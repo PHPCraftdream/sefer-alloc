@@ -24,7 +24,15 @@
 //! of the same generator shape, run at the same fixed seeds and the same
 //! `Config`, asserted to produce byte-identical `Vec<Op>` streams per seed
 //! (see `examples/perf_probe_p4_measurements.rs`): 0.015 marginal allocs/op
-//! for the enum vs. 0.766 for the boxed form.
+//! for the enum vs. 0.766 for the boxed form. Numerator convention (review
+//! P4-2): this wrapper does NOT override `GlobalAlloc::realloc`, so each
+//! realloc event passes through the default implementation's one `alloc`
+//! call and lands in `ALLOC_CALLS` — these figures count alloc calls PLUS
+//! realloc events, exactly the probe's ALLOC_CALLS + REALLOC_CALLS SUM
+//! numerator (the probe also reports alloc-only and realloc-only
+//! separately; its alloc-only enum figure is 0.000, and the previously
+//! published enum-side 0.015 -> 0.000 change was that definitional split,
+//! not drift).
 //!
 //!
 //! Not run under Miri (`#![cfg(not(miri))]`, the same convention
@@ -169,7 +177,11 @@ fn op_strategy_marginal_allocation_cost_stays_below_boxed_threshold() {
     let long = mean_allocs(|r| op_strategy(Config::default(), r), 220, SEEDS);
     let marginal_allocs_per_op = (long - short) / 200.0;
 
-    // Re-derived from the paired A/B (tests 2/3 and the probe): measured
+    // Re-derived from the paired A/B (tests 2/3 and the probe). Numerator:
+    // this wrapper's ALLOC_CALLS, which — because `realloc` is NOT
+    // overridden and the trait default routes the new block through the
+    // wrapper's own `alloc` — counts realloc events too, i.e. the probe's
+    // ALLOC_CALLS + REALLOC_CALLS SUM numerator (review P4-2). Measured
     // marginal allocs/op is 0.015 for the enum and 0.766 for the boxed
     // counterpart under this fixed config (`failure_persistence: None`,
     // 64 fixed seeds), so the threshold sits strictly between them — ~23x

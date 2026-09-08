@@ -77,6 +77,24 @@
 //! `REALLOC_CALLS` delta so a reader can tell whether the window could have
 //! been affected by the pre-fix accounting bug.
 //!
+//! # Marginal allocs/op numerator convention (review P4-2)
+//!
+//! The regression test's counting wrapper
+//! (`tests/size_strategy_avoids_boxed_value_trees.rs`) does NOT override
+//! `GlobalAlloc::realloc`. The trait's default implementation (checked in
+//! this toolchain's `core/src/alloc/global.rs`) allocates the new block via
+//! `self.alloc(...)` and deallocates the old one only on success — so each
+//! realloc event there is EXACTLY one call of the wrapper's own `alloc`,
+//! i.e. one increment of its single `ALLOC_CALLS` counter. This probe's
+//! realloc-honest counters instead keep `REALLOC_CALLS` separate from
+//! `ALLOC_CALLS`, so an alloc-only numerator differs from the test's by
+//! exactly the realloc events. Every marginal allocs/op figure is therefore
+//! printed under all THREE numerators — attempted `ALLOC_CALLS` only,
+//! attempted `REALLOC_CALLS` only, and their SUM — and the SUM is the one
+//! comparable to the test's counting. The previously published enum-side
+//! 0.015 -> 0.000 change is this definitional exclusion of realloc events
+//! from the alloc-only numerator, not run-to-run drift.
+//!
 //! # Honest build/target markers (P4-3)
 //!
 //! The output never claims the binary is a release build from inside the
@@ -106,8 +124,10 @@ use globalalloc_model::{drive, Config, Op};
 // Contract (review P3-1 fix):
 // - ATTEMPTED-call counters: ALLOC_CALLS (alloc()) and REALLOC_CALLS
 //   (realloc()) are incremented on EVERY call, before and regardless of the
-//   backend result. The published "allocs/op" figures depend on ALLOC_CALLS
-//   remaining attempted-call semantics.
+//   backend result. The published marginal allocs/op figures are reported
+//   under THREE numerators — ALLOC_CALLS only, REALLOC_CALLS only, and
+//   their SUM (P4-2; see the numerator-convention section in the file
+//   header) — all three attempted-call semantics.
 // - Byte accounting (TOTAL_BYTES, LIVE_BYTES, PEAK_LIVE) is updated ONLY on
 //   a SUCCESSFUL backend call. A null alloc or null realloc leaves
 //   live/total/peak completely unchanged; per the GlobalAlloc contract a
@@ -667,20 +687,48 @@ mod p4_paired_ab {
             .current()
     }
 
-    fn mean_allocs<S: Strategy<Value = Vec<Op>>>(
+    /// Mean per-draw ATTEMPTED-call counts of one `new_tree()` + `current()`
+    /// of a `len`-op stream, over `seeds` fixed seeds: (alloc-only,
+    /// realloc-only).
+    ///
+    /// P4-2: the marginal allocs/op derived from these is reported under
+    /// all THREE numerators — alloc-only, realloc-only, and their SUM —
+    /// because the regression test's counting wrapper does not override
+    /// `GlobalAlloc::realloc`: the trait default (checked in this
+    /// toolchain's `core/src/alloc/global.rs`) routes the new block through
+    /// the wrapper's own `alloc` (one `ALLOC_CALLS` per realloc event; the
+    /// paired dealloc is uncounted), so the test's single counter equals
+    /// the SUM, not the alloc-only figure.
+    fn mean_call_counts<S: Strategy<Value = Vec<Op>>>(
         build: impl Fn(core::ops::Range<usize>) -> S,
         len: usize,
         seeds: u64,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let strat = build(len..len + 1);
-        let mut total = 0usize;
+        let mut total_allocs = 0usize;
+        let mut total_reallocs = 0usize;
         for seed in 0..seeds {
-            let before = ALLOC_CALLS.load(Ordering::Relaxed);
+            let before_allocs = ALLOC_CALLS.load(Ordering::Relaxed);
+            let before_reallocs = REALLOC_CALLS.load(Ordering::Relaxed);
             let tree = strat.new_tree(&mut runner(seed, None)).unwrap();
             std::hint::black_box(tree.current());
-            total += ALLOC_CALLS.load(Ordering::Relaxed) - before;
+            total_allocs += ALLOC_CALLS.load(Ordering::Relaxed) - before_allocs;
+            total_reallocs += REALLOC_CALLS.load(Ordering::Relaxed) - before_reallocs;
         }
-        total as f64 / seeds as f64
+        (
+            total_allocs as f64 / seeds as f64,
+            total_reallocs as f64 / seeds as f64,
+        )
+    }
+
+    /// P4-2: one arm's marginal allocs/op under all three numerators. `sum`
+    /// is the canonical figure — it matches the regression test's counting;
+    /// `alloc_only` isolates the definitional delta.
+    #[derive(Clone, Copy)]
+    struct Marginals {
+        alloc_only: f64,
+        realloc_only: f64,
+        sum: f64,
     }
 
     // --- P3-2: three separately labeled scenarios replace the old single,
@@ -1111,7 +1159,7 @@ mod p4_paired_ab {
         // realloc replace semantics; full-new-request TOTAL_BYTES
         // convention; window-local re-based peaks; P3-1 exposure via the
         // per-window REALLOC_CALLS delta.
-        println!("legend: ATTEMPTED calls (ALLOC_CALLS, REALLOC_CALLS) are counted separately from byte accounting; LIVE_BYTES/TOTAL_BYTES/PEAK_LIVE update ONLY on successful backend calls (a null alloc or realloc leaves live unchanged; a successful realloc REPLACES the old size with the new one in live state). TOTAL_BYTES counts the cumulative FULL requested size of every successful call — a successful realloc counts the full new request, not the growth delta. peak = window-local max of LIVE_BYTES, re-based at window entry (start_live subtracted), so constant pre-window offsets cancel.");
+        println!("legend: ATTEMPTED calls (ALLOC_CALLS, REALLOC_CALLS) are counted separately from byte accounting; LIVE_BYTES/TOTAL_BYTES/PEAK_LIVE update ONLY on successful backend calls (a null alloc or realloc leaves live unchanged; a successful realloc REPLACES the old size with the new one in live state). TOTAL_BYTES counts the cumulative FULL requested size of every successful call — a successful realloc counts the full new request, not the growth delta. peak = window-local max of LIVE_BYTES, re-based at window entry (start_live subtracted), so constant pre-window offsets cancel. Marginal allocs/op figures are reported under THREE numerators — attempted ALLOC_CALLS only, attempted REALLOC_CALLS only, and their SUM; the SUM is the one matching the regression test's counting wrapper (it does not override realloc, so the default realloc's new-block alloc lands in its single counter — review P4-2).");
         println!("P3-1 exposure: each window reports its REALLOC_CALLS delta. A window with 0 reallocs cannot have been affected by the pre-fix bug (it only fired on realloc) beyond a constant pre-window offset, which the re-basing cancels; a window with reallocs > 0 WAS affected (stored live previously grew by new_size instead of new_size - old_size per realloc, and null reallocs over-counted).");
 
         let arms: [(&str, Config, bool); 4] = [
@@ -1176,9 +1224,10 @@ mod p4_paired_ab {
             "  full-shrink equality (steps + final value, {SHRINK_SEEDS} seeds, default config): OK"
         );
 
-        // stats: (arm name, marginal allocs/op, per-scenario (mean total B,
-        // mean trajectory peak B) in S1, S2, S3 order).
-        let mut stats: Vec<(&str, f64, ScenarioMeans)> = Vec::new();
+        // stats: (arm name, marginal allocs/op under all three numerators
+        // (P4-2; the delta lines below cite the SUM numerator), per-scenario
+        // (mean total B, mean trajectory peak B) in S1, S2, S3 order).
+        let mut stats: Vec<(&str, Marginals, ScenarioMeans)> = Vec::new();
         for (name, config, boxed) in arms {
             let build = move |len: core::ops::Range<usize>| {
                 if boxed {
@@ -1188,13 +1237,25 @@ mod p4_paired_ab {
                 }
             };
             let strat = build(STREAM..STREAM + 1);
-            // Marginal allocs/op: (mean allocs for len=220) - (mean for
-            // len=20) divided by 200 — unchanged attempted-ALLOC_CALLS
-            // semantics.
-            let a20 = mean_allocs(build, 20, SEEDS);
-            let a220 = mean_allocs(build, 220, SEEDS);
-            let marginal = (a220 - a20) / 200.0;
-            println!("  {name:14} marginal {marginal:6.3} allocs/op (attempted ALLOC_CALLS)");
+            // Marginal allocs/op: (mean calls for len=220) - (mean for
+            // len=20) divided by 200, reported under all three numerators
+            // (P4-2) — attempted-call semantics throughout.
+            let c20 = mean_call_counts(build, 20, SEEDS);
+            let c220 = mean_call_counts(build, 220, SEEDS);
+            let alloc_only = (c220.0 - c20.0) / 200.0;
+            let realloc_only = (c220.1 - c20.1) / 200.0;
+            let marginal = Marginals {
+                alloc_only,
+                realloc_only,
+                sum: alloc_only + realloc_only,
+            };
+            println!(
+                "  {name:14} marginal allocs/op: alloc-only {alloc_only:6.3} + realloc-only \
+                 {realloc_only:6.3} = sum {sum:6.3} (three numerators: attempted ALLOC_CALLS / \
+                 REALLOC_CALLS / their sum; the SUM matches the regression test's counting, \
+                 whose wrapper does not override realloc)",
+                sum = marginal.sum
+            );
             let means = measure_arm(name, &strat, SEEDS, SHRINK_SEEDS);
             stats.push((name, marginal, means));
         }
@@ -1211,8 +1272,12 @@ mod p4_paired_ab {
             let (b_marginal, b_means) = find(boxed_arm);
             let (e_marginal, e_means) = find(enum_arm);
             println!(
-                "  boxing-attributable delta ({boxed_arm} - {enum_arm}): {:+.3} allocs/op",
-                b_marginal - e_marginal
+                "  boxing-attributable delta ({boxed_arm} - {enum_arm}): sum {:+.3} allocs/op \
+                 (alloc-only {:+.3}, realloc-only {:+.3}) — the SUM numerator is the one \
+                 matching the regression test's counting",
+                b_marginal.sum - e_marginal.sum,
+                b_marginal.alloc_only - e_marginal.alloc_only,
+                b_marginal.realloc_only - e_marginal.realloc_only,
             );
             for (index, scenario_name) in scenario_names.iter().enumerate() {
                 println!(
@@ -1233,9 +1298,11 @@ mod p4_paired_ab {
         // when a failure is actually saved (never in this probe); the setting
         // exists to persist failures to the filesystem.
         let strat = op_strategy(Config::default(), STREAM..STREAM + 1);
-        let mut total = 0usize;
+        let mut total_allocs = 0usize;
+        let mut total_reallocs = 0usize;
         for seed in 0..SEEDS {
-            let before = ALLOC_CALLS.load(Ordering::Relaxed);
+            let before_allocs = ALLOC_CALLS.load(Ordering::Relaxed);
+            let before_reallocs = REALLOC_CALLS.load(Ordering::Relaxed);
             let tree = strat
                 .new_tree(&mut runner(
                     seed,
@@ -1245,11 +1312,14 @@ mod p4_paired_ab {
                 ))
                 .unwrap();
             std::hint::black_box(tree.current());
-            total += ALLOC_CALLS.load(Ordering::Relaxed) - before;
+            total_allocs += ALLOC_CALLS.load(Ordering::Relaxed) - before_allocs;
+            total_reallocs += REALLOC_CALLS.load(Ordering::Relaxed) - before_reallocs;
         }
         println!(
-            "  [legacy sensitivity, NOT a decision number] failure_persistence = Some(SourceParallel) (env-unset default): {:.1} allocs/draw over {SEEDS} seeds — extra allocs from the TestRunner partial_clone cloning Box<dyn FailurePersistence> (setting exists to persist failures to the filesystem; no I/O occurs here)",
-            total as f64 / SEEDS as f64
+            "  [legacy sensitivity, NOT a decision number] failure_persistence = Some(SourceParallel) (env-unset default): {:.1} alloc + {:.1} realloc = {:.1} sum calls/draw over {SEEDS} seeds (attempted-call numerators) — extra calls from the TestRunner partial_clone cloning Box<dyn FailurePersistence> (setting exists to persist failures to the filesystem; no I/O occurs here)",
+            total_allocs as f64 / SEEDS as f64,
+            total_reallocs as f64 / SEEDS as f64,
+            (total_allocs + total_reallocs) as f64 / SEEDS as f64,
         );
     }
 }
