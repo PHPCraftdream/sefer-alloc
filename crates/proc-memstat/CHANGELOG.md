@@ -30,17 +30,25 @@ version ever carried.
   `peak_rss`, each an `Option<u64>` that is **absent rather than substituted**
   where the platform API does not provide that quantity. Commit charge and
   virtual size are different axes and are never conflated: Windows reports
-  commit charge (`PagefileUsage`) and no virtual size; macOS reports virtual
-  size and no commit charge; Linux reports both.
+  commit charge (`PagefileUsage`) and no virtual size; Linux (`VmSize`) and
+  macOS (`virtual_size`) report virtual size and no commit charge.
 - **`MemStat::charged_or_reserved_bytes()`** — the documented compatibility
   accessor for callers that want "whichever of the two this platform has",
   `commit_charge` first, then `virtual_size`, then 0. Its rustdoc states
   outright that the reading is platform-dependent, because the whole point of
   splitting the two axes was to stop that dependence from being silent.
-- **Three platform backends, no C dependencies and no crate dependencies at
-  all**: Linux parses `/proc/self/status`, Windows calls
+  **Only Windows provides commit charge** (`PagefileUsage`); Linux (`VmSize`)
+  and macOS (`virtual_size`) provide virtual size and report `commit_charge`
+  as `None`. Those `None`s are structural, not unimplemented — neither
+  `/proc/self/status` nor `MACH_TASK_BASIC_INFO` has a commit-charge counter,
+  and reporting address space under that name would invert the very
+  distinction the split exists to draw.
+- **Three platform backends with zero CRATE dependencies** — no `sysinfo`, no
+  `libc`: Linux parses `/proc/self/status`, Windows calls
   `K32GetProcessMemoryInfo`, macOS calls `task_info` with
-  `MACH_TASK_BASIC_INFO` — each through locally-declared FFI.
+  `MACH_TASK_BASIC_INFO`, each through locally-declared FFI. Deliberately NOT
+  claimed as "no C libraries": two of the three backends do call native OS
+  APIs. What the crate has none of is *crate* dependencies.
 - **Its own three-OS CI job** (`proc-memstat gates` in
   `.github/workflows/ci.yml`): fmt, clippy `-D warnings`, tests, rustdoc
   `-D warnings`, a link-smoke consumer built **outside** the workspace that

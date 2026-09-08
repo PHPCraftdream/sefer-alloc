@@ -1,8 +1,8 @@
 # proc-memstat
 
 Single-read self-probe of a process's **own** memory: RSS + **commit charge**
-+ virtual size + peak RSS, in bytes, from one call. Zero dependencies, 100%
-Rust with **zero crate dependencies** — no `sysinfo`, no `libc`. (Not "no C
++ virtual size + peak RSS, in bytes, from one call. 100% Rust with **zero
+crate dependencies** — no `sysinfo`, no `libc`. (Not "no C
 libraries": the Windows and macOS backends call native OS APIs through
 locally-declared FFI. What this crate has none of is *crate* dependencies.)
 
@@ -24,6 +24,26 @@ assembles these lines with separate reads, and a `std` file read is not a
 single syscall. Reading the fields from one `MemStat` beats two `snapshot()`
 calls, which is the point — but a comparison that would be wrong if the
 figures were microseconds apart needs a stronger mechanism than this.
+
+## When a reading fails, say so — `try_snapshot`
+
+`snapshot()` is best-effort: it returns an all-zero `MemStat` when no reading
+is available. That fallback is indistinguishable from a genuinely tiny
+process, so a before/after pair whose *second* read failed reads as a complete
+release of memory.
+
+```rust
+match proc_memstat::try_snapshot() {
+    Ok(m) => println!("rss={}", m.rss),
+    Err(e) => eprintln!("no reading: {e}"),
+}
+```
+
+`try_snapshot() -> Result<MemStat, SnapshotError>` says which happened.
+`SnapshotError` is `Unsupported` (no backend for this target) / `Os` (the
+platform call failed) / `Malformed` (the reading came back unusable), and is
+`#[non_exhaustive]`. Use `snapshot()` when a missing reading is acceptable and
+`try_snapshot()` when a wrong conclusion from one would not be.
 
 ## `commit_charge` and `virtual_size` are different things
 
