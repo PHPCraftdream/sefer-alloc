@@ -203,11 +203,30 @@ pub fn try_snapshot() -> Result<MemStat, SnapshotError> {
 ///
 /// Best-effort: on any read failure, or on an unknown target, the whole
 /// reading falls back to [`MemStat::default`] — `rss: 0` and `None` for the
-/// optional fields — rather than panicking, because a probe must never take
-/// the process down.
+/// optional fields — rather than panicking.
 ///
 /// **That fallback is indistinguishable from a genuinely near-zero process.**
 /// Use [`try_snapshot`] when that distinction matters.
+///
+/// # What "never takes the process down" does and does not mean
+///
+/// It means this function does not panic when the platform read fails: a
+/// probe that cannot measure still returns.
+///
+/// It does NOT mean the call is free of side effects on the memory it is
+/// measuring, and on Linux specifically it is not (review P4-2). That backend
+/// reads `/proc/self/status` through `std::fs::read`, which ALLOCATES a fresh
+/// buffer per call. Two consequences worth stating rather than leaving to be
+/// discovered:
+///
+/// - Calling this from inside a global-allocator hook can RE-ENTER the
+///   allocator. Whether that is safe is a property of the allocator, not of
+///   this crate; if it is not reentrant, this call is not safe to make there.
+/// - Under memory exhaustion the allocation itself can fail, and Rust's
+///   allocation-failure path is not something this function can intercept.
+///
+/// Windows and macOS carry neither caveat: those backends fill a stack struct
+/// and allocate nothing.
 #[must_use]
 pub fn snapshot() -> MemStat {
     try_snapshot().unwrap_or_default()
