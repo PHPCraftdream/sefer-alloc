@@ -66,17 +66,24 @@ rather than filled in with a "nearest analogue".
 
 | Platform | `rss` | `virtual_size` | `commit_charge` | `peak_rss` |
 |----------|-------|----------------|-----------------|------------|
-| Linux    | `/proc/self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
+| Linux    | `/proc/thread-self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
 | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `None` | `PagefileUsage` (`Some`) | `PeakWorkingSetSize` (`Some`) |
 | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `resident_size_max` (`Some`) |
 | other / miri | `0` | `None` | `None` | `None` (honest fallback) |
 
 The `None`s are structural, not unimplemented: `PROCESS_MEMORY_COUNTERS` has no
-virtual-size field, and neither `/proc/self/status` nor `MACH_TASK_BASIC_INFO`
+virtual-size field, and neither the Linux task status nor `MACH_TASK_BASIC_INFO`
 has a commit-charge counter.
 
-All three Linux figures come from `/proc/self/status` (not `/proc/self/statm`),
-whose values are in kB regardless of the kernel's base page size — so no
+All three Linux figures come from the calling THREAD's own task status,
+`/proc/thread-self/status` — not `/proc/self/status`, which names the
+thread-group leader (the main thread): a process whose main thread has
+exited via `pthread_exit` is still alive, but the leader's status file no
+longer carries `VmRSS`/`VmSize`/`VmHWM`. All threads share one `mm`, so the
+calling thread's figures are the whole process's — nothing is summed across
+threads. Kernels older than 3.17, which have no `/proc/thread-self`, fall
+back to `/proc/self/status` (and never to `/proc/self/statm`), whose values
+are in kB regardless of the kernel's base page size — so no
 page-size query is needed and the numbers stay correct on 16 KiB/64 KiB-page
 kernels.
 

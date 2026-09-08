@@ -19,7 +19,7 @@
 //! - **`peak_rss`** — the high-water mark of RSS, where the OS exposes it
 //!   (`Some`), or `None` where it does not.
 //!
-//! **All fields are in bytes.** Linux's `/proc/self/status` reports kB and the
+//! **All fields are in bytes.** Linux's task status reports kB and the
 //! backend scales at the parse boundary, so nothing above it ever sees a KiB
 //! figure — this crate deals only in bytes.
 //!
@@ -41,7 +41,7 @@
 //!
 //! | Platform | `rss` | `virtual_size` | `commit_charge` | `peak_rss` |
 //! |----------|-------|----------------|-----------------|------------|
-//! | Linux    | `/proc/self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
+//! | Linux    | `/proc/thread-self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
 //! | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `None` | `PagefileUsage` (`Some`) | `PeakWorkingSetSize` (`Some`) |
 //! | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `resident_size_max` (`Some`) |
 //! | other    | `0` | `None` | `None` | `None` |
@@ -60,12 +60,22 @@
 //! Mach flavor's counterpart carries the other platform's field, which is why
 //! the absences are structural rather than merely unimplemented.
 //!
-//! All three Linux fields come from `/proc/self/status`, whose
-//! values are reported in kB regardless of the kernel's base page size — unlike
-//! `/proc/self/statm` (expressed in pages), this needs no page-size query and
-//! stays correct on 16 KiB/64 KiB-page kernels (aarch64, ppc64, etc.). On
-//! unknown targets the crate reports honest zeros rather than a fabricated
-//! number.
+//! All three Linux fields come from ONE read of the calling THREAD's own
+//! task status, `/proc/thread-self/status` — not `/proc/self/status`, which
+//! names the thread-group LEADER (the main thread). A multithreaded process
+//! may keep running after its main thread exits via `pthread_exit`; the
+//! kernel clears the exiting leader's `task->mm` at thread exit while the
+//! surviving threads keep the shared `mm` alive, and the leader's status
+//! file then no longer carries the `Vm*` fields even though the process is
+//! alive. The calling thread always holds the shared `mm`, and all threads
+//! share it — so its status always carries the fields, and its figures are
+//! the whole process's, never summed across threads. Kernels older than
+//! 3.17, which have no `/proc/thread-self`, fall back to the leader-named
+//! `/proc/self/status`. The values are reported in kB regardless of the
+//! kernel's base page size — unlike `/proc/self/statm` (expressed in
+//! pages), this needs no page-size query and stays correct on 16 KiB/
+//! 64 KiB-page kernels (aarch64, ppc64, etc.). On unknown targets the crate
+//! reports honest zeros rather than a fabricated number.
 //!
 //! Runnable form of the examples: `tests/monotonicity.rs`.
 
@@ -80,8 +90,8 @@
 /// A best-effort observation of the calling process's own memory usage, in
 /// **bytes**.
 ///
-/// Produced by [`snapshot`] from one source — on Linux, one
-/// `/proc/self/status` read. That narrows the window between the figures; it
+/// Produced by [`snapshot`] from one source — on Linux, one task-status
+/// read (`/proc/thread-self/status`). That narrows the window between the figures; it
 /// does NOT make them atomic, and this type does not claim it does (review
 /// P3-1). The kernel documents RSS accounting as asynchronous and possibly
 /// inexact, and `task_mem` — the procfs code producing these very lines —
@@ -101,11 +111,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemStat {
     /// Resident set size in bytes — physical memory currently backing the
-    /// process (Windows `WorkingSetSize`, Linux `/proc/self/status` `VmRSS`,
+    /// process (Windows `WorkingSetSize`, Linux `/proc/thread-self/status`
+    /// `VmRSS`,
     /// macOS `resident_size`). `0` on unknown platforms.
     pub rss: u64,
     /// Size of the process's virtual ADDRESS SPACE in bytes (Linux
-    /// `/proc/self/status` `VmSize`, macOS `virtual_size`); `None` where the
+    /// `/proc/thread-self/status` `VmSize`, macOS `virtual_size`); `None` where the
     /// API this crate uses does not expose it, which includes Windows —
     /// `PROCESS_MEMORY_COUNTERS` carries no virtual-size field.
     ///
@@ -117,7 +128,7 @@ pub struct MemStat {
     /// Memory charged against the system commit limit, in bytes, whether or
     /// not it has been faulted in yet (Windows `PagefileUsage`); `None` where
     /// the API this crate uses does not expose it, which is both Linux and
-    /// macOS — neither `/proc/self/status` nor `MACH_TASK_BASIC_INFO` carries
+    /// macOS — neither the Linux task status nor `MACH_TASK_BASIC_INFO` carries
     /// a commit-charge counter, and [`virtual_size`](Self::virtual_size) is a
     /// different quantity, not a stand-in for this one.
     ///
@@ -125,7 +136,8 @@ pub struct MemStat {
     /// here and not in `rss`.
     pub commit_charge: Option<u64>,
     /// Peak (high-water) resident set size in bytes, where the OS exposes it
-    /// (Windows `PeakWorkingSetSize`, Linux `/proc/self/status` `VmHWM`, macOS
+    /// (Windows `PeakWorkingSetSize`, Linux `/proc/thread-self/status`
+    /// `VmHWM`, macOS
     /// `resident_size_max`); `None` on platforms without a peak-RSS counter.
     pub peak_rss: Option<u64>,
 }
@@ -170,11 +182,11 @@ pub enum SnapshotError {
     /// callers should treat it as "this measurement is unavailable here",
     /// not as an error to report.
     Unsupported,
-    /// The platform query itself failed: `/proc/self/status` could not be
+    /// The platform query itself failed: the task status could not be
     /// read, or `K32GetProcessMemoryInfo` / `task_info` returned an error.
     Os,
     /// The source was read, but a required field was absent or not a plain
-    /// ASCII integer — a `/proc/self/status` without `VmRSS`, for instance.
+    /// ASCII integer — a task status without `VmRSS`, for instance.
     ///
     /// Distinguished from [`Os`](Self::Os) because it points at the CONTENT
     /// rather than at the access: a caller that sees this is looking at a
@@ -223,7 +235,7 @@ pub fn try_snapshot() -> Result<MemStat, SnapshotError> {
 ///
 /// It does NOT mean the call is free of side effects on the memory it is
 /// measuring, and on Linux specifically it is not (review P4-2). That backend
-/// reads `/proc/self/status` through `std::fs::read`, which ALLOCATES a fresh
+/// reads the task status through `std::fs::read`, which ALLOCATES a fresh
 /// buffer per call. Two consequences worth stating rather than leaving to be
 /// discovered:
 ///
@@ -254,17 +266,58 @@ mod platform {
     use super::status_parse::read_kib_field;
     use super::{MemStat, SnapshotError};
 
+    /// The calling THREAD's own task status. `/proc/thread-self` is a magic
+    /// symlink the kernel resolves PER LOOKUP from the calling task —
+    /// `sprintf(name, "%u/task/%u", tgid, pid)` over `current`
+    /// (`proc_thread_self_get_link`, fs/proc/thread_self.c) — so it names a
+    /// task that necessarily still holds the process's shared `mm`.
+    const THREAD_STATUS: &str = "/proc/thread-self/status";
+
+    /// Pre-3.17 fallback (2014): those kernels have no `/proc/thread-self`,
+    /// and `/proc/self/status` is what this backend read before review
+    /// round 2's P2-1 — correct whenever the leader is alive, which on such
+    /// a kernel is the only situation this read can be made in. There the
+    /// leader-exit scenario stays unmeasurable, exactly as before the fix.
+    const PROCESS_STATUS: &str = "/proc/self/status";
+
     pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {
-        // `read` (bytes), NOT `read_to_string`: a non-UTF-8 task name must not
-        // be able to zero out the numeric fields — see `status_parse`.
-        let status = std::fs::read("/proc/self/status").map_err(|_| SnapshotError::Os)?;
+        // The caller's OWN task status, not the thread-group leader's
+        // (review round 2, P2-1). `/proc/self` resolves to the TGID — the
+        // main thread — and a multithreaded process may keep running after
+        // its main thread exits via `pthread_exit` (the use pthread_exit(3)
+        // NOTES documents for exactly this purpose). The kernel clears the
+        // exiting task's `task->mm` at EVERY thread exit (`exit_mm`,
+        // kernel/exit.c — there is no group-still-alive exception), while
+        // the surviving threads keep the shared `mm` alive, and
+        // `proc_pid_status` prints the `Vm*` lines only inside its `if (mm)`
+        // branch (fs/proc/array.c). So after a leader exit the leader's
+        // status file still EXISTS but carries no `VmRSS`/`VmSize`/`VmHWM`:
+        // the process is alive and measurable, and the leader-named file no
+        // longer shows it. The calling thread always holds the shared `mm`,
+        // and all threads share it — its status always carries the fields,
+        // and its figures ARE the whole process's. They are never summed
+        // across threads; there is exactly one task read here.
+        //
+        // `read` (bytes), NOT `read_to_string`: a non-UTF-8 task name must
+        // not be able to zero out the numeric fields — see `status_parse`.
+        let status = match std::fs::read(THREAD_STATUS) {
+            Ok(bytes) => bytes,
+            // Linux < 3.17 has no `/proc/thread-self` at all; fall back to
+            // the leader-named file so old kernels keep their previous
+            // (correct-while-leader-alive) behaviour instead of losing the
+            // reading to a missing path.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::read(PROCESS_STATUS).map_err(|_| SnapshotError::Os)?
+            }
+            Err(_) => return Err(SnapshotError::Os),
+        };
         // VmRSS is the one field with no `Option` to express absence, so a
         // procfs without it is Malformed rather than a silent zero.
         let rss = read_kib_field(&status, b"VmRSS:").ok_or(SnapshotError::Malformed)?;
         Ok(MemStat {
             rss: rss * 1024,
             virtual_size: read_kib_field(&status, b"VmSize:").map(|kib| kib * 1024),
-            // `/proc/self/status` exposes no commit-charge counter; `VmSize`
+            // The task status exposes no commit-charge counter; `VmSize`
             // above is address space, a different quantity (see `MemStat`).
             commit_charge: None,
             peak_rss: read_kib_field(&status, b"VmHWM:").map(|kib| kib * 1024),

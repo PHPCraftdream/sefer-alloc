@@ -13,3 +13,12 @@ keywords = ["rss", "memory", "commit-charge", "process", "peak-rss"]
 categories = ["os", "memory-management", "development-tools::profiling"]
 
 [dependencies]
+
+# Review round 2, P2-1: the native lifecycle scenario is a `harness = false`
+# target because the scenario needs the process's REAL main thread — the
+# thread-group leader — and libtest's harness main cannot play that role
+# (its `#[test]` fns run on spawned workers, and no spawned thread can ever
+# BE the leader: TID == TGID defines it). See tests/thread_leader_exit.rs.
+[[test]]
+name = "thread_leader_exit"
+harness = false

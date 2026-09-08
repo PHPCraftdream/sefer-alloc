@@ -72,6 +72,26 @@ version ever carried.
   so `snapshot()` silently reported zeros while `VmRSS`/`VmSize`/`VmHWM` were
   ordinary ASCII digits on their own lines all along. The parser now works on
   bytes and touches only the ASCII numeric fields it was asked for.
+- **Linux: a live multithreaded process whose main thread had exited read
+  as unmeasurable.** `/proc/self` resolves to the thread-group LEADER — the
+  main thread — not to the calling thread. A multithreaded process may keep
+  running after its main thread exits via `pthread_exit` (the use
+  pthread_exit(3) NOTES documents for exactly this purpose): the kernel
+  clears the exiting leader's `task->mm` at thread exit while the surviving
+  threads keep the shared `mm` alive, and procfs prints the `Vm*` fields
+  only for a task whose `mm` is still set. The leader's status file still
+  EXISTS — it just carries no `VmRSS`/`VmSize`/`VmHWM` — so the backend
+  returned `Malformed` and `snapshot()` fell back to all zeros: a live
+  process with real memory read exactly like a complete release. The
+  backend now reads the CALLING THREAD's own status,
+  `/proc/thread-self/status` (Linux 3.17+; `/proc/self/status` stays as the
+  fallback on kernels without it). One read, of one task: all threads share
+  one `mm`, so the calling thread's figures ARE the process's, and nothing
+  is ever summed across threads. Verified by a native lifecycle scenario
+  (`tests/thread_leader_exit.rs`): the process's real main thread exits via
+  the thread-exit syscall while a worker keeps running; on the pre-fix
+  backend the same scenario returns `Malformed` and fails, with the fix the
+  worker gets a real reading.
 - **`commit` named three different quantities depending on the platform.**
   Split into `virtual_size` and `commit_charge` (see "Added"). **Breaking
   relative to the in-tree API**, and the reason this crate is published as
