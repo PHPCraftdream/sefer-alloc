@@ -1197,6 +1197,26 @@ impl AllocCore {
         super::segment_table::MAX_SEGMENTS
     }
 
+    /// TEST-ONLY (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143): the
+    /// process-wide count of OS segment reservations the KERNEL REFUSED —
+    /// see [`os::SEGMENTS_RESERVE_FAILED_TOTAL`](super::os::SEGMENTS_RESERVE_FAILED_TOTAL)
+    /// for the full rationale.
+    ///
+    /// A capacity test fills until `alloc` returns null, but null is
+    /// ambiguous: it means EITHER the `SegmentTable` ran out of slots (the
+    /// ceiling such a test is actually asserting) OR the OS declined to back
+    /// another mapping because the machine is under memory pressure — a
+    /// system-wide condition no test can control. Reading this counter's
+    /// DELTA across the fill loop disambiguates the two: zero means every
+    /// null came from the allocator's own bookkeeping, so the count is a
+    /// valid assertion; non-zero means the environment cut the run short and
+    /// the count says nothing about the ceiling.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_segments_reserve_failed_total() -> u64 {
+        super::os::SEGMENTS_RESERVE_FAILED_TOTAL.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// R15-1 (task #303) TEST-ONLY: `segment_directory::WORDS_PER_CLASS`
     /// (`= MAX_SEGMENTS / 64`) — the per-class word count of the
     /// `class-aware-dirty` sidecar (`PerClassDirty`) and, by construction,

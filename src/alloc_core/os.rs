@@ -56,6 +56,29 @@ pub(crate) static SEGMENTS_RESERVED_TOTAL: AtomicU64 = AtomicU64::new(0);
 /// relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
 pub(crate) static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
+/// Process-wide count of OS segment reservations the KERNEL REFUSED — every
+/// `aligned_vmem::reserve_aligned{,_lazy}` call that returned `None` on a
+/// segment-reservation path. Monotonic, relaxed; the third member of the
+/// counter family above.
+///
+/// R35 (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143): a capacity test that
+/// stops early cannot, from the outside, tell WHICH of two very different
+/// things happened — the allocator ran out of `SegmentTable` slots (the
+/// ceiling under test), or the OS refused to back another mapping (on
+/// Windows `ERROR_COMMITMENT_LIMIT`/1455, a system-wide RAM+pagefile
+/// budget shared with every other process on the machine). Both surface
+/// identically as a null return from `alloc`. Without this counter the
+/// only available assertion is "the count matched", which turns any
+/// machine under memory pressure into a red test that looks exactly like
+/// a slot-bookkeeping regression.
+///
+/// This is deliberately a FAILURE counter rather than an errno/GetLastError
+/// capture: the reservation primitives live behind `aligned_vmem`'s
+/// `Option` API and do not surface an OS error code, and the distinction
+/// the tests need is only "did the kernel refuse us", not which refusal
+/// class it was.
+pub(crate) static SEGMENTS_RESERVE_FAILED_TOTAL: AtomicU64 = AtomicU64::new(0);
+
 /// The segment size and alignment, in bytes. 4 MiB — mimalloc's default. Every
 /// [`Segment`] handed up by this module is aligned to a multiple of this value,
 /// so [`crate::alloc_core::segment_of`] can find an allocation's owning segment
@@ -149,7 +172,10 @@ impl Segment {
         }
         let n_segments = len.div_ceil(SEGMENT);
         let usable = n_segments * SEGMENT;
-        let reservation = vmem::reserve_aligned(usable, SEGMENT)?;
+        let Some(reservation) = vmem::reserve_aligned(usable, SEGMENT) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -204,7 +230,10 @@ impl Segment {
         if len == 0 {
             return None;
         }
-        let reservation = vmem::reserve_aligned(len, SEGMENT)?;
+        let Some(reservation) = vmem::reserve_aligned(len, SEGMENT) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -268,8 +297,11 @@ impl Segment {
         // tests/large_reserved_capacity.rs (task #1077's 64 KiB-multiple
         // boundary assertion) and by `validate_initial_commit` itself.
         // pageguard:allow — production provenance marker (task #1080)
-        let reservation =
-            vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit)?.into_reservation();
+        let Some(lazy) = vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -313,8 +345,11 @@ impl Segment {
         // branch. The allocator's commit frontier lives in the segment header,
         // reachable from a bare pointer on the hot path, so it does NOT use
         // `LazyReservation`'s tracking and takes the explicit door out.
-        let reservation =
-            vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?.into_reservation();
+        let Some(lazy) = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -340,8 +375,11 @@ impl Segment {
         // branch. The allocator's commit frontier lives in the segment header,
         // reachable from a bare pointer on the hot path, so it does NOT use
         // `LazyReservation`'s tracking and takes the explicit door out.
-        let reservation =
-            vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?.into_reservation();
+        let Some(lazy) = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }

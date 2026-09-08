@@ -169,6 +169,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/alloc_core_core_diag.rs::dbg_foreign_or_unroutable_frees",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_reserved_total",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_released_total",
+    "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_reserve_failed_total",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_node_id_for",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_page_map_class_for",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_table_count",

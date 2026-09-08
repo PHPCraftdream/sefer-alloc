@@ -75,7 +75,16 @@ pub fn reserve_aligned_on_node(
 
     let r = if node == NO_NODE {
         // No NUMA preference expressed: plain reservation, no shim detour.
-        aligned_vmem::reserve_aligned(usable, SEGMENT)?
+        // Same bypass note as the reserved-counter bump below: this path does
+        // not go through `os::Segment::reserve`, so a kernel refusal must bump
+        // the shared failure counter here too, or `dbg_segments_reserve_failed_total`
+        // would silently under-count under `numa-aware`.
+        let Some(r) = aligned_vmem::reserve_aligned(usable, SEGMENT) else {
+            crate::alloc_core::os::SEGMENTS_RESERVE_FAILED_TOTAL
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return None;
+        };
+        r
     } else {
         // The enclosing `node == NO_NODE` branch proves the input is not
         // the sentinel, so NodeId::new cannot return None here.
@@ -89,7 +98,14 @@ pub fn reserve_aligned_on_node(
             // Every error class (UnsupportedPlatform / UnsupportedArchitecture
             // / InvalidNode / InvalidArguments / Os) degrades to an unbound
             // reservation rather than failing the allocation.
-            Err(_) => aligned_vmem::reserve_aligned(usable, SEGMENT)?,
+            Err(_) => {
+                let Some(r) = aligned_vmem::reserve_aligned(usable, SEGMENT) else {
+                    crate::alloc_core::os::SEGMENTS_RESERVE_FAILED_TOTAL
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return None;
+                };
+                r
+            }
         }
     };
 

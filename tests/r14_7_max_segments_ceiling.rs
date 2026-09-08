@@ -41,12 +41,76 @@
 //! Correctness of the underlying slot bookkeeping is covered by
 //! `tests/segment_table_recycle.rs` and other lighter-weight tests that DO
 //! run under miri.
+//!
+//! ## Why these two tests are serialized, and why a stop-early is not a
+//! failure (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143)
+//!
+//! Both tests below drive an `AllocCore` to its full `MAX_SEGMENTS - 1`
+//! ceiling. `AllocCore::table` is a per-INSTANCE field, not a process-wide
+//! one, so two `AllocCore`s reach their ceilings independently — and libtest
+//! runs the tests in one file concurrently by default. The two fills
+//! therefore overlap, and the process's PEAK segment demand is twice what
+//! either test alone needs. That doubling is self-inflicted and buys
+//! nothing: neither test is about concurrency. `CEILING_LOCK` serializes
+//! them so only one full-ceiling working set is live at a time.
+//!
+//! Serializing halves the peak but cannot make the demand unconditionally
+//! satisfiable — the remaining requirement is still thousands of live
+//! segment reservations, and whether the OS grants them depends on a
+//! system-wide budget (on Windows, RAM + pagefile; a refusal surfaces as
+//! `ERROR_COMMITMENT_LIMIT`/1455) shared with every other process on the
+//! machine. A refused reservation and an exhausted `SegmentTable` both
+//! surface identically to the caller: `alloc` returns null. Asserting the
+//! achieved count alone therefore cannot distinguish the ceiling under test
+//! from a busy machine, which is precisely how this test earned a flake
+//! card.
+//!
+//! `AllocCore::dbg_segments_reserve_failed_total()` closes that gap: its
+//! DELTA across the fill loop counts reservations the kernel refused. Zero
+//! means every null came from the allocator's own bookkeeping and the count
+//! is a valid assertion; non-zero means the environment cut the run short,
+//! and the run reports that distinctly instead of blaming the allocator.
 
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
+use std::sync::{Mutex, MutexGuard};
 
 use sefer_alloc::{AllocCore, SegmentLayout};
+
+/// Serializes the two full-ceiling fills in this file — see the module doc.
+static CEILING_LOCK: Mutex<()> = Mutex::new(());
+
+/// Takes [`CEILING_LOCK`], tolerating poisoning: if one test panics while
+/// holding it, the other must still run serialized rather than fail with an
+/// unrelated `PoisonError`.
+fn ceiling_lock() -> MutexGuard<'static, ()> {
+    CEILING_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Reports whether a fill that stopped short did so because the OS refused
+/// to back another mapping, given the reserve-failure counter delta observed
+/// across that fill. Returns `true` when the caller should treat the run as
+/// environment-limited rather than a regression.
+///
+/// Deliberately requires BOTH conditions: a short fill AND an observed
+/// kernel refusal. A fill that reaches the expected ceiling is asserted
+/// normally no matter what the counter did, so this can never turn the
+/// test's real assertion off.
+fn stopped_early_by_the_os(achieved: usize, expected_ceiling: usize, refused: u64) -> bool {
+    if achieved >= expected_ceiling || refused == 0 {
+        return false;
+    }
+    eprintln!(
+        "r14_7 ceiling fill stopped at {achieved}/{expected_ceiling} live Large objects after \
+         the OS refused {refused} segment reservation(s) — this machine could not back the \
+         working set (system-wide commit budget), so the achieved count says nothing about \
+         MAX_SEGMENTS and is NOT asserted. This is an environment limit, not an allocator \
+         regression: a slot-bookkeeping regression stops short with ZERO refused reservations. \
+         See docs/CORRECTNESS_OPEN_ITEMS.md item 143."
+    );
+    true
+}
 
 /// The usable ceiling for simultaneously-live Large objects is exactly
 /// `MAX_SEGMENTS - 1` (slot 0 is the primordial segment's, permanently) —
@@ -57,6 +121,7 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 #[cfg_attr(miri, ignore)]
 #[test]
 fn live_large_objects_ceiling_is_exactly_max_segments_minus_one() {
+    let _serialized = ceiling_lock();
     let mut ac = AllocCore::new().expect("primordial");
 
     let large_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
@@ -70,6 +135,7 @@ fn live_large_objects_ceiling_is_exactly_max_segments_minus_one() {
     let attempt = max_segments + 64;
     let mut ptrs = Vec::with_capacity(attempt);
     let mut achieved = 0usize;
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
     for _ in 0..attempt {
         let p = ac.alloc(layout);
         if p.is_null() {
@@ -78,15 +144,27 @@ fn live_large_objects_ceiling_is_exactly_max_segments_minus_one() {
         achieved += 1;
         ptrs.push(p);
     }
+    let refused = AllocCore::dbg_segments_reserve_failed_total() - refused_before;
+
+    if stopped_early_by_the_os(achieved, expected_ceiling, refused) {
+        for p in ptrs {
+            // SAFETY: as the cleanup loop at the end of this test — each
+            // pointer came from a matching alloc above and is freed once.
+            unsafe { ac.dealloc(p, layout) };
+        }
+        return;
+    }
 
     assert_eq!(
         achieved, expected_ceiling,
         "expected exactly MAX_SEGMENTS-1 ({expected_ceiling}) simultaneously-live \
          Large objects to succeed (MAX_SEGMENTS={max_segments}, primordial \
          segment permanently occupies slot 0) before the first null alloc; \
-         got {achieved} — either the ceiling moved without this guard being \
-         updated, or a slot is being lost/gained somewhere in the register/\
-         recycle bookkeeping"
+         got {achieved} with {refused} OS reservation(s) refused — either the \
+         ceiling moved without this guard being updated, or a slot is being \
+         lost/gained somewhere in the register/recycle bookkeeping. (A \
+         non-zero refusal count here would mean the machine, not the \
+         allocator, cut the fill short — see item 143.)"
     );
 
     // The very next alloc must ALSO be null (the wall is total, not a single
@@ -118,6 +196,7 @@ fn live_large_objects_ceiling_is_exactly_max_segments_minus_one() {
 #[cfg_attr(miri, ignore)]
 #[test]
 fn ceiling_is_not_permanent_after_freeing_everything() {
+    let _serialized = ceiling_lock();
     let mut ac = AllocCore::new().expect("primordial");
 
     let large_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
@@ -126,16 +205,34 @@ fn ceiling_is_not_permanent_after_freeing_everything() {
     let max_segments = AllocCore::dbg_max_segments();
     let expected_ceiling = max_segments - 1;
 
-    // First wave: fill to the ceiling.
+    // First wave: fill to the ceiling. A null here is ambiguous exactly as
+    // in the test above, so collect what we got and let the reserve-failure
+    // delta decide whether it is a regression or this machine's limit.
     let mut ptrs = Vec::with_capacity(expected_ceiling);
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
     for _ in 0..expected_ceiling {
         let p = ac.alloc(layout);
-        assert!(
-            !p.is_null(),
-            "first wave must reach the ceiling without null"
-        );
+        if p.is_null() {
+            break;
+        }
         ptrs.push(p);
     }
+    let refused = AllocCore::dbg_segments_reserve_failed_total() - refused_before;
+    if stopped_early_by_the_os(ptrs.len(), expected_ceiling, refused) {
+        for p in ptrs {
+            // SAFETY: each pointer came from a matching alloc above and is
+            // freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
+        }
+        return;
+    }
+    assert_eq!(
+        ptrs.len(),
+        expected_ceiling,
+        "first wave must reach the ceiling without null; got {} with {refused} OS \
+         reservation(s) refused",
+        ptrs.len()
+    );
     assert!(
         ac.alloc(layout).is_null(),
         "table must be full after reaching the ceiling"
@@ -150,15 +247,26 @@ fn ceiling_is_not_permanent_after_freeing_everything() {
     }
 
     // Second wave: must be able to reach the ceiling again (slots recycled).
+    // Same OS-refusal caveat as the first wave — a null is only evidence
+    // against the recycle path when the kernel refused nothing.
     let mut second_wave = Vec::with_capacity(expected_ceiling);
-    for i in 0..expected_ceiling {
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
+    for _ in 0..expected_ceiling {
         let p = ac.alloc(layout);
-        assert!(
-            !p.is_null(),
-            "second wave alloc null at i={i}/{expected_ceiling} — slots were \
-             not actually recycled after freeing the first wave"
-        );
+        if p.is_null() {
+            break;
+        }
         second_wave.push(p);
+    }
+    let refused = AllocCore::dbg_segments_reserve_failed_total() - refused_before;
+    if !stopped_early_by_the_os(second_wave.len(), expected_ceiling, refused) {
+        assert_eq!(
+            second_wave.len(),
+            expected_ceiling,
+            "second wave stopped at {}/{expected_ceiling} with {refused} OS reservation(s) \
+             refused — slots were not actually recycled after freeing the first wave",
+            second_wave.len()
+        );
     }
 
     for p in second_wave {

@@ -248,96 +248,11 @@ resolved" in RESOLVED.md.)_
     structural fix, but CI has not yet re-observed this test post-fix across enough runs to
     call the flake class eliminated.
 
-143. **[T, filed 2026-09-06] `tests/r14_7_max_segments_ceiling.rs`'s two tests
-    (`live_large_objects_ceiling_is_exactly_max_segments_minus_one`,
-    `ceiling_is_not_permanent_after_freeing_everything`) fail non-deterministically
-    on this local Windows dev machine, well short of the expected `MAX_SEGMENTS - 1`
-    (4095) ceiling.** Observed while running `npm run check` ahead of an unrelated
-    `tagged-index-stack` publish: `achieved` read 1188 on one run and 2171 on an
-    immediate re-run of the identical binary with no other `cargo`/`rustc`/`node`
-    process running (`tasklist` confirmed) and ample free memory both times
-    (`wmic OS get FreePhysicalMemory` — 17-18 GiB free physical, ~46 GiB free
-    virtual/commit headroom via `FreeVirtualMemory`/pagefile). Each Large object
-    this test allocates consumes one whole `SEGMENT` (`1 << 22` = 4 MiB,
-    `src/alloc_core/os.rs:65`), so reaching the ceiling requires ~16 GiB of real
-    reservation/commit from a single process — evidence points at a per-process
-    OS-level constraint (Windows commit-charge or address-space fragmentation,
-    likely ASLR-dependent given the non-deterministic count) rather than a code
-    regression: `src/alloc_core/segment_table.rs` (where `MAX_SEGMENTS = 4096` is
-    defined) and `src/alloc_core/os.rs` show no commits in recent history, and the
-    failure varies in magnitude between identical runs — a real slot-bookkeeping
-    bug would fail at the same wrong count every time, not a different one.
-    **Not fixed here** — this is orthogonal to the `tagged-index-stack` crate the
-    session's actual task concerned (this test exercises only the root crate's
-    `AllocCore`/`SegmentTable`, nothing `tagged-index-stack` touches or that its
-    own `cargo publish -p tagged-index-stack` packaging/verification exercises),
-    and confirming the exact OS-level mechanism (vs. ruling it out and finding a
-    real bug instead) needs a dedicated investigation this task did not have
-    scope for. **Status (2026-09-06):** OPEN — needs a dedicated session to either
-    (a) reproduce
-    with `RUST_BACKTRACE=1` / process-level tooling (e.g. Windows Performance
-    Recorder, `VMMap`) to confirm the OS-level constraint directly, or (b) rule
-    that out and find a genuine bookkeeping regression. **Next trigger:** any
-    future `npm run check` or CI run that reproduces this failure — if CI (a
-    different, likely less memory-constrained environment) never reproduces it,
-    that is itself evidence for the local-machine-resource-constraint hypothesis.
-    **Evidence:** local `cargo test --features "production internals" --test
-    r14_7_max_segments_ceiling` output, two consecutive runs, 2026-09-06 (counts
-    1188 then 2171); `wmic OS get FreePhysicalMemory,FreeVirtualMemory,
-    TotalVirtualMemorySize` and `wmic pagefile get AllocatedBaseSize,CurrentUsage`
-    output from the same session; `git log --oneline -- src/alloc_core/
-    segment_table.rs src/alloc_core/os.rs` showing no recent commits.
-
-    **UPDATE 2026-09-07 — mechanism CONFIRMED, hypothesis above upgraded from
-    "evidence points at" to established, and one of its own premises corrected.**
-    Reproduced a third and fourth time (`npm run check` ahead of the
-    globalalloc-model round-5 push: `achieved` 1092; then standalone
-    `--test-threads=1`: 2127 — so it is NOT contention with parallel test
-    binaries). A scratch probe replicating the test's loop and reading the
-    always-compiled `AllocCore::dbg_segments_reserved_total()` /
-    `dbg_segments_released_total()` counters at the first null settles the
-    open question (a)/(b) above in favour of (a), with a hard OS error code:
-
-    ```text
-    achieved      = 2125
-    live segments = 2126      table full? = false   (MAX_SEGMENTS = 4096)
-    last OS error = Os { code: 1455, "The paging file is too small for this
-                    operation to complete." }
-    ```
-
-    Error 1455 is `ERROR_COMMITMENT_LIMIT`. The segment table was barely half
-    full when the allocation failed, so the null came from the OS refusing on
-    the system-wide commit limit — NOT from a slot lost or gained in the
-    register/recycle bookkeeping. This rules out (b).
-
-    **Correction to this card's own arithmetic.** The reasoning above ("~16 GiB
-    of real reservation/commit", "ample free memory ... 17-18 GiB free
-    physical") was wrong on both halves. (i) `Segment::reserve` goes through
-    `aligned_vmem::reserve_aligned`, which on an alignment miss **over-reserves
-    `size + align` and keeps the whole mapping** (`crates/aligned-vmem/src/lib.rs:28`),
-    so each 4 MiB segment can cost 8 MiB — the test's true worst-case demand is
-    `MAX_SEGMENTS * 2 * SEGMENT` ≈ **32 GiB**, double what this card assumed.
-    (ii) Free *physical* memory is the wrong quantity entirely: error 1455 is
-    the commit limit (RAM + pagefile), which fluctuates with whatever else the
-    machine is running — which is exactly why the count differs run to run
-    (1092/1188/2125/2127/2171) instead of being stable. The observed failure
-    points correspond to 8.5-17.0 GiB of over-reserved VA.
-
-    **Remaining work is now a bounded fix, not an investigation.** The test's
-    real defect is that it cannot distinguish its two possible causes: it treats
-    "first null" as "slot table full", when a null also arrives when the OS
-    refuses. The existing counters do not separate them either (they count
-    reservation *successes*; a lost-slot bug and an OS refusal both leave
-    `live < MAX_SEGMENTS`). The principled fix is a diagnostic counter for
-    FAILED OS segment reservations in `src/alloc_core/os.rs`, symmetric to the
-    existing `segments_reserved_total` (one relaxed atomic on an already-cold
-    OOM path), letting the test assert the ceiling when the allocator's own
-    table refused, and report an explicit environment-limited skip when the OS
-    did. **Status:** OPEN — mechanism settled, fix not yet implemented (it
-    touches root-crate production source and was out of scope for the
-    globalalloc-model round-5 task that reproduced it). **Evidence:** scratch
-    probe output above (probe not committed — it only reads existing public
-    `dbg_*` counters and can be rewritten from this card in a few lines);
-    `wmic OS get FreePhysicalMemory,FreeVirtualMemory,TotalVirtualMemorySize`
-    at reproduction time (17.4 GiB free physical, 41.3 GiB free commit —
-    neither is what the failure is bounded by, per the correction above).
+143. **CLOSED** by task #1925 (2026-09-08) — `tests/r14_7_max_segments_ceiling.rs`'s
+    two ceiling tests failed non-deterministically on a memory-pressured host
+    because a null from `alloc` is ambiguous between "the `SegmentTable` is
+    full" (the ceiling under test) and "the OS refused the mapping"
+    (`ERROR_COMMITMENT_LIMIT`). Closed by adding the failed-reservation counter
+    this card's own remaining-work paragraph specified, plus serializing the
+    file's two full-ceiling fills. See "Recently resolved" in RESOLVED.md for
+    the full investigation and closure narrative.
