@@ -251,3 +251,56 @@ resolved" in RESOLVED.md.)_
     pasted into three files now, and the right next step is a shared test
     helper (there is no `tests/common/` module in this repo yet), not a
     fourth and fifth copy.
+
+147. **[T, filed 2026-09-08, task #1911] `class_a_refill_reclaims_class_b_entries_in_the_same_pass`
+    (`tests/class_aware_dirty_routing.rs:456`) failed once in CI with a TOTAL
+    miss — `0/23` — not reproduced on rerun of the same SHA; mechanism NOT
+    established.**
+
+    - **Status:** OPEN — one CI observation, non-reproducible, filed as a data
+      point per this file's own convention (items 12 and 96 have the identical
+      shape: one CI failure, rerun green, recorded so a repeat occurrence is
+      not re-diagnosed from scratch).
+    - **Current verdict:** transient. NOT closed as "flake, ignore" — a `0/23`
+      total miss is a different signature from the marginal threshold trips of
+      items 12/96, and that difference is the reason this card exists rather
+      than a one-line note.
+    - **Next trigger:** a second occurrence. This card's own numbers
+      (`0/23`, the job name, the assertion text) are what a repeat should be
+      compared against first — in particular whether the second observation is
+      also a TOTAL miss or a partial one, since a partial miss would point at
+      the burn-down/leftover-free-list interaction the test's own R13-11
+      comment describes, while another total miss would not.
+    - **Evidence:** run `34253055556`, job `102151874479`
+      (`test (gated bodies + all-features)`, step
+      `--features "production alloc-stats bench-internals internals"`),
+      commit `132f341`, 2026-09-08T16:48:34Z. Assertion:
+      `only 0/23 class-B allocations after the class-A-triggered drain reused
+      one of the original cross-thread-freed addresses`. The same run's rerun
+      (`gh run rerun 34253055556 --failed`) came back green on every job.
+
+    **What IS established.**
+    - Not caused by the landing commit. `132f341` and the two commits before
+      it (`3119719`, `c0f528c`) touch only `crates/proc-memstat/**`,
+      `docs/perf/**` and `.github/workflows/release.yml` — no allocator code.
+      CI on `4297f18`, three commits earlier, was green on every job including
+      this one.
+    - Not item 96. That card is `wasted_dirty_drains_stays_low_under_class_aware_routing`
+      in the same FILE (closed 2026-09-08, task #1935); this is a different
+      test with a different oracle.
+    - Does not reproduce on Windows: 10/10 green running the whole file, 5/5
+      green running the test alone, under the exact failing feature set
+      (`production alloc-stats bench-internals internals`).
+
+    **What is NOT established.**
+    - The mechanism. One hypothesis was tested and REJECTED rather than
+      assumed: item 145's registry collision (the producer thread's
+      `HeapRegistry::claim()` returning the OWNER's heap, whose subsequent
+      `HeapRegistry::recycle(remote_heap)` would then recycle a live heap)
+      would explain a total `0/N` miss exactly, and this test uses precisely
+      the claim/recycle idiom item 145 describes — but instrumenting the
+      producer's claim (`remote_heap as usize == heap_addr`) printed
+      `collide=false` on 10/10 runs, all green. Recorded as a rejected
+      hypothesis so a future occurrence does not re-test it first.
+    - Whether the failure is Linux-specific or merely load-specific. Only one
+      observation exists, on Linux CI, and this box is Windows.
