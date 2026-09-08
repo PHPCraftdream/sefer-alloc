@@ -525,3 +525,36 @@ full closure trail".
       its own numbers rather than reopening this one, since the mechanism this
       card describes (single-round granularity of ~6.7 points per wasted drain)
       no longer exists.
+
+- **Flake-closure gate (task #1937, 2026-09-08).** Not an item — the closing
+  verification for the flake sweep that resolved items 12, 14, 96, 143 and
+  filed 145/146. Recorded here because CLAUDE.md's pre-push rule makes
+  `npm run check`'s usability a standing concern, and this session began with
+  it unusable.
+
+  **Starting state:** `npm run check` fail-fasted on the `r14_7` flake before
+  reaching roughly half its steps. That is not a cosmetic annoyance — it is
+  how commit `f66b9f0`'s R30-12 prefix defect reached `origin/main`: the gate
+  aborted before `verify-commit-prefixes` ever ran.
+
+  **Result:** `npm run check` now completes end to end, **53 steps, all OK,
+  exit 0** — including `verify-commit-prefixes`, the step the flake had been
+  hiding. Full-suite evidence, three independent observations, all with
+  `--no-fail-fast` so a single failure could not mask the rest:
+  - `cargo test --features "production internals" --no-fail-fast` — 254 test
+    binaries, 0 failures, cargo exit 0.
+  - `cargo test --all-features --no-fail-fast` — 254 binaries, 0 failures,
+    cargo exit 0. This row matters separately: it is the only one that builds
+    `large-cache-extended`, and it is what caught the second oversized-ladder
+    file (`large_cache_extended_narrow_working_set_after_materialization.rs`,
+    commit `d47a91e`).
+  - `npm run check`'s own four test rows (`production internals`;
+    `production alloc-stats bench-internals internals`; `pinning`;
+    `--all-features`), all OK.
+
+  **What this does NOT claim.** "Not observed across these runs" is not "the
+  flake class is eliminated". Two mechanisms found during the sweep remain
+  genuinely unexplained and are open as items 145 and 146; four sibling test
+  files still carry the oversized ladder unpatched (listed in item 146). The
+  gate is usable again, which was the goal — the underlying questions are
+  tracked, not closed by a green run.
