@@ -139,15 +139,40 @@ fn expect_macos_shape(m: &MemStat) {
 /// 1. PAGE GRANULARITY: every `Vm*` figure is derived from page counts
 ///    (`PAGE_SHIFT >= 12` on every mainline target), so the kB value is a
 ///    multiple of >= 4 and correctly scaled bytes are a multiple of 4096.
-///    This is the leg that catches a subtle `* 1000` slip, which the band
-///    below (±25%) is too wide for (a `* 1000` value is only 2.4% off).
+///    This is the leg that catches a subtle `* 1000` slip, which leg 3's
+///    magnitude band is far too wide for (a `* 1000` value is only 2.4% off
+///    — well inside any band that tolerates real read-to-read drift).
 /// 2. STRICTLY ABOVE the raw kB figure: a DROPPED `* 1024` reports the kB
 ///    number itself. Two adjacent reads of a quiet process see the same
 ///    value, and RSS cannot shrink ~1024-fold between them — so this leg
 ///    catches the drop even when the kB figure is 4096-aligned by luck.
-/// 3. JITTER BAND around `kb * 1024`: the live caller snapshots and parses
-///    at slightly different instants, so exact equality cannot be demanded —
-///    but a 1024x scale error is orders of magnitude outside any drift band.
+/// 3. MAGNITUDE BAND on the RATIO `actual_bytes / kb`: the live caller
+///    snapshots and re-parses at different instants, so exact equality
+///    cannot be demanded — but every defect class this function exists for
+///    moves that ratio by three orders of magnitude or more.
+///
+/// # Why leg 3 is a ratio band and not a ±25% value band
+///
+/// It was a ±25% band, and that was wrong — it pinned a live VALUE while
+/// claiming to check a SCALE. It failed in CI (run `34258042576`, job
+/// `102168705241`, commit `025b8a4`) on `VmSize`: the snapshot read
+/// 146 505 728 bytes and the independent re-parse a moment later read
+/// 213 630 976, a ratio of 1.46 between two adjacent reads. That is not a
+/// scale error, it is `VmSize` doing exactly what `VmSize` does — it is the
+/// size of the ADDRESS SPACE, which moves in whole-arena steps (a thread
+/// stack, an allocator arena, one `mmap`) while the other tests in this same
+/// binary run in parallel and allocate. The assertion's own message then said
+/// "it is a 1024x scale error away" about a 1.46x gap, which is worse than
+/// the flake: a wrong diagnosis attached to a real failure.
+///
+/// The band is now `kb * 64 ..= kb * 16384` — a factor of 16 either side of
+/// the correct 1024. A dropped `* 1024` lands at ratio 1 and a doubled one at
+/// 1 048 576; both are still rejected by four orders of magnitude, while no
+/// plausible address-space drift between two adjacent reads comes near 16x.
+/// Legs 1 and 2 are unchanged and are what actually catch the subtle cases
+/// (a `* 1000` slip, and a dropped scale whose kB figure happens to be
+/// page-aligned); leg 3 never contributed precision those two lacked, only
+/// fragility.
 fn expect_byte_scaled(actual_bytes: u64, kb: u64, field: &str) {
     assert_eq!(
         actual_bytes % 4096,
@@ -161,13 +186,27 @@ fn expect_byte_scaled(actual_bytes: u64, kb: u64, field: &str) {
          figure ({kb}) — a value AT the kB figure means the `* 1024` scale \
          step is gone"
     );
-    let expected = kb
-        .checked_mul(1024)
+    // A zero kB figure would make the ratio meaningless (and every band
+    // vacuously satisfied), so reject it outright rather than divide by it.
+    assert!(
+        kb > 0,
+        "{field}: the raw kB figure is 0 — a live process cannot have one, so \
+         the comparison below would be vacuous"
+    );
+    let lo = kb
+        .checked_mul(64)
+        .expect("kB figure small enough to scale without overflow");
+    let hi = kb
+        .checked_mul(16_384)
         .expect("kB figure small enough to scale without overflow");
     assert!(
-        actual_bytes >= (expected / 4) * 3 && actual_bytes <= (expected / 4) * 5,
-        "{field}: byte value ({actual_bytes}) must sit within ±25% of \
-         kB*1024 = {expected} (read jitter); it is a 1024x scale error away"
+        actual_bytes >= lo && actual_bytes <= hi,
+        "{field}: byte value ({actual_bytes}) is not kB*1024-scaled — it must \
+         land in {lo}..={hi} (kB={kb}, i.e. within 16x either side of the \
+         correct kB*1024 = {}); a dropped `* 1024` lands at ratio 1 and a \
+         doubled one at 1048576, so this band rejects both by four orders of \
+         magnitude while tolerating any real drift between the two reads",
+        kb * 1024
     );
 }
 
@@ -279,6 +318,17 @@ fn byte_scale_oracle_rejects_kib_reported_as_bytes() {
     rejects_what(
         || expect_byte_scaled(12_345_000, 12_345, "VmRSS"),
         "a x1000 scale slip",
+    );
+    // A DOUBLED `* 1024` — the one defect only leg 3 catches, and therefore
+    // the counterfactual proving leg 3 is not vacuous. It passes leg 1
+    // (4096*1024*1024 is page-granular) and leg 2 (it far exceeds the kB
+    // figure); only the magnitude band rejects it. Added when leg 3 was
+    // widened from a ±25% value band to a 16x-either-side ratio band: a
+    // widened assertion with no control is how a band quietly becomes a
+    // comment.
+    rejects_what(
+        || expect_byte_scaled(4096 * 1024 * 1024, 4096, "VmRSS"),
+        "a doubled `* 1024` (kB scaled twice)",
     );
 }
 
