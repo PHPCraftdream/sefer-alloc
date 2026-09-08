@@ -55,14 +55,45 @@ fn large_test_sizes(n: usize) -> Vec<usize> {
 }
 
 /// Force the sidecar to materialise: 9 distinct non-aliasing deposits
-/// (overflows the base 8 by exactly 1). Returns the 9 sizes used.
-fn force_materialisation(ac: &mut AllocCore) -> Vec<usize> {
+/// (overflows the base 8 by exactly 1). Returns the 9 sizes used, or `None`
+/// when the MACHINE — not the allocator — stopped the run; see the ladder
+/// note below and `docs/CORRECTNESS_OPEN_ITEMS.md` item 146.
+fn force_materialisation(ac: &mut AllocCore) -> Option<Vec<usize>> {
     ac.dbg_set_large_cache_budget(None);
     let sizes = large_test_sizes(9);
+    // The ladder is inherently large: nine sizes, each more than 2x the
+    // previous (so no two alias in the cache's best-fit band), starting at
+    // the Large floor — a 2^8 = 256x span whose top rung is ~1 GiB
+    // (1,069,547,520 bytes as measured on 2026-09-08). A machine that
+    // declines to back that mapping returns the same null a genuine
+    // allocator failure would, so the reserve-failure counter's delta is what
+    // separates them, exactly as `tests/r14_7_max_segments_ceiling.rs` does
+    // for the segment-table ceiling (item 143). Non-zero refusals: this host
+    // cannot host the ladder, and the caller must skip rather than assert.
+    // Zero refusals: still a failure — see item 146 for why that case is
+    // deliberately NOT treated as benign.
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
     for &bytes in &sizes {
         let l = layout(bytes);
         let p = ac.alloc(l);
-        assert!(!p.is_null(), "alloc of {bytes} bytes failed unexpectedly");
+        if p.is_null() && AllocCore::dbg_segments_reserve_failed_total() > refused_before {
+            eprintln!(
+                "large_cache_extended_narrow_working_set: the OS refused the {bytes}-byte \
+                 ladder rung ({} refusal(s)), so the sidecar could not be materialised on \
+                 this machine — the assertions that follow are NOT exercised. This is an \
+                 environment limit, not an allocator regression. See \
+                 docs/CORRECTNESS_OPEN_ITEMS.md item 146.",
+                AllocCore::dbg_segments_reserve_failed_total() - refused_before
+            );
+            return None;
+        }
+        assert!(
+            !p.is_null(),
+            "alloc of {bytes} bytes failed with 0 OS reservation(s) refused — the \
+             reserve-failure counter attributes this to no OS refusal, and the cause is \
+             NOT established (docs/CORRECTNESS_OPEN_ITEMS.md item 146). Do not assume an \
+             allocator regression without checking that card first."
+        );
         // SAFETY (R6-MS-1/2): pointer from the alloc immediately above, live,
         // freed exactly once here.
         unsafe { ac.dealloc(p, l) };
@@ -71,7 +102,7 @@ fn force_materialisation(ac: &mut AllocCore) -> Vec<usize> {
         ac.dbg_large_cache_extension_materialised(),
         "sidecar must have materialised after 9 distinct deposits"
     );
-    sizes
+    Some(sizes)
 }
 
 /// Generic N-narrow-working-set correctness check, run AFTER forcing
@@ -86,7 +117,10 @@ fn force_materialisation(ac: &mut AllocCore) -> Vec<usize> {
 /// idle).
 fn narrow_working_set_after_materialisation_is_correct(n: usize) {
     let mut ac = AllocCore::new().expect("primordial");
-    let nine_sizes = force_materialisation(&mut ac);
+    let Some(nine_sizes) = force_materialisation(&mut ac) else {
+        // Environment-limited: the notice is printed inside the helper.
+        return;
+    };
 
     // Drain the sidecar/base back to empty by cycling the SAME 9 sizes once
     // more is unnecessary — the 9-size burst above already deposited (not
@@ -185,7 +219,10 @@ fn narrow_working_set_n4_after_materialisation_is_correct() {
 #[test]
 fn scan_bound_stays_forty_during_narrow_working_set_phase() {
     let mut ac = AllocCore::new().expect("primordial");
-    let nine_sizes = force_materialisation(&mut ac);
+    let Some(nine_sizes) = force_materialisation(&mut ac) else {
+        // Environment-limited: the notice is printed inside the helper.
+        return;
+    };
     assert_eq!(ac.dbg_large_cache_total_slots(), 40);
 
     let working_set = &nine_sizes[..2];

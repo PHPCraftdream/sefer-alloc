@@ -223,3 +223,31 @@ resolved" in RESOLVED.md.)_
     not land while the failure was reproducible. **Evidence:** the two
     observed failure messages (with and without a counted refusal) and the
     0/8 + 0/6 run series, all 2026-09-08, recorded in this task's commit body.
+
+    **UPDATE 2026-09-08 (task #1937) — a SECOND file has the same ladder and
+    the same failure, found by the flake-closure gate.** The full
+    `cargo test --all-features --no-fail-fast` row (the row that actually
+    builds `large-cache-extended`; the `production internals` row does not)
+    failed three tests in
+    `tests/large_cache_extended_narrow_working_set_after_materialization.rs`
+    on `alloc of 1069547520 bytes` (~1.02 GiB). Its `force_materialisation`
+    helper builds a NINE-rung ladder — one longer than item 146's original
+    file — so its span is 2^8 = 256x and its top rung measured
+    **2,143,289,344 bytes (~2 GiB)**. Same discrimination applied: the helper
+    now returns `Option<Vec<usize>>`, `None` meaning the OS refused a rung,
+    and both call sites return early. Confirmed by the counter: refusal
+    deltas of 1, 3 and 2 across the four tests in that file, all four then
+    passing.
+
+    **Four sibling files share the identical `2 * size + 1` ladder and are
+    LATENT, not fixed:** `large_cache_extended_budget_before_materialization.rs`,
+    `large_cache_extended_fresh_slots_are_none.rs`,
+    `large_cache_extended_materializes_on_overflow.rs`,
+    `large_cache_extended_off_no_overflow_capacity.rs` (find them with
+    `grep -ln "2 \* size + 1\|2 \* n + 1" tests/*.rs`). They have not failed
+    here, presumably because they request fewer rungs, but they will hit the
+    same wall on a tighter host or if their rung count grows. Deliberately
+    left alone rather than pre-emptively patched: the discrimination has been
+    pasted into three files now, and the right next step is a shared test
+    helper (there is no `tests/common/` module in this repo yet), not a
+    fourth and fifth copy.
