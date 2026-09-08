@@ -145,36 +145,29 @@ pub fn snapshot() -> MemStat {
 // ---------------------------------------------------------------------------
 // Linux — /proc parsing (pure safe code, no FFI).
 // ---------------------------------------------------------------------------
+// The byte-level field parser lives in its own dependency-free file so
+// `tests/status_parse.rs` can pull it in with `#[path]` and cover it on any
+// host, /proc or not, without this crate exposing it publicly (review P2-3).
+#[cfg(all(target_os = "linux", not(miri)))]
+mod status_parse;
+
 #[cfg(all(target_os = "linux", not(miri)))]
 mod platform {
+    use super::status_parse::read_kib_field;
     use super::MemStat;
 
     pub(super) fn snapshot() -> MemStat {
-        let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        // `read` (bytes), NOT `read_to_string`: a non-UTF-8 task name must not
+        // be able to zero out the numeric fields — see `status_parse`.
+        let status = std::fs::read("/proc/self/status").unwrap_or_default();
         MemStat {
-            rss: read_kib_field(&status, "VmRSS:").unwrap_or(0) * 1024,
-            virtual_size: read_kib_field(&status, "VmSize:").map(|kib| kib * 1024),
+            rss: read_kib_field(&status, b"VmRSS:").unwrap_or(0) * 1024,
+            virtual_size: read_kib_field(&status, b"VmSize:").map(|kib| kib * 1024),
             // `/proc/self/status` exposes no commit-charge counter; `VmSize`
             // above is address space, a different quantity (see `MemStat`).
             commit_charge: None,
-            peak_rss: read_kib_field(&status, "VmHWM:").map(|kib| kib * 1024),
+            peak_rss: read_kib_field(&status, b"VmHWM:").map(|kib| kib * 1024),
         }
-    }
-
-    /// Read a `<prefix>\t   1234 kB` line from `/proc/self/status` and return
-    /// the numeric field, in kB — page-size-independent (unlike
-    /// `/proc/self/statm`, which is expressed in pages and would require a
-    /// `sysconf(_SC_PAGESIZE)` query to convert correctly on non-4-KiB-page
-    /// kernels such as aarch64/ppc64 hosts using 16 KiB or 64 KiB pages).
-    /// `None` if the field is absent/unreadable.
-    fn read_kib_field(status: &str, prefix: &str) -> Option<u64> {
-        for line in status.lines() {
-            if let Some(rest) = line.strip_prefix(prefix) {
-                // Format: "VmRSS:\t   1234 kB"
-                return rest.split_whitespace().next()?.parse().ok();
-            }
-        }
-        None
     }
 }
 
