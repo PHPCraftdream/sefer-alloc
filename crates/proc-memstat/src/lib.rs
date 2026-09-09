@@ -278,6 +278,12 @@ mod status_parse;
 #[cfg(all(target_os = "linux", not(miri)))]
 mod status_convert;
 
+// The acquisition seam (review round 3, P3-1): the NotFound→fallback read
+// extracted so `tests/status_read.rs` can `#[path]`-include it on every host
+// without widening the crate's public API.
+#[cfg(all(target_os = "linux", not(miri)))]
+mod status_read;
+
 #[cfg(all(target_os = "linux", not(miri)))]
 mod platform {
     use super::status_convert::snapshot_from_read;
@@ -299,7 +305,10 @@ mod platform {
 
     /// The acquisition step: the calling THREAD's own task status, falling
     /// back to the leader-named file on kernels without
-    /// `/proc/thread-self`.
+    /// `/proc/thread-self`. The fallback mechanics — NotFound-only, any
+    /// other error propagated untouched — live in `status_read::
+    /// read_status_from` and are tested per-injected-path by
+    /// `tests/status_read.rs` on every host (review round 3, P3-1).
     ///
     /// Deliberately the ONLY thing this module does itself: everything after
     /// the bytes are in hand (the `* 1024` scale, the field mapping, the
@@ -311,15 +320,7 @@ mod platform {
     /// not be able to fail the whole read and zero out the numeric fields
     /// via the fallback — see `status_parse` (review P2-3).
     fn read_status() -> Result<Vec<u8>, std::io::Error> {
-        match std::fs::read(THREAD_STATUS) {
-            Ok(bytes) => Ok(bytes),
-            // Linux < 3.17 has no `/proc/thread-self` at all; fall back to
-            // the leader-named file so old kernels keep their previous
-            // (correct-while-leader-alive) behaviour instead of losing the
-            // reading to a missing path.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::read(PROCESS_STATUS),
-            Err(e) => Err(e),
-        }
+        super::status_read::read_status_from(THREAD_STATUS, PROCESS_STATUS)
     }
 
     pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {

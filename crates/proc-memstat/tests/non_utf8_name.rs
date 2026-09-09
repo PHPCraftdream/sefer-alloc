@@ -29,6 +29,12 @@
 //! change inside a throwaway process — comm is per-task and dies with the
 //! child, so the runner (and any sibling test binary) never sees it.
 //!
+//! **Portability** (round 3, P3-1): on kernels without `/proc/thread-self`
+//! (pre-3.17) the scenario SKIPS with an explicit message: the renamed COMM
+//! lives on the calling (libtest worker) thread, so it is unobservable
+//! through the library's `/proc/self` fallback. The main 3.17+ regression
+//! coverage (thread-self path, bytes-not-read_to_string) is unchanged.
+//!
 //! **Under the counterfactual regression** (`read_to_string` in
 //! `src/lib.rs`'s `read_status`): the non-UTF-8 status fails
 //! `InvalidData` → `try_snapshot()` returns `Err(SnapshotError::Os)` → the
@@ -92,8 +98,26 @@ fn scenario_a_non_utf8_task_name_cannot_blank_the_real_backend_read() {
 
     // 2. Read the status BYTES — the same call shape the backend's
     //    acquisition step makes.
-    let status_bytes =
-        std::fs::read("/proc/thread-self/status").expect("read /proc/thread-self/status");
+    //    ENOENT-aware, SKIP (not fallback): the test body runs on a libtest
+    //    WORKER thread, and `prctl(PR_SET_NAME)` names the CALLING thread —
+    //    so on a pre-3.17 kernel (no `/proc/thread-self`, added in 3.17)
+    //    `/proc/self/status` would name the untouched MAIN thread, whose
+    //    `Name:` has no 0xFF and self-checks 3/4 would fail. The scenario is
+    //    simply unobservable through the legacy fallback: skip explicitly.
+    //    (Sol-codex round 3, P3-1.)
+    let status_bytes = match std::fs::read("/proc/thread-self/status") {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            println!(
+                "SKIP: kernel has no /proc/thread-self (added in Linux 3.17); \
+                 this scenario — which proves the backend reads the CALLING \
+                 THREAD's own renamed status — requires that file and cannot \
+                 be observed via /proc/self (Sol-codex round 3, P3-1)."
+            );
+            return;
+        }
+        Err(e) => panic!("read /proc/thread-self/status failed: {e}"),
+    };
 
     // 3. Premise self-check A: the `Name:` line carries the RAW 0xFF byte,
     //    not an ASCII `\xFF` escape. On a kernel that escaped it the

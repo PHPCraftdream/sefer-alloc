@@ -96,7 +96,20 @@
 //! 5. `try_snapshot()` returns `Ok` with `rss > 0` and the documented
 //!    Linux field shape, and `snapshot()` does NOT take the all-zero
 //!    fallback.
-
+//!
+//! # Sanctioned skip paths
+//!
+//! Two conditions skip the scenario instead of failing it, each loudly
+//! and each with the reason printed:
+//!
+//! - An arch whose `__NR_exit` the `SYS_EXIT` table has not verified
+//!   (`None`) skips at RUN time instead of failing the whole test
+//!   package's compile (Sol-codex round 3, P2-1); the table's refusal to
+//!   guess a syscall number is unchanged.
+//! - A kernel without `/proc/thread-self` (pre-3.17) makes the runner
+//!   skip: the scenario is thread-self-based by design, and the library's
+//!   own documented `/proc/self` fallback cannot serve it (Sol-codex
+//!   round 3, P3-1). Any other I/O error probing the file still fails.
 // Only the Linux scenario calls the parser; gating the module the same way
 // keeps it from being dead code on Windows/macOS/stub hosts (the pattern
 // `tests/platform_contract.rs` uses). Hoisted to the file's top level because
@@ -136,15 +149,20 @@ mod scenario {
     // `__NR_exit` — the THREAD-exit syscall (NOT `exit_group`), the syscall
     // glibc's own thread teardown issues. Numbers from each arch's
     // `asm/unistd*.h`; none has changed since long before this repo existed.
+    //
+    // `None` marks an arch whose `__NR_exit` this table has not verified:
+    // the scenario then SKIPS at run time instead of failing the whole test
+    // package's compile (Sol-codex round 3, P2-1). Refusing to GUESS the
+    // NUMBER is deliberate — the skip message says so.
     #[cfg(target_arch = "x86_64")]
-    const SYS_EXIT: core::ffi::c_long = 60;
+    pub(crate) const SYS_EXIT: Option<core::ffi::c_long> = Some(60);
     // asm-generic tables (aarch64, riscv64, loongarch64).
     #[cfg(any(
         target_arch = "aarch64",
         target_arch = "riscv64",
         target_arch = "loongarch64"
     ))]
-    const SYS_EXIT: core::ffi::c_long = 93;
+    pub(crate) const SYS_EXIT: Option<core::ffi::c_long> = Some(93);
     // Legacy tables (x86, arm, powerpc64, s390x, sparc64).
     #[cfg(any(
         target_arch = "x86",
@@ -153,7 +171,7 @@ mod scenario {
         target_arch = "s390x",
         target_arch = "sparc64"
     ))]
-    const SYS_EXIT: core::ffi::c_long = 1;
+    pub(crate) const SYS_EXIT: Option<core::ffi::c_long> = Some(1);
     #[cfg(not(any(
         target_arch = "x86_64",
         target_arch = "aarch64",
@@ -165,10 +183,7 @@ mod scenario {
         target_arch = "s390x",
         target_arch = "sparc64"
     )))]
-    core::compile_error!(
-        "thread_leader_exit: add this arch's __NR_exit (see asm/unistd*.h); \
-         refusing to guess a syscall number"
-    );
+    pub(crate) const SYS_EXIT: Option<core::ffi::c_long> = None;
 
     extern "C" {
         fn syscall(number: core::ffi::c_long, ...) -> core::ffi::c_long;
@@ -179,14 +194,14 @@ mod scenario {
     /// POSIX-sanctioned main-thread `pthread_exit`: the exact syscall
     /// glibc's thread teardown bottoms out in, so the kernel runs the same
     /// `do_exit()` → `exit_mm()` without unwinding any userspace frame.
-    fn leader_exit_thread_only() -> ! {
-        // SAFETY: a raw syscall with a fixed number and one zero argument —
+    fn leader_exit_thread_only(sys_exit: core::ffi::c_long) -> ! {
+        // SAFETY: a VERIFIED fixed number passed in, one zero argument —
         // no pointers, no layout assumptions. `SYS_exit` does not return:
         // the calling task stops here and its `task->mm` is cleared
         // in-kernel, while the worker thread keeps the thread group (and
         // the shared `mm`) alive.
         unsafe {
-            syscall(SYS_EXIT, 0);
+            syscall(sys_exit, 0);
         }
         unreachable!("the thread-exit syscall does not return")
     }
@@ -218,6 +233,28 @@ mod scenario {
     }
 
     pub fn runner_main() {
+        // The scenario is thread-self-based by design (it measures the
+        // worker's own status after the leader exits — impossible through
+        // the library's documented /proc/self fallback), so on a kernel
+        // without /proc/thread-self (pre-3.17) skip cleanly. Any OTHER I/O
+        // error must fail loudly, not be masked as "must be an old kernel".
+        match std::fs::read(THREAD_SELF_STATUS) {
+            Ok(_) => {}
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                println!(
+                    "[thread_leader_exit] SKIPPED: not applicable — this \
+                     kernel has no /proc/thread-self (added in Linux 3.17); \
+                     the leader-exit scenario requires the calling thread's \
+                     own status file (Sol-codex round 3, P3-1)"
+                );
+                return;
+            }
+            Err(e) => panic!(
+                "cannot probe /proc/thread-self/status before spawning the \
+                 child: {e}"
+            ),
+        }
+
         let exe = std::env::current_exe().expect("current_exe resolves this binary");
         // Per-run path: a stale report from an earlier run can never satisfy
         // this run even if the pre-spawn delete below were to fail.
@@ -275,7 +312,7 @@ mod scenario {
         let _ = std::fs::remove_file(&result_path);
     }
 
-    pub fn child_main() -> ! {
+    pub fn child_main(sys_exit: core::ffi::c_long) -> ! {
         let result_path = match std::env::args_os().nth(1) {
             Some(p) => PathBuf::from(p),
             None => {
@@ -310,7 +347,7 @@ mod scenario {
                      already failed the process with its own report)",
         );
         eprintln!("[thread_leader_exit] leader (main thread) exiting; worker continues");
-        leader_exit_thread_only();
+        leader_exit_thread_only(sys_exit);
     }
 
     fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
@@ -451,9 +488,18 @@ mod scenario {
 
 #[cfg(all(target_os = "linux", not(miri)))]
 fn main() {
+    let Some(sys_exit) = scenario::SYS_EXIT else {
+        println!(
+            "[thread_leader_exit] SKIPPED: no verified __NR_exit for arch \
+             '{}' — the scenario refuses to guess a syscall number \
+             (Sol-codex round 3, P2-1)",
+            std::env::consts::ARCH
+        );
+        return;
+    };
     if std::env::var_os(scenario::CHILD_MARKER).is_some() {
         scenario::assert_main_thread_is_leader();
-        scenario::child_main();
+        scenario::child_main(sys_exit);
     } else {
         scenario::runner_main();
     }
