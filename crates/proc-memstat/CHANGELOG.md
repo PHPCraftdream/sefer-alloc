@@ -284,6 +284,14 @@ version ever carried.
 
 ### Testing
 
+- Legacy-kernel SKIP notices now bypass both child and parent libtest capture
+  through direct stderr writes. A nested-runner regression test checks the
+  final output without `--nocapture`; the temporary result file is removed.
+- The non-UTF-8 path fixture now checks an ASCII control first and separates
+  `create_new` from data writes. Only known filename-encoding rejections
+  (Linux `EINVAL`, macOS `EILSEQ`) may skip the byte-read assertion, with a
+  visible notice; other setup errors fail. Error classification has negative
+  controls, and partial-file cleanup is attempted after write failures.
 - Per-platform **contract oracles** — each backend's field-presence shape is
   asserted against what that platform actually provides, and byte-vs-KiB scale
   is checked three ways, so a reading that is off by a factor of 1024 fails

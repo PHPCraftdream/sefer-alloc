@@ -127,6 +127,14 @@ fn not_found_from_fallback_read_propagates() {
     assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
 }
 
+/// Only name-encoding errors from create_new may skip the byte-read assertion.
+#[cfg(unix)]
+fn is_filename_encoding_error(error: &std::io::Error) -> bool {
+    // ext4 strict casefold: EINVAL; macOS APFS: EILSEQ (Darwin errno 92).
+    (cfg!(target_os = "linux") && error.kind() == std::io::ErrorKind::InvalidInput)
+        || (cfg!(target_os = "macos") && error.raw_os_error() == Some(92))
+}
+
 /// The P3-1 regression fixture (Sol-codex review round 4): the seam takes
 /// `&Path`, so a temp path that is NOT valid UTF-8 — which `std::env::
 /// temp_dir()` can legitimately produce via a non-UTF-8 `TMPDIR` path
@@ -139,10 +147,10 @@ fn not_found_from_fallback_read_propagates() {
 #[cfg(unix)]
 #[test]
 fn non_utf8_temp_path_is_read_without_conversion() {
+    use std::io::Write;
     use std::os::unix::ffi::OsStrExt;
 
-    // Same uniqueness scheme as `temp_path`, plus one raw 0xFF byte — valid
-    // in a Unix path component, invalid at any position of a UTF-8 string.
+    // Raw 0xFF is not UTF-8; some filesystems reject it in names.
     let pid = std::process::id();
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -160,36 +168,73 @@ fn non_utf8_temp_path_is_read_without_conversion() {
     );
 
     let fallback_missing = temp_path("non_utf8_missing_fallback");
+    let bytes: &[u8] = b"VmRSS:\t  4242 kB\n";
 
-    // Linux filesystems accept any byte but `/` and NUL in a component, so
-    // this normally succeeds and the strong round-trip assertion runs: the
-    // seam must return the REAL file's bytes, which a lossy UTF-8 conversion
-    // could not do (it would name a different, nonexistent file). A
-    // filesystem that validates names (macOS APFS) may refuse the create —
-    // there the fixture degrades, loudly, to the weaker no-panic assertion.
-    let bytes = b"VmRSS:\t  4242 kB\n".to_vec();
-    match std::fs::write(&path, &bytes) {
-        Ok(()) => {
-            let result = status_read::read_status_from(&path, &fallback_missing);
-            assert_eq!(
-                result.expect("the seam must read the REAL non-UTF-8 path"),
-                bytes,
-                "the seam must return the REAL file's bytes — a lossy UTF-8 \
-                 conversion would have named a different, nonexistent file"
-            );
+    // Confirm the same directory accepts an ordinary fixture first.
+    let control_path = temp_path("non_utf8_ascii_control");
+    let mut control = std::fs::File::create_new(&control_path).expect("create ASCII control fixture");
+    let control_write = control.write_all(bytes);
+    drop(control);
+    let _ = std::fs::remove_file(&control_path);
+    control_write.expect("write ASCII control fixture");
+
+    let mut file = match std::fs::File::create_new(&path) {
+        Ok(file) => file,
+        Err(e) if is_filename_encoding_error(&e) => {
+            writeln!(
+                std::io::stderr().lock(),
+                "[status_read] SKIP non-UTF-8 file-byte assertion: name rejected ({e}); \
+                 checking only the reader's error path"
+            )
+            .expect("report unavailable non-UTF-8 fixture");
+            status_read::read_status_from(&path, &fallback_missing)
+                .expect_err("a rejected non-UTF-8 name must yield a reader error, not panic");
+            return;
         }
-        Err(e) => {
-            println!(
-                "NOTE: this filesystem refused the non-UTF-8 fixture name \
-                 ({e}); asserting only the no-panic behavior"
-            );
-            let result = status_read::read_status_from(&path, &fallback_missing);
-            assert!(
-                result.is_err(),
-                "with no fixture file on disk the seam must return Err — \
-                 without panicking on the non-UTF-8 path"
-            );
-        }
+        Err(e) => panic!("create non-UTF-8 fixture failed: {e}"),
+    };
+    let write_result = file.write_all(bytes);
+    drop(file);
+    if let Err(e) = write_result {
+        let _ = std::fs::remove_file(&path);
+        panic!("write non-UTF-8 fixture failed: {e}");
     }
+
+    let result = status_read::read_status_from(&path, &fallback_missing);
     let _ = std::fs::remove_file(&path);
+    assert_eq!(
+        result.expect("the seam must read the REAL non-UTF-8 path"),
+        bytes,
+        "the seam must return the REAL file's bytes, without lossy path conversion"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn fixture_setup_errors_are_not_name_encoding_skips() {
+    use std::io::{Error, ErrorKind};
+
+    for kind in [
+        ErrorKind::PermissionDenied,
+        ErrorKind::NotFound,
+        ErrorKind::AlreadyExists,
+        ErrorKind::StorageFull,
+        ErrorKind::ReadOnlyFilesystem,
+        ErrorKind::InvalidData,
+        ErrorKind::WriteZero,
+        ErrorKind::Other,
+    ] {
+        assert!(
+            !is_filename_encoding_error(&Error::from(kind)),
+            "setup failure {kind:?} must not skip the byte-read assertion"
+        );
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn known_filename_encoding_rejection_can_skip() {
+    let errno = if cfg!(target_os = "macos") { 92 } else { 22 };
+    let error = std::io::Error::from_raw_os_error(errno);
+    assert!(is_filename_encoding_error(&error), "{error:?}");
 }
