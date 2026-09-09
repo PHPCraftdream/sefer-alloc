@@ -27,9 +27,12 @@ figures were microseconds apart needs a stronger mechanism than this.
 
 ## When a reading fails, say so — `try_snapshot`
 
-`snapshot()` is best-effort: it returns an all-zero `MemStat` when no reading
-is available. That fallback is indistinguishable from a genuinely tiny
-process, so a before/after pair whose *second* read failed reads as a complete
+`snapshot()` is best-effort: when no reading is available it returns an
+all-zero `MemStat` — `rss: 0`, every optional field `None`. A normally
+succeeding backend never returns that shape (the `Some` fields its platform
+matrix row requires are there even when a counter's own value is 0), but a
+caller reading `rss` alone sees `0` either way, and the fallback erases the
+cause — so a before/after pair whose *second* read failed reads as a complete
 release of memory.
 
 ```rust

@@ -32,8 +32,15 @@
 //! Taken alone that ratio argues for the fix. It is the wrong figure to
 //! decide on. One whole `snapshot()` costs 17 125.3 ns, because the
 //! open/read/close round trip — and the kernel formatting the file's text on
-//! demand — dominates a parse measured in hundreds of nanoseconds. The
-//! saving is 335.8 ns out of 17 125.3 ns per call, i.e. 2.0%. The earlier run
+//! demand — dominates a parse measured in hundreds of nanoseconds. What was
+//! compared: two PARSE-ONLY loops, against a SEPARATELY measured old full
+//! `snapshot()` — NOT a full A/B of two whole backends. So the saving of
+//! 335.8 ns out of 17 125.3 ns per call, i.e. 2.0%, is an ESTIMATE of the
+//! removable work's share of a call, not a measured speedup of a new
+//! `snapshot()`. Two distinct quantities, not interchangeable: the full
+//! three-scan parse itself is ~3.17% of that same call (543.2 / 17 125.3),
+//! while the ~2.0% is what FUSING the scans SAVES of it (335.8 / 17 125.3).
+//! The earlier run
 //! (`4297f18`, run `34244081677`) measured the same real-file arm at a 1.95x
 //! ratio and 196.0 ns saved, 1.1% of the same denominator; the parse arms
 //! carry visible cross-run CI noise, and the verdict is unchanged across it
@@ -86,6 +93,10 @@ fn synthetic_status(groups_len: usize) -> Vec<u8> {
 
 /// Returns `(three_scans_ns, one_scan_ns)` per call so the caller can put the
 /// saving over a denominator instead of reporting it bare.
+///
+/// `iters` is the size of ONE timed batch, and the reported figure is that
+/// batch's total elapsed time divided by `iters` — a single mean with no
+/// independent samples or variance behind it, not N separate measurements.
 fn bench(label: &str, status: &[u8], iters: u32) -> (f64, f64) {
     // Three separate scans — what the backend does today.
     let t0 = Instant::now();
@@ -134,7 +145,8 @@ fn bench(label: &str, status: &[u8], iters: u32) -> (f64, f64) {
 /// `std::fs::read` — an open/read/close round trip plus the kernel formatting
 /// the file's text on demand — so the parse is only ever part of the cost.
 ///
-/// Returns ns per call.
+/// Returns ns per call. `iters` is the iteration count of ONE timed batch
+/// (after a 1 000-call warmup), not independent timing samples.
 fn snapshot_cost_ns(iters: u32) -> f64 {
     for _ in 0..1_000 {
         std::hint::black_box(proc_memstat::snapshot());
@@ -192,9 +204,12 @@ fn main() {
     let snap_ns = snapshot_cost_ns(20_000);
     let saved_ns = three_ns - one_ns;
     let pct = 100.0 * saved_ns / snap_ns;
-    // Assert the printed arithmetic rather than trusting the format string —
-    // a headline number a human retyped is exactly the class of error this
-    // repo's reporting rules exist to foreclose.
+    // Self-consistency insurance, and ONLY that: this recomputes the SAME
+    // formula from the SAME variables the println! below formats, so it
+    // proves the printed percentage is the quotient of these variables —
+    // nothing more. It does NOT independently verify the measured values,
+    // the printed output a human reads, or their transcription into the
+    // summary CSV; a wrong measurement upstream passes this untouched.
     assert!(
         (pct - (100.0 * (three_ns - one_ns) / snap_ns)).abs() < 1e-9,
         "the printed percentage must be the quotient it claims to be"
@@ -205,10 +220,15 @@ fn main() {
         "  whole snapshot() ......... {snap_ns:.1} ns/call  (open+read+close of \
          /proc/self/status, plus the parse)"
     );
-    println!("  parse, three scans ....... {three_ns:.1} ns  (today's backend)");
+    println!(
+        "  parse, three scans ....... {three_ns:.1} ns = {:.1}% of one snapshot()  \
+         (today's backend: the parse's own SHARE of a call)",
+        100.0 * three_ns / snap_ns
+    );
     println!("  parse, one fused scan .... {one_ns:.1} ns  (read_kib_fields)");
     println!(
         "  saving ................... {saved_ns:.1} ns = {pct:.1}% of one snapshot() \
-         ({saved_ns:.1} ns saved / {snap_ns:.1} ns per call)"
+         ({saved_ns:.1} ns saved / {snap_ns:.1} ns per call) — the SAVING from \
+         fusing, an estimate, not the parse's own share printed above"
     );
 }

@@ -211,3 +211,30 @@ fn the_fused_reader_agrees_with_the_per_field_reader() {
         }
     }
 }
+
+/// The documented PRECONDITION of `read_kib_fields` — distinct,
+/// non-overlapping prefixes — and the EXACT behavior when it is violated,
+/// pinned as a known, documented limitation rather than left undiscoverable
+/// (review round 2, P4-4). With duplicate prefixes, two independent
+/// `read_kib_field` calls each see the line and both return `Some(7)`, but
+/// the fused reader attributes the line to its FIRST matching prefix only,
+/// so the second, duplicate prefix records `None`. Deliberately pins CURRENT
+/// behavior: production never calls the fused reader (NO-GO measurement
+/// subject), the real `FIELDS` are distinct and non-overlapping, and
+/// changing the `break` would silently alter the exact function the
+/// recorded scan-cost measurement measured. If you ever change the
+/// function's contract, change this fixture and the doc precondition in the
+/// same commit.
+#[test]
+fn duplicate_prefixes_are_a_documented_precondition_violation() {
+    let status: &[u8] = b"VmRSS:\t 7 kB\n";
+    // Two independent per-field scans each see the line.
+    assert_eq!(read_kib_field(status, b"VmRSS:"), Some(7));
+    assert_eq!(read_kib_field(status, b"VmRSS:"), Some(7));
+    // The fused reader: the first duplicate wins the line, the second
+    // never sees it.
+    assert_eq!(
+        read_kib_fields(status, [b"VmRSS:", b"VmRSS:"]),
+        [Some(7), None]
+    );
+}

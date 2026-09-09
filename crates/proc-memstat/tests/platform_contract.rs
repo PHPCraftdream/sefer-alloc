@@ -28,8 +28,16 @@
 //!    `* 1000` slip, crossed backends) and must REJECT them, on every host,
 //!    under miri too — so the live assertions cannot silently be vacuous.
 //!
-//! Read-only: nothing here moves process memory, so — unlike
-//! `tests/monotonicity.rs` — no fresh-process isolation is needed.
+//! No scenario here DELIBERATELY moves process memory — no touched 16 MiB
+//! buffer, unlike `tests/monotonicity.rs` — so no fresh-process isolation is
+//! needed. That is not a claim that the file is memory-inert: thread startup
+//! for the other tests in the same binary, the `catch_unwind` machinery of
+//! the negative controls, and the `std::fs::read` calls all allocate and move
+//! RSS/commit by small amounts — a tension commit `c656e5d` already
+//! acknowledged in its own message when it widened the smoke band. The live
+//! assertions are written to absorb exactly that: shape checks demand
+//! field PRESENCE, not values, and the scale check is a 16x-either-side
+//! band, not a value pin.
 //!
 //! The parser reaches the test via `#[path]` — the sanctioned pattern (see
 //! `tests/status_parse.rs`); the review explicitly ruled out widening the
@@ -174,7 +182,7 @@ fn expect_macos_shape(m: &MemStat) {
 /// It was a ±25% band, and that was wrong — it pinned a live VALUE while
 /// claiming to check a SCALE. It failed in CI (run `34258042576`, job
 /// `102168705241`, commit `025b8a4`) on `VmSize`: the snapshot read
-/// 146 505 728 bytes and the independent re-parse a moment later read
+/// 146 505 728 bytes and the second, independent READ a moment later read
 /// 213 630 976, a ratio of 1.46 between two adjacent reads. That is not a
 /// scale error, it is `VmSize` doing exactly what `VmSize` does — it is the
 /// size of the ADDRESS SPACE, which moves in whole-arena steps (a thread
@@ -410,9 +418,14 @@ fn linux_snapshot_reports_the_documented_counters() {
     expect_linux_shape(&snapshot());
 }
 
-/// The byte-scale SMOKE band, live: an independent parse of the SAME file
-/// the backend reads, held against the backend's output for all three `Vm*`
-/// fields. Availability + coarse band only — presence of the fields and a
+/// The byte-scale SMOKE band, live: a SECOND, independent READ of the same
+/// file the backend reads, re-parsed and held against the backend's output
+/// for all three `Vm*` fields. "Independent" covers the read and the fixture
+/// derivation only — the parsing is the SAME `src/status_parse.rs` module
+/// (`#[path]` above) the backend itself uses, so this does NOT independently
+/// verify the parser; it verifies the backend's output against a fresh read
+/// of the source at a different instant. Availability + coarse band only —
+/// presence of the fields and a
 /// ratio within 16x either side of kB*1024. This CANNOT prove the exact
 /// `* 1024` scale (two adjacent reads legitimately differ, and the band
 /// above pins which wrong multipliers it cannot distinguish): the exact

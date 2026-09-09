@@ -1,11 +1,12 @@
-metric,value,unit,commit,run_id,job_id,os,features,samples,note
+metric,value,unit,commit,run_id,job_id,os,features,batch_iterations,note
 whole_snapshot_call,17125.3,ns/call,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,20000,open+read+close of /proc/self/status plus the parse
 parse_three_scans_real,543.2,ns,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,200000,today's backend; real /proc/self/status of 1510 bytes
 parse_one_scan_real,207.5,ns,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,200000,read_kib_fields fused reader; same 1510-byte file
 parse_saving_real,335.8,ns,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,200000,543.2 minus 207.5
-parse_saving_over_whole_call,2.0,percent,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,20000,335.8 ns saved / 17125.3 ns per call
+parse_share_real,3.17,percent,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,200000,543.2 ns full three-scan parse / 17125.3 ns per call; the PARSE's own share of a whole call — a DIFFERENT quantity from the 2.0% fusing SAVES
+parse_saving_over_whole_call,2.0,percent,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,20000,335.8 ns saved by fusing / 17125.3 ns per call; ESTIMATE of the removable work's share (parse-only arms vs a separately measured whole snapshot()), not a measured speedup of a new snapshot()
 parse_ratio_real,2.62,x,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,200000,543.2 / 207.5
 parse_ratio_real_run1,1.95,x,4297f18,34244081677,102121434862,ubuntu-latest (GitHub Actions),default,200000,same measurement one run earlier; cross-run spread on the parse arms
 parse_saving_over_whole_call_run1,1.1,percent,4297f18,34244081677,102121434862,ubuntu-latest (GitHub Actions),default,200000,196.0 ns saved / 17125.3 ns per call (denominator from run 2; run 1 did not measure it)
 parse_ratio_synthetic_20751b,4.90,x,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,200000,PARSE-ONLY; not paired with a read of a 20751-byte real file, so no percent-of-call figure is derivable for this arm
-verdict,NO-GO,,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,,do not adopt read_kib_fields in the Linux backend; the parse is 2.0% of a call the syscall dominates
+verdict,NO-GO,,3119719,34249822373,102141100998,ubuntu-latest (GitHub Actions),default,,do not adopt read_kib_fields in the Linux backend; fusing SAVES ~2.0% of a call the syscall dominates (the full three-scan parse is ~3.17% of it, see parse_share_real)

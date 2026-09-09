@@ -170,11 +170,19 @@ fn scenario_committing_without_touching() {
             // released exactly once, here. Size 0 is the documented
             // MEM_RELEASE contract.
             let freed = unsafe { VirtualFree(self.0, 0, MEM_RELEASE) };
-            // Deliberately not a panic: on the unwind path a panicking Drop
-            // aborts the process and would replace the real assertion message
-            // with a far less useful one.
             if freed == 0 {
-                eprintln!("warning: VirtualFree(MEM_RELEASE) failed during cleanup");
+                // Deliberately not a panic (on the unwind path a panicking
+                // Drop aborts the process and would replace the real
+                // assertion message with a far less useful one) — and
+                // deliberately not `eprintln!` either: it panics if writing
+                // to stderr fails, and that panic inside `drop` during an
+                // unwind aborts the process just the same. A raw `write_all`
+                // with the `Result` discarded is the same best-effort
+                // diagnostic without the panic path.
+                let _ = std::io::Write::write_all(
+                    &mut std::io::stderr(),
+                    b"warning: VirtualFree(MEM_RELEASE) failed during cleanup\n",
+                );
             }
         }
     }

@@ -157,9 +157,8 @@ fn optional_absent_fields_convert_to_none_with_an_exact_rss() {
 /// The LAST KiB figure whose ×1024 product fits in a `u64` converts exactly:
 /// `18_014_398_509_481_983 = u64::MAX / 1024`.
 ///
-/// Behavior ABOVE this boundary — a KiB figure whose product overflows the
-/// `u64` byte value — is review round 2's P4-1, a separate follow-up
-/// deliberately NOT asserted here.
+/// Behavior ABOVE this boundary is asserted by the NEXT test
+/// (`the_first_overflowing_kib_value_is_malformed`) — review round 2's P4-1.
 #[test]
 fn the_boundary_kib_value_converts_exactly() {
     const FIXTURE_BOUNDARY: &[u8] = b"VmRSS:\t 18014398509481983 kB\n";
@@ -171,5 +170,44 @@ fn the_boundary_kib_value_converts_exactly() {
             commit_charge: None,
             peak_rss: None,
         }),
+    );
+}
+
+/// The FIRST KiB figure whose ×1024 product overflows a `u64` —
+/// `18_014_398_509_481_984 = u64::MAX / 1024 + 1` — is `Malformed` through
+/// BOTH seams: the same content-defect classification as a figure the
+/// strict grammar rejects, NOT a panic (debug overflow-checks) and NOT a
+/// wrap to a fabricated near-zero byte count (release) (review round 2,
+/// P4-1). Paired with `the_boundary_kib_value_converts_exactly` above: that
+/// boundary value must be the LAST success, and the very next value up must
+/// fail cleanly.
+#[test]
+fn the_first_overflowing_kib_value_is_malformed() {
+    const FIXTURE_ABOVE: &[u8] = b"VmRSS:\t 18014398509481984 kB\n";
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_ABOVE),
+        Err(SnapshotError::Malformed),
+    );
+    assert_eq!(
+        status_convert::snapshot_from_read(Ok(FIXTURE_ABOVE.to_vec())),
+        Err(SnapshotError::Malformed),
+    );
+}
+
+/// The overflow check covers the OPTIONAL fields too: an overflowing
+/// `VmSize`/`VmHWM` must fail the conversion rather than silently wrap (in
+/// release) while `rss` still reads plausibly — each field pinned
+/// independently so a check added to one cannot mask the other.
+#[test]
+fn an_overflowing_optional_field_is_malformed_not_a_wrapped_value() {
+    const FIXTURE_VMSIZE: &[u8] = b"VmRSS:\t 1 kB\nVmSize:\t 18014398509481984 kB\n";
+    const FIXTURE_VMHWM: &[u8] = b"VmRSS:\t 1 kB\nVmSize:\t 1 kB\nVmHWM:\t 18014398509481984 kB\n";
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_VMSIZE),
+        Err(SnapshotError::Malformed),
+    );
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_VMHWM),
+        Err(SnapshotError::Malformed),
     );
 }

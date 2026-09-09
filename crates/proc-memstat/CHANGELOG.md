@@ -22,9 +22,11 @@ version ever carried.
   virtual size, commit charge, and peak RSS. Best-effort: returns an all-zero
   `MemStat` when no reading is available.
 - **`try_snapshot() -> Result<MemStat, SnapshotError>`** — the fallible form.
-  It exists because `snapshot()`'s all-zero fallback is indistinguishable from
-  a genuinely tiny process, so a before/after pair whose second read failed
-  reads as a complete release of memory. `SnapshotError` (`Unsupported` / `Os`
+  It exists because through `snapshot()` a failed read is indistinguishable
+  from a genuinely tiny process to a caller reading `rss` alone — `rss` reads
+  `0` either way, and the all-zero fallback erases the cause — so a
+  before/after pair whose second read failed reads as a complete release of
+  memory. `SnapshotError` (`Unsupported` / `Os`
   / `Malformed`, `#[non_exhaustive]`) says which happened.
 - **`MemStat`** — `rss: u64` plus `virtual_size`, `commit_charge` and
   `peak_rss`, each an `Option<u64>` that is **absent rather than substituted**
@@ -52,9 +54,13 @@ version ever carried.
 - **Its own three-OS CI job** (`proc-memstat gates` in
   `.github/workflows/ci.yml`): fmt, clippy `-D warnings`, tests, rustdoc
   `-D warnings`, a link-smoke consumer built **outside** the workspace that
-  actually links and calls `snapshot()`, and a packaging dry-run. Before this,
-  nothing in CI built or tested this crate on any platform — which matters
-  more than usual for a crate that is almost entirely platform FFI.
+  actually links and calls `snapshot()`, and a packaging dry-run. Before
+  this, no CI ever ran this crate's OWN tests or gates on any
+  platform — the crate was already being COMPILED (it is a workspace member
+  and a dev-dependency of the root crate, so the workspace-wide
+  `cargo clippy --all-targets` rows and the root `cargo test` rows compiled
+  it everywhere they ran) — but nothing executed its own test suite, which
+  matters more than usual for a crate that is almost entirely platform FFI.
 
 ### Fixed
 
@@ -153,6 +159,65 @@ version ever carried.
 - **The unconditional "a probe must never take the process down" claim was
   qualified** with what it does and does not cover (allocation, reentrancy,
   OOM).
+- **Linux: a parseable KiB figure whose ×1024 product overflows `u64` could
+  panic (debug) or wrap to a fabricated near-zero byte count (release).**
+  The strict parser rejected overflow at the KiB figure itself, but the
+  subsequent scaling step was unchecked — `u64::MAX / 1024 + 1` KiB parsed
+  fine and then overflowed on the way to bytes. All THREE scaled fields
+  (`rss`, `virtual_size`, `peak_rss`) now go through `checked_mul(1024)` and
+  report the overflow as `SnapshotError::Malformed`, the same content-defect
+  classification as a figure the grammar rejects. Defensive hardening
+  (review round 2, P4-1) — not a size any real Linux process reaches;
+  fixtures pin the exact boundary (`u64::MAX / 1024` still succeeds, the
+  next value up is `Malformed`) and the same check on the optional fields.
+- **Windows test fixture only: the cleanup `Drop`'s failure diagnostic could
+  itself panic.** `tests/monotonicity.rs`'s `CommittedRegion` guard printed
+  a `VirtualFree` failure with `eprintln!`, which Rust documents as able to
+  panic on a broken stderr — and a panic inside `drop` during an unwind
+  aborts the process, hiding the original assertion failure behind a bare
+  abort. The diagnostic is now a raw `write_all` with its `Result`
+  discarded; the happy-path `VirtualFree` check is unchanged (review round
+  2, P4-3).
+
+### Documentation
+
+- **The macOS cached Mach self-port's SAFETY proof now names BOTH of
+  libSystem's write points** — startup via `libSystem_initializer`, and the
+  single-threaded post-fork child re-initialization (`_mach_fork_child()` →
+  `mach_init_doit()`, Apple libsyscall `mach_init.c`). The getter was always
+  sound — a by-value port-name read cannot race either write; the proof
+  simply omitted the fork path. No data race existed or is claimed (review
+  round 2, P4-2).
+- **The rejected fused reader's contract now states its precondition
+  outright** — distinct, non-overlapping prefixes — instead of asserting "a
+  line matches at most one prefix" as if the signature guaranteed it. With
+  duplicate prefixes a line is attributed to the first matching prefix only;
+  that exact behavior is now pinned by a fixture in `tests/status_parse.rs`
+  as a documented, discoverable limitation. Production never calls the
+  fused reader (NO-GO measurement subject), so no metric was ever affected,
+  and the function is unchanged from the one the recorded measurement
+  measured (review round 2, P4-4).
+- **The scan-cost measurement's wording now matches what it measured**
+  (review round 2, P4-5 — labels only; nothing re-measured): the ~2.0%
+  figure is labeled an ESTIMATE of the removable work's share (parse-only
+  arms vs a separately measured whole `snapshot()`, not a full backend
+  A/B); the summary CSV's `samples` column is renamed `batch_iterations`
+  (one timed batch's iteration count, not independent timing samples); the
+  example's self-consistency `assert!` is documented as exactly that; and
+  the CSV now carries the parse's own share of a call (~3.17%, row
+  `parse_share_real`) beside the ~2.0% fusing SAVES, which the concluding
+  verdict row no longer conflates.
+- **Remaining overclaims narrowed** (review round 2, P4-6): the
+  all-zero-fallback wording now says precisely what is indistinguishable —
+  a zero `rss` read alone; a normally-succeeding backend fills the `Some`
+  fields its platform-matrix row requires even at zero, so the whole
+  fallback shape never occurs on success — while keeping the
+  erased-error-cause point; the CHANGELOG's CI history now says the crate
+  was already COMPILED by workspace-wide CI rows before its own gates
+  existed (the absence was its own tests, not compilation); and
+  `tests/platform_contract.rs`'s header now says its re-parse is independent
+  as a READ/fixture source, not as a parser (same `#[path]`-included
+  module), and no longer claims the file moves no process memory at all.
 
 ### Measured, decided, not changed
 

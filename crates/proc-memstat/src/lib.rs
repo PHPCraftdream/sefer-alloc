@@ -23,10 +23,15 @@
 //! backend scales at the parse boundary, so nothing above it ever sees a KiB
 //! figure — this crate deals only in bytes.
 //!
-//! [`snapshot`] is best-effort: it returns an all-zero [`MemStat`] when no
-//! reading is available. That fallback cannot be told apart from a genuinely
-//! tiny process, so a before/after pair whose SECOND read failed reads as a
-//! complete release of memory. [`try_snapshot`] returns a
+//! [`snapshot`] is best-effort: when no reading is available it returns
+//! [`MemStat::default`] — `rss: 0` and every optional field `None`. Read as a
+//! WHOLE, that fallback is the one shape a normally-succeeding backend never
+//! produces: every real platform's successful reading carries the `Some`
+//! fields its platform-matrix row below requires, even when a counter's own
+//! value is zero. Read through `rss` ALONE, though, a zero is a zero either
+//! way — and the fallback also erases WHY nothing was reported — so a
+//! before/after pair whose SECOND read failed reads as a complete release of
+//! memory. [`try_snapshot`] returns a
 //! [`Result`]`<`[`MemStat`]`, `[`SnapshotError`]`>` and says which happened —
 //! use it when a wrong conclusion from a missing reading would matter.
 //!
@@ -168,10 +173,11 @@ impl MemStat {
 
 /// Why a [`try_snapshot`] call could not produce a reading.
 ///
-/// Exists because a failed read and a genuinely tiny process are otherwise
-/// indistinguishable through [`snapshot`], which reports zeros either way
-/// (review P4-1): a before/after pair whose second read failed looks exactly
-/// like a complete release of memory.
+/// Exists because through [`snapshot`] a failed read and a genuinely tiny
+/// process are otherwise indistinguishable — `rss` reads `0` either way, and
+/// the all-zero fallback erases the CAUSE (review P4-1): a before/after pair
+/// whose second read failed looks exactly like a complete release of memory
+/// to a caller comparing `rss` alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SnapshotError {
@@ -225,8 +231,12 @@ pub fn try_snapshot() -> Result<MemStat, SnapshotError> {
 /// reading falls back to [`MemStat::default`] — `rss: 0` and `None` for the
 /// optional fields — rather than panicking.
 ///
-/// **That fallback is indistinguishable from a genuinely near-zero process.**
-/// Use [`try_snapshot`] when that distinction matters.
+/// **Read through `rss` alone, that fallback is indistinguishable from a
+/// genuinely near-zero process** — and it erases why nothing was reported.
+/// (Read as a whole it is not: a normally-succeeding backend fills the
+/// `Some` fields its platform-matrix row requires even when a counter's own
+/// value is 0, so the all-`None` fallback shape never occurs on success.)
+/// Use [`try_snapshot`] when the distinction matters.
 ///
 /// # What "never takes the process down" does and does not mean
 ///
@@ -444,13 +454,17 @@ mod platform {
     /// right, so it must never be `mach_port_deallocate`d.
     fn mach_task_self() -> u32 {
         // SAFETY: `mach_task_self_` is a `mach_port_t` global exported by
-        // libSystem (which std links on macOS), written only by
-        // `mach_init_doit()` (`mach_task_self_ = task_self_trap()`,
-        // libsyscall/Mach-side mach_init.c) during `libSystem_initializer` —
-        // before any user code runs in the process image — so this read can
-        // neither race with a write nor observe uninitialised memory. It is a
-        // plain `u32` load of a port NAME copied by value: it acquires no Mach
-        // right and transfers no ownership.
+        // libSystem (which std links on macOS). libSystem writes it at
+        // exactly TWO points, and neither can overlap this read:
+        // `mach_init_doit()` (`mach_task_self_ = task_self_trap()`) during
+        // `libSystem_initializer` — before any user code runs in the process
+        // image — and, in a child after `fork()`, `_mach_fork_child()`
+        // calling `mach_init_doit()` again, single-threaded, before normal
+        // execution resumes there (Apple libsyscall,
+        // libsyscall/mach/mach_init.c). Every read is therefore sequenced
+        // after the last write with no concurrent writer. The read itself is
+        // a plain `u32` load of a port NAME copied by value: it acquires no
+        // Mach right and transfers no ownership.
         unsafe { mach_task_self_ }
     }
 

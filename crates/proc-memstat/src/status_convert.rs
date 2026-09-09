@@ -34,18 +34,33 @@ use crate::{MemStat, SnapshotError};
 /// becomes the bytes every other layer of this crate deals in. The exact
 /// multiplier is pinned by `tests/status_convert.rs` against an immutable
 /// fixture, which is the only kind of test that can distinguish ×1024 from
-/// ×1000 or ×2048 — a live ratio band cannot.
+/// ×1000 or ×2048 — a live ratio band cannot. A KiB figure whose ×1024
+/// product overflows `u64` is `Malformed` too — a content defect, not a
+/// panic or a wrap.
 pub(crate) fn memstat_from_status(status: &[u8]) -> Result<MemStat, SnapshotError> {
     // VmRSS is the one field with no `Option` to express absence, so a
-    // procfs without it is Malformed rather than a silent zero.
-    let rss = read_kib_field(status, b"VmRSS:").ok_or(SnapshotError::Malformed)?;
+    // procfs without it is Malformed rather than a silent zero. `Malformed`
+    // also covers the ×1024 overflow: the strict parser already rejects a
+    // KiB figure that overflows `u64`, but even a parseable one overflows
+    // when SCALED (`u64::MAX / 1024 + 1` KiB × 1024 > `u64::MAX`), and an
+    // unchecked `* 1024` there would panic under overflow-checks or wrap to
+    // a fabricated near-zero byte count without them. Checked on ALL THREE
+    // scaled fields (review round 2, P4-1; defensive — no real Linux
+    // process reaches the boundary).
+    let rss = read_kib_field(status, b"VmRSS:")
+        .and_then(|kib| kib.checked_mul(1024))
+        .ok_or(SnapshotError::Malformed)?;
     Ok(MemStat {
-        rss: rss * 1024,
-        virtual_size: read_kib_field(status, b"VmSize:").map(|kib| kib * 1024),
+        rss,
+        virtual_size: read_kib_field(status, b"VmSize:")
+            .map(|kib| kib.checked_mul(1024).ok_or(SnapshotError::Malformed))
+            .transpose()?,
         // The task status exposes no commit-charge counter; `VmSize` above
         // is address space, a different quantity (see `MemStat`).
         commit_charge: None,
-        peak_rss: read_kib_field(status, b"VmHWM:").map(|kib| kib * 1024),
+        peak_rss: read_kib_field(status, b"VmHWM:")
+            .map(|kib| kib.checked_mul(1024).ok_or(SnapshotError::Malformed))
+            .transpose()?,
     })
 }
 

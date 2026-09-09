@@ -53,6 +53,22 @@ pub(crate) fn read_kib_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
 /// Same per-field semantics as [`read_kib_field`] — this only changes how
 /// many times the buffer is walked, from once per field to once in total.
 ///
+/// # Precondition: distinct, non-overlapping prefixes
+///
+/// The equivalence with N independent [`read_kib_field`] calls holds only
+/// while a status line can match at most ONE of `prefixes`. That is a
+/// REQUIREMENT on the caller, not something the signature enforces: given
+/// `"VmRSS: 7 kB"` and the duplicate prefixes `[b"VmRSS:", b"VmRSS:"]`, the
+/// two per-field calls both return `Some(7)`, but after the first prefix
+/// matches a line this function stops comparing that LINE (the `break`
+/// below) and moves on, so the second, duplicate prefix records `None`. The
+/// three `FIELDS` of `examples/status_scan_cost.rs` — the only prefix set
+/// this function is measured with — satisfy the requirement, and production
+/// code never calls this function at all (see the NO-GO note below). The
+/// behavior with duplicate prefixes is pinned as a KNOWN, documented
+/// limitation by a fixture in `tests/status_parse.rs`, not left
+/// undiscoverable.
+///
 /// Exists to answer review P4-2 with a measurement rather than an assumption:
 /// the finding notes that three lookups rescan the buffer from the start each
 /// time, which is O(L) done three times, NOT O(L²), and that the gain from
@@ -104,7 +120,12 @@ pub(crate) fn read_kib_fields<const N: usize>(
             out[i] = field_value(rest);
             seen[i] = true;
             remaining -= 1;
-            // A line matches at most one prefix, so stop comparing this line.
+            // REQUIRES distinct, non-overlapping prefixes (see this
+            // function's doc): given that, a line matching prefix `i` cannot
+            // match any other, so stop comparing this line. With duplicate
+            // or overlapping prefixes the early stop is observable — prefix
+            // `i + 1` never sees the line — which is exactly the documented,
+            // fixture-pinned limitation, not an internal detail.
             break;
         }
     }
