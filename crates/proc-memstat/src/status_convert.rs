@@ -24,8 +24,23 @@
 //! types re-exported at the test crate root in the `#[path]` compilation —
 //! the sanctioned pattern that keeps the crate's public API untouched.
 
-use crate::status_parse::read_kib_field;
+use crate::status_parse::{read_kib_field_lookup, KibFieldLookup};
 use crate::{MemStat, SnapshotError};
+
+/// Fold a three-state lookup on an OPTIONAL field into the `Option` the
+/// public `MemStat` carries: only a genuinely ABSENT field becomes `None`;
+/// a PRESENT-but-invalid shape is a content defect (`Malformed`), and a
+/// valid KiB figure is scaled with the same checked ×1024 as the required
+/// field (review round 3, P4-1).
+fn scaled_optional(lookup: KibFieldLookup) -> Result<Option<u64>, SnapshotError> {
+    match lookup {
+        KibFieldLookup::Absent => Ok(None),
+        KibFieldLookup::Invalid => Err(SnapshotError::Malformed),
+        KibFieldLookup::Value(kib) => {
+            Ok(Some(kib.checked_mul(1024).ok_or(SnapshotError::Malformed)?))
+        }
+    }
+}
 
 /// The production conversion: a task-status buffer as read from
 /// `/proc/thread-self/status` into a [`MemStat`], in BYTES.
@@ -34,9 +49,12 @@ use crate::{MemStat, SnapshotError};
 /// becomes the bytes every other layer of this crate deals in. The exact
 /// multiplier is pinned by `tests/status_convert.rs` against an immutable
 /// fixture, which is the only kind of test that can distinguish ×1024 from
-/// ×1000 or ×2048 — a live ratio band cannot. A KiB figure whose ×1024
-/// product overflows `u64` is `Malformed` too — a content defect, not a
-/// panic or a wrap.
+/// ×1000 or ×2048 — a live ratio band cannot. The error contract is exact:
+/// an absent OPTIONAL field (`VmSize`/`VmHWM`) is `None`; ANY
+/// present-but-invalid shape on ANY field this function reads — wrong unit,
+/// junk, or a value too large to represent — is `Malformed`; and overflow
+/// is `Malformed` at EITHER stage, the KiB parse itself or the ×1024 scale
+/// (review round 3, P4-1).
 pub(crate) fn memstat_from_status(status: &[u8]) -> Result<MemStat, SnapshotError> {
     // VmRSS is the one field with no `Option` to express absence, so a
     // procfs without it is Malformed rather than a silent zero. `Malformed`
@@ -47,20 +65,20 @@ pub(crate) fn memstat_from_status(status: &[u8]) -> Result<MemStat, SnapshotErro
     // a fabricated near-zero byte count without them. Checked on ALL THREE
     // scaled fields (review round 2, P4-1; defensive — no real Linux
     // process reaches the boundary).
-    let rss = read_kib_field(status, b"VmRSS:")
-        .and_then(|kib| kib.checked_mul(1024))
-        .ok_or(SnapshotError::Malformed)?;
+    let rss = match read_kib_field_lookup(status, b"VmRSS:") {
+        KibFieldLookup::Value(kib) => kib.checked_mul(1024).ok_or(SnapshotError::Malformed)?,
+        // Absent or present-but-invalid: VmRSS is the one field with no
+        // `Option` to express absence, so both are Malformed rather than a
+        // silent zero.
+        KibFieldLookup::Absent | KibFieldLookup::Invalid => return Err(SnapshotError::Malformed),
+    };
     Ok(MemStat {
         rss,
-        virtual_size: read_kib_field(status, b"VmSize:")
-            .map(|kib| kib.checked_mul(1024).ok_or(SnapshotError::Malformed))
-            .transpose()?,
+        virtual_size: scaled_optional(read_kib_field_lookup(status, b"VmSize:"))?,
         // The task status exposes no commit-charge counter; `VmSize` above
         // is address space, a different quantity (see `MemStat`).
         commit_charge: None,
-        peak_rss: read_kib_field(status, b"VmHWM:")
-            .map(|kib| kib.checked_mul(1024).ok_or(SnapshotError::Malformed))
-            .transpose()?,
+        peak_rss: scaled_optional(read_kib_field_lookup(status, b"VmHWM:"))?,
     })
 }
 

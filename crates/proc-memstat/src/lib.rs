@@ -4,7 +4,9 @@
 //! figures gathered from ONE source in one go:
 //!
 //! - **`rss`** — resident set size: the physical memory currently backing the
-//!   process's pages (what "top" shows as RES / working set).
+//!   process's pages (what "top" shows as RES / working set). This is the
+//!   platform's own RSS/working-set counter, which carries documented
+//!   exclusions — see the `rss` field's note.
 //! - **`commit_charge`** — memory *charged against the system commit limit*,
 //!   whether or not it has been faulted in yet. This is a **separate axis**
 //!   from RSS — a `VirtualAlloc(MEM_COMMIT)` shows up here even while it is
@@ -119,6 +121,18 @@ pub struct MemStat {
     /// process (Windows `WorkingSetSize`, Linux `/proc/thread-self/status`
     /// `VmRSS`,
     /// macOS `resident_size`). `0` on unknown platforms.
+    ///
+    /// This is the counter the platform names, NOT the process's total
+    /// physical footprint — each source excludes documented categories: the
+    /// Windows working set contains only pageable memory allocations, so
+    /// nonpageable ones (Address Windowing Extensions (AWE), large-page
+    /// allocations) are excluded (Microsoft, "Working Set",
+    /// <https://learn.microsoft.com/en-us/windows/win32/memory/working-set>);
+    /// Linux `VmRSS` is `RssAnon + RssFile + RssShmem` and excludes EXPLICIT
+    /// HugeTLB allocations, which the kernel reports separately as
+    /// `HugetlbPages` and does not count in "RSS"
+    /// (<https://docs.kernel.org/filesystems/proc.html>). Transparent huge
+    /// pages ARE part of RSS — only explicit hugetlbfs allocations are not.
     pub rss: u64,
     /// Size of the process's virtual ADDRESS SPACE in bytes (Linux
     /// `/proc/thread-self/status` `VmSize`, macOS `virtual_size`); `None` where the
@@ -192,7 +206,10 @@ pub enum SnapshotError {
     /// read, or `K32GetProcessMemoryInfo` / `task_info` returned an error.
     Os,
     /// The source was read, but a required field was absent or not a plain
-    /// ASCII integer — a task status without `VmRSS`, for instance.
+    /// ASCII integer — a task status without `VmRSS`, for instance — or an
+    /// optional field (`VmSize`/`VmHWM`) was present but invalid: a wrong or
+    /// missing unit, junk around the digits, or a value too large to
+    /// represent (review round 3, P4-1).
     ///
     /// Distinguished from [`Os`](Self::Os) because it points at the CONTENT
     /// rather than at the access: a caller that sees this is looking at a

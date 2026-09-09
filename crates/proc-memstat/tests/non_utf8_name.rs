@@ -91,8 +91,22 @@ fn scenario_a_non_utf8_task_name_cannot_blank_the_real_backend_read() {
     //    SAFETY: `name` is a valid NUL-terminated pointer for the duration
     //    of the call; PR_SET_NAME only copies from it.
     let name: &[u8; 14] = b"proc-memstat\xff\0";
+    // The trailing zeros are typed explicitly (`c_ulong`, glibc's documented
+    // `unsigned long` vararg type for prctl) because prctl(2)'s CAVEATS
+    // (https://man7.org/linux/man-pages/man2/prctl.2.html) warns that zero
+    // arguments must be passed at full machine width — through the variadic
+    // ABI an untyped `0` defaults to `i32`, and correctness would then rest
+    // on ABI register/stack-slot padding happening to zero-extend on
+    // x86-64/aarch64. Portability fix; no behavior change on hosts where the
+    // padding already worked. (Sol-codex review round 3, P4-2.)
     let ret = unsafe {
-        prctl(15 /* PR_SET_NAME */, name.as_ptr(), 0, 0, 0)
+        prctl(
+            15, /* PR_SET_NAME */
+            name.as_ptr(),
+            0 as core::ffi::c_ulong,
+            0 as core::ffi::c_ulong,
+            0 as core::ffi::c_ulong,
+        )
     };
     assert_eq!(ret, 0, "prctl(PR_SET_NAME) must succeed");
 

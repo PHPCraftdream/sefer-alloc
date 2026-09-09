@@ -102,12 +102,18 @@ version ever carried.
   integer.** `12oops`, `12.5`, and `1e6` were read as `12`, `12`, and `1` —
   and `12 MB` was silently read as 12 KiB — because the byte parser cut the
   value at the first non-digit and never checked the unit. The accepted
-  grammar is now exactly `ASCII whitespace + integer + ASCII whitespace +
-  "kB" + trailing whitespace` (unit REQUIRED and case-sensitive: mainline
-  kernels print these lines as `%5lu kB`, so requiring it rejects nothing a
-  real kernel prints, while treating any other unit as kB is precisely the
+  grammar is now exactly `zero-or-more ASCII whitespace + integer + one
+  ASCII whitespace + "kB" + trailing whitespace` (real kernels always print
+  the tab before the unit; unit REQUIRED and case-sensitive: mainline
+  kernels print these lines as a literal TAB after the prefix, the value
+  right-aligned to width 8, and " kB" (v6.12 fs/proc/task_mmu.c), so
+  requiring the unit rejects nothing a real kernel prints, while treating any other unit as kB is precisely the
   silent misread this forbids). Any deviation is rejected and surfaces as
-  `Malformed` through `try_snapshot`. (Sol-codex review round 2, P3-1.)
+  `Malformed` through `try_snapshot`. As of review round 3's P4-1 fix that
+  "any deviation" holds for the OPTIONAL fields (`VmSize`/`VmHWM`) too: a
+  present-but-invalid one (wrong unit, junk, or a value too large to
+  represent even in KiB) is `Malformed`, never a silent `None`; only a
+  genuinely absent optional field is `None`. (Sol-codex review round 2, P3-1.)
 - **The ×1024 scale claim was moved from a live ratio band to an exact
   fixture oracle.** The old oracle compared two LIVE reads in a
   `kb*64..=kb*16384` band, which cannot tell ×1024 from ×2048 or from a
@@ -170,6 +176,10 @@ version ever carried.
   (review round 2, P4-1) — not a size any real Linux process reaches;
   fixtures pin the exact boundary (`u64::MAX / 1024` still succeeds, the
   next value up is `Malformed`) and the same check on the optional fields.
+  Since review round 3's P4-1 fix, overflow at EITHER stage — the KiB parse
+  itself or the ×1024 scale — is classified identically (`Malformed`) on ALL
+  fields, closing the gap where a parse-stage overflow on an optional field
+  collapsed to `None`.
 - **Windows test fixture only: the cleanup `Drop`'s failure diagnostic could
   itself panic.** `tests/monotonicity.rs`'s `CommittedRegion` guard printed
   a `VirtualFree` failure with `eprintln!`, which Rust documents as able to
@@ -178,6 +188,23 @@ version ever carried.
   abort. The diagnostic is now a raw `write_all` with its `Result`
   discarded; the happy-path `VirtualFree` check is unchanged (review round
   2, P4-3).
+- **Linux: the error contract was non-monotonic — a MORE-broken status
+  could turn an error back into success.** A present-but-invalid OPTIONAL
+  field (`VmSize`/`VmHWM` with a wrong unit, junk, or a decimal run too
+  large for `u64`) silently became `None`, while a SCALE-stage-overflowing
+  one on the same field raised `Malformed` — so a parse-stage overflow
+  (strictly more broken) regressed an error into a successful snapshot with
+  the field missing. The parser now distinguishes absent from invalid
+  internally via a three-state `KibFieldLookup` enum (`Absent`/`Invalid`/
+  `Value`) — internal-only, no public API change: `None` now means exactly
+  "the key is genuinely absent", and every present-but-invalid shape on any
+  field this crate reads is `Malformed`, like the same defect on the
+  required `VmRSS` (Sol-codex review round 3, P4-1).
+- **Test fixture only: `prctl(PR_SET_NAME)`'s variadic zero arguments are
+  now passed at full machine width** (`c_ulong`, not untyped zeros that
+  default to `i32` through the variadic ABI), per prctl(2)'s CAVEATS.
+  No crash was reproduced on tested hosts — this is a portability-
+  correctness fix, not a behavior fix (Sol-codex review round 3, P4-2).
 
 ### Documentation
 
@@ -194,9 +221,12 @@ version ever carried.
   duplicate prefixes a line is attributed to the first matching prefix only;
   that exact behavior is now pinned by a fixture in `tests/status_parse.rs`
   as a documented, discoverable limitation. Production never calls the
-  fused reader (NO-GO measurement subject), so no metric was ever affected,
-  and the function is unchanged from the one the recorded measurement
-  measured (review round 2, P4-4).
+  fused reader (NO-GO measurement subject), so no metric was ever affected.
+  The fused reader's own loop is unchanged since the measurement, but the
+  SHARED field-value tail it calls now additionally validates grammar/unit
+  (round-2 P3-1), so the recorded numbers are pinned to commit `3119719`
+  and a current-HEAD re-run measures different code (review rounds 2 and
+  3, P4-4).
 - **The scan-cost measurement's wording now matches what it measured**
   (review round 2, P4-5 — labels only; nothing re-measured): the ~2.0%
   figure is labeled an ESTIMATE of the removable work's share (parse-only
@@ -218,6 +248,21 @@ version ever carried.
   `tests/platform_contract.rs`'s header now says its re-parse is independent
   as a READ/fixture source, not as a parser (same `#[path]`-included
   module), and no longer claims the file moves no process memory at all.
+- **The `rss` field's documented exclusions are now stated outright**
+  (Sol-codex review round 3, P4-3): it is the platform's own RSS/working-set
+  counter, not total physical footprint — the Windows working set contains
+  only pageable allocations (nonpageable ones such as AWE and large-page
+  allocations are excluded), and Linux `VmRSS` excludes explicit HugeTLB
+  pages, reported separately as `HugetlbPages`; transparent huge pages are
+  explicitly NOT excluded (they are part of RSS).
+- **Grammar and label precision pass** (Sol-codex review round 3, P4-4):
+  the kB parser's leading-whitespace grammar corrected to zero-or-more and
+  pinned by a fixture; the stale `%5lu` claim replaced with the verified
+  v6.12 width-8/tab fact (fs/proc/task_mmu.c); the smoke-band "same file"
+  claim corrected to same-shared-`mm`-while-leader-alive; the scan-cost
+  example's stale `/proc/self` denominator label corrected; and the
+  historical gate figures pinned to commit `3119719` with an explicit
+  current-HEAD caveat.
 
 ### Measured, decided, not changed
 
@@ -226,8 +271,13 @@ version ever carried.
   1510-byte file the fused reader is 2.62x faster than three separate scans
   (543.2 ns → 207.5 ns) — but one whole `snapshot()` costs 17 125.3 ns,
   because the open/read/close round trip dominates, so the saving is 335.8 ns
-  out of 17 125.3 ns, i.e. **2.0% of a call**. The backend keeps its three
-  per-field reads. Evidence:
+  out of 17 125.3 ns, i.e. **2.0% of a call** (measured at commit
+  `3119719`). The backend keeps its three
+  per-field reads. Re-running the example on current HEAD is not expected
+  to reproduce these exact numbers because the measured code changed after
+  the measurement (round-2 P3-1 grammar validation inside the shared tail;
+  round-3 P2-1 thread-self acquisition in the whole-call denominator).
+  Evidence:
   `docs/perf/_raw_proc_memstat_p4_2_scan_cost.log` and
   `docs/perf/PROC_MEMSTAT_P4_2_SCAN_COST_summary.csv` in the repository;
   reproduce with

@@ -50,7 +50,12 @@ platform call failed) / `Malformed` (the reading came back unusable), and is
 
 ## `commit_charge` and `virtual_size` are different things
 
-RSS (resident set) only counts pages the OS has actually faulted in. **Commit
+RSS (resident set) only counts pages the OS has actually faulted in. It is
+also not the process's total physical footprint: on Windows the working set
+contains only pageable allocations, so nonpageable ones (AWE, large-page
+allocations) are not in it; on Linux `VmRSS` excludes explicit HugeTLB pages
+(reported separately as `HugetlbPages`) while transparent huge pages DO count
+as RSS. **Commit
 charge** counts memory charged against the system commit limit whether or not
 it is resident yet — so a `VirtualAlloc(MEM_COMMIT)` is visible in
 `commit_charge` while still invisible to `rss`. It is the axis that catches

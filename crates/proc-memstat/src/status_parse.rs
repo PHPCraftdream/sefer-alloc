@@ -24,9 +24,59 @@
 //! `/proc` — without widening this crate's public API, which the review
 //! explicitly ruled out.
 
+/// The three outcomes a kB-field lookup can have. A bare `Option<u64>`
+/// collapses two causes that must not be treated alike (review round 3,
+/// P4-1): a genuinely ABSENT field is `None` for an optional field, while a
+/// PRESENT-but-invalid one is a content defect (`SnapshotError::Malformed`),
+/// exactly like the same defect on the required `VmRSS` — collapsing them
+/// let a MORE-broken input turn an error back into success. Internal to this
+/// module and `status_convert.rs`; deliberately not part of the crate's
+/// public API.
+// Unconditionally allowed, not `cfg_attr(not(test), ...)`: the only users are
+// `status_convert.rs` (in the library build) and `tests/status_parse.rs`,
+// both `#[path]` includers, invisible to the library AND to the other
+// `#[path]` includers, which compile the same module without touching this
+// item. A `test`-scoped allow leaves those compilations red.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KibFieldLookup {
+    /// No line in the buffer starts with the prefix.
+    Absent,
+    /// A line matched the prefix but failed the strict kB grammar — a wrong
+    /// or missing unit, junk around the digits, or a decimal run too large
+    /// for `u64`.
+    Invalid,
+    /// The line matched the strict kB grammar; its value in kB.
+    Value(u64),
+}
+
+/// [`read_kib_field`] with absence and invalidity kept DISTINCT: see
+/// [`KibFieldLookup`] for why the collapse is not always sound (review
+/// round 3, P4-1). Production conversion uses this form.
+// Allowed for the same `#[path]`-includer reason as [`KibFieldLookup`].
+#[allow(dead_code)]
+pub(crate) fn read_kib_field_lookup(status: &[u8], prefix: &[u8]) -> KibFieldLookup {
+    // Same loop as [`read_kib_field`]: the first line whose prefix matches
+    // decides; the shared tail now returns the three-state lookup.
+    for line in status.split(|&b| b == b'\n') {
+        let Some(rest) = line.strip_prefix(prefix) else {
+            continue;
+        };
+        return field_value(rest);
+    }
+    KibFieldLookup::Absent
+}
+
 /// Read a `<prefix>\t   1234 kB` line out of `/proc/self/status` and return
 /// the numeric field in kB, or `None` if the field is absent or its value is
 /// not a plain ASCII integer followed by the `kB` unit.
+///
+/// This `Option` form deliberately collapses [`KibFieldLookup::Absent`] and
+/// [`KibFieldLookup::Invalid`] — every existing call site (tests, examples,
+/// the fused-reader equivalence oracle) wants exactly that collapse.
+/// Production conversion uses [`read_kib_field_lookup`], which keeps the two
+/// distinct so a present-but-invalid field can be reported as a content
+/// defect instead of silently read as absent (review round 3, P4-1).
 ///
 /// kB is what procfs reports here regardless of the kernel's base page size —
 /// unlike `/proc/self/statm`, which is expressed in pages and would need a
@@ -35,16 +85,13 @@
 ///
 /// Lines whose bytes are not valid UTF-8 are simply not matched; they cannot
 /// abort the scan, which is the entire point of this module.
+// Allowed for the same `#[path]`-includer reason as [`KibFieldLookup`].
+#[allow(dead_code)]
 pub(crate) fn read_kib_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
-    for line in status.split(|&b| b == b'\n') {
-        let Some(rest) = line.strip_prefix(prefix) else {
-            continue;
-        };
-        // "VmRSS:	   1234 kB" — the shared tail below skips the ASCII
-        // whitespace between the prefix and the number, then takes the digits.
-        return field_value(rest);
+    match read_kib_field_lookup(status, prefix) {
+        KibFieldLookup::Value(kib) => Some(kib),
+        KibFieldLookup::Absent | KibFieldLookup::Invalid => None,
     }
-    None
 }
 
 /// Read SEVERAL fields in ONE pass over `status`, in the order `prefixes`
@@ -117,7 +164,14 @@ pub(crate) fn read_kib_fields<const N: usize>(
             let Some(rest) = line.strip_prefix(prefixes[i]) else {
                 continue;
             };
-            out[i] = field_value(rest);
+            out[i] = match field_value(rest) {
+                // The fused reader keeps `read_kib_field`'s collapsing
+                // `Option` output: Absent and Invalid both record `None`, and
+                // a field SEEN yet invalid still counts as resolved (the
+                // `seen` bookkeeping below is unchanged).
+                KibFieldLookup::Value(v) => Some(v),
+                KibFieldLookup::Absent | KibFieldLookup::Invalid => None,
+            };
             seen[i] = true;
             remaining -= 1;
             // REQUIRES distinct, non-overlapping prefixes (see this
@@ -164,42 +218,64 @@ pub(crate) fn read_int_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
 }
 
 /// Shared tail of the kB readers: given everything after the prefix on a
-/// matching line, return its numeric value, or `None` if the line does not
-/// match the strict kB grammar.
+/// matching line, return its value as a [`KibFieldLookup`] — every grammar
+/// rejection (including a decimal run too large for `u64`) is
+/// [`KibFieldLookup::Invalid`], never absence.
 ///
 /// Accepted grammar:
 ///
 /// ```text
-/// line = ASCII-whitespace+ , ASCII-digit+ , ASCII-whitespace+ , "kB" , ASCII-whitespace*
+/// line = ASCII-whitespace* , ASCII-digit+ , ASCII-whitespace+ , "kB" , ASCII-whitespace*
 /// ```
 ///
 /// Deliberate decisions:
 ///
 /// - the unit is REQUIRED and must be exactly `kB` (case-sensitive: lowercase
-///   k, capital B). Mainline kernels print these memory lines as `%5lu kB`
-///   (fs/proc/array.c), so requiring it rejects nothing a real kernel prints;
-///   treating `MB`/`KB`/a missing unit as kB, by contrast, is exactly the
-///   silent unit-substitution misread (a megabyte line read as KiB) that must
-///   never happen here;
+///   k, capital B). Mainline kernels print these memory lines as a literal
+///   TAB after the prefix followed by the value right-aligned to width 8 and
+///   ` kB` (`seq_put_decimal_ull_width(..., 8)` in v6.12
+///   fs/proc/task_mmu.c), so requiring the unit rejects nothing a real
+///   kernel prints; treating `MB`/`KB`/a missing unit as kB, by contrast, is
+///   exactly the silent unit-substitution misread (a megabyte line read as
+///   KiB) that must never happen here. That argument is width-independent:
+///   it survives whatever the kernel's formatting width happens to be;
+/// - leading whitespace between the prefix and the digits is ZERO-or-more:
+///   real kernels always print the TAB anyway (above), so the zero form
+///   never occurs in real procfs output, but its presence is not
+///   load-bearing — the checks that carry validation are digits-end-at-
+///   whitespace and the required exact `kB` unit, so accepting a missing
+///   separator loses nothing (review round 3, P4-4.1);
 /// - whitespace between the digits and the unit is required (`12kB` is
 ///   rejected);
 /// - the numeric token must END at the unit: a trailing non-digit before the
 ///   whitespace/unit (`12oops`, `12.5`, `1e6`) rejects the whole line instead
 ///   of quietly becoming `12`/`12`/`1`.
-fn field_value(rest: &[u8]) -> Option<u64> {
-    let (start, end) = integer_span(rest)?;
+fn field_value(rest: &[u8]) -> KibFieldLookup {
+    let Some((start, end)) = integer_span(rest) else {
+        return KibFieldLookup::Invalid;
+    };
     let tail = &rest[end..];
-    let ws = tail.iter().position(|b| !b.is_ascii_whitespace())?;
+    let Some(ws) = tail.iter().position(|b| !b.is_ascii_whitespace()) else {
+        return KibFieldLookup::Invalid;
+    };
     if ws == 0 {
         // Whitespace between integer and unit is required (`12kB` is not
         // accepted).
-        return None;
+        return KibFieldLookup::Invalid;
     }
-    let unit = tail[ws..].strip_prefix(b"kB")?;
+    let Some(unit) = tail[ws..].strip_prefix(b"kB") else {
+        return KibFieldLookup::Invalid;
+    };
     if !unit.iter().all(|b| b.is_ascii_whitespace()) {
-        return None;
+        return KibFieldLookup::Invalid;
     }
-    parse_ascii_u64(&rest[start..end])
+    // A decimal run too large for `u64` is a content defect, not absence —
+    // mapping it to `Invalid` (not `None`) is precisely the non-monotonicity
+    // review round 3's P4-1 removes.
+    match parse_ascii_u64(&rest[start..end]) {
+        Some(kib) => KibFieldLookup::Value(kib),
+        None => KibFieldLookup::Invalid,
+    }
 }
 
 /// The ASCII-digit run after ASCII-whitespace-only leading bytes; `None` if

@@ -211,3 +211,52 @@ fn an_overflowing_optional_field_is_malformed_not_a_wrapped_value() {
         Err(SnapshotError::Malformed),
     );
 }
+
+/// A wrong unit on an OPTIONAL field is `Malformed`, not a silent `None`.
+///
+/// A megabyte `VmSize`/`VmHWM` is the same silent-unit-substitution misread
+/// (a megabyte line read as KiB) the strict grammar forbids on the required
+/// `VmRSS` — the optionality of the field must not downgrade a content
+/// defect into quiet absence. Before review round 3's P4-1 fix this returned
+/// `Ok` with the field silently `None`.
+#[test]
+fn a_wrong_unit_optional_field_is_malformed_not_a_silent_none() {
+    const FIXTURE_VMSIZE_MB: &[u8] = b"VmRSS:\t 1 kB\nVmSize:\t 12 MB\n";
+    const FIXTURE_VMHWM_MB: &[u8] = b"VmRSS:\t 1 kB\nVmSize:\t 1 kB\nVmHWM:\t 12 MB\n";
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_VMSIZE_MB),
+        Err(SnapshotError::Malformed),
+    );
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_VMHWM_MB),
+        Err(SnapshotError::Malformed),
+    );
+}
+
+/// A value too large to represent EVEN IN KiB is `Malformed`, not a silent
+/// `None`, on the optional fields too.
+///
+/// `18_446_744_073_709_551_616 = u64::MAX + 1` overflows inside the parser
+/// (`parse_ascii_u64`'s accumulation) — BEFORE the ×1024 scale, unlike the
+/// figures pinned by `the_first_overflowing_kib_value_is_malformed` and
+/// `an_overflowing_optional_field_is_malformed_not_a_wrapped_value`, which
+/// parse fine as KiB and overflow only when scaled (`18_014_398_509_481_984`
+/// KiB). Before review round 3's P4-1 fix, this parse-stage overflow on an
+/// optional field silently became `None` — MORE-broken input turned an
+/// error back into success, while the scale-stage overflow on the same
+/// field still raised `Malformed`.
+#[test]
+fn a_parser_overflowing_optional_field_is_malformed_not_a_silent_none() {
+    const FIXTURE_VMSIZE_PARSE_OVERFLOW: &[u8] =
+        b"VmRSS:\t 1 kB\nVmSize:\t 18446744073709551616 kB\n";
+    const FIXTURE_VMHWM_PARSE_OVERFLOW: &[u8] =
+        b"VmRSS:\t 1 kB\nVmSize:\t 1 kB\nVmHWM:\t 18446744073709551616 kB\n";
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_VMSIZE_PARSE_OVERFLOW),
+        Err(SnapshotError::Malformed),
+    );
+    assert_eq!(
+        status_convert::memstat_from_status(FIXTURE_VMHWM_PARSE_OVERFLOW),
+        Err(SnapshotError::Malformed),
+    );
+}

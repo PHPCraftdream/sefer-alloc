@@ -119,7 +119,8 @@ fn scientific_notation_is_not_an_integer() {
 
 #[test]
 fn a_wrong_or_missing_unit_is_rejected_not_read_as_kib() {
-    // procfs prints these lines as `%5lu kB`; treating any other spelling as
+    // procfs prints these lines as a TAB, a width-8 right-aligned value, and
+    // " kB"; treating any other spelling as
     // kB is exactly the silent unit-substitution misread (12 MB read as 12).
     assert_eq!(read_kib_field(b"VmRSS:\t 12 MB\n", b"VmRSS:"), None);
     assert_eq!(read_kib_field(b"VmRSS:\t 12 KB\n", b"VmRSS:"), None);
@@ -237,4 +238,58 @@ fn duplicate_prefixes_are_a_documented_precondition_violation() {
         read_kib_fields(status, [b"VmRSS:", b"VmRSS:"]),
         [Some(7), None]
     );
+}
+
+// ---------------------------------------------------------------------------
+// The three-state lookup: absence and invalid content must not collapse.
+// (review round 3, P4-1)
+// ---------------------------------------------------------------------------
+
+use status_parse::{read_kib_field_lookup, KibFieldLookup};
+
+/// The parser distinguishes ABSENT from PRESENT-but-invalid; the collapsing
+/// `Option` of [`read_kib_field`] cannot, and the conversion layer used to
+/// treat a wrong unit or an unrepresentable value on an OPTIONAL field the
+/// same as a genuinely missing line — silently `None`. This pins the
+/// three-state distinction at the parser level, where the information
+/// actually exists.
+#[test]
+fn the_lookup_distinguishes_absent_invalid_and_value() {
+    // No line starts with the prefix: genuinely absent.
+    assert_eq!(
+        read_kib_field_lookup(b"VmSize:\t 1111 kB\n", b"VmHWM:"),
+        KibFieldLookup::Absent
+    );
+    // Present but the wrong unit: a content defect, not absence.
+    assert_eq!(
+        read_kib_field_lookup(b"VmSize:\t 12 MB\n", b"VmSize:"),
+        KibFieldLookup::Invalid
+    );
+    // Present but too large to represent even as KiB (u64::MAX + 1): the
+    // PARSE-stage overflow is also a content defect, not absence — before
+    // review round 3's P4-1 fix this collapsed to the same `None` as a
+    // missing line while the ×1024 SCALE-stage overflow raised an error,
+    // making the error contract non-monotonic.
+    assert_eq!(
+        read_kib_field_lookup(b"VmSize:\t 18446744073709551616 kB\n", b"VmSize:"),
+        KibFieldLookup::Invalid
+    );
+    assert_eq!(
+        read_kib_field_lookup(b"VmSize:\t 12 kB\n", b"VmSize:"),
+        KibFieldLookup::Value(12)
+    );
+}
+
+/// The documented grammar's leading whitespace is ZERO-or-more, not
+/// one-or-more (review round 3, P4-4.1): `integer_span` always accepted a
+/// missing separator, and the doc was corrected to match rather than the
+/// code restricted. Real kernels always print a literal TAB after the prefix
+/// (`seq_put_decimal_ull_width(..., 8)` in v6.12 fs/proc/task_mmu.c), so the
+/// zero-whitespace shape never occurs in real procfs output — it is pinned
+/// anyway so the documented grammar and the code cannot silently drift
+/// apart again.
+#[test]
+fn no_whitespace_between_prefix_and_digits_still_parses() {
+    assert_eq!(read_kib_field(b"VmRSS:12 kB\n", b"VmRSS:"), Some(12));
+    assert_eq!(read_kib_field(b"VmSize:4096 kB\n", b"VmSize:"), Some(4096));
 }

@@ -46,6 +46,16 @@
 //! carry visible cross-run CI noise, and the verdict is unchanged across it
 //! because both figures are negligible against the syscall.
 //!
+//! **What the cited figures are evidence of — and only of — THAT commit's
+//! code.** The measured code has since changed: the shared field-value tail
+//! the fused reader calls now additionally validates grammar/unit (round-2
+//! P3-1 landed after the measurement), and the whole-`snapshot()`
+//! denominator now acquires via `/proc/thread-self/status` (round-3 P2-1).
+//! Re-running on current HEAD is therefore NOT expected to reproduce these
+//! exact numbers. What IS unchanged: the outer loop structure of both
+//! readers, and the shape of the finding — O(L) three times vs once,
+//! negligible against the syscall.
+//!
 //! So the backend keeps its three `read_kib_field` calls. Fusing them would
 //! buy 2% of a call that a probe makes a handful of times per process, in
 //! exchange for a reader whose correctness has to be kept in step with the
@@ -141,9 +151,11 @@ fn bench(label: &str, status: &[u8], iters: u32) -> (f64, f64) {
 /// Without this, `saved=196.0 ns` is a numerator with nothing under it, and
 /// the same figure argues for opposite decisions depending on the total it is
 /// a fraction of: meaningful against a ~400 ns call, noise against a ~5 us
-/// one. On Linux `snapshot()` reads `/proc/self/status` through
-/// `std::fs::read` — an open/read/close round trip plus the kernel formatting
-/// the file's text on demand — so the parse is only ever part of the cost.
+/// one. On Linux `snapshot()` reads `/proc/thread-self/status` — the
+/// calling thread's own task status, falling back to `/proc/self/status` on
+/// pre-3.17 kernels — through `std::fs::read`, an open/read/close round trip
+/// plus the kernel formatting the file's text on demand, so the parse is
+/// only ever part of the cost.
 ///
 /// Returns ns per call. `iters` is the iteration count of ONE timed batch
 /// (after a 1 000-call warmup), not independent timing samples.
@@ -184,6 +196,10 @@ fn main() {
 
     // And the real thing, where available — the synthetic buffer is a model,
     // and a model's numbers should be checked against the article itself.
+    // This arm parses the leader-named `/proc/self/status`, while the
+    // whole-`snapshot()` denominator below reads the calling thread's
+    // `/proc/thread-self/status`; both reflect the same shared `mm` while
+    // the leader is alive.
     let real_arms = match std::fs::read("/proc/self/status") {
         Ok(real) => Some(bench("REAL /proc/self/status", &real, 200_000)),
         Err(e) => {
@@ -218,7 +234,8 @@ fn main() {
     println!("proc-memstat P4-2: the saving OVER THE WHOLE CALL");
     println!(
         "  whole snapshot() ......... {snap_ns:.1} ns/call  (open+read+close of \
-         /proc/self/status, plus the parse)"
+         the calling thread's task status — /proc/thread-self/status, \
+         falling back to /proc/self/status on pre-3.17 kernels — plus the parse)"
     );
     println!(
         "  parse, three scans ....... {three_ns:.1} ns = {:.1}% of one snapshot()  \

@@ -418,9 +418,15 @@ fn linux_snapshot_reports_the_documented_counters() {
     expect_linux_shape(&snapshot());
 }
 
-/// The byte-scale SMOKE band, live: a SECOND, independent READ of the same
-/// file the backend reads, re-parsed and held against the backend's output
-/// for all three `Vm*` fields. "Independent" covers the read and the fixture
+/// The byte-scale SMOKE band, live: a SECOND, independent READ re-parsed and
+/// held against the backend's output
+/// for all three `Vm*` fields. This test reads `/proc/self/status` — the
+/// thread-group LEADER's task file — while production reads
+/// `/proc/thread-self/status`, the CALLING THREAD's (with a
+/// `/proc/self/status` fallback on pre-3.17 kernels), so the two reads hit
+/// different per-task records, not literally the same file; with the leader
+/// alive both reflect the SAME shared `mm`, which is exactly why the
+/// comparison holds. "Independent" covers the read and the fixture
 /// derivation only — the parsing is the SAME `src/status_parse.rs` module
 /// (`#[path]` above) the backend itself uses, so this does NOT independently
 /// verify the parser; it verifies the backend's output against a fresh read
