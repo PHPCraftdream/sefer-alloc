@@ -168,18 +168,28 @@ fn snapshot_re_export_matches_proc_memstat() {
 /// genuinely near-zero one without naming `proc-memstat`, and the error type
 /// is nameable and `Display`-able through the re-export.
 ///
+/// The type annotation below NAMES `proc_probe::SnapshotError` (round-2
+/// review P4-1): without it the `Err` payload's type is merely inferred from
+/// `try_snapshot`'s return type, and deleting `SnapshotError` from
+/// `src/lib.rs`'s `pub use` would not break this test at all. With it,
+/// removing the re-export is a compile error in THIS test.
+///
 /// Requires the `std` feature: the `try_snapshot`/`SnapshotError` re-export
 /// is std-only, exactly like `snapshot`/`MemStat`.
 #[cfg(feature = "std")]
 #[test]
 fn try_snapshot_re_export_reachable() {
-    match proc_probe::try_snapshot() {
+    // P4-1 type-level pin: names BOTH halves of the re-exported pair, so the
+    // re-export itself is load-bearing for this test's compilation.
+    let typed: Result<proc_probe::MemStat, proc_probe::SnapshotError> = proc_probe::try_snapshot();
+    match typed {
         Ok(m) => {
             let _typed: proc_probe::MemStat = m;
         }
         // `SnapshotError` is `#[non_exhaustive]`, so a wildcard arm is
-        // mandatory from outside `proc-memstat`; binding it here proves the
-        // error type itself crossed the re-export.
+        // mandatory from outside `proc-memstat`. Note what this match does
+        // NOT do: it destructures the outer `Result` and binds the whole
+        // error payload — it never matches on SnapshotError's own variants.
         Err(e) => {
             let _msg: String = e.to_string();
         }
@@ -350,15 +360,20 @@ mod real_emit {
     ///
     /// **Why a re-exec** (the `crates/proc-memstat/tests/non_utf8_name.rs`
     /// pattern): `emit*` write to the process's real stdout, which a
-    /// same-process libtest cannot cleanly observe — the harness captures
-    /// test output through a pipe it owns.
+    /// same-process libtest cannot cleanly observe — when capturing, the
+    /// harness redirects writes into a THREAD-LOCAL IN-PROCESS BUFFER
+    /// (`OUTPUT_CAPTURE` in `library/std/src/io/stdio.rs`; Rust 1.88), not
+    /// an OS pipe, and discards that buffer when the test passes.
     ///
     /// **Why `--nocapture` is REQUIRED on the child**: without it the child's
-    /// libtest harness swallows the `emit*` writes into its capture buffer
-    /// and DISCARDS them on success, so the pipe we read would never see
-    /// them. With `--nocapture` the harness forwards writes straight to the
-    /// inherited stdout — which, because we spawned the child with
-    /// `.output()`, is the pipe we then read.
+    /// libtest harness swallows the `emit*` writes into that same in-process
+    /// capture buffer and DISCARDS them on success, so the OS pipe we read
+    /// would never see them. With `--nocapture` the harness forwards writes
+    /// straight to the inherited stdout — which, because we spawned the child
+    /// with `.output()`, is the OS pipe at the INTER-PROCESS boundary between
+    /// this runner and the re-exec'd child: the only pipe involved here. Two
+    /// different mechanisms, deliberately kept distinct (round-2 review
+    /// P4-4).
     ///
     /// **Why `--format terse` is REQUIRED on the child**: see
     /// [`emit_child_stdout`] (P2-1 — the serial-child pretty formatter would
@@ -424,7 +439,7 @@ const NODE_AGREEMENT_LINES: &[&str] = &[
     "RESULT \t k=1",
     "RESULT\u{00A0}k=1",   // NBSP: whitespace in BOTH models
     "RESULT\u{1680}k=1",   // OGHAM SPACE MARK
-    "RESULT\u{2003}k=1",   // EN SPACE
+    "RESULT\u{2003}k=1",   // EM SPACE
     "RESULT\u{2028}k=1",   // LINE SEPARATOR
     "RESULT\u{2029}k=1",   // PARAGRAPH SEPARATOR
     "RESULT\u{202F}k=1",   // NARROW NO-BREAK SPACE
@@ -709,17 +724,12 @@ fn parser_contract_matches_node_ecmascript_regex() {
         .chain(NODE_DIVERGENCE_LINES.iter().map(|(l, _)| *l))
         .collect();
 
-    // Corpus JSON in a unique temp file (proc-memstat's unique-per-run
-    // pattern), written via the local escaper — no serde dependency.
-    let corpus_path = std::env::temp_dir().join(format!(
-        "proc_probe_p3_2_corpus_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock is after the epoch")
-            .as_nanos()
-    ));
-    let _ = std::fs::remove_file(&corpus_path); // best-effort, pre-existing leftovers
+    // Corpus JSON, built with the local escaper — no serde dependency. P3-3:
+    // the JSON is piped straight to node's STDIN — no temp file, no
+    // filesystem round-trip, no cleanup that an earlier panic could skip, and
+    // no env-var path string whose encoding could lose a raw non-UTF-8 byte
+    // (e.g. a 0xFF byte in a TMPDIR component on Unix) crossing the
+    // Rust->Node boundary.
     let mut json = String::from("{\"regex\":");
     json.push_str(&json_string(&contract.regex_body));
     json.push_str(",\"flags\":");
@@ -734,12 +744,8 @@ fn parser_contract_matches_node_ecmascript_regex() {
         json.push_str(&json_string(l));
     }
     json.push_str("]}");
-    std::fs::write(&corpus_path, json).expect("write corpus temp file");
 
-    let verdicts = run_node_corpus_check(&corpus_path, all_lines.len());
-
-    // Best-effort cleanup of the temp corpus.
-    let _ = std::fs::remove_file(&corpus_path);
+    let verdicts = run_node_corpus_check(&json, all_lines.len());
 
     for (i, l) in NODE_AGREEMENT_LINES.iter().enumerate() {
         assert_eq!(
@@ -784,17 +790,34 @@ fn parser_contract_matches_node_ecmascript_regex() {
     .expect("write node-verification success diagnostic");
 }
 
-/// Invoke node ONCE with the corpus path via an ENV VAR (avoids argv-encoding
-/// pitfalls on Windows and `-e`/argv-index ambiguities across node versions)
-/// and validate the verdict string. Extracted as a fn (not an immediately
-/// invoked closure) to satisfy clippy's `redundant_closure_call`.
-fn run_node_corpus_check(corpus_path: &std::path::Path, expected_len: usize) -> String {
-    let out = std::process::Command::new("node")
+/// Invoke node ONCE, feeding the corpus JSON to the child's STDIN, and
+/// validate the verdict string. A pipe carries the bytes across the
+/// Rust->Node boundary byte-identically (Sol-codex round-2 review P3-3): no
+/// temp file, no filesystem round-trip, no cleanup that an earlier panic
+/// could skip, and no env-var/argv path string whose encoding could lose a
+/// raw non-UTF-8 byte on Unix. Extracted as a fn (not an immediately invoked
+/// closure) to satisfy clippy's `redundant_closure_call`.
+fn run_node_corpus_check(corpus_json: &str, expected_len: usize) -> String {
+    let mut child = std::process::Command::new("node")
         .arg("-e")
         .arg(NODE_CHECK_SCRIPT)
-        .env("PROC_PROBE_P3_2_CORPUS", corpus_path)
-        .output()
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .expect("spawn node (availability checked above)");
+    // Write the whole corpus; `wait_with_output` then drops the stdin handle,
+    // and closing the pipe is what fires node's 'end' event so the child can
+    // finish.
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin was piped")
+        .write_all(corpus_json.as_bytes())
+        .expect("write corpus JSON to node's stdin");
+    let out = child
+        .wait_with_output()
+        .expect("wait for the node corpus check");
     assert!(
         out.status.success(),
         "node corpus check failed:
@@ -819,21 +842,25 @@ fn run_node_corpus_check(corpus_path: &std::path::Path, expected_len: usize) -> 
     v
 }
 
-/// The node one-liner: reads the corpus path from an ENV VAR (avoids
-/// argv-encoding pitfalls on Windows and `-e`/argv-index ambiguities across
-/// node versions), rebuilds the runner regex, and prints one `A`/`R` verdict
-/// per corpus line. The regex body, FLAGS, and trim preprocessing all come
-/// from the runner's extracted ACTIVE contract (Sol-codex round-2 review
-/// P3-1) instead of a hand-copied literal, so the check always executes the
-/// runner's CURRENT semantics: `new RegExp(body, flags)` and
-/// `parsed.trim ? line.trim() : line` before `.exec()`, exactly as
-/// `parseResult` does at `scripts/paired-ab-runner.mjs:253`.
+/// The node one-liner: reads the corpus JSON from STDIN (P3-3 — the bytes
+/// cross the Rust->Node boundary through a pipe byte-identically; no temp
+/// file, no path in an env var or argv, nothing to clean up), rebuilds the
+/// runner regex, and prints one `A`/`R` verdict per corpus line. The regex
+/// body, FLAGS, and trim preprocessing all come from the runner's extracted
+/// ACTIVE contract (Sol-codex round-2 review P3-1) instead of a hand-copied
+/// literal, so the check always executes the runner's CURRENT semantics:
+/// `new RegExp(body, flags)` and `parsed.trim ? line.trim() : line` before
+/// `.exec()`, exactly as `parseResult` does at
+/// `scripts/paired-ab-runner.mjs:253`.
 const NODE_CHECK_SCRIPT: &str = r"
-const fs = require('fs');
-const parsed = JSON.parse(fs.readFileSync(process.env.PROC_PROBE_P3_2_CORPUS, 'utf8'));
-const re = new RegExp(parsed.regex, parsed.flags);
-const prep = (l) => (parsed.trim ? l.trim() : l);
-process.stdout.write(parsed.lines.map((l) => (re.exec(prep(l)) !== null ? 'A' : 'R')).join(''));
+const chunks = [];
+process.stdin.on('data', (chunk) => chunks.push(chunk));
+process.stdin.on('end', () => {
+  const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const re = new RegExp(parsed.regex, parsed.flags);
+  const prep = (l) => (parsed.trim ? l.trim() : l);
+  process.stdout.write(parsed.lines.map((l) => (re.exec(prep(l)) !== null ? 'A' : 'R')).join(''));
+});
 ";
 
 /// The ONLY skippable node-spawn failure is "binary absent" (NotFound).

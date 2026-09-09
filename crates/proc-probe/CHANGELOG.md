@@ -120,6 +120,30 @@ its module doc states:
   `skip_notice_survives_libtest_capture` test pins the capture-visibility
   counterfactually, and the CI `proc-probe-gates` job asserts node and the
   runner script up front so the skip path is structurally impossible there.
+- **Stdin-borne interop corpus** (round-2 review P3-3): the node-verified
+  corpus crosses the Rust->Node boundary as bytes piped to the child's stdin
+  instead of a temp-file path in an env var — no filesystem round-trip, no
+  cleanup that an earlier panic could skip, and no env-var path string whose
+  encoding could lose a raw non-UTF-8 byte on Unix; the full 37-line verdict
+  set is byte-identical to the temp-file transport.
+- **Re-export type pin** (round-2 review P4-1):
+  `try_snapshot_re_export_reachable` names `proc_probe::SnapshotError` in an
+  explicit type annotation, so deleting it from the re-export is a compile
+  error in that test rather than an unobserved API loss (verified
+  counterfactually).
+- **Honest quick-start measurement** (round-2 review P4-2): the README's
+  flagship example captures `elapsed_ns` immediately after the timed work and
+  treats `snapshot()`/`emit*` as a separate, clearly-labeled instrumentation
+  step, so the headline duration no longer includes the measurement
+  machinery.
+- **MSRV coverage for proc-probe's own targets** (round-2 review P4-3): the
+  root `msrv` job compiles `tests/protocol.rs` on the pinned 1.88 toolchain
+  (`cargo check -p proc-probe --all-targets`) in both the default and the
+  bare-metal `--no-default-features` configuration.
+- **Comment corrections** (round-2 review P4-4): libtest's per-test capture
+  is described as a thread-local in-process buffer (`OUTPUT_CAPTURE`),
+  distinct from the OS pipe at the `Command::output()` boundary, and U+2003
+  is labeled EM SPACE (EN SPACE is U+2002).
 
 `try_snapshot_re_export_reachable` additionally proves the fallible
 `try_snapshot()`/`SnapshotError` re-export is usable through `proc-probe`

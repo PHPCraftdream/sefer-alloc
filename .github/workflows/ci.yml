@@ -2672,6 +2672,20 @@ jobs:
       # P3-23); 1.88 here is above that floor and matches the job's pin.
       - run: cargo check -p globalalloc-model --all-features
       - run: cargo test -p globalalloc-model --no-run --all-features
+      # proc-probe-specific MSRV checks (Sol-codex round-2 review, P4-3): the
+      # workspace-root `--all-features` rows at the top of this job reach
+      # proc-probe only as a default-feature path-dependency LIBRARY (through
+      # the root's dev-dependency graph), never as its own tested member —
+      # its `tests/protocol.rs` and the bare-metal `--no-default-features`
+      # configuration were never compiled on the pinned 1.88 toolchain by
+      # anything before these rows. The crate declares
+      # `rust-version = "1.88"`, matching this job's pin exactly.
+      # `--all-targets` is the point: a plain `cargo check` would compile
+      # the library alone and miss the test target. These rows must stay
+      # ABOVE the `dtolnay/rust-toolchain@1.79` switch below, while plain
+      # `cargo` still resolves to 1.88.
+      - run: cargo check -p proc-probe --all-targets
+      - run: cargo check -p proc-probe --all-targets --no-default-features
       # The published library surface has MSRV 1.79: `inline const`, used by
       # `ArrayLinks::new`, is stabilized there. The floor rows check the
       # library on both the host and the no_std `x86_64-unknown-none` target;

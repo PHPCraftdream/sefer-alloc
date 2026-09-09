@@ -7,13 +7,23 @@ re-export of [`proc-memstat`](../proc-memstat)'s single-read RSS +
 one line.*
 
 ```rust
+// 1. The measured region: only the work being timed goes between the two
+//    timestamps.
 let t0 = std::time::Instant::now();             // start of the measured region
+
+// ... the work being timed goes here ...
+
+let elapsed_ns = t0.elapsed().as_nanos();       // captured BEFORE any
+                                                // instrumentation
+
+// 2. Measurement + reporting are a separate AFTER-the-fact step: snapshot()
+//    and emit* are instrumentation whose cost must NOT leak into elapsed_ns.
 let m = proc_probe::snapshot();                 // measure (bytes, one read)
-proc_probe::emit_u64("rss_kib", m.rss / 1024);  // report
-proc_probe::emit_ns("elapsed_ns", t0.elapsed().as_nanos());
+proc_probe::emit_ns("elapsed_ns", elapsed_ns);  // report the work's duration
+proc_probe::emit_u64("rss_kib", m.rss / 1024);  // report memory
 // stdout:
-//   RESULT rss_kib=1234
 //   RESULT elapsed_ns=987654
+//   RESULT rss_kib=1234
 ```
 
 `snapshot()` is best-effort: on a read failure it returns an all-zero
