@@ -1227,6 +1227,17 @@ jobs:
       # node-verified ECMAScript-regex agreement test. Post the std/no_std
       # gating fix, the std-gated tests carry `#[cfg(feature = "std")]`, so
       # the suite still runs (and is meaningful) in BOTH configurations.
+      # Sol-codex review round 2, P3-2: the node-verified interop test in
+      # tests/protocol.rs legitimately SKIPs when the runner script or a
+      # runnable node is absent (a published-crate checkout has no scripts/).
+      # This job runs a normal repository checkout where both exist, so a
+      # skip here would be a real bug: assert both preconditions up front so
+      # the skip path is structurally impossible in CI.
+      - name: precondition (node + runner script present for the interop test)
+        run: |
+          node --version
+          test -f scripts/paired-ab-runner.mjs
+
       - name: test (default std features)
         run: cargo test -p proc-probe --all-targets
 

@@ -98,9 +98,28 @@ its module doc states:
   `scripts/paired-ab-runner.mjs:253`, executed by real Node.js. The six
   documented U+FEFF/U+0085 divergences are explicitly documented, pinned, and
   node-verified rather than claimed away as "identical" (round-1 review
-  finding P3-2). When the runner source or `node` is absent — a
-  published-crate checkout has no `scripts/` — the test SKIPs with a stderr
-  notice, never fails.
+  finding P3-2). When the runner source or `node` is genuinely absent
+  (`ErrorKind::NotFound` — a published-crate checkout has no `scripts/`) the
+  test SKIPs with a stderr notice, never fails; any other spawn error
+  (e.g. PermissionDenied: found but not executable) hard-fails instead of
+  being misclassified as an absent optional tool (round-2 review P3-2a).
+  Skip notices — and the final node-verification success diagnostic — are
+  direct `std::io::stderr()` writes, so they remain visible in ordinary CI
+  logs without `--nocapture` despite libtest capture (round-2 review P3-2b).
+- **Active-contract drift guard** (round-2 review P3-1): the guard no longer
+  substring-checks a hand-copied regex body — it extracts the runner's
+  ACTIVE contract (regex literal body AND flags, plus whether `.trim()`
+  precedes `.exec()`) and compares named fields, failing loudly on drift;
+  the Node check builds `new RegExp(body, flags)` and applies trim exactly
+  as the runner does. Two negative controls pin the previously-invisible
+  drifts (added `i` flag, removed `.trim()`).
+- **Visible, correctly-classified skips** (round-2 review P3-2): the
+  permissive skip path is narrowed to `NotFound`, other spawn errors
+  hard-fail, and both skip notices plus the success diagnostic bypass
+  libtest capture via direct stderr writes; the new
+  `skip_notice_survives_libtest_capture` test pins the capture-visibility
+  counterfactually, and the CI `proc-probe-gates` job asserts node and the
+  runner script up front so the skip path is structurally impossible there.
 
 `try_snapshot_re_export_reachable` additionally proves the fallible
 `try_snapshot()`/`SnapshotError` re-export is usable through `proc-probe`

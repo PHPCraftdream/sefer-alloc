@@ -39,6 +39,7 @@
 //! `std` feature (they do not exist without it).
 
 use proc_probe::RESULT_PREFIX;
+use std::io::Write;
 
 /// The line each `emit*` prints, built with the SAME format string the library
 /// uses (`"{RESULT_PREFIX} {key}={value}"`).
@@ -461,13 +462,167 @@ const NODE_DIVERGENCE_LINES: &[(&str, bool)] = &[
     ("RESULT k=a\u{0085}b", false), // Rust: NEL is Rust-whitespace -> reject; JS: NEL is \S -> accept
 ];
 
-/// Byte-for-byte the body of the regex literal at
-/// `scripts/paired-ab-runner.mjs:253` (inside `parseResult`, lines 250–257;
-/// re-read and confirmed 2026-09-09). Identical copies also exist at
-/// `scripts/r10_5_large_cache_gate.mjs:114`, `scripts/r34_7_causal_harness.mjs:128`
-/// and `scripts/r34_23_vec_harness.mjs:117` — only the paired-ab-runner file
-/// is drift-guarded below.
-const RUNNER_REGEX_SRC: &str = "^RESULT\\s+([a-z0-9_]+)=(\\S+)$";
+/// The documented runner contract this test's corpus and divergence fixtures
+/// were built against: the regex literal BODY at
+/// `scripts/paired-ab-runner.mjs:253` (inside `parseResult`, lines 250–257),
+/// no flags, and `line.trim()` applied immediately before `.exec()`.
+/// Byte-for-byte confirmed 2026-09-09. Identical regex copies also exist at
+/// `scripts/r10_5_large_cache_gate.mjs:114`,
+/// `scripts/r34_7_causal_harness.mjs:128` and
+/// `scripts/r34_23_vec_harness.mjs:117` — only the paired-ab-runner file is
+/// drift-guarded below.
+const EXPECTED_RUNNER_REGEX_BODY: &str = "^RESULT\\s+([a-z0-9_]+)=(\\S+)$";
+
+/// The ACTIVE runner parsing contract, extracted mechanically from the
+/// runner's source text (Sol-codex round-2 review P3-1): the regex literal
+/// body, any flags after the closing slash, and whether `.exec()` is called
+/// on `line.trim()` — the three things the old substring guard could NOT see.
+#[derive(Debug, PartialEq, Eq)]
+struct RunnerContract {
+    /// The literal's body between the slashes.
+    regex_body: String,
+    /// JS regex flags after the closing slash ("" today).
+    flags: String,
+    /// Whether `.exec()` is called on `line.trim()`.
+    trims: bool,
+}
+
+/// Extract the ACTIVE contract from runner source text: find the regex
+/// literal anchored on `/^RESULT` whose flags are immediately followed by
+/// `.exec(` (the production call shape); read the body up to the first
+/// UNESCAPED closing `/`, then ASCII-alphabetic flags, then require exactly
+/// `.exec(` and read the paren-balanced argument; `trims` is whether that
+/// argument ends with `.trim()`.
+///
+/// Returns `None` when the anchor+call shape is absent (the runner
+/// restructured its parser — a drift the caller must report loudly). Uses
+/// `str::get` (checked slicing) throughout so exotic future literal content
+/// can never panic mid-char. Escaped slashes (`\/`) inside the body do not
+/// terminate it. Each occurrence of the anchor is attempted independently;
+/// an occurrence whose flags are not immediately followed by `.exec(` (e.g.
+/// the literal used with `.test(`) is skipped in favor of the next one.
+fn extract_runner_contract(runner_src: &str) -> Option<RunnerContract> {
+    const ANCHOR: &str = "/^RESULT";
+    let mut search_from = 0;
+    while let Some(rel) = runner_src[search_from..].find(ANCHOR) {
+        let lit_start = search_from + rel;
+        search_from = lit_start + ANCHOR.len();
+        // Body: from after the anchor's opening slash to the first UNESCAPED
+        // closing '/'. Walk bytewise with checked slicing (str::get).
+        let mut i = lit_start + ANCHOR.len();
+        let mut body_end = None;
+        while i < runner_src.len() {
+            let b = runner_src.as_bytes()[i];
+            if b == b'\\' {
+                i += 2; // skip the escaped char wholesale (never panics: the
+                        // loop bound re-checks `i < len`)
+                continue;
+            }
+            if b == b'/' {
+                body_end = Some(i);
+                break;
+            }
+            i += 1;
+        }
+        let body_end = body_end?;
+        let regex_body = runner_src.get(lit_start + 1..body_end)?.to_string();
+        // Flags: ASCII-alphabetic chars immediately after the closing slash.
+        let mut j = body_end + 1;
+        while runner_src
+            .get(j..j + 1)
+            .and_then(|c| c.bytes().next())
+            .is_some_and(|b| b.is_ascii_alphabetic())
+        {
+            j += 1;
+        }
+        let flags = runner_src.get(body_end + 1..j)?.to_string();
+        // The production call shape: `.exec(` immediately after the flags.
+        if runner_src.get(j..j + 6) != Some(".exec(") {
+            continue; // not the active callable (e.g. used with `.test(`)
+        }
+        // Read the paren-balanced argument.
+        let arg_start = j + 6;
+        let mut depth = 1usize;
+        let mut k = arg_start;
+        while k < runner_src.len() {
+            match runner_src.as_bytes()[k] {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            k += 1;
+        }
+        if depth != 0 {
+            return None;
+        }
+        let arg = runner_src.get(arg_start..k)?;
+        return Some(RunnerContract {
+            regex_body,
+            flags,
+            trims: arg.ends_with(".trim()"),
+        });
+    }
+    None
+}
+
+/// The single drift-guard entry point used by the interop test AND both
+/// negative-control tests: extract the active contract and compare it to the
+/// documented one, returning a drift message naming the moved field
+/// (Sol-codex round-2 review P3-1).
+fn runner_contract_drift(runner_src: &str) -> Result<RunnerContract, String> {
+    let contract = extract_runner_contract(runner_src).ok_or_else(|| {
+        "cannot locate the `/^RESULT.../...exec(...)` parse contract in \
+         scripts/paired-ab-runner.mjs; the runner's parseResult restructured — \
+         re-sync EXPECTED_RUNNER_REGEX_BODY and the extraction in this test \
+         (Sol-codex round-2 P3-1)"
+            .to_string()
+    })?;
+    if contract.regex_body != EXPECTED_RUNNER_REGEX_BODY {
+        return Err(format!(
+            "runner regex body drifted: documented {EXPECTED_RUNNER_REGEX_BODY:?}, \
+             found {found:?} (Sol-codex round-2 P3-1)",
+            found = contract.regex_body
+        ));
+    }
+    if !contract.flags.is_empty() {
+        return Err(format!(
+            "runner regex flags drifted: documented no flags, found {:?} — \
+             e.g. an added 'i' flag would silently make the parser \
+             case-insensitive, exactly the drift the old substring guard \
+             could not see (Sol-codex round-2 P3-1)",
+            contract.flags
+        ));
+    }
+    if !contract.trims {
+        return Err(
+            "runner preprocessing drifted: documented `line.trim()` immediately \
+             before `.exec()`, found no trim immediately before .exec( — \
+             whitespace handling would have silently drifted under the old \
+             substring guard (Sol-codex round-2 P3-1)"
+                .to_string(),
+        );
+    }
+    Ok(contract)
+}
+
+/// Minimal verbatim copy of the runner's parseResult
+/// (scripts/paired-ab-runner.mjs:250–257) used to build synthetic variants
+/// for the drift-guard negative controls. NEVER the real file: the controls
+/// must not modify or even require it (they run in every configuration,
+/// including --no-default-features and published-crate checkouts).
+const SYNTHETIC_PARSE_RESULT_SRC: &str = r#"function parseResult(out) {
+  const r = {};
+  for (const line of out.split(/\r?\n/)) {
+    const m = /^RESULT\s+([a-z0-9_]+)=(\S+)$/.exec(line.trim());
+    if (m) r[m[1]] = /^-?\d+$/.test(m[2]) ? Number(m[2]) : m[2];
+  }
+  return r;
+}"#;
 
 /// Minimal JSON string escaper (no serde dependency): quotes and escapes
 /// `"` `\` `\n` `\r` `\t`, other chars < 0x20 as `\uXXXX`, everything else —
@@ -506,33 +661,38 @@ fn parser_contract_matches_node_ecmascript_regex() {
     let runner_src = match std::fs::read_to_string(&runner_path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!(
-                "SKIP parser_contract_matches_node_ecmascript_regex: runner not found at {}",
+            report_skip(&format!(
+                "parser_contract_matches_node_ecmascript_regex: runner not \
+                 found at {}",
                 runner_path.display()
-            );
+            ));
             return;
         }
         Err(e) => panic!("failed to read {}: {e}", runner_path.display()),
     };
 
-    // Drift guard: if the runner's parse contract moved, FAIL rather than
-    // silently comparing against a stale copy of the regex.
-    assert!(
-        runner_src.contains(RUNNER_REGEX_SRC),
-        "the runner's parse contract moved; re-sync RUNNER_REGEX_SRC from \
-         scripts/paired-ab-runner.mjs:253 (parseResult, lines 250-257)"
-    );
+    let contract = match runner_contract_drift(&runner_src) {
+        Ok(c) => c,
+        Err(drift) => panic!("drift guard: {drift}"),
+    };
 
     // Node availability: absent node is a SKIP; a failing `node --version`
     // is a real environment error and panics.
     let node_version_out = match std::process::Command::new("node").arg("--version").output() {
         Ok(o) => o,
-        Err(e) => {
-            eprintln!(
-                "SKIP parser_contract_matches_node_ecmascript_regex: node not runnable ({e})"
-            );
-            return;
-        }
+        Err(e) => match node_spawn_skip_reason(&e) {
+            Some(reason) => {
+                report_skip(&format!(
+                    "parser_contract_matches_node_ecmascript_regex: {reason}"
+                ));
+                return;
+            }
+            None => panic!(
+                "`node --version` failed to spawn: {e} — a found-but-broken node \
+                 is a real environment problem, not an absent optional tool \
+                 (Sol-codex round-2 review P3-2a)"
+            ),
+        },
     };
     assert!(
         node_version_out.status.success(),
@@ -561,7 +721,11 @@ fn parser_contract_matches_node_ecmascript_regex() {
     ));
     let _ = std::fs::remove_file(&corpus_path); // best-effort, pre-existing leftovers
     let mut json = String::from("{\"regex\":");
-    json.push_str(&json_string(RUNNER_REGEX_SRC));
+    json.push_str(&json_string(&contract.regex_body));
+    json.push_str(",\"flags\":");
+    json.push_str(&json_string(&contract.flags));
+    json.push_str(",\"trim\":");
+    json.push_str(if contract.trims { "true" } else { "false" });
     json.push_str(",\"lines\":[");
     for (i, l) in all_lines.iter().enumerate() {
         if i > 0 {
@@ -605,14 +769,19 @@ fn parser_contract_matches_node_ecmascript_regex() {
         );
     }
 
-    // Diagnostic: proves under --nocapture that node actually ran (version +
-    // raw verdict string) rather than the test silently skipping.
-    println!(
+    // Diagnostic: proves that node actually ran (version + raw verdict
+    // string) rather than the test silently skipping. Direct stderr write —
+    // a captured println! from a PASSING test is discarded by libtest unless
+    // --nocapture is requested, which CI never does (Sol-codex round-2
+    // review P3-2b).
+    writeln!(
+        std::io::stderr().lock(),
         "node {node_version}: {}/{} agreement lines + {} documented divergences, verdicts={verdicts}",
         NODE_AGREEMENT_LINES.len(),
         all_lines.len(),
         NODE_DIVERGENCE_LINES.len(),
-    );
+    )
+    .expect("write node-verification success diagnostic");
 }
 
 /// Invoke node ONCE with the corpus path via an ENV VAR (avoids argv-encoding
@@ -653,12 +822,161 @@ fn run_node_corpus_check(corpus_path: &std::path::Path, expected_len: usize) -> 
 /// The node one-liner: reads the corpus path from an ENV VAR (avoids
 /// argv-encoding pitfalls on Windows and `-e`/argv-index ambiguities across
 /// node versions), rebuilds the runner regex, and prints one `A`/`R` verdict
-/// per corpus line — mirroring the production call shape exactly
-/// (`re.exec(line.trim()) !== null`, as `parseResult` does at
-/// `scripts/paired-ab-runner.mjs:253`).
+/// per corpus line. The regex body, FLAGS, and trim preprocessing all come
+/// from the runner's extracted ACTIVE contract (Sol-codex round-2 review
+/// P3-1) instead of a hand-copied literal, so the check always executes the
+/// runner's CURRENT semantics: `new RegExp(body, flags)` and
+/// `parsed.trim ? line.trim() : line` before `.exec()`, exactly as
+/// `parseResult` does at `scripts/paired-ab-runner.mjs:253`.
 const NODE_CHECK_SCRIPT: &str = r"
 const fs = require('fs');
 const parsed = JSON.parse(fs.readFileSync(process.env.PROC_PROBE_P3_2_CORPUS, 'utf8'));
-const re = new RegExp(parsed.regex);
-process.stdout.write(parsed.lines.map((l) => (re.exec(l.trim()) !== null ? 'A' : 'R')).join(''));
+const re = new RegExp(parsed.regex, parsed.flags);
+const prep = (l) => (parsed.trim ? l.trim() : l);
+process.stdout.write(parsed.lines.map((l) => (re.exec(prep(l)) !== null ? 'A' : 'R')).join(''));
 ";
+
+/// The ONLY skippable node-spawn failure is "binary absent" (NotFound).
+/// Anything else (e.g. PermissionDenied: found but not executable) is a real
+/// environment problem and must hard-fail, not silently skip (Sol-codex
+/// round-2 review P3-2a). Returns Some(skip reason) for NotFound, None for
+/// fatal.
+fn node_spawn_skip_reason(e: &std::io::Error) -> Option<String> {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        Some(format!("node not runnable ({e})"))
+    } else {
+        None
+    }
+}
+
+/// Direct stderr write — libtest captures println!/eprintln! from a PASSING
+/// test and discards the buffer unless --nocapture is requested, which CI
+/// never does, so a captured skip is indistinguishable from a pass in CI
+/// logs (Sol-codex round-2 review P3-2b). `std::io::stderr().lock()` writes
+/// bypass capture entirely. Mirrors
+/// `crates/proc-memstat/tests/non_utf8_name.rs` exactly.
+fn report_skip(reason: &str) {
+    writeln!(std::io::stderr().lock(), "[protocol] SKIP: {reason}").expect("report skip");
+}
+
+#[test]
+fn drift_guard_rejects_added_case_insensitive_flag() {
+    let mutated = SYNTHETIC_PARSE_RESULT_SRC.replace(
+        r#"=(\S+)$/.exec(line.trim())"#,
+        r#"=(\S+)$/i.exec(line.trim())"#,
+    );
+    assert_ne!(
+        mutated, SYNTHETIC_PARSE_RESULT_SRC,
+        "premise: the mutation must actually apply to the synthetic runner copy"
+    );
+    // Premise of the blindness being fixed (P3-1): the OLD naive substring
+    // guard (`runner_src.contains(EXPECTED_RUNNER_REGEX_BODY)`) still passes
+    // on the mutated source, because the documented body remains present —
+    // the added flag lives AFTER the closing slash and is invisible to a
+    // body-substring check.
+    assert!(
+        mutated.contains(EXPECTED_RUNNER_REGEX_BODY),
+        "premise: the old substring guard is blind to an added regex flag"
+    );
+    let err = runner_contract_drift(&mutated)
+        .expect_err("the drift guard must reject an added case-insensitive flag");
+    assert!(
+        err.to_lowercase().contains("flag"),
+        "drift message must name the flags field, got: {err}"
+    );
+}
+
+#[test]
+fn drift_guard_rejects_removed_trim() {
+    let mutated = SYNTHETIC_PARSE_RESULT_SRC.replace(".exec(line.trim())", ".exec(line)");
+    assert_ne!(
+        mutated, SYNTHETIC_PARSE_RESULT_SRC,
+        "premise: the mutation must actually apply to the synthetic runner copy"
+    );
+    // Same premise as the flag control (P3-1): the OLD substring guard is
+    // blind — the regex body itself is untouched, only the preprocessing
+    // around `.exec(` changed.
+    assert!(
+        mutated.contains(EXPECTED_RUNNER_REGEX_BODY),
+        "premise: the old substring guard is blind to removed trim preprocessing"
+    );
+    let err =
+        runner_contract_drift(&mutated).expect_err("the drift guard must reject removed trim");
+    assert!(
+        err.contains("trim"),
+        "drift message must mention the trim drift, got: {err}"
+    );
+}
+
+#[test]
+fn drift_guard_accepts_untouched_synthetic_runner() {
+    let contract = runner_contract_drift(SYNTHETIC_PARSE_RESULT_SRC)
+        .expect("the verbatim runner copy must match the documented contract");
+    assert_eq!(contract.regex_body, EXPECTED_RUNNER_REGEX_BODY);
+    assert_eq!(contract.flags, "");
+    assert!(contract.trims);
+}
+
+#[test]
+fn node_spawn_errors_other_than_not_found_are_fatal_not_skips() {
+    // A DIRECTORY, not the node binary: spawning it yields an error verified
+    // empirically on this Windows machine as ErrorKind::PermissionDenied
+    // (raw os error 5); on Unix EACCES maps to PermissionDenied the same way.
+    let err = std::process::Command::new(std::env::current_dir().expect("current_dir"))
+        .arg("--version")
+        .output()
+        .expect_err("spawning a directory must fail");
+    assert!(
+        err.kind() != std::io::ErrorKind::NotFound,
+        "premise: the spawn failed with a non-NotFound kind, got {:?}",
+        err.kind()
+    );
+    assert!(
+        node_spawn_skip_reason(&err).is_none(),
+        "a found-but-unspawnable target is FATAL, not a skippable absent tool \
+         (Sol-codex round-2 review P3-2a); got kind {:?}",
+        err.kind()
+    );
+    // The genuinely-absent case stays skippable.
+    assert!(
+        node_spawn_skip_reason(&std::io::Error::from(std::io::ErrorKind::NotFound)).is_some(),
+        "NotFound must remain the single skippable spawn failure"
+    );
+}
+
+/// P3-2b counterfactual (Sol-codex round-2 review): the SKIP notice must
+/// reach the REAL stderr even though libtest captures (and, for a passing
+/// test, DISCARDS) println!/eprintln! output — CI never passes --nocapture.
+/// Mirrors `crates/proc-memstat/tests/non_utf8_name.rs`'s
+/// `skip_notice_survives_both_libtest_capture_layers`: re-exec this test
+/// binary with a marker env var and `.env_remove("RUST_TEST_NOCAPTURE")`, no
+/// `--nocapture`, and assert the direct-stderr notice appears in the child's
+/// CAPTURED stderr. Under the pre-fix eprintln! implementation this test
+/// FAILS (the child's passing harness discards the buffer).
+#[test]
+fn skip_notice_survives_libtest_capture() {
+    const TEST: &str = "skip_notice_survives_libtest_capture";
+    const MARKER: &str = "PROC_PROBE_PROTOCOL_SKIP_CAPTURE_CHILD";
+    const REASON: &str = "synthetic libtest-capture probe";
+
+    if std::env::var_os(MARKER).is_some() {
+        report_skip(REASON);
+        return;
+    }
+
+    let out = std::process::Command::new(std::env::current_exe().expect("current_exe"))
+        .args(["--exact", TEST])
+        .env(MARKER, "1")
+        .env_remove("RUST_TEST_NOCAPTURE")
+        .output()
+        .expect("spawn libtest-capture regression runner");
+    assert!(
+        out.status.success(),
+        "libtest-capture regression runner failed: {out:?}"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("UTF-8 skip diagnostic");
+    assert!(
+        stderr.contains(&format!("[protocol] SKIP: {REASON}")),
+        "skip notice was hidden by libtest capture: {stderr:?}"
+    );
+}
