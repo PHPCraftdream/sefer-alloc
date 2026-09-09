@@ -337,7 +337,10 @@ mod platform {
     /// not be able to fail the whole read and zero out the numeric fields
     /// via the fallback — see `status_parse` (review P2-3).
     fn read_status() -> Result<Vec<u8>, std::io::Error> {
-        super::status_read::read_status_from(THREAD_STATUS, PROCESS_STATUS)
+        super::status_read::read_status_from(
+            std::path::Path::new(THREAD_STATUS),
+            std::path::Path::new(PROCESS_STATUS),
+        )
     }
 
     pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {

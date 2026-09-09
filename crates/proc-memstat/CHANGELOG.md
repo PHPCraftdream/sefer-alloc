@@ -102,8 +102,7 @@ version ever carried.
   integer.** `12oops`, `12.5`, and `1e6` were read as `12`, `12`, and `1` —
   and `12 MB` was silently read as 12 KiB — because the byte parser cut the
   value at the first non-digit and never checked the unit. The accepted
-  grammar is now exactly `zero-or-more ASCII whitespace + integer + one
-  ASCII whitespace + "kB" + trailing whitespace` (real kernels always print
+  grammar is now exactly `zero-or-more ASCII whitespace + integer + one-or-more ASCII whitespace + "kB" + trailing whitespace` (real kernels always print
   the tab before the unit; unit REQUIRED and case-sensitive: mainline
   kernels print these lines as a literal TAB after the prefix, the value
   right-aligned to width 8, and " kB" (v6.12 fs/proc/task_mmu.c), so

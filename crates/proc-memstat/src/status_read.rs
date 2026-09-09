@@ -33,9 +33,15 @@
 /// "must be an old kernel". The fallback file is correct whenever the
 /// leader is alive, which on such a kernel is the only situation this read
 /// can be made in.
+///
+/// The arguments are [`std::path::Path`]s, not `&str`s: the operation is a
+/// file read, not text processing, and on Unix a path is arbitrary bytes
+/// that need not be valid UTF-8 — a `&str` parameter forced every caller,
+/// the test harness included, through a UTF-8 conversion that panics on a
+/// legitimate non-UTF-8 temp path (Sol-codex review round 4, P3-1).
 pub(crate) fn read_status_from(
-    thread_status: &str,
-    process_status: &str,
+    thread_status: &std::path::Path,
+    process_status: &std::path::Path,
 ) -> Result<Vec<u8>, std::io::Error> {
     match std::fs::read(thread_status) {
         Ok(bytes) => Ok(bytes),

@@ -34,6 +34,13 @@
 //! lives on the calling (libtest worker) thread, so it is unobservable
 //! through the library's `/proc/self` fallback. The main 3.17+ regression
 //! coverage (thread-self path, bytes-not-read_to_string) is unchanged.
+//! The skip is made OBSERVABLE (round 4, P4-1): the child writes a
+//! machine-readable `SKIP` marker to a runner-provided result file, and the
+//! runner prints a visible skip notice from it on its own output — the
+//! child's bare `println!` is hidden by its own libtest harness, and the
+//! runner's captured child output previously appeared only on the failure
+//! path (`tests/thread_leader_exit.rs` result-file pattern, adapted to a
+//! child that runs under libtest).
 //!
 //! **Under the counterfactual regression** (`read_to_string` in
 //! `src/lib.rs`'s `read_status`): the non-UTF-8 status fails
@@ -54,14 +61,51 @@ mod status_parse;
 /// another copy of itself.
 const SCENARIO_CHILD: &str = "PROC_MEMSTAT_NON_UTF8_NAME_CHILD";
 
+/// Per-run result-file env var, set ONLY on the freshly-spawned scenario
+/// process: on a legacy-kernel skip the child writes an explicit
+/// machine-readable `SKIP ...` marker there, and the runner surfaces it on
+/// ITS OWN output. The child's bare `println!` cannot serve: the child is a
+/// libtest binary whose harness hides a passing `#[test]`'s captured
+/// output, and the runner prints its `Command::output()` text only inside
+/// the failure-path assert — on exit 0 both are invisible (Sol-codex round
+/// 4, P4-1). A result FILE rather than a distinguishable exit code, because
+/// the child is judged by libtest's exit status (a skip exits 0 exactly
+/// like a pass, and any real assertion failure already exits non-zero):
+/// the file adds the marker without touching that contract. This is the
+/// `tests/thread_leader_exit.rs` result-file pattern, adapted to a child
+/// that runs UNDER libtest.
+const SCENARIO_RESULT: &str = "PROC_MEMSTAT_NON_UTF8_NAME_RESULT";
+
 /// Run the scenario alone in a fresh process, and fail this test (with the
 /// child's captured output) if that child fails. Same shape as
 /// `tests/monotonicity.rs`.
+///
+/// The child records its outcome in a per-run result file (the
+/// `tests/thread_leader_exit.rs` pattern, adapted to a child that runs
+/// UNDER libtest): a legacy-kernel skip must be visible on the PARENT's own
+/// output, not buried in the child's internally-captured text — the child's
+/// `println!` is hidden by its own libtest harness (a passing `#[test]`),
+/// and this runner only prints its `Command::output()` capture on the
+/// failure path (Sol-codex round 4, P4-1).
 fn run_scenario_alone(scenario: &'static str) {
     let exe = std::env::current_exe().expect("current_exe resolves this test binary");
+
+    // Per-run path + pre-spawn delete: a stale report from an earlier run
+    // can never satisfy this run (the `tests/thread_leader_exit.rs` rule).
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let result_path = std::env::temp_dir().join(format!(
+        "proc_memstat_non_utf8_name_{pid}_{nanos}_result.txt"
+    ));
+    let _ = std::fs::remove_file(&result_path);
+
     let out = std::process::Command::new(&exe)
         .args(["--exact", scenario])
         .env(SCENARIO_CHILD, "1")
+        .env(SCENARIO_RESULT, &result_path)
         .output()
         .unwrap_or_else(|e| panic!("failed to re-spawn this binary for scenario {scenario}: {e}"));
     assert!(
@@ -73,6 +117,21 @@ fn run_scenario_alone(scenario: &'static str) {
         stdout = String::from_utf8_lossy(&out.stdout),
         stderr = String::from_utf8_lossy(&out.stderr),
     );
+
+    // A machine-readable SKIP marker in the result file is surfaced on the
+    // runner's own output UNCONDITIONALLY — not only inside a failure-path
+    // assert message. This stays a skip, not a failure: the fix is purely
+    // about observing an already-legitimate legacy-kernel skip, not about
+    // changing when a skip happens (Sol-codex round 4, P4-1).
+    if let Ok(report) = std::fs::read_to_string(&result_path) {
+        if report.starts_with("SKIP") {
+            println!(
+                "[non_utf8_name] SKIPPED — child scenario report:\n{report}\
+                 (the scenario's real assertions did NOT run on this kernel)"
+            );
+        }
+    }
+    let _ = std::fs::remove_file(&result_path);
 }
 
 // `prctl` is variadic in glibc; declared locally so the test crate needs no
@@ -122,12 +181,22 @@ fn scenario_a_non_utf8_task_name_cannot_blank_the_real_backend_read() {
     let status_bytes = match std::fs::read("/proc/thread-self/status") {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            println!(
-                "SKIP: kernel has no /proc/thread-self (added in Linux 3.17); \
+            let reason = "kernel has no /proc/thread-self (added in Linux 3.17); \
                  this scenario — which proves the backend reads the CALLING \
                  THREAD's own renamed status — requires that file and cannot \
-                 be observed via /proc/self (Sol-codex round 3, P3-1)."
-            );
+                 be observed via /proc/self (Sol-codex round 3, P3-1)";
+            println!("SKIP: {reason}.");
+            // Machine-readable marker for the runner (see `SCENARIO_RESULT`):
+            // the runner prints a visible skip notice from this file on ITS
+            // OWN output, unconditionally — this child's `println!` above is
+            // captured (hidden) inside a passing libtest run, and the
+            // runner's Command::output() text appears only on the failure
+            // path (Sol-codex round 4, P4-1). Best-effort: a failed write
+            // degrades to the previous, invisible-skip behavior — it must
+            // NOT turn a legitimate legacy-kernel skip into a failure.
+            if let Some(result_path) = std::env::var_os(SCENARIO_RESULT) {
+                let _ = std::fs::write(result_path, format!("SKIP {reason}\n"));
+            }
             return;
         }
         Err(e) => panic!("read /proc/thread-self/status failed: {e}"),

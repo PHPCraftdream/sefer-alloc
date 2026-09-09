@@ -32,11 +32,13 @@
 /// let a MORE-broken input turn an error back into success. Internal to this
 /// module and `status_convert.rs`; deliberately not part of the crate's
 /// public API.
-// Unconditionally allowed, not `cfg_attr(not(test), ...)`: the only users are
-// `status_convert.rs` (in the library build) and `tests/status_parse.rs`,
-// both `#[path]` includers, invisible to the library AND to the other
-// `#[path]` includers, which compile the same module without touching this
-// item. A `test`-scoped allow leaves those compilations red.
+// Unconditionally allowed, not `cfg_attr(not(test), ...)`. In the library
+// build this enum is NOT dead: `status_convert.rs` is an ordinary `mod`
+// (see `src/lib.rs`) that uses it directly. The allow exists for the OTHER
+// compilations of this file — the test/example `#[path]` includers (see the
+// module doc) — which compile this module WITHOUT `status_convert`, where
+// these items go genuinely unused. Those includers span both `test`-cfg'd
+// and non-`test` compilations, so no narrower scoping covers them all.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KibFieldLookup {

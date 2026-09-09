@@ -6,7 +6,7 @@
 //! The production `read_status()` runs against real kernel paths, so its
 //! fallback is unreachable wherever `/proc/thread-self` exists — i.e. on
 //! every kernel this repo is ever compiled on. Here the seam's two path
-//! arguments are INJECTED (missing paths, temp files, a directory), so all
+//! arguments are INJECTED (missing paths, temp files, an interior-NUL path), so all
 //! four shapes of the branch matrix are exercised directly:
 //!
 //! - the fallback DOES fire on a `NotFound` primary read, and reads the
@@ -60,10 +60,7 @@ fn fallback_fires_on_not_found_and_returns_fallback_bytes() {
     let (fallback_path, bytes) = write_temp("fallback", b"VmRSS:\t  123456 kB\n");
     let missing = temp_path("missing_thread");
 
-    let result = status_read::read_status_from(
-        missing.to_str().expect("utf-8 temp path"),
-        fallback_path.to_str().expect("utf-8 temp path"),
-    );
+    let result = status_read::read_status_from(&missing, &fallback_path);
 
     assert_eq!(result.expect("fallback read must succeed"), bytes);
 
@@ -79,10 +76,7 @@ fn no_fallback_when_primary_read_succeeds() {
     let (primary_path, bytes) = write_temp("primary", b"VmHWM:\t    4321 kB\n");
     let missing = temp_path("missing_process");
 
-    let result = status_read::read_status_from(
-        primary_path.to_str().expect("utf-8 temp path"),
-        missing.to_str().expect("utf-8 temp path"),
-    );
+    let result = status_read::read_status_from(&primary_path, &missing);
 
     assert_eq!(result.expect("primary read must succeed"), bytes);
 
@@ -103,8 +97,8 @@ fn non_not_found_error_is_not_masked() {
     let (fallback_path, _bytes) = write_temp("nul_case", b"VmRSS:\t       0 kB\n");
 
     let result = status_read::read_status_from(
-        "proc_memstat_bad\0path",
-        fallback_path.to_str().expect("utf-8 temp path"),
+        std::path::Path::new("proc_memstat_bad\0path"),
+        &fallback_path,
     );
 
     let err = result.expect_err("an interior-NUL path must fail");
@@ -127,11 +121,75 @@ fn not_found_from_fallback_read_propagates() {
     let missing_thread = temp_path("missing_thread_both");
     let missing_process = temp_path("missing_process_both");
 
-    let result = status_read::read_status_from(
-        missing_thread.to_str().expect("utf-8 temp path"),
-        missing_process.to_str().expect("utf-8 temp path"),
-    );
+    let result = status_read::read_status_from(&missing_thread, &missing_process);
 
     let err = result.expect_err("both paths missing must fail");
     assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+}
+
+/// The P3-1 regression fixture (Sol-codex review round 4): the seam takes
+/// `&Path`, so a temp path that is NOT valid UTF-8 — which `std::env::
+/// temp_dir()` can legitimately produce via a non-UTF-8 `TMPDIR` path
+/// component on Unix — flows through the read untouched. On the pre-fix
+/// `&str` signature every call site converted first, and
+/// `path.to_str().expect("utf-8 temp path")` PANICKED on exactly this path
+/// during test setup, before the seam — and the fallback logic under test —
+/// was ever reached. A plain Cyrillic or other valid-non-ASCII name would
+/// NOT exercise this: it is valid UTF-8, so the old conversion succeeded.
+#[cfg(unix)]
+#[test]
+fn non_utf8_temp_path_is_read_without_conversion() {
+    use std::os::unix::ffi::OsStrExt;
+
+    // Same uniqueness scheme as `temp_path`, plus one raw 0xFF byte — valid
+    // in a Unix path component, invalid at any position of a UTF-8 string.
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut name =
+        std::ffi::OsString::from(format!("proc_memstat_status_read_{pid}_{nanos}_non_utf8_"));
+    name.push(std::ffi::OsStr::from_bytes(b"\xFF.txt"));
+    let path = std::env::temp_dir().join(name);
+
+    // Premise: this is genuinely the path shape the old setup panicked on.
+    assert!(
+        path.to_str().is_none(),
+        "fixture premise: the temp path must not be valid UTF-8"
+    );
+
+    let fallback_missing = temp_path("non_utf8_missing_fallback");
+
+    // Linux filesystems accept any byte but `/` and NUL in a component, so
+    // this normally succeeds and the strong round-trip assertion runs: the
+    // seam must return the REAL file's bytes, which a lossy UTF-8 conversion
+    // could not do (it would name a different, nonexistent file). A
+    // filesystem that validates names (macOS APFS) may refuse the create —
+    // there the fixture degrades, loudly, to the weaker no-panic assertion.
+    let bytes = b"VmRSS:\t  4242 kB\n".to_vec();
+    match std::fs::write(&path, &bytes) {
+        Ok(()) => {
+            let result = status_read::read_status_from(&path, &fallback_missing);
+            assert_eq!(
+                result.expect("the seam must read the REAL non-UTF-8 path"),
+                bytes,
+                "the seam must return the REAL file's bytes — a lossy UTF-8 \
+                 conversion would have named a different, nonexistent file"
+            );
+        }
+        Err(e) => {
+            println!(
+                "NOTE: this filesystem refused the non-UTF-8 fixture name \
+                 ({e}); asserting only the no-panic behavior"
+            );
+            let result = status_read::read_status_from(&path, &fallback_missing);
+            assert!(
+                result.is_err(),
+                "with no fixture file on disk the seam must return Err — \
+                 without panicking on the non-UTF-8 path"
+            );
+        }
+    }
+    let _ = std::fs::remove_file(&path);
 }
