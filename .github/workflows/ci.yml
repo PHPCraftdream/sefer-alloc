@@ -1179,6 +1179,81 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo publish --dry-run -p proc-memstat
 
+  proc-probe-gates:
+    # Sol-codex proc-probe review round 1, P3-3: NOTHING in main CI ran this
+    # crate's own gates. The workspace is non-virtual with no default-members,
+    # and the `test-workspace` job lists its packages explicitly — proc-probe
+    # is not among them, so no `cargo test -p proc-probe` / clippy / rustdoc
+    # row existed anywhere here (compiling the crate as a dev-dependency or
+    # through an example does not run its integration tests, per Cargo's
+    # package-selection rules). The only place `cargo test -p proc-probe` ran
+    # was release.yml's own pre-publish gate — which fires at actual release
+    # time, far too late to catch a regression during ordinary development.
+    #
+    # Single-OS, deliberately NOT the three-OS matrix proc-memstat-gates uses
+    # above: this crate holds no unsafe and no FFI of its own
+    # (`#![forbid(unsafe_code)]`); its only OS-sensitive surface is transitive
+    # through the proc-memstat dependency, which proc-memstat-gates' own
+    # three-OS matrix already covers. proc-probe's own source carries zero
+    # platform-conditional code.
+    #
+    # The bare-metal cross-build row keeps the no_std promise honest now that
+    # it is a real, fixed one: with `default-features = false` the crate has
+    # ZERO dependencies and must build for a target with no std at all. One
+    # proportionate build step, not a whole no_std pipeline (same shape as
+    # test-workspace's per-crate `--target thumbv7em-none-eabi` rows).
+    name: proc-probe gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          # Installs the bare-metal target up front (the action's own target
+          # installation, equivalent to `rustup target add`).
+          targets: thumbv7em-none-eabi
+
+      - name: fmt
+        run: cargo fmt -p proc-probe -- --check
+
+      - name: clippy (all targets, warnings as errors)
+        run: cargo clippy -p proc-probe --all-targets -- -D warnings
+
+      - name: clippy (--no-default-features, warnings as errors)
+        run: cargo clippy -p proc-probe --all-targets --no-default-features -- -D warnings
+
+      # The crate's own integration suite (`tests/protocol.rs`): parser-model
+      # round-trips, the real re-exec'd-child stdout-bytes contract, and the
+      # node-verified ECMAScript-regex agreement test. Post the std/no_std
+      # gating fix, the std-gated tests carry `#[cfg(feature = "std")]`, so
+      # the suite still runs (and is meaningful) in BOTH configurations.
+      - name: test (default std features)
+        run: cargo test -p proc-probe --all-targets
+
+      # Feature-off configuration: the emit family and the proc-memstat
+      # re-export are compiled out; what survives is the `RESULT_PREFIX`
+      # protocol constant and the std-independent parser-model tests. This
+      # row catches a compile break or a name-resolution regression in the
+      # configuration a no_std consumer actually builds.
+      - name: test (--no-default-features)
+        run: cargo test -p proc-probe --no-default-features --all-targets
+
+      # Both renders are warning-gated because the two feature configs
+      # produce different item sets (the std-gated re-export and emit-family
+      # docs vanish under --no-default-features).
+      - name: rustdoc (warnings as errors, default features)
+        run: cargo doc -p proc-probe --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: rustdoc (--no-default-features, warnings as errors)
+        run: cargo doc -p proc-probe --no-default-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: no_std bare-metal cross-build (thumbv7em-none-eabi)
+        run: cargo build -p proc-probe --no-default-features --target thumbv7em-none-eabi
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
