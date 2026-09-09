@@ -99,6 +99,61 @@ fn malformed_values_are_none_rather_than_a_guess() {
 }
 
 #[test]
+fn a_trailing_nondigit_before_the_unit_rejects_the_line() {
+    // The numeric token must END where the unit begins: `12oops` must not
+    // quietly become `12`.
+    assert_eq!(read_kib_field(b"VmRSS:\t 12oops kB\n", b"VmRSS:"), None);
+}
+
+#[test]
+fn a_decimal_point_is_not_an_integer() {
+    // `12.5` truncated to `12` would under-report by half a unit with no sign.
+    assert_eq!(read_kib_field(b"VmRSS:\t 12.5 kB\n", b"VmRSS:"), None);
+}
+
+#[test]
+fn scientific_notation_is_not_an_integer() {
+    // `1e6` truncated to `1` would misreport by six orders of magnitude.
+    assert_eq!(read_kib_field(b"VmRSS:\t 1e6 kB\n", b"VmRSS:"), None);
+}
+
+#[test]
+fn a_wrong_or_missing_unit_is_rejected_not_read_as_kib() {
+    // procfs prints these lines as `%5lu kB`; treating any other spelling as
+    // kB is exactly the silent unit-substitution misread (12 MB read as 12).
+    assert_eq!(read_kib_field(b"VmRSS:\t 12 MB\n", b"VmRSS:"), None);
+    assert_eq!(read_kib_field(b"VmRSS:\t 12 KB\n", b"VmRSS:"), None);
+    assert_eq!(read_kib_field(b"VmRSS:\t 12 KiB\n", b"VmRSS:"), None);
+    // Line ends right after the digits: no unit at all.
+    assert_eq!(read_kib_field(b"VmRSS:\t 12\n", b"VmRSS:"), None);
+    // Whitespace between digits and unit is required.
+    assert_eq!(read_kib_field(b"VmRSS:\t 12kB\n", b"VmRSS:"), None);
+}
+
+#[test]
+fn junk_after_the_unit_rejects_the_line() {
+    assert_eq!(read_kib_field(b"VmRSS:\t 12 kB extra\n", b"VmRSS:"), None);
+}
+
+#[test]
+fn plain_kib_values_still_parse() {
+    // Positive control: the strict grammar must not reject what real kernels
+    // actually print.
+    assert_eq!(read_kib_field(b"VmRSS:\t 1234 kB\n", b"VmRSS:"), Some(1234));
+    assert_eq!(read_kib_field(b"VmRSS:\t 0 kB\n", b"VmRSS:"), Some(0));
+    assert_eq!(
+        read_kib_field(b"VmRSS:\t 12345678 kB\n", b"VmRSS:"),
+        Some(12345678)
+    );
+}
+
+#[test]
+fn trailing_whitespace_after_the_unit_is_accepted() {
+    // No trailing newline: only ASCII whitespace may follow the unit.
+    assert_eq!(read_kib_field(b"VmRSS:\t 12 kB ", b"VmRSS:"), Some(12));
+}
+
+#[test]
 fn a_final_line_without_a_trailing_newline_still_parses() {
     assert_eq!(read_kib_field(b"VmRSS:\t 64 kB", b"VmRSS:"), Some(64));
 }
@@ -128,7 +183,7 @@ use status_parse::read_kib_fields;
 /// change.
 #[test]
 fn the_fused_reader_agrees_with_the_per_field_reader() {
-    let cases: [&[u8]; 5] = [
+    let cases: [&[u8]; 7] = [
         NON_UTF8_NAME,
         b"VmPeak:\t 9999 kB\nVmSize:\t 1111 kB\nVmRSS:\t 2222 kB\nVmHWM:\t 3333 kB\n",
         // Absent fields.
@@ -138,6 +193,10 @@ fn the_fused_reader_agrees_with_the_per_field_reader() {
         b"VmRSS:\tx 12 kB\nVmRSS:\t 77 kB\n",
         // No trailing newline.
         b"VmRSS:\t 64 kB",
+        // Trailing junk before the unit: both readers must reject, not read 12.
+        b"VmRSS:\t 12oops kB\n",
+        // Wrong unit: a megabyte line must not be read as KiB.
+        b"VmRSS:\t 12 MB\n",
     ];
     let prefixes: [&[u8]; 3] = [b"VmRSS:", b"VmSize:", b"VmHWM:"];
     for (i, status) in cases.iter().enumerate() {

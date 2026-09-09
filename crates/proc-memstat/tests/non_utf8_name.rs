@@ -1,0 +1,162 @@
+//! End-to-end guard for the P2-3 fix (review round 2, P3-3a): the Linux
+//! backend must read `/proc/thread-self/status` as BYTES
+//! (`std::fs::read`), not via `read_to_string`.
+//!
+//! `tests/status_parse.rs`'s
+//! `the_utf8_route_this_parser_replaced_would_still_lose_every_field` only
+//! proves `String::from_utf8` fails on a fabricated fixture — it never
+//! exercises the production reader. If the backend regressed to
+//! `read_to_string`, every existing live test would stay green: a test
+//! binary has an ASCII name, hence an ASCII status, which both routes read
+//! fine. This file closes that gap by running the REAL backend function
+//! (`proc_memstat::try_snapshot`) against a GENUINELY non-UTF-8 status.
+//!
+//! Kernel facts this relies on (verified empirically on a 6.18 kernel and
+//! against mainline `fs/proc/array.c`):
+//!
+//! * `prctl(PR_SET_NAME)` sets the CALLING THREAD's `comm` from raw bytes,
+//!   with no UTF-8 validation (16-byte bound including the NUL).
+//! * `/proc/<pid>/status`'s `Name:` line prints the comm through
+//!   `seq_escape_str(m, tcomm, ESCAPE_SPACE | ESCAPE_SPECIAL, "\n\\")`,
+//!   which escapes only space/special ASCII — bytes >= 0x80 (e.g. 0xFF)
+//!   pass through RAW. A comm containing 0xFF therefore makes the whole
+//!   status file invalid UTF-8: exactly the input a `read_to_string`
+//!   reader fails on with `InvalidData`.
+//!
+//! **Fresh-process isolation** (the `tests/monotonicity.rs` pattern): the
+//! runner re-executes this binary with `--exact <test>` plus a marker env
+//! var; the child runs the scenario alone. This keeps the `prctl` name
+//! change inside a throwaway process — comm is per-task and dies with the
+//! child, so the runner (and any sibling test binary) never sees it.
+//!
+//! **Under the counterfactual regression** (`read_to_string` in
+//! `src/lib.rs`'s `read_status`): the non-UTF-8 status fails
+//! `InvalidData` → `try_snapshot()` returns `Err(SnapshotError::Os)` → the
+//! assertion below fails, instead of silently passing like every other
+//! live test would.
+
+#![cfg(all(target_os = "linux", not(miri)))]
+
+// The parser, pulled in by `#[path]` — the sanctioned pattern (see
+// `tests/status_parse.rs`) — to prove it reads the ASCII fields out of the
+// same non-UTF-8 bytes the backend just consumed end-to-end.
+#[path = "../src/status_parse.rs"]
+mod status_parse;
+
+/// Marker env var, set ONLY on the freshly-spawned scenario process: the
+/// marked process runs its scenario body directly instead of spawning yet
+/// another copy of itself.
+const SCENARIO_CHILD: &str = "PROC_MEMSTAT_NON_UTF8_NAME_CHILD";
+
+/// Run the scenario alone in a fresh process, and fail this test (with the
+/// child's captured output) if that child fails. Same shape as
+/// `tests/monotonicity.rs`.
+fn run_scenario_alone(scenario: &'static str) {
+    let exe = std::env::current_exe().expect("current_exe resolves this test binary");
+    let out = std::process::Command::new(&exe)
+        .args(["--exact", scenario])
+        .env(SCENARIO_CHILD, "1")
+        .output()
+        .unwrap_or_else(|e| panic!("failed to re-spawn this binary for scenario {scenario}: {e}"));
+    assert!(
+        out.status.success(),
+        "fresh-process scenario {scenario} failed ({status}):\n\
+         --- child stdout ---\n{stdout}\n\
+         --- child stderr ---\n{stderr}",
+        status = out.status,
+        stdout = String::from_utf8_lossy(&out.stdout),
+        stderr = String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// `prctl` is variadic in glibc; declared locally so the test crate needs no
+// `libc` dependency (the crate's other locally-declared FFI, same shape).
+extern "C" {
+    fn prctl(option: core::ffi::c_int, ...) -> core::ffi::c_int;
+}
+
+/// Child body: give THIS task a non-UTF-8 name, then run the real backend
+/// against the status file that name corrupts. Every link the test depends
+/// on is asserted (the `tests/thread_leader_exit.rs` discipline: prove the
+/// scenario is real, then assert on it).
+fn scenario_a_non_utf8_task_name_cannot_blank_the_real_backend_read() {
+    // 1. Set the CALLING THREAD's comm to raw bytes including 0xFF. 14 bytes
+    //    including the NUL, inside the kernel's 16-byte comm bound.
+    //    SAFETY: `name` is a valid NUL-terminated pointer for the duration
+    //    of the call; PR_SET_NAME only copies from it.
+    let name: &[u8; 14] = b"proc-memstat\xff\0";
+    let ret = unsafe {
+        prctl(15 /* PR_SET_NAME */, name.as_ptr(), 0, 0, 0)
+    };
+    assert_eq!(ret, 0, "prctl(PR_SET_NAME) must succeed");
+
+    // 2. Read the status BYTES — the same call shape the backend's
+    //    acquisition step makes.
+    let status_bytes =
+        std::fs::read("/proc/thread-self/status").expect("read /proc/thread-self/status");
+
+    // 3. Premise self-check A: the `Name:` line carries the RAW 0xFF byte,
+    //    not an ASCII `\xFF` escape. On a kernel that escaped it the
+    //    scenario cannot exist — fail loudly rather than pass vacuously.
+    let name_line = status_bytes
+        .split(|&b| b == b'\n')
+        .find(|line| line.starts_with(b"Name:"))
+        .expect("status must carry a Name: line");
+    assert!(
+        name_line.contains(&0xFF),
+        "kernel escaped the 0xFF in comm (line {name_line:?}) — the scenario \
+         cannot exist on this kernel"
+    );
+
+    // 4. Premise self-check B: the file is genuinely NOT valid UTF-8 — the
+    //    in-run counterfactual that makes the assertion below mean something
+    //    (a `read_to_string` reader fails exactly this).
+    assert!(
+        String::from_utf8(status_bytes.clone()).is_err(),
+        "status bytes must be invalid UTF-8 for this scenario to exist"
+    );
+
+    // 5. THE assertion: the real backend reads it fine. Under the
+    //    read_to_string regression this read fails InvalidData →
+    //    Err(SnapshotError::Os) → this test fails.
+    let m = proc_memstat::try_snapshot().expect(
+        "try_snapshot must read a non-UTF-8-named task's status (bytes, not \
+         read_to_string)",
+    );
+    assert!(m.rss > 0, "rss must be non-zero, got {}", m.rss);
+    assert!(
+        m.virtual_size.is_some(),
+        "Linux must report virtual_size (VmSize)"
+    );
+    assert!(m.peak_rss.is_some(), "Linux must report peak_rss (VmHWM)");
+    assert!(
+        m.commit_charge.is_none(),
+        "Linux must leave commit_charge None; got {:?}",
+        m.commit_charge
+    );
+
+    // 6. The best-effort wrapper must not take the all-zero fallback either.
+    assert!(
+        proc_memstat::snapshot().rss > 0,
+        "snapshot() must not fall back to zeros on a non-UTF-8 task name"
+    );
+
+    // 7. The parser reads the ASCII fields out of these very bytes. Presence
+    //    only — NOT compared against try_snapshot()'s rss: the two reads are
+    //    at different instants and RSS legitimately moves.
+    assert!(
+        status_parse::read_kib_field(&status_bytes, b"VmRSS:").is_some(),
+        "parser must find VmRSS in the non-UTF-8 status bytes"
+    );
+}
+
+/// A non-UTF-8 task name must not be able to blank the real backend's read.
+#[cfg(all(target_os = "linux", not(miri)))]
+#[test]
+fn a_non_utf8_task_name_cannot_blank_the_real_backend_read() {
+    if std::env::var_os(SCENARIO_CHILD).is_some() {
+        scenario_a_non_utf8_task_name_cannot_blank_the_real_backend_read();
+    } else {
+        run_scenario_alone("a_non_utf8_task_name_cannot_blank_the_real_backend_read");
+    }
+}

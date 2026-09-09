@@ -261,9 +261,16 @@ pub fn snapshot() -> MemStat {
 #[cfg(all(target_os = "linux", not(miri)))]
 mod status_parse;
 
+// The bytes-to-`MemStat` conversion seam (review round 2, P3-2/P3-3b): a
+// closed, independently testable home for the `* 1024` scale and the error
+// classification, `#[path]`-included by `tests/status_convert.rs` on every
+// host without widening the crate's public API.
+#[cfg(all(target_os = "linux", not(miri)))]
+mod status_convert;
+
 #[cfg(all(target_os = "linux", not(miri)))]
 mod platform {
-    use super::status_parse::read_kib_field;
+    use super::status_convert::snapshot_from_read;
     use super::{MemStat, SnapshotError};
 
     /// The calling THREAD's own task status. `/proc/thread-self` is a magic
@@ -280,6 +287,31 @@ mod platform {
     /// leader-exit scenario stays unmeasurable, exactly as before the fix.
     const PROCESS_STATUS: &str = "/proc/self/status";
 
+    /// The acquisition step: the calling THREAD's own task status, falling
+    /// back to the leader-named file on kernels without
+    /// `/proc/thread-self`.
+    ///
+    /// Deliberately the ONLY thing this module does itself: everything after
+    /// the bytes are in hand (the `* 1024` scale, the field mapping, the
+    /// error classification) is `status_convert::snapshot_from_read`, which
+    /// `tests/status_convert.rs` exercises per-injected-result (review round
+    /// 2, P3-2/P3-3b).
+    ///
+    /// `read` (bytes), NOT `read_to_string`: a non-UTF-8 task name must
+    /// not be able to fail the whole read and zero out the numeric fields
+    /// via the fallback — see `status_parse` (review P2-3).
+    fn read_status() -> Result<Vec<u8>, std::io::Error> {
+        match std::fs::read(THREAD_STATUS) {
+            Ok(bytes) => Ok(bytes),
+            // Linux < 3.17 has no `/proc/thread-self` at all; fall back to
+            // the leader-named file so old kernels keep their previous
+            // (correct-while-leader-alive) behaviour instead of losing the
+            // reading to a missing path.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::read(PROCESS_STATUS),
+            Err(e) => Err(e),
+        }
+    }
+
     pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {
         // The caller's OWN task status, not the thread-group leader's
         // (review round 2, P2-1). `/proc/self` resolves to the TGID — the
@@ -294,34 +326,14 @@ mod platform {
         // status file still EXISTS but carries no `VmRSS`/`VmSize`/`VmHWM`:
         // the process is alive and measurable, and the leader-named file no
         // longer shows it. The calling thread always holds the shared `mm`,
-        // and all threads share it — its status always carries the fields,
-        // and its figures ARE the whole process's. They are never summed
-        // across threads; there is exactly one task read here.
+        // and all threads share it — its figures ARE the whole process's.
+        // They are never summed across threads; there is exactly one task
+        // read here.
         //
-        // `read` (bytes), NOT `read_to_string`: a non-UTF-8 task name must
-        // not be able to zero out the numeric fields — see `status_parse`.
-        let status = match std::fs::read(THREAD_STATUS) {
-            Ok(bytes) => bytes,
-            // Linux < 3.17 has no `/proc/thread-self` at all; fall back to
-            // the leader-named file so old kernels keep their previous
-            // (correct-while-leader-alive) behaviour instead of losing the
-            // reading to a missing path.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::read(PROCESS_STATUS).map_err(|_| SnapshotError::Os)?
-            }
-            Err(_) => return Err(SnapshotError::Os),
-        };
-        // VmRSS is the one field with no `Option` to express absence, so a
-        // procfs without it is Malformed rather than a silent zero.
-        let rss = read_kib_field(&status, b"VmRSS:").ok_or(SnapshotError::Malformed)?;
-        Ok(MemStat {
-            rss: rss * 1024,
-            virtual_size: read_kib_field(&status, b"VmSize:").map(|kib| kib * 1024),
-            // The task status exposes no commit-charge counter; `VmSize`
-            // above is address space, a different quantity (see `MemStat`).
-            commit_charge: None,
-            peak_rss: read_kib_field(&status, b"VmHWM:").map(|kib| kib * 1024),
-        })
+        // The rest of the path — parse, `* 1024` scale, `Ok`/`Os`/
+        // `Malformed` classification — is `snapshot_from_read`, and lives
+        // (and is tested) in `status_convert`.
+        snapshot_from_read(read_status())
     }
 }
 

@@ -92,6 +92,50 @@ version ever carried.
   the thread-exit syscall while a worker keeps running; on the pre-fix
   backend the same scenario returns `Malformed` and fails, with the fix the
   worker gets a real reading.
+- **Linux: the kB parser accepted a numeric PREFIX instead of a validated
+  integer.** `12oops`, `12.5`, and `1e6` were read as `12`, `12`, and `1` —
+  and `12 MB` was silently read as 12 KiB — because the byte parser cut the
+  value at the first non-digit and never checked the unit. The accepted
+  grammar is now exactly `ASCII whitespace + integer + ASCII whitespace +
+  "kB" + trailing whitespace` (unit REQUIRED and case-sensitive: mainline
+  kernels print these lines as `%5lu kB`, so requiring it rejects nothing a
+  real kernel prints, while treating any other unit as kB is precisely the
+  silent misread this forbids). Any deviation is rejected and surfaces as
+  `Malformed` through `try_snapshot`. (Sol-codex review round 2, P3-1.)
+- **The ×1024 scale claim was moved from a live ratio band to an exact
+  fixture oracle.** The old oracle compared two LIVE reads in a
+  `kb*64..=kb*16384` band, which cannot tell ×1024 from ×2048 or from a
+  ×1000 slip (for a 512-multiple kB figure such as 4096, both wrong
+  multipliers pass every leg — demonstrated in review round 2's P3-2). The
+  production conversion `status bytes -> Result<MemStat, SnapshotError>` was
+  therefore extracted into a closed seam (`src/status_convert.rs`: the ONLY
+  home of the `* 1024` scale and of the `Os`/`Malformed` classification),
+  `#[path]`-included by `tests/status_convert.rs` and held against an
+  immutable fixture byte-for-byte — exact bytes for all four fields,
+  absent-optional handling, and the boundary `u64::MAX / 1024` KiB figure.
+  The live test stays as an availability/smoke band only (the ±25%
+  tightening was rightly reverted once already), its known blind spots are
+  pinned AS PASSING so the imprecision is testable documentation, and the
+  x1000 negative control now uses a page-granular kB figure (12_348,
+  printable by a real 4 KiB-page kernel) with a paired positive control,
+  replacing the old 12_345 input that no real procfs could print.
+- **The UTF-8-regression guard and the error contract are tested THROUGH the
+  real backend, not around it.** The parser-fixture test could not catch a
+  regression of the production reader to `read_to_string` (every live test
+  passes on an ASCII-named binary), and `Ok`/`Os`/`Malformed` were only ever
+  constructed as bare enum values. Now: each error variant is produced
+  against ONE injected result at the conversion seam — a failed read
+  (`InvalidData`, the exact kind `read_to_string` produces on non-UTF-8)
+  maps to `Os`, never `Malformed`; malformed content maps to `Malformed`;
+  and the causation behind `snapshot()`'s all-zero fallback is proven
+  deterministically rather than inferred from two independent live calls
+  (Sol-codex round 2, P3-3). Additionally, a fresh-process Linux scenario
+  (`tests/non_utf8_name.rs`) sets the calling thread's name to raw bytes
+  containing `0xFF` via `prctl(PR_SET_NAME)` — bytes >= 0x80 pass through
+  the kernel's `Name:` escaping RAW, so `/proc/thread-self/status` is
+  genuinely invalid UTF-8 — and runs the real backend against it; under a
+  `read_to_string` regression this test FAILS (verified by temporary
+  revert), where every previous live test would have stayed green.
 - **`commit` named three different quantities depending on the platform.**
   Split into `virtual_size` and `commit_charge` (see "Added"). **Breaking
   relative to the in-tree API**, and the reason this crate is published as

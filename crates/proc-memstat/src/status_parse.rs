@@ -26,7 +26,7 @@
 
 /// Read a `<prefix>\t   1234 kB` line out of `/proc/self/status` and return
 /// the numeric field in kB, or `None` if the field is absent or its value is
-/// not a plain ASCII integer.
+/// not a plain ASCII integer followed by the `kB` unit.
 ///
 /// kB is what procfs reports here regardless of the kernel's base page size —
 /// unlike `/proc/self/statm`, which is expressed in pages and would need a
@@ -111,22 +111,89 @@ pub(crate) fn read_kib_fields<const N: usize>(
     out
 }
 
-/// Shared tail of both readers: given everything after the prefix on a
-/// matching line, return its numeric value.
+/// Read a unit-less integer line (`Tgid:`, `Pid:`) from `/proc` status.
+///
+/// Grammar: `ASCII-whitespace* digits ASCII-whitespace* end-of-line` — a bare
+/// non-negative ASCII integer with NO unit, which is what the identity fields
+/// carry (the `Tgid:`/`Pid:` checks in `tests/thread_leader_exit.rs`).
+/// Deliberately a SEPARATE grammar from [`read_kib_field`]'s strict kB one:
+/// a kB line read here is rejected, because after the digits comes `" kB"`,
+/// which is not whitespace-only — a unit-bearing value must not silently pass
+/// through the unit-less reader. Trailing non-whitespace junk after the
+/// digits (`1234x`) is likewise rejected rather than truncated to `1234`.
+// Unconditionally allowed, not `cfg_attr(not(test), ...)`: the only users are
+// `#[path]` includers, invisible to the library AND to the other `#[path]`
+// includers, which compile the same module without touching this function. A
+// `test`-scoped allow leaves those compilations red.
+#[allow(dead_code)]
+pub(crate) fn read_int_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
+    for line in status.split(|&b| b == b'\n') {
+        let Some(rest) = line.strip_prefix(prefix) else {
+            continue;
+        };
+        let (start, end) = integer_span(rest)?;
+        // Unit-less grammar: after the digits only whitespace may follow. A
+        // kB line read here is rejected — " kB" is not whitespace-only.
+        if !rest[end..].iter().all(|b| b.is_ascii_whitespace()) {
+            return None;
+        }
+        return parse_ascii_u64(&rest[start..end]);
+    }
+    None
+}
+
+/// Shared tail of the kB readers: given everything after the prefix on a
+/// matching line, return its numeric value, or `None` if the line does not
+/// match the strict kB grammar.
+///
+/// Accepted grammar:
+///
+/// ```text
+/// line = ASCII-whitespace+ , ASCII-digit+ , ASCII-whitespace+ , "kB" , ASCII-whitespace*
+/// ```
+///
+/// Deliberate decisions:
+///
+/// - the unit is REQUIRED and must be exactly `kB` (case-sensitive: lowercase
+///   k, capital B). Mainline kernels print these memory lines as `%5lu kB`
+///   (fs/proc/array.c), so requiring it rejects nothing a real kernel prints;
+///   treating `MB`/`KB`/a missing unit as kB, by contrast, is exactly the
+///   silent unit-substitution misread (a megabyte line read as KiB) that must
+///   never happen here;
+/// - whitespace between the digits and the unit is required (`12kB` is
+///   rejected);
+/// - the numeric token must END at the unit: a trailing non-digit before the
+///   whitespace/unit (`12oops`, `12.5`, `1e6`) rejects the whole line instead
+///   of quietly becoming `12`/`12`/`1`.
 fn field_value(rest: &[u8]) -> Option<u64> {
-    let digits_start = rest.iter().position(|b| b.is_ascii_digit())?;
-    if rest[..digits_start]
-        .iter()
-        .any(|b| !b.is_ascii_whitespace())
-    {
+    let (start, end) = integer_span(rest)?;
+    let tail = &rest[end..];
+    let ws = tail.iter().position(|b| !b.is_ascii_whitespace())?;
+    if ws == 0 {
+        // Whitespace between integer and unit is required (`12kB` is not
+        // accepted).
         return None;
     }
-    let digits_end = digits_start
-        + rest[digits_start..]
+    let unit = tail[ws..].strip_prefix(b"kB")?;
+    if !unit.iter().all(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
+    parse_ascii_u64(&rest[start..end])
+}
+
+/// The ASCII-digit run after ASCII-whitespace-only leading bytes; `None` if
+/// there is no digit or non-whitespace junk precedes it.
+fn integer_span(rest: &[u8]) -> Option<(usize, usize)> {
+    let start = rest.iter().position(|b| b.is_ascii_digit())?;
+    if rest[..start].iter().any(|b| !b.is_ascii_whitespace()) {
+        return None;
+    }
+    let end = start
+        + rest[start..]
             .iter()
             .position(|b| !b.is_ascii_digit())
-            .unwrap_or(rest.len() - digits_start);
-    parse_ascii_u64(&rest[digits_start..digits_end])
+            .unwrap_or(rest.len() - start);
+    Some((start, end))
 }
 
 /// Parse a non-empty run of ASCII digits, returning `None` on overflow.

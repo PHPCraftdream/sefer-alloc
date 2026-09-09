@@ -11,10 +11,18 @@
 //!    (the crate-doc platform matrix), and which figure
 //!    `charged_or_reserved_bytes()` must return;
 //! 2. UNITS — on Linux, that the kB figures of `/proc/self/status` are
-//!    scaled to bytes. The `* 1024` lives in the backend, not in the parser
-//!    that `tests/status_parse.rs` already covers with exact-value oracles —
-//!    so this file parses the SAME `/proc/self/status` independently and
-//!    holds the backend's output against the documented `kB * 1024`;
+//!    scaled to bytes — but only as a COARSE SMOKE BAND. The exact `* 1024`
+//!    proof is `tests/status_convert.rs`, which holds the production
+//!    conversion seam (`status_convert::memstat_from_status`) against an
+//!    immutable fixture. A live check cannot be exact (two adjacent reads
+//!    legitimately differ), so this file's live scale check pins presence
+//!    plus a loose ratio band only, and its negative controls below pin
+//!    exactly which wrong multipliers the band CANNOT distinguish
+//!    (`tests/status_convert.rs` is where ×1024 vs ×2048 vs ×1000 is
+//!    actually pinned). The `* 1024` itself lives in
+//!    `src/status_convert.rs` — the backend's acquisition seam — not in the
+//!    parser that `tests/status_parse.rs` already covers with exact-value
+//!    oracles;
 //! 3. NEGATIVE CONTROLS — every oracle here is fed the exact value shapes of
 //!    the historical defects (dead peak counter, dropped `* 1024`, a
 //!    `* 1000` slip, crossed backends) and must REJECT them, on every host,
@@ -132,24 +140,34 @@ fn expect_macos_shape(m: &MemStat) {
     );
 }
 
-/// One Linux field must be `kb * 1024` — BYTES, not the raw kB figure
-/// `/proc/self/status` reports. Three legs, each catching what the previous
-/// one lets through:
+/// A live Linux field must LOOK kB*1024-scaled — a SMOKE check, not a proof
+/// of exactness (the exact proof is `tests/status_convert.rs`, production
+/// seam vs immutable fixture; a live check cannot be exact because two
+/// adjacent reads of `VmSize` legitimately differ). Three legs, each
+/// catching what the previous one lets through:
 ///
 /// 1. PAGE GRANULARITY: every `Vm*` figure is derived from page counts
 ///    (`PAGE_SHIFT >= 12` on every mainline target), so the kB value is a
 ///    multiple of >= 4 and correctly scaled bytes are a multiple of 4096.
-///    This is the leg that catches a subtle `* 1000` slip, which leg 3's
-///    magnitude band is far too wide for (a `* 1000` value is only 2.4% off
-///    — well inside any band that tolerates real read-to-read drift).
+///    This catches a `* 1000` slip ONLY when the kB figure is not itself a
+///    multiple of 512: for a kB figure like 4096, `4096 * 1000` is a
+///    multiple of 4096 and inside the band, so nothing here catches it (the
+///    blind spot is pinned as a PASSING expectation by
+///    `the_smoke_band_passes_exactly_what_the_review_demonstrated` below;
+///    exact rejection of both wrong multipliers lives in
+///    `tests/status_convert.rs`).
 /// 2. STRICTLY ABOVE the raw kB figure: a DROPPED `* 1024` reports the kB
 ///    number itself. Two adjacent reads of a quiet process see the same
 ///    value, and RSS cannot shrink ~1024-fold between them — so this leg
 ///    catches the drop even when the kB figure is 4096-aligned by luck.
 /// 3. MAGNITUDE BAND on the RATIO `actual_bytes / kb`: the live caller
 ///    snapshots and re-parses at different instants, so exact equality
-///    cannot be demanded — but every defect class this function exists for
-///    moves that ratio by three orders of magnitude or more.
+///    cannot be demanded.
+///
+/// To be explicit: this oracle is a smoke check that CANNOT distinguish
+/// ×1024 from ×2048 or from ×1000 on cooperating inputs — review P3-2
+/// demonstrated both counterexamples pass every leg. It exists to catch a
+/// total scale loss, not a subtle one.
 ///
 /// # Why leg 3 is a ratio band and not a ±25% value band
 ///
@@ -169,10 +187,10 @@ fn expect_macos_shape(m: &MemStat) {
 /// the correct 1024. A dropped `* 1024` lands at ratio 1 and a doubled one at
 /// 1 048 576; both are still rejected by four orders of magnitude, while no
 /// plausible address-space drift between two adjacent reads comes near 16x.
-/// Legs 1 and 2 are unchanged and are what actually catch the subtle cases
-/// (a `* 1000` slip, and a dropped scale whose kB figure happens to be
-/// page-aligned); leg 3 never contributed precision those two lacked, only
-/// fragility.
+/// Legs 1 and 2 are unchanged; leg 3 never contributed precision those two
+/// lacked, only fragility. (None of the three legs makes this an exactness
+/// oracle — see the doc above and `tests/status_convert.rs` for where
+/// ×1024 is actually pinned.)
 fn expect_byte_scaled(actual_bytes: u64, kb: u64, field: &str) {
     assert_eq!(
         actual_bytes % 4096,
@@ -313,10 +331,16 @@ fn byte_scale_oracle_rejects_kib_reported_as_bytes() {
         || expect_byte_scaled(4096, 4096, "VmRSS"),
         "a raw kB figure (4096 kB) reported as bytes",
     );
-    // A `* 1000` slip, which legs 2-3 tolerate (2.4% off) — leg 1 must:
-    // 12_345_000 % 4096 == 3_752 != 0.
+    // A `* 1000` slip on a REALISTIC kB figure — a multiple of 4 (a 4 KiB-
+    // page kernel can print it) but not of 512, so leg 1 (granularity)
+    // rejects it: 12_348_000 % 4096 == 2_656 != 0. The old control used
+    // kb = 12_345, which is not even a multiple of 4 — an input no real
+    // page-granular procfs can print — so it only proved rejection of an
+    // impossible value. For a 512-multiple kB figure (e.g. 4096) this leg
+    // has nothing to say; that blind spot is pinned AS PASSING by
+    // `the_smoke_band_passes_exactly_what_the_review_demonstrated` below.
     rejects_what(
-        || expect_byte_scaled(12_345_000, 12_345, "VmRSS"),
+        || expect_byte_scaled(12_348 * 1000, 12_348, "VmRSS"),
         "a x1000 scale slip",
     );
     // A DOUBLED `* 1024` — the one defect only leg 3 catches, and therefore
@@ -337,6 +361,24 @@ fn byte_scale_oracle_accepts_correct_scaling() {
     // Positive control: the oracle must accept exactly what the contract
     // demands — otherwise the live Linux assertion could never pass at all.
     expect_byte_scaled(4096 * 1024, 4096, "VmRSS");
+    // Paired with the x1000 rejection above: the SAME kB figure scaled
+    // correctly must pass, proving that rejection is the scale's fault, not
+    // the input's.
+    expect_byte_scaled(12_348 * 1024, 12_348, "VmRSS");
+}
+
+/// Pin the review's two counterexamples AS PASSING: the smoke band accepts a
+/// `* 2048` (doubled) and a `* 1000` slip on kb = 4096 — the granularity leg
+/// only fires when the kB figure is not a multiple of 512, and 4096*1000 is
+/// a multiple of 4096 and inside the band. This is deliberate, testable
+/// documentation of the smoke band's imprecision (so nobody reintroduces a
+/// "this proves exact scale" claim): a plain call here IS the no-panic
+/// assertion. The exact rejection of BOTH wrong multipliers lives in
+/// `tests/status_convert.rs` (production seam vs immutable fixture).
+#[test]
+fn the_smoke_band_passes_exactly_what_the_review_demonstrated() {
+    expect_byte_scaled(4096 * 2048, 4096, "VmRSS");
+    expect_byte_scaled(4096 * 1000, 4096, "VmRSS");
 }
 
 // ---------------------------------------------------------------------------
@@ -368,12 +410,17 @@ fn linux_snapshot_reports_the_documented_counters() {
     expect_linux_shape(&snapshot());
 }
 
-/// The KiB-for-bytes oracle, live: an independent parse of the SAME file the
-/// backend reads, held against the backend's output for all three `Vm*`
-/// fields. Dropping the backend's `* 1024` reports KiB and fails this.
+/// The byte-scale SMOKE band, live: an independent parse of the SAME file
+/// the backend reads, held against the backend's output for all three `Vm*`
+/// fields. Availability + coarse band only — presence of the fields and a
+/// ratio within 16x either side of kB*1024. This CANNOT prove the exact
+/// `* 1024` scale (two adjacent reads legitimately differ, and the band
+/// above pins which wrong multipliers it cannot distinguish): the exact
+/// proof is `tests/status_convert.rs`, production conversion seam vs an
+/// immutable fixture.
 #[cfg(all(target_os = "linux", not(miri)))]
 #[test]
-fn linux_snapshot_scales_kib_fields_to_bytes() {
+fn linux_snapshot_byte_scale_smoke_band_holds() {
     let m = snapshot();
     expect_linux_shape(&m);
     let status = std::fs::read("/proc/self/status").expect("read /proc/self/status");

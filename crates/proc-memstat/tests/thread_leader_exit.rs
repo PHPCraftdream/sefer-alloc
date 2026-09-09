@@ -115,7 +115,7 @@ mod scenario {
 
     use proc_memstat::{snapshot, try_snapshot};
 
-    use crate::status_parse::read_kib_field;
+    use crate::status_parse::{read_int_field, read_kib_field};
 
     /// Marker env var, set ONLY on the freshly-spawned child whose main
     /// thread will play (and lose) the leader.
@@ -203,8 +203,8 @@ mod scenario {
     pub fn assert_main_thread_is_leader() {
         let status = std::fs::read(THREAD_SELF_STATUS)
             .expect("main thread reads its own /proc/thread-self/status");
-        let tgid = read_kib_field(&status, b"Tgid:").expect("status carries Tgid:");
-        let pid = read_kib_field(&status, b"Pid:").expect("status carries Pid:");
+        let tgid = read_int_field(&status, b"Tgid:").expect("status carries Tgid:");
+        let pid = read_int_field(&status, b"Pid:").expect("status carries Pid:");
         assert_eq!(
             tgid, pid,
             "the scenario's main thread must be the thread-group leader \
@@ -331,8 +331,8 @@ mod scenario {
         // Identity of THIS thread: a non-leader worker with a live mm.
         let own = std::fs::read(THREAD_SELF_STATUS)
             .expect("worker reads its own /proc/thread-self/status");
-        let tid = read_kib_field(&own, b"Pid:").expect("worker status carries Pid:");
-        let tgid = read_kib_field(&own, b"Tgid:").expect("worker status carries Tgid:");
+        let tid = read_int_field(&own, b"Pid:").expect("worker status carries Pid:");
+        let tgid = read_int_field(&own, b"Tgid:").expect("worker status carries Tgid:");
         assert_ne!(
             tid, tgid,
             "the spawned worker must be a non-leader thread (Pid != Tgid)"
@@ -387,7 +387,7 @@ mod scenario {
 
         // The old source is dead, and dead in exactly the documented way.
         let observed_tgid =
-            read_kib_field(&old_status, b"Tgid:").expect("zombie status keeps Tgid:");
+            read_int_field(&old_status, b"Tgid:").expect("zombie status keeps Tgid:");
         assert_eq!(
             observed_tgid, tgid,
             "/proc/self/status must still describe THIS process"

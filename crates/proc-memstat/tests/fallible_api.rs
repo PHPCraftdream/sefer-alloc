@@ -38,6 +38,22 @@ fn the_stub_target_reports_unsupported_rather_than_zeros() {
 /// adding the fallible entry point must not have changed what `snapshot()`
 /// returns.
 ///
+/// **This test is an AVAILABILITY check only, and cannot prove the
+/// Err→default causation its subject once claimed** (review round 2,
+/// P3-3b): `snapshot()` and `try_snapshot()` here are two independent live
+/// OS calls, so one succeeding does not prove the other failed, and the
+/// `Err(_)` arm's assertion runs only when it runs. The causation is proven
+/// where it can be:
+///
+/// - on stub targets, where `try_snapshot()` cannot succeed at all,
+///   `snapshot()` returning exactly `MemStat::default()` through the real
+///   path is deterministic — asserted in `tests/platform_contract.rs`;
+/// - per-injected-result at the conversion seam, in
+///   `tests/status_convert.rs` (`Err(_) → SnapshotError::Os`,
+///   `Ok(malformed) → SnapshotError::Malformed`), where the public wrapper
+///   is literally `try_snapshot().unwrap_or_default()` (`src/lib.rs`,
+///   `fn snapshot`).
+///
 /// Compares field PRESENCE and not the byte values on purpose. An earlier
 /// revision asserted `snapshot() == m` and was flaky within minutes: the two
 /// calls are two independent readings of a live process, so its rss moves
