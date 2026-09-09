@@ -1228,14 +1228,21 @@ jobs:
       # gating fix, the std-gated tests carry `#[cfg(feature = "std")]`, so
       # the suite still runs (and is meaningful) in BOTH configurations.
       # Sol-codex review round 2, P3-2: the node-verified interop test in
-      # tests/protocol.rs legitimately SKIPs when the runner script or a
-      # runnable node is absent (a published-crate checkout has no scripts/).
-      # This job runs a normal repository checkout where both exist, so a
-      # skip here would be a real bug: assert both preconditions up front so
-      # the skip path is structurally impossible in CI.
-      - name: precondition (node + runner script present for the interop test)
+      # tests/protocol.rs legitimately SKIPs when the shared parser module or
+      # a runnable node is absent (a published-crate checkout has no
+      # scripts/). This job runs a normal repository checkout where both
+      # exist, so a skip here would be a real bug: assert both preconditions
+      # up front so the skip path is structurally impossible in CI.
+      # Round-3 review P3-1: the test no longer reads `paired-ab-runner.mjs`
+      # at all — it dynamically imports and calls the REAL `parseResult`
+      # function from `paired-ab-parse-result.mjs` directly, so that is the
+      # file whose presence actually matters; the runner file is checked too
+      # since `paired-ab-runner.mjs` itself imports the shared module and a
+      # missing runner would indicate a broken checkout.
+      - name: precondition (node + shared parser module present for the interop test)
         run: |
           node --version
+          test -f scripts/paired-ab-parse-result.mjs
           test -f scripts/paired-ab-runner.mjs
 
       - name: test (default std features)
@@ -2672,20 +2679,33 @@ jobs:
       # P3-23); 1.88 here is above that floor and matches the job's pin.
       - run: cargo check -p globalalloc-model --all-features
       - run: cargo test -p globalalloc-model --no-run --all-features
-      # proc-probe-specific MSRV checks (Sol-codex round-2 review, P4-3): the
-      # workspace-root `--all-features` rows at the top of this job reach
-      # proc-probe only as a default-feature path-dependency LIBRARY (through
-      # the root's dev-dependency graph), never as its own tested member —
-      # its `tests/protocol.rs` and the bare-metal `--no-default-features`
-      # configuration were never compiled on the pinned 1.88 toolchain by
-      # anything before these rows. The crate declares
+      # proc-probe-specific MSRV checks (Sol-codex round-2 review, P4-3;
+      # corrected round-3 review P4-1): the workspace-root `--all-features`
+      # rows at the top of this job reach proc-probe only as a
+      # default-feature path-dependency LIBRARY (through the root's
+      # dev-dependency graph), never as its own tested member — its
+      # `tests/protocol.rs` was never compiled on the pinned 1.88 toolchain
+      # by anything before these rows. The crate declares
       # `rust-version = "1.88"`, matching this job's pin exactly.
       # `--all-targets` is the point: a plain `cargo check` would compile
-      # the library alone and miss the test target. These rows must stay
-      # ABOVE the `dtolnay/rust-toolchain@1.79` switch below, while plain
-      # `cargo` still resolves to 1.88.
+      # the library alone and miss the test target. These two rows are HOST
+      # checks (default and `--no-default-features`) — round-3 review P4-1
+      # caught that the round-2 CHANGELOG entry wrongly called the second
+      # row "bare-metal": `--all-targets` compiles the host test binary, and
+      # nothing here passes `--target`. These rows must stay ABOVE the
+      # `dtolnay/rust-toolchain@1.79` switch below, while plain `cargo`
+      # still resolves to 1.88.
       - run: cargo check -p proc-probe --all-targets
       - run: cargo check -p proc-probe --all-targets --no-default-features
+      # The REAL bare-metal check (round-3 review P4-1): library ONLY (no
+      # `--all-targets` — the host test binary uses std and doesn't belong
+      # on bare metal) on the actual `thumbv7em-none-eabi` target, still on
+      # the pinned 1.88 toolchain. Mirrors the `sefer-region` bare-metal row
+      # above (`cargo check -p sefer-region --no-default-features --target
+      # thumbv7em-none-eabi`); this job already installs that target
+      # (`targets: thumbv7em-none-eabi` on the `dtolnay/rust-toolchain@1.88`
+      # step above).
+      - run: cargo check -p proc-probe --no-default-features --target thumbv7em-none-eabi
       # The published library surface has MSRV 1.79: `inline const`, used by
       # `ArrayLinks::new`, is stabilized there. The floor rows check the
       # library on both the host and the no_std `x86_64-unknown-none` target;

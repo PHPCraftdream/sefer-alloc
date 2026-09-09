@@ -94,11 +94,13 @@ its module doc states:
   condition; the byte assertions themselves are unchanged.
 - **Model vs the real ECMAScript parser**
   (`parser_contract_matches_node_ecmascript_regex`): the Rust parser model is
-  compared line-by-line against the ACTUAL regex from
-  `scripts/paired-ab-runner.mjs:253`, executed by real Node.js. The six
+  compared line-by-line against the REAL `parseResult` function in
+  `scripts/paired-ab-parse-result.mjs`, dynamically imported and called by a
+  spawned Node.js child (round-3 review P3-1 — see below; earlier rounds
+  reconstructed the regex/flags/trim shape by hand instead). The six
   documented U+FEFF/U+0085 divergences are explicitly documented, pinned, and
   node-verified rather than claimed away as "identical" (round-1 review
-  finding P3-2). When the runner source or `node` is genuinely absent
+  finding P3-2). When the shared parser module or `node` is genuinely absent
   (`ErrorKind::NotFound` — a published-crate checkout has no `scripts/`) the
   test SKIPs with a stderr notice, never fails; any other spawn error
   (e.g. PermissionDenied: found but not executable) hard-fails instead of
@@ -106,20 +108,57 @@ its module doc states:
   Skip notices — and the final node-verification success diagnostic — are
   direct `std::io::stderr()` writes, so they remain visible in ordinary CI
   logs without `--nocapture` despite libtest capture (round-2 review P3-2b).
-- **Active-contract drift guard** (round-2 review P3-1): the guard no longer
-  substring-checks a hand-copied regex body — it extracts the runner's
-  ACTIVE contract (regex literal body AND flags, plus whether `.trim()`
-  precedes `.exec()`) and compares named fields, failing loudly on drift;
-  the Node check builds `new RegExp(body, flags)` and applies trim exactly
-  as the runner does. Two negative controls pin the previously-invisible
-  drifts (added `i` flag, removed `.trim()`).
+- **Shared parseResult, not a reconstructed contract** (round-3 review P3-1,
+  superseding round-2's mechanism below): round-2's `extract_runner_contract`
+  scanned the runner's SOURCE TEXT for a regex literal, its flags, and a
+  `.trim()` suffix — but a stale comment holding the OLD expression before a
+  changed real line, or a real change like `.exec(line.toLowerCase().trim())`
+  that still ends in `.trim()`, could fool it into checking the wrong or an
+  incomplete contract. Fixed by extracting the runner's actual `parseResult`
+  function into a new, side-effect-free module,
+  `scripts/paired-ab-parse-result.mjs` — `scripts/paired-ab-runner.mjs` now
+  imports it instead of defining it locally, and the Rust interop test's
+  spawned Node child dynamically `import()`s that SAME file and calls the
+  SAME function per corpus line (`Object.keys(parseResult(line)).length > 0`
+  as the accept/reject verdict). There is exactly one `parseResult` now, so
+  there is nothing left for the interop test's model of the runner's
+  semantics to drift from. `extract_runner_contract`/`RunnerContract`/
+  `runner_contract_drift` and their three drift-guard tests are deleted —
+  they tested the OLD reconstruction mechanism, which no longer exists.
+  Round-2's own P3-1 fix (the bullet immediately below, kept for history) is
+  superseded by this entry, not merely amended.
+- ~~**Active-contract drift guard** (round-2 review P3-1): the guard no
+  longer substring-checks a hand-copied regex body — it extracts the
+  runner's ACTIVE contract (regex literal body AND flags, plus whether
+  `.trim()` precedes `.exec()`) and compares named fields, failing loudly on
+  drift; the Node check builds `new RegExp(body, flags)` and applies trim
+  exactly as the runner does. Two negative controls pin the
+  previously-invisible drifts (added `i` flag, removed `.trim()`).~~
+  Superseded by round-3 review P3-1 above: this mechanism could still be
+  fooled by source text it didn't fully understand (a stale comment, or a
+  real change that still happened to end in `.trim()`); it no longer exists.
 - **Visible, correctly-classified skips** (round-2 review P3-2): the
   permissive skip path is narrowed to `NotFound`, other spawn errors
   hard-fail, and both skip notices plus the success diagnostic bypass
   libtest capture via direct stderr writes; the new
   `skip_notice_survives_libtest_capture` test pins the capture-visibility
   counterfactually, and the CI `proc-probe-gates` job asserts node and the
-  runner script up front so the skip path is structurally impossible there.
+  shared parser module up front so the skip path is structurally impossible
+  there.
+- **A stdin-write failure now still reaps the child** (round-3 review P3-2):
+  `run_node_corpus_check` used to `.expect()` the stdin write result BEFORE
+  `wait_with_output()` — if the Node child had already exited (e.g. an early
+  init error) and closed its read end, the write could return `BrokenPipe`,
+  and panicking right there skipped `wait` entirely: `Child` provides no
+  drop-time wait, so an exited-but-unreaped child can leak as a zombie on
+  Unix, and the child's stderr (the most useful diagnostic for exactly this
+  failure) was lost with it. Extracted into `write_stdin_then_wait`, which
+  always calls `wait_with_output` regardless of the write outcome and
+  reports whichever failure is more informative. The new
+  `stdin_write_failure_still_reaps_child` test spawns a Node child that
+  exits immediately without reading stdin, writes a payload larger than any
+  OS pipe buffer to force a real write failure, and asserts the child's
+  REAL exit code was still collected — proof `wait` was actually reached.
 - **Stdin-borne interop corpus** (round-2 review P3-3): the node-verified
   corpus crosses the Rust->Node boundary as bytes piped to the child's stdin
   instead of a temp-file path in an env var — no filesystem round-trip, no
@@ -136,14 +175,33 @@ its module doc states:
   treats `snapshot()`/`emit*` as a separate, clearly-labeled instrumentation
   step, so the headline duration no longer includes the measurement
   machinery.
-- **MSRV coverage for proc-probe's own targets** (round-2 review P4-3): the
-  root `msrv` job compiles `tests/protocol.rs` on the pinned 1.88 toolchain
+- **MSRV coverage for proc-probe's own targets** (round-2 review P4-3,
+  wording corrected round-3 review P4-1): the root `msrv` job compiles
+  `tests/protocol.rs` on the pinned 1.88 toolchain
   (`cargo check -p proc-probe --all-targets`) in both the default and the
-  bare-metal `--no-default-features` configuration.
+  HOST `--no-default-features` configuration (`--all-targets` compiles the
+  host test binary, not a bare-metal target — the round-2 CHANGELOG entry
+  wrongly called this "bare-metal", which round-3 flagged). A separate row
+  compiles the LIBRARY ONLY (no `--all-targets`: host test code doesn't
+  belong on bare metal) for the real
+  `--target thumbv7em-none-eabi --no-default-features` bare-metal
+  configuration on the same pinned 1.88 toolchain, closing the gap the
+  wording previously claimed was already closed.
 - **Comment corrections** (round-2 review P4-4): libtest's per-test capture
   is described as a thread-local in-process buffer (`OUTPUT_CAPTURE`),
   distinct from the OS pipe at the `Command::output()` boundary, and U+2003
   is labeled EM SPACE (EN SPACE is U+2002).
+- **Two overclaiming test comments softened** (round-3 review P4-2): a
+  comment on `EXPECTED_BLOCK` claimed an emit regression "makes exactly this
+  test (and only this test) fail", which stopped being true once
+  `real_stdout_emit_family_exact_bytes_serial_child` started sharing the
+  same `assert_expected_result_lines` oracle — reworded to describe both
+  callers. A comment on the serial-child test claimed the two
+  `real_stdout_emit_family_exact_bytes*` tests together guarantee coverage
+  of "both child thread modes (multithreaded default and forced serial)" —
+  not guaranteed, since the non-serial test's child merely inherits the
+  outer run's thread count (which can itself be forced serial) — reworded to
+  describe only what's actually guaranteed by construction.
 
 `try_snapshot_re_export_reachable` additionally proves the fallible
 `try_snapshot()`/`SnapshotError` re-export is usable through `proc-probe`

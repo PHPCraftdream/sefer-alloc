@@ -26,11 +26,19 @@
 //!
 //! 3. **Model vs the real ECMAScript parser**
 //!    (`parser_contract_matches_node_ecmascript_regex`): the Rust model is
-//!    compared line-by-line against the ACTUAL regex from
-//!    `scripts/paired-ab-runner.mjs:253`, executed by real Node.js. This
-//!    closes **P3-2** (Sol-codex round-1 review): the model was previously
-//!    claimed "semantically identical" to the ECMAScript parser, but
-//!    Rust `char::is_whitespace` (Unicode `White_Space`) and ECMAScript
+//!    compared line-by-line against the REAL `parseResult` function in
+//!    `scripts/paired-ab-parse-result.mjs`, dynamically imported and called
+//!    by a spawned Node.js child — not a hand-reconstructed regex (Sol-codex
+//!    round-3 review P3-1: an earlier version rebuilt the regex/flags/trim
+//!    shape by scanning the runner's source TEXT, which a stale comment
+//!    holding the old expression, or a real change like
+//!    `.exec(line.toLowerCase().trim())` that still ends in `.trim()`, could
+//!    fool. Importing and calling the actual function removes that whole
+//!    class of drift by construction: there is exactly one `parseResult`,
+//!    and both `scripts/paired-ab-runner.mjs` and this test execute it).
+//!    This closes **P3-2** (Sol-codex round-1 review): the model was
+//!    previously claimed "semantically identical" to the ECMAScript parser,
+//!    but Rust `char::is_whitespace` (Unicode `White_Space`) and ECMAScript
 //!    `\s`/`trim()` disagree on the U+FEFF/U+0085 boundary — those six
 //!    divergences are now explicitly documented, pinned, and node-verified
 //!    rather than claimed away.
@@ -241,8 +249,12 @@ mod real_emit {
     /// exact decimal spellings of `u64::MAX`, `i64::MIN`, `1.5f64` Display,
     /// and `u128::MAX`; a narrowing regression such as `ns as u64` would emit
     /// u64::MAX's digits and mismatch. A `RESULT_PREFIX` rename to `"RESULTX"`
-    /// or an empty `emit*` body makes exactly this test (and only this test)
-    /// fail — the P2-2 finding.
+    /// or an empty `emit*` body makes both tests that share
+    /// [`assert_expected_result_lines`] fail, independent of the library's
+    /// own `RESULT_PREFIX`/format string — the P2-2 finding (Sol-codex
+    /// round-3 review P4-2: this used to claim "exactly this test", which
+    /// stopped being accurate once `real_stdout_emit_family_exact_bytes_serial_child`
+    /// started sharing the same oracle).
     const EXPECTED_BLOCK: &str = concat!(
         "RESULT arm=sefer\n",
         "RESULT rss_kib_max=18446744073709551615\n",
@@ -343,7 +355,8 @@ mod real_emit {
         //    stdout, and no expected line missing. Both the `"RESULT "`
         //    filter and `EXPECTED_BLOCK` are hardcoded literals independent
         //    of `RESULT_PREFIX`, so a prefix rename or an empty emit body
-        //    makes exactly this test (and only this test) fail.
+        //    fails every test that calls this oracle (both callers below,
+        //    Sol-codex round-3 review P4-2).
         let emitted: Vec<&str> = stdout
             .lines()
             .filter(|l| l.starts_with("RESULT "))
@@ -404,9 +417,14 @@ mod real_emit {
     ///
     /// Runner-only by construction: the child re-exec's `--exact` filter
     /// selects [`TEST_NAME`], so this test's own body always takes the
-    /// runner branch. Together with [`real_stdout_emit_family_exact_bytes`]
-    /// this covers the terse formatter in BOTH child thread modes
-    /// (multithreaded default and forced serial).
+    /// runner branch. This test forces `RUST_TEST_THREADS=1` on the child
+    /// explicitly; [`real_stdout_emit_family_exact_bytes`]'s child, by
+    /// contrast, inherits whatever thread count the outer run happens to
+    /// have (which is ALSO serial if the outer run itself sets
+    /// `RUST_TEST_THREADS=1` — Sol-codex round-3 review P4-2: an earlier
+    /// version of this comment claimed the two tests together guarantee
+    /// coverage of "both" thread modes, which overstates it — only THIS
+    /// test's serial condition is guaranteed by construction).
     #[test]
     fn real_stdout_emit_family_exact_bytes_serial_child() {
         let stdout = emit_child_stdout(Some(("RUST_TEST_THREADS", "1")));
@@ -477,168 +495,6 @@ const NODE_DIVERGENCE_LINES: &[(&str, bool)] = &[
     ("RESULT k=a\u{0085}b", false), // Rust: NEL is Rust-whitespace -> reject; JS: NEL is \S -> accept
 ];
 
-/// The documented runner contract this test's corpus and divergence fixtures
-/// were built against: the regex literal BODY at
-/// `scripts/paired-ab-runner.mjs:253` (inside `parseResult`, lines 250–257),
-/// no flags, and `line.trim()` applied immediately before `.exec()`.
-/// Byte-for-byte confirmed 2026-09-09. Identical regex copies also exist at
-/// `scripts/r10_5_large_cache_gate.mjs:114`,
-/// `scripts/r34_7_causal_harness.mjs:128` and
-/// `scripts/r34_23_vec_harness.mjs:117` — only the paired-ab-runner file is
-/// drift-guarded below.
-const EXPECTED_RUNNER_REGEX_BODY: &str = "^RESULT\\s+([a-z0-9_]+)=(\\S+)$";
-
-/// The ACTIVE runner parsing contract, extracted mechanically from the
-/// runner's source text (Sol-codex round-2 review P3-1): the regex literal
-/// body, any flags after the closing slash, and whether `.exec()` is called
-/// on `line.trim()` — the three things the old substring guard could NOT see.
-#[derive(Debug, PartialEq, Eq)]
-struct RunnerContract {
-    /// The literal's body between the slashes.
-    regex_body: String,
-    /// JS regex flags after the closing slash ("" today).
-    flags: String,
-    /// Whether `.exec()` is called on `line.trim()`.
-    trims: bool,
-}
-
-/// Extract the ACTIVE contract from runner source text: find the regex
-/// literal anchored on `/^RESULT` whose flags are immediately followed by
-/// `.exec(` (the production call shape); read the body up to the first
-/// UNESCAPED closing `/`, then ASCII-alphabetic flags, then require exactly
-/// `.exec(` and read the paren-balanced argument; `trims` is whether that
-/// argument ends with `.trim()`.
-///
-/// Returns `None` when the anchor+call shape is absent (the runner
-/// restructured its parser — a drift the caller must report loudly). Uses
-/// `str::get` (checked slicing) throughout so exotic future literal content
-/// can never panic mid-char. Escaped slashes (`\/`) inside the body do not
-/// terminate it. Each occurrence of the anchor is attempted independently;
-/// an occurrence whose flags are not immediately followed by `.exec(` (e.g.
-/// the literal used with `.test(`) is skipped in favor of the next one.
-fn extract_runner_contract(runner_src: &str) -> Option<RunnerContract> {
-    const ANCHOR: &str = "/^RESULT";
-    let mut search_from = 0;
-    while let Some(rel) = runner_src[search_from..].find(ANCHOR) {
-        let lit_start = search_from + rel;
-        search_from = lit_start + ANCHOR.len();
-        // Body: from after the anchor's opening slash to the first UNESCAPED
-        // closing '/'. Walk bytewise with checked slicing (str::get).
-        let mut i = lit_start + ANCHOR.len();
-        let mut body_end = None;
-        while i < runner_src.len() {
-            let b = runner_src.as_bytes()[i];
-            if b == b'\\' {
-                i += 2; // skip the escaped char wholesale (never panics: the
-                        // loop bound re-checks `i < len`)
-                continue;
-            }
-            if b == b'/' {
-                body_end = Some(i);
-                break;
-            }
-            i += 1;
-        }
-        let body_end = body_end?;
-        let regex_body = runner_src.get(lit_start + 1..body_end)?.to_string();
-        // Flags: ASCII-alphabetic chars immediately after the closing slash.
-        let mut j = body_end + 1;
-        while runner_src
-            .get(j..j + 1)
-            .and_then(|c| c.bytes().next())
-            .is_some_and(|b| b.is_ascii_alphabetic())
-        {
-            j += 1;
-        }
-        let flags = runner_src.get(body_end + 1..j)?.to_string();
-        // The production call shape: `.exec(` immediately after the flags.
-        if runner_src.get(j..j + 6) != Some(".exec(") {
-            continue; // not the active callable (e.g. used with `.test(`)
-        }
-        // Read the paren-balanced argument.
-        let arg_start = j + 6;
-        let mut depth = 1usize;
-        let mut k = arg_start;
-        while k < runner_src.len() {
-            match runner_src.as_bytes()[k] {
-                b'(' => depth += 1,
-                b')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                _ => {}
-            }
-            k += 1;
-        }
-        if depth != 0 {
-            return None;
-        }
-        let arg = runner_src.get(arg_start..k)?;
-        return Some(RunnerContract {
-            regex_body,
-            flags,
-            trims: arg.ends_with(".trim()"),
-        });
-    }
-    None
-}
-
-/// The single drift-guard entry point used by the interop test AND both
-/// negative-control tests: extract the active contract and compare it to the
-/// documented one, returning a drift message naming the moved field
-/// (Sol-codex round-2 review P3-1).
-fn runner_contract_drift(runner_src: &str) -> Result<RunnerContract, String> {
-    let contract = extract_runner_contract(runner_src).ok_or_else(|| {
-        "cannot locate the `/^RESULT.../...exec(...)` parse contract in \
-         scripts/paired-ab-runner.mjs; the runner's parseResult restructured — \
-         re-sync EXPECTED_RUNNER_REGEX_BODY and the extraction in this test \
-         (Sol-codex round-2 P3-1)"
-            .to_string()
-    })?;
-    if contract.regex_body != EXPECTED_RUNNER_REGEX_BODY {
-        return Err(format!(
-            "runner regex body drifted: documented {EXPECTED_RUNNER_REGEX_BODY:?}, \
-             found {found:?} (Sol-codex round-2 P3-1)",
-            found = contract.regex_body
-        ));
-    }
-    if !contract.flags.is_empty() {
-        return Err(format!(
-            "runner regex flags drifted: documented no flags, found {:?} — \
-             e.g. an added 'i' flag would silently make the parser \
-             case-insensitive, exactly the drift the old substring guard \
-             could not see (Sol-codex round-2 P3-1)",
-            contract.flags
-        ));
-    }
-    if !contract.trims {
-        return Err(
-            "runner preprocessing drifted: documented `line.trim()` immediately \
-             before `.exec()`, found no trim immediately before .exec( — \
-             whitespace handling would have silently drifted under the old \
-             substring guard (Sol-codex round-2 P3-1)"
-                .to_string(),
-        );
-    }
-    Ok(contract)
-}
-
-/// Minimal verbatim copy of the runner's parseResult
-/// (scripts/paired-ab-runner.mjs:250–257) used to build synthetic variants
-/// for the drift-guard negative controls. NEVER the real file: the controls
-/// must not modify or even require it (they run in every configuration,
-/// including --no-default-features and published-crate checkouts).
-const SYNTHETIC_PARSE_RESULT_SRC: &str = r#"function parseResult(out) {
-  const r = {};
-  for (const line of out.split(/\r?\n/)) {
-    const m = /^RESULT\s+([a-z0-9_]+)=(\S+)$/.exec(line.trim());
-    if (m) r[m[1]] = /^-?\d+$/.test(m[2]) ? Number(m[2]) : m[2];
-  }
-  return r;
-}"#;
-
 /// Minimal JSON string escaper (no serde dependency): quotes and escapes
 /// `"` `\` `\n` `\r` `\t`, other chars < 0x20 as `\uXXXX`, everything else —
 /// including non-ASCII — passed through as UTF-8. Valid JSON, and
@@ -661,35 +517,36 @@ fn json_string(s: &str) -> String {
     out
 }
 
-/// The Rust parser model must match the REAL runner regex — executed by real
-/// Node.js (`re.exec(line.trim()) !== null`, exactly the production call
-/// shape at `scripts/paired-ab-runner.mjs:253`) — on a shared corpus, and the
-/// six documented U+FEFF/U+0085 divergences must hold in both directions.
+/// The Rust parser model must match the REAL `parseResult` function from
+/// `scripts/paired-ab-parse-result.mjs` — dynamically imported and called by
+/// a spawned Node.js child, not a hand-reconstructed regex (Sol-codex
+/// round-3 review P3-1) — on a shared corpus, and the six documented
+/// U+FEFF/U+0085 divergences must hold in both directions.
 ///
 /// Not std-feature-gated: uses only the test crate's std and `RESULT_PREFIX`.
 #[test]
 fn parser_contract_matches_node_ecmascript_regex() {
-    // Locate the runner source. A published-crate checkout has no `scripts/`:
-    // SKIP (stderr notice + return), never fail, on NotFound.
-    let runner_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/paired-ab-runner.mjs");
-    let runner_src = match std::fs::read_to_string(&runner_path) {
-        Ok(s) => s,
+    // Locate the shared parser module. A published-crate checkout has no
+    // `scripts/`: SKIP (stderr notice + return), never fail, on NotFound.
+    // Deliberately NOT canonicalized: `std::fs::canonicalize` on Windows
+    // returns a `\\?\`-prefixed verbatim path that Node's
+    // `url.pathToFileURL` cannot turn into an importable `file://` URL
+    // (confirmed empirically) — the plain joined path (containing `..`) is
+    // resolved correctly by `pathToFileURL` + dynamic `import()` instead.
+    let parse_result_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scripts/paired-ab-parse-result.mjs");
+    match std::fs::metadata(&parse_result_path) {
+        Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             report_skip(&format!(
-                "parser_contract_matches_node_ecmascript_regex: runner not \
-                 found at {}",
-                runner_path.display()
+                "parser_contract_matches_node_ecmascript_regex: shared parser \
+                 module not found at {}",
+                parse_result_path.display()
             ));
             return;
         }
-        Err(e) => panic!("failed to read {}: {e}", runner_path.display()),
-    };
-
-    let contract = match runner_contract_drift(&runner_src) {
-        Ok(c) => c,
-        Err(drift) => panic!("drift guard: {drift}"),
-    };
+        Err(e) => panic!("failed to stat {}: {e}", parse_result_path.display()),
+    }
 
     // Node availability: absent node is a SKIP; a failing `node --version`
     // is a real environment error and panics.
@@ -724,18 +581,16 @@ fn parser_contract_matches_node_ecmascript_regex() {
         .chain(NODE_DIVERGENCE_LINES.iter().map(|(l, _)| *l))
         .collect();
 
-    // Corpus JSON, built with the local escaper — no serde dependency. P3-3:
-    // the JSON is piped straight to node's STDIN — no temp file, no
-    // filesystem round-trip, no cleanup that an earlier panic could skip, and
-    // no env-var path string whose encoding could lose a raw non-UTF-8 byte
-    // (e.g. a 0xFF byte in a TMPDIR component on Unix) crossing the
-    // Rust->Node boundary.
-    let mut json = String::from("{\"regex\":");
-    json.push_str(&json_string(&contract.regex_body));
-    json.push_str(",\"flags\":");
-    json.push_str(&json_string(&contract.flags));
-    json.push_str(",\"trim\":");
-    json.push_str(if contract.trims { "true" } else { "false" });
+    // Corpus JSON, built with the local escaper — no serde dependency. P3-3
+    // (round-2 review): the JSON is piped straight to node's STDIN — no temp
+    // file, no filesystem round-trip, no cleanup that an earlier panic could
+    // skip, and no env-var path string whose encoding could lose a raw
+    // non-UTF-8 byte (e.g. a 0xFF byte in a TMPDIR component on Unix)
+    // crossing the Rust->Node boundary. `parseResultPath` is the ONLY thing
+    // the Node side needs to locate and execute the real parser (P3-1,
+    // round-3 review) — no regex/flags/trim fields to keep in sync with it.
+    let mut json = String::from("{\"parseResultPath\":");
+    json.push_str(&json_string(&parse_result_path.display().to_string()));
     json.push_str(",\"lines\":[");
     for (i, l) in all_lines.iter().enumerate() {
         if i > 0 {
@@ -790,6 +645,41 @@ fn parser_contract_matches_node_ecmascript_regex() {
     .expect("write node-verification success diagnostic");
 }
 
+/// Write `data` to `child`'s stdin (taking the handle so it closes — and
+/// signals EOF to the child — as soon as the write finishes or fails), then
+/// UNCONDITIONALLY wait for the child and collect its output, regardless of
+/// whether the write succeeded (Sol-codex round-3 review P3-2).
+///
+/// Why this matters: the previous implementation called `.expect()` on the
+/// write result BEFORE `wait_with_output()`. If the child had already
+/// exited on its own (e.g. an early Node initialization error) and closed
+/// its read end, `write_all` can return `BrokenPipe` — and panicking right
+/// there, before ever calling `wait`, skips reaping the child. `Child`
+/// documents that it provides no drop-time wait
+/// (<https://doc.rust-lang.org/std/process/struct.Child.html#warning>), so
+/// an exited-but-unreaped child can be left as a zombie on Unix, AND the
+/// child's stderr — the most useful diagnostic for exactly this kind of
+/// early failure — is lost with it. Waiting first (or, as here, always)
+/// means a write failure is reported ALONGSIDE the child's real exit status
+/// and stderr, and the process is always reaped either way.
+fn write_stdin_then_wait(
+    mut child: std::process::Child,
+    data: &[u8],
+) -> (std::io::Result<()>, std::process::Output) {
+    let write_result = {
+        let mut stdin = child.stdin.take().expect("stdin was piped");
+        // Write, then let `stdin` drop at the end of this block — closing
+        // our end of the pipe either way, which is what lets the child's
+        // stdin 'end' event fire on the happy path (mirroring what
+        // `wait_with_output`'s own internal stdin-drop used to do here).
+        stdin.write_all(data)
+    };
+    let out = child
+        .wait_with_output()
+        .expect("wait for the child process (after recording the stdin write result)");
+    (write_result, out)
+}
+
 /// Invoke node ONCE, feeding the corpus JSON to the child's STDIN, and
 /// validate the verdict string. A pipe carries the bytes across the
 /// Rust->Node boundary byte-identically (Sol-codex round-2 review P3-3): no
@@ -798,7 +688,7 @@ fn parser_contract_matches_node_ecmascript_regex() {
 /// raw non-UTF-8 byte on Unix. Extracted as a fn (not an immediately invoked
 /// closure) to satisfy clippy's `redundant_closure_call`.
 fn run_node_corpus_check(corpus_json: &str, expected_len: usize) -> String {
-    let mut child = std::process::Command::new("node")
+    let child = std::process::Command::new("node")
         .arg("-e")
         .arg(NODE_CHECK_SCRIPT)
         .stdin(std::process::Stdio::piped())
@@ -806,18 +696,19 @@ fn run_node_corpus_check(corpus_json: &str, expected_len: usize) -> String {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("spawn node (availability checked above)");
-    // Write the whole corpus; `wait_with_output` then drops the stdin handle,
-    // and closing the pipe is what fires node's 'end' event so the child can
-    // finish.
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin was piped")
-        .write_all(corpus_json.as_bytes())
-        .expect("write corpus JSON to node's stdin");
-    let out = child
-        .wait_with_output()
-        .expect("wait for the node corpus check");
+    let (write_result, out) = write_stdin_then_wait(child, corpus_json.as_bytes());
+    if let Err(e) = write_result {
+        panic!(
+            "failed to write corpus JSON to node's stdin: {e} (Sol-codex \
+             round-3 review P3-2)\n\
+             child exit status: {status}\n\
+             --- child stdout ---\n{stdout}\n\
+             --- child stderr ---\n{stderr}",
+            status = out.status,
+            stdout = String::from_utf8_lossy(&out.stdout),
+            stderr = String::from_utf8_lossy(&out.stderr),
+        );
+    }
     assert!(
         out.status.success(),
         "node corpus check failed:
@@ -842,24 +733,28 @@ fn run_node_corpus_check(corpus_json: &str, expected_len: usize) -> String {
     v
 }
 
-/// The node one-liner: reads the corpus JSON from STDIN (P3-3 — the bytes
-/// cross the Rust->Node boundary through a pipe byte-identically; no temp
-/// file, no path in an env var or argv, nothing to clean up), rebuilds the
-/// runner regex, and prints one `A`/`R` verdict per corpus line. The regex
-/// body, FLAGS, and trim preprocessing all come from the runner's extracted
-/// ACTIVE contract (Sol-codex round-2 review P3-1) instead of a hand-copied
-/// literal, so the check always executes the runner's CURRENT semantics:
-/// `new RegExp(body, flags)` and `parsed.trim ? line.trim() : line` before
-/// `.exec()`, exactly as `parseResult` does at
-/// `scripts/paired-ab-runner.mjs:253`.
+/// The node one-liner: reads the corpus JSON from STDIN (P3-3, round-2
+/// review — the bytes cross the Rust->Node boundary through a pipe
+/// byte-identically; no temp file, no path in an env var or argv, nothing to
+/// clean up), dynamically imports the REAL `parseResult` function from the
+/// path Rust supplies, and prints one `A`/`R` verdict per corpus line —
+/// `A` when `parseResult(line)` returns a non-empty object (a match),
+/// `R` otherwise. This calls the ACTUAL function `scripts/paired-ab-runner.mjs`
+/// uses (Sol-codex round-3 review P3-1) instead of reconstructing its
+/// regex/flags/trim shape by hand: there is nothing left to keep in sync,
+/// because both the runner and this check execute the same code.
+/// `url.pathToFileURL` turns the (OS-native, non-canonicalized — see the
+/// caller's comment on why) path into an importable `file://` URL.
 const NODE_CHECK_SCRIPT: &str = r"
+const { pathToFileURL } = require('url');
 const chunks = [];
 process.stdin.on('data', (chunk) => chunks.push(chunk));
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  const re = new RegExp(parsed.regex, parsed.flags);
-  const prep = (l) => (parsed.trim ? l.trim() : l);
-  process.stdout.write(parsed.lines.map((l) => (re.exec(prep(l)) !== null ? 'A' : 'R')).join(''));
+  const { parseResult } = await import(pathToFileURL(parsed.parseResultPath).href);
+  process.stdout.write(
+    parsed.lines.map((l) => (Object.keys(parseResult(l)).length > 0 ? 'A' : 'R')).join(''),
+  );
 });
 ";
 
@@ -887,64 +782,6 @@ fn report_skip(reason: &str) {
 }
 
 #[test]
-fn drift_guard_rejects_added_case_insensitive_flag() {
-    let mutated = SYNTHETIC_PARSE_RESULT_SRC.replace(
-        r#"=(\S+)$/.exec(line.trim())"#,
-        r#"=(\S+)$/i.exec(line.trim())"#,
-    );
-    assert_ne!(
-        mutated, SYNTHETIC_PARSE_RESULT_SRC,
-        "premise: the mutation must actually apply to the synthetic runner copy"
-    );
-    // Premise of the blindness being fixed (P3-1): the OLD naive substring
-    // guard (`runner_src.contains(EXPECTED_RUNNER_REGEX_BODY)`) still passes
-    // on the mutated source, because the documented body remains present —
-    // the added flag lives AFTER the closing slash and is invisible to a
-    // body-substring check.
-    assert!(
-        mutated.contains(EXPECTED_RUNNER_REGEX_BODY),
-        "premise: the old substring guard is blind to an added regex flag"
-    );
-    let err = runner_contract_drift(&mutated)
-        .expect_err("the drift guard must reject an added case-insensitive flag");
-    assert!(
-        err.to_lowercase().contains("flag"),
-        "drift message must name the flags field, got: {err}"
-    );
-}
-
-#[test]
-fn drift_guard_rejects_removed_trim() {
-    let mutated = SYNTHETIC_PARSE_RESULT_SRC.replace(".exec(line.trim())", ".exec(line)");
-    assert_ne!(
-        mutated, SYNTHETIC_PARSE_RESULT_SRC,
-        "premise: the mutation must actually apply to the synthetic runner copy"
-    );
-    // Same premise as the flag control (P3-1): the OLD substring guard is
-    // blind — the regex body itself is untouched, only the preprocessing
-    // around `.exec(` changed.
-    assert!(
-        mutated.contains(EXPECTED_RUNNER_REGEX_BODY),
-        "premise: the old substring guard is blind to removed trim preprocessing"
-    );
-    let err =
-        runner_contract_drift(&mutated).expect_err("the drift guard must reject removed trim");
-    assert!(
-        err.contains("trim"),
-        "drift message must mention the trim drift, got: {err}"
-    );
-}
-
-#[test]
-fn drift_guard_accepts_untouched_synthetic_runner() {
-    let contract = runner_contract_drift(SYNTHETIC_PARSE_RESULT_SRC)
-        .expect("the verbatim runner copy must match the documented contract");
-    assert_eq!(contract.regex_body, EXPECTED_RUNNER_REGEX_BODY);
-    assert_eq!(contract.flags, "");
-    assert!(contract.trims);
-}
-
-#[test]
 fn node_spawn_errors_other_than_not_found_are_fatal_not_skips() {
     // A DIRECTORY, not the node binary: spawning it yields an error verified
     // empirically on this Windows machine as ErrorKind::PermissionDenied
@@ -968,6 +805,57 @@ fn node_spawn_errors_other_than_not_found_are_fatal_not_skips() {
     assert!(
         node_spawn_skip_reason(&std::io::Error::from(std::io::ErrorKind::NotFound)).is_some(),
         "NotFound must remain the single skippable spawn failure"
+    );
+}
+
+/// P3-2 regression (Sol-codex round-3 review): a stdin-write failure must
+/// still reap the child — proven by observing the child's REAL exit code,
+/// not just that the write returned an error. Spawns a node child that
+/// exits immediately WITHOUT ever reading stdin, then writes a payload much
+/// larger than any OS pipe buffer so the write cannot silently complete into
+/// kernel buffering before the child's (now-closed) read end causes a real
+/// write failure. If `write_stdin_then_wait` panicked on the write error
+/// before calling `wait`, the child's exit code below would never be
+/// collected — `child.wait_with_output()` (via `Child::wait`) is the only
+/// thing that reaps it, so this assertion passing is direct evidence `wait`
+/// was actually reached.
+#[test]
+fn stdin_write_failure_still_reaps_child() {
+    const EXIT_CODE: i32 = 7;
+    let spawn_result = std::process::Command::new("node")
+        .args(["-e", &format!("process.exit({EXIT_CODE})")])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let child = match spawn_result {
+        Ok(c) => c,
+        Err(e) => match node_spawn_skip_reason(&e) {
+            Some(reason) => {
+                report_skip(&format!("stdin_write_failure_still_reaps_child: {reason}"));
+                return;
+            }
+            None => panic!("failed to spawn node: {e}"),
+        },
+    };
+    // 4 MiB is comfortably larger than any real OS pipe buffer (64 KiB on
+    // Linux, similar order of magnitude elsewhere), so `write_all` cannot
+    // finish before the child's early exit closes the read end.
+    let payload = vec![b'x'; 4 * 1024 * 1024];
+    let (write_result, out) = write_stdin_then_wait(child, &payload);
+    assert!(
+        write_result.is_err(),
+        "premise: writing 4 MiB to an already-exiting node child's stdin must fail \
+         (got a successful write — this platform's pipe buffer or timing didn't \
+         trigger the condition this test needs)"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(EXIT_CODE),
+        "the child's real exit code must still be collected after a stdin write \
+         failure (Sol-codex round-3 review P3-2): this is only observable if \
+         `wait_with_output` actually ran after the write failed, proving the child \
+         was reaped rather than left running/zombied"
     );
 }
 

@@ -92,6 +92,7 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { REPO_ROOT, run } from './lib.mjs';
+import { parseResult } from './paired-ab-parse-result.mjs';
 
 const isWin = process.platform === 'win32';
 
@@ -245,15 +246,6 @@ async function buildArms(arms) {
   } else {
     console.log('[paired-ab] --config has no "build" step; assuming arm commands are already built.');
   }
-}
-
-function parseResult(out) {
-  const r = {};
-  for (const line of out.split(/\r?\n/)) {
-    const m = /^RESULT\s+([a-z0-9_]+)=(\S+)$/.exec(line.trim());
-    if (m) r[m[1]] = /^-?\d+$/.test(m[2]) ? Number(m[2]) : m[2];
-  }
-  return r;
 }
 
 async function runOnce(arm) {
