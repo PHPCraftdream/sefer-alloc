@@ -172,7 +172,8 @@ fn non_utf8_temp_path_is_read_without_conversion() {
 
     // Confirm the same directory accepts an ordinary fixture first.
     let control_path = temp_path("non_utf8_ascii_control");
-    let mut control = std::fs::File::create_new(&control_path).expect("create ASCII control fixture");
+    let mut control =
+        std::fs::File::create_new(&control_path).expect("create ASCII control fixture");
     let control_write = control.write_all(bytes);
     drop(control);
     let _ = std::fs::remove_file(&control_path);
