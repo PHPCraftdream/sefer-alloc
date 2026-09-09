@@ -130,10 +130,35 @@ fn budget_infeasible_deposit_after_base_eight_full_never_materialises_extension(
     let base_eight = &sizes[..8];
     let ninth = sizes[8];
 
+    // The 9-rung ladder's top rung is the same ~2 GiB size documented in
+    // docs/CORRECTNESS_OPEN_ITEMS.md item 146 (this file is one of the four
+    // "latent" siblings named there): an OS that declines to back that
+    // mapping returns the same null a genuine allocator failure would.
+    // `dbg_segments_reserve_failed_total`'s delta separates the two, exactly
+    // as `tests/r14_7_max_segments_ceiling.rs` does for the segment-table
+    // ceiling (item 143).
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
     for &bytes in base_eight {
         let l = layout(bytes);
         let p = ac.alloc(l);
-        assert!(!p.is_null(), "alloc of {bytes} bytes failed unexpectedly");
+        if p.is_null() && AllocCore::dbg_segments_reserve_failed_total() > refused_before {
+            eprintln!(
+                "budget_infeasible_deposit_after_base_eight_full_never_materialises_extension: \
+                 the OS refused the {bytes}-byte base-8 filler ({} refusal(s)), so the \
+                 resident base could not be built on this machine — the assertions that \
+                 follow are NOT exercised. This is an environment limit, not an allocator \
+                 regression. See docs/CORRECTNESS_OPEN_ITEMS.md item 146.",
+                AllocCore::dbg_segments_reserve_failed_total() - refused_before
+            );
+            return;
+        }
+        assert!(
+            !p.is_null(),
+            "alloc of {bytes} bytes failed with 0 OS reservation(s) refused — the \
+             reserve-failure counter attributes this to no OS refusal, and the cause is \
+             NOT established (docs/CORRECTNESS_OPEN_ITEMS.md item 146). Do not assume an \
+             allocator regression without checking that card first."
+        );
         // SAFETY (R6-MS-1/2): pointer from the alloc immediately above, live,
         // freed exactly once here.
         unsafe { ac.dealloc(p, l) };
@@ -165,9 +190,29 @@ fn budget_infeasible_deposit_after_base_eight_full_never_materialises_extension(
     let tight_budget = ac.dbg_large_cache_used();
     ac.dbg_set_large_cache_budget(Some(tight_budget));
 
+    let refused_before_ninth = AllocCore::dbg_segments_reserve_failed_total();
     let l9 = layout(ninth);
     let p9 = ac.alloc(l9);
-    assert!(!p9.is_null(), "alloc of {ninth} bytes failed unexpectedly");
+    if p9.is_null() && AllocCore::dbg_segments_reserve_failed_total() > refused_before_ninth {
+        eprintln!(
+            "budget_infeasible_deposit_after_base_eight_full_never_materialises_extension: \
+             the OS refused the {ninth}-byte 9th-deposit reservation ({} refusal(s)), so \
+             this counterfactual could not be exercised on this machine — the assertions \
+             that follow are NOT exercised. This is an environment limit, not an allocator \
+             regression. See docs/CORRECTNESS_OPEN_ITEMS.md item 146.",
+            AllocCore::dbg_segments_reserve_failed_total() - refused_before_ninth
+        );
+        // The base-8 pointers were already freed above; nothing else to
+        // release before returning early.
+        return;
+    }
+    assert!(
+        !p9.is_null(),
+        "alloc of {ninth} bytes failed with 0 OS reservation(s) refused — the \
+         reserve-failure counter attributes this to no OS refusal, and the cause is NOT \
+         established (docs/CORRECTNESS_OPEN_ITEMS.md item 146). Do not assume an allocator \
+         regression without checking that card first."
+    );
     let ninth_usable = {
         // Read the actual usable_size the header carries for this pointer by
         // depositing it and inspecting which case applies: since we expect
@@ -252,10 +297,31 @@ fn effectively_unbounded_budget_still_materialises_extension_on_overflow() {
     ac.dbg_set_large_cache_budget(Some(usize::MAX));
 
     let sizes = large_test_sizes(9);
+    // Same 9-rung ladder as the discriminating counterfactual above — see
+    // its comment and docs/CORRECTNESS_OPEN_ITEMS.md item 146 for why an OS
+    // refusal on the top rung must be told apart from a real allocator bug.
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
     for &bytes in &sizes {
         let l = layout(bytes);
         let p = ac.alloc(l);
-        assert!(!p.is_null(), "alloc of {bytes} bytes failed unexpectedly");
+        if p.is_null() && AllocCore::dbg_segments_reserve_failed_total() > refused_before {
+            eprintln!(
+                "effectively_unbounded_budget_still_materialises_extension_on_overflow: \
+                 the OS refused the {bytes}-byte deposit ({} refusal(s)), so this test \
+                 could not be exercised on this machine — the assertion below is NOT \
+                 exercised. This is an environment limit, not an allocator regression. \
+                 See docs/CORRECTNESS_OPEN_ITEMS.md item 146.",
+                AllocCore::dbg_segments_reserve_failed_total() - refused_before
+            );
+            return;
+        }
+        assert!(
+            !p.is_null(),
+            "alloc of {bytes} bytes failed with 0 OS reservation(s) refused — the \
+             reserve-failure counter attributes this to no OS refusal, and the cause is \
+             NOT established (docs/CORRECTNESS_OPEN_ITEMS.md item 146). Do not assume an \
+             allocator regression without checking that card first."
+        );
         // SAFETY (R6-MS-1/2): pointer from the alloc immediately above, live,
         // freed exactly once here.
         unsafe { ac.dealloc(p, l) };

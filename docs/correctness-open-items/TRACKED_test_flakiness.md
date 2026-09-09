@@ -252,6 +252,37 @@ resolved" in RESOLVED.md.)_
     helper (there is no `tests/common/` module in this repo yet), not a
     fourth and fifth copy.
 
+    **UPDATE 2026-09-09 — the predicted wall was hit for real, on the FIRST
+    of the four named latent files.** `npm run check`'s `--all-features` test
+    step failed `budget_infeasible_deposit_after_base_eight_full_never_materialises_extension`
+    (`tests/large_cache_extended_budget_before_materialization.rs`) with
+    `alloc of 2143289344 bytes failed unexpectedly` — the exact ~2 GiB top
+    rung already measured for the same 9-rung ladder in task #1937's update
+    above (this file's `large_test_sizes(9)` is the identical helper).
+    Reproduced in isolation (`cargo test --all-features --test
+    large_cache_extended_budget_before_materialization -- --test-threads=1`)
+    passed cleanly on an immediate re-run with no other `cargo`/`node`/`rush`
+    process active, consistent with a transient environment-commit refusal
+    rather than a code regression from unrelated same-session work (a
+    `proc-memstat` crate change landed immediately before this run and
+    touches none of the root crate's allocator code). Fixed by applying the
+    same discrimination to all three hard-`assert!(!p.is_null())` sites in
+    this one file: the base-8 fill loop and the single 9th-deposit
+    allocation in `budget_infeasible_deposit_after_base_eight_full_never_materialises_extension`,
+    and the 9-rung loop in
+    `effectively_unbounded_budget_still_materialises_extension_on_overflow`
+    (which shares the same ladder and was equally exposed even though it had
+    not yet been observed to fail). All three now read
+    `dbg_segments_reserve_failed_total()`'s delta and, on a null WITH a
+    counted refusal, print an explicit environment-limit message and return
+    early instead of asserting; a null with zero refusals still fails loudly.
+    Verified: the isolated test file passes (6/6) and clippy stays clean.
+    **The four-file list above is now three:** `large_cache_extended_budget_before_materialization.rs`
+    is no longer latent. The other three remain unpatched for the same
+    stated reason (no shared `tests/common/` helper yet) — the next one to
+    fail should get the identical treatment, and whoever eventually builds
+    the shared helper should fold all now-four patched copies into it.
+
 147. **[T, filed 2026-09-08, task #1911] `class_a_refill_reclaims_class_b_entries_in_the_same_pass`
     (`tests/class_aware_dirty_routing.rs:456`) failed once in CI with a TOTAL
     miss — `0/23` — not reproduced on rerun of the same SHA; mechanism NOT
