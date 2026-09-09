@@ -13,7 +13,17 @@
 //! RESULT <key>=<value>
 //! ```
 //!
-//! `<key>` is `[a-z0-9_]+`; `<value>` is any non-whitespace token. This crate
+//! `<key>` is `[a-z0-9_]+` (ASCII only). `<value>` is one or more characters
+//! the reference runner's ECMAScript parser treats as non-whitespace — i.e.
+//! outside ECMAScript `\s` (its WhiteSpace + LineTerminator sets plus the
+//! Space_Separator category), *not* outside Rust's `char::is_whitespace`;
+//! the two whitespace models disagree at the boundary (U+FEFF is `\s`-whitespace
+//! but not Rust-whitespace, U+0085 the reverse), so values involving those code
+//! points parse differently between a Rust-side model and the real runner.
+//! Probes should keep keys and values ASCII, where the two models agree
+//! exactly; `tests/protocol.rs`'s `parser_contract_matches_node_ecmascript_regex`
+//! verifies this model against the real ECMAScript regex (via node) and pins
+//! those divergences explicitly. This crate
 //! is the emitting half — one function per value shape (`emit`, `emit_u64`,
 //! `emit_i64`, `emit_f64`, `emit_ns`) so a probe never hand-rolls the
 //! `println!("RESULT ...")` string and never drifts the format the runner
@@ -80,7 +90,9 @@ pub const RESULT_PREFIX: &str = "RESULT";
 /// This is the string-valued primitive; the numeric helpers ([`emit_u64`],
 /// [`emit_i64`], [`emit_f64`], [`emit_ns`]) format their argument and delegate
 /// here in spirit. `key` should match `[a-z0-9_]+` (the shape runners parse);
-/// `value` is any token without whitespace.
+/// `value` is one or more characters outside the runner's ECMAScript `\s`
+/// definition of whitespace (see the protocol notes above); prefer ASCII so the
+/// Rust-side and ECMAScript whitespace models agree exactly.
 #[cfg(feature = "std")]
 pub fn emit(key: &str, value: &str) {
     std::println!("{RESULT_PREFIX} {key}={value}");
