@@ -10,6 +10,8 @@
 //! parser and round-trips to the original key/value. This pins the contract
 //! between this crate and every runner without an fd dance; a separate
 //! `emit_smoke` test additionally proves the functions run without panicking.
+//! The last two tests additionally require the default `std` feature (the
+//! re-export and the `emit*` family do not exist without it).
 
 use proc_probe::RESULT_PREFIX;
 
@@ -95,6 +97,10 @@ fn parser_rejects_non_result_and_malformed_lines() {
 
 /// The re-export must be the exact same `snapshot()` — a probe gets
 /// measure + report from this one crate.
+///
+/// Requires the `std` feature: the `snapshot`/`MemStat` re-export is
+/// std-only (`proc-memstat` is an std crate).
+#[cfg(feature = "std")]
 #[test]
 fn snapshot_re_export_matches_proc_memstat() {
     let a = proc_probe::snapshot();
@@ -109,6 +115,9 @@ fn snapshot_re_export_matches_proc_memstat() {
 
 /// The `emit*` functions must run without panicking (they write to stdout; the
 /// output itself is contract-checked above via the shared format string).
+///
+/// Requires the `std` feature: every `emit*` function is std-only.
+#[cfg(feature = "std")]
 #[test]
 fn emit_smoke_does_not_panic() {
     proc_probe::emit("arm", "sefer");

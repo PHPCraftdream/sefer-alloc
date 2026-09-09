@@ -41,9 +41,11 @@ parent repo is one consumer.
 
 ## Features
 
-- `std` (default): the `emit*` family (they write to stdout). Disable
-  (`default-features = false`) for a `no_std` consumer that only wants
-  `RESULT_PREFIX` / the `proc-memstat` re-export and brings its own sink.
+- `std` (default): the `emit*` family (they write to stdout) plus the
+  `proc-memstat` re-export (`snapshot` / `MemStat` — `proc-memstat` itself is
+  an std-only crate). Disable (`default-features = false`) for a genuinely
+  dependency-free `no_std` build that only wants `RESULT_PREFIX` and brings
+  its own sink.
 
 `#![forbid(unsafe_code)]` — all the OS FFI stays confined to `proc-memstat`.
 

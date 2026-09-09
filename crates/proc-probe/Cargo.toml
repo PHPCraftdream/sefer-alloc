@@ -13,12 +13,15 @@ keywords = ["benchmark", "process", "memory", "rss", "probe"]
 categories = ["development-tools::profiling", "os", "memory-management"]
 
 [features]
-# The `emit*` functions write to stdout, which needs `std`. Default-on so a
-# probe binary gets the emit family with a plain `cargo add proc-probe`. Disable
-# (`default-features = false`) for a `no_std` consumer that only wants the
-# protocol constant / the `proc-memstat` re-export and supplies its own sink.
+# The `emit*` functions write to stdout, which needs `std`, and the
+# `proc-memstat` re-export is itself an std-only crate — so both are gated on
+# this feature, and `std` is what pulls in the (optional) dependency.
+# Default-on so a probe binary gets the emit family with a plain
+# `cargo add proc-probe`. Disable (`default-features = false`) for a `no_std`
+# consumer that only wants the protocol constant and supplies its own sink —
+# that build has zero dependencies.
 default = ["std"]
-std = []
+std = ["dep:proc-memstat"]
 
 [dependencies]
-proc-memstat = { path = "../proc-memstat", version = "0.1" }
+proc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }

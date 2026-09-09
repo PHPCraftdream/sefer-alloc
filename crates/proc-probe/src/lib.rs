@@ -1,6 +1,6 @@
 //! `proc-probe` — the `RESULT key=value` stdout protocol every fresh-process
-//! judge shares, plus a re-export of [`proc_memstat`]'s single-read memory
-//! [`snapshot`].
+//! judge shares, plus (under the default `std` feature) a re-export of
+//! `proc-memstat`'s single-read memory `snapshot`.
 //!
 //! # The protocol
 //!
@@ -14,34 +14,13 @@
 //! ```
 //!
 //! `<key>` is `[a-z0-9_]+`; `<value>` is any non-whitespace token. This crate
-//! is the emitting half — one function per value shape ([`emit`], [`emit_u64`],
-//! [`emit_i64`], [`emit_f64`], [`emit_ns`]) so a probe never hand-rolls the
+//! is the emitting half — one function per value shape (`emit`, `emit_u64`,
+//! `emit_i64`, `emit_f64`, `emit_ns`) so a probe never hand-rolls the
 //! `println!("RESULT ...")` string and never drifts the format the runner
-//! parses against.
-//!
-//! # Measure + report in one dependency
-//!
-//! A probe almost always wants to *measure* memory and then *report* it. This
-//! crate re-exports [`proc_memstat::snapshot`] and [`proc_memstat::MemStat`],
-//! so a probe binary depends on **one** crate for both halves:
-//!
-//! ```text
-//! let m = proc_probe::snapshot();          // measure (bytes, one read)
-//! proc_probe::emit_u64("rss_kib", m.rss / 1024);        // report
-//! // Name the metric you actually read. `commit_charge` and `virtual_size`
-//! // are different quantities and only one of them exists on a given OS —
-//! // see `proc_memstat::MemStat`. Emitting one under the other's name is
-//! // how a retained address space gets reported as retained commit.
-//! if let Some(kib) = m.commit_charge.map(|b| b / 1024) {
-//!     proc_probe::emit_u64("commit_charge_kib", kib);
-//! }
-//! if let Some(kib) = m.virtual_size.map(|b| b / 1024) {
-//!     proc_probe::emit_u64("virtual_size_kib", kib);
-//! }
-//! ```
-//!
-//! (Runnable form of the examples lives in `tests/protocol.rs` — this crate
-//! ships no doctests.)
+//! parses against. The `emit*` family and the `proc-memstat` re-export exist
+//! only under the default `std` feature; a `no_std` consumer built with
+//! `default-features = false` gets `RESULT_PREFIX` alone and supplies its own
+//! sink (that build has zero dependencies).
 //!
 //! # Why a separate crate from `proc-memstat`
 //!
@@ -55,15 +34,41 @@
 #![deny(missing_docs)]
 #![no_std]
 
-// The emit family writes to stdout, which needs `std`. The protocol *shape*
-// (and any future formatting helpers) is `no_std`-clean; only the sink pulls in
-// `std`, so downstream `no_std` probes that build their own sink can still use
-// this crate's constants/format without the emit functions.
+// The emit family writes to stdout, which needs `std`, and the `proc-memstat`
+// re-export is itself an std-only crate — so both are gated on the `std`
+// feature (which is what pulls in the optional dependency). The protocol
+// *shape* (and any future formatting helpers) is `no_std`-clean: with
+// `default-features = false` this crate builds with zero dependencies, and a
+// downstream `no_std` probe that builds its own sink can still use the
+// `RESULT_PREFIX` constant/format.
 #[cfg(feature = "std")]
 extern crate std;
 
 /// Re-export of the single-read memory snapshot from [`proc_memstat`] — a
 /// probe gets "measure + report" from this one crate.
+///
+/// A probe almost always wants to *measure* memory and then *report* it. This
+/// crate re-exports [`proc_memstat::snapshot`] and [`proc_memstat::MemStat`],
+/// so a probe binary depends on **one** crate for both halves:
+///
+/// ```text
+/// let m = proc_probe::snapshot();          // measure (bytes, one read)
+/// proc_probe::emit_u64("rss_kib", m.rss / 1024);        // report
+/// // Name the metric you actually read. `commit_charge` and `virtual_size`
+/// // are different quantities and only one of them exists on a given OS —
+/// // see `proc_memstat::MemStat`. Emitting one under the other's name is
+/// // how a retained address space gets reported as retained commit.
+/// if let Some(kib) = m.commit_charge.map(|b| b / 1024) {
+///     proc_probe::emit_u64("commit_charge_kib", kib);
+/// }
+/// if let Some(kib) = m.virtual_size.map(|b| b / 1024) {
+///     proc_probe::emit_u64("virtual_size_kib", kib);
+/// }
+/// ```
+///
+/// (Runnable form of the examples lives in `tests/protocol.rs` — this crate
+/// ships no doctests.)
+#[cfg(feature = "std")]
 pub use proc_memstat::{snapshot, MemStat};
 
 /// The line prefix every emitted metric carries. A runner keys off exactly this
