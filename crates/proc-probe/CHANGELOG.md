@@ -81,6 +81,17 @@ its module doc states:
   (P2-2): the previous suite never inspected real `emit*` output — emptying
   every `emit*` body or renaming `RESULT_PREFIX` to `"RESULTX"` passed every
   test.
+- **Framing-proof real-stdout child** (round-2 review P2-1): the re-exec'd
+  child now runs with `--format terse`, so libtest's own harness framing can
+  never share a physical line with the emitted bytes — the serial-child case
+  (an inherited `RUST_TEST_THREADS=1`, or `available_parallelism() == 1`)
+  makes the default pretty formatter print `test <name> ... ` without a
+  trailing newline before the test body, which silently swallowed the first
+  `RESULT` line out of the strict line-filter assertion while the emit bytes
+  themselves were exactly correct. The new
+  `real_stdout_emit_family_exact_bytes_serial_child` test forces
+  `RUST_TEST_THREADS=1` on the CHILD via `.env(...)` and pins exactly that
+  condition; the byte assertions themselves are unchanged.
 - **Model vs the real ECMAScript parser**
   (`parser_contract_matches_node_ecmascript_regex`): the Rust parser model is
   compared line-by-line against the ACTUAL regex from

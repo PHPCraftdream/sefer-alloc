@@ -18,7 +18,11 @@
 //!    expectations (the literal word `RESULT`, not `RESULT_PREFIX`). This
 //!    closes **P2-2** (Sol-codex round-1 review): the previous suite never
 //!    inspected real `emit*` output — emptying every `emit*` body or renaming
-//!    `RESULT_PREFIX` to `"RESULTX"` passed every test.
+//!    `RESULT_PREFIX` to `"RESULTX"` passed every test. The child runs with
+//!    `--format terse`, so libtest's own framing can never share a physical
+//!    line with the emitted bytes (P2-1, round-2 review);
+//!    `real_stdout_emit_family_exact_bytes_serial_child` pins the
+//!    forced-serial (`RUST_TEST_THREADS=1` on the child) case.
 //!
 //! 3. **Model vs the real ECMAScript parser**
 //!    (`parser_contract_matches_node_ecmascript_regex`): the Rust model is
@@ -214,6 +218,11 @@ mod real_emit {
     /// test `module_path!()` includes the test-crate name (`protocol::...`),
     /// while libtest's own test paths omit it — a `module_path!()`-built
     /// filter matches nothing and the child silently runs 0 tests.
+    ///
+    /// BOTH runner tests below re-exec with this exact filter, so the child
+    /// branch always runs inside `real_stdout_emit_family_exact_bytes`;
+    /// `real_stdout_emit_family_exact_bytes_serial_child` is runner-only by
+    /// construction.
     const TEST_NAME: &str = "real_emit::real_stdout_emit_family_exact_bytes";
 
     /// Independently HARDCODED expectations — the literal word `RESULT`, NOT
@@ -232,44 +241,67 @@ mod real_emit {
         "RESULT elapsed_ns_max=340282366920938463463374607431768211455\n",
     );
 
-    /// The real `emit*` output must land on the child's real stdout as exact
-    /// bytes matching independently hardcoded expectations (P2-2).
-    ///
-    /// **Why a re-exec** (the `crates/proc-memstat/tests/non_utf8_name.rs`
-    /// pattern): `emit*` write to the process's real stdout, which a
-    /// same-process libtest cannot cleanly observe — the harness captures
-    /// test output through a pipe it owns.
-    ///
-    /// **Why `--nocapture` is REQUIRED on the child**: without it the child's
-    /// libtest harness swallows the `emit*` writes into its capture buffer
-    /// and DISCARDS them on success, so the pipe we read would never see
-    /// them. With `--nocapture` the harness forwards writes straight to the
-    /// inherited stdout — which, because we spawned the child with
-    /// `.output()`, is the pipe we then read.
-    #[test]
-    fn real_stdout_emit_family_exact_bytes() {
-        if std::env::var_os(CHILD_MARKER).is_some() {
-            // Child branch: call the REAL functions in this exact order.
-            proc_probe::emit("arm", "sefer");
-            proc_probe::emit_u64("rss_kib_max", u64::MAX);
-            proc_probe::emit_i64("delta_neg", -42);
-            proc_probe::emit_i64("i64_min", i64::MIN);
-            proc_probe::emit_f64("ratio", 1.5);
-            // elapsed_ns_max = u128::MAX closes exactly the coverage gap the
-            // Sol-codex round-1 review (P2-2) found — the previous test only
-            // used `987_654_321` (fits u32), so an accidental u128→u64/u32
-            // narrowing in `emit_ns` was unverifiable; the current `emit_ns`
-            // does NOT narrow, so this guards a guarantee, it does not fix a
-            // present bug.
-            proc_probe::emit_ns("elapsed_ns_max", u128::MAX);
-            return;
-        }
+    /// The child branch: the REAL `emit*` calls, in this exact order. Shared
+    /// by every runner scenario below (the `--exact` filter above selects
+    /// this body in the re-exec'd child regardless of which runner test
+    /// spawned it).
+    fn emit_family() {
+        proc_probe::emit("arm", "sefer");
+        proc_probe::emit_u64("rss_kib_max", u64::MAX);
+        proc_probe::emit_i64("delta_neg", -42);
+        proc_probe::emit_i64("i64_min", i64::MIN);
+        proc_probe::emit_f64("ratio", 1.5);
+        // elapsed_ns_max = u128::MAX closes exactly the coverage gap the
+        // Sol-codex round-1 review (P2-2) found — the previous test only
+        // used `987_654_321` (fits u32), so an accidental u128→u64/u32
+        // narrowing in `emit_ns` was unverifiable; the current `emit_ns`
+        // does NOT narrow, so this guards a guarantee, it does not fix a
+        // present bug.
+        proc_probe::emit_ns("elapsed_ns_max", u128::MAX);
+    }
 
-        // Runner branch: re-exec this test binary with the marker set.
+    /// Re-exec this test binary as a libtest child running ONLY
+    /// [`TEST_NAME`], and return its captured stdout.
+    ///
+    /// **Why `--format terse` is REQUIRED on the child** (Sol-codex round-2
+    /// review P2-1): without it the child's libtest selects its PRETTY
+    /// formatter, and when the child is SINGLE-threaded that formatter prints
+    /// `test <name> ... ` with NO trailing newline BEFORE the test body —
+    /// verified against the Rust 1.88 sources
+    /// (`PrettyFormatter::write_test_start` in
+    /// `library/test/src/formatters/pretty.rs`; the selector
+    /// `is_multithreaded = opts.test_threads.unwrap_or_else(get_concurrency)
+    /// \> 1` in `library/test/src/console.rs`; `get_concurrency` reads
+    /// `RUST_TEST_THREADS` first in
+    /// `library/test/src/helpers/concurrency.rs`). The child inherits the
+    /// outer environment, so an outer `RUST_TEST_THREADS=1` (a common CI/dev
+    /// setting for deterministic sequential runs) — or
+    /// `available_parallelism() == 1` — triggers exactly this; the first
+    /// emitted line then physically reads
+    /// `test real_emit::... ... RESULT arm=sefer`, the
+    /// `starts_with("RESULT ")` filter silently drops it, and the test fails
+    /// although every `emit*` printed exactly correct bytes. The TERSE
+    /// formatter writes the pre-body name only for padded BENCHMARKS
+    /// (`write_test_start` guards on `NamePadding::PadOnRight`,
+    /// `library/test/src/formatters/terse.rs`): for a normal test in EITHER
+    /// thread mode nothing is written between the LF-terminated
+    /// `running N tests` header and the body, and the post-body result is a
+    /// bare `.` — so every emitted line starts at column 0 regardless of the
+    /// child's thread count. `--format terse` is stable libtest CLI and only
+    /// changes the harness framing, never the emitted bytes.
+    ///
+    /// `extra_child_env` is a single `(key, value)` pair set ON TOP of the
+    /// inherited environment; the serial-child regression test below uses it
+    /// to force `RUST_TEST_THREADS=1` on the child deterministically.
+    fn emit_child_stdout(extra_child_env: Option<(&str, &str)>) -> String {
         let exe = std::env::current_exe().expect("current_exe resolves this test binary");
-        let out = std::process::Command::new(&exe)
-            .args(["--exact", TEST_NAME, "--nocapture"])
-            .env(CHILD_MARKER, "1")
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.args(["--exact", TEST_NAME, "--nocapture", "--format", "terse"])
+            .env(CHILD_MARKER, "1");
+        if let Some((key, value)) = extra_child_env {
+            cmd.env(key, value);
+        }
+        let out = cmd
             .output()
             .unwrap_or_else(|e| panic!("failed to re-spawn this binary for {TEST_NAME}: {e}"));
         assert!(
@@ -281,9 +313,14 @@ mod real_emit {
             stdout = String::from_utf8_lossy(&out.stdout),
             stderr = String::from_utf8_lossy(&out.stderr),
         );
-        let stdout = String::from_utf8(out.stdout)
-            .expect("emit* write UTF-8; the harness adds no non-UTF-8 framing");
+        String::from_utf8(out.stdout)
+            .expect("emit* write UTF-8; the harness adds no non-UTF-8 framing")
+    }
 
+    /// The full two-part oracle over the child's real stdout. UNCHANGED by
+    /// the P2-1 fix — the fix changed only the child's libtest formatter,
+    /// never the strictness of these assertions.
+    fn assert_expected_result_lines(stdout: &str) {
         // 1. Contiguity, order, and the exact LF-terminated line shape: a
         //    `\r\n` or a missing trailing `\n` breaks this contains match.
         assert!(
@@ -306,8 +343,60 @@ mod real_emit {
             "RESULT lines in the child's real stdout diverge from the hardcoded block"
         );
     }
-}
 
+    /// The real `emit*` functions must land on the child's real stdout as exact
+    /// bytes matching independently hardcoded expectations (P2-2).
+    ///
+    /// **Why a re-exec** (the `crates/proc-memstat/tests/non_utf8_name.rs`
+    /// pattern): `emit*` write to the process's real stdout, which a
+    /// same-process libtest cannot cleanly observe — the harness captures
+    /// test output through a pipe it owns.
+    ///
+    /// **Why `--nocapture` is REQUIRED on the child**: without it the child's
+    /// libtest harness swallows the `emit*` writes into its capture buffer
+    /// and DISCARDS them on success, so the pipe we read would never see
+    /// them. With `--nocapture` the harness forwards writes straight to the
+    /// inherited stdout — which, because we spawned the child with
+    /// `.output()`, is the pipe we then read.
+    ///
+    /// **Why `--format terse` is REQUIRED on the child**: see
+    /// [`emit_child_stdout`] (P2-1 — the serial-child pretty formatter would
+    /// merge libtest's own `test ... ... ` framing into the first metric
+    /// line).
+    #[test]
+    fn real_stdout_emit_family_exact_bytes() {
+        if std::env::var_os(CHILD_MARKER).is_some() {
+            // Child branch: call the REAL functions in this exact order.
+            emit_family();
+            return;
+        }
+
+        // Runner branch: re-exec this test binary with the marker set.
+        let stdout = emit_child_stdout(None);
+        assert_expected_result_lines(&stdout);
+    }
+
+    /// P2-1 regression (Sol-codex round-2 review): the emitted bytes must
+    /// survive a FORCED single-threaded child. `RUST_TEST_THREADS=1` is set
+    /// via `.env(...)` on the child's `Command` — deterministic, independent
+    /// of the outer run's environment — which is exactly the condition under
+    /// which the pre-fix child's PRETTY formatter printed `test <name> ... `
+    /// (no trailing newline) before the body and silently dropped
+    /// `RESULT arm=sefer` from the strict line-filter assertion. Verified
+    /// counterfactually before the fix: the pre-fix child under this exact
+    /// scenario fails with the first expected line missing.
+    ///
+    /// Runner-only by construction: the child re-exec's `--exact` filter
+    /// selects [`TEST_NAME`], so this test's own body always takes the
+    /// runner branch. Together with [`real_stdout_emit_family_exact_bytes`]
+    /// this covers the terse formatter in BOTH child thread modes
+    /// (multithreaded default and forced serial).
+    #[test]
+    fn real_stdout_emit_family_exact_bytes_serial_child() {
+        let stdout = emit_child_stdout(Some(("RUST_TEST_THREADS", "1")));
+        assert_expected_result_lines(&stdout);
+    }
+}
 // ---------------------------------------------------------------------------
 // Layer 3: the parser model vs the real ECMAScript regex, via real Node.js.
 // ---------------------------------------------------------------------------
