@@ -37,14 +37,22 @@ before it.
   **`emit_i64`** (a signed delta may be negative), **`emit_f64`**
   (the default `f64` `Display`, which never emits whitespace, so the value
   stays a single parseable token), and **`emit_ns`** — a plain-integer
-  nanosecond metric, a convenience for the common
-  `Instant::elapsed().as_nanos()` (`u128`) shape, kept as its own function so a
-  probe timing a region does not repeat the cast at every call site.
-- **A re-export of `proc-memstat`'s `snapshot()` and `MemStat`** (requires the
-  default `std` feature; `proc-memstat` is itself an std-only crate) — a probe
-  almost always wants to *measure* memory and then *report* it, and this crate
-  re-exports both so a probe binary depends on **one** crate for the whole
-  "measure + report" pair.
+  nanosecond metric for the common `Instant::elapsed().as_nanos()` (`u128`)
+  shape, printed at full `u128` width with no narrowing step and no
+  hand-rolled `RESULT` formatting at the call site. The family is unchecked:
+  the key/value shape is a precondition, and violating it is a caller logic
+  error — nothing is validated, sanitized, or truncated. A stdout write
+  failure panics, exactly as `println!` does.
+- **A re-export of `proc-memstat`'s `snapshot()` and `MemStat` — and of the
+  fallible `try_snapshot()` / `SnapshotError` pair** (requires the default
+  `std` feature; `proc-memstat` is itself an std-only crate) — a probe almost
+  always wants to *measure* memory and then *report* it, and this crate
+  re-exports both forms so a probe binary depends on **one** crate for the
+  whole "measure + report" pair. The fallible form exists for the paired-A/B
+  case where a judge must distinguish a failed reading from a genuinely
+  near-zero one: best-effort `snapshot()` returns an all-zero `MemStat` on
+  failure, which a bare `RESULT rss_kib=0` cannot tell apart from "memory was
+  freed".
 - **A genuine `no_std` core with ZERO dependencies.** The `std` feature is
   what pulls in the (optional) `proc-memstat` dependency; with
   `default-features = false` the crate builds with zero dependencies and
@@ -82,6 +90,10 @@ its module doc states:
   finding P3-2). When the runner source or `node` is absent — a
   published-crate checkout has no `scripts/` — the test SKIPs with a stderr
   notice, never fails.
+
+`try_snapshot_re_export_reachable` additionally proves the fallible
+`try_snapshot()`/`SnapshotError` re-export is usable through `proc-probe`
+alone (round-1 review finding P3-4).
 
 The crate ships no doctests (repo convention); runnable examples live in
 `tests/`.

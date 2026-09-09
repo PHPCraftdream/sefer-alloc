@@ -158,6 +158,29 @@ fn snapshot_re_export_matches_proc_memstat() {
     }
 }
 
+/// The fallible re-export must be reachable through `proc-probe` alone
+/// (P3-4): a one-dependency probe can distinguish a failed measurement from a
+/// genuinely near-zero one without naming `proc-memstat`, and the error type
+/// is nameable and `Display`-able through the re-export.
+///
+/// Requires the `std` feature: the `try_snapshot`/`SnapshotError` re-export
+/// is std-only, exactly like `snapshot`/`MemStat`.
+#[cfg(feature = "std")]
+#[test]
+fn try_snapshot_re_export_reachable() {
+    match proc_probe::try_snapshot() {
+        Ok(m) => {
+            let _typed: proc_probe::MemStat = m;
+        }
+        // `SnapshotError` is `#[non_exhaustive]`, so a wildcard arm is
+        // mandatory from outside `proc-memstat`; binding it here proves the
+        // error type itself crossed the re-export.
+        Err(e) => {
+            let _msg: String = e.to_string();
+        }
+    }
+}
+
 /// The `emit*` functions must run without panicking. This smoke test does NOT
 /// inspect their output — that contract (real stdout bytes vs independently
 /// hardcoded expectations) is checked by
