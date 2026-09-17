@@ -227,3 +227,12 @@ unsafe hooks (`tests/dbg_hook_safety_tripwire.rs`) и README с новым test 
 дополнительных sentinels. `node scripts/verify-ci-sentinels.mjs` проверил
 88/88; floor и текущая карточка item 87 синхронизированы.
 Результат удалённого CI здесь заранее не утверждается.
+
+Полный pre-push сценарий выявил требование файлового cfg для runtime-теста:
+`verify-alloc-core-dbg-internals-exhaustive` не принимает только function-level
+gate у вызовов диагностического API. Runtime-регрессия перенесена в
+`tests/g1_delayed_notification.rs` с crate-level cfg. Четыре структурных
+проверки остались в исходном файле и продолжают работать без internals.
+CI-команды включают оба targets; счётчик integration test files обновлён
+до 255. Оба режима G1/G3 и 17 doc guards после переноса прошли;
+сканер диагностического API сообщает ноль нарушений.

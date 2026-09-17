@@ -2054,13 +2054,13 @@ jobs:
       - name: Production batch and post-release notification
         shell: bash
         run: |
-          cargo test --locked --features "production batch-api internals bench-internals" --test g1_dirty_resolve_apply_split --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-production.log"
+          cargo test --locked --features "production batch-api internals bench-internals" --test g1_dirty_resolve_apply_split --test g1_delayed_notification --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-production.log"
           grep -F "test delayed_notification_survives_actual_segment_release ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-production.log"
       - name: Non-fastbin batch reclamation
         shell: bash
         run: |
-          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test g1_dirty_resolve_apply_split --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test g1_dirty_resolve_apply_split --test g1_delayed_notification --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test delayed_notification_survives_actual_segment_release ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test large_batch_drains_small_overflow_without_fastbin ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
