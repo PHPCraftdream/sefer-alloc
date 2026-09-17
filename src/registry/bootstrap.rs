@@ -847,7 +847,7 @@ impl Registry {
     /// across the crate.
     ///
     /// **F-3 context (documented, not fixed):** the two production callers —
-    /// `set_dirty_bit_for_segment` and `resolve_heap_overflow` in
+    /// `resolve_dirty_bit_target` and `resolve_heap_overflow` in
     /// `heap_core_xthread.rs` — read `owner_id` from *foreign* segment
     /// memory with only an `idx < MAX_HEAPS` range check before indexing the
     /// registry. A garbled-but-in-range id therefore triggers a FRESH OS

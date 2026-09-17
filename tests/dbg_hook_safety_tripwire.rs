@@ -453,6 +453,8 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
 /// per-item `# Safety` doc requirement, enforced by human review at land
 /// time, not by this test).
 const UNSAFE_HOOKS: &[&str] = &[
+    // Resolve requires a live block; delayed apply retains only process-lived metadata.
+    "src/registry/heap_core_xthread.rs::dbg_resolve_dirty_notification",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_stamp_segment_id",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_stamp_kind_byte",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_unregister",

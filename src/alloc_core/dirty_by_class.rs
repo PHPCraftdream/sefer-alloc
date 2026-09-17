@@ -169,7 +169,7 @@ const PER_CLASS_DIRTY_SIZE: usize = {
 /// `cell`. Returns `None` only on OOM (sidecar OOM is NOT allocator OOM — the
 /// per-class routing mechanism simply stays off for this heap and the caller
 /// must fall back to the existing per-segment bitmap; see the call site in
-/// `registry::heap_core_xthread::set_dirty_bit_for_segment`).
+/// `registry::heap_core_xthread::apply_resolved_dirty_bit`).
 ///
 /// Thin wrapper over `OncePtrCell::get_or_try_init`, whose `UNINIT ->
 /// INITIALIZING -> READY` protocol (CAS-publish, OOM rollback, loser re-race)
@@ -184,7 +184,7 @@ pub(crate) fn ensure_per_class_dirty(
         Some(base.cast::<PerClassDirty>())
     })?;
     // SAFETY: `ptr` was produced by THIS closure via `leak_zeroed_pages`
-    // (never by any other caller of this cell — `set_dirty_bit_for_segment`
+    // (never by any other caller of this cell — `apply_resolved_dirty_bit`
     // and `drain_dirty_segments` are the only two call sites, and both go
     // through this module's two public functions), so it is non-null,
     // `PAGE`-aligned (>= `align_of::<PerClassDirty>() == 8`), valid for

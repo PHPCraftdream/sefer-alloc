@@ -282,26 +282,130 @@ const RETRY_ROUND_SAFETY_CAP: u32 = 1;
 #[cfg(feature = "alloc-xthread")]
 const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micros(200);
 
-/// R7-A4: set the dirty bit for segment `base` in the owning HeapSlot's
-/// `dirty_segments` bitmap. Called by `push_with_overflow_retry` AFTER a
-/// successful `RemoteFreeRing::push` or `try_push_uncounted` — i.e. after
-/// a ring entry has been published for this segment.
+/// G1 (review `docs/reviews/2026-09-10-074442-sefer-alloc-global-review-sol-codex-run-1.md`,
+/// finding G1, P1): the dirty-bit pipeline is split into a RESOLVE phase and
+/// an APPLY phase so that NO segment memory is ever touched after the free
+/// record is published on the ring.
+///
+/// `ResolvedDirtyTarget` is a G1 resolution snapshot: it contains ONLY a
+/// process-lifetime `&'static HeapSlot` plus bitmap arithmetic (`word`, `bit`)
+/// and the packed ring-entry word — deliberately NO segment pointer, so it
+/// stays valid across the publish even if the owner drains the record and
+/// RELEASES the segment in the publish-to-apply window.
+#[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+#[derive(Clone, Copy)]
+struct ResolvedDirtyTarget {
+    slot: &'static super::heap_slot::HeapSlot,
+    word: usize,
+    bit: u64,
+    #[cfg_attr(not(feature = "class-aware-dirty"), allow(dead_code))]
+    packed: u32,
+}
+
+/// G1 RESOLVE phase: resolve the owning HeapSlot and the dirty-bitmap
+/// `(word, bit)` for segment `base`. MUST be called BEFORE the `ring.push` /
+/// `try_push_uncounted` that publishes this block's free record.
+///
+/// Call-ordering contract: before the publish, this block is still counted in
+/// the owner's `live_count` (the owner cannot have observed THIS producer's
+/// record yet), so the segment cannot have been released — reading
+/// `segment_id_at(base)` and `owner_state_atomic()` here is safe. After the
+/// publish it is NOT: the owner may drain the record, drop `live_count` to
+/// zero, and unmap the segment before this thread runs again, which is the
+/// use-after-free finding G1 fixes.
 ///
 /// Resolves the owning HeapSlot via the segment's `owner_state` header stamp
 /// (the SAME `unpack_owner_id` → `slot(idx)` path `resolve_heap_overflow`
 /// uses). Reads the immutable `segment_id` from the segment header to compute
 /// `(word, bit)` in the 16-word dirty bitmap.
 ///
+/// **Defensive:** if the owner id is out of range (should be unreachable for
+/// a live, correctly-stamped segment — same argument as
+/// `resolve_heap_overflow`'s `None` branch), returns `None`; the dirty bit is
+/// simply not set and the linear-scan fallback eventually finds the ring entry
+/// anyway (P4 contract — see `remote_free_ring.rs` module doc).
+///
+/// R34-15/task #534: free-path slot resolution. `slot_or_none` returns `None`
+/// on chunk-materialisation OOM instead of aborting, folding into the same
+/// defensive bail as the garbled-id check above. F-3 context: `owner_id` is
+/// read from FOREIGN segment memory with only the `idx < MAX_HEAPS` range
+/// check above; a garbled-but-in-range id can trigger a FRESH OS reservation
+/// here. For a legitimate cross-thread free this is harmless — and under G1
+/// this invariant now holds UNCONDITIONALLY, because the resolve runs BEFORE this
+/// producer's publish: the block holds `live_count >= 1` until the owner's
+/// drain of a record that does not exist yet, so the segment cannot be
+/// released under the freer at this point (see the review's G1 section). The
+/// residual risk is the same caller-contract-violation surface (double free /
+/// stale pointer) every allocator has.
+#[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+#[inline]
+fn resolve_dirty_bit_target(
+    base: *mut u8,
+    #[cfg_attr(not(feature = "class-aware-dirty"), allow(unused_variables))] packed: u32,
+) -> Option<ResolvedDirtyTarget> {
+    use crate::alloc_core::segment_header::{unpack_owner_id, SegmentHeader, SegmentMeta};
+
+    let segment_id = SegmentHeader::segment_id_at(base) as usize;
+    let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
+    let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed)) as usize;
+    let reg = super::bootstrap::ensure();
+    if owner_id >= super::bootstrap::MAX_HEAPS {
+        return None; // Defensive: unstamped/garbled owner id.
+    }
+    // R34-15/task #534: free-path slot resolution. `slot_or_none` returns
+    // `None` on chunk-materialisation OOM instead of aborting, folding into
+    // the same defensive bail as the garbled-id check above. F-3 context:
+    // `owner_id` is read from FOREIGN segment memory with only the
+    // `idx < MAX_HEAPS` range check above; a garbled-but-in-range id can
+    // trigger a FRESH OS reservation here. For a legitimate cross-thread
+    // free this is harmless — and under G1 this invariant is UNCONDITIONAL here,
+    // because this resolve runs BEFORE this producer's publish: the block
+    // holds `live_count >= 1` until the owner drains a record that does not
+    // exist yet, so the segment cannot be released under the freer at this
+    // point (see the review's G1 section). The residual risk is the same
+    // caller-contract-violation surface (double free / stale pointer) every
+    // allocator has.
+    let Some(slot) = reg.slot_or_none(owner_id) else {
+        return None; // Chunk-materialisation OOM — defensive return (R34-15).
+    };
+    let word = segment_id / 64;
+    let bit = 1u64 << (segment_id % 64);
+    // The WORDS_PER_CLASS compile-time bound check: segment_id < MAX_SEGMENTS
+    // is an invariant of the SegmentTable (register rejects overflow), so
+    // word < DIRTY_BITMAP_WORDS by construction. debug_assert for defence;
+    // the runtime guard below (G1) moves the old post-publish `if word < ...`
+    // gating decision into resolve so behaviour is identical — no bit is set
+    // when out of range.
+    debug_assert!(
+        word < super::heap_slot::DIRTY_BITMAP_WORDS,
+        "segment_id {segment_id} out of dirty bitmap range"
+    );
+    if word >= super::heap_slot::DIRTY_BITMAP_WORDS {
+        return None;
+    }
+    Some(ResolvedDirtyTarget {
+        slot,
+        word,
+        bit,
+        packed,
+    })
+}
+
+/// G1 APPLY phase: perform the dirty-bit writes from a pre-publish
+/// [`ResolvedDirtyTarget`] snapshot. MUST be called ONLY AFTER a successful
+/// ring publish (the fast-path `push` or in-loop `try_push_uncounted`).
+///
+/// G1 contract: this function takes NO segment pointer and NEVER touches
+/// segment memory — by the time it runs, the owner may legally have drained
+/// this producer's record AND RELEASED the segment (unmap/decommit); every
+/// input here is either a process-lifetime `&'static HeapSlot` or immutable
+/// bitmap arithmetic snapshotted before the publish.
+///
 /// **Ordering:** `fetch_or(bit, Release)` — the `Release` pairs with the
 /// owner's `swap(0, Acquire)` in the dirty-drain loop, establishing
 /// happens-before from the producer's ring publish (which completed before
-/// this call) to the owner's dirty-drain iteration.
-///
-/// **Defensive:** if the owner id is out of range (should be unreachable for
-/// a live, correctly-stamped segment — same argument as
-/// `resolve_heap_overflow`'s `None` branch), the dirty bit is simply not set;
-/// the linear-scan fallback eventually finds the ring entry anyway (P4
-/// contract — see `remote_free_ring.rs` module doc).
+/// this call) to the owner's dirty-drain iteration. The G1 split does not
+/// change that chain: the publish still precedes this call.
 ///
 /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): `packed` is the SAME
 /// already-packed `(offset, class)` ring-entry word the caller just published
@@ -331,41 +435,14 @@ const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micro
 /// doc comment for the consumer-side read.
 #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
 #[inline]
-fn set_dirty_bit_for_segment(
-    base: *mut u8,
-    #[cfg_attr(not(feature = "class-aware-dirty"), allow(unused_variables))] packed: u32,
-) {
-    use crate::alloc_core::segment_header::{unpack_owner_id, SegmentHeader, SegmentMeta};
-
-    let segment_id = SegmentHeader::segment_id_at(base) as usize;
-    let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
-    let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed)) as usize;
-    let reg = super::bootstrap::ensure();
-    if owner_id >= super::bootstrap::MAX_HEAPS {
-        return; // Defensive: unstamped/garbled owner id.
-    }
-    // R34-15/task #534: free-path slot resolution. `slot_or_none` returns
-    // `None` on chunk-materialisation OOM instead of aborting, folding into
-    // the same defensive bail as the garbled-id check above. F-3 context:
-    // `owner_id` is read from FOREIGN segment memory with only the
-    // `idx < MAX_HEAPS` range check above; a garbled-but-in-range id can
-    // trigger a FRESH OS reservation here. For a legitimate cross-thread
-    // free this is harmless (the block holds `live_count >= 1` until the
-    // owner's drain, so the segment cannot be released under the freer);
-    // the residual risk is the same caller-contract-violation surface
-    // (double free / stale pointer) every allocator has.
-    let Some(slot) = reg.slot_or_none(owner_id) else {
-        return; // Chunk-materialisation OOM — defensive return (R34-15).
-    };
-    let word = segment_id / 64;
-    let bit = 1u64 << (segment_id % 64);
-    // The WORDS_PER_CLASS compile-time bound check: segment_id < MAX_SEGMENTS
-    // is an invariant of the SegmentTable (register rejects overflow), so
-    // word < DIRTY_BITMAP_WORDS by construction. debug_assert for defence.
-    debug_assert!(
-        word < super::heap_slot::DIRTY_BITMAP_WORDS,
-        "segment_id {segment_id} out of dirty bitmap range"
-    );
+fn apply_resolved_dirty_bit(target: ResolvedDirtyTarget) {
+    #[cfg_attr(not(feature = "class-aware-dirty"), allow(unused_variables))]
+    let ResolvedDirtyTarget {
+        slot,
+        word,
+        bit,
+        packed,
+    } = target;
     if word < super::heap_slot::DIRTY_BITMAP_WORDS {
         slot.remote.dirty_segments[word].fetch_or(bit, Ordering::Release);
     }
@@ -430,6 +507,44 @@ fn set_dirty_bit_for_segment(
 }
 
 impl HeapCore {
+    /// Prepare a delayed notification for the post-release regression test.
+    ///
+    /// Test support only (`internals` + `bench-internals`), not stable API.
+    /// The closure owns only a process-lifetime snapshot and may run on another
+    /// thread after release. It reports whether a previously clear coarse bit
+    /// was set; the test must exclude competing notifications/drains of that bit.
+    ///
+    /// # Safety
+    /// `ptr` must be a live Small block of a registry heap, allocated with `layout`.
+    /// It must remain allocated until this function returns.
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "alloc-segment-directory",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)] // The caller establishes header lifetime before resolve.
+    pub unsafe fn dbg_resolve_dirty_notification(
+        ptr: *mut u8,
+        layout: Layout,
+    ) -> Option<impl FnOnce() -> bool + Send + 'static> {
+        let class =
+            crate::alloc_core::size_classes::SizeClasses::class_for(layout.size(), layout.align())?
+                as u32;
+        #[cfg(not(feature = "hardened"))]
+        let packed = crate::alloc_core::remote_free_ring::pack_entry(0, class);
+        #[cfg(feature = "hardened")]
+        let packed = crate::alloc_core::remote_free_ring::pack_entry_hardened(0, class, 0);
+        let target = resolve_dirty_bit_target(os::segment_base_of_ptr(ptr), packed)?;
+        Some(move || {
+            let before = target.slot.remote.dirty_segments[target.word].load(Ordering::Acquire);
+            apply_resolved_dirty_bit(target);
+            let after = target.slot.remote.dirty_segments[target.word].load(Ordering::Acquire);
+            before & target.bit == 0 && after & target.bit != 0
+        })
+    }
+
     /// 0.3.0 (task A1); extracted for #132: push a Large/huge segment `base`
     /// onto the OWNING heap's deferred-free stack, given `head` — the
     /// owner's `thread_free_head()` (a `*const AtomicPtr<u8>`, obtained by a
@@ -1230,11 +1345,22 @@ impl HeapCore {
         base: *mut u8,
         packed: u32,
     ) {
+        // G1 (docs/reviews/2026-09-10-074442-sefer-alloc-global-review-sol-codex-run-1.md):
+        // resolve BEFORE publish — after the push succeeds the owner may drain
+        // the record and release the segment before this thread runs again; the
+        // old post-publish dirty-bit helper read the segment header in exactly
+        // that window (use-after-free).
+        #[cfg(feature = "alloc-segment-directory")]
+        let dirty_target = resolve_dirty_bit_target(base, packed);
         if ring.push(packed).is_ok() {
             // R7-A4 (P3): set the dirty bit for this segment after a
             // successful ring publish — the fast-path producer site.
+            // G1: applied from the pre-publish resolution snapshot; no
+            // segment-memory access happens after the publish.
             #[cfg(feature = "alloc-segment-directory")]
-            set_dirty_bit_for_segment(base, packed);
+            if let Some(target) = dirty_target {
+                apply_resolved_dirty_bit(target);
+            }
             return; // Fast path: the common case never proceeds further.
         }
         // R6-OPT-P0-4: the segment ring is full. Try the heap-level
@@ -1278,6 +1404,15 @@ impl HeapCore {
             // that case, matching `push_to_heap_overflow`'s own "returns
             // false" defensive behaviour.
             let overflow = Self::resolve_heap_overflow(base);
+            // G1: resolve ONCE before the loop — same rationale as the
+            // fast path, same once-not-per-poll discipline as
+            // `resolve_heap_overflow` above. This block's free record is
+            // not published until a push inside the loop succeeds, so the
+            // segment cannot be released across the retry window, and the
+            // resolved target ('static slot + immutable segment_id
+            // arithmetic) stays valid regardless.
+            #[cfg(feature = "alloc-segment-directory")]
+            let dirty_target = resolve_dirty_bit_target(base, packed);
             // R6-REGRESSION-2: probe rounds of `RETRY_ROUND_SPINS` tight-spin
             // polls each, with a real `std::thread::sleep(RETRY_ROUND_SLEEP)`
             // OS-level block between rounds (from round 2 onward — the sleep
@@ -1342,8 +1477,12 @@ impl HeapCore {
                         // R7-A4 (P3): set the dirty bit — the retry-path
                         // producer site (try_push_uncounted in the bounded
                         // spin-retry loop, the R6-REGRESSION-2 path).
+                        // G1: applied from the pre-loop resolution
+                        // snapshot; no segment-memory access after publish.
                         #[cfg(feature = "alloc-segment-directory")]
-                        set_dirty_bit_for_segment(base, packed);
+                        if let Some(target) = dirty_target {
+                            apply_resolved_dirty_bit(target);
+                        }
                         DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
                         return;
                     }
@@ -1553,7 +1692,7 @@ impl HeapCore {
         // R34-15/task #534: `slot_or_none` returns `None` on
         // chunk-materialisation OOM instead of aborting; `map` folds the `None`
         // into this function's existing defensive `None` return (same shape as
-        // the garbled-id check above). F-3: see `set_dirty_bit_for_segment`'s
+        // the garbled-id check above). F-3: see `resolve_dirty_bit_target`'s
         // doc comment for why a garbled-but-in-range id reaching here is
         // harmless for legitimate cross-thread frees.
         reg.slot_or_none(idx).map(|slot| &slot.overflow)
