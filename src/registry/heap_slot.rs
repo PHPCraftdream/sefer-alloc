@@ -259,7 +259,7 @@ pub(crate) struct HeapSlotRemote {
     /// R13-1 (task #271, P0 fix): the coarse-only latch — set PERMANENTLY,
     /// once, the first time [`ensure_per_class_dirty`](crate::alloc_core::dirty_by_class::ensure_per_class_dirty)
     /// fails to materialise this heap's [`dirty_by_class`](Self::dirty_by_class)
-    /// sidecar (OOM). See `set_dirty_bit_for_segment`'s doc comment
+    /// sidecar (OOM). See `apply_resolved_dirty_bit`'s doc comment
     /// (`registry::heap_core_xthread`) for the producer-side write and
     /// `AllocCore::drain_dirty_segments`'s doc comment for the consumer-side
     /// read and the visibility-gap bug this closes.
@@ -299,7 +299,7 @@ pub(crate) struct HeapSlotRemote {
     /// the slot would start un-degraded instead of inheriting a possibly
     /// long-past transient OOM. **Decided NOT to implement this round** —
     /// this field is written by REMOTE (cross-thread) producers, and
-    /// `set_dirty_bit_for_segment`'s (`registry::heap_core_xthread`) owner
+    /// `resolve_dirty_bit_target`'s (`registry::heap_core_xthread`) owner
     /// resolution is an unconditional segment-header-stamp read with NO
     /// `STATE_LIVE` check at all (unlike the advisory `owner_slot_is_live`
     /// probe `push_with_overflow_retry` uses for a different purpose) — a
@@ -319,7 +319,7 @@ pub(crate) struct HeapSlotRemote {
     /// producer can validate).
     ///
     /// **Ordering:** producer writes `true` with `Release`
-    /// (`set_dirty_bit_for_segment`, `registry::heap_core_xthread`); the
+    /// (`apply_resolved_dirty_bit`, `registry::heap_core_xthread`); the
     /// consumer (`AllocCore::drain_dirty_segments`) reads `Acquire`
     /// (R14-2, task #287 — promoted from a `Relaxed` read three independent
     /// Round 13 reviews found diverged from this doc comment and from the

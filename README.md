@@ -672,14 +672,14 @@ item-scoped regions.
 | [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 10 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) / `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) / `dbg_clear_magazine_on_hit` (R29-10, task #441, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) — plus the R29-3 `dbg_decomp_decommit_payload`/`dbg_decomp_recommit_payload` (R31-6, task #469) delegations (gated `bench-internals`); see the R24-6/R25-1 note below the table. (`dbg_decomp_release`'s delegation is `unsafe fn` again as of R31-15/task #486 — forwards the identical `# Safety` contract; see the `alloc_core_small_pool.rs` row above for why.) Plus two task #504 (F11 step 2) delegations, `dbg_decomp_win_commit_only`/`dbg_decomp_win_release_only` (gated `bench-internals`), forwarding their identical `# Safety` contracts from the `alloc_core_small_pool.rs` originals. |
 | [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 6 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc`, which cost this file its one `try_promote_to_large` item-scoped site — the other, `realloc`'s move leg, was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary) |
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
-| [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
+| [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 2 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path); `dbg_resolve_dirty_notification` test hook (`internals` + `bench-internals`), whose caller guarantees a live block during resolution |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **18** tier-1 module-level seams (12 in
-`src/`, 6 in `crates/`) plus **93** tier-2 item-scoped allows across **22**
+`src/`, 6 in `crates/`) plus **94** tier-2 item-scoped allows across **22**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1309,7 +1309,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **252 integration test files** ship
+a test file, and a reproducible command. **255 integration test files** ship
 in `tests/`; **83 example binaries** in `examples/`; **25 benches** in
 `benches/`; **15 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1317,7 +1317,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (252 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (255 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (83 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

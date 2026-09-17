@@ -1060,6 +1060,12 @@ impl HeapCore {
     /// classification hoist (the TLS lookup is amortised at the `SeferAlloc`
     /// wrapper, not here).
     ///
+    /// G3 added Large/Small routing: Large-classified batches delegate to
+    /// `alloc_batch_large` (drain-equipped), Small batches carry the same
+    /// unconditional `drain_heap_overflow` prelude the scalar non-`fastbin`
+    /// path has, so batch correctness/retention behaviour now matches N
+    /// scalar `alloc` calls on the reclamation axis too.
+    ///
     /// # ⚠ EXPERIMENTAL / UNSTABLE
     ///
     /// Same `batch-api` (requires `experimental`) no-semver-guarantees status
@@ -1069,6 +1075,36 @@ impl HeapCore {
     #[doc(hidden)]
     #[must_use]
     pub fn alloc_batch(&mut self, layout: Layout, out: &mut [*mut u8]) -> usize {
+        use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+
+        // G3 (P2): ONE call carries ONE shared `layout` for the whole batch,
+        // so classify ONCE at the top — the same single-classification shape
+        // the `fastbin` `alloc_batch` above and the scalar `alloc` already
+        // use — and route on it, instead of looping blind.
+        let size = layout.size().max(MIN_BLOCK);
+        let align = layout.align();
+        let class = SizeClasses::class_for(size, align);
+
+        // G3 (P2): Large-classified batches must take the SAME drain-equipped
+        // Large loop the fastbin batch uses — delegate the whole call to
+        // `alloc_batch_large` (which performs the `drain_large_deferred_free`
+        // housekeeping) instead of duplicating a second generic loop here.
+        if class.is_none() {
+            return self.alloc_batch_large(out, layout);
+        }
+
+        // G3 (P2): non-fastbin Small batches get the SAME unconditional
+        // `drain_heap_overflow` prelude the scalar non-fastbin path carries
+        // (there is no magazine / `refill_magazine_slow` cold path in this
+        // configuration to place it in — identical placement rationale as the
+        // scalar path's own comment). NOT `drain_large_deferred_free`: that
+        // stack is Large-segment-only and the scalar path gates it on
+        // `class.is_none()` for the same reason.
+        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
+        {
+            self.drain_heap_overflow();
+        }
+
         let mut filled = 0usize;
         for slot in out.iter_mut() {
             let p = self.core.alloc(layout);
@@ -1084,9 +1120,33 @@ impl HeapCore {
 
     /// Shared Large-path loop for `alloc_batch` (no magazine for Large
     /// classes). Stamps each block's owning segment (cross-thread routing
-    /// needs it), matching `HeapCore::alloc`'s Large fallthrough.
+    /// needs it), matching `HeapCore::alloc`'s Large fallthrough. Performs the
+    /// SAME `drain_large_deferred_free` housekeeping the scalar `alloc`
+    /// performs before a Large request (G3: a batch-only owner never runs the
+    /// scalar path, so without it here, cross-thread-freed Large segments are
+    /// never reclaimed and SegmentTable slots grow O(batches)).
     #[cfg(feature = "batch-api")]
     fn alloc_batch_large(&mut self, out: &mut [*mut u8], layout: Layout) -> usize {
+        // G3 (P2): drain this heap's cross-thread Large-segment deferred-free
+        // stack before the Large-classified loop below, exactly as the scalar
+        // `alloc` does on every Large request (the `class.is_none()` guard
+        // there is already satisfied by construction here — this function's
+        // ONLY caller is `alloc_batch`'s Large branch). Without it, a
+        // batch-only owner never runs the scalar path, so cross-thread-freed
+        // Large segments queue on the deferred stack unboundedly: held
+        // segments and SegmentTable slots grow O(batches) instead of reaching
+        // a bounded steady state, until a real OOM or `table.register`
+        // failure. This is owner-side housekeeping, NOT magazine hot-path
+        // work: this function has no magazine fast path to protect.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            self.drain_large_deferred_free();
+        }
+
+        // Match the scalar non-fastbin allocation prelude.
+        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
+        self.drain_heap_overflow();
+
         let mut filled = 0usize;
         for slot in out.iter_mut() {
             let p = self.core.alloc(layout);

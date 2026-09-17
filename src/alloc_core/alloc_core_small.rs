@@ -2590,11 +2590,11 @@ impl AllocCore {
     /// same fallback behaviour the feature has when OFF, just without the
     /// class-scoped speedup from then on for this one heap. See
     /// `HeapSlotRemote::sidecar_oom_latch`'s doc comment for the full design
-    /// and `set_dirty_bit_for_segment`'s doc comment
+    /// and `apply_resolved_dirty_bit`'s doc comment
     /// (`registry::heap_core_xthread`) for the producer-side write.
     ///
     /// R14-2 (task #287, P0 fix): this read is `Acquire`, pairing with the
-    /// producer's `Release` store in `set_dirty_bit_for_segment` — this is
+    /// producer's `Release` store in `apply_resolved_dirty_bit` — this is
     /// the SAME pairing `HeapSlotRemote::sidecar_oom_latch`'s doc comment has
     /// always claimed and the loom model
     /// (`tests/loom_class_aware_dirty.rs::latched_visit_and_drain`) has
@@ -2634,7 +2634,7 @@ impl AllocCore {
         // R13-1 (task #271, P0 fix), R14-2 (task #287): the coarse-only
         // latch, checked BEFORE resolving the per-class slice at all — see
         // this function's doc comment for the full rationale. `Acquire`:
-        // pairs with `set_dirty_bit_for_segment`'s `Release` store
+        // pairs with `apply_resolved_dirty_bit`'s `Release` store
         // (`registry::heap_core_xthread`) — see the doc comment's ordering
         // discussion.
         #[cfg(feature = "class-aware-dirty")]

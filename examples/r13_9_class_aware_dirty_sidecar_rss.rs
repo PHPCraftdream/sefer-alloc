@@ -19,7 +19,7 @@
 //! computation) for N = 4, 8, 16 heaps, each forced to materialise its own
 //! sidecar via one genuine cross-thread free (the ONLY way
 //! `ensure_per_class_dirty` is reached in production code — see
-//! `registry::heap_core_xthread::set_dirty_bit_for_segment`).
+//! `registry::heap_core_xthread::apply_resolved_dirty_bit`).
 //!
 //! R15-1 (task #303): `MAX_SEGMENTS` raised 1024 -> 4096 (R14-7, task #292)
 //! after this harness was written, which raises `WORDS_PER_CLASS` 16 -> 64
@@ -172,7 +172,7 @@ fn claim_heap_with_materialised_sidecar() -> *mut HeapCore {
     assert!(p != 0, "owner alloc returned null");
 
     // ...a helper thread frees it remotely, which is the ONLY call path that
-    // reaches `set_dirty_bit_for_segment` -> `ensure_per_class_dirty` and
+    // reaches `apply_resolved_dirty_bit` -> `ensure_per_class_dirty` and
     // therefore the only way the sidecar is EVER materialised in production.
     thread::spawn(move || {
         let _ = bootstrap::ensure();

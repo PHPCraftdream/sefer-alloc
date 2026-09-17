@@ -461,7 +461,8 @@ impl AllocCore {
     /// per-segment dirty bit (`dirty_segments`), deliberately WITHOUT setting
     /// any per-class bit — reconstructing, byte-for-byte, the exact
     /// bitmap-level state a real sidecar-OOM push leaves behind (see
-    /// `set_dirty_bit_for_segment`'s `None` branch,
+    /// `apply_resolved_dirty_bit`'s sidecar-OOM branch (the
+    /// `ensure_per_class_dirty` `None` arm),
     /// `registry::heap_core_xthread`), WITHOUT needing to actually exhaust
     /// virtual memory to trigger a genuine `ensure_per_class_dirty` failure
     /// (impractical/non-deterministic in a unit test — same rationale as
@@ -499,7 +500,7 @@ impl AllocCore {
         if word >= ds.len() {
             return false;
         }
-        // Release: matches `set_dirty_bit_for_segment`'s real production
+        // Release: matches `apply_resolved_dirty_bit`'s real production
         // ordering for this exact bit.
         ds[word].fetch_or(bit, core::sync::atomic::Ordering::Release);
         true

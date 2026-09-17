@@ -1414,7 +1414,7 @@ impl AllocCore {
     /// rationale [`dbg_directory_rescue_scan`](Self::dbg_directory_rescue_scan)
     /// documents for its own OOM-adjacent scenario). This hook stores `true`
     /// directly into the SAME `&'static AtomicBool` handle the real
-    /// `set_dirty_bit_for_segment` OOM branch writes (`Release`, matching the
+    /// `apply_resolved_dirty_bit` (G1 apply phase) sidecar-OOM branch writes (`Release`, matching the
     /// production write's ordering), letting a test deterministically
     /// reconstruct "a producer already observed sidecar OOM at least once for
     /// this heap" and then assert `drain_dirty_segments`'s consumer-side
