@@ -62,7 +62,7 @@ use std::sync::Mutex;
 
 use crossbeam_epoch as epoch;
 
-use crate::concurrent::hand::{AtomicSlot, EvictOutcome};
+use crate::concurrent::epoch::hand::{AtomicSlot, EvictOutcome};
 use crate::concurrent::EpochHandle;
 
 /// Writer-serialised bookkeeping: the free list (a stack of vacant slot

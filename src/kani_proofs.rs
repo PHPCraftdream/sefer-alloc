@@ -153,7 +153,7 @@ mod node_proofs {
 // CI). We keep only harnesses that never touch the epoch runtime.
 #[cfg(all(kani, feature = "experimental"))]
 mod hand_proofs {
-    use crate::concurrent::hand::AtomicSlot;
+    use crate::concurrent::epoch::hand::AtomicSlot;
 
     #[kani::proof]
     fn vacant_starts_at_generation_zero() {

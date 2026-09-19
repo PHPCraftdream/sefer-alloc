@@ -27,7 +27,7 @@ Core instructions, mandatory for all code in this repository. They
      the single focused library — that is its one responsibility.
   4. **`#[cfg(kani)]` proof harnesses in `src/`** (e.g. `src/kani_proofs.rs`) —
      Kani proof harnesses need `pub(crate)` internals (e.g.
-     `crate::alloc_core::node::Node`, `crate::concurrent::hand::AtomicSlot`)
+     `crate::alloc_core::node::Node`, `crate::concurrent::epoch::hand::AtomicSlot`)
      that are invisible from `tests/` (integration tests see only `pub`), so
      they legitimately live in `src/` behind `#[cfg(kani)]` rather than in the
      `tests/` tree.

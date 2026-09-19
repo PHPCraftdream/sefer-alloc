@@ -129,7 +129,7 @@ std = ["sefer-region/std"]
 # - 3b-I (`arc-swap`): RCU with page-granularity copy-on-write — zero `unsafe`
 #   of our own.
 # - 3b-II (`crossbeam-epoch`): per-slot atomics + epoch reclamation — the single
-#   confined `unsafe` Hand organ (src/concurrent/hand.rs), the only module with
+#   confined `unsafe` Hand organ (src/concurrent/epoch/hand.rs), the only module with
 #   `#![allow(unsafe_code)]`. See docs/PLAN.md.
 experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
 # Phase 7c: thread-per-core pinning. Additive over `experimental` — pulls in
@@ -891,7 +891,7 @@ sefer-region = { path = "crates/sefer-region", version = "0.2", default-features
 arc-swap = { version = "1", optional = true }
 # Phase 3b-II: epoch-based memory reclamation for the per-slot-atomics lock-free
 # read tier. Optional — only pulled in by `experimental`. Its `unsafe` is the
-# dependency's; OUR `unsafe` is confined to src/concurrent/hand.rs (the single
+# dependency's; OUR `unsafe` is confined to src/concurrent/epoch/hand.rs (the single
 # documented `#![allow(unsafe_code)]` module) and is wrapped in a safe-to-use
 # `AtomicSlot<T>` API. See docs/PLAN.md.
 crossbeam-epoch = { version = "0.9", optional = true }

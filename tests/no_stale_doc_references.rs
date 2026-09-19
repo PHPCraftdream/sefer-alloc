@@ -204,7 +204,7 @@ fn no_stale_pre_h1_thread_free_prose() {
 /// behaviour it was named for, not renamed by this guard's scope), the
 /// `ABANDONED_TAIL` sentinel used by the still-live `deferred_large`
 /// cross-thread-free stack ([`crate::alloc_core::segment_header`]), and
-/// "adopting thread" prose in `concurrent/sharded_region.rs` describing an
+/// "adopting thread" prose in `concurrent/sharded/sharded_region.rs` describing an
 /// unrelated, still-live shard-reuse mechanism — all correct and not the
 /// target of this guard.
 ///

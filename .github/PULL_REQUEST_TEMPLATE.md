@@ -49,7 +49,7 @@
 - [ ] Every `unsafe` block has a `// SAFETY:` comment naming the invariants
       upheld
 - [ ] `cargo +nightly miri test` on relevant invariant tests — clean, or N/A
-- [ ] Unsafe code is confined to the allowed modules (`concurrent::hand`,
+- [ ] Unsafe code is confined to the allowed modules (`concurrent::epoch::hand`,
       `byte::byte_region`, `byte::byte_allocator`)
 
 ### Performance

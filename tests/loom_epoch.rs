@@ -21,7 +21,7 @@
 //! # What rests on miri, NOT loom
 //!
 //! The **reclamation correctness** (the `guard.defer_destroy` / epoch-advance
-//! lifetime proof in `src/concurrent/hand.rs`) is NOT modelled here. That
+//! lifetime proof in `src/concurrent/epoch/hand.rs`) is NOT modelled here. That
 //! rests on the `crossbeam-epoch` crate's correctness plus `miri`, which
 //! verifies our `unsafe` dereferences against real epoch guards. loom models
 //! ordering; miri models lifetime/aliasing. (See the final report: miri cannot

@@ -239,7 +239,7 @@
 //                             (under `large-cache-extended`)
 //
 //    Research / older tiers (not in production build):
-//      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
+//      * `concurrent::epoch::hand`   — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
 //
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
 //  EVERY configuration. Verifiable: `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`

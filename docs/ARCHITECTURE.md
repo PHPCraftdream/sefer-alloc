@@ -172,7 +172,7 @@ not pull it in.
 | [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
 | [`src/registry/heap_registry.rs`](../src/registry/heap_registry.rs) | Global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, consulted by every cross-thread routing decision. | `alloc-global` |
 | [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
-| [`src/concurrent/hand.rs`](../src/concurrent/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator; **deprecated, legacy/research-tier**). | `experimental` |
+| [`src/concurrent/epoch/hand.rs`](../src/concurrent/epoch/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator; **deprecated, legacy/research-tier**). | `experimental` |
 
 Outside these tier-1 modules AND the tier-2 item-scoped allows (individual
 `unsafe fn` boundaries in otherwise-safe files — see README §"Where unsafe

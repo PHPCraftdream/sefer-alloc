@@ -14,29 +14,25 @@
 //! thin safe wrapper over `core_affinity` for thread-per-core dispatch and is
 //! NOT deprecated.
 
-mod epoch_handle;
-mod epoch_region;
-pub(crate) mod hand;
-mod lock_free_handle;
-mod lock_free_region;
-mod sharded_handle;
-mod sharded_region;
+pub(crate) mod epoch;
+pub(crate) mod lock_free;
+pub(crate) mod sharded;
 
 #[cfg(feature = "pinning")]
 mod pinning;
 
 #[allow(deprecated)]
-pub use epoch_handle::EpochHandle;
+pub use epoch::epoch_handle::EpochHandle;
 #[allow(deprecated)]
-pub use epoch_region::EpochRegion;
+pub use epoch::epoch_region::EpochRegion;
 #[allow(deprecated)]
-pub use lock_free_handle::LockFreeHandle;
+pub use lock_free::lock_free_handle::LockFreeHandle;
 #[allow(deprecated)]
-pub use lock_free_region::LockFreeRegion;
+pub use lock_free::lock_free_region::LockFreeRegion;
 #[allow(deprecated)]
-pub use sharded_handle::ShardedHandle;
+pub use sharded::sharded_handle::ShardedHandle;
 #[allow(deprecated)]
-pub use sharded_region::ShardedRegion;
+pub use sharded::sharded_region::ShardedRegion;
 
 #[cfg(feature = "pinning")]
 pub use pinning::PinnedRunner;
