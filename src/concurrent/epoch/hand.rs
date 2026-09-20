@@ -267,7 +267,7 @@ impl<T> AtomicSlot<T> {
     /// generation. This is part of the [`try_evict_at`] no-reinstall proof.
     ///
     /// [`try_evict_at`]: AtomicSlot::try_evict_at
-    pub(crate) fn install(&self, value: T, _guard: &Guard) -> u32 {
+    pub(crate) fn install(&self, value: T) -> u32 {
         let owned = Owned::new(value);
         // Release-publish the pointer. A reader's Acquire load of this pointer
         // (and the Acquire load of the generation, which precedes it in

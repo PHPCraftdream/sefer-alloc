@@ -272,7 +272,6 @@ impl<T> EpochRegion<T> {
     /// Panics if the writer mutex is poisoned (a writer panicked while holding
     /// it). Readers are unaffected.
     pub fn insert(&self, value: T) -> Result<EpochHandle<T>, T> {
-        let guard = epoch::pin();
         let mut state = self.state.lock().expect("writer mutex poisoned");
         // Owner drains any indices a remote remover freed since its last op
         // (single-consumer drain). This is what makes a remote `remote_evict`
@@ -283,7 +282,7 @@ impl<T> EpochRegion<T> {
             return Err(value);
         };
         let slot = &self.slots[index as usize];
-        let generation = slot.install(value, &guard);
+        let generation = slot.install(value);
         // fetch_add (not the mutex-guarded `state.len`) so a concurrent remote
         // remover's fetch_sub races correctly (Phase 7b accounting).
         self.len.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
