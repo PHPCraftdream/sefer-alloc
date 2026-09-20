@@ -203,8 +203,11 @@
 //                             by `os`'s SegmentDirectory reservation and
 //                             `large_cache_extended`'s LargeCacheExtension
 //                             reservation. (under `alloc-core`)
-//      * `global::sefer_alloc` — the `unsafe impl GlobalAlloc` alloc-face seam
-//                             (trait obligation + pointer handoff). (under `alloc-global`)
+//      * `global::sefer_alloc::global_alloc` — the `unsafe impl GlobalAlloc`
+//                             alloc-face seam (trait obligation + pointer handoff).
+//                             (under `alloc-global`)
+//      * `global::sefer_alloc::batch` — the `batch-api` `alloc_batch`/`dealloc_batch`
+//                             unsafe-fn boundary pair. (under `alloc-global`)
 //      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
 //                             (under `alloc-global`)
 //      * `global::fallback`     — primordial fallback heap seam —
@@ -334,7 +337,7 @@ mod concurrent;
 //
 // R34-3 (task #522, finding B1): `#[doc(hidden)]` alone hides this module
 // from rustdoc but does NOT remove it from the public semver/ABI surface —
-// see `SeferAlloc::alloc_batch`'s doc comment in `src/global/sefer_alloc.rs`
+// see `SeferAlloc::alloc_batch`'s doc comment in `src/global/sefer_alloc/batch.rs`
 // for the same principle already applied to two individual methods. Two
 // mutually-exclusive `mod alloc_core;` declarations below (one `pub`, one
 // `pub(crate)`, `cfg`-disjoint on `internals`) give the module body itself

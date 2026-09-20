@@ -1,5 +1,5 @@
 //! Doc-accuracy regression guard for the "No-panic" contract in
-//! `src/global/sefer_alloc.rs` (R34-16, release-stabilization audit F-5).
+//! `src/global/sefer_alloc/mod.rs` (R34-16, release-stabilization audit F-5).
 //!
 //! F-5 found a divergence between the module doc's claim "Every entry point
 //! here returns null on failure and NEVER panics" and the code: five
@@ -92,7 +92,7 @@ fn five_invariant_tripwires_pinned_by_message() {
 
 #[test]
 fn no_panic_doc_is_qualified() {
-    let doc = read_src("global/sefer_alloc.rs");
+    let doc = read_src("global/sefer_alloc/mod.rs");
 
     // The old unqualified overclaim must be gone.
     assert!(

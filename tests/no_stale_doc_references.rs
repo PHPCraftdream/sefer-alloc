@@ -160,7 +160,14 @@ fn no_stale_pre_h1_thread_free_prose() {
                 "install_thread_free",
             ],
         ),
-        ("global/sefer_alloc.rs", &["install_thread_free"]),
+        ("global/sefer_alloc/mod.rs", &["install_thread_free"]),
+        ("global/sefer_alloc/core.rs", &["install_thread_free"]),
+        ("global/sefer_alloc/diag.rs", &["install_thread_free"]),
+        ("global/sefer_alloc/batch.rs", &["install_thread_free"]),
+        (
+            "global/sefer_alloc/global_alloc.rs",
+            &["install_thread_free"],
+        ),
     ];
 
     let mut offenders = Vec::new();
@@ -758,7 +765,7 @@ fn production_feature_bundle_doc_sites_match_cargo_toml() {
 
     // Every doc site that writes the `production` bundle out as a
     // `+`-separated feature list (rather than just saying "`production`").
-    let sites: &[&str] = &["src/lib.rs", "src/global/sefer_alloc.rs", "README.md"];
+    let sites: &[&str] = &["src/lib.rs", "src/global/sefer_alloc/core.rs", "README.md"];
 
     let mut offenders = Vec::new();
     for rel in sites {
