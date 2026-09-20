@@ -79,7 +79,7 @@ bundling dimension, carried into §5 as a policy question) + LS6
 (`MADV_FREE`, conditional companion that the keep-registered variant makes
 unnecessary).
 The moment a non-current Small segment's `live_count` hits 0, the whole
-4MiB reservation is released (`src/alloc_core/alloc_core.rs:1070`, `:1121`,
+4MiB reservation is released (`src/alloc_core/alloc_core/mod.rs:1070`, `:1121`,
 `:3447-3449`, `:2836-2841` → `segment_table.rs:381` → `os::release_segment`).
 Oscillating working sets pay release + re-reserve + metadata re-init + a
 full set of demand-zero faults per oscillation; cost scales with block size

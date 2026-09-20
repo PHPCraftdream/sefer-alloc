@@ -42,7 +42,7 @@
 //! ## Counterfactual (non-vacuity)
 //!
 //! Run manually during development by reverting the own-thread Large-dealloc
-//! branches in `src/alloc_core/alloc_core.rs` back to "only zero `magic`,
+//! branches in `src/alloc_core/alloc_core/` back to "only zero `magic`,
 //! defer release to `Drop`": both tests below fail around iteration
 //! `MAX_SEGMENTS` (`SegmentTable` exhausted → `AllocCore::alloc` returns
 //! null). Restoring the eager `unregister` + `release_segment` fix makes

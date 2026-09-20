@@ -32,14 +32,14 @@ A live block is in neither → it is pushed to the magazine (`heap_core.rs:955-9
 ### 1.2 The third, transient resting place the oracles cannot see
 
 A block P whose **cross-thread free is still in-flight** sits in its segment's
-`RemoteFreeRing` (`src/alloc_core/remote_free_ring.rs`), pushed by a remote thread via
+`RemoteFreeRing` (`src/alloc_core/segment/remote_free_ring/mod.rs`), pushed by a remote thread via
 `dealloc_routing`'s Variant-2 push, and **not yet drained** by the owner. This state
 sets NEITHER oracle:
 
 - P is **not in `slots`** → the in-magazine scan (`heap_core.rs:908-926`) cannot see it.
 - The bitmap **still reads "allocated"** → the ring push deliberately does not touch
   the bitmap; only the owner-side drain `AllocCore::reclaim_offset` → `mark_free`
-  (`src/alloc_core/alloc_core.rs:718`, the `is_free` transition happens deep in that
+  (`src/alloc_core/alloc_core/mod.rs:718`, the `is_free` transition happens deep in that
   path) sets the free bit. So `is_free(off)` returns false (`heap_core.rs:951`).
 
 So an OWN-thread free of P, concurrent-with / after a remote free of the same P that is
@@ -248,7 +248,7 @@ closure) passed down — same correctness, slightly larger surface. Both are acc
 
 **Functions to refactor**
 
-1. `AllocCore::reclaim_offset` (`src/alloc_core/alloc_core.rs:718`) — split the "block is
+1. `AllocCore::reclaim_offset` (`src/alloc_core/alloc_core/mod.rs:718`) — split the "block is
    still carved (bitmap allocated) and passes guards" branch: instead of unconditionally
    `write_next`+`mark_free`, when the entry is a drain candidate whose bitmap reads
    allocated, append its `off` (+ class) to an out-param **conflict list** and do NOT

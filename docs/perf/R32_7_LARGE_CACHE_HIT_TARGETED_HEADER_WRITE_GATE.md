@@ -8,7 +8,7 @@ This task tracks finding **F12** in
 `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` ("the large-cache HIT
 path rewrites the entire ~130-byte `SegmentHeader` when only ~5 words
 actually changed"). `AllocCore::alloc_large`'s large-cache hit arm
-(`src/alloc_core/alloc_core_large.rs`) used to build a full fresh
+(`src/alloc_core/large/alloc_core_large.rs`) used to build a full fresh
 `SegmentHeader` via `SegmentHeader::large(..)` and overwrite the WHOLE
 header (144 bytes, confirmed by this task — see §2) with
 `Node::write_struct`, even though 4 of that constructor's 8 arguments
@@ -55,7 +55,7 @@ unchanged" premise is TRUE.** The assert is kept as a PERMANENT correctness
 pin (not removed after the one-shot check) — it is cheap relative to the
 segment-registration work around it, and it guards an invariant a future
 field addition to `slot`/`CachedLarge` could silently break without this
-pin catching it. See `src/alloc_core/alloc_core_large.rs`, the block
+pin catching it. See `src/alloc_core/large/alloc_core_large.rs`, the block
 immediately preceding the 4 targeted-write calls.
 
 ## 2. Exact-size compile-time pin
@@ -68,7 +68,7 @@ size_of::<SegmentHeader>()]`, read the "found one with a size of N" error):
 **144 bytes**, confirmed identical under `--features production`,
 `--all-features`, and `--features experimental`.
 
-Added as a permanent compile-time assert in `src/alloc_core/segment_header.rs`:
+Added as a permanent compile-time assert in `src/alloc_core/segment/segment_header/mod.rs`:
 
 ```text
 const _: () = assert!(size_of::<SegmentHeader>() == 144);
@@ -114,7 +114,7 @@ new `set_magic_at` call is deliberately a PLAIN (non-atomic) store, not an
 atomic one. This is sound specifically BECAUSE this call site is the
 unregistered-window case, not the steady-state case `magic_at`'s atomicity
 exists for — see `set_magic_at`'s doc comment in
-`src/alloc_core/segment_header_views.rs` for the full restatement. The
+`src/alloc_core/segment/segment_header/segment_header_views.rs` for the full restatement. The
 pre-existing full-struct `Node::write_struct` this replaces was ALSO a
 plain, non-atomic write at this exact call site (confirmed by reading the
 removed code) — this task's targeted write is no less atomic than what it
@@ -138,7 +138,7 @@ this task relies on) all agree: the change is sound.
 
 ## 4. The fix
 
-`src/alloc_core/alloc_core_large.rs`, the large-cache hit arm: replaced
+`src/alloc_core/large/alloc_core_large.rs`, the large-cache hit arm: replaced
 
 ```text
 let hdr = SegmentHeader::large(u32::MAX, size, align, slot.usable_size,
@@ -156,7 +156,7 @@ SegmentHeader::set_bump_at(slot.base, bump);
 ```
 
 Three new field-specific accessors were added to
-`src/alloc_core/segment_header_views.rs`, following the file's existing
+`src/alloc_core/segment/segment_header/segment_header_views.rs`, following the file's existing
 `set_large_size_at` naming/shape pattern exactly:
 
 - `set_large_align_at` — plain `usize` store at `large_align`'s offset.
@@ -383,11 +383,11 @@ future round picks it up.
 
 ## 10. Files changed
 
-- `src/alloc_core/alloc_core_large.rs` — the fix (targeted writes +
+- `src/alloc_core/large/alloc_core_large.rs` — the fix (targeted writes +
   falsification assert + restated UBFIX-6 comment).
-- `src/alloc_core/segment_header.rs` — the `size_of::<SegmentHeader>() ==
+- `src/alloc_core/segment/segment_header/mod.rs` — the `size_of::<SegmentHeader>() ==
   144` compile-time pin.
-- `src/alloc_core/segment_header_views.rs` — 3 new accessors
+- `src/alloc_core/segment/segment_header/segment_header_views.rs` — 3 new accessors
   (`set_large_align_at`, `set_bump_at`, `set_magic_at`).
 - `benches/perf_gate_iai.rs` — 2 new bench arms (`large_cache_prefill_only_4mib`,
   `large_cache_hit_only_4mib`) + stubs for `not(alloc-decommit)`, plus a

@@ -48,7 +48,7 @@ arms. No production call site touched, no existing function body edited.
 ## 1. What `flush_class` actually does today (read first, per the task brief)
 
 Re-read `AllocCore::flush_class` / `AllocCore::flush_run`
-(`src/alloc_core/alloc_core_small_magazine.rs:491-696`) in full — code has
+(`src/alloc_core/small/alloc_core_small_magazine.rs:491-696`) in full — code has
 moved since R24-2 (now in this file rather than being described only by line
 numbers in `heap_core_free.rs`), but the algorithm is unchanged from R24-2's
 description:

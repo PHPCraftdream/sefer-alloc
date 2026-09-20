@@ -2,7 +2,7 @@
 //!
 //! ## The bug this proves fixed
 //!
-//! `AllocCore::dbg_decomp_full_cycle` (`src/alloc_core/alloc_core_small_pool.rs`)
+//! `AllocCore::dbg_decomp_full_cycle` (`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs)
 //! is a safe `pub fn`, `bench-internals`-gated, that measures one reserve→
 //! release segment-lifecycle cycle. Before this fix it called
 //! `reserve_small_segment()` — whose LAST statement publishes the freshly

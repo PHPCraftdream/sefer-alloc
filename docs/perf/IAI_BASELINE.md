@@ -787,7 +787,7 @@ Task #58 (RAD-5, plan Phase 5/E4, `docs/perf/PERF_PLAN_2026-07-10-radical-
 audit-implementation-plan.md`) revisited the G1 honest-reject above with a
 different shape: instead of *redefining* `AllocBitmap`'s semantics (the
 shape G1 rejected — see that section), add a second, orthogonal bitmap
-(`src/alloc_core/magazine_bitmap.rs`, `MagazineBitmap`) recording ONLY
+(`src/alloc_core/segment/bitmap/magazine_bitmap.rs`, `MagazineBitmap`) recording ONLY
 magazine residency, leaving every `AllocBitmap` call site byte-identical.
 This closes G1's stated blocker cleanly: no `mark_alloc`/`mark_free`
 call-site semantics change, so `carve_batch`'s leave-unset optimization and
@@ -867,9 +867,9 @@ issued twice" signature) then restored and confirmed GREEN;
 extension) — all 3 tests (T1/T2/T3) pass, confirming the skip is sound for
 the new bitmap too, not just `AllocBitmap`.
 
-Files: `src/alloc_core/magazine_bitmap.rs` (new), `src/alloc_core/mod.rs`,
-`src/alloc_core/segment_header.rs`, `src/alloc_core/bootstrap.rs`,
-`src/alloc_core/alloc_core_small.rs`, `src/alloc_core/alloc_core_small_pool.rs`,
+Files: `src/alloc_core/segment/bitmap/magazine_bitmap.rs` (new), `src/alloc_core/mod.rs`,
+`src/alloc_core/segment/segment_header/mod.rs`, `src/alloc_core/alloc_core/bootstrap.rs`,
+`src/alloc_core/small/alloc_core_small/mod.rs`, `src/alloc_core/small/alloc_core_small_pool/mod.rs`,
 `src/registry/heap_core.rs`, `tests/regression_virgin_bitmap_skip.rs`.
 
 **Note on baseline staleness:** the Post-PERF-PASS-5 reference table above
@@ -1080,7 +1080,7 @@ now genuinely as cheap as that mechanism's own single-cached-value check.
 
 Files: `src/registry/heap_overflow.rs` (new), `src/registry/heap_core.rs`,
 `src/registry/heap_registry.rs`, `src/registry/heap_slot.rs`,
-`src/registry/mod.rs`, `src/alloc_core/alloc_core.rs` (one `small_cur()`
+`src/registry/mod.rs`, `src/alloc_core/alloc_core/mod.rs` (one `small_cur()`
 accessor), `tests/remote_fanin.rs` (harness 2 rewritten to assert
 `exhausted_delta == 0`), `tests/loom_heap_overflow.rs` (new),
 `tests/miri_heap_overflow_unit.rs` (new).
@@ -1089,7 +1089,7 @@ accessor), `tests/remote_fanin.rs` (harness 2 rewritten to assert
 
 Task T10 (round2 remediation `performance#1`, `docs/reviews/2026-07-12-round2-
 synthesis.md` finding 1) targeted the O(S) segment scan in
-`AllocCore::find_segment_with_free_impl` (`src/alloc_core/alloc_core_small.rs`,
+`AllocCore::find_segment_with_free_impl` (`src/alloc_core/small/alloc_core_small/mod.rs`,
 the `for i in 0..n` loop over every owned segment on a free-list miss). The
 synthesis flagged this as the round2 sweep's biggest asymptotic perf
 opportunity but explicitly warned it "requires careful membership-tracking to
@@ -1191,9 +1191,9 @@ const-evals `class_for` for the benches' fixed sizes, so both variants generate
 identical bench code; the win is real-world-dynamic-align only, invisible to
 the iai judge.
 
-Final tree after T10 finding #1's revert: only `src/alloc_core/size_classes.rs`
-(the perf#9 jump) + the two test files changed; `src/alloc_core/alloc_core.rs`
-and `src/alloc_core/alloc_core_small.rs` are byte-identical to pre-T10 (the
+Final tree after T10 finding #1's revert: only `src/alloc_core/platform/size_classes.rs`
+(the perf#9 jump) + the two test files changed; `src/alloc_core/alloc_core/mod.rs`
+and `src/alloc_core/small/alloc_core_small/mod.rs` are byte-identical to pre-T10 (the
 hint field and pre-check were added then fully reverted). A future arc that
 adds a ≥64-segment bench (or profiles a real application with 100+ long-lived
 small segments) may flip this verdict; the correctness-proven hint shape is

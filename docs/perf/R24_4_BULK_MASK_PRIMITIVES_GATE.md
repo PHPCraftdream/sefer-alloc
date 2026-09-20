@@ -59,7 +59,7 @@ production-only figures.)
 ## 1. The primitive design (implemented, verified, then reverted)
 
 `SegmentBitmap::clear_many(&mut self, offsets: &[u32])` /
-`set_many(&mut self, offsets: &[u32])` (`src/alloc_core/segment_bitmap.rs`),
+`set_many(&mut self, offsets: &[u32])` (`src/alloc_core/segment/bitmap/segment_bitmap.rs`),
 with a private shared accumulator body `mask_many` + `flush`:
 
 - Walk `offsets`, OR each offset's bit-mask into a running per-byte
@@ -123,7 +123,7 @@ while i < drained.len() {
 ```
 
 The run-grouping mirrors `flush_class`'s established same-base-run pattern
-(`src/alloc_core/alloc_core_small_magazine.rs:532–569`): walk `drained`,
+(`src/alloc_core/small/alloc_core_small_magazine.rs:532–569`): walk `drained`,
 detect consecutive same-`base` runs, dispatch each run to one
 `clear_magazine_many` call. The fixed `[u32; TCACHE_CAP]` offsets buffer
 (`TCACHE_CAP = 16`) needs no `Vec`/`Box` (M5: `HeapCore` allocates none);

@@ -6,7 +6,7 @@
 //! # Scope — what loom covers
 //!
 //! This harness models `push_large_deferred_free` / `drain_large_deferred_free`
-//! (`src/alloc_core/deferred_large/push.rs` / `drain.rs`) in isolation using
+//! (`src/alloc_core/large/deferred_large/push.rs` / `drain.rs`) in isolation using
 //! `loom::sync::atomic` (NOT the real functions, which use
 //! `core::sync::atomic` and operate on live `SegmentHeader`s). It reproduces
 //! the EXACT protocol shape:

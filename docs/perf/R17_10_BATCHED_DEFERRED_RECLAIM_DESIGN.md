@@ -53,7 +53,7 @@ reuse rather than invent from scratch.
 ### 1.1 What is ALREADY batched (correcting the plan's premise)
 
 `AllocCore::drain_dirty_segments`
-(`src/alloc_core/alloc_core_small.rs:2521-2691`) is the drain this whole
+(`src/alloc_core/small/alloc_core_small/mod.rs:2521-2691`) is the drain this whole
 class-aware-dirty line of work (R9-6/R12-7/R13-9/R14-3) is about. Its
 segment-visit loop (`for (w, ds_word) in scan_source.iter().enumerate()` →
 `while bits != 0`, lines 2580-2688) does, for each dirty segment bit it
@@ -65,11 +65,11 @@ finds:
    `1u64 << entry_class_idx(off)` for every successfully reclaimed entry —
    this is already exactly a **per-segment class presence mask**, gathered
    during the drain, one bit per size class (≤64 classes fit one `u64`;
-   `SMALL_CLASS_COUNT = 49` default, `src/alloc_core/size_classes.rs:165`,
+   `SMALL_CLASS_COUNT = 49` default, `src/alloc_core/platform/size_classes.rs:165`,
    58 under `medium-classes` — both ≤ 64).
 2. **One** `self.sync_directory_for_segment_classes(base, sid,
    changed_classes)` call (line 2654), AFTER the ring is fully drained —
-   `src/alloc_core/alloc_core_small.rs:2399-2423`'s doc comment states this
+   `src/alloc_core/small/alloc_core_small/mod.rs:2399-2423`'s doc comment states this
    explicitly: *"inspecting ONLY the classes whose bit is set in
    `changed_classes`... instead of sweeping all `SMALL_CLASS_COUNT`
    classes... O(popcount(changed_classes)) reads instead of O(SMALL_CLASS_
@@ -105,7 +105,7 @@ if reclaimed {
 }
 ```
 
-`dec_live_and_maybe_decommit` (`src/alloc_core/alloc_core_small_pool.rs:78-113`)
+`dec_live_and_maybe_decommit` (`src/alloc_core/small/alloc_core_small_pool/mod.rs:78-113`)
 decrements the segment's owner-only `live_count` by 1 and, only on the
 transition to `live == 0` (plus `base != small_cur`, not-already-decommitted,
 kind `Small`), returns `true` (the caller then calls
@@ -116,9 +116,9 @@ decrement+compare sequences instead of one.
 **This is not hypothetical waste with no known fix.** The exact same file
 already carries a proven-identical batched sibling,
 `dec_live_batch_and_maybe_decommit`
-(`src/alloc_core/alloc_core_small_pool.rs:115-159`, "E3, task W4"), built for
+(`src/alloc_core/small/alloc_core_small_pool/mod.rs:115-159`, "E3, task W4"), built for
 a DIFFERENT call site — `flush_run`'s same-segment magazine-flush batch
-(`src/alloc_core/alloc_core_small_magazine.rs:586-670`). Its own doc comment
+(`src/alloc_core/small/alloc_core_small_magazine.rs:586-670`). Its own doc comment
 (lines 120-132) gives the exact correctness argument this design needs:
 
 > "within a same-segment run `live` can only reach 0 at the LAST accepted
@@ -148,7 +148,7 @@ immediate pool-admission-or-release decision, with no opportunity to look at
 the whole batch together (e.g., admitting the K found-empty-this-sweep
 segments to the pool in one pass, or doing the `SegmentTable::recycle`
 bookkeeping — `hash_remove`, `own_cache_clear`, `free_list_push`,
-`src/alloc_core/segment_table.rs:337-403` — for several segments back to
+`src/alloc_core/segment/segment_table/mod.rs:337-403` — for several segments back to
 back rather than interleaved with the rest of the per-segment drain body).
 
 **A near-identical deferred-batch pattern already exists elsewhere in this
@@ -254,7 +254,7 @@ scan_source.iter()...` loop fully returns.
 
 **Sizing:** `drain_dirty_segments` visits at most `popcount` bits across
 `DIRTY_BITMAP_WORDS` words (`MAX_SEGMENTS / 64 = 64` words, `MAX_SEGMENTS =
-4096`, `src/alloc_core/segment_table.rs:64`) in one call — a MUCH smaller
+4096`, `src/alloc_core/segment/segment_table/mod.rs:64`) in one call — a MUCH smaller
 practical cap than `drain_heap_overflow`'s 64 (which defends against up to
 `HEAP_OVERFLOW_CAP = 2048` distinct native entries in one MPSC drain). A cap
 in the 8-16 range is very likely generous for this path's realistic case
@@ -279,9 +279,9 @@ local this design's §1.1 shows already exists). This design does **not**
 propose adding one: the transient, drain-call-scoped `changed_classes`
 local already IS the per-segment class mask the directory-sync step needs,
 and the class-aware-dirty feature's separate, ALREADY-SHIPPED
-`PerClassDirty` sidecar (`src/alloc_core/dirty_by_class.rs`,
+`PerClassDirty` sidecar (`src/alloc_core/platform/dirty_by_class.rs`,
 `WORDS_PER_CLASS = MAX_SEGMENTS / 64 = 64`,
-`src/alloc_core/segment_directory.rs:172`, 8.0 KiB page-rounded per
+`src/alloc_core/segment/segment_directory/mod.rs:172`, 8.0 KiB page-rounded per
 materialised heap — R13-9 §5.1's corrected figure) already IS the
 persistent per-(segment,class) presence structure that drives WHICH segments
 get visited in the first place. Adding a third, redundant class-mask
@@ -671,35 +671,35 @@ wall-clock), not solely on an unconfirmed wall-clock win.
 
 ## 8. Files/lines this document is grounded in (for the next round's reader)
 
-- `src/alloc_core/alloc_core_small.rs:2380-2423` — `sync_directory_for_
+- `src/alloc_core/small/alloc_core_small/mod.rs:2380-2423` — `sync_directory_for_
   segment_classes` (already-batched, per-segment, R8-1).
-- `src/alloc_core/alloc_core_small.rs:2521-2691` — `drain_dirty_segments`
+- `src/alloc_core/small/alloc_core_small/mod.rs:2521-2691` — `drain_dirty_segments`
   (the drain this whole design is about; scan-source selection at
   2544-2578; per-segment loop at 2580-2688; per-block decommit check at
   2621-2635; per-segment sync call at 2651-2655; per-segment pool/release at
   2668-2679).
-- `src/alloc_core/alloc_core_small_pool.rs:78-113` — `dec_live_and_maybe_
+- `src/alloc_core/small/alloc_core_small_pool/mod.rs:78-113` — `dec_live_and_maybe_
   decommit` (per-block, current call site's function).
-- `src/alloc_core/alloc_core_small_pool.rs:115-159` — `dec_live_batch_and_
+- `src/alloc_core/small/alloc_core_small_pool/mod.rs:115-159` — `dec_live_batch_and_
   maybe_decommit` (E3/task W4 — the already-proven batched sibling this
   design proposes reusing).
-- `src/alloc_core/alloc_core_small_pool.rs:236-285` — `release_or_pool_
+- `src/alloc_core/small/alloc_core_small_pool/mod.rs:236-285` — `release_or_pool_
   empty_segment` (pool-admit-or-release-and-recycle decision).
-- `src/alloc_core/alloc_core_small_pool.rs:287-356` — `finalize_orphaned_
+- `src/alloc_core/small/alloc_core_small_pool/mod.rs:287-356` — `finalize_orphaned_
   empty_segments` (R12-6 fallback-sweep precedent for a bounded dedup
   buffer overflowing).
-- `src/alloc_core/alloc_core_small_magazine.rs:586-670` — `flush_run` (the
+- `src/alloc_core/small/alloc_core_small_magazine.rs:586-670` — `flush_run` (the
   ORIGINAL call site `dec_live_batch_and_maybe_decommit` was built for).
 - `src/registry/heap_core_xthread.rs:497-733` — `drain_heap_overflow`
   (R11-2/R12-6 — the existing deferred cross-entry finalization pattern for
   the OTHER, cross-segment overflow ring; motivating reason differs from
   this design's, §1.3).
-- `src/alloc_core/segment_table.rs:337-403` — `SegmentTable::recycle` (slot
+- `src/alloc_core/segment/segment_table/mod.rs:337-403` — `SegmentTable::recycle` (slot
   release bookkeeping: hash_remove, own_cache_clear, OS release, free-list
   push).
 - `src/registry/heap_registry.rs:342-375` — `HeapRegistry::recycle` (heap
   SLOT recycle — confirmed NOT a drain; see §6 point 6).
-- `src/alloc_core/dirty_by_class.rs`, `src/alloc_core/segment_directory.rs:170-172`
+- `src/alloc_core/platform/dirty_by_class.rs`, `src/alloc_core/segment/segment_directory/mod.rs:170-172`
   — the existing `PerClassDirty` sidecar / `WORDS_PER_CLASS` (§2.3's
   rejected-alternative discussion).
 - `src/registry/heap_core_xthread.rs:334-...` — `set_dirty_bit_for_segment`

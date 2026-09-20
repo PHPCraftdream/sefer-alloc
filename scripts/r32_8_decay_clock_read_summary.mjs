@@ -10,7 +10,7 @@
 // What this measures:
 //   1. `_raw_r32_8_clock_read_ab_gate.log` — isolates the raw per-call
 //      `Instant::now()` cost inside `AllocCore::maybe_decay_large_cache`
-//      (`src/alloc_core/alloc_core_large_cache.rs`) at a FIXED headroom the
+//      (`src/alloc_core/large/alloc_core_large_cache.rs`) at a FIXED headroom the
 //      workload never crosses (guard-real vs guard-forced via
 //      `FORCE_DECAY_CLOCK_READ`).
 //   2. `_raw_r32_8_stride_fix_gate.log` — validates the stride-throttle FIX's

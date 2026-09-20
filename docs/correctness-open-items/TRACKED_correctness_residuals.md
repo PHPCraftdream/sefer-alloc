@@ -81,7 +81,7 @@ split the same day.)
     - **Current-number-or-verdict:** by inspection, the current production
       `reclaim` closures (`AllocCore::reclaim_offset` /
       `AllocCore::reclaim_offset_checked`,
-      `src/alloc_core/alloc_core_small_reclaim.rs`) do not panic after
+      `src/alloc_core/small/alloc_core_small_reclaim.rs`) do not panic after
       mutating state on their current code paths — no `unwrap`/`expect`/
       `panic!`/unchecked indexing on the mutation-bearing paths. This is an
       observation about the code AS WRITTEN, not a structural guarantee: the
@@ -107,7 +107,7 @@ split the same day.)
       `reclaim` closure gains fallible/panicking code on a mutation-bearing
       path, or if a direct/internal `catch_unwind` caller around `drain` is
       ever added to production code (currently none exists).
-    - **Evidence:** `src/alloc_core/remote_free_ring.rs`'s
+    - **Evidence:** `src/alloc_core/segment/remote_free_ring/mod.rs`'s
       `DrainHeadPublish` doc comment (the "Exact contract (Sol-F5, task
       #567 ...)" section, ~lines 861-900);
       `docs/reviews/2026-08-05-sol-release-readonly-review.md` finding F5;
@@ -123,7 +123,7 @@ split the same day.)
       whether the unwind happened before or after the in-place `write(hc)`.
       A post-write unwind lets the next CAS winner `write` a fresh
       `HeapCore` on top of the old one WITHOUT running the old value's
-      `Drop` (`AllocCore::Drop`, `src/alloc_core/alloc_core.rs`, releases
+      `Drop` (`AllocCore::Drop`, `src/alloc_core/alloc_core/mod.rs`, releases
       the heap's segment reservations) — so skipping it leaks them. The
       guard therefore guarantees "no permanent `INITIALIZING` livelock", NOT
       "`Drop` always runs for an already-written `HeapCore`".

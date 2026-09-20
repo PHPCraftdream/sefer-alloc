@@ -18,10 +18,10 @@ floor)."*
 
 1. A process-wide, `bench-internals`-gated Tier-1 hit/miss path-activation
    oracle — `CONTAINS_BASE_TIER1_HITS`/`CONTAINS_BASE_TIER1_MISSES`
-   (`src/alloc_core/alloc_core.rs`), incremented inside
-   `SegmentTable::contains_base` (`src/alloc_core/segment_table.rs`), with
+   (`src/alloc_core/alloc_core/mod.rs`), incremented inside
+   `SegmentTable::contains_base` (`src/alloc_core/segment/segment_table/mod.rs`), with
    accessors at both the `AllocCore` level
-   (`src/alloc_core/alloc_core_core_diag.rs`) and the `HeapCore` level
+   (`src/alloc_core/alloc_core/alloc_core_core_diag/`) and the `HeapCore` level
    (`src/registry/heap_core_diag.rs`), plus a reset hook. This is the
    instrument neither R22-17 nor R23-3 ever built — R23-3 §1.3/§6.2
    explicitly says a benchmark cannot *predict* which OS-assigned addresses
@@ -39,7 +39,7 @@ floor)."*
    coverage for the new counter pair (same-segment-repeated-free hit
    confirmation; a negative test proving the pre-existing
    `dbg_hash_contains_only` bypass hook does NOT move the new counters).
-4. `src/alloc_core/segment_table.rs`: `OWN_CACHE_SIZE` raised **4 → 16**,
+4. `src/alloc_core/segment/segment_table/mod.rs`: `OWN_CACHE_SIZE` raised **4 → 16**,
    plus a `const _: () = assert!(...)` compile-time power-of-two pin (the
    masking arithmetic in `cache_index` requires it; there was no such pin
    before this task).
@@ -59,7 +59,7 @@ the plain `production` default, not an opt-in feature — this IS a
 
 ## 1. The counter design
 
-`SegmentTable::contains_base` (`src/alloc_core/segment_table.rs`) is the
+`SegmentTable::contains_base` (`src/alloc_core/segment/segment_table/mod.rs`) is the
 production ownership-check entry point every own-thread free and every
 `realloc` in-place-check call goes through:
 
@@ -629,7 +629,7 @@ identical whether computed on `churn_elapsed_ns` or `ns_per_op`.
 **Binaries.** "after" = built from HEAD
 (`7d55209de6159bd42397fc28a746715c97fc91a5`, `OWN_CACHE_SIZE = 16`, the
 shipped state). "before" = built from the SAME HEAD with `OWN_CACHE_SIZE`
-temporarily edited to `4` in `src/alloc_core/segment_table.rs` (the identical
+temporarily edited to `4` in `src/alloc_core/segment/segment_table/mod.rs` (the identical
 scratch-edit technique §8 documents — the constant is flipped in-place, the
 binary built, then the constant restored; `git diff` verified clean after
 restoration). Both built `--features "production bench-internals"` (the
@@ -639,7 +639,7 @@ R32-11's contaminated-timing finding, where the counter was new in only the
 AFTER arm). **Immutable source identity (CLAUDE.md R29-6 rule, option 3):**
 the "before" state's patch hash is
 `9da1a54e83cec28adae585eeb1d2e55a93f44581f9471f13b268ff9fe85892ae`
-(`sha256sum` of `git diff src/alloc_core/segment_table.rs` when
+(`sha256sum` of `git diff src/alloc_core/segment/segment_table/mod.rs` when
 `OWN_CACHE_SIZE` is changed `16 → 4` over HEAD `7d55209...`); the "after"
 state IS HEAD `7d55209...` directly (no patch).
 
@@ -753,7 +753,7 @@ addendum's wall-clock evidence.
   (`OWN_CACHE_SIZE = 16`, the shipped state).
 - **"before" binary source identity (R29-6 rule, option 3):** patch hash
   `9da1a54e83cec28adae585eeb1d2e55a93f44581f9471f13b268ff9fe85892ae` (sha256
-  of `git diff src/alloc_core/segment_table.rs` over HEAD `7d55209...`,
+  of `git diff src/alloc_core/segment/segment_table/mod.rs` over HEAD `7d55209...`,
   changing `OWN_CACHE_SIZE` from 16 to 4). Reproducible: checkout
   `7d55209...`, apply the one-line edit, re-hash the diff.
 - **Feature set:** `production bench-internals` for both arms (the counter

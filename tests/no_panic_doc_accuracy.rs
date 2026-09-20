@@ -52,18 +52,18 @@ fn assert_count(haystack: &str, needle: &str, expected: usize, ctx: &str) {
 #[test]
 fn five_invariant_tripwires_pinned_by_message() {
     // Site 1 — realloc ownership re-check (always compiled, not feature-gated).
-    let core = read_src("alloc_core/alloc_core.rs");
+    let core = read_src("alloc_core/alloc_core/mem/realloc_fastpath.rs");
     assert_count(
         &core,
         "known-base realloc called for a segment not owned by this core",
         1,
-        "alloc_core.rs site 1",
+        "mem/realloc_fastpath.rs site 1",
     );
 
     // Sites 2–5 — large-cache slot take/set helpers (alloc-decommit-gated,
     // in `production`; gated out of some configs, but the source text is
     // feature-independent so this guard still applies).
-    let cache = read_src("alloc_core/alloc_core_large_cache.rs");
+    let cache = read_src("alloc_core/large/alloc_core_large_cache.rs");
     assert_count(
         &cache,
         "large_cache_slot_take: empty base slot",

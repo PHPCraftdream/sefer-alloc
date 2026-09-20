@@ -149,7 +149,7 @@ reps. No silent caps applied.
   measures ONLY the RSS/commit axis.
 - **No cross-platform measurement** (Windows-native only, same caveat every
   prior gate carries).
-- **`src/alloc_core/small_segment_pool_config.rs` untouched** —
+- **`src/alloc_core/config/small_segment_pool_config.rs` untouched** —
   `DEFAULT_POOL_SEGMENTS` remains `4`.
 
 ---

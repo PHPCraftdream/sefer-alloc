@@ -1,4 +1,4 @@
-//! Unit tests for the NUMA OS-seam (`src/alloc_core/numa.rs`).
+//! Unit tests for the NUMA OS-seam (`src/alloc_core/platform/numa.rs`).
 //!
 //! Gated on `feature = "numa-aware"` — this whole file is a no-op without it.
 //! Run with:

@@ -1,7 +1,7 @@
 //! R21-2 (task #351) — direct, non-vacuous proof that the OPT-H Stage-1
 //! diagnostic precondition-checking logic
 //! (`AllocCore::realloc_inplace_fast_path_known_base`,
-//! `src/alloc_core/alloc_core.rs`) actually DISCRIMINATES tail-adjacent from
+//! `src/alloc_core/alloc_core/`) actually DISCRIMINATES tail-adjacent from
 //! non-tail-adjacent cross-class Small/medium grows — not merely "compiles
 //! and doesn't crash".
 //!
@@ -183,7 +183,7 @@ const KIB: usize = 1024;
 const ALIGN: usize = 8;
 
 /// The class this scenario grows FROM (one of the `medium-classes` EXTRAS
-/// rungs — `src/alloc_core/size_classes.rs`).
+/// rungs — `src/alloc_core/platform/size_classes.rs`).
 const OLD_SIZE: usize = 768 * KIB;
 /// The class this scenario grows TO — the next (and last) rung.
 const NEW_SIZE: usize = 1024 * KIB;
@@ -223,7 +223,7 @@ const SCENARIO_3_NEW_SIZE: usize = 1024 * KIB;
 ///
 /// **Carve order vs. call order — why `objs[1]`, not `objs[3]`, is the
 /// tail.** `alloc_small`'s refill batch (`carve_block_with_refill`,
-/// `src/alloc_core/alloc_core_small.rs`) carves the CALLER's block directly
+/// `src/alloc_core/small/alloc_core_small/`) carves the CALLER's block directly
 /// (call #0 gets the 1st-carved block, offset `768 KiB`), then carves up to
 /// 31 MORE blocks and pushes each onto the class's free list — a LIFO
 /// stack. So call #1 pops the free list's head, which is the

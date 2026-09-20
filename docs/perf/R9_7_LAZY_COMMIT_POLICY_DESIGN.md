@@ -11,7 +11,7 @@ ships this session; §11 gives the staged plan that would land it.
 **Base revision:** `main` @ `fd28ff8` (R9-6 just landed; the small-path
 substrate under analysis is R8-10 task #223 @ `852828e`, which landed
 2026-07-20). The decay mechanism under analysis
-(`maybe_decay_small_pool`, `src/alloc_core/alloc_core_small_pool.rs:445`) and
+(`maybe_decay_small_pool`, `src/alloc_core/small/alloc_core_small_pool/mod.rs:445`) and
 the decommit primitive R9-5 characterized (`decommit_empty_segment_impl`,
 `alloc_core_small_pool.rs:631`) are unchanged since R8-10.
 **Platform:** Windows 10 Pro x86-64 (analysis host). The correctness argument
@@ -28,7 +28,7 @@ The review's concern is real and verified: today's latency-first pool can
 retain **exactly 16 MiB of committed payload per materialized heap** while
 pooled (§2 — the review's "16 MiB" number is correct against
 `SmallSegmentPoolConfig::DEFAULT`: `DEFAULT_POOL_SEGMENTS = 4` × `SEGMENT =
-4 MiB` = 16 MiB, `src/alloc_core/small_segment_pool_config.rs:113-117`), and
+4 MiB` = 16 MiB, `src/alloc_core/config/small_segment_pool_config.rs:113-117`), and
 the only drain is `maybe_decay_small_pool`, which FULLY RELEASES one
 FIFO-oldest segment per `decay_interval` (default 1 s) — there is no
 intermediate "committed-but-cheap-to-revive" state. The review asks for a
@@ -41,7 +41,7 @@ shape for that third state — "decommit the payload, keep the free-list metadat
 intact for a cheap recommit" — is unsound as stated.** The small-path free list
 is an INTRUSIVE singly-linked chain whose `next` link lives in the FIRST WORD
 OF THE BLOCK BODY, i.e. INSIDE the payload (`Node::write_next` /
-`Node::read_next`, `src/alloc_core/node.rs:74-108`; written by `dealloc_small`
+`Node::read_next`, `src/alloc_core/platform/node.rs:74-108`; written by `dealloc_small`
 at `alloc_core_small.rs:1396`, read by `pop_free` at `alloc_core_small.rs:836`).
 Decommitting the payload therefore DESTROYS the chain links, not just the block
 contents: on Windows/Linux the recommit is demand-zero, so every `next` reads
@@ -121,7 +121,7 @@ registered + pooled." That is the missing THIRD state.
 heap."
 
 **Verification against `SmallSegmentPoolConfig`
-(`src/alloc_core/small_segment_pool_config.rs`):**
+(`src/alloc_core/config/small_segment_pool_config.rs`):**
 
 ```text
 DEFAULT_POOL_SEGMENTS  = 4                      (small_segment_pool_config.rs:114)
@@ -169,7 +169,7 @@ TWO storage regions:
   free block's BODY, i.e. INSIDE the payload region
   `[small_meta_end, SEGMENT)`. `Node::write_next(block, next)` does
   `block.as_ptr() as *mut *mut u8; ptr.write_unaligned(next)`
-  (`src/alloc_core/node.rs:74-91`); `Node::read_next(block)` reads it back
+  (`src/alloc_core/platform/node.rs:74-91`); `Node::read_next(block)` reads it back
   (`node.rs:100-108`). `dealloc_small` writes it on every free
   (`alloc_core_small.rs:1396`); `pop_free` reads it on every reuse
   (`alloc_core_small.rs:836`). **This word is payload, and a payload decommit
@@ -370,7 +370,7 @@ design adds no new hotness bookkeeping.
 The reuse of an age-1 (POOLED-COLD) segment is via FRESH CARVE, not free-list
 pop (the free list is nulled). The recommit machinery ALREADY EXISTS at
 `carve_block`'s `is_decommitted()` branch
-(`src/alloc_core/alloc_core_small.rs:1070-1110`):
+(`src/alloc_core/small/alloc_core_small/mod.rs:1070-1110`):
 
 - **Eager path** (`not(feature = "alloc-lazy-commit")`): calls
   `os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT)`

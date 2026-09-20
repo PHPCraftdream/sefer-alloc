@@ -15,7 +15,7 @@ recommendation that may be "not yet."
 
 **Date:** 2026-07-30. **Base revision analyzed:** `main` @ `374c6d1`
 (R30-9 landed) + the working tree's uncommitted R30-7 profile additions
-(`src/alloc_core/profile.rs`, `src/alloc_core/large_cache_config.rs`,
+(`src/alloc_core/config/profile.rs`, `src/alloc_core/config/large_cache_config.rs`,
 `src/global/sefer_alloc.rs`, `tests/profile.rs`, `examples/r30_7_*` — these
 show as uncommitted in `git status` at the start of this task but are
 R30-7's, not this task's; this document does not modify them). Line
@@ -52,7 +52,7 @@ in detail.
 
 **What IS structurally new value, found by inspecting a live hook, not
 hypothesized:** `dbg_decomp_reserve_and_keep` / `dbg_decomp_release`
-(`src/alloc_core/alloc_core_small_pool.rs:1070-1115`) already hands a raw
+(`src/alloc_core/small/alloc_core_small_pool/mod.rs:1070-1115`) already hands a raw
 `*mut u8` segment base out of one hook and consumes it in a paired
 `unsafe fn`, with ONLY a `debug_assert!` (compiled out in `--release`)
 checking the base is not the live `small_cur` cursor before releasing it.
@@ -145,13 +145,13 @@ $ awk '/^const UNSAFE_HOOKS/,/^\];/' tests/dbg_hook_safety_tripwire.rs | grep -c
 $ grep -rl "pub fn dbg_\|pub unsafe fn dbg_" src/ crates/ | sort
 crates/racy-ptr-cell/src/lib.rs
 crates/ring-mpsc/src/lib.rs
-src/alloc_core/alloc_core_core_diag.rs
-src/alloc_core/alloc_core_large_cache.rs
-src/alloc_core/alloc_core.rs
-src/alloc_core/alloc_core_small_diag.rs
-src/alloc_core/alloc_core_small_pool.rs
-src/alloc_core/alloc_core_small_reclaim.rs
-src/alloc_core/remote_free_ring.rs
+src/alloc_core/alloc_core/alloc_core_core_diag/
+src/alloc_core/large/alloc_core_large_cache.rs
+src/alloc_core/alloc_core/mod.rs
+src/alloc_core/small/alloc_core_small_diag.rs
+src/alloc_core/small/alloc_core_small_pool/mod.rs
+src/alloc_core/small/alloc_core_small_reclaim.rs
+src/alloc_core/segment/remote_free_ring/mod.rs
 src/global/fallback.rs
 src/global/sefer_alloc.rs
 src/global/tls_heap.rs
@@ -304,7 +304,7 @@ architecture:**
   the ONE remaining primitive touching segment reservation in a hook
   context, and it structurally CANNOT publish `small_cur` (it has no code
   path that writes that field — verified by reading the function, see
-  `src/alloc_core/alloc_core_small.rs:1903`). The convention is already
+  `src/alloc_core/small/alloc_core_small/mod.rs:1903`). The convention is already
   enforced by the function's own shape, not merely by doc comment.
 
 ---
@@ -335,7 +335,7 @@ already closes today, file-location-independent.
 
 ### 5.1 The live counterexample this design targets
 
-`src/alloc_core/alloc_core_small_pool.rs:1070-1115` (R29-3/R30-1 era):
+`src/alloc_core/small/alloc_core_small_pool/mod.rs:1070-1115` (R29-3/R30-1 era):
 
 ```text
 pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<*mut u8> {

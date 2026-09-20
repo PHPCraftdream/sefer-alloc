@@ -8,7 +8,7 @@ Research document (written before implementation). Closes gap #7
 
 ## §0. What already exists — NUMA-relevant points
 
-### OS-seam (`src/alloc_core/os.rs`)
+### OS-seam (`src/alloc_core/platform/os.rs`)
 
 The file contains the single confined-`unsafe` block for memory reservation
 via `mmap`/`VirtualAlloc`. Currently NO NUMA-specific flags or calls are used
@@ -25,9 +25,9 @@ anywhere:
 
 `decommit_pages`/`recommit_pages` already exist and are properly wrapped.
 NUMA calls should be placed alongside — in a separate file
-`src/alloc_core/numa.rs`, similarly `cfg`-gated.
+`src/alloc_core/platform/numa.rs`, similarly `cfg`-gated.
 
-### Segment header (`src/alloc_core/segment_header.rs`)
+### Segment header (`src/alloc_core/segment/segment_header/mod.rs`)
 
 `SegmentHeader` — `#[repr(C)]`, Copy, purely safe code. Currently
 contains: `magic`, `kind`, `segment_id`, `bump`, `large_size/align`,
@@ -42,7 +42,7 @@ const _: () = assert!(Layout::page_map_off() == PAGE);
 The header must fit within a single page (4 KiB). Currently it is ~96 bytes;
 a `node_id: u32` field adds 4 bytes — much less than PAGE. Safe.
 
-### AllocCore (`src/alloc_core/alloc_core.rs`)
+### AllocCore (`src/alloc_core/alloc_core/mod.rs`)
 
 Segment reservation points:
 - `reserve_small_segment` (lines 997–1034): calls `Segment::reserve(SEGMENT)`,
@@ -163,9 +163,9 @@ on Darwin compiles as a no-op: detection returns node 0,
 
 ## §2. Insertion points in our code
 
-### New file `src/alloc_core/numa.rs`
+### New file `src/alloc_core/platform/numa.rs`
 
-Following the pattern of `src/alloc_core/os.rs`:
+Following the pattern of `src/alloc_core/platform/os.rs`:
 
 ```rust
 //! NUMA-seam: detect current NUMA node and bind a segment to a node.
@@ -195,7 +195,7 @@ pub fn reserve_aligned_on_node(usable: usize, node: u32)
 
 All `unsafe` blocks have a `// SAFETY:` comment. Full analogy with `os.rs`.
 
-### `src/alloc_core/segment_header.rs` — new field
+### `src/alloc_core/segment/segment_header/mod.rs` — new field
 
 ```rust
 #[repr(C)]
@@ -217,7 +217,7 @@ the header layout is stable regardless of the feature set. Access is via
 
 **Size check**: adding a `u32` will not violate the assert `size_of::<SegmentHeader>() <= PAGE` — the current size is ~96 bytes, it will remain ~100 bytes, much less than 4096.
 
-### `src/alloc_core/alloc_core.rs` — changing `reserve_small_segment`
+### `src/alloc_core/alloc_core/mod.rs` — changing `reserve_small_segment`
 
 ```rust
 fn reserve_small_segment(&mut self) -> Option<*mut u8> {
@@ -339,7 +339,7 @@ miss, not once per process. This is the cheap NUMA optimisation to do
 
 **What is cached.** The `u32` returned by `numa::current_node()` for the
 calling thread. Stored as a per-`AllocCore`-instance field
-`cached_numa_node: Option<u32>` (`src/alloc_core/alloc_core.rs`), gated on
+`cached_numa_node: Option<u32>` (`src/alloc_core/alloc_core/mod.rs`), gated on
 `#[cfg(feature = "numa-aware")]`. `None` = "not yet queried on this claim";
 `Some(n)` = "the last query returned `n`".
 
@@ -361,14 +361,14 @@ if `Some`, otherwise queries `numa::current_node()`, stores the result, and
 returns it. Every former call site of `numa::current_node()` on a hot path
 now calls the cached accessor instead:
 
-- `find_segment_with_free_impl` (`src/alloc_core/alloc_core_small.rs`) — the
+- `find_segment_with_free_impl` (`src/alloc_core/small/alloc_core_small/mod.rs`) — the
   per-miss path, the call site this cache exists to defray.
 - `reserve_small_segment` (same file) — new-segment small reservation.
 - `alloc_large`'s cache-hit re-stamp and `alloc_large_slow`
-  (`src/alloc_core/alloc_core_large.rs`) — the large path's two sites.
+  (`src/alloc_core/large/alloc_core_large.rs`) — the large path's two sites.
 
 The one-time bootstrap call in `AllocCore::new_inner`
-(`src/alloc_core/alloc_core.rs`, ~line 726) is **left as a direct
+(`src/alloc_core/alloc_core/mod.rs`, ~line 726) is **left as a direct
 `numa::current_node()` call** — it runs exactly once per
 `AllocCore::new_inner()`, never in a hot loop, so routing it through the
 cache would add a field write for zero amortisation benefit. Forcing it
@@ -493,8 +493,8 @@ fresh 128-call budget).
 or a wall-clock timer.** Every call site of `current_node_cached()` is
 already a refill-miss or new-segment-reservation path —
 `find_segment_with_free_impl`, `reserve_small_segment`
-(`src/alloc_core/alloc_core_small.rs`), and `alloc_large`/`alloc_large_slow`
-(`src/alloc_core/alloc_core_large.rs`) — never the bump-pointer
+(`src/alloc_core/small/alloc_core_small/mod.rs`), and `alloc_large`/`alloc_large_slow`
+(`src/alloc_core/large/alloc_core_large.rs`) — never the bump-pointer
 alloc/dealloc fast path (that path never touches NUMA state at all). Each of
 these call sites is already paying for a free-list linear scan or an actual
 OS segment reservation (a real mmap/VirtualAlloc round-trip, page-table
@@ -508,7 +508,7 @@ eliminated).
 
 **Why 128.** Sits in the middle of the 64–256 per-class range this task's
 review suggested, and deliberately matches the order of magnitude of
-`DIRECTORY_MISS_FULL_SCAN_PERIOD` (`src/alloc_core/segment_directory.rs`,
+`DIRECTORY_MISS_FULL_SCAN_PERIOD` (`src/alloc_core/segment/segment_directory/mod.rs`,
 `= 64`) — the sibling "periodic re-validation" cadence the directory-miss
 trust window already established as "rare enough to be free, frequent
 enough to bound drift" for a structurally similar problem (bounding how
@@ -599,7 +599,7 @@ NUMA nodes on a single physical socket). Does not require a VM.
 
 ### Test `tests/numa_seam.rs`
 
-Unit test for `src/alloc_core/numa.rs`:
+Unit test for `src/alloc_core/platform/numa.rs`:
 
 ```rust
 #[test]
@@ -655,7 +655,7 @@ phase E.
 
 ### Safety
 
-New confined-`unsafe` block `src/alloc_core/numa.rs`:
+New confined-`unsafe` block `src/alloc_core/platform/numa.rs`:
 - `mbind` syscall: does not modify segment data, only the physical page
   allocation policy. Primary risk: passing an incorrect `addr`/`len` or node.
   Protection: call ONLY on a live segment immediately after `mmap`, before any
@@ -685,9 +685,9 @@ to the same node.
 
 | Artifact | Estimate |
 |----------|----------|
-| `src/alloc_core/numa.rs` | 250–400 lines |
-| `src/alloc_core/segment_header.rs` | +8 lines (field + constructors) |
-| `src/alloc_core/alloc_core.rs` | +30–50 lines (`#[cfg(feature)]` blocks) |
+| `src/alloc_core/platform/numa.rs` | 250–400 lines |
+| `src/alloc_core/segment/segment_header/mod.rs` | +8 lines (field + constructors) |
+| `src/alloc_core/alloc_core/mod.rs` | +30–50 lines (`#[cfg(feature)]` blocks) |
 | `src/alloc_core/mod.rs` | +1 line (`pub(crate) mod numa;`) |
 | `tests/numa_seam.rs` | ~60 lines |
 | `tests/numa_alloc.rs` | ~120 lines |
@@ -719,7 +719,7 @@ to the same node.
 
 ## §8. Implementation steps
 
-### Phase A — `src/alloc_core/numa.rs` (OS-seam)
+### Phase A — `src/alloc_core/platform/numa.rs` (OS-seam)
 
 New confined-`unsafe` module with topology detection and `bind_segment` /
 `reserve_aligned_on_node`. Covered by unit tests in `tests/numa_seam.rs`.
@@ -762,10 +762,10 @@ only on real multi-socket hardware. RSS metric is not affected
 
 | File | Action |
 |------|--------|
-| `src/alloc_core/numa.rs` | New confined-`unsafe` NUMA-seam |
-| `src/alloc_core/os.rs` | No changes (read only) |
-| `src/alloc_core/segment_header.rs` | + field `node_id: u32`, accessors |
-| `src/alloc_core/alloc_core.rs` | + `#[cfg(numa-aware)]` in `reserve_small_segment`, `alloc_large`, `find_segment_with_free` |
+| `src/alloc_core/platform/numa.rs` | New confined-`unsafe` NUMA-seam |
+| `src/alloc_core/platform/os.rs` | No changes (read only) |
+| `src/alloc_core/segment/segment_header/mod.rs` | + field `node_id: u32`, accessors |
+| `src/alloc_core/alloc_core/mod.rs` | + `#[cfg(numa-aware)]` in `reserve_small_segment`, `alloc_large`, `find_segment_with_free` |
 | `src/alloc_core/mod.rs` | + `pub(crate) mod numa;` |
 | `src/heap/heap.rs` | No changes (NUMA logic is below, in AllocCore) |
 | `Cargo.toml` | + feature `numa-aware = ["alloc-core"]` |

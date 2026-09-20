@@ -10,7 +10,7 @@
 //! [`AllocCore::dbg_small_class_count`] / [`AllocCore::dbg_words_per_class`],
 //! never hardcoded from reading `size_classes.rs`/`segment_table.rs` by eye —
 //! still matches the illustrative snapshot numbers
-//! `src/alloc_core/dirty_by_class.rs`'s module doc comment ("## Sizing and
+//! `src/alloc_core/platform/dirty_by_class.rs`'s module doc comment ("## Sizing and
 //! lazy materialisation" section) cites.
 //!
 //! If a future change to `MAX_SEGMENTS`, `SMALL_CLASS_COUNT` (i.e. any edit to
@@ -57,7 +57,7 @@ fn sidecar_byte_footprint_matches_doc_comment_snapshot() {
          doc comment snapshot ({EXPECTED_BYTES} bytes) to {bytes_per_heap} \
          bytes (small_class_count={}, words_per_class={}) — update BOTH this \
          test's EXPECTED_BYTES constant and the \"## Sizing and lazy \
-         materialisation\" doc comment in src/alloc_core/dirty_by_class.rs",
+         materialisation\" doc comment in src/alloc_core/platform/dirty_by_class.rs",
         AllocCore::dbg_small_class_count(),
         AllocCore::dbg_words_per_class(),
     );

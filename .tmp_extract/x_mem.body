@@ -1,0 +1,971 @@
+    /// Allocate `layout.size()` bytes satisfying `layout.align()`.
+    ///
+    /// Returns a non-null `*mut u8` on success, or null on OOM. The memory is
+    /// **uninitialised** (matching `GlobalAlloc::alloc`); see
+    /// [`alloc_zeroed`](Self::alloc_zeroed) for zeroed memory.
+    ///
+    /// Zero-size layouts are not supported (they violate the `GlobalAlloc`
+    /// contract; we round up to `MIN_BLOCK` and serve normally).
+    #[must_use]
+    #[inline(always)]
+    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        let size = layout.size().max(super::size_classes::MIN_BLOCK);
+        let align = layout.align();
+        match Self::classify(size, align) {
+            AllocKind::Small { class_idx } => self.alloc_small(class_idx),
+            // `.0` discards the freshness bool — the plain `alloc` path is
+            // uninitialised-memory by contract and must NOT observe it; only
+            // `alloc_zeroed` below consults the bool. Behaviour is byte-
+            // identical to the pre-tuple `alloc_large` call.
+            AllocKind::Large => self.alloc_large(size, align).0,
+        }
+    }
+
+    /// Allocate `layout.size()` bytes of **zeroed** memory.
+    ///
+    /// # Fresh-reservation skip (task #221 / R8-8)
+    ///
+    /// For a Large-classified request, consults `alloc_large`'s freshness
+    /// signal: a genuinely fresh OS reservation is already zero-filled by the
+    /// OS (Windows `VirtualAlloc` MEM_COMMIT / Unix zero-filled `mmap`), so the
+    /// explicit `Node::zero` pass is SKIPPED — this is the win for large
+    /// calloc-heavy requests. A `large_cache` HIT (a reused segment that may
+    /// hold the prior occupant's bytes) is NOT fresh and is zeroed explicitly.
+    /// Small-classified requests are always zeroed explicitly (the small path
+    /// is out of scope for the freshness skip — see the task header) UNLESS
+    /// the opt-in `virgin-zero-skip` feature (R12-10, task #261) is enabled,
+    /// in which case the identical freshness-skip discipline applies to a
+    /// genuinely virgin (never-before-served) bump-carved block — see
+    /// [`alloc_small_with_virgin`](Self::alloc_small_with_virgin)'s doc for
+    /// the exact virginity predicate. A free-list-served (reused) block is
+    /// NEVER treated as virgin and is always zeroed explicitly, exactly as
+    /// before this feature existed.
+    #[must_use]
+    pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
+        let size = layout.size().max(super::size_classes::MIN_BLOCK);
+        let align = layout.align();
+        match Self::classify(size, align) {
+            AllocKind::Small { class_idx } => {
+                #[cfg(feature = "virgin-zero-skip")]
+                {
+                    let (ptr, is_virgin) = self.alloc_small_with_virgin(class_idx);
+                    if !ptr.is_null() && !is_virgin {
+                        #[cfg(feature = "alloc-stats")]
+                        SMALL_ZERO_PASS_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        Node::zero(ptr, size);
+                    }
+                    ptr
+                }
+                #[cfg(not(feature = "virgin-zero-skip"))]
+                {
+                    let ptr = self.alloc_small(class_idx);
+                    if !ptr.is_null() {
+                        Node::zero(ptr, size);
+                    }
+                    ptr
+                }
+            }
+            AllocKind::Large => {
+                let (ptr, is_fresh) = self.alloc_large(size, align);
+                if !ptr.is_null() && !is_fresh {
+                    #[cfg(feature = "alloc-stats")]
+                    LARGE_ZERO_PASS_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    Node::zero(ptr, size);
+                }
+                ptr
+            }
+        }
+    }
+
+    /// Deallocate memory previously returned by [`alloc`](Self::alloc) (or
+    /// `alloc_zeroed`/`realloc`).
+    ///
+    /// This is an **`unsafe fn`**: it trusts its caller to honour the
+    /// [`GlobalAlloc::dealloc`](crate::global::SeferAlloc)-shaped contract (see
+    /// `# Safety`). The crate's former posture was a *safe* `pub fn` with an
+    /// M2 "defensive-free" guard (matching `free()` in mimalloc/glibc); that
+    /// posture was **reversed in R6-MS-1/2** after the round5
+    /// `memory_safety_review` produced concrete safe-Rust counterexamples
+    /// proving the defensive checks insufficient — a same-class in-place
+    /// realloc that *resurrects* a freed block (two live allocations at one
+    /// address), a fully-overlapping `copy_nonoverlapping(p, p, n)` in the
+    /// realloc move leg, and an interior `dealloc` of a Large segment
+    /// releasing the whole reservation of a still-live neighbour. Marking the
+    /// entry point `unsafe fn` makes a contract violation *documented caller
+    /// UB* rather than an unsound *safe* API. The M2 defensive paths
+    /// (foreign-pointer no-op, bitmap guard) are **retained as
+    /// defence-in-depth** — they no longer carry the soundness argument, but
+    /// they still make many accidental misuses benign at runtime.
+    ///
+    /// See `docs/agent_reviews_round5/memory_safety_review.md` (R5-MS-1/MS-2)
+    /// for the full exploit catalogue and `CHANGELOG.md` (R6-MS-1/2) for the
+    /// migration.
+    ///
+    /// **Phase 13.3 — arithmetic own-thread free.** The hot path is now pure
+    /// arithmetic + (at most) one field-specific header byte read, NOT a
+    /// full-struct `SegmentHeader::read_at`. Specifically:
+    ///   - `segment_base_of(ptr)` — one mask (already the case).
+    ///   - `self.table.contains_base(base)` — the foreign-pointer guard (this
+    ///     is the load-bearing defence-in-depth check, NOT the `magic` word:
+    ///     a foreign pointer's computed base is simply not in our registry,
+    ///     so we never touch its bytes).
+    ///   - `SegmentHeader::kind_at(base)` — ONE byte field read (via
+    ///     `offset_of!`) to distinguish Large from Small/Primordial. This is
+    ///     the minimum read necessary: Large blocks are freed by marking the
+    ///     segment (no class free list), Small/Primordial go to the BinTable;
+    ///     without distinguishing them we'd misroute. `kind` is written once
+    ///     at segment init and immutable thereafter, so this byte read cannot
+    ///     race an owner write on the disjoint `bump` field (the §11
+    ///     root-cause analysis).
+    ///   - the size class is derived from the caller-supplied `Layout` via
+    ///     `Self::classify` — pure arithmetic, no `page_map` lookup (§13:
+    ///     `page_map` is unreliable for mixed-class pages, and own-thread
+    ///     free HAS the `Layout`, so deriving from it is both cheaper AND
+    ///     correct).
+    ///
+    /// The `SEGMENT_MAGIC` full-struct sanity check is intentionally absent
+    /// here: it lives ONLY on the defensive cross-thread routing path
+    /// (`HeapCore::dealloc_routing` under `alloc-xthread`), where a foreign
+    /// pointer could in principle resolve to a registered-but-not-ours base.
+    /// On the trusted own-thread path, `contains_base` is the sole guard and
+    /// the `Layout` is authoritative for the class — a full header load would
+    /// be a dependent load on the free critical path with no correctness gain.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the [`GlobalAlloc::dealloc`] contract for `ptr`
+    /// and `layout`. Concretely:
+    ///
+    /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
+    ///   allocation owned by *this* `AllocCore`, returned by a prior
+    ///   [`alloc`](Self::alloc)/[`alloc_zeroed`](Self::alloc_zeroed)/
+    ///   [`realloc`](Self::realloc). It MUST NOT be an interior pointer
+    ///   (`base + interior_offset`): the foreign/interior defences are
+    ///   best-effort, not a soundness guarantee, and an interior Large free
+    ///   would release the whole reservation of a still-live neighbour.
+    /// - `layout` exactly matches the layout the allocation was made with.
+    /// - The allocation is freed **at most once**: a double-free, and any
+    ///   re-issue of `ptr` after this call (before a later `alloc` happens to
+    ///   reuse its address for a new owner), is UB.
+    /// - `ptr` is not a foreign / already-released-unmapped base (a pointer
+    ///   from another allocator or a segment whose OS reservation has been
+    ///   released).
+    ///
+    /// Null `ptr` is always safe (early return). The M2 defensive paths
+    /// (foreign-pointer no-op, bitmap guard) make several of these accidental
+    /// violations benign *at runtime*, but they are NOT a substitute for
+    /// honouring the contract — a violation this method cannot detect is UB.
+    #[inline]
+    #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        if ptr.is_null() {
+            return;
+        }
+        let base = os::segment_base_of_ptr(ptr);
+        // Foreign-pointer check: if the computed segment base is NOT one of our
+        // registered segments, this pointer is not one of ours — no-op (do not
+        // touch foreign memory, do not even read a header that may be unmapped).
+        if !self.table.contains_base(base) {
+            // Review finding 2.3: make the drop OBSERVABLE. Without
+            // `alloc-xthread` this branch is the sole guard, and a cross-thread
+            // free lands here as a PERMANENT leak — the misconfiguration
+            // signature this counter exists to expose (see
+            // `FOREIGN_OR_UNROUTABLE_FREES`). Gated behind `alloc-stats` so the
+            // free hot path pays nothing by default, matching the crate's other
+            // per-event stat counters. Relaxed: diagnostic only.
+            #[cfg(feature = "alloc-stats")]
+            FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+        // Field-specific `kind` read (Phase 13.3): a single byte at its
+        // `offset_of!` offset, NOT a full-struct `read_at`. Distinguishes
+        // Large (free = mark segment) from Small/Primordial (free = push to
+        // BinTable). `kind` is immutable after init, so this byte read is
+        // race-free against the owner's disjoint `bump` writes.
+        match SegmentHeader::kind_at(base) {
+            SegmentKind::Large => {
+                // Large/huge: the segment is being freed. The full header read
+                // here is on the cold Large path (one allocation per segment,
+                // rare), so the dependent-load cost does not matter.
+                //
+                // OPT-E (alloc-decommit): if the segment is small enough to
+                // cache AND a free slot exists, decommit its payload pages and
+                // deposit it into the large_cache so the next alloc_large of a
+                // compatible size can reuse it without an OS round-trip.
+                //
+                // Without alloc-decommit (or when the cache admission is
+                // declined): the OS reservation is released EAGERLY, right
+                // here — NOT deferred to `Drop` (task #125; see the release
+                // branches below for the full rationale). `unregister(base)`
+                // runs first so `Drop`'s `table.bases()` walk never sees
+                // `base` again — no double-free of the reservation.
+                //
+                // Phase 2: run a lazy decay tick on large free (same cheap
+                // Instant check as on the alloc path).
+                #[cfg(feature = "alloc-decommit")]
+                self.maybe_decay_large_cache();
+
+                let stale = SegmentHeader::read_at(base);
+
+                #[cfg(feature = "alloc-decommit")]
+                {
+                    // The physical usable span is read from the header's
+                    // stable `span_usable` field — NOT recomputed from
+                    // `large_size`/`large_align`. Bug #134: on a cache-hit
+                    // reuse the header's logical size/align can be smaller
+                    // than the segment's actual physical footprint (the OS
+                    // reservation is reused as-is for a smaller request), so
+                    // recomputing "usable size" from size/align here
+                    // under-reports the true span and corrupts the
+                    // large-cache byte-budget accounting. `span_usable` is
+                    // set once at the segment's original OS reservation and
+                    // carried forward verbatim through every cache-hit reuse
+                    // (see `SegmentHeader::span_usable` doc). R12-4:
+                    // `reserved_capacity` is carried forward the same way
+                    // (never recomputed) — see `CachedLarge::reserved_capacity`'s
+                    // doc. The field is present in every build's layout
+                    // (inert, equal to `span_usable`, when the feature is
+                    // off), so this read needs no `#[cfg]` split.
+                    let usable_size = stale.span_usable;
+                    let reserved_capacity = stale.reserved_capacity;
+
+                    // Phase 1 large-cache admission: byte-budget enforcement.
+                    //
+                    // Strategy:
+                    //   1. Find a free slot (None). If none is free, try FIFO eviction.
+                    //   2. Check that depositing this span would not exceed the budget
+                    //      (if one is set). If the budget would overflow, evict the
+                    //      oldest occupied slot to make room. If eviction still can't
+                    //      satisfy the budget (budget < usable_size), skip caching.
+                    //   3. Deposit into the (now-free) slot.
+                    //
+                    // FIFO definition (task D1): the "oldest" slot is the
+                    // occupied one with the smallest insertion `seq`, found via
+                    // `oldest_occupied_slot` (a seq-based min-by scan) — NOT slot
+                    // index 0. Each deposit stamps `large_cache_seq` into
+                    // `CachedLarge::seq`, so eviction picks the true FIFO-oldest
+                    // entry regardless of slot order. This holds for any
+                    // LARGE_CACHE_SLOTS (currently 8), not just the old 2-slot
+                    // minimal implementation that happened to fill slots in order.
+                    // Two independent admission constraints: (1) there must be a
+                    // free slot, (2) the byte-budget (if set) must accommodate
+                    // `usable_size`. Either failing means we evict the oldest and
+                    // retry. Bug #94 history: an earlier version short-circuited
+                    // `try_evict_to_fit` to `true` when budget=None and missed
+                    // the "slots full" case entirely, silently releasing every
+                    // span beyond the first two to the OS. The loop below treats
+                    // both constraints uniformly.
+                    //
+                    // R13-7 (task #277): "free slot" now searches the COMBINED
+                    // base+extension index space via `large_cache_find_free_slot`
+                    // (base 8 first, then the lazily-materialised
+                    // `large-cache-extended` sidecar once the base is full) —
+                    // the byte-budget check is UNCHANGED and remains the
+                    // primary control regardless of how many slots exist.
+                    //
+                    // R14-5 (task #290, review finding @fm P3): budget
+                    // feasibility is checked BEFORE ever calling
+                    // `large_cache_find_free_slot` — a deposit this large can
+                    // NEVER fit under the configured budget (even against a
+                    // fully-evicted cache), so there is no point paying for a
+                    // sidecar materialisation (a real OS page reservation) to
+                    // go looking for a free slot the budget will reject
+                    // regardless. See `large_cache_deposit_budget_infeasible`'s
+                    // doc for the exact rationale and its scope (this is a
+                    // single-deposit-vs-budget check, not a full feasibility
+                    // predictor for the eviction loop below).
+                    let mut admitted: Option<usize> = None;
+                    if !self.large_cache_deposit_budget_infeasible(usable_size) {
+                        loop {
+                            let free_slot = self.large_cache_find_free_slot();
+                            let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
+                                self.large_cache_used_bytes + usable_size <= budget
+                            });
+                            if let Some(idx) = free_slot {
+                                if budget_ok {
+                                    admitted = Some(idx);
+                                    break;
+                                }
+                            }
+                            // Either no free slot, or budget would overflow → evict
+                            // the oldest entry and retry. If the cache is already
+                            // empty there is nothing more we can do.
+                            if !self.evict_one_oldest() {
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(slot_idx) = admitted {
+                        // We keep the pages COMMITTED in the cache (no decommit
+                        // on deposit). On Windows, `VirtualAlloc(MEM_DECOMMIT)`
+                        // followed immediately by `VirtualAlloc(MEM_COMMIT)` on
+                        // the next cache hit costs more than just leaving the
+                        // pages mapped — the entire purpose of the cache is to
+                        // amortise the OS round-trip cost. Decommitting here
+                        // would reduce RSS by the usable payload size, but at the
+                        // cost of an expensive recommit on every hit, negating
+                        // the speedup. We intentionally trade RSS for latency:
+                        // a cached large segment keeps its pages warm between uses.
+                        //
+                        // NULL the table slot WITHOUT releasing the OS reservation.
+                        // The cached entry owns the reservation; AllocCore::drop
+                        // releases it explicitly from the large_cache array.
+                        self.table.unregister(base);
+                        // Zero the magic so that if something reads the header
+                        // while it's in the cache, it won't be confused as a
+                        // live registered segment.
+                        //
+                        // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-
+                        // synthesis.md): this used to be `hdr_zero = stale;
+                        // hdr_zero.magic = 0; Node::write_struct(base, hdr_zero)`
+                        // — a non-atomic FULL-STRUCT write that races with
+                        // `SegmentHeader::magic_at`/`kind_at`/`large_size_at`/
+                        // `span_usable_at` (remote defensive field reads that can
+                        // observe a live header concurrently with this owner
+                        // write under a stale/duplicate remote free — misuse of
+                        // the `GlobalAlloc` contract the defensive reads exist to
+                        // survive without UB). `stale` is a fresh `read_at(base)`
+                        // taken just above, so every OTHER field of `hdr_zero`
+                        // is byte-identical to what is already in memory — the
+                        // full-struct write's only REAL effect was zeroing
+                        // `magic`. Restoring this file's own §11 discipline
+                        // ("remote-readable field ⇒ atomic single-word access",
+                        // the same pattern `SegmentMeta::owner_state_atomic`
+                        // already uses for cross-thread owner-state reads): write only the
+                        // `magic` field, through an `&AtomicU32` view at its
+                        // `offset_of!` offset, so a concurrent remote
+                        // `magic_at`/`kind_at`/`large_size_at`/`span_usable_at`
+                        // read never races a torn/non-atomic store — those other
+                        // three fields are untouched here, so no write to them is
+                        // needed at all.
+                        let magic_off = core::mem::offset_of!(SegmentHeader, magic);
+                        Node::atomic_u32_at(base, magic_off)
+                            .store(0, core::sync::atomic::Ordering::Release);
+                        // Deposit into cache and update the byte-budget counter.
+                        let seq = self.large_cache_seq;
+                        self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
+                        self.large_cache_slot_set(
+                            slot_idx,
+                            CachedLarge {
+                                reservation: stale.reservation,
+                                reservation_len: stale.reservation_len,
+                                base,
+                                usable_size,
+                                reserved_capacity,
+                                seq,
+                            },
+                        );
+                        self.large_cache_used_bytes += usable_size;
+                        return;
+                    }
+                    // Not admitted (no free slot after eviction, or budget too small):
+                    // release the OS reservation EAGERLY right now rather than
+                    // deferring to `AllocCore::drop` (task #125 / same leak
+                    // class as A1/#114). In the Phase 12.5 shard model, the
+                    // per-thread `AllocCore` living in a registry slot is
+                    // effectively never dropped mid-process (the slot is
+                    // recycled between threads, but the `AllocCore` itself
+                    // persists) — "defer release to Drop" is therefore a
+                    // PERMANENT leak of both the OS reservation and the
+                    // `SegmentTable` slot on the own-thread admission-reject
+                    // path, eventually exhausting `MAX_SEGMENTS` and forcing
+                    // `alloc_large` to return null. `unregister` FIRST (frees
+                    // the slot for reuse; mirrors `reclaim_large_segment`'s
+                    // ordering), THEN release — Drop's `table.bases()` walk
+                    // will no longer see `base`, so there is no double-free.
+                    self.table.unregister(base);
+                    os::release_segment(stale.reservation, stale.reservation_len);
+                }
+                #[cfg(not(feature = "alloc-decommit"))]
+                {
+                    // No large-cache at all: every own-thread large free must
+                    // release eagerly for the same reason as the
+                    // admission-reject branch above (task #125) — deferring
+                    // to `Drop` leaks the reservation AND the `SegmentTable`
+                    // slot for the remaining process lifetime.
+                    self.table.unregister(base);
+                    os::release_segment(stale.reservation, stale.reservation_len);
+                }
+            }
+            SegmentKind::Small | SegmentKind::Primordial => {
+                // Derive the class from the caller's `Layout` (pure
+                // arithmetic via `SIZE2CLASS`) — NOT from `page_map`. §13 of
+                // RACE_DRAIN_RECLAIM.md: `page_map` records only the FIRST
+                // class to touch a page, so it returns the wrong class for
+                // any later block of a different class in the same page. The
+                // own-thread freer HAS the original `Layout`, so classifying
+                // from it is both cheaper (no page_map load) AND correct.
+                let size = layout.size().max(super::size_classes::MIN_BLOCK);
+                let align = layout.align();
+                let kind = Self::classify(size, align);
+                let class_idx = match kind {
+                    AllocKind::Small { class_idx } => class_idx,
+                    // Layout mismatch: the original allocation was small but
+                    // the dealloc layout classifies as large. This is a
+                    // contract violation; no-op (do not corrupt).
+                    AllocKind::Large => return,
+                };
+                self.dealloc_small(base, ptr, class_idx);
+            }
+            // L-5 (UBFIX-11): `contains_base` already proved `base` is one of
+            // OUR registered segments, but the `kind` BYTE at that base has
+            // been corrupted to something other than the three legitimate
+            // discriminants (0/1/2) — `kind_at`'s strict decode maps that to
+            // `Unknown` rather than guessing. Neither the Large branch (which
+            // would release/cache the OS reservation) nor the Small/
+            // Primordial branch (which would write a BinTable/free-list
+            // header into the payload) is safe to run against a segment
+            // whose real kind we cannot trust — no-op is the only sound
+            // choice: do not touch this segment's payload or reservation at
+            // all. Same reject-not-guess posture as the H-1 payload
+            // lower-bound guard (UBFIX-3).
+            SegmentKind::Unknown => {}
+        }
+    }
+
+    /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
+    ///
+    /// Two in-place fast paths are attempted first (shared with
+    /// [`try_realloc_inplace_known_base`](Self::try_realloc_inplace_known_base), which [`HeapCore::realloc`](crate::registry::HeapCore)
+    /// calls so its alloc leg can route through the magazine-aware
+    /// `HeapCore::alloc`):
+    ///
+    /// **OPT-F — in-place small→small realloc:** when both the old and new
+    /// sizes resolve to the SAME size class (`new_class_idx == old_class_idx`),
+    /// the block physically fits the new size without any data movement, so we
+    /// return the original pointer unchanged: no alloc, no copy, no dealloc.
+    /// The block's live-count and alloc-bitmap stay intact. The `==` (not
+    /// `<=`) rule is load-bearing — see `realloc_inplace_fast_path`'s comment
+    /// and `tests/regression_realloc_cross_class_shrink.rs`.
+    ///
+    /// **OPT-G — in-place Large→Large realloc:** when the block lives in a
+    /// Large segment and the grown size (clamped to `MIN_BLOCK`) still fits
+    /// the segment's `span_usable`, we update the header's `large_size` and
+    /// return the same pointer. Shrinks fall through to the slow path
+    /// (reclaims RSS). The stored size is clamped to `MIN_BLOCK` to stay
+    /// symmetric with the alloc path and the #138 cross-thread consistency
+    /// check (`large_layout_consistent`).
+    ///
+    /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
+    /// Returns null on failure, leaving the old allocation intact. Null `ptr`
+    /// returns null without touching state.
+    ///
+    /// A **foreign pointer** (its computed segment base is not one of ours)
+    /// also returns null without touching state, symmetric with
+    /// [`dealloc`](Self::dealloc)'s foreign-pointer no-op. This is a
+    /// substrate-level (`AllocCore`) entry point with no cross-heap concept:
+    /// unlike `HeapCore::realloc` (which has a design-load-bearing foreign-leg
+    /// for `alloc-xthread` — a pointer from another live heap in the SAME
+    /// process is legitimate there and `dealloc` routes it cross-thread), a
+    /// pointer this `AllocCore` does not recognise is never legitimate.
+    ///
+    /// This is an **`unsafe fn`** (R6-MS-1/2): the move leg's
+    /// [`Node::copy_nonoverlapping`](crate::alloc_core::node::Node) reads
+    /// `old_layout.size()` bytes out of `ptr`, and trusts the caller's
+    /// `old_layout`/`ptr` exactly as `GlobalAlloc::realloc` does. The crate's
+    /// former posture was a safe `pub fn` bounded by
+    /// [`safe_payload_read_span`](Self::safe_payload_read_span); that was
+    /// reversed after the round5 review showed the same-class in-place branch
+    /// resurrecting a freed block and the foreign/move legs being reachable
+    /// from safe code. See `# Safety` and `CHANGELOG.md` (R6-MS-1/2).
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the [`GlobalAlloc::realloc`] contract for `ptr`
+    /// and `old_layout`:
+    ///
+    /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
+    ///   allocation owned by *this* `AllocCore`, made with a `Layout` whose
+    ///   size/align match `old_layout`. It MUST NOT be an interior pointer.
+    /// - `old_layout` exactly matches the allocation's layout; in particular
+    ///   `old_layout.size()` must not exceed the block's true size (the move
+    ///   leg copies that many bytes out of `ptr`).
+    /// - On success (`!null` return) the OLD `ptr` is freed by this call — it
+    ///   MUST NOT be used or re-freed afterwards. On null return `ptr` is left
+    ///   intact and still owned by the caller.
+    /// - `ptr` is not a foreign / already-released-unmapped base.
+    ///
+    /// Null `ptr` is always safe (early return).
+    #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+        if ptr.is_null() {
+            return core::ptr::null_mut();
+        }
+        // OPT-F / OPT-G: try the in-place fast paths first (Large grow-in-span
+        // and Small same-class). The detection logic lives in ONE place —
+        // `realloc_inplace_fast_path` — shared with `try_realloc_inplace`
+        // (which `HeapCore::realloc` calls so its alloc leg can route through
+        // the magazine-aware `HeapCore::alloc`). Keeping a single source of
+        // truth here closes the unmarked duplication/divergence hazard flagged
+        // in the X-arc retrospective (C2): a bugfix applied to one copy but
+        // not the other would silently disagree.
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base(base) {
+            // Foreign/unregistered pointer: NOT a legitimate move-leg
+            // candidate at the substrate level (see doc comment above and F1
+            // in the UB/memory-safety audit). Symmetric with `dealloc`'s
+            // foreign-pointer no-op — return null instead of falling through
+            // to `self.alloc` + `Node::copy_nonoverlapping(ptr, ..)`, which
+            // would read `old_layout.size()` bytes from an address we never
+            // registered.
+            return core::ptr::null_mut();
+        }
+        if let Some(p) = self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
+        {
+            return p;
+        }
+        // In-place fast paths did not apply: alloc a fresh block, copy the
+        // preserved prefix, and free the old block.
+        //
+        // R2-1 (soundness): the move leg copies `old_layout.size().min(
+        // new_size)` bytes OUT of `ptr`. `contains_base(base)` proved the
+        // segment is ours & mapped, but NOT that the block is as large as
+        // `old_layout` claims — and this is a SAFE `pub fn` (no `unsafe`
+        // marker), so unlike `GlobalAlloc::realloc` (whose `unsafe` signature
+        // makes the caller's `old_layout` a trusted precondition) a bogus
+        // `old_layout` (e.g. 8 MiB claimed for a 16-byte block) must not drive
+        // an out-of-bounds read. The write side is always safe (`copy <=
+        // new_size <= the fresh allocation`); the unsound half is the READ.
+        // Reject (return null, `ptr` untouched) when the claimed old size
+        // exceeds the segment's actual committed span.
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+            return core::ptr::null_mut();
+        }
+        let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
+            Ok(l) => l,
+            Err(_) => return core::ptr::null_mut(),
+        };
+        let new_ptr = self.alloc(new_layout);
+        if new_ptr.is_null() {
+            return core::ptr::null_mut();
+        }
+        let copy = old_layout.size().min(new_size);
+        Node::copy_nonoverlapping(ptr, new_ptr, copy);
+        // SAFETY: `ptr` is a live own-segment allocation (proven by
+        // `contains_base(base)` above) whose true size bounds the move-leg
+        // read (`old_layout.size() <= safe_payload_read_span`), made with
+        // `old_layout`; the fresh `new_ptr` holds the copied prefix, so
+        // freeing the old block once here completes the contract-honouring
+        // realloc move leg.
+        unsafe { self.dealloc(ptr, old_layout) };
+        new_ptr
+    }
+
+    /// R2-1 (soundness): the maximum number of bytes starting at `payload`
+    /// that lie within the COMMITTED span of the segment at `base`, computed
+    /// purely from segment-header metadata — WITHOUT trusting any
+    /// caller-supplied `Layout`.
+    ///
+    /// [`realloc`](Self::realloc) and `HeapCore::realloc` are SAFE `pub fn`s
+    /// (no `unsafe` marker), so they must not let a bogus `old_layout.size()`
+    /// drive an out-of-bounds read in the move leg's
+    /// [`Node::copy_nonoverlapping`]. `contains_base(base)` proves the segment
+    /// is OURS and MAPPED, but says nothing about how large the block at
+    /// `payload` actually is; this method supplies that missing upper bound.
+    ///
+    /// For a Large segment the committed span is the header's `span_usable`
+    /// (the physical OS reservation, `>=` the logical `large_size`, so all real
+    /// data is preserved). For a Small/Primordial segment `span_usable` is
+    /// unused (0) — the segment is exactly one `SEGMENT` (4 MiB), fully
+    /// committed on reserve — so `SEGMENT` is the bound. In both cases the
+    /// result is an upper bound on the bytes that can be read from `payload`
+    /// without faulting or escaping the segment's OS allocation; the move legs
+    /// reject (`old_layout.size() >` this value) before any copy rather than
+    /// reading past the segment.
+    ///
+    /// # Preconditions
+    ///
+    /// `base` MUST already be proven to be a live, mapped segment — via
+    /// `contains_base(base)` (own-segment legs) or `magic_at(base) ==
+    /// SEGMENT_MAGIC` (the cross-heap foreign leg under `alloc-xthread`).
+    /// This method reads `kind`/`span_usable` header fields at `base`, which
+    /// is only sound for a mapped segment.
+    #[inline]
+    pub(crate) fn safe_payload_read_span(base: *mut u8, payload: *mut u8) -> usize {
+        let seg_span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            SegmentHeader::span_usable_at(base)
+        } else {
+            // Small/Primordial: `span_usable` is 0 (inert — see
+            // `SegmentHeader::small`); the segment is exactly one SEGMENT,
+            // fully committed on reserve.
+            os::SEGMENT
+        };
+        let off = (payload as usize).wrapping_sub(base as usize);
+        seg_span.saturating_sub(off)
+    }
+
+    /// Single source of truth for the OPT-F / OPT-G in-place realloc fast
+    /// paths. Returns `Some(ptr)` (the SAME pointer, unchanged or with its
+    /// Large header's `large_size` updated in place) when an in-place resize
+    /// is possible, `None` otherwise. Does NOT fall through to `self.alloc` —
+    /// callers own that decision (the substrate-level [`realloc`](Self::realloc)
+    /// calls `self.alloc` + copy + `self.dealloc`; the registry-level
+    /// [`try_realloc_inplace_known_base`](Self::try_realloc_inplace_known_base) is consumed by `HeapCore::realloc`, which routes
+    /// its alloc leg through the magazine-aware `HeapCore::alloc`).
+    ///
+    /// Both callers share these detection predicates so a bugfix applied to
+    /// one cannot silently fail to reach the other (the X-arc retrospective
+    /// C2 hazard).
+    ///
+    /// # OPT-G — Large→Large in-place grow
+    ///
+    /// Preconditions (all must hold to take the fast path):
+    ///   1. The pointer lives in one of OUR segments (registered in the
+    ///      table).
+    ///   2. The segment kind is `Large` (dedicated single-allocation
+    ///      segment). Huge is excluded conservatively — only Large segments
+    ///      have a verified committed-span guarantee via `span_usable`.
+    ///   3. GROW or SAME size only (clamped: `new_eff >= old_eff`). A
+    ///      shrink falls through to the slow path, which reclaims RSS by
+    ///      moving the payload to a smaller segment/class.
+    ///   4. The grown payload fits the committed span:
+    ///      `payload_offset + new_eff <= span_usable` (checked add to
+    ///      guard against usize wrap on pathological sizes).
+    ///
+    /// MIN_BLOCK clamping: the alloc path clamps every request to
+    /// `MIN_BLOCK` before storing `large_size` in the header. The #138
+    /// cross-thread consistency check (`large_layout_consistent`) compares
+    /// the header value against `layout_size.max(MIN_BLOCK)`. We must
+    /// clamp identically here so a later cross-thread free does not see
+    /// `raw != clamped` and silently drop the free — permanently leaking
+    /// the segment + its SegmentTable slot (#114/#130 class).
+    ///
+    /// Soundness:
+    ///   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
+    ///       NOT by the passed layout. A grown-in-place block stays a Large
+    ///       segment, so `dealloc(ptr, new_layout)` frees the whole segment
+    ///       correctly regardless of `new_size`.
+    ///   (b) `crates/aligned-vmem` reserves large segments with
+    ///       `VirtualAlloc(MEM_RESERVE|MEM_COMMIT)` over the WHOLE span;
+    ///       the large-cache keeps pages committed on deposit. The entire
+    ///       `span_usable` region is committed and writable — growing into
+    ///       it cannot fault.
+    ///   (c) Large reservations round UP to whole SEGMENT (4 MiB) multiples,
+    ///       so e.g. a 512 KiB large alloc owns a full 4 MiB committed span
+    ///       and can grow to ~4 MiB in place.
+    ///
+    /// When all hold: update the header's `large_size` to the CLAMPED
+    /// `new_eff` and return the SAME pointer. The grown tail is
+    /// uninitialised (matching `GlobalAlloc`).
+    ///
+    /// # OPT-F — Small→Small same-class in-place
+    ///
+    /// Preconditions (all must hold to take the fast path):
+    ///   1. The pointer lives in one of OUR segments (registered in the table).
+    ///   2. The segment kind is Small or Primordial (has a BinTable / class).
+    ///   3. Both the old layout and the new size classify as Small (not Large).
+    ///   4. new_class_idx == old_class_idx → the block stays in EXACTLY the
+    ///      same size class.
+    ///
+    /// Why `==` and NOT `<=` (the subtle correctness point): a caller that
+    /// reallocs `ptr` then later frees it MUST, per the `GlobalAlloc`
+    /// contract, pass the NEW layout (`new_size`, same align) to `dealloc`.
+    /// Our `dealloc` (post-#114) derives the block's size class from that
+    /// layout alone — NOT from where the block physically sits. A block is
+    /// carved at an offset that is a multiple of ITS class's `block_size`;
+    /// that offset is NOT necessarily a multiple of a *smaller* class's
+    /// `block_size` (the class sizes are not divisors of one another —
+    /// e.g. the 132464-byte class is not a multiple of the 4096-byte
+    /// class). So if we returned `ptr` unchanged for a shrink that crosses
+    /// into a smaller class (`new_class < old_class`), the eventual
+    /// `dealloc` would push this block's offset onto the SMALLER class's
+    /// free list, where the offset is misaligned — corrupting that free
+    /// list so a later `alloc` from it returns a mis-placed pointer. This
+    /// was latent until task B1 added page-aligned classes (512..16384):
+    /// before B1 the shrink target for a page-aligned request classified
+    /// to `None` (Large) and never hit this path, so the bug never
+    /// manifested. `==` keeps the block in its own class, where the
+    /// carved offset is valid for the free list `dealloc` will use.
+    ///
+    /// When the class matches we return `ptr` unchanged. No copy (the
+    /// block has not moved), no dealloc (we reuse it); the alloc-bitmap
+    /// and live-count are unaffected (the block stays live).
+    ///
+    /// A cross-class shrink (`new_class < old_class`) falls through to the
+    /// slow path (alloc new block in the smaller class + copy + dealloc
+    /// old block in its own class) — correct, just not zero-copy. Growth
+    /// (`new_class > old_class`) and Large on either side also fall
+    /// through.
+    /// In-place realloc fast paths for a pointer whose segment base has already
+    /// been proven live in this `AllocCore`'s table. This is the same logic as
+    /// [`realloc_inplace_fast_path`](Self::realloc_inplace_fast_path), split so
+    /// `HeapCore::realloc` can reuse its own `contains_base(base)` proof instead
+    /// of probing the segment table again.
+    #[inline]
+    fn realloc_inplace_fast_path_known_base(
+        &mut self,
+        base: *mut u8,
+        ptr: *mut u8,
+        old_layout: Layout,
+        new_size: usize,
+    ) -> Option<*mut u8> {
+        assert!(
+            self.table.contains_base_ro(base),
+            "known-base realloc called for a segment not owned by this core"
+        );
+        let kind = SegmentHeader::kind_at(base);
+        // OPT-G: Large→Large in-place grow.
+        if kind == SegmentKind::Large {
+            let old_eff = old_layout.size().max(super::size_classes::MIN_BLOCK);
+            let new_eff = new_size.max(super::size_classes::MIN_BLOCK);
+            if new_eff >= old_eff {
+                let payload_off = ptr as usize - base as usize;
+                let span_usable = SegmentHeader::span_usable_at(base);
+                if let Some(end) = payload_off.checked_add(new_eff) {
+                    if end <= span_usable {
+                        SegmentHeader::set_large_size_at(base, new_eff);
+                        #[cfg(feature = "alloc-stats")]
+                        RELOC_INPLACE_LARGE_CALLS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        return Some(ptr);
+                    }
+                    // R12-4 (feature `large-reserved-capacity`): the grow no
+                    // longer fits the COMMITTED span (`span_usable`), but the
+                    // segment may have extra RESERVED-but-uncommitted VA
+                    // (`reserved_capacity`, always `>= span_usable`) it can
+                    // grow into — committing just the missing tail instead
+                    // of falling through to the slow alloc+copy+free path.
+                    // See `SegmentHeader::reserved_capacity`'s doc and the
+                    // `large-reserved-capacity` feature doc in `Cargo.toml`
+                    // for the full R12-3/R12-4 motivation.
+                    #[cfg(feature = "large-reserved-capacity")]
+                    if self.try_grow_large_reserved_capacity(base, end) {
+                        SegmentHeader::set_large_size_at(base, new_eff);
+                        #[cfg(feature = "alloc-stats")]
+                        RELOC_INPLACE_LARGE_CALLS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        return Some(ptr);
+                    }
+                }
+            }
+            #[cfg(feature = "alloc-stats")]
+            RELOC_FASTPATH_DECLINE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return None;
+        }
+        // OPT-F: Small→Small same-class in-place.
+        if matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
+            let old_size = old_layout.size().max(super::size_classes::MIN_BLOCK);
+            let align = old_layout.align();
+            let clamped_new = new_size.max(super::size_classes::MIN_BLOCK);
+            if let (Some(old_class), Some(new_class)) = (
+                super::size_classes::SizeClasses::class_for(old_size, align),
+                super::size_classes::SizeClasses::class_for(clamped_new, align),
+            ) {
+                if new_class == old_class {
+                    #[cfg(feature = "alloc-stats")]
+                    RELOC_INPLACE_SMALL_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return Some(ptr);
+                }
+                // OPT-H STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351,
+                // `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §6.1/§8 step
+                // 1) — OBSERVATION, NOT IMPLEMENTATION. OPT-F declined (the
+                // class changed), so this is exactly the case a FUTURE OPT-H
+                // mechanism would target: a cross-class Small/Primordial
+                // grow. We only COUNT how often OPT-H's six preconditions
+                // (design §2.1) would hold here; we do NOT carve, do NOT
+                // move `bump`, do NOT return `Some` — the function still
+                // falls through to the unchanged `None` below in every case,
+                // exactly as before this diagnostic existed.
+                //
+                // The entire precondition-evaluation block below is gated on
+                // `alloc-stats` (not just the two `fetch_add` calls) so that
+                // a plain `production` build (which does NOT include
+                // `alloc-stats`) pays zero cost here: no extra branch, no
+                // extra load, no extra arithmetic on the hot path beyond what
+                // OPT-F already computed. This is a stricter gate than the
+                // `LARGE_ZERO_PASS_CALLS`/`SMALL_ZERO_PASS_CALLS` precedent
+                // needs (those sit on a path that already does multi-KiB
+                // work), because this new comparison chain sits directly on
+                // the realloc-grow hot path callers execute on every
+                // cross-class Small/medium grow, `alloc-stats` or not.
+                #[cfg(feature = "alloc-stats")]
+                if super::size_classes::SizeClasses::block_size(new_class)
+                    > super::size_classes::SizeClasses::block_size(old_class)
+                {
+                    // Precondition 1 holds (growing, cross-class). This is
+                    // the Stage-1 denominator. Precondition 2 (segment kind
+                    // Small/Primordial) is already established by the
+                    // enclosing `if matches!(kind, ...)` above.
+                    OPT_H_ATTEMPTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+                    let off = ptr as usize - base as usize;
+                    let old_block_size = super::size_classes::SizeClasses::block_size(old_class);
+                    let new_block_size = super::size_classes::SizeClasses::block_size(new_class);
+                    let meta = super::segment_header::SegmentMeta::new(base);
+
+                    // Precondition 3 (tail-adjacency): this block must be
+                    // the segment's current bump tail — the most-recently
+                    // carved, not-yet-grown-or-freed block. Reusing the
+                    // existing owner-only `bump_of` accessor (same
+                    // single-field read `carve_block` itself uses), not
+                    // hand-rolling a new bump read.
+                    let tail_adjacent = off + old_block_size == meta.bump_of();
+                    // Precondition 4 (new-class alignment): the offset must
+                    // be a legal carve position for `new_class` — i.e.
+                    // indistinguishable from an ordinarily-carved
+                    // `new_class` block to every subsystem that later reads
+                    // this offset (BinTable free-list reuse on dealloc).
+                    let new_class_aligned = off.is_multiple_of(new_block_size);
+                    // Precondition 5 (segment capacity): the grown block
+                    // must still fit within the segment (same `SEGMENT`
+                    // constant OPT-G's Large-path checks and `carve_block`
+                    // use — not a hardcoded literal).
+                    let fits_segment = off + new_block_size <= super::os::SEGMENT;
+                    // Precondition 6 (lazy-commit frontier). Under
+                    // `primordial-lazy-commit`/`small-segment-lazy-commit`,
+                    // `carve_block` never advances `bump` past
+                    // `committed_payload_end` without first committing the
+                    // tail up to at least the new `bump` value (see
+                    // `carve_block`'s B2 grow-on-carve block,
+                    // `alloc_core_small.rs:1508-1533`: it commits BEFORE
+                    // `set_bump`, and only ever sets
+                    // `committed_payload_end` to a value `>=` the new
+                    // `bump`). So for a block that satisfies precondition 3
+                    // (`off + old_block_size == bump`), the frontier is
+                    // already `>= bump == off + old_block_size` at every
+                    // instant — i.e. the frontier is always at least as far
+                    // as the CURRENT tail. This does NOT by itself prove the
+                    // frontier already covers `off + new_block_size` (the
+                    // GROWN tail may extend past the current frontier if
+                    // `new_block_size > old_block_size` pushes past a
+                    // `GROW_CHUNK` boundary the frontier hasn't reached yet)
+                    // — a real OPT-H implementation would still need to run
+                    // `carve_block`'s own commit-frontier step for the
+                    // stretch `[bump, off + new_block_size)`. For THIS
+                    // observation-only Stage-1 counter, when the lazy-commit
+                    // features are OFF there is nothing to commit (trivially
+                    // satisfied); when they are ON we do NOT independently
+                    // verify the frontier already covers the grown tail —
+                    // this is a known, documented overcount for lazy-commit
+                    // builds specifically (Stage-1 hit rate on such a build
+                    // may be a slight overcount versus a real
+                    // implementation's actual hit rate), not a new checked
+                    // code path, per this task's explicit scope boundary
+                    // (inventing frontier-verification logic here would add
+                    // an untested new code path for a precondition that, in
+                    // this observation-only task, has zero behavioral
+                    // consequence either way). See
+                    // `docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE.md` §3's
+                    // "overcounting-configuration caveat" for why the
+                    // Stage-1 measurement's 0-hit result is trustworthy
+                    // despite this overcount, and why a future non-zero
+                    // reading under a lazy-commit build must be read as an
+                    // upper bound, not an exact count.
+                    let lazy_commit_frontier_ok = true;
+
+                    if tail_adjacent && new_class_aligned && fits_segment && lazy_commit_frontier_ok
+                    {
+                        OPT_H_HITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "alloc-stats")]
+        RELOC_FASTPATH_DECLINE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        None
+    }
+
+    /// R12-4 (feature `large-reserved-capacity`): try to grow a Large
+    /// segment's COMMITTED span (`span_usable`) up to at least `required_end`
+    /// bytes (segment-relative), by committing the missing tail
+    /// `[span_usable, page_round(required_end))` — WITHOUT moving the
+    /// allocation. Called only from the OPT-G grow path, only after the
+    /// existing committed-span check (`required_end <= span_usable`) has
+    /// already failed.
+    ///
+    /// Returns `true` (and leaves `span_usable` advanced to cover
+    /// `required_end`) iff:
+    ///   1. `required_end <= reserved_capacity` — the grow fits within the
+    ///      segment's RESERVED VA span (checked with `checked_add`-free
+    ///      arithmetic since `required_end` was already computed via a
+    ///      `checked_add` at the call site); and
+    ///   2. the OS commit of the missing tail succeeds (`os::commit_pages`
+    ///      — can fail on genuine commit-charge exhaustion, in which case
+    ///      this returns `false` and the caller falls through to the slow
+    ///      alloc+copy+free path, exactly as if `reserved_capacity` had not
+    ///      existed).
+    ///
+    /// Returns `false` (no OS call, header unchanged) if `required_end`
+    /// exceeds `reserved_capacity` — the segment has no more VA to grow into
+    /// and the caller must fall through to the slow path.
+    ///
+    /// # Why committing a REAL-PAGE-SAFE round of `required_end`, not
+    /// `required_end` itself
+    ///
+    /// `commit_pages` (like every commit/decommit primitive in this crate)
+    /// requires offsets aligned to the RUNTIME OS page size — `required_end`
+    /// is an arbitrary byte count (a payload size), not necessarily
+    /// page-aligned at all. Rounding UP to the next
+    /// [`os::MAX_REALISTIC_PAGE_SIZE`] (64 KiB) boundary (capped at
+    /// `reserved_capacity`, which is itself always a runtime-page multiple —
+    /// see [`os::Segment::reserve_capacity_exact`]'s contract) commits a
+    /// whole number of pages on EVERY host page size while still covering
+    /// `required_end`; the extra bytes up to the boundary are committed but
+    /// not yet claimed by any allocation — exactly the same "commit whole
+    /// pages, track the logical frontier separately" pattern
+    /// `alloc-lazy-commit`'s `committed_payload_end` uses for small segments.
+    ///
+    /// Task #1077 (the fifth escape of the compile-time-page-constant bug
+    /// class): this used to round to the compile-time `os::PAGE` (4 KiB),
+    /// but `os::commit_pages` -> `aligned_vmem::try_commit_range` validates
+    /// its endpoint against the RUNTIME `aligned_vmem::page_size()` — on a
+    /// 16 KiB (Apple Silicon) or 64 KiB (aarch64-linux-64k) host a
+    /// 4-KiB-only multiple is rejected as `invalid_argument`, the commit
+    /// returns `false`, and the grow silently degrades to the slow
+    /// alloc+copy+free path: no memory-safety consequence, but the
+    /// `large-reserved-capacity` feature is a permanent no-op there and
+    /// `tests/large_reserved_capacity.rs`'s same-pointer assertions are a
+    /// latent red. 64 KiB is a superset multiple of every page size this
+    /// crate supports (see `os::MAX_REALISTIC_PAGE_SIZE`'s invariant), so
+    /// one rounding serves all hosts; the ≤ ~60 KiB of extra committed
+    /// tail per grow is negligible against the ≥ 4x reserved headroom
+    /// (`LARGE_RESERVED_CAP_GROWTH_FACTOR`).
+    #[cfg(feature = "large-reserved-capacity")]
+    #[inline]
+    fn try_grow_large_reserved_capacity(&mut self, base: *mut u8, required_end: usize) -> bool {
+        let reserved_capacity = SegmentHeader::reserved_capacity_at(base);
+        if required_end > reserved_capacity {
+            return false;
+        }
+        let span_usable = SegmentHeader::span_usable_at(base);
+        // `required_end > span_usable` is guaranteed by the call site (this
+        // is only reached after the committed-span check already failed),
+        // so the commit range below is always non-empty.
+        // task #1077: MAX_REALISTIC_PAGE_SIZE (64 KiB), NOT the compile-time
+        // `PAGE` (4 KiB) — see the doc block above; the runtime-page-size
+        // validator in `try_commit_range` rejects 4-KiB-only multiples on
+        // 16/64 KiB-page hosts. The `.min(reserved_capacity)` clamp stays
+        // validator-safe: `reserved_capacity` is itself a runtime-page
+        // multiple (built from `usable`, which task #1074 already rounds to
+        // `aligned_vmem::page_size()` in `alloc_large_slow`).
+        let new_span_usable =
+            align_up(required_end, super::os::MAX_REALISTIC_PAGE_SIZE).min(reserved_capacity);
+        if !os::commit_pages(base, span_usable, new_span_usable) {
+            // Commit-charge exhaustion / genuine OOM on the incremental
+            // commit: leave the header untouched (span_usable unchanged —
+            // still describes exactly what is actually committed) and let
+            // the caller fall through to the slow path.
+            return false;
+        }
+        SegmentHeader::set_span_usable_at(base, new_span_usable);
+        true
+    }
+
+    /// Try the two in-place realloc fast paths (Large grow-in-span, Small same-class), but the
+    /// caller has already proven `base` is live in this core's segment table.
+    /// Used by `HeapCore::realloc` to avoid a duplicate `contains_base` probe
+    /// after its own ownership check.
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn try_realloc_inplace_known_base(
+        &mut self,
+        base: *mut u8,
+        ptr: *mut u8,
+        old_layout: Layout,
+        new_size: usize,
+    ) -> Option<*mut u8> {
+        if ptr.is_null() {
+            return None;
+        }
+        self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
+    }

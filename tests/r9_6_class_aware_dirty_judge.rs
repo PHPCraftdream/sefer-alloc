@@ -1,7 +1,7 @@
 //! R9-6 judge: class-aware dirty routing — measurement-only.
 //!
 //! Measures the O(D) vs O(D_class) gap the external review flagged in
-//! `drain_dirty_segments` (`src/alloc_core/alloc_core_small.rs`): the drain
+//! `drain_dirty_segments` (`src/alloc_core/small/alloc_core_small/`): the drain
 //! visits EVERY segment whose per-segment dirty bit is set regardless of which
 //! size class the caller is searching for, so under a mixed-class remote-fan-in
 //! workload (multiple producer threads concurrently freeing blocks of DIFFERENT

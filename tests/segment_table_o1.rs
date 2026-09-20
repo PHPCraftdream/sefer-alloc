@@ -1,7 +1,7 @@
 //! Task #135 (Part 1/2/3) — O(1) `SegmentTable` register/unregister/recycle
 //! and the `HeapCore::dealloc_routing` M2-reorder hardening.
 //!
-//! ## What changed (see `src/alloc_core/segment_table.rs` / `alloc_core.rs`
+//! ## What changed (see `src/alloc_core/segment/segment_table/mod.rs` / `alloc_core/alloc_core/mod.rs
 //! / `src/registry/heap_core.rs` for the full rationale)
 //!
 //! - `register`/`unregister`/`recycle` used to scan the slot array `[0,

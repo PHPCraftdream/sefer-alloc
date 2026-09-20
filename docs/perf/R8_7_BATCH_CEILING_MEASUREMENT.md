@@ -43,7 +43,7 @@ separate, NOT-yet-done task).
 ### 2.1 The primitives measured
 
 - **`AllocCore::refill_class_bump(class_idx, out: &mut [*mut u8]) -> usize`**
-  (`src/alloc_core/alloc_core_small_magazine.rs:117`, `#[doc(hidden)] pub`,
+  (`src/alloc_core/small/alloc_core_small_magazine.rs:117`, `#[doc(hidden)] pub`,
   gated only on `alloc-core`) — bump-direct batched carve. Fills `out` with up
   to `out.len()` live, bitmap-allocated blocks of `class_idx` in ONE call:
   drains existing free blocks first, then bump-carves the remainder directly
@@ -55,7 +55,7 @@ separate, NOT-yet-done task).
   `alloc-xthread`+`fastbin` variant with a magazine-residency predicate) on
   every tcache magazine miss.
 - **`unsafe AllocCore::flush_class(class_idx, blocks: &[*mut u8])`**
-  (`src/alloc_core/alloc_core_small_magazine.rs:370`, `#[doc(hidden)] pub`, no
+  (`src/alloc_core/small/alloc_core_small_magazine.rs:370`, `#[doc(hidden)] pub`, no
   extra feature gate beyond `alloc-core`) — pushes a batch of blocks back onto
   their owning segments' `BinTable`s in ONE call, grouping same-segment runs
   (Э8) so metadata (`bin_table`, `alloc_bitmap`, `bump`) is read/written once
@@ -64,7 +64,7 @@ separate, NOT-yet-done task).
   `src/registry/heap_core_free.rs:376` on tcache magazine overflow and
   `src/registry/heap_core_tcache.rs:101` on thread-heap teardown.
 - **`AllocCore::dbg_layout_class_for(layout) -> Option<usize>`**
-  (`src/alloc_core/alloc_core_core_diag.rs:391`, `#[doc(hidden)] pub`,
+  (`src/alloc_core/alloc_core/alloc_core_core_diag/:391`, `#[doc(hidden)] pub`,
   test-only classification hook) — used only to resolve `class_idx` for the
   batch arm; not part of the timed region.
 

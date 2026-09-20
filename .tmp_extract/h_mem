@@ -1,0 +1,32 @@
+//! The [`AllocCore`] allocator entry points — [`AllocCore::alloc`],
+//! [`AllocCore::alloc_zeroed`], [`AllocCore::dealloc`],
+//! [`AllocCore::realloc`] — and their shared in-place-realloc machinery
+//! ([`AllocCore::safe_payload_read_span`],
+//! `realloc_inplace_fast_path_known_base`,
+//! `try_grow_large_reserved_capacity`, `try_realloc_inplace_known_base`).
+//! Mechanically split out of the former flat `alloc_core.rs` body (the face
+//! group's 1000-line cap); the bodies are byte-identical to their pre-split
+//! forms.
+
+use core::alloc::Layout;
+
+use crate::alloc_core::node::Node;
+use crate::alloc_core::os;
+#[cfg(feature = "large-reserved-capacity")]
+use crate::alloc_core::segment_header::align_up;
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+use crate::alloc_core::size_classes::AllocKind;
+
+use super::AllocCore;
+#[cfg(feature = "alloc-decommit")]
+use super::CachedLarge;
+// The bench statics bumped on these paths all live in the `counters`
+// sibling and are re-exported at `alloc_core::alloc_core` (cfg parity);
+// every bump site below is `alloc-stats`-gated, so the import is too.
+#[cfg(feature = "alloc-stats")]
+use crate::alloc_core::alloc_core::{
+    FOREIGN_OR_UNROUTABLE_FREES, LARGE_ZERO_PASS_CALLS, OPT_H_ATTEMPTS, OPT_H_HITS,
+    RELOC_FASTPATH_DECLINE_CALLS, RELOC_INPLACE_LARGE_CALLS, RELOC_INPLACE_SMALL_CALLS,
+    SMALL_ZERO_PASS_CALLS,
+};
+

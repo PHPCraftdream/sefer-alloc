@@ -7,7 +7,7 @@
 //! file models (Phase 10) was **superseded** by the per-segment
 //! [`RemoteFreeRing`](crate::alloc_core::remote_free_ring) — a non-intrusive
 //! MPSC offset queue that never touches a block's bytes (see
-//! `src/alloc_core/remote_free_ring.rs`'s module doc for the full UAF
+//! `src/alloc_core/segment/remote_free_ring/mod.rs`'s module doc for the full UAF
 //! root-cause this replacement fixed, and `src/heap/thread_free.rs`'s
 //! "History" section). No live code path pushes/drains individual freed
 //! blocks through an intrusive Treiber stack anymore.

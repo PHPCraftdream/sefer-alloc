@@ -163,15 +163,15 @@ not pull it in.
 
 | Module | Role | Feature gate |
 |---|---|---|
-| [`src/alloc_core/os.rs`](../src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit. | `alloc-core` |
-| [`src/alloc_core/node.rs`](../src/alloc_core/node.rs) | Intrusive free-list node read/write: the single place that reads/writes the `next` pointer inside a free block; also `release_segment` thin wrapper. | `alloc-core` |
+| [`src/alloc_core/platform/os.rs`](../src/alloc_core/platform/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit. | `alloc-core` |
+| [`src/alloc_core/platform/node.rs`](../src/alloc_core/platform/node.rs) | Intrusive free-list node read/write: the single place that reads/writes the `next` pointer inside a free block; also `release_segment` thin wrapper. | `alloc-core` |
 | [`src/global/sefer_alloc.rs`](../src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore`. | `alloc-global` |
 | [`src/global/tls_heap.rs`](../src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse). | `alloc-global` |
 | [`src/global/fallback.rs`](../src/global/fallback.rs) | Primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (survives reentrant / early-init / teardown access). | `alloc-global` |
 | [`src/registry/bootstrap.rs`](../src/registry/bootstrap.rs) | The primordial-segment carve / SegmentTable bootstrap seam — raw-pointer footprint carving of the metadata region under the atomic single-writer bootstrap protocol. | `alloc-global` |
 | [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
 | [`src/registry/heap_registry.rs`](../src/registry/heap_registry.rs) | Global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, consulted by every cross-thread routing decision. | `alloc-global` |
-| [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
+| [`src/alloc_core/platform/numa.rs`](../src/alloc_core/platform/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
 | [`src/concurrent/epoch/hand.rs`](../src/concurrent/epoch/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator; **deprecated, legacy/research-tier**). | `experimental` |
 
 Outside these tier-1 modules AND the tier-2 item-scoped allows (individual
@@ -457,7 +457,7 @@ section.
 
 Full design: [PHASE_NUMA_DESIGN.md](PHASE_NUMA_DESIGN.md).
 
-### OS seam: `src/alloc_core/numa.rs`
+### OS seam: `src/alloc_core/platform/numa.rs`
 
 A confined `unsafe` module (modeled after `os.rs`) with three entry points:
 

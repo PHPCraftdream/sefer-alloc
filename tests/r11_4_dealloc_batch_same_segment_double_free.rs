@@ -6,7 +6,7 @@
 //! (one of which duplicates an already-freed pointer).
 //!
 //! This mirrors `flush_class`'s own L-4 (UBFIX-11) scenario doc comment
-//! (`src/alloc_core/alloc_core_small_magazine.rs`): a batch containing the
+//! (`src/alloc_core/small/alloc_core_small_magazine.rs`): a batch containing the
 //! SAME pointer (or a segment-coincident pointer) in two separate positions
 //! must not corrupt the segment's BinTable/bitmap/decommit state, whether the
 //! duplicate lands in the magazine-fill portion, the `flush_class`-overflow

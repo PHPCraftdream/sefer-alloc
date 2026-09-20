@@ -188,10 +188,10 @@ merely re-stated from the review: the actual mechanism is whole-`SEGMENT`
 rounding, the SAME effect `0a34ba1` (this round's own first commit) added to
 CLAUDE.md as a standing evidence rule. For a 32 MiB object at 8-byte
 alignment, `AllocCore::alloc_large`'s `needed = hdr_aligned +
-align_up(size, align)` (`src/alloc_core/alloc_core_large.rs:144-153`)
+align_up(size, align)` (`src/alloc_core/large/alloc_core_large.rs:144-153`)
 rounds to `32 MiB + one page` (the segment header's own footprint), then
 `usable = needed.div_ceil(SEGMENT) * SEGMENT` (`:190-192`, `SEGMENT` = 4 MiB,
-`src/alloc_core/os.rs:65`) rounds THAT up to **9 segments = 36 MiB** usable
+`src/alloc_core/platform/os.rs:65`) rounds THAT up to **9 segments = 36 MiB** usable
 span per object — not the 32 MiB payload alone. **4 objects × 36 MiB = 144
 MiB** committed and released, matching the measured 144.3 MiB commit
 drop almost exactly (the residual ~0.3 MiB is registry/heap bookkeeping

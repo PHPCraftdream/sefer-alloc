@@ -10,7 +10,7 @@ two-trigger conditional-entry rule).
 `bd1bd3e7feca2c9dbdf36d56c9c4f5b856b59785` (working tree carrying only
 this task's own additive edits at measurement time — `git status --short`
 shows `Cargo.toml`, `benches/perf_gate_iai.rs`,
-`src/alloc_core/alloc_core_small_pool.rs`,
+`src/alloc_core/small/alloc_core_small_pool/mod.rs`,
 `src/registry/heap_core_diag.rs` modified, plus new files under
 `examples/`/`docs/perf/`/`docs/checkpoints/`/`docs/reviews/` from other
 in-flight work, none of which this task touches beyond its own additions).
@@ -225,7 +225,7 @@ decommit/recommit pair and the VMA teardown cost may differ).
 
 | file | change |
 |---|---|
-| `src/alloc_core/alloc_core_small_pool.rs` | +7 `bench-internals`-gated decomposition hooks on `AllocCore` |
+| `src/alloc_core/small/alloc_core_small_pool/mod.rs` | +7 `bench-internals`-gated decomposition hooks on `AllocCore` |
 | `src/registry/heap_core_diag.rs` | +7 `HeapCore` delegation wrappers for the above |
 | `examples/r29_3_decomposition_gate.rs` | NEW — wall-clock decomposition binary |
 | `benches/perf_gate_iai.rs` | +2 supplementary iai arms + group registration |

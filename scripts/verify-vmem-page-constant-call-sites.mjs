@@ -110,7 +110,7 @@
 // Prod findings reuse suppressions S1 (marker) and S3 (negative context),
 // and are deduplicated against fold findings by (line, arg index).
 //
-// The ONE in-tree marker is `src/alloc_core/os.rs`'s `reserve_capacity_exact`
+// The ONE in-tree marker is `src/alloc_core/platform/os.rs`'s `reserve_capacity_exact`
 // call (see the comment block above it): both arguments are value-proven
 // runtime-page multiples but form-opaque to the walker — `reserved_len` is
 // `usable.saturating_mul(4).min(16 * SEGMENT).max(usable)` (integer ×4 /
@@ -317,7 +317,7 @@ function blankRust(src) {
 // when its definition itself folds (e.g. page.rs's literal `4096`); when it
 // does NOT fold it is an alias of the standard constant (`vmem::PAGE`,
 // `aligned_vmem::PAGE`), not a different value, so PAGE falls back to 4096 —
-// otherwise the src/alloc_core/os.rs shape (a pure `vmem::PAGE` alias) would
+// otherwise the src/alloc_core/platform/os.rs shape (a pure `vmem::PAGE` alias) would
 // silently disable scanning of every PAGE argument in that file.
 // Anything else — unresolvable identifiers, `::`, `.`, calls — is "unevaluable"
 // and the argument is skipped (it is a runtime value or cross-file constant).
@@ -993,7 +993,7 @@ fn probe() {
   {
     id: 'F5',
     mustFlag: true,
-    purpose: 'file-local const PAGE alias (vmem::PAGE) still folds to 4096 — the src/alloc_core/os.rs shape',
+    purpose: 'file-local const PAGE alias (vmem::PAGE) still folds to 4096 — the src/alloc_core/platform/os.rs shape',
     source: `const PAGE: usize = vmem::PAGE;
 
 fn probe(seg: usize) {

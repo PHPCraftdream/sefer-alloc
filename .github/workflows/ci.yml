@@ -2025,7 +2025,7 @@ jobs:
       # without `mock`), but that covers only the shim IN ISOLATION — not
       # whether `sefer-alloc` built with `numa-aware` and WITHOUT
       # `numa-aware-mock` still compiles/links against it (the actual
-      # integration surface: `src/alloc_core/numa.rs`'s thin wrapper calling
+      # integration surface: `src/alloc_core/platform/numa.rs`'s thin wrapper calling
       # into the shim's real functions). The only job that builds this
       # combination is `numa-real-kernel` below, gated to `schedule`/
       # `workflow_dispatch` (weekly) — a signature drift in e.g.
@@ -3091,7 +3091,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # #141: loom_deferred_large — A1 deferred_large push/drain Treiber-stack
       # model (the double-push guard + DEFERRED_LARGE_TAIL/ABANDONED_TAIL
-      # sentinel split from `src/alloc_core/deferred_large/push.rs`/`drain.rs`).
+      # sentinel split from `src/alloc_core/large/deferred_large/push.rs`/`drain.rs`).
       #
       # R13-5 (task #275): loom_class_aware_dirty (added R12-7 stage 2, task
       # #258) was never wired into ANY loom job — a second forgotten loom

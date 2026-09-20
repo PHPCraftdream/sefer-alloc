@@ -23,7 +23,7 @@
 //!    in `src/registry/heap_core.rs` (right after the struct definition) — a
 //!    future field addition that grows `HeapCore` past 9 KiB fails the BUILD,
 //!    not a downstream deployment. This mirrors the established
-//!    `SegmentHeader` pin pattern (`src/alloc_core/segment_header.rs`).
+//!    `SegmentHeader` pin pattern (`src/alloc_core/segment/segment_header/layout_asserts.rs).
 //! 2. This **runtime** `#[test]` — reads `size_of::<HeapCore>()` for the
 //!    feature set under test and asserts the same budget. It is deliberately
 //!    non-vacuous: it also enforces a lower bound, so a field REMOVAL (a

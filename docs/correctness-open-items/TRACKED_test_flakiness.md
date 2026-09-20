@@ -198,7 +198,7 @@ resolved" in RESOLVED.md.)_
       the allocation failed BEFORE or OUTSIDE any OS reservation attempt.
       `AllocCore::alloc_large`'s own null paths that fit that description
       include `self.table.register(base)` returning `None`
-      (`src/alloc_core/alloc_core_large.rs`, the "segment table full" arm,
+      (`src/alloc_core/large/alloc_core_large.rs`, the "segment table full" arm,
       which releases the reservation it already made and returns null) and the
       earlier returns around lines 155/515. **Which one fires here has not
       been determined** — a probe attempt in this task did not land a

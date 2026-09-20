@@ -287,7 +287,7 @@ costs "6.1 KiB per materialised heap" — that number is the RAW
 = 49 × 16 × 8 = 6,272 bytes = 6.13 KiB with the default 49-class table, 58
 classes → 7,424 bytes = 7.25 KiB under `medium-classes`). The sidecar is
 reserved via `aligned_vmem::leak_zeroed_pages`
-(`src/alloc_core/dirty_by_class.rs`'s `PER_CLASS_DIRTY_SIZE` const), which
+(`src/alloc_core/platform/dirty_by_class.rs`'s `PER_CLASS_DIRTY_SIZE` const), which
 rounds the request UP to a whole number of 4 KiB pages. Both the default and
 `medium-classes` raw sizes round up to the SAME 2-page ceiling:
 

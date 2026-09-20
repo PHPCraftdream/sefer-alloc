@@ -18,7 +18,7 @@
 //! `dbg_unregister`/`dbg_recycle` (task #101 / R4-MS-3) and `dbg_push_to_ring`
 //! (R6-MS-4) `unsafe fn` in this crate — these two hooks were simply missed in
 //! that pass (the classification drift is noted in
-//! `src/alloc_core/alloc_core_small_diag.rs`, whose own `unsafe fn`
+//! `src/alloc_core/small/alloc_core_small_diag.rs`, whose own `unsafe fn`
 //! `dbg_corrupt_freelist_head_next` cites these two as the field-corruption
 //! pattern it mirrors).
 //!

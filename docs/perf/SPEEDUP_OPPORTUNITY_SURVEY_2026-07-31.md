@@ -105,11 +105,11 @@ copies. Each is a residue of a correct earlier decision, and each is cheap.
 
 **What / where.**
 
-- `src/alloc_core/segment_header_layout.rs:28-43` — `Layout::alloc_bitmap_off()`
+- `src/alloc_core/segment/segment_header/segment_header_layout.rs:28-43` — `Layout::alloc_bitmap_off()`
   and `Layout::magazine_bitmap_off()`. The magazine bitmap is placed
   `align_up_const(alloc_bitmap_off() + AllocBitmap::FOOTPRINT, 8)`, i.e.
   immediately AFTER the whole alloc bitmap.
-- `src/alloc_core/segment_bitmap.rs:50` —
+- `src/alloc_core/segment/bitmap/segment_bitmap.rs:50` —
   `FOOTPRINT = SEGMENT / MIN_BLOCK / 8` = `4 MiB / 16 / 8` = **32 KiB**, and
   both `AllocBitmap::FOOTPRINT` (`alloc_bitmap.rs:73`) and
   `MagazineBitmap::FOOTPRINT` (`magazine_bitmap.rs:93`) alias that same
@@ -215,7 +215,7 @@ meta.alloc_bitmap().is_free(off)             // base+ALLOC_OFF -> locate(off) ->
 meta.magazine_bitmap().mark_magazine(off)    // base+MAG_OFF   -> locate(off) -> load|store
 ```
 
-`SegmentBitmap::locate` (`src/alloc_core/segment_bitmap.rs:110-118`) is the
+`SegmentBitmap::locate` (`src/alloc_core/segment/bitmap/segment_bitmap.rs:110-118`) is the
 SAME pure function of `off` in all three calls, applied to three different
 region bases. On the fast (legit-free) path **both oracles always run** — a
 live block is in neither, so neither can short-circuit the other. The two
@@ -286,7 +286,7 @@ section confirms are non-vacuous.
 
 **What / where.**
 
-- `src/alloc_core/segment_table.rs:140` — `pub(crate) const OWN_CACHE_SIZE: usize = 4;`
+- `src/alloc_core/segment/segment_table/mod.rs:140` — `pub(crate) const OWN_CACHE_SIZE: usize = 4;`
 - `:181` / `:233` — `own_cache: [*mut u8; OWN_CACHE_SIZE]`, per `SegmentTable`
   (i.e. per heap).
 - `:497-510` — `contains_base`: Tier-1 is
@@ -299,7 +299,7 @@ section confirms are non-vacuous.
 **Why it might be slow today.** `cache_index(base) = (base >> 22) & 3`
 addresses 4 buckets. A `SegmentKind::Large` allocation owns its own
 4 MiB-aligned segment (`AllocCore::alloc_large`,
-`src/alloc_core/alloc_core_large.rs`), so a workload with N concurrently-live
+`src/alloc_core/large/alloc_core_large.rs`), so a workload with N concurrently-live
 Large objects has N distinct hot bases going through this cache. At N > 4 the
 cache is thrashing by construction, and — because it is DIRECT-mapped, not
 associative — even N == 4 only works if the OS handed out four bases whose
@@ -521,7 +521,7 @@ change in this survey by a wide margin.
 
 ### F5 — The 16 KiB `SIZE2CLASS` LUT is NOT the cache problem X6's revisit trigger implies (re-assessment: looks dead, and here is why)
 
-**What / where.** `src/alloc_core/size_classes.rs:171-183` —
+**What / where.** `src/alloc_core/platform/size_classes.rs:171-183` —
 `S2C_LEN = size2class_len(SMALL_MAX, MIN_BLOCK)`, a `[u8; ~16192]` static
 (`SMALL_MAX` ≈ 253 KiB / `MIN_BLOCK` 16 B ≈ 16.2 K entries ≈ **15.8 KiB**).
 Indexed at `crates/size-classes/src/lib.rs:359`:
@@ -818,14 +818,14 @@ step 1 and the R31-0 addendum in step 4.
 
 **What / where.**
 
-- `src/alloc_core/alloc_core.rs:187-215` — `struct CachedLarge` has six
+- `src/alloc_core/alloc_core/mod.rs:187-215` — `struct CachedLarge` has six
   8-byte fields (`reservation`, `reservation_len`, `base`, `usable_size`,
   `reserved_capacity`, `seq`). Verified layout (scratch `rustc -O` probe
   outside the repo, `size_of`/`align_of`): `CachedLarge` = **48 B**,
   `Option<CachedLarge>` = **56 B** (no niche — every field is a raw pointer,
   `usize`, or `u64`, none of which has one).
-- `src/alloc_core/alloc_core.rs:95` — `LARGE_CACHE_SLOTS = 8`;
-  `src/alloc_core/large_cache_extended.rs:112` —
+- `src/alloc_core/alloc_core/mod.rs:95` — `LARGE_CACHE_SLOTS = 8`;
+  `src/alloc_core/large/large_cache_extended.rs:112` —
   `LARGE_CACHE_EXTENDED_SLOTS = 32`. So the storage the scans walk is
   **448 B = 7 cache lines** (base) and **2,240 B = 35 cache lines**
   (base + extension), computed from the measured 56 B stride.
@@ -921,7 +921,7 @@ invariant to pin by test.
 ### F9 — the large-cache decay tick's `Instant::now()` fast-path exit is a CLIFF keyed on `used > headroom`, and the profiles R30-7/R31-9 just shipped are designed to put workloads on the wrong side of it (NEW — a cost of a shipped feature that nobody has priced)
 
 **What / where.**
-`src/alloc_core/alloc_core_large_cache.rs:320-356`, `maybe_decay_large_cache`:
+`src/alloc_core/large/alloc_core_large_cache.rs:320-356`, `maybe_decay_large_cache`:
 
 ```text
 if self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
@@ -939,8 +939,8 @@ cache-hit timing that the unconditional clock read had regressed to ~150 ns.
 See task #95."*
 
 Two call sites, both unconditional on their respective paths:
-- `src/alloc_core/alloc_core_large.rs:140` — top of **every** `alloc_large`.
-- `src/alloc_core/alloc_core.rs:1467` — the Large branch of **every**
+- `src/alloc_core/large/alloc_core_large.rs:140` — top of **every** `alloc_large`.
+- `src/alloc_core/alloc_core/mod.rs:1467` — the Large branch of **every**
   `AllocCore::dealloc`.
 - (plus `alloc_core_large.rs:566`, `reclaim_large_segment`, on the
   cross-thread reclaim path.)
@@ -958,7 +958,7 @@ outside of the interval check, not the inside.
 
 This matters *now* specifically because of what shipped in Round 30/31:
 
-- `src/alloc_core/profile.rs:287-291` — `LargeCachePolicy::LowHeadroom` sets
+- `src/alloc_core/config/profile.rs:287-291` — `LargeCachePolicy::LowHeadroom` sets
   `headroom_bytes = 16 MiB`; `LargeCachePolicy::Trimmed64MiB` sets **64 MiB**;
   `Default` keeps 256 MiB.
 - The entire measured *point* of those two variants (R30-6, R29-13, R31-1) is
@@ -1041,7 +1041,7 @@ Scope: **measurement first, ~10 lines if it confirms.** The doc-comment fix
 
 ### F10 — every cross-thread free reads the ring's consumer-written `head` cache line, so PERF-PASS-4's own cache-line split guarantees a 2-line, cross-core-coherent push instead of a 1-line one (NEW — the classic "shadow head" the design stopped one step short of)
 
-**What / where.** `src/alloc_core/remote_free_ring.rs`:
+**What / where.** `src/alloc_core/segment/remote_free_ring/mod.rs`:
 
 - `:551` `HEAD_OFF = 0`, `:557` `TAIL_OFF = 64`, `:563` `OVERFLOW_OFF = 68`,
   `:569` `SLOTS_OFF = 128`. PERF-PASS-4 (G8/ML4, task #52) deliberately widened
@@ -1171,7 +1171,7 @@ exist and is the real cost.
   `release_reservation` (`:869-874`) later frees the whole region with
   `VirtualFree(region, 0, MEM_RELEASE)`. Windows cannot partially release a
   `MEM_RESERVE` region, so there is no trim step and none is attempted.
-  With `SEGMENT = 4 MiB` (`src/alloc_core/os.rs`) used as BOTH size and align
+  With `SEGMENT = 4 MiB` (`src/alloc_core/platform/os.rs`) used as BOTH size and align
   for a small segment, `over = 8 MiB` — **every 4 MiB segment permanently
   reserves 8 MiB of address space.**
 - **Unix** (`:1020-1093`). `unix_reserve` FIRST tries
@@ -1201,7 +1201,7 @@ measured:
    this is not an OOM risk, but it is not free either: every reservation is a
    VAD-tree node with a range twice as wide, and `large-reserved-capacity`
    multiplies the base figure further (its own `LARGE_RESERVED_CAP_BYTES` is
-   64 MiB, `src/alloc_core/alloc_core_large.rs:42` → 128 MiB reserved per
+   64 MiB, `src/alloc_core/large/alloc_core_large.rs:42` → 128 MiB reserved per
    qualifying Large segment). Whether that costs measurable **time** is
    exactly the unknown.
 
@@ -1255,7 +1255,7 @@ the first time.
    counters (hit / total) in `unix_reserve` around
    `try_reserve_aligned_exact`, plus a Windows-side count of reserve+commit
    pairs. `crates/aligned-vmem` already has `SEGMENTS_RESERVED_TOTAL`/`..._RELEASED_TOTAL`
-   plumbed through `src/alloc_core/os.rs:374-386` and surfaced in
+   plumbed through `src/alloc_core/platform/os.rs:374-386` and surfaced in
    `AllocStats` — the same pattern extends in a few lines. Per CLAUDE.md's
    benchmark-hook rule these must be `bench-internals`-gated. This turns
    "the fast path might be a net loss" from speculation into a number, for
@@ -1304,7 +1304,7 @@ cross-referenced index entries.
 
 ### F12 — the large-cache HIT path rewrites the entire ~130-byte `SegmentHeader` when only ~5 words actually changed, and 4 of the rewritten fields are copied back byte-identical from the cache entry (NEW; small, but `Ir`-visible and judged by an already-committed bench)
 
-**What / where.** `src/alloc_core/alloc_core_large.rs:306-344`, the
+**What / where.** `src/alloc_core/large/alloc_core_large.rs:306-344`, the
 `large_cache` hit arm of `alloc_large` — the "fast" path whose entire purpose
 is to avoid an OS round-trip:
 
@@ -1412,7 +1412,7 @@ paragraph and one new debug assert.
 **(a) `Layout` alignment > `MIN_BLOCK` on the classification hot path —
 already-worked ground, verdict THIN.**
 `crates/size-classes/src/lib.rs:353-384` (`class_for`) and
-`src/alloc_core/size_classes.rs:74` (`SMALL_ALIGN_MAX = MIN_BLOCK` = 16). Any
+`src/alloc_core/platform/size_classes.rs:74` (`SMALL_ALIGN_MAX = MIN_BLOCK` = 16). Any
 request with `align > 16` — which includes very common shapes like
 crossbeam/tokio's 64- and 128-byte cache-padded types — misses the O(1) fast
 path (`:360`) and enters the divisibility walk (`:368-383`), on **both** alloc
@@ -1458,13 +1458,13 @@ target would settle it in minutes and is worth doing once, given item 24's
 standing unexplained Windows wall-clock signal (see F11).
 
 **(c) NUMA — verdict OUT OF SCOPE for `production`.** `crates/numa-shim/` exists
-(833 lines) with `src/alloc_core/numa.rs` (125 lines) as the in-crate seam, but
+(833 lines) with `src/alloc_core/platform/numa.rs` (125 lines) as the in-crate seam, but
 `numa-aware` is **not part of `production`**, so every NUMA-touching site
 (`alloc_core_large.rs:382-407`, `:487-488`, `:349-353`) compiles out of the
 shipped configuration entirely. Within the feature, the one plausibly-hot cost
 — `numa::current_node()` per large allocation — is already cached with a
 bounded refresh period (`AllocCore::current_node_cached`,
-`src/alloc_core/alloc_core.rs:1172-1187`, R11-5/R12-5) and invalidated at
+`src/alloc_core/alloc_core/mod.rs:1172-1187`, R11-5/R12-5) and invalidated at
 `claim` (`:1206-1211`). OPEN_ITEMS' "Recently resolved" trail also records
 R10-6/R11-6's `class_nonempty_by_node` work as closed and **re-verified
 still-closed by R25-9 against a stale re-flag** — i.e. this area has already

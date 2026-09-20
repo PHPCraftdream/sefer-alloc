@@ -5,7 +5,7 @@ Windows `VirtualAlloc2` opportunity and its trade-offs. The Windows
 `align > 64 KiB` two-call reservation path
 (`crates/aligned-vmem/src/lib.rs:1497-1589`) — the crate's own flagship
 allocator-segment use case (e.g. `align=4MiB, size=4MiB` is
-`src/alloc_core/os.rs`'s only reservation shape) — currently costs 2
+`src/alloc_core/platform/os.rs`'s only reservation shape) — currently costs 2
 syscalls and holds `size + align` bytes of virtual address space to
 deliver `size` bytes of usable span (e.g. 8 MiB VA held for 4 MiB
 usable). `VirtualAlloc2` (Windows 10 1803+ / Server 2016+) accepts a

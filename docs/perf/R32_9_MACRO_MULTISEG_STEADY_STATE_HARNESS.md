@@ -103,7 +103,7 @@ never freed until teardown. 80 gives 25% headroom past the 64 threshold
 path-activation oracle's `>= 64` check has room to fail loudly on a real
 regression instead of sitting exactly on the boundary.
 
-At `SEGMENT = 4 MiB` (`src/alloc_core/os.rs`), 80 segments is a **~320 MiB**
+At `SEGMENT = 4 MiB` (`src/alloc_core/platform/os.rs`), 80 segments is a **~320 MiB**
 working set (single-thread arm) / **~1.28 GiB** (4-thread arm, own floor per
 thread) — genuinely too large to fit in a typical L2 (commonly 0.25-2 MiB)
 or even many L3 caches (commonly 8-32 MiB) in full. This report does NOT

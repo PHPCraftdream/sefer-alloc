@@ -1081,9 +1081,9 @@ is initialised to `NO_NODE` and never read without `numa-aware`).
 
 | Location | Change |
 |---|---|
-| `src/alloc_core/numa.rs` | Confined-`unsafe` OS seam: `current_node()`, `bind_segment()`, `reserve_aligned_on_node()` |
-| `src/alloc_core/segment_header.rs` | `node_id: u32` field (+4 bytes; still ≪ PAGE) |
-| `src/alloc_core/alloc_core.rs` | `reserve_small_segment` stamps `node_id`; `find_segment_with_free` prefers same-node segments; `alloc_large` steers large segments |
+| `src/alloc_core/platform/numa.rs` | Confined-`unsafe` OS seam: `current_node()`, `bind_segment()`, `reserve_aligned_on_node()` |
+| `src/alloc_core/segment/segment_header/mod.rs` | `node_id: u32` field (+4 bytes; still ≪ PAGE) |
+| `src/alloc_core/alloc_core/mod.rs` | `reserve_small_segment` stamps `node_id`; `find_segment_with_free` prefers same-node segments; `alloc_large` steers large segments |
 
 ### What is verified
 

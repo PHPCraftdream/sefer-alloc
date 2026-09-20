@@ -29,7 +29,7 @@
 //!
 //! Task B1 adds 8 explicit "page-aligned" classes (512, 1024, 2048, 4096,
 //! 6144, 8192, 12288, 16384 — see `PAGE_ALIGNED_EXTRA` in
-//! `src/alloc_core/size_classes.rs`) merged into the sorted
+//! `src/alloc_core/platform/size_classes.rs`) merged into the sorted
 //! `SIZE_CLASS_TABLE`, so small page-aligned requests up to 16 KiB now
 //! resolve to a small class and share a normal per-segment free list instead
 //! of a dedicated segment each.

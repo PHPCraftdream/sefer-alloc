@@ -45,7 +45,7 @@ test-only drift-manufacturing hook.
 
 ## 1. The review's finding — the worst case being cheapened
 
-`find_segment_with_free_impl` (`src/alloc_core/alloc_core_small.rs`) trusts a
+`find_segment_with_free_impl` (`src/alloc_core/small/alloc_core_small/mod.rs`) trusts a
 directory MISS (returns `None` immediately, no O(S) fallback scan) for up to
 `DIRECTORY_MISS_FULL_SCAN_PERIOD - 1` consecutive misses, tracked by a SINGLE
 field `self.directory_miss_streak: u32` shared across EVERY size class. Only on
@@ -65,14 +65,14 @@ before detection.
 
 ### What changed
 
-- **`src/alloc_core/segment_directory.rs`** — `DIRECTORY_MISS_FULL_SCAN_PERIOD`
+- **`src/alloc_core/segment/segment_directory/mod.rs`** — `DIRECTORY_MISS_FULL_SCAN_PERIOD`
   256 → **64** (per-class), with a const-assert that it fits the new `u8`
   per-class storage.
-- **`src/alloc_core/alloc_core.rs`** — the field
+- **`src/alloc_core/alloc_core/mod.rs`** — the field
   `directory_miss_streak: u32` → `directory_miss_streak: [u8; SMALL_CLASS_COUNT]`
   (init `[0; SMALL_CLASS_COUNT]`). `u8` keeps it at `SMALL_CLASS_COUNT` bytes
   (49 B default); the const-assert pins that a future period bump cannot wrap.
-- **`src/alloc_core/alloc_core_small.rs`** — the directory-miss block indexes
+- **`src/alloc_core/small/alloc_core_small/mod.rs`** — the directory-miss block indexes
   the streak by `class_idx`: each class's misses bump only its OWN slot, and the
   periodic re-validation resets only that class's slot.
 
@@ -251,12 +251,12 @@ bumping it).
 
 | File | Change |
 |------|--------|
-| `src/alloc_core/segment_directory.rs` | period 256→64 (per-class) + u8-fit const-assert + doc |
-| `src/alloc_core/alloc_core.rs` | `directory_miss_streak: u32` → `[u8; SMALL_CLASS_COUNT]` |
-| `src/alloc_core/alloc_core_small.rs` | per-class streak indexing; `rescue` param on `find_segment_with_free_impl`; forced wrappers; rescue at `alloc_small` OOM branch; heal-site `‖ rescue` |
-| `src/alloc_core/alloc_core_small_magazine.rs` | rescue at `refill_class_bump_impl` OOM branch (checked under fastbin) |
-| `src/alloc_core/directory_stats.rs` | new `DIRECTORY_RESCUE_OOM_AVOIDED` counter |
-| `src/alloc_core/alloc_core_core_diag.rs` | streak read/set/reset-for-class hooks; rescue hook; rescue counter reader |
+| `src/alloc_core/segment/segment_directory/mod.rs` | period 256→64 (per-class) + u8-fit const-assert + doc |
+| `src/alloc_core/alloc_core/mod.rs` | `directory_miss_streak: u32` → `[u8; SMALL_CLASS_COUNT]` |
+| `src/alloc_core/small/alloc_core_small/mod.rs` | per-class streak indexing; `rescue` param on `find_segment_with_free_impl`; forced wrappers; rescue at `alloc_small` OOM branch; heal-site `‖ rescue` |
+| `src/alloc_core/small/alloc_core_small_magazine.rs` | rescue at `refill_class_bump_impl` OOM branch (checked under fastbin) |
+| `src/alloc_core/segment/segment_directory/directory_stats.rs` | new `DIRECTORY_RESCUE_OOM_AVOIDED` counter |
+| `src/alloc_core/alloc_core/alloc_core_core_diag/` | streak read/set/reset-for-class hooks; rescue hook; rescue counter reader |
 | `tests/directory_authoritative_miss.rs` | Test 3 setup adapted to per-class (streak setter + `force_fresh_segment`); Tests 1–2 unchanged |
 | `tests/r9_8_directory_drift_recovery.rs` | NEW — decoupling + rescue tests |
 | `docs/ARCHITECTURE.md` | test-file count 175→178 |

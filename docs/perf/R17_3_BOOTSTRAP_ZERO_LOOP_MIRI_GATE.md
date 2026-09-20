@@ -54,7 +54,7 @@ of these benches perform a cross-thread free, so none ever call
 §2.3a **CORRECTED** bullet, resolved by R16-4 (task #314, commit `afa6b1d`),
 pinned the exact mechanism via `callgrind_annotate` + `objdump`: LLVM recognises
 two compile-time-bounded, statically-zero-valued write loops in
-`bootstrap::primordial()` (`src/alloc_core/bootstrap.rs`) as a `memset` idiom and
+`bootstrap::primordial()` (`src/alloc_core/alloc_core/bootstrap.rs`) as a `memset` idiom and
 lowers them to `call memset` instructions whose `MAX_SEGMENTS`-derived size
 arguments quadrupled across the raise:
 
@@ -86,7 +86,7 @@ under `cfg(miri)`, absent otherwise).
 
 ## 2. The fix
 
-Two edits in `src/alloc_core/bootstrap.rs`, symmetric to the existing
+Two edits in `src/alloc_core/alloc_core/bootstrap.rs`, symmetric to the existing
 `AllocBitmap::init_in_place` / `MagazineBitmap::init_in_place` gates 70 lines
 above them in the same file (lines 165, 173):
 

@@ -33,12 +33,12 @@
 //! (a) CONSTRUCT `AllocCore` — a reverted RESERVE call site computes an
 //!     `initial_commit` the vmem layer rejects under the forced page, so
 //!     `AllocCore::new()` returns `None` (primordial site:
-//!     `src/alloc_core/bootstrap.rs`; small-segment sites:
-//!     `src/alloc_core/alloc_core_small.rs` under
+//!     `src/alloc_core/alloc_core/bootstrap.rs`; small-segment sites:
+//!     `src/alloc_core/small/alloc_core_small/` (reserve.rs) under
 //!     `small-segment-lazy-commit`).
 //! (b) READ BACK the stamped `committed_payload_end` frontier via the
 //!     `internals` diagnostic `dbg_committed_payload_end_for` — a reverted
-//!     STAMP call site (`bootstrap.rs` / `alloc_core_small.rs`) stores the
+//!     STAMP call site (`bootstrap.rs` / `alloc_core_small/reserve.rs`) stores the
 //!     unrounded sum, which is not a 64 KiB multiple.
 //! (c) Under `small-segment-lazy-commit`, exhaust the primordial and check
 //!     the fresh small segment's frontier the same way, then write and read
@@ -237,7 +237,7 @@ mod forced_page {
         // allocation target, so merely constructing AllocCore drives
         // bootstrap.rs's lazy reservation with the forced 64 KiB page.
         let mut a = AllocCore::new().expect(
-            "the PRIMORDIAL lazy-reserve call site (src/alloc_core/bootstrap.rs) computed an \
+            "the PRIMORDIAL lazy-reserve call site (src/alloc_core/alloc_core/bootstrap.rs) computed an \
              initial_commit that the vmem layer rejected under the forced 64 KiB page — \
              the task #1074 raw-sum regression",
         );
@@ -253,7 +253,7 @@ mod forced_page {
         assert_eq!(
             frontier,
             SegmentLayout::primordial_lazy_initial_commit(64 * 1024),
-            "the STAMP call site in src/alloc_core/bootstrap.rs must store the page-rounded \
+            "the STAMP call site in src/alloc_core/alloc_core/bootstrap.rs must store the page-rounded \
              value ({}), not the raw meta_end + LAZY_FIRST_CHUNK sum ({}) — the task #1074 \
              raw-sum regression",
             SegmentLayout::primordial_lazy_initial_commit(64 * 1024),
@@ -262,7 +262,7 @@ mod forced_page {
         assert!(
             frontier.is_multiple_of(64 * 1024),
             "primordial committed_payload_end ({frontier}) must be a multiple of the forced \
-             64 KiB page: an unrounded raw-sum stamp (src/alloc_core/bootstrap.rs) breaks \
+             64 KiB page: an unrounded raw-sum stamp (src/alloc_core/alloc_core/bootstrap.rs) breaks \
              every later page-size-validated vmem operation against this frontier"
         );
         assert!(
@@ -304,7 +304,7 @@ mod forced_page {
             assert_eq!(
                 frontier2,
                 SegmentLayout::small_lazy_initial_commit(64 * 1024),
-                "the SMALL-segment reserve/stamp call sites (src/alloc_core/alloc_core_small.rs) \
+                "the SMALL-segment reserve/stamp call sites (src/alloc_core/small/alloc_core_small/reserve.rs) \
                  must store the page-rounded value ({}), not the raw meta_end + \
                  LAZY_FIRST_CHUNK sum ({}) — the task #1074 raw-sum regression",
                 SegmentLayout::small_lazy_initial_commit(64 * 1024),
@@ -314,7 +314,7 @@ mod forced_page {
                 frontier2.is_multiple_of(64 * 1024),
                 "small-segment committed_payload_end ({frontier2}) must be a multiple of \
                  the forced 64 KiB page: the stamp call site in \
-                 src/alloc_core/alloc_core_small.rs stored an unrounded raw sum"
+                 src/alloc_core/small/alloc_core_small/reserve.rs stored an unrounded raw sum"
             );
             // Prove the committed prefix is genuinely WRITABLE under the
             // forced page — the reserve really committed `frontier2` bytes,
@@ -327,8 +327,8 @@ mod forced_page {
                     second_ptr.read(),
                     0x5C,
                     "the fresh small segment's committed prefix must be writable under \
-                     the forced 64 KiB page (src/alloc_core/alloc_core_small.rs reserve \
-                     call site)"
+                     the forced 64 KiB page (src/alloc_core/small/alloc_core_small/reserve.rs \
+                     reserve call site)"
                 );
             }
         }

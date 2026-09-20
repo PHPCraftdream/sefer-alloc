@@ -167,7 +167,7 @@ and not others.
 **The more likely explanation, following R30-7 §0.1's own "hypothesis 0"
 one step further:** `decommit_calls_total` is a **process-wide** counter
 (`DECOMMIT_CALLS`, a single `static AtomicU64` in
-`src/alloc_core/alloc_core.rs:221`), summing decommits across every
+`src/alloc_core/alloc_core/mod.rs:221`), summing decommits across every
 thread's own `AllocCore`/pool — NOT a per-heap counter reset per arm. This
 workload's per-thread peak working set (`OBJS_PER_ROUND / 4 × Σ(SIZE_CLASSES)`
 = `4626 × (64+256+1024+4096)` = 24.00 MiB exactly ≈ 6.0 small segments)
@@ -180,7 +180,7 @@ small segment independent of `pooled_count < pool_cap` — for instance the
 segment boundaries at a rate/pattern where individual segments empty
 completely at moments the current per-thread bump cursor (`small_cur`) has
 already moved past them (the `base == small_cur` guard in
-`dec_live_and_maybe_decommit`, `src/alloc_core/alloc_core_small_pool.rs:175`,
+`dec_live_and_maybe_decommit`, `src/alloc_core/small/alloc_core_small_pool/mod.rs:175`,
 only protects the SINGLE currently-bump-targeted segment — any OTHER
 segment that empties is eligible for pool/release regardless of how much
 pool headroom remains, so a pool cap only matters once `pooled_count`
@@ -334,7 +334,7 @@ this task needs while tripling the process-launch budget.
 > reading and structural argument — **option (b)** was taken.
 >
 > 2. **RESOLVED — established by source reading, not read back at runtime.**
->    `AllocCore::new_with_config` (`src/alloc_core/alloc_core.rs:933-963`)
+>    `AllocCore::new_with_config` (`src/alloc_core/alloc_core/mod.rs:933-963`)
 >    resolves `core.pool_cap = resolved_pool_segments().min(resolved_pool_byte_cap()
 >    / SEGMENT)` (the exact assignment is at `alloc_core.rs:961-963`) — a
 >    genuine runtime computation, not a compile-time constant folded away;

@@ -6,8 +6,8 @@ already-extracted `crates/aligned-vmem` (`aligned-vmem`) and `crates/numa-shim`
 or how should `vmem` itself be broadened — for testability and community use?
 
 Surveyed sources: `crates/aligned-vmem/src/lib.rs`, `crates/numa-shim/src/lib.rs`,
-`src/alloc_core/os.rs`, `src/alloc_core/numa.rs`, `src/alloc_core/segment_header.rs`,
-`src/alloc_core/segment_layout.rs`, `examples/first_alloc_process.rs`,
+`src/alloc_core/platform/os.rs`, `src/alloc_core/platform/numa.rs`, `src/alloc_core/segment/segment_header/mod.rs`,
+`src/alloc_core/segment/segment_layout.rs`, `examples/first_alloc_process.rs`,
 `scripts/first-alloc-bench.mjs`, `src/registry/*` (sidecar pattern), both
 crate `Cargo.toml`s and their `tests/`.
 
@@ -41,7 +41,7 @@ crate in this lane.
 
 2. **Coupling.** Essentially zero. The only allocator-flavoured residue is
    naming/doc references to sefer-alloc and the deprecated `is_empty`
-   carcass. `src/alloc_core/os.rs` consumes it purely through the public API
+   carcass. `src/alloc_core/platform/os.rs` consumes it purely through the public API
    (thin `Segment` newtype), proving the seam is already clean.
 
 3. **Extraction effort + API broadening for community use.** Effort to
@@ -106,7 +106,7 @@ crate in this lane.
      recording mock that replaces platform syscalls, letting any target
      (macOS, miri) assert the wrapping logic. Proven pattern, already tested
      (`crates/numa-shim/tests/mock_dispatch.rs`).
-   - `src/alloc_core/os.rs` `COMMIT_FAIL_ARMED` (R7-B2): a fault-injection
+   - `src/alloc_core/platform/os.rs` `COMMIT_FAIL_ARMED` (R7-B2): a fault-injection
      atomic that makes the next `commit_pages` fail without touching the OS,
      used for commit-charge-exhaustion (OOM-path) tests. Today it lives in
      the *allocator*, above the vmem seam.
@@ -189,7 +189,7 @@ crate in this lane.
 
 1. **What / where.** A pattern used three times: `src/registry/registry_chunk.rs`
    + `src/registry/heap_overflow.rs` (via `bootstrap.rs`), and
-   `src/alloc_core/os.rs::reserve_directory_sidecar` (R7-A1). Shape: round
+   `src/alloc_core/platform/os.rs::reserve_directory_sidecar` (R7-A1). Shape: round
    `size_of::<T>()` up to PAGE, `reserve_aligned(size, PAGE)`, rely on
    OS-zeroed pages as the all-zero valid initial state (explicit
    `write_bytes(0)` under miri because `std::alloc` doesn't zero),
@@ -256,7 +256,7 @@ crate in this lane.
 
 ## Honestly NOT extractable (allocator-specific)
 
-- **`Segment` / `segment_base_of` / SEGMENT constant** (`src/alloc_core/os.rs`,
+- **`Segment` / `segment_base_of` / SEGMENT constant** (`src/alloc_core/platform/os.rs`,
   `segment_layout.rs`): the newtype is 60 lines over `Reservation` plus
   sefer's diagnostic counters (`SEGMENTS_RESERVED_TOTAL`); `segment_base_of`
   is one mask. There is no crate here — vmem already *is* the extraction, and
@@ -272,7 +272,7 @@ crate in this lane.
   linux/windows/macos/miri/fallback, locally-declared FFI, per-site SAFETY
   wrappers): it is a *convention*, consistently used across vmem/numa/os.rs —
   worth a page in vmem's README as "how to add a platform", not a crate.
-- **`src/alloc_core/numa.rs`**: already a 90-line compat shim over the
+- **`src/alloc_core/platform/numa.rs`**: already a 90-line compat shim over the
   extracted `numa-shim`; nothing left to extract. (`numa-shim` itself, like
   vmem, is publish-ready and unpublished — same "just publish it" note
   applies, though that is lane-adjacent.)

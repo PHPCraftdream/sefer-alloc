@@ -77,7 +77,7 @@ Two independent problems, both demonstrated on THIS repository:
 
 2. **High false-positive rate on legitimate historical prose.** This repo
    already contains the exact patterns a grep-lint would mis-flag:
-   - `src/alloc_core/bootstrap.rs:228` — «`1024→4096` raise quadrupled this
+   - `src/alloc_core/alloc_core/bootstrap.rs:236` — «`1024→4096` raise quadrupled this
      loop's trip count» — *intentionally* names both the old and new value to
      describe a past change. Correct. A grep for numbers near `MAX_SEGMENTS`
      flags it.
@@ -86,7 +86,7 @@ Two independent problems, both demonstrated on THIS repository:
      a comment about `HEAP_OVERFLOW_CAP`, near segment prose. Correct. A naive
      «`2048` near segment» grep conflates it with the long-gone `MAX_SEGMENTS=1024`
      era.
-   - `src/alloc_core/segment_header.rs:301,606` — «`104` and `120` round up» /
+   - `src/alloc_core/segment/segment_header/mod.rs:318,321` — «`104` and `120` round up» /
      «`4096` … UNCHANGED» — descriptive layout arithmetic. Correct.
 
    Suppressing these needs an allow-list, which collapses back into variant 1's
@@ -122,7 +122,7 @@ into a comment at all?):
 
 The convention is not vacuous «be careful» — it has a concrete, proven escape
 hatch already in the tree: the `dbg_*` test-only accessors
-(`src/alloc_core/alloc_core_core_diag.rs:853 dbg_max_segments`,
+(`src/alloc_core/alloc_core/alloc_core_core_diag/:853 dbg_max_segments`,
 `:872 dbg_words_per_class`; `src/registry/heap_core_diag.rs:337
 dbg_promotion_compiled`). When a number MUST be restated *in executable code*
 (a test, an example, a printed harness line), restate it via the accessor, not
@@ -230,12 +230,12 @@ the comment to cite the name (variant 3):
 
 | Constant | Definition site | Current value | Churn history | Existing accessor | Action if built |
 |---|---|---|---|---|---|
-| `MAX_SEGMENTS` | `src/alloc_core/segment_table.rs:64` | `4096` | raised `1024→4096` (R14-7); cascaded into every derived constant below | `dbg_max_segments()` (`alloc_core_core_diag.rs:853`) — **exists** | add `assert_eq!(MAX_SEGMENTS, dbg_max_segments())`-style canary in a `tests/` file (the accessor already exposes it; a test-side mirror + assert closes the loop) |
-| `HASH_CAPACITY` (`= 2 * MAX_SEGMENTS`) | `segment_table.rs:73` | `8192` | the R17-6 stale `// 2048` | via `dbg_max_segments()` ×2, or a new `dbg_hash_capacity()` | rewrite the `// 8192` trailing comment to `` // = 2 * MAX_SEGMENTS `` (variant 3); optionally add accessor |
-| `WORDS_PER_CLASS` (`= MAX_SEGMENTS / 64`) | `src/alloc_core/segment_directory.rs:172` | `64` | R15-5 stale `16` across 5 files | `dbg_words_per_class()` (`alloc_core_core_diag.rs:872`, `alloc-segment-directory`-gated) — **exists** | already has an accessor; add a canary `assert_eq!` mirroring it, like `HAS_PROMOTION` |
-| `SMALL_CLASS_COUNT` (`= SIZE_CLASS_TABLE.len()`) | `src/alloc_core/size_classes.rs:165` | `49` (default) / `55` (`medium-classes`) / `58` (`medium-classes-wide`) | R16-2 mislabeled `55`↔`58` | none | `dirty_by_class.rs:37-39` **currently restates live derived literals** (`49-class`, `3,136 words = 25,088 bytes = 24.5 KiB`, `55 … 28,160`, `58 … 29,696`) — these are at-risk RIGHT NOW; action is a variant-3 rewrite (cite `SMALL_CLASS_COUNT` × `WORDS_PER_CLASS` symbolically), optionally backed by a `dbg_small_class_count()` accessor + canary |
+| `MAX_SEGMENTS` | `src/alloc_core/segment/segment_table/mod.rs:111` | `4096` | raised `1024→4096` (R14-7); cascaded into every derived constant below | `dbg_max_segments()` (`alloc_core_core_diag/table_diag.rs:312`) — **exists** | add `assert_eq!(MAX_SEGMENTS, dbg_max_segments())`-style canary in a `tests/` file (the accessor already exposes it; a test-side mirror + assert closes the loop) |
+| `HASH_CAPACITY` (`= 2 * MAX_SEGMENTS`) | `segment/segment_table/mod.rs:120` | `8192` | the R17-6 stale `// 2048` | via `dbg_max_segments()` ×2, or a new `dbg_hash_capacity()` | rewrite the `// 8192` trailing comment to `` // = 2 * MAX_SEGMENTS `` (variant 3); optionally add accessor |
+| `WORDS_PER_CLASS` (`= MAX_SEGMENTS / 64`) | `src/alloc_core/segment/segment_directory/mod.rs:172` | `64` | R15-5 stale `16` across 5 files | `dbg_words_per_class()` (`alloc_core_core_diag/directory_diag.rs:295`, `alloc-segment-directory`-gated) — **exists** | already has an accessor; add a canary `assert_eq!` mirroring it, like `HAS_PROMOTION` |
+| `SMALL_CLASS_COUNT` (`= SIZE_CLASS_TABLE.len()`) | `src/alloc_core/platform/size_classes.rs:211` | `49` (default) / `55` (`medium-classes`) / `58` (`medium-classes-wide`) | R16-2 mislabeled `55`↔`58` | none | `dirty_by_class.rs:50-52` **currently restates live derived literals** (`49-class`, `3,136 words = 25,088 bytes = 24.5 KiB`, `55 … 28,160`, `58 … 29,696`) — these are at-risk RIGHT NOW; action is a variant-3 rewrite (cite `SMALL_CLASS_COUNT` × `WORDS_PER_CLASS` symbolically), optionally backed by a `dbg_small_class_count()` accessor + canary |
 
-The `SMALL_CLASS_COUNT` / `dirty_by_class.rs:37-39` case is the one live
+The `SMALL_CLASS_COUNT` / `dirty_by_class.rs:50-52` case is the one live
 at-risk site found while writing this doc — **it is a doc-debt candidate for a
 future round regardless of whether variant 4 is adopted** (it would rot the
 next time the size-class table or `MAX_SEGMENTS` changes, exactly as R16-2

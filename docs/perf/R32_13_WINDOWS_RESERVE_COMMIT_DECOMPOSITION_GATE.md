@@ -13,8 +13,8 @@ WSL/Valgrind needed, unlike most of this backlog.
 `f126de1a77f01c6a33f605d0985a29cf71862ab5` (working tree carrying only this
 task's own additive edits at measurement time — `git status --short`
 showed `Cargo.toml`, `crates/aligned-vmem/Cargo.toml`, `crates/aligned-vmem/src/lib.rs`,
-`src/alloc_core/alloc_core_core_diag.rs`, `src/alloc_core/alloc_core_small_pool.rs`,
-`src/alloc_core/os.rs`, `src/registry/heap_core_diag.rs`,
+`src/alloc_core/alloc_core/alloc_core_core_diag/`, `src/alloc_core/small/alloc_core_small_pool/mod.rs`,
+`src/alloc_core/platform/os.rs`, `src/registry/heap_core_diag.rs`,
 `tests/dbg_hook_safety_tripwire.rs`, `README.md` modified, plus new files
 under `examples/`/`scripts/`/`docs/perf/`, none of which this task touches
 beyond its own additions). **Immutable source identity (R29-6 rule):** git
@@ -64,7 +64,7 @@ adds two things R29-3 never measured:
 Per the survey's own scoping ("step 1 is trivial and independently useful
 even if you stop here"), two `bench-internals`-gated counter pairs were
 added, extending the SAME `SEGMENTS_RESERVED_TOTAL`/`SEGMENTS_RELEASED_TOTAL`
-pattern already plumbed through `src/alloc_core/os.rs` (confirmed at
+pattern already plumbed through `src/alloc_core/platform/os.rs` (confirmed at
 `:52-57` — not `:374-386` as the survey guessed; the survey's own citation
 was an approximate line reference, corrected here):
 
@@ -79,7 +79,7 @@ Both are `#[cfg(feature = "bench-internals")]`, `AtomicU64` storage always
 compiled, increments gated — zero cost in a plain `production` build.
 Surfaced via `AllocCore::dbg_unix_exact_reserve_attempts`/`_hits`/
 `dbg_windows_reserve_commit_calls`/`dbg_reset_vmem_bench_internals_counters`
-(`src/alloc_core/alloc_core_core_diag.rs`) and the matching `HeapCore`
+(`src/alloc_core/alloc_core/alloc_core_core_diag/`) and the matching `HeapCore`
 delegations (`src/registry/heap_core_diag.rs`), following this session's
 established `dbg_*` counter pattern (tasks #499/#501/#502).
 
@@ -119,7 +119,7 @@ the R29-3 `dbg_decomp_*` cluster's own gating exactly):
   a NEW `bench-internals`-gated wrapper over `aligned_vmem::commit_range`
   that does not require any sefer-level lazy-commit POLICY feature
   (`primordial-lazy-commit`/`small-segment-lazy-commit`) — see that
-  function's doc comment in `src/alloc_core/os.rs` for why the split is
+  function's doc comment in `src/alloc_core/platform/os.rs` for why the split is
   kept independent of production reservation policy.
 - `AllocCore::dbg_decomp_win_release_only(reservation_ptr, reservation_len)`
   (`unsafe fn`) — thin wrapper over `os::release_segment`.
@@ -263,9 +263,9 @@ functions (`commit_pages`/`reserve_lazy`), reachable only from
 |---|---|
 | `crates/aligned-vmem/Cargo.toml` | +1 `bench-internals` feature (crate-local, no dependencies) |
 | `crates/aligned-vmem/src/lib.rs` | +3 `bench-internals`-gated `AtomicU64` counters + accessors + reset hook; 2 increment sites (`try_reserve_aligned_exact`, `win_reserve_commit`) |
-| `src/alloc_core/os.rs` | +1 `bench-internals`-gated `Segment::reserve_lazy_for_measurement` + 1 `bench-internals`-gated `commit_pages_for_measurement` |
-| `src/alloc_core/alloc_core_core_diag.rs` | +6 `dbg_*` accessors delegating to the new `aligned_vmem` counters |
-| `src/alloc_core/alloc_core_small_pool.rs` | +3 `bench-internals`-gated decomposition hooks (`dbg_decomp_win_reserve_only`/`_commit_only`/`_release_only`) |
+| `src/alloc_core/platform/os.rs` | +1 `bench-internals`-gated `Segment::reserve_lazy_for_measurement` + 1 `bench-internals`-gated `commit_pages_for_measurement` |
+| `src/alloc_core/alloc_core/alloc_core_core_diag/` | +6 `dbg_*` accessors delegating to the new `aligned_vmem` counters |
+| `src/alloc_core/small/alloc_core_small_pool/mod.rs` | +3 `bench-internals`-gated decomposition hooks (`dbg_decomp_win_reserve_only`/`_commit_only`/`_release_only`) |
 | `src/registry/heap_core_diag.rs` | +4 `HeapCore` delegation wrappers for the step-1 counters + +3 for the step-2 split hooks |
 | `Cargo.toml` | +1 `bench-internals` forward to `aligned-vmem?/bench-internals`+`aligned-vmem?/lazy-commit`; +1 `[[example]]` entry |
 | `examples/r32_13_windows_reserve_commit_decomposition_gate.rs` | NEW — wall-clock decomposition binary |

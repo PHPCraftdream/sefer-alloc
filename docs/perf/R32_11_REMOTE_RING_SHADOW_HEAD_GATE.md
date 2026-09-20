@@ -10,7 +10,7 @@ This task tracks finding **F10** in
 `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` ("every cross-thread
 free reads the ring's consumer-written `head` cache line, so PERF-PASS-4's
 own cache-line split guarantees a 2-line, cross-core-coherent push instead of
-a 1-line one"). `RemoteFreeRing::push` (`src/alloc_core/remote_free_ring.rs`)
+a 1-line one"). `RemoteFreeRing::push` (`src/alloc_core/segment/remote_free_ring/mod.rs`)
 — the producer side of the cross-thread-free MPSC ring, called on every
 cross-thread free — read the CONSUMER's `head` cursor (`Acquire`) on every
 push, even though PERF-PASS-4 (task #52) had already split `head`
@@ -92,7 +92,7 @@ to the ones `push`/`drain` already use).
 never a correctness cost, only a fallback to the exact pre-F10 behaviour.
 
 The full argument, with more detail, lives in
-`src/alloc_core/remote_free_ring.rs`'s module doc, "F10 — shadow/cached
+`src/alloc_core/segment/remote_free_ring/mod.rs`'s module doc, "F10 — shadow/cached
 head" section (this report's §1 restates it for a reader who doesn't want to
 open the source).
 
@@ -385,7 +385,7 @@ against the raw provenance) →
   - All 8 loom tests (5 pre-existing + 3 new) pass:
     `RUSTFLAGS="--cfg loom" cargo test --release --features "alloc-core,alloc-xthread" --test loom_remote_ring`.
 - **`tests/dbg_hook_safety_tripwire.rs`** — the new
-  `dbg_advance_head_only` test seam (`src/alloc_core/remote_free_ring.rs`)
+  `dbg_advance_head_only` test seam (`src/alloc_core/segment/remote_free_ring/mod.rs`)
   is classified into `SAFE_MUTATORS` (bounded blast radius identical to the
   pre-existing `dbg_set_cursors`) — **all 7 pass**.
 - **`cargo test --release --features production`** — full suite, **all
@@ -428,7 +428,7 @@ matrix.
 
 ## 8. Files changed
 
-- `src/alloc_core/remote_free_ring.rs` — `cached_head: AtomicU32` field
+- `src/alloc_core/segment/remote_free_ring/mod.rs` — `cached_head: AtomicU32` field
   (`CACHED_HEAD_OFF = 72`, in existing padding), `full_check` helper, the
   soundness argument (module doc), `DBG_RING_PUSH_SHADOW_FAST`/`_SLOW`
   path-activation oracle counters (`bench-internals`-gated), `dbg_set_cursors`
@@ -551,7 +551,7 @@ advance, never a regression. It is correctly enumerated in
 bounded-blast-radius justification. This is a documentation-completeness
 defect in a formally-stated proof, not a shipped-code soundness bug.
 
-**Fix.** The module doc in `src/alloc_core/remote_free_ring.rs` (F10
+**Fix.** The module doc in `src/alloc_core/segment/remote_free_ring/mod.rs` (F10
 section, ~line 103) now lists all four write sites with a one-line note
 on each. `dbg_advance_head_only`'s own doc comment now states an
 explicit "must never regress `head`" precondition, matching the style
@@ -590,7 +590,7 @@ release-readiness review
 doc, explicitly asking that the assumption not be left implicit and that
 no site claim "formally verified" without disclosing it.
 
-**Fix (this task, Sol-F7, task #569).** `src/alloc_core/remote_free_ring.rs`'s
+**Fix (this task, Sol-F7, task #569).** `src/alloc_core/segment/remote_free_ring/mod.rs`'s
 module doc already carried the staleness-bound paragraph (added in an
 earlier pass responding to the second review above, "Wrap argument
 precondition — the staleness bound (ASSUMPTION, not a theorem"), but the

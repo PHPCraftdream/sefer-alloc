@@ -1,0 +1,27 @@
+//! The [`AllocCore`] constructor cluster — [`AllocCore::new`],
+//! [`AllocCore::new_with_config`], [`AllocCore::live_config_matches`], and
+//! the private `new_inner` bootstrap — plus the `bench-internals`-gated
+//! `DBG_RESERVATION_OWNER_ID_COUNTER` source static. Mechanically split out
+//! of the former flat `alloc_core.rs` body (the face group's 1000-line cap);
+//! the bodies are byte-identical to their pre-split forms.
+
+use crate::alloc_core::bootstrap;
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::large_cache_mode::LargeCacheMode;
+#[cfg(feature = "numa-aware")]
+use crate::alloc_core::numa;
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::os::SEGMENT;
+#[cfg(feature = "numa-aware")]
+use crate::alloc_core::segment_header::SegmentMeta;
+#[cfg(feature = "alloc-segment-directory")]
+use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::alloc_core::LargeCacheHitCounter;
+#[cfg(feature = "alloc-decommit")]
+use super::LARGE_CACHE_SLOTS;
+#[cfg(feature = "alloc-decommit")]
+use super::LargeCacheDecayConfig;
+
+use super::AllocCore;
+

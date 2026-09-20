@@ -60,7 +60,7 @@ split the same day.)
    own confidence/severity, for a future round to check and either action or
    dismiss:
    - **[P2 → CONFIRMED P1, 2026-07-30] `AllocCore::dbg_decomp_full_cycle`**
-     (`src/alloc_core/alloc_core_small_pool.rs:1014`, R29-3/task #434) is a
+     (`src/alloc_core/small/alloc_core_small_pool/mod.rs:1014`, R29-3/task #434) is a
      SAFE `pub fn` that calls `reserve_small_segment` then
      `release_or_pool_empty_segment` on the freshly-reserved base.
      **My original text here (below, struck) was FACTUALLY WRONG and is
@@ -302,7 +302,7 @@ split the same day.)
      under `hardened`) cannot substitute for `live_count`, because without
      `alloc-decommit` the small-segment release/pool machinery itself
      (`dec_live_and_maybe_decommit` / `dec_live_batch_and_maybe_decommit`,
-     `src/alloc_core/alloc_core_small_pool.rs`) is entirely
+     `src/alloc_core/small/alloc_core_small_pool/mod.rs`) is entirely
      `#[cfg(feature = "alloc-decommit")]` — small/medium segments are never
      released or live-count-tracked at all under that combo, so
      `dbg_contains_base` would read `true` forever regardless of whether a
@@ -315,7 +315,7 @@ split the same day.)
        - **Large-promoted path** (`production medium-classes`): disabled
          `self.table.unregister(base)` in the cache-admitted leg of
          `AllocCore::dealloc`'s Large branch
-         (`src/alloc_core/alloc_core.rs`, `#[cfg(any())]`) — reproduces
+         (`src/alloc_core/alloc_core/mod.rs`, `#[cfg(any())]`) — reproduces
          R28-2's own documented alternate outcome at this exact site: a
          deterministic `STATUS_ACCESS_VIOLATION` crash (both `--release`
          and debug profiles), because the segment becomes genuinely
@@ -326,7 +326,7 @@ split the same day.)
          `src/`), test passes again.
        - **Medium-ladder path** (`production medium-classes
          exact-span-large`): disabled the `dec_live_batch_and_maybe_decommit`
-         block in `flush_run` (`src/alloc_core/alloc_core_small_magazine.rs`,
+         block in `flush_run` (`src/alloc_core/small/alloc_core_small_magazine.rs`,
          `#[cfg(any())]`) — clean assertion failure,
          `live_count went from Some(2) to Some(2)`, exactly the "no change
          at all" signature the assertion's own doc comment predicts.
@@ -344,7 +344,7 @@ split the same day.)
 
 7. **[T, filed 2026-07-30, R30-10/task #459]
    `dbg_decomp_reserve_and_keep`/`dbg_decomp_release`
-   (`src/alloc_core/alloc_core_small_pool.rs:1070-1115`) mint-then-redeem a
+   (`src/alloc_core/small/alloc_core_small_pool/mod.rs:1070-1115`) mint-then-redeem a
    bare `*mut u8` segment base with only a `debug_assert!` (compiled out in
    `--release`) guarding against releasing the live `small_cur` cursor —
    the same hazard class R30-1 (task #450) fixed for `dbg_decomp_full_cycle`,
@@ -384,7 +384,7 @@ split the same day.)
 
    **[FIXED, R31-4/task #467, commit `ca9aba9`, 2026-07-30/31.]**
    Implemented `ReservedSmallSegment` exactly per §5.2-5.3's sketch, in a new
-   one-export file (`src/alloc_core/reserved_small_segment.rs`, per this
+   one-export file (`src/alloc_core/small/reserved_small_segment.rs`, per this
    project's file-structure rule): a private `base: *mut u8` field, a
    `pub(super)` constructor (`new_from_reservation`) reachable only from
    `AllocCore`'s own reservation path inside `alloc_core_small_pool.rs` — no
@@ -409,7 +409,7 @@ split the same day.)
    reserve and release for its `write_volatile` measurement, without
    weakening the unforgeability guarantee (reading a value out is not
    constructing a new handle). Updated exactly the ~5 files the design doc
-   estimated: `src/alloc_core/alloc_core_small_pool.rs` (the two hook
+   estimated: `src/alloc_core/small/alloc_core_small_pool/mod.rs` (the two hook
    definitions), `src/registry/heap_core_diag.rs` (the `HeapCore` forwarding
    delegates), `examples/r29_3_decomposition_gate.rs`,
    `tests/r30_1_decomp_full_cycle_cursor_safety.rs` (R30-1's own
@@ -653,7 +653,7 @@ split the same day.)
    check first) — see the Round 31 review-response CHANGELOG entry.
    - **P2-4 — `ReservedSmallSegment`'s `pub(super)` scoping doc claim is
      wrong in three places.** The review's claim:
-     `src/alloc_core/reserved_small_segment.rs:23-27` and `:80-85` say
+     `src/alloc_core/small/reserved_small_segment.rs:23-27` and `:80-85` say
      `new_from_reservation` is "callable only from within
      `alloc_core_small_pool.rs`'s own module tree," and `:108-112` says
      `into_base` is "not exposed outside this module tree" — both
@@ -733,7 +733,7 @@ split the same day.)
      resolves to `pub(in crate::alloc_core)`, reachable from every module
      under `alloc_core`. Confirmed the single real caller via
      `grep -n "new_from_reservation\|into_base"
-     src/alloc_core/alloc_core_small_pool.rs` → lines 1095 and 1117 exactly.
+     src/alloc_core/small/alloc_core_small_pool/mod.rs` → lines 1095 and 1117 exactly.
      Fixed all three overstated doc-comment locations
      (`reserved_small_segment.rs:23-27`, `:80-85`, `:108-112`) to state
      "reachable from anywhere inside `alloc_core`... Rust has no
@@ -754,7 +754,7 @@ split the same day.)
      and citing this review finding.
    - **P2-11 confirmed; decision: keep as a sanctioned exception, add
      justification (not tighten).** Re-verified `AllocCore::dbg_large_cache_hits`
-     (`src/alloc_core/alloc_core_large_cache.rs:544`) is gated
+     (`src/alloc_core/large/alloc_core_large_cache.rs:544`) is gated
      `#[cfg(feature = "alloc-decommit")]` alone — reachable in plain
      `production`. Unlike its `HeapCore` sibling (R31-4/item 8 P2-2 above,
      which had ZERO callers outside `bench-internals`-gated examples before

@@ -19,7 +19,7 @@ thread-per-core server running many `AllocCore` instances concurrently
 (`AllocCore` is owner-only, neither `Send` nor `Sync` — there is no
 process-wide coordination between heaps) could retain tens of GiB in
 aggregate even though each individual heap stayed under its own ceiling. See
-`src/alloc_core/large_cache_config.rs`'s `DEFAULT_EXTENDED_BUDGET_BYTES` doc
+`src/alloc_core/config/large_cache_config.rs`'s `DEFAULT_EXTENDED_BUDGET_BYTES` doc
 for the full multi-heap rationale and the rejected process-global-budget
 alternative. This section and §2/§3.2 below are left as a historical record
 of what was measured at the ORIGINAL 5x/1280 MiB value on 2026-07-23 — the
@@ -50,12 +50,12 @@ re-running the harness.
 
 ## 1. Item 1 — budget-vs-materialisation ordering (fixed)
 
-**Change:** `src/alloc_core/alloc_core_large_cache.rs` gained
+**Change:** `src/alloc_core/large/alloc_core_large_cache.rs` gained
 `AllocCore::large_cache_deposit_budget_infeasible(usable_size) -> bool` — a
 cheap, purely arithmetic pre-check (`Some(budget) if usable_size > budget`,
 no eviction, no sidecar touch). Both admission call sites
-(`src/alloc_core/alloc_core.rs`'s Large `dealloc` branch,
-`src/alloc_core/alloc_core_large.rs::reclaim_large_segment`) now run this
+(`src/alloc_core/alloc_core/mod.rs`'s Large `dealloc` branch,
+`src/alloc_core/large/alloc_core_large.rs::reclaim_large_segment`) now run this
 check BEFORE ever entering the free-slot-search loop that can materialise
 the extension:
 
@@ -111,7 +111,7 @@ pre-existing eviction loop unchanged.
 
 **Decision:** `large-cache-extended` gets its OWN finite default budget,
 applied only when the caller never calls `.budget_bytes(..)` explicitly.
-`src/alloc_core/large_cache_config.rs`:
+`src/alloc_core/config/large_cache_config.rs`:
 
 ```rust
 pub(crate) const DEFAULT_EXTENDED_BUDGET_BYTES: usize = 5 * DEFAULT_HEADROOM_BYTES; // 1280 MiB
@@ -374,14 +374,14 @@ scenario.
 ## 8. Files changed/added
 
 **Source (hardening, items 1-2):**
-- `src/alloc_core/alloc_core_large_cache.rs` — new
+- `src/alloc_core/large/alloc_core_large_cache.rs` — new
   `large_cache_deposit_budget_infeasible`, updated
   `large_cache_find_free_slot` doc, new `dbg_large_cache_budget` test seam.
-- `src/alloc_core/alloc_core.rs` — pre-check wired into the Large `dealloc`
+- `src/alloc_core/alloc_core/mod.rs` — pre-check wired into the Large `dealloc`
   admission loop.
-- `src/alloc_core/alloc_core_large.rs` — pre-check wired into
+- `src/alloc_core/large/alloc_core_large.rs` — pre-check wired into
   `reclaim_large_segment`'s admission loop.
-- `src/alloc_core/large_cache_config.rs` — `DEFAULT_EXTENDED_BUDGET_BYTES`,
+- `src/alloc_core/config/large_cache_config.rs` — `DEFAULT_EXTENDED_BUDGET_BYTES`,
   feature-conditional `resolved_budget_bytes`.
 
 **Tests (items 1, 2, 4, 5):**

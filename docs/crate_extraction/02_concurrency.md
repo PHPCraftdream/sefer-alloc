@@ -3,10 +3,10 @@
 **Research question:** which loom-verified concurrency primitives in
 `sefer-alloc` could/should be extracted into standalone community crates?
 
-**Method:** read of `src/alloc_core/remote_free_ring.rs`,
+**Method:** read of `src/alloc_core/segment/remote_free_ring/mod.rs`,
 `src/registry/{heap_overflow,heap_slot,heap_registry,bootstrap,tagged_ptr,
 registry_chunk,heap_core_xthread}.rs`, `src/alloc_core/deferred_large/*`,
-`src/alloc_core/segment_directory.rs`, `src/concurrent/*`, all 18
+`src/alloc_core/segment/segment_directory/mod.rs`, `src/concurrent/*`, all 18
 `tests/loom_*.rs` models, `docs/CROSS_THREAD_STATE_MACHINES.md`.
 
 **Extraction precedent already exists in-repo:** `crates/` already hosts
@@ -39,7 +39,7 @@ first reserved-but-unpublished slot** ("later drain picks it up"), overflow →
 (`tail_relaxed()` vs. an owner-cached head, sound by cursor monotonicity).
 Two production instances of the same protocol:
 
-- `src/alloc_core/remote_free_ring.rs` — `RemoteFreeRing`, single-`u32`-entry
+- `src/alloc_core/segment/remote_free_ring/mod.rs` — `RemoteFreeRing`, single-`u32`-entry
   ring carved over raw segment metadata (256 slots, cache-line-separated
   cursor blocks, power-of-two-CAP wrap pin, packed `(offset, class)`
   entries).
@@ -209,7 +209,7 @@ a payload into a per-key channel (a candidate-1 ring), **then**
 side `set_dirty_bit_for_segment`, `src/registry/heap_core_xthread.rs:285-328`);
 the consumer `swap(0, Acquire)`s each word and drains exactly the set bits'
 channels (`drain_dirty_segments`, reached from
-`src/alloc_core/alloc_core_small.rs`). The documented contract: an entry
+`src/alloc_core/small/alloc_core_small/mod.rs`). The documented contract: an entry
 whose producer stalls between ring-publish and `fetch_or` is *boundedly
 deferred*, never lost — found by a later bit-set, another producer's drain of
 the same channel, or the unconditional linear-scan fallback (the three-path
@@ -337,7 +337,7 @@ Effort LOW (already self-contained), value LOW–MEDIUM.
   detection) is allocator policy; only its two underlying rings (candidate 1)
   generalize. The model could still ship as a ring-crate *example* of
   composing two rings.
-- **`SegmentDirectory`** (`src/alloc_core/segment_directory.rs`) — plain
+- **`SegmentDirectory`** (`src/alloc_core/segment/segment_directory/mod.rs`) — plain
   non-atomic owner-only bitmap; not a concurrency primitive at all (the
   atomic sibling is candidate 4).
 - **Owner-stamping / slot recycle→claim handshake**

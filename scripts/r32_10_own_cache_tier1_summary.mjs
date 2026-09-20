@@ -7,7 +7,7 @@
 // (CLAUDE.md "tables derived by one checked script, not hand-transcribed").
 //
 // Both raw logs were captured in the main working tree by temporarily
-// flipping the `OWN_CACHE_SIZE` constant (`src/alloc_core/segment_table.rs`)
+// flipping the `OWN_CACHE_SIZE` constant (`src/alloc_core/segment/segment_table/mod.rs`)
 // between builds, then restoring it to the shipped value (16) before the
 // landing commit — a source-CONSTANT before/after, not a runtime switch, so
 // (per CLAUDE.md's R29-6 rule) the "before" state is NOT separately

@@ -9,141 +9,132 @@
 
 // The file `alloc_core.rs` carries the same name as this module per the
 // crate's one-export-per-file convention; silence clippy's module_inception.
-pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
-mod alloc_core_core_diag;
-mod alloc_core_large;
-#[cfg(feature = "alloc-decommit")]
-mod alloc_core_large_cache;
-mod alloc_core_small;
-mod alloc_core_small_diag;
-mod alloc_core_small_magazine;
-#[cfg(feature = "alloc-decommit")]
-mod alloc_core_small_pool;
-mod alloc_core_small_reclaim;
-mod bootstrap;
-/// The cross-thread deferred-free Treiber stack for Large/huge segments
-/// (task A1, extracted for #132). Used by the allocator face
-/// (`registry::heap_core::HeapCore`) and any direct `AllocCore` user so the
-/// double-push-guarded push/drain logic is not duplicated.
-///
-/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
-/// `#[doc(hidden)]` (see `lib.rs`): `DBG_LARGE_XTHREAD_RECLAIMED` is
-/// re-exported (via `registry`) as a `#[doc(hidden)]` test-only diagnostic.
+/// Group module: the public const-buildable configuration types (Profile, LargeCacheConfig, LargeCacheMode, SmallSegmentPoolConfig).
+mod config;
+/// Group module: the large/huge allocation path — `alloc_large` + slow path + reclaim, the per-shard large-cache decay/eviction cluster, the experimental `large-cache-extended` sidecar, and the cross-thread deferred-free Treiber stack.
+mod large;
+/// Group module: OS & platform shims (os, numa, size_classes) plus the confined raw-memory unsafe seams (node, sidecar, dirty_by_class).
+mod platform;
+/// Group module: the segment substrate — the per-segment metadata header
+/// family (`segment_header/`), the self-hosted `SegmentTable` registry, the
+/// per-class `segment_directory` + its `directory_stats` counters, the
+/// per-segment `remote_free_ring`, the `segment_layout` geometry, and the
+/// per-segment bitmap family (`bitmap/`).
+mod segment;
+/// Group module: the small/medium allocation path — the small
+/// alloc/dealloc/carve hot cluster, directory-accelerated segment lookup,
+/// small-segment reserve, the magazine (tcache) batch ops, cross-thread
+/// reclaim, small-path diagnostics, the `alloc-decommit` empty-segment pool
+/// + decommit machinery, and the measurement-only `ReservedSmallSegment`
+/// handle.
+mod small;
+// The former flat segment-substrate child modules now live in the `segment/`
+// group module and are re-exported here (at their original
+// visibility/cfg/doc-hidden parity) so every one stays reachable at its
+// existing `alloc_core::<name>` module path.
+pub(crate) use segment::bitmap::{alloc_bitmap, magazine_bitmap, segment_bitmap};
+pub(crate) use segment::directory_stats;
+#[cfg(feature = "alloc-segment-directory")]
+pub(crate) use segment::segment_directory;
 #[doc(hidden)]
-pub mod deferred_large;
-/// R7-A0 diagnostic counters for the per-class segment directory
-/// (observability phase). Storage is always compiled; per-event increments
-/// are gated behind `alloc-stats`. See the module doc for the counter
-/// inventory.
-pub(crate) mod directory_stats;
-/// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): the lazily-materialised
-/// per-(segment, class) dirty-bit sidecar (`PerClassDirty`) — see the module
-/// doc for the full design. A named `unsafe` seam (single documented reason:
-/// dereferencing the `OncePtrCell`-published sidecar pointer).
-#[cfg(feature = "class-aware-dirty")]
-pub(crate) mod dirty_by_class;
-#[cfg(feature = "alloc-decommit")]
-pub mod large_cache_config;
-/// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): the lazily-
-/// materialised sidecar that widens the large-segment free-cache beyond the
-/// fixed 8 base slots. See the module doc for the full design. A named
-/// `unsafe` seam (single documented reason: dereferencing the
-/// `leak_zeroed_pages`-published sidecar pointer, owner-only, no
-/// `OncePtrCell` needed).
-#[cfg(feature = "large-cache-extended")]
-pub(crate) mod large_cache_extended;
-#[cfg(feature = "alloc-decommit")]
-pub mod large_cache_mode;
-/// RAD-5 (plan Phase 5-E4), verdict GO — the second orthogonal per-segment
-/// bitmap (magazine residency), wired into the production hot path. See the
-/// module doc for the design and `docs/perf/IAI_BASELINE.md` §RAD-5 for the
-/// measurement.
-pub(crate) mod magazine_bitmap;
-pub(crate) mod node;
-/// NUMA OS-seam: NUMA-node detection and segment binding.
-/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
-/// `#[doc(hidden)]` (see `lib.rs`): the public surface is test-only (the
-/// `#[doc(hidden)]` re-export), reachable by the isolated NUMA unit test.
-/// Nothing here is stable public API.
+pub use segment::segment_header;
+// `allow(unused_imports)`: a `mod` declaration (this file's pre-reorg form)
+// is exempt from the unused-imports lint, but the equivalent module
+// re-export is not. `segment_header_gen_table`'s only in-crate consumer is
+// `segment_header`'s own `pub use super::segment_header_gen_table::...`
+// forwarder, which resolves through `segment`'s module declaration, not
+// through this re-export — so under `hardened` the name would otherwise
+// warn. Same allow-with-explanation discipline as `platform::sidecar`.
+#[cfg(feature = "hardened")]
+#[allow(unused_imports)]
+use segment::segment_header_gen_table;
+// `allow(unused_imports)`: same discipline — these three siblings' ITEMS are
+// consumed via `alloc_core::segment_header::...` paths, never via these
+// module names; the re-exports exist purely to keep the old
+// `alloc_core::segment_header_layout` / `_meta_fields` / `_views` module
+// paths valid (module-path parity with the pre-reorg `mod` declarations).
+#[doc(hidden)]
+pub use segment::remote_free_ring;
+use segment::segment_layout;
+pub(crate) use segment::segment_table;
+#[allow(unused_imports)]
+use segment::{segment_header_layout, segment_header_meta_fields, segment_header_views};
+
+// The ten former flat child modules now live in two group modules — the
+// `platform/` shims+seams and `config/` configuration types — and are
+// re-exported here (at their original visibility/cfg/doc-hidden parity) so
+// every one stays reachable at its existing `alloc_core::<name>` module path.
+pub(crate) use platform::node;
 #[cfg(feature = "numa-aware")]
 #[doc(hidden)]
-pub mod numa;
-pub(crate) mod os;
-/// R30-7 (task #456), reworked R31-9 (task #473): [`Profile`] — a small
-/// builder composing two independent, named, measured configuration axes
-/// ([`profile::SmallPoolPolicy`] for `pool_segments`/`pool_byte_cap`,
-/// [`profile::LargeCachePolicy`] for large-cache `headroom_bytes`), from
-/// this project's own measured gate reports (R27-3/R27-4/R30-6/R31-1/R31-2).
-/// See the module doc for the full rationale and exact numbers.
+pub use platform::numa;
+pub(crate) use platform::os;
+// `allow(unused_imports)`: a `pub(crate) mod` declaration (this file's
+// pre-reorg form) is exempt from the unused-imports lint, but the equivalent
+// module re-export is not — and sidecar's only consumers
+// (`os.rs`'s directory-sidecar reservation, `large_cache_extended.rs`) are
+// both feature-gated, so under plain `alloc-core` the name would otherwise
+// warn. Same allow-with-explanation discipline as the `internals`-off
+// `mod alloc_core` declaration in `lib.rs`.
+#[cfg(feature = "class-aware-dirty")]
+pub(crate) use platform::dirty_by_class;
+#[allow(unused_imports)]
+pub(crate) use platform::sidecar;
+pub(crate) use platform::size_classes;
+// The former flat small-path child modules now live in the `small/` group
+// module and are re-exported here (at their original visibility/cfg parity)
+// so every one stays reachable at its existing `alloc_core::<name>` module
+// path. `allow(unused_imports)` on the private ones: a `mod` declaration
+// (their pre-reorg form) is exempt from the unused-imports lint, but the
+// equivalent module re-export is not — these siblings' ITEMS are consumed as
+// `impl AllocCore` methods (or, for `alloc_core_small`, only under the
+// lazy-commit features; for `alloc_core_small_pool`, via the
+// `bench-internals`-gated snapshot-type re-export below), never via these
+// module names, so the names would otherwise warn in several feature
+// configs. Same allow-with-explanation discipline as `platform::sidecar`.
+#[allow(unused_imports)]
+use small::alloc_core_small;
+#[allow(unused_imports)]
+use small::alloc_core_small_diag;
+#[allow(unused_imports)]
+use small::alloc_core_small_magazine;
 #[cfg(feature = "alloc-decommit")]
-pub mod profile;
-/// The per-segment non-intrusive cross-thread-free MPSC ring. Compiled in
-/// unconditionally so the segment `Layout` (`segment_header::Layout`, which
-/// always reserves the ring's bytes to keep the byte layout uniform across
-/// feature configs) can reference `FOOTPRINT`; the `push`/`drain` methods are
-/// the only `alloc-xthread`-gated surface.
-///
-/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
-/// `#[doc(hidden)]` (see `lib.rs`): the public surface is test-only (the
-/// `#[doc(hidden)] pub` methods on `RemoteFreeRing`), reachable by the
-/// isolated ring unit test. Nothing here is stable public API.
-#[doc(hidden)]
-pub mod remote_free_ring;
-/// R31-4 (task #467): [`ReservedSmallSegment`] — the typed, non-forgeable,
-/// move-consumed handle for the `dbg_decomp_reserve_and_keep`/
-/// `dbg_decomp_release` measurement hook pair. See the module doc for the
-/// full rationale (`docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md`
-/// §5's sketch, implemented here).
+#[allow(unused_imports)]
+use small::alloc_core_small_pool;
+#[allow(unused_imports)]
+use small::alloc_core_small_reclaim;
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-pub mod reserved_small_segment;
-/// The shared per-segment bitmap *mechanism* (the bit-test/set/clear
-/// arithmetic + `FOOTPRINT`) common to [`alloc_bitmap::AllocBitmap`] and
-/// [`magazine_bitmap::MagazineBitmap`]; task #98 / R4-6 dedup of
-/// `code_quality_review.md` finding #7. `pub(crate)` only because
-/// `alloc_core` itself is `#[doc(hidden)]`; the type is `pub(super)` so neither
-/// wrapper nor any other crate code can confuse the two bitmap KINDS at a call
-/// site. Nothing here is stable public API.
-pub(crate) mod segment_bitmap;
-/// R7-A1: per-class `class_nonempty` bitmap sidecar for O(1)
-/// directory-driven segment lookup. Feature-gated behind
-/// `alloc-segment-directory` (experimental, off by default). The module
-/// defines the `SegmentDirectory` struct, the materialisation threshold
-/// constant, and the one-time rebuild routine. Lookup wiring is A3 scope.
-#[cfg(feature = "alloc-segment-directory")]
-pub(crate) mod segment_directory;
-/// The per-segment metadata layout + field-specific header accessors + (X7 Ф1)
-/// the generation-table byte-level accessors. `pub` (not `pub(crate)`) only
-/// because `alloc_core` itself is `#[doc(hidden)]` (see `lib.rs`): the public
-/// surface is test-only (the `#[doc(hidden)] pub` gen-table accessors
-/// `gen_at`/`bump_gen`/`GEN_TABLE_FOOTPRINT`/`Layout::gen_table_off`), reachable
-/// by the isolated gen-table layout test. Nothing here is stable public API.
-#[doc(hidden)]
-pub mod segment_header;
-/// X7 Ф1 (task #189) generation-table byte-level accessors (`gen_at`/
-/// `bump_gen`/`init_gen_table_in_place`) — split out of `segment_header.rs`
-/// (task R6-CQ-7c). Compiled only under `hardened` (every item in the file is
-/// `#[cfg(feature = "hardened")]`), so the module declaration itself is gated
-/// the same way.
-#[cfg(feature = "hardened")]
-mod segment_header_gen_table;
-mod segment_header_layout;
-mod segment_header_meta_fields;
-mod segment_header_views;
-mod segment_layout;
-pub(crate) mod segment_table;
-/// R14-9 (task #294): the owner-only lazily-materialised sidecar primitive
-/// (`reserve`/`deref`/`deref_mut`) shared by `os.rs`'s `SegmentDirectory`
-/// reservation and `large_cache_extended.rs`'s `LargeCacheExtension`
-/// reservation. A named `unsafe` seam (two documented reasons: typed
-/// `ptr::write` init, and the `&'static [mut] T` deref boundary). See the
-/// module doc for why `PerClassDirty` (cross-thread-published via
-/// `OncePtrCell`) is NOT migrated onto this type.
-pub(crate) mod sidecar;
-pub(crate) mod size_classes;
+pub use small::reserved_small_segment;
+// The four former flat large-path child modules now live in the `large/`
+// group module and are re-exported here (at their original visibility/cfg/
+// doc-hidden parity) so every one stays reachable at its existing
+// `alloc_core::<name>` module path.
+// `allow(unused_imports)`: a `mod` declaration (this file's pre-reorg form)
+// is exempt from the unused-imports lint, but the equivalent module
+// re-export is not — nothing in-crate references the module by name (its
+// items are consumed as `impl AllocCore` methods), so under `internals`
+// (where this module is not part of the crate's public surface) the name
+// would otherwise warn. Same allow-with-explanation discipline as
+// `small::alloc_core_small`.
 #[cfg(feature = "alloc-decommit")]
-pub mod small_segment_pool_config;
+pub use config::large_cache_config;
+#[cfg(feature = "alloc-decommit")]
+pub use config::large_cache_mode;
+#[cfg(feature = "alloc-decommit")]
+pub use config::profile;
+#[cfg(feature = "alloc-decommit")]
+pub use config::small_segment_pool_config;
+#[allow(unused_imports)]
+use large::alloc_core_large;
+#[cfg(feature = "alloc-decommit")]
+#[allow(unused_imports)]
+use large::alloc_core_large_cache;
+#[doc(hidden)]
+pub use large::deferred_large;
+#[cfg(feature = "large-cache-extended")]
+pub(crate) use large::large_cache_extended;
 
 pub use alloc_core::AllocCore;
 /// R9-1 test seam (task #221 follow-up): the process-wide Large-path explicit

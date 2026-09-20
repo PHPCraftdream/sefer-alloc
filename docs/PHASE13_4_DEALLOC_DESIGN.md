@@ -6,7 +6,7 @@ and delivers two-list (13.4).
 
 ## 0. Problem (confirmed by counterfactual)
 
-`AllocCore::dealloc_small` (src/alloc_core/alloc_core.rs) on every own-thread
+`AllocCore::dealloc_small` (src/alloc_core/alloc_core/mod.rs) on every own-thread
 free calls `free_list_contains` — **O(free-list length)** walk (M2 double-free
 guard). During the bench deallocation phase (1024 blocks of one class into a
 single segment) the free-list grows 0→1024 → **O(N²)** ≈ 524k dereferences with
@@ -49,7 +49,7 @@ of the segment.
   - `is_free(off: u32) -> bool` — test the bit.
   - `mark_free(off: u32)` — set the bit (called on push to free-list).
   - `mark_alloc(off: u32)` — clear the bit (called on block issuance).
-- File: `src/alloc_core/alloc_bitmap.rs` (single export `AllocBitmap`), like
+- File: `src/alloc_core/segment/bitmap/alloc_bitmap.rs` (single export `AllocBitmap`), like
   PageMap/BinTable. `mod.rs` — reexport only.
 
 ### 1.2 Layout (`segment_header::Layout`)

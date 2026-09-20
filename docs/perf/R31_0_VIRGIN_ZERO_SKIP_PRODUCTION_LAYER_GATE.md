@@ -12,7 +12,7 @@ unaffected and not re-derived here.
 R30-3's judge (`benches/r30_3_virgin_zero_skip_native_gate.rs`) constructs a
 bare `AllocCore` (`AllocCore::new()`) and calls `core.alloc_zeroed(layout)`
 directly — the magazine-BYPASS substrate. A bump-carve there goes through
-`carve_block_with_refill` (`src/alloc_core/alloc_core_small.rs:346`), which
+`carve_block_with_refill` (`src/alloc_core/small/alloc_core_small/mod.rs:346`), which
 carves the caller's block AND proactively refills `REFILL_BATCH = 31` more
 blocks onto the FREE LIST (Phase 9 amortisation, unconditional, not gated on
 `virgin-zero-skip`). Every subsequent same-class `alloc_zeroed` then pops a
@@ -285,7 +285,7 @@ noise: `Touch::None` never faults a page, so in the OFF arm the entire
 measured cost at these sizes is dominated by exactly the work
 `virgin-zero-skip` removes — the unconditional `Node::zero`
 (`core::ptr::write_bytes`) memset over the whole allocation
-(`src/alloc_core/node.rs:135-144`), which itself forces the OS to
+(`src/alloc_core/platform/node.rs:135-144`), which itself forces the OS to
 commit/fault every page it touches. Skip that memset on a genuinely virgin,
 OS-already-zero page range, and there is close to nothing left to measure
 at `notouch` — which is exactly what the data shows.

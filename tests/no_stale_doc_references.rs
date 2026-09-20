@@ -621,7 +621,7 @@ fn parse_production_feature_list(cargo: &str) -> Vec<String> {
 }
 
 /// Derive a Rust module path from a source file path relative to `src/`
-/// (e.g. `src/alloc_core/sidecar.rs` -> `alloc_core::sidecar`). Returns `None`
+/// (e.g. `src/alloc_core/platform/sidecar.rs` -> `alloc_core::sidecar`). Returns `None`
 /// for `mod.rs` / `lib.rs` (crate or parent-module roots, which have no own
 /// path segment and are never themselves a named seam submodule).
 fn file_to_module_path(src: &Path, file: &Path) -> Option<String> {
@@ -1036,7 +1036,7 @@ fn perclass_doc_offsets_match_const_asserts() {
 /// that test file's own `EXPECTED_BYTES` constants, per feature combo. This
 /// test checks the missing link 2 <-> 3: that `EXPECTED_BYTES` also agrees
 /// with (3) the PROSE snapshot numbers in
-/// `src/alloc_core/dirty_by_class.rs`'s "## Sizing and lazy materialisation"
+/// `src/alloc_core/platform/dirty_by_class.rs`'s "## Sizing and lazy materialisation"
 /// module-doc section. Editing that prose to a wrong number left the
 /// existing tripwire green (it never reads the doc comment); this test reads
 /// the doc comment's source text and pins the exact byte-count tokens for
@@ -1061,9 +1061,10 @@ fn dirty_by_class_doc_snapshot_matches_sidecar_tripwire_expected_bytes() {
         manifest
             .join("src")
             .join("alloc_core")
+            .join("platform")
             .join("dirty_by_class.rs"),
     )
-    .expect("read dirty_by_class.rs");
+    .expect("read src/alloc_core/platform/dirty_by_class.rs");
 
     // Must match `dirty_by_class_sidecar_sizing_tripwire.rs`'s
     // `EXPECTED_BYTES` for `#[cfg(not(feature = "medium-classes"))]`.
@@ -1093,7 +1094,7 @@ fn dirty_by_class_doc_snapshot_matches_sidecar_tripwire_expected_bytes() {
         if !text.contains(&needle) {
             offenders.push(format!(
                 "expected token `{needle}` ({label}) not found in \
-                 src/alloc_core/dirty_by_class.rs's \"## Sizing and lazy \
+                 src/alloc_core/platform/dirty_by_class.rs's \"## Sizing and lazy \
                  materialisation\" doc comment"
             ));
         }

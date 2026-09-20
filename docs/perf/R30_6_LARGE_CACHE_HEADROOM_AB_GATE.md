@@ -37,7 +37,7 @@ supported by this data; "drop to 64 MiB" is.
 
 **This task does not change any `src/` default** — measurement only, per
 its own explicit instruction. `DEFAULT_HEADROOM_BYTES` (256 MiB) is
-untouched in `src/alloc_core/large_cache_config.rs`. One `src/` addition was
+untouched in `src/alloc_core/config/large_cache_config.rs`. One `src/` addition was
 needed: a single thin `HeapCore::dbg_large_cache_hits` delegation wrapper
 (exposing the pre-existing `AllocCore::dbg_large_cache_hits` accessor at the
 `HeapCore` level, following the exact established pattern already used by
@@ -291,7 +291,7 @@ process per launch).
 ## 2. Why 64 MiB and 256 MiB are IDENTICAL, and why 0/16 MiB cost exactly 1/8
 
 This gate's 48 MiB/burst workload, read against `run_decay_step`'s
-mechanism (`src/alloc_core/alloc_core_large_cache.rs:366-380`, cited
+mechanism (`src/alloc_core/large/alloc_core_large_cache.rs:366-380`, cited
 verbatim by R29-13 §4): eviction proceeds in WHOLE-SEGMENT units and stops
 the instant `large_cache_used_bytes` would drop to or below the headroom
 target.
@@ -475,7 +475,7 @@ above is a recommendation recorded here, to be enacted (or not) in R30-7.
 | `CHANGELOG.md` | Round 30 section extended with this task's entry (append-only, R30-1 through R30-5 untouched) |
 
 **No production source default changed.** `DEFAULT_HEADROOM_BYTES` (256
-MiB, `src/alloc_core/large_cache_config.rs`) is untouched.
+MiB, `src/alloc_core/config/large_cache_config.rs`) is untouched.
 
 ---
 

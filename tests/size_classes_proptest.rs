@@ -26,7 +26,7 @@
 //!    times — is the exact `SegmentTable`-exhaustion abort #114 fixed for a
 //!    different alignment range. This assertion is the property that would
 //!    fail if `PAGE_ALIGNED_EXTRA` were reverted to empty (see
-//!    `src/alloc_core/size_classes.rs` and
+//!    `src/alloc_core/platform/size_classes.rs` and
 //!    `tests/regression_page_aligned_no_segment_exhaustion.rs` for the
 //!    execution-level counterfactual).
 

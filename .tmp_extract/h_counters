@@ -1,0 +1,10 @@
+//! The bench/diagnostic counter statics of [`AllocCore`] — the 15
+//! always-compiled process-wide statics (`DECOMMIT_CALLS` ..
+//! `PROMOTION_BYTES_HIST`), the `promotion_byte_bucket` histogram-bucket fn,
+//! the `FOREIGN_OR_UNROUTABLE_FREES` stat static, and the
+//! `LargeCacheHitCounter` alias — mechanically split out of the former flat
+//! `alloc_core.rs` body (the face group's 1000-line cap). The definitions are
+//! byte-identical to their pre-split forms; consumers reach them through the
+//! `alloc_core` group re-exports (visibility/cfg parity), so every pre-reorg
+//! `alloc_core::alloc_core::<name>` path stays valid.
+

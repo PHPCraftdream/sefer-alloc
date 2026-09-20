@@ -40,7 +40,7 @@
 //! replacement — R23-6), THIS test has **no clean deterministic counter
 //! replacement**: the guard it protects
 //! (`AllocCore::dealloc_small`'s M2 double-free check, see
-//! `src/alloc_core/alloc_core_small.rs`) is, by design, an UNCONDITIONAL
+//! `src/alloc_core/small/alloc_core_small/`) is, by design, an UNCONDITIONAL
 //! O(1) `AllocBitmap::is_free` bit test with no loop — it does exactly one
 //! bit-test per free regardless of N. A counter that increments once per
 //! `dealloc_small` call would read exactly N after N frees under BOTH the

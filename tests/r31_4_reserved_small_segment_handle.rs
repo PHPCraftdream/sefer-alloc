@@ -3,7 +3,7 @@
 //!
 //! ## What this proves, and how
 //!
-//! `src/alloc_core/reserved_small_segment.rs` retrofits
+//! `src/alloc_core/small/reserved_small_segment.rs` retrofits
 //! `AllocCore::dbg_decomp_reserve_and_keep` / `AllocCore::dbg_decomp_release`
 //! (previously: bare `Option<*mut u8>` out, `unsafe fn(&mut self, base: *mut
 //! u8)` in, guarded only by a `debug_assert!` compiled out in `--release`)
@@ -90,7 +90,7 @@
 //! compiling cleanly, corrupting the wrong heap's pool/directory/
 //! `SegmentTable` state. `AllocCore::dbg_decomp_release` is `unsafe fn`
 //! again as of R31-15 (task #486) — see its doc comment in
-//! `src/alloc_core/alloc_core_small_pool.rs` for the full writeup, and
+//! `src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs` for the full writeup, and
 //! `tests/r31_15_reserved_small_segment_cross_core_release.rs` for that
 //! specific counterfactual. The double-release argument this file makes is
 //! independent of and unaffected by that change — a handle still cannot be

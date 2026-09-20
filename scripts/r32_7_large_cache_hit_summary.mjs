@@ -8,7 +8,7 @@
 // What this measures: replacing `AllocCore::alloc_large`'s large-cache HIT
 // arm's full ~144-byte `SegmentHeader` `Node::write_struct` rewrite with 4
 // targeted field writes (`magic`/`large_size`/`large_align`/`bump`) --
-// `src/alloc_core/alloc_core_large.rs`. The BEFORE log was captured in an
+// `src/alloc_core/large/alloc_core_large.rs`. The BEFORE log was captured in an
 // isolated `git worktree` at commit
 // 2dfeaa30944fb73dedd2365bb90c41ff4c198c5d (this task's base) with ONLY the
 // new bench pair (`large_cache_prefill_only_4mib` / `large_cache_hit_only_4mib`,

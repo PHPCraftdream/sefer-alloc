@@ -16,7 +16,7 @@ the bar the candidates below are measured against.
 
 ## 1. Size-class table + const-built O(1) `SIZE2CLASS` lookup — **extract**
 
-**What / where.** `src/alloc_core/size_classes.rs` (~500 lines, single file).
+**What / where.** `src/alloc_core/platform/size_classes.rs` (~500 lines, single file).
 Three cooperating pieces, all `const`-evaluated:
 
 - `build_table()` — a `const fn` sorted-merge of a 1.25×-geometric progression
@@ -131,7 +131,7 @@ stack.pop(|i| links[i].load()) -> Option<u32>;
 
 ## 3. `Node` — the raw-memory access membrane — **extract only with a repositioned pitch**
 
-**What / where.** `src/alloc_core/node.rs` (~600 lines), the tier-1 `unsafe`
+**What / where.** `src/alloc_core/platform/node.rs` (~600 lines), the tier-1 `unsafe`
 seam: intrusive free-list `write_next`/`read_next` (block's first word IS the
 node), `deref`/`offset` address arithmetic, typed `read_struct`/`write_struct`,
 width-specific aligned/unaligned reads/writes, and — the interesting part —
@@ -179,7 +179,7 @@ carved::atomic_ptr_exposed(addr) -> &'a AtomicPtr<u8>; // provenance-clean share
 
 ## 4. `RemoteFreeRing` — bounded MPSC ring over borrowed memory — **worth it, jointly with the concurrency lane**
 
-**What / where.** `src/alloc_core/remote_free_ring.rs` (~960 lines). A
+**What / where.** `src/alloc_core/segment/remote_free_ring/mod.rs` (~960 lines). A
 Vyukov-style bounded MPSC queue of `u32` payloads whose storage is **not owned**
 — it is a view over caller-provided raw memory (carved from segment metadata),
 with a cache-line-separated layout (consumer cursor / producer cursors /
@@ -225,7 +225,7 @@ ring.drain(|val| ...);                                 // single consumer
 
 ## 5. `SegmentBitmap` / `AllocBitmap` / `MagazineBitmap` — **not worth extracting**
 
-**What / where.** `src/alloc_core/segment_bitmap.rs` (~120 lines, the shared
+**What / where.** `src/alloc_core/segment/bitmap/segment_bitmap.rs` (~120 lines, the shared
 mechanism: one bit per 16 B granule, test/set/clear over a `*mut u8` via the
 `Node` seam) plus two `#[repr(transparent)]` domain newtypes
 (`alloc_bitmap.rs` — the O(1) exact double-free oracle; `magazine_bitmap.rs` —
@@ -241,7 +241,7 @@ supply-chain slot. If `carved-mem` (§3) happens, a `BitView` type belongs
 
 ## 6. `SegmentTable`'s open-addressing hash + slot free-list — **not worth extracting**
 
-`src/alloc_core/segment_table.rs` (~970 lines): linear-probe hash over
+`src/alloc_core/segment/segment_table/mod.rs` (~970 lines): linear-probe hash over
 fixed self-hosted memory with **backward-shift deletion** (no tombstones —
 `hash_remove`, R4-8/N3), a `u32` free-list stack of recyclable slots, and a
 4-entry direct-mapped "proven present" cache. Algorithmically these are nice

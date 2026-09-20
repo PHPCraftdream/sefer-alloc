@@ -639,8 +639,8 @@ perf report --stdio -i /tmp/sefer-p8/p.data -g none \
 | 5.9% | bench worker body (mstress branch) | |
 | 5.7% | `std/sync/mpmc/mod.rs:397` | More channel coordination |
 | ~3-5% | mimalloc internals (`free.c:209`, `alloc.c:120`) | mimalloc-arm cost |
-| **0.23%** | `src/alloc_core/alloc_bitmap.rs:126` (`mark_alloc`/`mark_free`) | **OUR M2 bitmap** |
-| **0.05%** | `src/alloc_core/alloc_bitmap.rs:116` (`locate`) | **Bit-position math** |
+| **0.23%** | `src/alloc_core/segment/bitmap/alloc_bitmap.rs:126` (`mark_alloc`/`mark_free`) | **OUR M2 bitmap** |
+| **0.05%** | `src/alloc_core/segment/bitmap/alloc_bitmap.rs:116` (`locate`) | **Bit-position math** |
 
 **Total Sefer-alloc own-code: < 1% of MT runtime.**
 

@@ -11,7 +11,7 @@ This task tracks finding **F9** in
 tick's `Instant::now()` fast-path exit is a CLIFF keyed on `used >
 headroom`, and the profiles R30-7/R31-9 just shipped are designed to put
 workloads on the wrong side of it"). `AllocCore::maybe_decay_large_cache`
-(`src/alloc_core/alloc_core_large_cache.rs`) has a fast-path guard: if
+(`src/alloc_core/large/alloc_core_large_cache.rs`) has a fast-path guard: if
 `large_cache_used_bytes <= headroom_bytes`, it returns immediately, skipping
 a `std::time::Instant::now()` read (a `QueryPerformanceCounter` syscall on
 Windows). If the cache is ABOVE headroom, the guard falls through and reads
@@ -21,7 +21,7 @@ Large `dealloc` branch).
 
 The survey's concern: two shipped, non-default profiles —
 `LargeCachePolicy::LowHeadroom` (16 MiB headroom) and
-`LargeCachePolicy::Trimmed64MiB` (64 MiB headroom), `src/alloc_core/profile.rs`
+`LargeCachePolicy::Trimmed64MiB` (64 MiB headroom), `src/alloc_core/config/profile.rs`
 — exist SPECIFICALLY to let a heap's working set sit ABOVE its headroom
 during normal operation (that is what makes them RSS-saving vs the 256 MiB
 `Default`). That means both profiles are, by design, on the "guard fails,
@@ -53,7 +53,7 @@ regime" rule (the R30-6/R31-1 postmortem) applies directly.
 
 **Design (a) — hold headroom FIXED, vary only whether the clock read
 executes.** A new `bench-internals`-gated, process-wide switch,
-`FORCE_DECAY_CLOCK_READ` (`AtomicBool`, `src/alloc_core/alloc_core.rs`,
+`FORCE_DECAY_CLOCK_READ` (`AtomicBool`, `src/alloc_core/alloc_core/mod.rs`,
 toggled via `AllocCore::dbg_set_force_decay_clock_read`), makes
 `maybe_decay_large_cache` skip its headroom fast-exit and always proceed to
 the clock read — WITHOUT touching `headroom_bytes`. Two runs at the
@@ -67,7 +67,7 @@ the weaker "report the hit-rate delta as a check" option (b).
 
 **Path-activation oracle (R30-8 rule).** A new `bench-internals`-gated,
 process-wide counter, `MAYBE_DECAY_GUARD_PASSED` (`AtomicU64`,
-`src/alloc_core/alloc_core.rs`), counts calls that passed the fast-exit and
+`src/alloc_core/alloc_core/mod.rs`), counts calls that passed the fast-exit and
 reached the clock read, read via
 `AllocCore::dbg_maybe_decay_guard_passed_count()`. This is the instrument
 that proves each arm actually differed in the intended mechanism, not just
@@ -213,8 +213,8 @@ Per the survey's own recipe (§"What would be needed to capture it", step 2):
 **a cheap monotonic op-counter throttles how often the clock is even
 consulted, once past the headroom fast-exit.**
 
-`src/alloc_core/alloc_core.rs` adds `AllocCore::large_cache_decay_op_count:
-u32` (initialized to 0). `src/alloc_core/alloc_core_large_cache.rs` adds:
+`src/alloc_core/alloc_core/mod.rs` adds `AllocCore::large_cache_decay_op_count:
+u32` (initialized to 0). `src/alloc_core/large/alloc_core_large_cache.rs` adds:
 
 ```text
 const DECAY_CLOCK_CHECK_STRIDE: u32 = 64;
@@ -319,7 +319,7 @@ correctness bug); a future round picks up the root cause from that item.
 
 ## 7. Doc-comment disclosure
 
-`src/alloc_core/profile.rs`'s `LargeCachePolicy::LowHeadroom` and
+`src/alloc_core/config/profile.rs`'s `LargeCachePolicy::LowHeadroom` and
 `::Trimmed64MiB` doc comments now disclose the clock-read cost as an
 additional axis, alongside their pre-existing (R31-9/R31-1-maintained)
 RSS-vs-hit-rate tradeoff documentation, citing this report's measured
@@ -327,16 +327,16 @@ magnitude and the fix that reduces (but does not eliminate) it.
 
 ## 8. Files changed
 
-- `src/alloc_core/alloc_core.rs` — `MAYBE_DECAY_GUARD_PASSED` (path-activation
+- `src/alloc_core/alloc_core/mod.rs` — `MAYBE_DECAY_GUARD_PASSED` (path-activation
   oracle counter), `FORCE_DECAY_CLOCK_READ` (measurement-only override
   switch), both `bench-internals`-gated; `large_cache_decay_op_count: u32`
   field + its `AllocCore::new_with_config` initializer.
-- `src/alloc_core/alloc_core_large_cache.rs` — the fix
+- `src/alloc_core/large/alloc_core_large_cache.rs` — the fix
   (`DECAY_CLOCK_CHECK_STRIDE`, the stride-throttle logic in
   `maybe_decay_large_cache`, the `dbg_force_decay_tick` stride-bypass), plus
   the two new `dbg_*` accessors (`dbg_maybe_decay_guard_passed_count`,
   `dbg_set_force_decay_clock_read`).
-- `src/alloc_core/profile.rs` — doc-comment disclosure on `LowHeadroom` /
+- `src/alloc_core/config/profile.rs` — doc-comment disclosure on `LowHeadroom` /
   `Trimmed64MiB` (see §7).
 - `examples/r32_8_large_cache_decay_clock_read_ab_gate.rs` (new) — Gate 1
   (isolation A/B).

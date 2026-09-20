@@ -13,7 +13,7 @@ file is modified. One throwaway measurement harness
 (`examples/r11_3_promotion_probe.rs`, ~280 lines, a new `[[example]]`
 registration in `Cargo.toml` — the only `Cargo.toml` change, purely additive)
 was added to get honest numbers without touching
-`src/registry/heap_core_free.rs` or `src/alloc_core/alloc_core.rs`. §5 states
+`src/registry/heap_core_free.rs` or `src/alloc_core/alloc_core/mod.rs`. §5 states
 the verdict; §6 gives the staged plan for a future session.
 **Date:** 2026-07-21
 **Base revision:** `main` @ `f0dd9a9` (R10-2 measured the problem this task
@@ -93,7 +93,7 @@ always falls through to the move leg: `HeapCore::alloc(new_layout)`, then
 
 Under `medium-classes` (six exact classes: 256/320/384/512/768/1024 KiB
 appended to the small-class table, `SMALL_MAX` = 1 MiB — confirmed this
-session by re-reading `src/alloc_core/size_classes.rs` lines 96–113, 169),
+session by re-reading `src/alloc_core/platform/size_classes.rs` lines 96–113, 169),
 growing a buffer through the class ladder triggers a SEPARATE
 alloc+copy+dealloc at EVERY class boundary crossed, each copying the ENTIRE
 buffer contents (not just the delta). R10-2 measured this at ~2,111× slower
@@ -114,7 +114,7 @@ class-crossing copies into 1 copy + (N−1) free grows.
 ### 2.1 Why a call-site harness gets honest numbers without touching `src/`
 
 The task's constraint is real and was honored: **no line in
-`src/registry/heap_core_free.rs`, `src/alloc_core/alloc_core.rs`, or any
+`src/registry/heap_core_free.rs`, `src/alloc_core/alloc_core/mod.rs`, or any
 other shipping file was modified.** The harness
 (`examples/r11_3_promotion_probe.rs`) gets honest numbers a different way: it
 does not simulate the allocator — it drives the REAL, unmodified
@@ -213,7 +213,7 @@ for 8 concurrently-live promoted objects) because the cost is driven by
 `LARGE_PROMOTE_KIB` (the padding TARGET) crossing a `SEGMENT` (4 MiB)
 rounding boundary, not by which threshold triggers the promotion. This is
 the real, unmodified `alloc_large` behavior confirmed this session
-(`src/alloc_core/alloc_core_large.rs` lines 87–95: `n_segments =
+(`src/alloc_core/large/alloc_core_large.rs` lines 87–95: `n_segments =
 needed.div_ceil(SEGMENT); let usable = n_segments * SEGMENT`) — a 2 MiB
 request rounds up to exactly one 4 MiB `SEGMENT`. 8 objects × 4 MiB = 32 MiB
 + ~6 MiB process baseline ≈ 38 MiB, which matches the measured

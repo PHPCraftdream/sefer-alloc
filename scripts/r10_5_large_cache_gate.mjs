@@ -25,7 +25,7 @@
 // passed only on these probe binaries' `--features` build lines, exactly the
 // usage `alloc-stats` exists for). The per-hit increment is a single Relaxed
 // load+store on the owning thread (no `lock xadd`; see
-// `src/alloc_core/alloc_core_large.rs` lines 129-157) — negligible against
+// `src/alloc_core/large/alloc_core_large.rs` lines 129-157) — negligible against
 // the us-scale Large-path work, and asymmetric only in that the baseline arm
 // pays it (the treatment arm's small path does not hit the Large cache).
 //

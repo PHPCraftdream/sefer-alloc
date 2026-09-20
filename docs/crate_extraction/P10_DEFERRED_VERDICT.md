@@ -17,7 +17,7 @@ crates, not just the reports:
   `mod mock` with `fail_next_commit`, and `leak_zeroed_pages`. The "second half
   of the vmem unsafe story" framing for `carved-mem` is now testable against a
   real 0.2 baseline.
-- `src/alloc_core/node.rs` atomic views are `pub(crate) fn atomic_uN_at(..) ->
+- `src/alloc_core/platform/node.rs` atomic views are `pub(crate) fn atomic_uN_at(..) ->
   &'static AtomicUN` — the `'static` is documented in-source as a SEAM
   convenience ("NOT mapped-forever"), load-bearing for the safe upper world.
 

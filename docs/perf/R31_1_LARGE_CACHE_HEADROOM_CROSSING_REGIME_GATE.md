@@ -7,7 +7,7 @@ headroom tied at 100.0% hit rate, at a workload labelled "48 MiB/burst,
 2026-07-30 addendum) independently confirmed that workload's ACTUAL rounded
 working set is **64 MiB, not 48 MiB** (`AllocCore::alloc_large` rounds every
 Large allocation's usable span UP to a whole number of 4 MiB `SEGMENT`s —
-`src/alloc_core/alloc_core_large.rs:188-192` — so a 6 MiB object costs a
+`src/alloc_core/large/alloc_core_large.rs:188-192` — so a 6 MiB object costs a
 2-segment, 8 MiB span; 8 objects × 8 MiB = 64 MiB, confirmed directly by
 R30-6's own raw log, whose `burst1_used_max_bytes` column reads `67108864`
 = exactly 64 MiB in every one of its 36 rows [CORRECTED 2026-07-31, see §5:
@@ -78,7 +78,7 @@ start rather than retrofitted).
   SAME harness run (not merely re-cited from a different report), because
   `maybe_decay_large_cache`'s fast-path early-return
   (`large_cache_used_bytes <= headroom_bytes`,
-  `src/alloc_core/alloc_core_large_cache.rs:320-330`) fires unconditionally
+  `src/alloc_core/large/alloc_core_large_cache.rs:320-330`) fires unconditionally
   when occupancy is AT OR BELOW the headroom target — decay never even
   attempts eviction.
 - **Past the boundary (128 MiB or 288 MiB burst, genuinely EXCEEDING the 64
@@ -148,7 +148,7 @@ Every child hard-asserts, before its `RESULT` lines print:
 | `CROSSING_R29_13_34MiB` | 34 MiB | 36 MiB (9 segments) | 8 | 288 MiB |
 
 Rounding arithmetic (verified against `alloc_core_large.rs:127-194`,
-`SEGMENT = 4 MiB` = `1 << 22`, `src/alloc_core/os.rs:65`): `needed =
+`SEGMENT = 4 MiB` = `1 << 22`, `src/alloc_core/platform/os.rs:65`): `needed =
 align_up(size_of::<SegmentHeader>(), PAGE) + align_up(size, align)`, then
 (without the opt-in `exact-span-large` feature, which is NOT part of
 `production` and is NOT enabled by this gate's feature set)
@@ -240,7 +240,7 @@ runs in this gate passed the assertion with no violations.
   see R30-6's 2026-07-30 addendum (task #476) item 5 for the explicit
   statement of that gap.
 - **This report does not change any `src/` default.**
-  `DEFAULT_HEADROOM_BYTES` (256 MiB, `src/alloc_core/large_cache_config.rs`)
+  `DEFAULT_HEADROOM_BYTES` (256 MiB, `src/alloc_core/config/large_cache_config.rs`)
   is untouched. This is measurement only, feeding a FUTURE default-change
   decision that requires separate explicit user sign-off, per this task's
   own instruction.
@@ -261,7 +261,7 @@ runs in this gate passed the assertion with no violations.
 | `CHANGELOG.md` | Round 31 section extended with this task's entry (append-only) |
 
 **No production source default changed.** `DEFAULT_HEADROOM_BYTES` (256
-MiB, `src/alloc_core/large_cache_config.rs`) is untouched.
+MiB, `src/alloc_core/config/large_cache_config.rs`) is untouched.
 
 ---
 

@@ -3,7 +3,7 @@
 //! ## The defect (pre-R13-2)
 //!
 //! `SegmentDirectory::node_ids: [u32; MAX_NODES]` (`MAX_NODES == 8`,
-//! `src/alloc_core/segment_directory.rs`) is an append-only registration
+//! `src/alloc_core/segment/segment_directory/mod.rs`) is an append-only registration
 //! table: `node_bucket_mut` claims the next free slot the first time a node
 //! id is seen, and NEVER releases a slot afterwards — even after every
 //! segment ever attributed to that node goes completely idle (every class of

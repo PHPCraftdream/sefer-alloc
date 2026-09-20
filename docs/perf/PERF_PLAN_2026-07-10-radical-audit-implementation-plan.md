@@ -423,7 +423,7 @@ shifts). Phases 1–5 need no human policy input; 6–8 are gated.
   large-cache modules, `mod.rs` reexports only (repo convention), zero
   behavior change. Deliberately BEFORE Phases 3 and 5, which edit exactly
   these regions — smaller reviewable diffs afterward.
-- **Files:** `src/alloc_core/alloc_core.rs` → several files + `mod.rs`.
+- **Files:** `src/alloc_core/alloc_core/mod.rs` → several files + `mod.rs`.
 - **Impact:** none at runtime (must be provably none).
 - **Risk:** LOW mechanically; one iai re-pin (binary layout shifts ≈ the
   PASS-3 noise-band precedent, every bench moved ≤55 Ir).
@@ -442,7 +442,7 @@ shifts). Phases 1–5 need no human policy input; 6–8 are gated.
   defaults unchanged (4 / 16 MiB). Adaptive cap only if `pool_cap_sweep`
   data motivates it — separate commit, same phase at most.
 - **Files:** `src/alloc_core/` (pool module post-split),
-  `src/alloc_core/segment_header.rs` (link fields — re-run PASS-5 layout
+  `src/alloc_core/segment/segment_header/mod.rs` (link fields — re-run PASS-5 layout
   asserts), `small_segment_pool_config.rs`.
 - **Expected impact:** eliminate the remaining 173/367 decommit calls in
   `working_set_cycle` at 256 B/1024 B when the user raises the cap; PASS-3
@@ -465,7 +465,7 @@ shifts). Phases 1–5 need no human policy input; 6–8 are gated.
   lost; owner drains fallback after rings. Do NOT build the dirty-segment
   queue here (that is Phase 7).
 - **Files:** `src/registry/heap_core.rs` (`:1452/:1458` push sites),
-  `src/alloc_core/remote_free_ring.rs` or a new seam file for the fallback
+  `src/alloc_core/segment/remote_free_ring/mod.rs` or a new seam file for the fallback
   stack, drain sites in `alloc_core`.
 - **Expected impact:** correctness/robustness (unbounded logical leak +
   blocked decommit under fan-in → gone); perf-neutral by design on

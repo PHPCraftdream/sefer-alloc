@@ -91,10 +91,10 @@ inventory is:
   `reserved_capacity` span so a growing realloc commits the missing tail via
   ONE `VirtualAlloc(MEM_COMMIT)` and returns the SAME pointer, no copy.
 - The two constants: `LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 4`
-  (`src/alloc_core/alloc_core_large.rs:89`, raised 2→4 by R14-6/task #291)
+  (`src/alloc_core/large/alloc_core_large.rs:89`, raised 2→4 by R14-6/task #291)
   and `LARGE_RESERVED_CAP_BYTES: usize = 16 * SEGMENT`
-  (`src/alloc_core/alloc_core_large.rs:42`, the cap). Used at
-  `src/alloc_core/alloc_core_large.rs:421-422`.
+  (`src/alloc_core/large/alloc_core_large.rs:42`, the cap). Used at
+  `src/alloc_core/large/alloc_core_large.rs:421-422`.
 - R14-6 (`docs/perf/R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` §0) showed the
   2x→4x change **inverted** the iai `realloc_grow` regression from +102.3%
   Ir to **−22.4% Ir** (treatment now FASTER than baseline) while leaving
@@ -159,15 +159,15 @@ open opt-in question.
 **Runtime-tunable knob (`.budget_bytes(n)`), NOT a separate feature.**
 
 - `pub(crate) const DEFAULT_EXTENDED_BUDGET_BYTES: usize =
-  DEFAULT_HEADROOM_BYTES` (`src/alloc_core/large_cache_config.rs:147`, =
+  DEFAULT_HEADROOM_BYTES` (`src/alloc_core/config/large_cache_config.rs:147`, =
   256 MiB since R17-9/task #326 cut it from the R14-5 5× default of 1280 MiB).
 - This is the FALLBACK applied only when `large-cache-extended` is compiled
   in AND the caller never called `.budget_bytes(..)` — see
-  `resolved_budget_bytes()` at `src/alloc_core/large_cache_config.rs:373`,
+  `resolved_budget_bytes()` at `src/alloc_core/config/large_cache_config.rs:373`,
   which branches `#[cfg(feature = "large-cache-extended")]`.
 - An explicit `.budget_bytes(n)` call (any `n`, including `0` or
   `usize::MAX`) always overrides the default — `LargeCacheConfig::budget_bytes`
-  builder at `src/alloc_core/large_cache_config.rs:278`.
+  builder at `src/alloc_core/config/large_cache_config.rs:278`.
 
 So mechanism 5 is **not an independent toggle**: it is the budget dimension
 of mechanism 3 (`large-cache-extended`). It is, however, the ONE knob in
@@ -415,7 +415,7 @@ honestly, by mechanism.
 
 ### 5.1 What is already runtime-tunable (the precedent)
 
-`LargeCacheConfig` (`src/alloc_core/large_cache_config.rs:177`) is the
+`LargeCacheConfig` (`src/alloc_core/config/large_cache_config.rs:177`) is the
 established runtime-config pattern in this codebase — a `const`-buildable
 builder threaded through `AllocCore::new_with_config` /
 `SeferAlloc::with_config`. Its current knobs (all `alloc-decommit`-gated):
@@ -707,14 +707,14 @@ R10-2 gate actually needs.
 - `src/registry/heap_core_free.rs:75` — `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
 - `src/registry/heap_core_free.rs:854`/`:863` — promotion call site
 - `src/registry/heap_core_free.rs:1074` — `try_promote_to_large`
-- `src/alloc_core/alloc_core_large.rs:42` — `LARGE_RESERVED_CAP_BYTES`
-- `src/alloc_core/alloc_core_large.rs:89` — `LARGE_RESERVED_CAP_GROWTH_FACTOR` (= 4)
-- `src/alloc_core/alloc_core_large.rs:421-422` — growth-factor use site
-- `src/alloc_core/large_cache_config.rs:48` — `DEFAULT_HEADROOM_BYTES` (256 MiB)
-- `src/alloc_core/large_cache_config.rs:147` — `DEFAULT_EXTENDED_BUDGET_BYTES`
-- `src/alloc_core/large_cache_config.rs:177` — `LargeCacheConfig` struct
-- `src/alloc_core/large_cache_config.rs:278` — `.budget_bytes()` builder
-- `src/alloc_core/large_cache_config.rs:373` — `resolved_budget_bytes()`
+- `src/alloc_core/large/alloc_core_large.rs:42` — `LARGE_RESERVED_CAP_BYTES`
+- `src/alloc_core/large/alloc_core_large.rs:89` — `LARGE_RESERVED_CAP_GROWTH_FACTOR` (= 4)
+- `src/alloc_core/large/alloc_core_large.rs:421-422` — growth-factor use site
+- `src/alloc_core/config/large_cache_config.rs:48` — `DEFAULT_HEADROOM_BYTES` (256 MiB)
+- `src/alloc_core/config/large_cache_config.rs:147` — `DEFAULT_EXTENDED_BUDGET_BYTES`
+- `src/alloc_core/config/large_cache_config.rs:177` — `LargeCacheConfig` struct
+- `src/alloc_core/config/large_cache_config.rs:278` — `.budget_bytes()` builder
+- `src/alloc_core/config/large_cache_config.rs:373` — `resolved_budget_bytes()`
 
 **Measurement-methodology precedent (reused, not reinvented):**
 - `docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md` §7.1/§10 — R18-2's

@@ -236,7 +236,7 @@ relocations' extra transient double-booked memory, so the RSS-side benefit
 survives even where the realloc-latency side does not fully recover.
 
 **Why the fix is only partial**, confirmed by direct source read
-(`src/alloc_core/alloc_core_large.rs:381-385`): `reserved_capacity` is a
+(`src/alloc_core/large/alloc_core_large.rs:381-385`): `reserved_capacity` is a
 GEOMETRIC 2× multiple of `usable`, computed and FIXED once at the segment's
 ORIGINAL allocation — it does not grow as the segment grows in place. Chain
 256 KiB→512 KiB→1 MiB→2 MiB→4 MiB: the initial ~256 KiB segment's

@@ -6,7 +6,7 @@
 //! claiming "the class-aware-dirty drain path is compiled out under NUMA
 //! routing" / "`drain_dirty_segments` ... is itself compiled out under
 //! `numa-aware`". Reading `AllocCore::drain_dirty_segments`
-//! (`src/alloc_core/alloc_core_small.rs`) shows its ONLY feature gate is
+//! (`src/alloc_core/small/alloc_core_small/`) shows its ONLY feature gate is
 //! `#[cfg(feature = "alloc-xthread")]` — no `not(numa-aware)` anywhere in the
 //! function. What IS gated on `not(numa-aware)` is `find_segment_with_free_forced`
 //! (the rescue-scan entry point), a different function entirely.

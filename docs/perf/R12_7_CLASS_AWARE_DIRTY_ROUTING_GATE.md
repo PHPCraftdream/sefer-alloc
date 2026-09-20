@@ -162,16 +162,16 @@ counterfactual_partial_drain_loses_other_class_entry`, `#[should_panic]`).
 ### 3.3 Files changed
 
 **`src/` (feature-gated, additive):**
-- `src/alloc_core/dirty_by_class.rs` (new) — `PerClassDirty` sidecar type +
+- `src/alloc_core/platform/dirty_by_class.rs` (new) — `PerClassDirty` sidecar type +
   `ensure_per_class_dirty`/`get_per_class_dirty` resolve functions. A named
   `unsafe` seam (`#![allow(unsafe_code)]`, single documented reason:
   dereferencing the `RacyPtrCell`-published sidecar pointer).
 - `src/alloc_core/mod.rs` — `pub(crate) mod dirty_by_class;` declaration,
   gated `#[cfg(feature = "class-aware-dirty")]`.
-- `src/alloc_core/alloc_core.rs` — `AllocCore::dirty_by_class: Option<&'static
+- `src/alloc_core/alloc_core/mod.rs` — `AllocCore::dirty_by_class: Option<&'static
   RacyPtrCell<PerClassDirty>>` field (mirrors the existing `dirty_segments`
   handle-binding discipline).
-- `src/alloc_core/alloc_core_small.rs` — `drain_dirty_segments` gains the
+- `src/alloc_core/small/alloc_core_small/mod.rs` — `drain_dirty_segments` gains the
   class-scoped scan-source selection (see §3.1); doc comment extended.
 - `src/registry/heap_slot.rs` — `HeapSlotRemote::dirty_by_class:
   RacyPtrCell<PerClassDirty>` field.

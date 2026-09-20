@@ -426,7 +426,7 @@ fn latch_overrides_a_materialised_sidecar() {
 /// `coarse_only_entry_is_recovered_after_latch_trips` and
 /// `latch_overrides_a_materialised_sidecar` are non-vacuous counterfactuals:
 ///
-/// 1. In `src/alloc_core/alloc_core_small.rs`'s `drain_dirty_segments`,
+/// 1. In `src/alloc_core/small/alloc_core_small/`'s `drain_dirty_segments`,
 ///    temporarily replace the `let per_class_words = if coarse_only_latched
 ///    { None } else { .. }` conditional with the pre-R13-1 unconditional
 ///    form (`per_class_words = self.dirty_by_class.and_then(..).map(..)`,

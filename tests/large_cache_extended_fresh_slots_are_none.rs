@@ -1,6 +1,6 @@
 //! R14-1 (task #286) — postcondition test for the explicit typed
 //! initialisation added to `reserve_large_cache_extension`
-//! (`src/alloc_core/large_cache_extended.rs`).
+//! (`src/alloc_core/large/large_cache_extended.rs`).
 //!
 //! ## What this guards
 //!

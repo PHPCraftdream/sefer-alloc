@@ -92,7 +92,7 @@ commit charge, same instant, in bytes).
 
 ### 2.2 Path-activation oracle (R30-8)
 
-Three new process-wide counters (`src/alloc_core/alloc_core.rs`), bumped inside
+Three new process-wide counters (`src/alloc_core/alloc_core/mod.rs`), bumped inside
 the single shared `realloc_inplace_fast_path_known_base` detection function:
 
 | Counter | Increment site | Meaning |

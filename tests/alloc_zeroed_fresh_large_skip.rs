@@ -57,7 +57,7 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
 // size-class table SMALL_MAX ~253 KiB; under the opt-in `medium-classes` feature
 // SMALL_MAX grows to 1 MiB — 2 MiB is Large in BOTH, so this test stays valid
 // under `--all-features` (which enables `medium-classes`). See
-// `src/alloc_core/size_classes.rs`.
+// `src/alloc_core/platform/size_classes.rs`.
 //
 // Under miri, every byte of every full-buffer touch (`write_bytes` /
 // `assert_all_zero`) is interpreted one at a time with shadow-memory

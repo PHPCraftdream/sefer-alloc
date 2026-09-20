@@ -16,8 +16,8 @@ Severity в этом отчёте оценивает достижимость и
 
 **Файлы и строки:**
 
-- `src/alloc_core/alloc_core.rs:2160-2192` — safe `pub fn realloc`; membership проверяется только для in-place fast path, после чего любой указатель попадает в alloc/copy/dealloc move path.
-- `src/alloc_core/node.rs:146-154` — `Node::copy_nonoverlapping` выполняет настоящий `ptr::copy_nonoverlapping`.
+- `src/alloc_core/alloc_core/mem.rs:519-581` — safe `pub fn realloc`; membership проверяется только для in-place fast path, после чего любой указатель попадает в alloc/copy/dealloc move path.
+- `src/alloc_core/platform/node.rs:148-155` — `Node::copy_nonoverlapping` выполняет настоящий `ptr::copy_nonoverlapping`.
 - `src/registry/heap_core.rs:1159-1267` — тот же дефект присутствует в safe `HeapCore::realloc`; foreign path безусловно копирует из `ptr`.
 - `src/lib.rs:169-193` — проект прямо признаёт, что safe membrane-функции полагаются на prose-контракты, нарушение которых из safe-кода приводит к UB.
 - `src/lib.rs:279-280` — `AllocCore` публично реэкспортирован.
@@ -46,10 +46,10 @@ let _ = a.realloc(bogus, old, 16);
 
 **Файлы и строки:**
 
-- `src/alloc_core/alloc_core.rs:658-666` — документация обещает: safe entry point, foreign pointer или double-free — no-op, «never UB, never corrupts».
-- `src/alloc_core/alloc_core.rs:698-894` — membership проверяет только segment base; принадлежность конкретной активной аллокации не проверяется.
-- `src/alloc_core/alloc_core.rs:3910-3966` — small free индексирует bitmap и записывает intrusive `next` в переданный адрес.
-- `src/alloc_core/alloc_core.rs:3914-3933` — block-start/interior-pointer проверка включена только под `hardened`.
+- `src/alloc_core/alloc_core/mem.rs:107-187` — документация обещает: safe entry point, foreign pointer или double-free — no-op, «never UB, never corrupts».
+- `src/alloc_core/alloc_core/mem.rs:188-453` — membership проверяет только segment base; принадлежность конкретной активной аллокации не проверяется.
+- `src/alloc_core/small/alloc_core_small/dealloc.rs:34-136` — small free индексирует bitmap и записывает intrusive `next` в переданный адрес.
+- `src/alloc_core/small/alloc_core_small/dealloc.rs:38-57` — block-start/interior-pointer проверка включена только под `hardened`.
 - `Cargo.toml:186-203` — `hardened` opt-in и не входит в `production`.
 - `tests/regression_hardened_interior_ptr.rs:1-141` — сам проект документирует и тестирует, что без guard interior pointer попадает в magazine/freelist и выдаётся как блок.
 
@@ -81,11 +81,11 @@ assert_eq!(duplicate, live);   // один блок выдан двум логи
 **Файлы и строки:**
 
 - `src/lib.rs:234-242` — весь `alloc_core` сделан `pub`, чтобы integration tests могли достигать test surface; `#[doc(hidden)]` только скрывает документацию и не ограничивает доступ.
-- `src/alloc_core/remote_free_ring.rs:487-510` — safe `over_test_buffer`/`init_test_buffer` принимают произвольный raw pointer с prose-only требованием размера/alignment/lifetime.
-- `src/alloc_core/remote_free_ring.rs:555-565` — `init_test_buffer` в итоге пишет cursors и все slots по переданному адресу.
-- `src/alloc_core/alloc_core.rs:2726-2757` — safe public `flush_class` принимает caller-controlled raw pointers и передаёт их в `flush_run` без проверки `table.contains_base`.
-- `src/alloc_core/alloc_core.rs:2777-2851` — `flush_run` немедленно читает/пишет segment metadata и тела блоков по вычисленному base.
-- `src/alloc_core/segment_header.rs:1402-1446` — публичные safe `gen_at`/`bump_gen` материализуют atomic view по caller-provided base/offset.
+- `src/alloc_core/segment/remote_free_ring/ops.rs:77-112` — safe `over_test_buffer`/`init_test_buffer` принимают произвольный raw pointer с prose-only требованием размера/alignment/lifetime.
+- `src/alloc_core/segment/remote_free_ring/ops.rs:106-112` — `init_test_buffer` в итоге пишет cursors и все slots по переданному адресу.
+- `src/alloc_core/small/alloc_core_small_magazine.rs:491-570` — safe public `flush_class` принимает caller-controlled raw pointers и передаёт их в `flush_run` без проверки `table.contains_base`.
+- `src/alloc_core/small/alloc_core_small_magazine.rs:586-695` — `flush_run` немедленно читает/пишет segment metadata и тела блоков по вычисленному base.
+- `src/alloc_core/segment/segment_header/segment_header_gen_table.rs:55-67`,`98-110` — публичные safe `gen_at`/`bump_gen` материализуют atomic view по caller-provided base/offset.
 
 **Почему это опасно:** `#[doc(hidden)]` не является visibility или safety boundary. Любой downstream crate с соответствующей feature может вызвать эти функции без `unsafe`; неверный адрес приводит к invalid atomic reference, out-of-bounds read/write или metadata corruption. Комментарий «test-only» не делает UB обязанностью safe caller.
 
@@ -109,10 +109,10 @@ RemoteFreeRing::init_test_buffer(1usize as *mut u8);
 - `Cargo.toml:162-163,186-203` — рекомендуемый `production` включает `fastbin`, но не `hardened`.
 - `src/registry/heap_core.rs:963-1003` — residual «re-issue-before-drain» прямо описан в production free path.
 - `src/registry/heap_core.rs:1420-1459` — generation записывается в remote ring entry только под `hardened`.
-- `src/alloc_core/alloc_core.rs:943-1057` — drain/reclaim; без совпадающей generation stale note может выполнить `write_next`, `mark_free` и `dec_live` для нового occupant.
+- `src/alloc_core/small/alloc_core_small_reclaim.rs:95-344` — drain/reclaim; без совпадающей generation stale note может выполнить `write_next`, `mark_free` и `dec_live` для нового occupant.
 - `tests/regression_xthread_double_free_residual.rs:1-69,105-188` — точный deterministic reproducer оставлен `#[ignore]` для non-hardened профилей.
 - `tests/regression_xthread_double_free_residual.rs:367-470` — тот же interleaving проходит с hardened generation check.
-- `src/alloc_core/remote_free_ring.rs:242-246` и `tests/regression_gen_wrap_boundary.rs` — даже hardened использует `u8` generation и принимает residual после 256 reissues.
+- `src/alloc_core/segment/remote_free_ring/mod.rs:580` и `tests/regression_gen_wrap_boundary.rs` — даже hardened использует `u8` generation и принимает residual после 256 reissues.
 
 **Механизм:** remote free кладёт `(offset,class)` в ring, own-thread ошибочно освобождает тот же `P` в magazine, затем allocator повторно выдаёт `P`. Поздний drain считает старую ring note актуальной, пишет freelist link в живой `P`, уничтожая пользовательские байты, и делает `P` повторно выдаваемым. В `hardened` note несёт generation и отбрасывается после reissue; в `production` такой информации нет.
 

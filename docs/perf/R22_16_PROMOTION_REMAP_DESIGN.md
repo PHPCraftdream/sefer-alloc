@@ -58,8 +58,8 @@ of them move an existing mapping's *contents* to a *new address* while
 preserving the *old* address's page-table entries as untouched. This would be
 entirely new FFI surface on both platforms (§2).
 
-Worse, and independent of the FFI gap: `src/alloc_core/segment_header.rs` and
-`src/alloc_core/alloc_core_small.rs`'s carve model (read in full, §3) confirms
+Worse, and independent of the FFI gap: `src/alloc_core/segment/segment_header/mod.rs` and
+`src/alloc_core/small/alloc_core_small/mod.rs`'s carve model (read in full, §3) confirms
 a medium/small **segment is a single 4 MiB OS mapping shared by many blocks of
 possibly different classes**, carved by **one segment-wide bump cursor**
 (`SegmentHeader::bump`) — not "one block, one mapping." A remap primitive
@@ -268,13 +268,13 @@ this asymmetry is itself evidence the mechanism's true cost is higher than
 
 ### 2.1 First claim to verify — a medium/small segment is ONE shared mapping (TRUE, re-confirmed)
 
-`src/alloc_core/segment_header.rs`'s own module doc (lines 19-32) and
+`src/alloc_core/segment/segment_header/mod.rs`'s own module doc (lines 19-32) and
 `PageMap`'s doc (lines 177-191, quoted verbatim by R20-3 §1.1 and
 re-verified here) state this explicitly: a small/medium segment carves from
 **one segment-wide bump cursor** (`SegmentHeader::bump`, `SegmentMeta::
 bump_of`/`set_bump`, `segment_header.rs:1138-1152`) shared across **every**
 size class ever carved from that segment. `carve_block`
-(`src/alloc_core/alloc_core_small.rs:1429-1557`, read in full for this
+(`src/alloc_core/small/alloc_core_small/mod.rs:1429-1557`, read in full for this
 design) does exactly what R20-3 §1.1 already documented:
 
 ```text
@@ -292,7 +292,7 @@ edge case: "under this substrate's shared-bump-cursor model a page is
 mixed-class... `PageMap` is therefore NOT a reliable class oracle." A 256
 KiB medium block and a 64-byte small block routinely sit back-to-back in the
 same segment, sharing the one `mmap`/`VirtualAlloc` mapping that IS the
-segment's single OS reservation (`src/alloc_core/os.rs:65`, `SEGMENT = 1 <<
+segment's single OS reservation (`src/alloc_core/platform/os.rs:65`, `SEGMENT = 1 <<
 22` = 4 MiB — one `Segment::reserve` call, one `aligned_vmem::Reservation`,
 per segment, confirmed by reading `os.rs` in full for this design).
 
@@ -306,7 +306,7 @@ and the carve arithmetic answers this precisely:
 `carve_block`'s `align_up(bump, block_size)` rounds the START of a new carve
 UP to a multiple of the class's OWN `block_size` — **not** up to a page
 boundary, and **not** relative to any OTHER class's block size. For the
-medium ladder (256/320/384/512/768/1024 KiB — `src/alloc_core/size_classes.rs`
+medium ladder (256/320/384/512/768/1024 KiB — `src/alloc_core/platform/size_classes.rs`
 `EXTRAS`, confirmed present at exactly those values in this build), every
 one of those sizes happens to be a multiple of 4 KiB (256 KiB = 65536×4KiB;
 320 KiB = 81920×4KiB; etc. — trivially true since they are all whole
@@ -358,7 +358,7 @@ condition for remapping it independently. Both `mremap` and Windows'
 placeholder mechanism (§1.2/§1.3) operate on ranges *carved out of an
 existing OS-level mapping* — and the OS-level mapping here is the **whole 4
 MiB segment**, one single `mmap`/`VirtualAlloc` call
-(`src/alloc_core/os.rs`'s `Segment::reserve`, thin wrapper over
+(`src/alloc_core/platform/os.rs`'s `Segment::reserve`, thin wrapper over
 `aligned_vmem::reserve_aligned`). Neither primitive has any concept of "this
 byte range within my VMA is objectA, that one is objectB" — that
 distinction exists ONLY in this crate's own `SegmentHeader`/`BinTable`/bump
@@ -414,7 +414,7 @@ blocker, not a restatement of it.
 
 ### 3.1 `segment_base_of` is a pure bitmask of the POINTER'S OWN address
 
-`src/alloc_core/os.rs:95-123`, read in full: `segment_base_of(addr) = addr &
+`src/alloc_core/platform/os.rs:95-123`, read in full: `segment_base_of(addr) = addr &
 !(SEGMENT - 1)` and `segment_base_of_ptr` is the pointer-preserving
 equivalent (`ptr.map_addr(|a| a & !(SEGMENT - 1))`). This is not a lookup —
 it is arithmetic performed directly on whatever address the caller currently
@@ -431,7 +431,7 @@ OTHER live segment there if the VA range got reused).
 
 ### 3.2 `SegmentTable` stores and hashes on that exact base pointer
 
-`src/alloc_core/segment_table.rs` (read in full for this design): the
+`src/alloc_core/segment/segment_table/mod.rs` (read in full for this design): the
 registry is "a fixed-capacity array of segment-base pointers" (module doc,
 lines 1-30) plus an open-addressing hash table (`hash_slots`, OPT-B, lines
 144-150) whose **key IS the segment base pointer itself** — `contains_base`/
@@ -524,7 +524,7 @@ Give a promotable medium object its OWN page-aligned VA region from carve
 time — structurally the SAME thing `SegmentKind::Large`
 (`segment_header.rs:156-158`, "holds ONE allocation of arbitrary size/align.
 No page map") already does, and the same thing `AllocCore::alloc_large`
-(`src/alloc_core/alloc_core_large.rs:127`, read for this design) already
+(`src/alloc_core/large/alloc_core_large.rs:127`, read for this design) already
 implements: **Large is already a "one object owns its whole reservation"
 model.** A MediumExtent kind would be, structurally, "Large but for objects
 in the 256 KiB–1 MiB range that MIGHT grow past the promotion threshold" —
@@ -783,25 +783,25 @@ open question the way §5.1's is for 4a.
   (789-1013, `VirtualAlloc`/`VirtualFree`/`GetSystemInfo` only — no
   `VirtualAlloc2`/`MapViewOfFile3`), Unix raw FFI (1019-1313, `mmap`/
   `munmap`/`madvise`/`sysconf` only — no `mremap`).
-- `src/alloc_core/os.rs` — read in full. `SEGMENT = 1 << 22` (line 65,
+- `src/alloc_core/platform/os.rs` — read in full. `SEGMENT = 1 << 22` (line 65,
   4 MiB), `segment_base_of`/`segment_base_of_ptr` (95-123, the pure
   address-bitmask identity function §3.1's argument rests on).
-- `src/alloc_core/segment_header.rs` — read the module doc (1-37),
+- `src/alloc_core/segment/segment_header/mod.rs` — read the module doc (1-37),
   `SegmentKind` (144-175, confirms `Large` is already one-object-per-
   segment — §4a's precedent), `PageMap`'s "mixed-class"/"NOT a reliable
   class oracle" doc (177-191), `BinTable` (992-1069), `SegmentMeta`/
   `bump_of`/`set_bump` (1084-1152, the owner-only single-writer bump
   cursor §2.1/§3.3 point 3 both depend on).
-- `src/alloc_core/alloc_core_small.rs:1419-1557` — `carve_block`, read in
+- `src/alloc_core/small/alloc_core_small/mod.rs:1419-1557` — `carve_block`, read in
   full. The exact `align_up(bump, block_size)` arithmetic §2.2's
   page-alignment finding is derived from.
-- `src/alloc_core/alloc_core_large.rs:127-` — `alloc_large`, read for §4a's
+- `src/alloc_core/large/alloc_core_large.rs:127-` — `alloc_large`, read for §4a's
   "Large is already one-object-per-segment" precedent.
-- `src/alloc_core/segment_table.rs` — read the module doc and struct
+- `src/alloc_core/segment/segment_table/mod.rs` — read the module doc and struct
   definition (1-161) in full. Confirms the base-pointer-keyed hash table
   (`hash_slots`, `contains_base`/`contains_base_ro` at lines 455/475) §3.2's
   argument rests on.
-- `src/alloc_core/size_classes.rs` — `EXTRAS` (grepped, confirms
+- `src/alloc_core/platform/size_classes.rs` — `EXTRAS` (grepped, confirms
   256/320/384/512/768/1024 KiB medium ladder, matching R20-3 §5.2's own
   citation).
 - `src/registry/heap_core_free.rs` — `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
@@ -847,7 +847,7 @@ re-trusting the original document's description, and not trusting the task
 prompt's description either — both were checked against the file as it
 stands today):
 
-1. **`carve_block`** (`src/alloc_core/alloc_core_small.rs:1429-1557`): reads
+1. **`carve_block`** (`src/alloc_core/small/alloc_core_small/mod.rs:1429-1557`): reads
    `bump = meta.bump_of()` (line 1438), computes
    `aligned_bump = align_up(bump, block_size)` (line 1439), bails with
    `None` if `aligned_bump + block_size > SEGMENT` (line 1440-1442),
@@ -856,7 +856,7 @@ stands today):
    carved range starts at or after the bump position that existed
    immediately before the carve, and the bump only ever moves forward by
    this call.
-2. **`carve_batch`** (`src/alloc_core/alloc_core_small.rs:1608-` , the
+2. **`carve_batch`** (`src/alloc_core/small/alloc_core_small/mod.rs:1608-` , the
    batched sibling): identical shape — `bump = meta.bump_of()` (line 1619),
    `aligned_start = align_up(bump, block_size)` (line 1620), same
    `> SEGMENT` bail (line 1621), and the batch's own close,
@@ -866,7 +866,7 @@ stands today):
 3. **Every call site of `set_bump` in the whole crate** was enumerated
    (`grep -rn "set_bump" src/`): the only two are the two above (forward,
    monotonic) and exactly one other pair, both inside
-   **`decommit_empty_segment_impl`** (`src/alloc_core/alloc_core_small_pool.rs:751`
+   **`decommit_empty_segment_impl`** (`src/alloc_core/small/alloc_core_small_pool/mod.rs:751`
    and `:812`), both `meta.set_bump(payload_start)` — a backward reset to
    the segment's payload start. There is no fourth call site anywhere in
    `src/`.
@@ -924,9 +924,9 @@ functions this correction's argument rests on).
 ### 10.2 §3's whole-segment base-address-stability blocker — UNAFFECTED, still real
 
 §3.1-3.3's argument does not depend on §2.4 at all, and this correction does
-not touch it. `segment_base_of_ptr` (`src/alloc_core/os.rs:95-123`) is a pure
+not touch it. `segment_base_of_ptr` (`src/alloc_core/platform/os.rs:95-123`) is a pure
 bitmask of the pointer's own address with no indirection layer; `SegmentTable`
-(`src/alloc_core/segment_table.rs`) hashes on that exact base pointer as its
+(`src/alloc_core/segment/segment_table/mod.rs`) hashes on that exact base pointer as its
 membership key; and `AllocCore::small_cur` caches a segment base directly for
 the owner's fast carve path. Moving a segment's OWN base address would still
 invalidate every other live pointer sharing it (§3.3, points 1-3) — none of
@@ -952,11 +952,11 @@ baseline any remap design must change relative to:
   bytes, then **`self.dealloc(ptr, old_layout)`** on the OLD block (line
   1338-1341) — an entirely ordinary free through the normal `dealloc_small`
   path. That path pushes the freed offset onto its size class's
-  `BinTable` free list (`src/alloc_core/segment_header.rs:999-1069`,
+  `BinTable` free list (`src/alloc_core/segment/segment_header/mod.rs:999-1069`,
   `BinTable::set_head`).
 - Confirmed medium classes participate in this SAME `BinTable` indexing:
   `SMALL_CLASS_COUNT = SIZE_CLASS_TABLE.len() = GEO_COUNT + EXTRAS.len()`
-  (`src/alloc_core/size_classes.rs:138,165`), and `EXTRAS` under
+  (`src/alloc_core/platform/size_classes.rs:138,165`), and `EXTRAS` under
   `medium-classes` IS the six-class medium ladder (256 KiB-1 MiB,
   `size_classes.rs:95-111`) — there is no separate free-list mechanism for
   medium; it is the same per-class `BinTable` head/offset scheme small

@@ -653,7 +653,7 @@ impl SeferAlloc {
     /// ring drain on a KNOWN cadence (e.g. `examples/r32_11_remote_ring_shadow_head_gate.rs`'s
     /// favorable-regime owner thread, which must keep `RemoteFreeRing::push`'s
     /// target ring far from capacity so the shadow-head fast path — F10,
-    /// `src/alloc_core/remote_free_ring.rs` — is the mechanism actually under
+    /// `src/alloc_core/segment/remote_free_ring/` — is the mechanism actually under
     /// measurement, not an accident of allocation-pattern side effects) needs
     /// a direct hook, not a hoped-for side effect. Mirrors
     /// [`dbg_trim_current_thread`](Self::dbg_trim_current_thread)'s exact

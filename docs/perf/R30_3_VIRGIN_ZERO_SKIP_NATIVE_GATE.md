@@ -13,7 +13,7 @@ thousands of times per sample, so from the second call onward every
 `alloc_zeroed` pops a RECYCLED block off the free list instead of exercising
 the bump-carve path `virgin-zero-skip` gates. Confirmed by this task by
 tracing `alloc_small_with_virgin`'s dispatch order
-(`src/alloc_core/alloc_core_small.rs:274-297`: step 1 checks the free list
+(`src/alloc_core/small/alloc_core_small/mod.rs:274-297`: step 1 checks the free list
 first, step 3 is the bump-carve). That bench file's own source is
 structurally unchanged since R29-16's follow-up commit `68e2019` (which
 withdrew the conclusion, task marked correction-only, did not redesign the
@@ -117,11 +117,11 @@ Source: the readonly review's §3, reproduced point by point.
    this point required (`VIRGIN_BATCH = 1`, not the originally planned 16).
 4. **A path-activation oracle.** Met using an EXISTING counter, no new hook
    needed: `AllocCore::dbg_small_zero_pass_count()`
-   (`src/alloc_core/alloc_core_core_diag.rs:516`, gated `alloc-stats`)
+   (`src/alloc_core/alloc_core/alloc_core_core_diag/:516`, gated `alloc-stats`)
    already counts, process-wide, every Small `alloc_zeroed` call that took
    the explicit-`Node::zero` (non-virgin) path — bumped in exactly the
    branch `virgin-zero-skip` bypasses
-   (`src/alloc_core/alloc_core.rs:1310-1319`,
+   (`src/alloc_core/alloc_core/mod.rs:1310-1319`,
    `src/registry/heap_core_alloc.rs:546-584`). Reading it before/after a
    batch gives the exact count of non-intended-path calls. **This oracle
    caught a real design bug during development of this very bench** — see
@@ -164,7 +164,7 @@ report was written; the file says so explicitly at its own header.)
 
 Root cause, traced in source: `alloc_small_with_virgin`'s bump-carve path
 (step 3) calls `carve_block_with_refill`
-(`src/alloc_core/alloc_core_small.rs:346-376`), which carves the caller's
+(`src/alloc_core/small/alloc_core_small/mod.rs:346-376`), which carves the caller's
 block AND ALSO proactively carves `REFILL_BATCH = 31` more blocks of the
 SAME class and pushes every one onto the free list (Phase 9 amortisation,
 unconditional — not gated on `virgin-zero-skip`, exists purely to amortise
@@ -172,7 +172,7 @@ carve overhead across a churn workload). The next 31 `alloc_zeroed` calls of
 the same class all hit `alloc_small_with_virgin` step 1 (free-list pop) —
 and ANY free-list pop is `is_virgin = false` by the dispatch conjunct
 (`alloc_small_with_virgin`'s own doc,
-`src/alloc_core/alloc_core_small.rs:255-263`), **even though those 31
+`src/alloc_core/small/alloc_core_small/mod.rs:255-263`), **even though those 31
 refilled blocks are still OS-fresh/zero-filled and were never handed to any
 caller or dirtied by anything**. So any `VIRGIN_BATCH > 1` on a single
 class/heap structurally caps virgin-path activation at `1 / (1 + 31) ≈
@@ -205,7 +205,7 @@ rest paying the explicit-zero path regardless of the feature flag.
 
 **When `virgin-zero-skip` is OFF, `SMALL_ZERO_PASS_CALLS` is never
 incremented at all**, for either scenario — confirmed directly in source
-(`src/alloc_core/alloc_core.rs:1305-1327`): the `#[cfg(not(feature =
+(`src/alloc_core/alloc_core/mod.rs:1305-1327`): the `#[cfg(not(feature =
 "virgin-zero-skip"))]` arm always calls `Node::zero` unconditionally but
 never touches the counter (the increment site lives entirely inside the
 `#[cfg(feature = "virgin-zero-skip")]` branch, both in `AllocCore`'s own

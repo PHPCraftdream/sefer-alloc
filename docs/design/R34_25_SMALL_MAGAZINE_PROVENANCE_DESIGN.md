@@ -73,7 +73,7 @@ return issued;
 ```
 
 `(a)` re-derives the SEGMENT-aligned base from the just-popped pointer
-(`ptr.map_addr(|a| a & !(SEGMENT - 1))`, a single AND — `src/alloc_core/os.rs:121`).
+(`ptr.map_addr(|a| a & !(SEGMENT - 1))`, a single AND — `src/alloc_core/platform/os.rs:121`).
 `(b)` computes the segment-relative offset. `(c)` constructs a `MagazineBitmap`
 view over the segment header's residency bitmap (`SegmentMeta::new(base)` just
 stores `base`; `.magazine_bitmap()` is `MagazineBitmap::new(base +
@@ -87,7 +87,7 @@ byte load + AND-with-`!mask` + store — `segment_bitmap.rs:102`).
 `MagazineBitmap` (RAD-5, GO) is the **only window `AllocCore` has into magazine
 state**. `AllocCore` (the single-threaded substrate) has no magazine concept;
 its cross-thread free-drain path `reclaim_offset_checked`
-(`src/alloc_core/alloc_core_small_reclaim.rs:68`) consults `is_in_magazine(off)`
+(`src/alloc_core/small/alloc_core_small_reclaim.rs:68`) consults `is_in_magazine(off)`
 (line 145) to decide whether a remote-free note is the duplicate leg of a
 cross-thread double-free. The own-thread free path
 (`dealloc_own_thread_with_base`, `src/registry/heap_core_free.rs`) consults the

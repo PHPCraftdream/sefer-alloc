@@ -76,7 +76,7 @@ safe to call even if `base` is unmapped (a released/decommitted segment) —
 this is exactly the guarantee a header-first replacement would have to
 reproduce (see §2.2).
 
-### 1.2 `SegmentTable::contains_base` (`src/alloc_core/segment_table.rs:455-468`)
+### 1.2 `SegmentTable::contains_base` (`src/alloc_core/segment/segment_table/mod.rs:455-468`)
 
 ```text
 pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
@@ -356,7 +356,7 @@ instruction not to commit).
   called unconditionally, first, before any other work, exactly as the task
   described.
 - **Read `SegmentTable::contains_base`/`contains_base_ro` in full**
-  (`src/alloc_core/segment_table.rs:429-489`), PLUS `hash_contains`
+  (`src/alloc_core/segment/segment_table/mod.rs:429-489`), PLUS `hash_contains`
   (`:839-861`), `hash_insert`/`hash_remove` (`:688-784`) for the actual probe
   mechanics — confirmed it is a two-tier check (4-entry direct-mapped
   own-segment cache, THEN an open-addressing linear probe over an

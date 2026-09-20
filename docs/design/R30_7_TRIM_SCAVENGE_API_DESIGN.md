@@ -31,8 +31,8 @@ NOT claim, and a recommendation that may be "not yet" rather than a rubber
 stamp.
 
 **Date:** 2026-07-30. **Base revision analyzed:** `main` @ `97c2f07` (R30-6
-landed) + this task's own uncommitted profile additions (`src/alloc_core/profile.rs`,
-`src/alloc_core/large_cache_config.rs`, `src/global/sefer_alloc.rs`).
+landed) + this task's own uncommitted profile additions (`src/alloc_core/config/profile.rs`,
+`src/alloc_core/config/large_cache_config.rs`, `src/global/sefer_alloc.rs`).
 Line numbers cited below are current as of that tree.
 
 ---
@@ -78,12 +78,12 @@ shape:
 
 | mechanism | fires on | idle behavior (measured) |
 |---|---|---|
-| small-pool decay (`maybe_decay_small_pool`, `src/alloc_core/alloc_core_small_pool.rs:516`) | `reserve_small_segment` cold path only | flat across a 2 s idle window — [`R27_3`](../perf/R27_3_POOL_RETENTION_GATE.md) §3, exact, not noisy |
-| large-cache decay (`maybe_decay_large_cache`, `src/alloc_core/alloc_core_large_cache.rs:320-356`) | large alloc/dealloc slow path only | flat across a 2 s idle window at EVERY headroom arm, 36/36 cells — [`R29_13`](../perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0, "not one byte was reclaimed" |
+| small-pool decay (`maybe_decay_small_pool`, `src/alloc_core/small/alloc_core_small_pool/mod.rs:516`) | `reserve_small_segment` cold path only | flat across a 2 s idle window — [`R27_3`](../perf/R27_3_POOL_RETENTION_GATE.md) §3, exact, not noisy |
+| large-cache decay (`maybe_decay_large_cache`, `src/alloc_core/large/alloc_core_large_cache.rs:320-356`) | large alloc/dealloc slow path only | flat across a 2 s idle window at EVERY headroom arm, 36/36 cells — [`R29_13`](../perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0, "not one byte was reclaimed" |
 
 Both reports independently established the SAME fact through DIFFERENT
 mechanisms: **"no background thread" (this project's repeated, documented
-design choice — `src/alloc_core/alloc_core.rs:135`, `large_cache_config.rs:330`,
+design choice — `src/alloc_core/alloc_core/mod.rs:135`, `large_cache_config.rs:330`,
 `large_cache_mode.rs:14`) means retention only shrinks in response to
 allocation TRAFFIC, and idle produces no traffic.**
 
@@ -289,7 +289,7 @@ logic" as a possible starting point, since it already does forced
 convergence for measurement purposes. This was evaluated and NOT chosen as
 the primitive this proposal wraps, for a concrete reason:
 
-`dbg_force_decay_tick` (`src/alloc_core/alloc_core_large_cache.rs:435-447`)
+`dbg_force_decay_tick` (`src/alloc_core/large/alloc_core_large_cache.rs:435-447`)
 performs exactly ONE decay step (10% of the excess-over-headroom, at the
 default decay rate) per call — R29-13 §1.6 documents that reaching a fixed
 point with it requires LOOPING the call until the cache stops shrinking
@@ -388,7 +388,7 @@ and cache from scratch, subject to the SAME headroom/cap policy as before —
 `trim_for_recycle` behaves today at thread-exit (the config is a
 per-`AllocCore`, set-once-at-materialization field, untouched by any drain
 operation — R27-5 §2.3 already established this for `pool_cap` specifically,
-citing `src/alloc_core/alloc_core.rs:836-839`).
+citing `src/alloc_core/alloc_core/mod.rs:836-839`).
 
 ---
 

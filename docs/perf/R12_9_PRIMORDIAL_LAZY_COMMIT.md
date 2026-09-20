@@ -2,7 +2,7 @@
 # `small-segment-lazy-commit`; measure the primordial-only policy in isolation
 
 **Task:** #260 (P1). `alloc-lazy-commit` already existed
-(`src/alloc_core/bootstrap.rs`, `src/alloc_core/os.rs`) and gave a first-heap
+(`src/alloc_core/alloc_core/bootstrap.rs`, `src/alloc_core/platform/os.rs`) and gave a first-heap
 commit win at bootstrap (~5.1x smaller), but it was one feature flag
 controlling TWO distinct reservation call sites: the one-time primordial
 segment AND every ordinary small-segment reservation. The small-segment leg
@@ -39,12 +39,12 @@ shared frontier mechanism:
 - The `committed_payload_end` field on `SegmentHeader` (present in every
   build's layout, read/written only when either sub-feature is on).
 - B2 grow-on-carve in `carve_block`/`carve_batch`
-  (`src/alloc_core/alloc_core_small.rs`) — generic over `SegmentKind::Small |
+  (`src/alloc_core/small/alloc_core_small/mod.rs`) — generic over `SegmentKind::Small |
   SegmentKind::Primordial`, reading/writing `committed_payload_end` the same
   way regardless of which policy caused the segment's initial reservation to
   be partial.
 - B3 decommit-aware reuse in `decommit_empty_segment_impl`
-  (`src/alloc_core/alloc_core_small_pool.rs`) — reachable ONLY for `Small`
+  (`src/alloc_core/small/alloc_core_small_pool/mod.rs`) — reachable ONLY for `Small`
   segments (see §2), so gated on `small-segment-lazy-commit` specifically.
 - Every `dbg_*` diagnostic in `alloc_core_small_diag.rs`
   (`dbg_committed_payload_end_for`, `dbg_grow_commit_count`,
@@ -79,7 +79,7 @@ their own policy is off), not just conditionally when their own policy is on.
 
 Verified in source, not asserted: `AllocCore::dec_live_and_maybe_decommit`
 and `dec_live_batch_and_maybe_decommit`
-(`src/alloc_core/alloc_core_small_pool.rs`) are the ONLY entry points that
+(`src/alloc_core/small/alloc_core_small_pool/mod.rs`) are the ONLY entry points that
 route an emptied segment into `release_or_pool_empty_segment` (pool
 admission) or a release. Both hard-gate:
 

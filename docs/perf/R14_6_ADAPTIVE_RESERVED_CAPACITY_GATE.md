@@ -20,7 +20,7 @@ for the deterministic iai judge — the same dual-platform setup R13-6 used.
 **Both features remain opt-in.** `Cargo.toml`'s `production = [...]` is
 UNCHANGED by this task — `exact-span-large` and `large-reserved-capacity`
 still do not appear there. The only `src/` change is the value of one
-constant (`LARGE_RESERVED_CAP_GROWTH_FACTOR`, `src/alloc_core/alloc_core_large.rs`),
+constant (`LARGE_RESERVED_CAP_GROWTH_FACTOR`, `src/alloc_core/large/alloc_core_large.rs`),
 2 → 4, plus doc updates explaining why. Whether this pair is promoted into
 `production` is explicitly left to the user/orchestrator, per this task's own
 brief — this document is measurement + a data-driven constant change, not a
@@ -97,7 +97,7 @@ same writeup in-repo.
 ### 1.2 Why the RSS axis is untouched by this change
 
 `Segment::reserve_capacity_exact(reserved_len, initial_commit)`
-(`src/alloc_core/os.rs`) calls `aligned_vmem::reserve_aligned_lazy(reserved_len,
+(`src/alloc_core/platform/os.rs`) calls `aligned_vmem::reserve_aligned_lazy(reserved_len,
 SEGMENT, initial_commit)`, which reserves `reserved_len` bytes of VA but
 commits only `initial_commit` (== `usable`) bytes — the rest stays
 reserved-but-uncommitted (Windows lazy-commit backend; eager elsewhere, see
@@ -356,9 +356,9 @@ instruction; `Cargo.toml` was not touched.
   exact-hit-rate baseline/treatment, first-heap-commit baseline (5 samples)
   + treatment (5 samples).
 - This document.
-- `src/alloc_core/alloc_core_large.rs`: `LARGE_RESERVED_CAP_GROWTH_FACTOR`
+- `src/alloc_core/large/alloc_core_large.rs`: `LARGE_RESERVED_CAP_GROWTH_FACTOR`
   2 → 4, with an expanded doc comment carrying §1's data table in-repo.
-- `src/alloc_core/segment_header.rs`: `reserved_capacity` field doc updated
+- `src/alloc_core/segment/segment_header/mod.rs`: `reserved_capacity` field doc updated
   to reference the new factor.
 - `Cargo.toml`: `large-reserved-capacity` feature doc comment updated (2x →
   4x mention); the feature LIST itself (`production = [...]`) is untouched.

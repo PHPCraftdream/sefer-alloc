@@ -1,0 +1,38 @@
+//! [`AllocCore`] — the single-threaded allocator over the self-hosted segment
+//! substrate (Phase 8, `alloc-core` feature).
+//!
+//! This is the **Cartographer** of the segment substrate: all placement logic
+//! (which size class, which page, free-list pop/push, large/huge routing) is
+//! **pure safe integer arithmetic** over segment-relative offsets and
+//! size-class indices. Every raw memory touch is delegated to the [`node`](node)
+//! seam; every OS reservation to the [`os`](os) seam. `AllocCore` itself
+//! contains NO `unsafe` and NO `Vec`/`Box`/`HashSet`/`std::alloc` — the alloc
+//! path is therefore **reentrancy-free (M5)**: it cannot recurse into the
+//! global allocator because it allocates no metadata through it.
+//!
+//! ## API
+//!
+//! - [`AllocCore::new`] — bootstrap the primordial segment (the ONLY place
+//!   that hand-carves self-hosted metadata; see [`bootstrap`]).
+//! - [`alloc`](AllocCore::alloc) / [`dealloc`](AllocCore::dealloc) /
+//!   [`realloc`](AllocCore::realloc) / [`alloc_zeroed`](AllocCore::alloc_zeroed)
+//!   — the single-threaded allocator entry points. `alloc`/`alloc_zeroed`
+//!   are **safe** `pub fn`s; `dealloc`/`realloc` are **`unsafe fn`s** (R6-MS-1/2)
+//!   carrying a `# Safety` contract that mirrors `GlobalAlloc`'s — a
+//!   well-behaved caller passes a valid prior pointer/layout (verify with
+//!   `grep -n "pub unsafe fn dealloc\|pub unsafe fn realloc" src/alloc_core/alloc_core.rs`).
+//!   The crate's former posture was a safe `pub fn` with a defensive **M2
+//!   contract at runtime** (a foreign or already-freed pointer degraded to a
+//!   no-op); that was reversed after the round5 `memory_safety_review` produced
+//!   concrete safe-Rust counterexamples proving the defensive checks
+//!   insufficient — see [`dealloc`](AllocCore::dealloc)'s `# Safety` section
+//!   for the full rationale and exploit catalogue, and `CHANGELOG.md`
+//!   (R6-MS-1/2) for the migration. The M2 defensive paths are RETAINED as
+//!   defence-in-depth. None of the entry points panic or recurse.
+//!
+//! ## Single-threaded
+//!
+//! Phase 8 is single-threaded (correctness before concurrency — §5 P8).
+//! Per-thread heaps + lock-free cross-thread free are Phase 9/10. `AllocCore`
+//! is `Send` (it owns its segments, which are `Send`) but NOT `Sync`.
+

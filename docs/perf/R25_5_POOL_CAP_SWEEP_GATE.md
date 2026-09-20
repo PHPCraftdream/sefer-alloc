@@ -206,7 +206,7 @@ The raw log and the probe's own printed `NOTE:` line make this explicit.
   task, not an iai/Callgrind-judged one; no deterministic instruction-count
   judge applies here (there is no meaningful "instruction count" for a
   wall-clock RSS sweep).
-- **`src/alloc_core/small_segment_pool_config.rs` untouched** — per the
+- **`src/alloc_core/config/small_segment_pool_config.rs` untouched** — per the
   task's explicit, non-negotiable constraint, no default was changed.
 
 ---
@@ -333,7 +333,7 @@ specific numbers do not exhibit that tension.
 both are no-op relative to 8 for every axis and workload this task measured),
 **flagged as a candidate for a future default raise, not decided here** per
 the task's explicit instruction. `DEFAULT_POOL_SEGMENTS` in
-`src/alloc_core/small_segment_pool_config.rs` remains `4`, unmodified by this
+`src/alloc_core/config/small_segment_pool_config.rs` remains `4`, unmodified by this
 task.
 
 **What this recommendation does NOT establish** (explicitly out of scope,
@@ -474,7 +474,7 @@ process isolation before any RSS claim can be made.
   **task #418 (R26-9)**, conditional on #410.
 
 `DEFAULT_POOL_SEGMENTS` in
-`src/alloc_core/small_segment_pool_config.rs` remains `4`, unchanged.
+`src/alloc_core/config/small_segment_pool_config.rs` remains `4`, unchanged.
 
 ---
 
@@ -483,9 +483,9 @@ process isolation before any RSS claim can be made.
 §5's "candidate for a future default raise" phrasing (and §1's abstract) could
 be read as "raise `DEFAULT_POOL_SEGMENTS` to 8" — a one-knob edit that is a
 literal NO-OP. The effective pool cap resolves as
-`min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core.rs:837-839`);
+`min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core/mod.rs:837-839`);
 with the current `DEFAULT_POOL_BYTE_CAP = 16 MiB`
-(`src/alloc_core/small_segment_pool_config.rs:117`, `SEGMENT = 4 MiB`) the byte
+(`src/alloc_core/config/small_segment_pool_config.rs:117`, `SEGMENT = 4 MiB`) the byte
 ceiling already resolves to `16 MiB / 4 MiB = 4`, so `min(8, 4) = 4` and editing
 only `DEFAULT_POOL_SEGMENTS` 4→8 changes nothing. A real default raise is a
 PAIRED change `(4, 16 MiB) → (8, 32 MiB)` doubling the per-heap retained

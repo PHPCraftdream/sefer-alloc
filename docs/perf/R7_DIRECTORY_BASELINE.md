@@ -24,10 +24,10 @@ All counters: process-wide `AtomicU64`, Relaxed. Storage always compiled under
 Feature-OFF builds are byte-for-byte unchanged.
 
 **Files changed:**
-- `src/alloc_core/directory_stats.rs` — new file, counter storage
+- `src/alloc_core/segment/segment_directory/directory_stats.rs` — new file, counter storage
 - `src/alloc_core/mod.rs` — module declaration
-- `src/alloc_core/alloc_core_core_diag.rs` — `dbg_*` read accessors
-- `src/alloc_core/alloc_core_small.rs` — `FULL_SCAN_SLOTS_EXAMINED` increment
+- `src/alloc_core/alloc_core/alloc_core_core_diag/` — `dbg_*` read accessors
+- `src/alloc_core/small/alloc_core_small/mod.rs` — `FULL_SCAN_SLOTS_EXAMINED` increment
 - `benches/directory_threshold_probe.rs` — new transition-zone probe
 - `Cargo.toml` — bench entry for probe
 

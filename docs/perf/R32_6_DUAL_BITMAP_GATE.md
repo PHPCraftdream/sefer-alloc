@@ -25,7 +25,7 @@ byte-identical to its state before this task started (verified: `git diff
 
 ## 1. What was built (and then reverted)
 
-- `src/alloc_core/segment_bitmap.rs`: `SegmentBitmap` (the old shared 1-bit
+- `src/alloc_core/segment/bitmap/segment_bitmap.rs`: `SegmentBitmap` (the old shared 1-bit
   mechanism) replaced by `DualBitmap`, a 2-bit-per-granule mechanism with
   `test_alloc`/`set_alloc`/`clear_alloc` (bit 0 of each pair) and
   `test_magazine`/`set_magazine`/`clear_magazine` (bit 1), plus a combined
@@ -35,17 +35,17 @@ byte-identical to its state before this task started (verified: `git diff
   `test_both` only — this split was added DURING the investigation (§3) to
   rule out "unused mask computation not eliminated" as the regression cause;
   it made no measurable difference (see §3.2).
-- `src/alloc_core/alloc_bitmap.rs` / `magazine_bitmap.rs`: both wrappers kept
+- `src/alloc_core/segment/bitmap/alloc_bitmap.rs` / `magazine_bitmap.rs`: both wrappers kept
   their PUBLIC API completely unchanged (same method names, same semantics,
   same `FOOTPRINT` constant) — only their internal storage moved from
   `SegmentBitmap` to `DualBitmap`, constructed at a SHARED base offset
   instead of two separate offsets.
-- `src/alloc_core/segment_header_layout.rs`: `alloc_bitmap_off()` +
+- `src/alloc_core/segment/segment_header/segment_header_layout.rs`: `alloc_bitmap_off()` +
   `magazine_bitmap_off()` collapsed into one `bitmap_off()`;
   `remote_ring_off()` updated to add `DualBitmap::COMBINED_FOOTPRINT` (=
   `2 * FOOTPRINT`, byte-identical total span to the old two-region sum, so
   every offset AFTER the bitmap region is unchanged).
-- `src/alloc_core/segment_header.rs`: added
+- `src/alloc_core/segment/segment_header/mod.rs`: added
   `SegmentMeta::bitmap_test_both(off) -> (is_free, is_in_magazine)`, the
   combined-read payoff primitive, used at the two call sites below.
 - `src/registry/heap_core_free.rs` (`dealloc_own_thread_with_base`) and

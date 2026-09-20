@@ -45,7 +45,7 @@ dedicated-segment path) and random power-of-two alignments (`1 .. 2 MiB`, i.e.
 route to `alloc_large`, exercising the #130-hardened over-reserve/trim large-align
 arithmetic, while `align >= SEGMENT` is the rejected corridor covered by unit
 tests) against
-[`sefer_alloc::AllocCore`](../src/alloc_core/alloc_core.rs) — the single-threaded
+[`sefer_alloc::AllocCore`](../src/alloc_core/alloc_core/mod.rs) — the single-threaded
 segment substrate the `SeferAlloc` / `GlobalAlloc` face is built on. It checks
 the **M-invariants** from [`docs/INVARIANTS.md`](../docs/INVARIANTS.md):
 

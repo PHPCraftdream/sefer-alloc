@@ -1,0 +1,448 @@
+/// A single-threaded allocator over the self-hosted segment substrate.
+///
+/// Owns its segments (the primordial + any additionally-reserved small or
+/// large/huge segments). The registry of live segments lives in the
+/// primordial segment's payload (self-hosted) — there is NO `Vec<Segment>`:
+/// `AllocCore::drop` walks the registry and frees every reservation through
+/// the `os` seam.
+///
+/// ## PERF-PASS-5 (G7/ML6, task #53) — field DECLARATION order is a no-op here
+///
+/// `AllocCore` is `repr(Rust)` (no explicit `#[repr(..)]`): field
+/// declaration order is a HINT to the compiler, not a layout guarantee. The
+/// 2026-07-10 memory-layout review (finding 6) measured rustc placing the
+/// cold 384-byte `large_cache` array ahead of the dealloc-hot `table` field
+/// under the OLD source order (`large_cache` declared before `table`). This
+/// task moved `table` and `small_cur` to be the FIRST two fields declared
+/// below — and then re-measured with `-Zprint-type-sizes` on this project's
+/// CURRENT profile (task #49 already added `lto = "thin"` /
+/// `codegen-units = 1`): the compiled layout is BYTE-IDENTICAL to before —
+/// rustc still places `large_cache` first, `table`/`small_cur` in the
+/// middle. A minimal reproduction (two structs with `table`/`small_cur`
+/// declared first vs. `large_cache` declared first, otherwise identical
+/// fields) confirmed this is not an artifact of this struct's specific
+/// `#[cfg(feature = "alloc-decommit")]` gating: rustc's `repr(Rust)`
+/// layout algorithm reorders fields by its own heuristic (chiefly
+/// size/alignment) REGARDLESS of declaration order for this field set (all
+/// fields here are `align <= 8`, so there is no alignment-driven reason to
+/// prefer one order over the other, and the compiler's choice is not
+/// influenced by which one happens to appear first in the source).
+///
+/// **Verdict: NO-OP, reported honestly per the task spec rather than forcing
+/// a cosmetic reorder that measurement shows does nothing.** The
+/// declaration order below (`table`/`small_cur` first) is KEPT anyway
+/// because it is the more readable grouping (hot fields first in the
+/// source, matching the doc narrative) and costs nothing — but it has no
+/// effect on the compiled cache-line layout `AllocCore::dealloc`'s
+/// `table.own_cache` touch actually observes. If a future toolchain/profile
+/// change makes `repr(Rust)` field order load-bearing again, an explicit
+/// `#[repr(C)]` (with the accompanying hand-packing discipline
+/// `SegmentHeader` uses) would be the correct fix, not a bare declaration
+/// reorder.
+pub struct AllocCore {
+    /// The primordial segment registry (self-hosted in segment 0's payload).
+    pub(super) table: SegmentTable,
+    /// Metadata view of the "current" small segment — the one whose bump
+    /// cursor and free lists new small allocations draw from. When it fills,
+    /// [`alloc_small`] reserves a fresh small segment and switches to it.
+    ///
+    /// [`alloc_small`]: Self::alloc_small
+    pub(super) small_cur: *mut u8,
+    /// R11-5: cached return value of `numa::current_node()` for the calling
+    /// thread, populated lazily by [`current_node_cached`](Self::current_node_cached)
+    /// and reset to `None` at registry-slot `claim()` time by
+    /// [`invalidate_numa_node_cache`](Self::invalidate_numa_node_cache).
+    ///
+    /// `None` = "not yet queried on this claim"; `Some(n)` = "the last query
+    /// returned `n`". Owner-private single-writer (this `AllocCore`'s owning
+    /// thread is its sole mutator), so a plain `Option<u32>` — no `Cell`, no
+    /// atomic — is sound and the cheapest possible cache. See
+    /// `docs/PHASE_NUMA_DESIGN.md` §4.1 for the full design note, including
+    /// the slot-recycle invalidation argument and the resulting staleness
+    /// bound (a migrated thread's reads may lag the OS's real answer for
+    /// the duration of the current slot claim — `claim()` to `recycle()`).
+    ///
+    /// R12-5: this claim-lifetime bound is unlimited in wall-clock time for a
+    /// long-lived claim (a `HeapCore` held by a non-pinned thread for
+    /// millions of allocations never re-queries once populated, pre-R12-5).
+    /// [`current_node_cached`](Self::current_node_cached) now additionally
+    /// forces a re-query every [`NUMA_NODE_REFRESH_PERIOD`] calls, bounding
+    /// the staleness to that many refill-misses even within a single claim.
+    /// See `docs/PHASE_NUMA_DESIGN.md` §4.1 "Bounded mid-claim refresh
+    /// (R12-5)" for the full rationale.
+    #[cfg(feature = "numa-aware")]
+    pub(super) cached_numa_node: Option<u32>,
+    /// R12-5: number of [`current_node_cached`](Self::current_node_cached)
+    /// calls served from cache since the value was last populated by an
+    /// actual `numa::current_node()` query (by either a cache miss or a
+    /// periodic forced refresh). Reset to `0` every time the cache is
+    /// (re-)populated; reset implicitly whenever `cached_numa_node` is set to
+    /// `None` (the next call is a miss regardless of this counter's value).
+    /// Compared against [`NUMA_NODE_REFRESH_PERIOD`] to trigger the periodic
+    /// refresh. Owner-private single-writer, same discipline as
+    /// `cached_numa_node`.
+    #[cfg(feature = "numa-aware")]
+    pub(super) numa_node_hits_since_refresh: u32,
+    /// OPT-E — large-segment free-cache. A small fixed array of recently-freed
+    /// large/huge segments whose OS reservations are still live. `alloc_large`
+    /// checks this array first; a size-matched entry is reused without a new
+    /// OS reservation. `dealloc` on the large path deposits the segment here
+    /// (if a slot is free and the budget permits) instead of releasing
+    /// the OS reservation immediately. Pages are kept committed between uses so
+    /// no recommit syscall is needed on a cache hit. The cache is gated on
+    /// `alloc-decommit` for consistency with the small-segment recycle path
+    /// (both operate in the regime where empty slots are recyclable).
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache: [Option<CachedLarge>; LARGE_CACHE_SLOTS],
+
+    /// R32-12 (task #503, F8 sub-change (2)): occupancy bitmask over the
+    /// COMBINED base+extension index space (see `CombinedSlot` in
+    /// `alloc_core_large_cache.rs`) — bit `i` set ⟺ combined slot `i`
+    /// currently holds `Some(CachedLarge)`. Replaces the free-slot-search
+    /// scan (`self.large_cache.iter().position(|s| s.is_none())`,
+    /// `large_cache_find_free_slot`) with a `trailing_ones()` lookup: the
+    /// index of the lowest CLEAR bit is the lowest free slot, found without
+    /// walking the 56-byte-per-slot `[Option<CachedLarge>; N]` array at all.
+    ///
+    /// The discriminant this bit mirrors is NOT duplicated data (a bit
+    /// derived from `Option::is_some()` carries no independent value that
+    /// could drift out of sync in the sense a copied field could) — but it
+    /// IS state that must be maintained in lockstep with every occupation
+    /// change, so every site that currently sets/clears an
+    /// `Option<CachedLarge>` slot to `Some`/`None` must also set/clear the
+    /// corresponding bit here. The complete enumeration of those sites (per
+    /// CLAUDE.md's site-enumeration discipline):
+    ///   1. [`large_cache_slot_set`](Self::large_cache_slot_set) — sets the
+    ///      bit for `idx` (the slot transitions None → Some).
+    ///   2. [`large_cache_slot_take`](Self::large_cache_slot_take) — clears
+    ///      the bit for `idx` (the slot transitions Some → None).
+    ///
+    /// These are the ONLY two functions in this crate that ever write
+    /// `self.large_cache[i]` or `ext.slots[i]` (verified by grep — see
+    /// `docs/perf/R32_12_LARGE_CACHE_OCCUPANCY_BITMASK_GATE.md` §2 for the
+    /// exhaustive site list); every other mutation (deposit, cache-hit take,
+    /// eviction) already funnels through one of these two, so maintaining
+    /// the bitmask in exactly these two places keeps it correct by
+    /// construction, not by convention.
+    ///
+    /// Sized `u64`: `LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS` (8 + 32
+    /// = 40) is the current combined maximum, pinned `<= u64::BITS` by the
+    /// compile-time assertions above this struct — see those assertions'
+    /// own doc for what to do if a future round raises either constant past
+    /// 64.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_occupied: u64,
+
+    /// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): lazily-
+    /// materialised sidecar pointer widening the large-cache from
+    /// `LARGE_CACHE_SLOTS` (8) to `8 + LARGE_CACHE_EXTENDED_SLOTS` (40) total
+    /// slots. `null` = not yet materialised (either the base 8 slots have
+    /// never overflowed, or the feature is off, or sidecar OOM — all three
+    /// are indistinguishable and all three mean "cache is capped at the base
+    /// 8 slots", exactly the pre-existing behaviour). Owner-only (plain
+    /// `*mut`, not `AtomicPtr` — mirrors `directory_sidecar`, not
+    /// `dirty_by_class`; see `large_cache_extended`'s module doc for why no
+    /// `OncePtrCell` is needed here). Dereferenced via
+    /// `large_cache_extended::deref_large_cache_extension[_mut]`.
+    #[cfg(feature = "large-cache-extended")]
+    pub(super) large_cache_extension: *mut super::large_cache_extended::LargeCacheExtension,
+
+    /// Per-shard byte budget for the large-cache. `None` = unbounded (any span
+    /// may be admitted as long as a free slot exists). When set, the sum of
+    /// `usable_size` across all occupied slots is kept `<= large_cache_budget_bytes`;
+    /// an incoming span that would exceed the budget triggers FIFO eviction of
+    /// the oldest slot before admission.
+    ///
+    /// Set via [`LargeCacheConfig::budget_bytes`] passed to
+    /// [`AllocCore::new_with_config`].
+    ///
+    /// [`LargeCacheConfig::budget_bytes`]: super::large_cache_config::LargeCacheConfig::budget_bytes
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_budget_bytes: Option<usize>,
+
+    /// Running sum of `usable_size` across all currently occupied slots in
+    /// `large_cache`.
+    ///
+    /// Invariant:
+    /// ```text
+    /// large_cache_used_bytes ==
+    ///     large_cache.iter().filter_map(|s| s.as_ref().map(|c| c.usable_size)).sum()
+    /// ```
+    /// Maintained on every deposit (`+= usable_size`) and every eviction /
+    /// cache-hit (`-= slot.usable_size`). NOT decremented on `AllocCore::drop`
+    /// (the field is dead at that point).
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_used_bytes: usize,
+
+    /// Monotonic insertion-sequence counter for `large_cache` deposits (task
+    /// D1). Each deposit stamps the current value into `CachedLarge::seq` and
+    /// then increments this counter. FIFO eviction picks the occupied slot
+    /// with the smallest `seq` — the true "oldest" entry — rather than
+    /// assuming index order, which only happened to hold for the old
+    /// `LARGE_CACHE_SLOTS == 2` minimal implementation.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_seq: u64,
+
+    // ── Phase 2 — lazy decay ─────────────────────────────────────────────────
+    /// Immutable decay parameters: rate, interval, headroom. Set once at
+    /// `AllocCore::new_with_config` from a `LargeCacheConfig`; overridable in
+    /// tests via `dbg_set_decay_config`.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) decay_config: LargeCacheDecayConfig,
+
+    /// Wall-clock time of the last decay tick. `None` = never ticked yet (the
+    /// first call to `maybe_decay_large_cache` primes the timer without
+    /// releasing anything). Stored as `Option<std::time::Instant>` so the very
+    /// first call does not accidentally release half the cache at process start.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) last_decay_tick: Option<std::time::Instant>,
+
+    /// R32-8 (task #499, F9): monotonic count of `maybe_decay_large_cache`
+    /// calls that passed the headroom fast-exit (i.e.
+    /// `large_cache_used_bytes` greater than `headroom_bytes`) since the
+    /// last clock read. A cheap counter increment/compare is used to decide
+    /// WHETHER to consult the clock at all, ahead of the `Instant::now()`
+    /// read itself — see
+    /// [`maybe_decay_large_cache`](Self::maybe_decay_large_cache)'s own doc
+    /// for the exact trade (decay-tick GRANULARITY vs clock-read frequency)
+    /// this buys. Reset to 0 every time the clock IS actually consulted
+    /// (`maybe_decay_large_cache`) so the stride restarts from the moment of
+    /// the last real check. Also primed by
+    /// [`dbg_force_decay_tick`](Self::dbg_force_decay_tick), which bypasses
+    /// the stride entirely — see its own doc.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_decay_op_count: u32,
+
+    // ── Phase 3 — cache operating mode ───────────────────────────────────────
+    /// The large-cache operating mode, set once at `AllocCore::new_with_config`
+    /// from a `LargeCacheConfig`. Stored for diagnostic/test access and as the
+    /// anchor for future scavenger-thread wiring.
+    ///
+    /// `Lazy` — the only variant, currently — is Phase 2 lazy decay, no
+    /// background thread. `LargeCacheMode` is `#[non_exhaustive]`: a future
+    /// background-scavenger mode can be added as a non-breaking addition
+    /// (R3-B removed the earlier unimplemented `Background`/`Both`
+    /// placeholders — see `docs/reviews/2026-07-12-round3-remediation-plan.md`,
+    /// решение №2).
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_mode: LargeCacheMode,
+
+    /// TEST/DIAGNOSTIC-ONLY (task D1 → #133): this `AllocCore`'s OWNED
+    /// large-cache hit counter — the fallback target used when this heap is
+    /// NOT bound to a registry slot (a STANDALONE `AllocCore` built directly by
+    /// tests via `AllocCore::new`). For a slot-bound heap this field is left
+    /// untouched after bind: the increment and the diagnostic read are both
+    /// redirected to the slot's counter via [`large_cache_hits_sink`](Self::large_cache_hits_sink).
+    ///
+    /// Kept as an owned `AtomicU64` (not removed) precisely so the standalone
+    /// path — which has no registry slot and no cross-thread aggregator reading
+    /// it, hence no aliasing gap — still counts hits for the `AllocCore`-level
+    /// large-cache regression tests.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_hits: LargeCacheHitCounter,
+
+    /// TEST/DIAGNOSTIC-ONLY (task W3): stable `&'static` handle to THIS heap's
+    /// SLOT-resident large-cache hit counter
+    /// ([`HeapSlot::large_cache_hits`](crate::registry::heap_slot::HeapSlot::large_cache_hits)),
+    /// planted by `HeapRegistry::claim` via
+    /// [`bind_large_cache_hits`](Self::bind_large_cache_hits) at bind time.
+    /// See [`LargeCacheHitCounter`] above for the aliasing-gap rationale.
+    ///
+    /// `Some` for a slot-bound heap → the increment and `dbg_large_cache_hits`
+    /// go to the slot's `AtomicU64` (the SAME one the cross-thread aggregator
+    /// reads, so the views agree — and NO `&AllocCore` is ever materialised by
+    /// the aggregator). `None` for a standalone `AllocCore` → both fall back to
+    /// the owned [`large_cache_hits`](Self::large_cache_hits) field above.
+    ///
+    /// Stored as a SAFE `Option<&'static _>` (this module is
+    /// `#![forbid(unsafe_code)]` — a raw pointer would be unusable).
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_hits_sink: Option<&'static LargeCacheHitCounter>,
+
+    // ── Mechanism 2 (task #51; RAD-3/E2 task #56 restructure) — empty-small-
+    // segment hysteresis pool ─────────────────────────────────────────────────
+    /// The pool's HEAD: the base of the most-recently-pooled ("warmest")
+    /// empty small segment, or `null` if the pool is empty. The pool's
+    /// storage is an intrusive DOUBLY-linked list threaded through each
+    /// pooled segment's own [`SegmentHeader::pool_next`]/`pool_prev` fields
+    /// (see [`SmallSegmentPoolConfig`] for the pool's design) — `AllocCore`
+    /// itself holds only this head pointer, [`pool_tail`](Self::pool_tail),
+    /// [`pooled_count`](Self::pooled_count), and
+    /// [`pool_cap`](Self::pool_cap).
+    ///
+    /// **Intrusive list, not a fixed array — why (RAD-3/E2).** The prior
+    /// design used a fixed `[*mut u8; POOL_MAX_SLOTS]` array (`POOL_MAX_SLOTS
+    /// = 4`), which silently clamped any `pool_segments` request above 4 and,
+    /// more importantly, is a compile-time-sized field INSIDE `AllocCore` —
+    /// which lives inline in every registry `HeapSlot` (`MAX_HEAPS = 4096`
+    /// slots). Raising the cap by widening the array multiplies that fixed
+    /// cost by 4096 regardless of whether a given heap ever pools a segment —
+    /// exactly the structural RSS/binary-size cost class RAD-1 eliminated
+    /// from the registry's `next_free` bootstrap. An intrusive list instead
+    /// stores its "next"/"prev" links INSIDE the segments themselves (which
+    /// already exist, already have header bytes to spare — see
+    /// `SegmentHeader`'s RAD-3 doc note) — `AllocCore`'s own per-heap cost
+    /// stays two pointers + two `usize`s, INDEPENDENT of how large a cap the
+    /// user configures.
+    ///
+    /// List order: HEAD = warmest (most recently emptied) — the analogue of
+    /// the old array's "push at `pooled_count`, pop from `pooled_count - 1`"
+    /// LIFO order, now realised as O(1) push-front / pop-front. TAIL =
+    /// coldest (least recently emptied) — evicted by the decay tick, the
+    /// analogue of the old min-seq scan, now O(1) pop-back.
+    ///
+    /// No per-segment "is this pooled?" flag is needed (same invariant as
+    /// before): a pooled segment stays a normal registered, committed,
+    /// `live_count == 0` small segment; "pooled" means only "this segment is
+    /// currently linked into the pool list" — `pool_next`/`pool_prev` are
+    /// both `null` for the pool's sole entry (head==tail) or for a
+    /// not-currently-pooled segment (see `release_or_pool_empty_segment` for
+    /// the stale-ring-while-pooled soundness argument, unchanged by this
+    /// restructure).
+    ///
+    /// [`SmallSegmentPoolConfig`]: super::small_segment_pool_config::SmallSegmentPoolConfig
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) pool_head: *mut u8,
+
+    /// The pool's TAIL: the base of the least-recently-pooled ("coldest")
+    /// empty small segment, or `null` if the pool is empty. See
+    /// [`pool_head`](Self::pool_head) for the full design note.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) pool_tail: *mut u8,
+
+    /// Number of segments currently linked into the pool list
+    /// (`pool_head`/`pool_tail` + each entry's `pool_next`/`pool_prev`).
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) pooled_count: usize,
+
+    /// Resolved runtime cap on pooled segments: `min(config.pool_segments,
+    /// config.pool_byte_cap / SEGMENT)`. `0` = pool disabled (every empty
+    /// small segment released immediately — the pre-Mechanism-2 behaviour).
+    /// Set once at [`AllocCore::new_with_config`].
+    ///
+    /// **RAD-3 (E2, task #56): no third `.min(POOL_MAX_SLOTS)` term.** The
+    /// prior compile-time array cap silently clamped any request above 4;
+    /// the intrusive-list storage has no such compile-time bound, so this
+    /// cap now HONESTLY reflects exactly what the caller configured (bounded
+    /// only by the byte budget) — the value returned by
+    /// [`dbg_pool_cap`](Self::dbg_pool_cap) is always the true operative cap,
+    /// observable and un-clamped.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) pool_cap: usize,
+
+    /// Wall-clock time of the last small-pool decay tick. `None` = never ticked.
+    /// Mirrors [`last_decay_tick`](Self::last_decay_tick) for the large cache.
+    /// The decay evicts the FIFO-oldest pooled segment once the configured
+    /// interval elapses, so a burst-then-quiet small workload does not pin the
+    /// pooled segments indefinitely (the hard bound is still the `pool_cap` /
+    /// byte-cap; the decay is the "eventual drain to zero when truly idle" that
+    /// makes retention TEMPORARY, not merely bounded).
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) last_pool_decay_tick: Option<std::time::Instant>,
+
+    // ── R7-A1: per-class segment directory sidecar ──────────────────────────
+    /// Lazily-materialised `SegmentDirectory` sidecar — null until
+    /// `table.count() >= DIRECTORY_MATERIALIZE_THRESHOLD` (32). Owner-only
+    /// (plain `*mut`, not `AtomicPtr`): only the owning thread reads/writes
+    /// this pointer and the sidecar it points to.
+    ///
+    /// `null` = directory not yet materialised (either below threshold, or
+    /// sidecar OOM). A non-null value is a valid, OS-zeroed-or-rebuilt
+    /// `*mut SegmentDirectory` leaked for the process lifetime. Dereferenced
+    /// via `os::deref_directory_sidecar[_mut]`.
+    ///
+    /// Nothing queries this directory for lookups yet (A3 scope). A1 adds
+    /// only the storage, lazy materialisation, one-time rebuild, and the dbg
+    /// accessor.
+    #[cfg(feature = "alloc-segment-directory")]
+    pub(super) directory_sidecar: *mut super::segment_directory::SegmentDirectory,
+
+    /// R8-2 (task #215) / R9-8 (task #230): consecutive genuine directory
+    /// misses (no candidate validated) since the last full-scan re-validation
+    /// pass, tracked PER-CLASS so a drift-affected class trips its OWN rescan
+    /// independent of how often other (healthy) classes miss. Reset to 0 for
+    /// a class every time a periodic re-validation scan actually runs for THAT
+    /// class (whether or not it finds anything). See
+    /// `DIRECTORY_MISS_FULL_SCAN_PERIOD` (the per-class threshold, 64) for the
+    /// rationale on the value. `u8` storage: the period (64) fits comfortably
+    /// and keeps this at `SMALL_CLASS_COUNT` bytes (49 B default); the
+    /// const-assert below pins that the period never exceeds `u8::MAX`.
+    #[cfg(feature = "alloc-segment-directory")]
+    pub(super) directory_miss_streak: [u8; SMALL_CLASS_COUNT],
+
+    /// R7-A4: reference to the owning HeapSlot's `dirty_segments` bitmap
+    /// (planted by `HeapCore` at bind time). `None` until bound (the
+    /// pre-bind AllocCore is standalone and has no registry slot). The
+    /// reference is `&'static` because the HeapSlot lives in the process-
+    /// global registry array, leaked for the process lifetime.
+    ///
+    /// Used by `find_segment_with_free_impl` to drain ONLY dirty segments'
+    /// rings instead of polling every ring. Feature-gated: the dirty routing
+    /// only matters when both `alloc-xthread` (cross-thread frees exist) and
+    /// `alloc-segment-directory` (the directory drives the drain) are active.
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+    pub(crate) dirty_segments:
+        Option<&'static [core::sync::atomic::AtomicU64; super::segment_directory::WORDS_PER_CLASS]>,
+
+    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): reference to the
+    /// owning HeapSlot's lazily-materialised per-(segment, class) dirty-bit
+    /// sidecar cell (planted by `HeapCore` at bind time, same discipline as
+    /// [`dirty_segments`](Self::dirty_segments)). `None` until bound.
+    ///
+    /// Note this is a handle to the CELL, not the sidecar itself — the
+    /// sidecar behind the cell may still be UNINIT (no class-routed
+    /// cross-thread free has landed on this heap yet); `drain_dirty_segments`
+    /// resolves it read-only via `dirty_by_class::get_per_class_dirty` (never
+    /// materialising it from the drain side — see that function's doc
+    /// comment).
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) dirty_by_class:
+        Option<&'static once_ptr_cell::OncePtrCell<super::dirty_by_class::PerClassDirty>>,
+
+    /// R13-1 (task #271, P0 fix): reference to the owning HeapSlot's
+    /// coarse-only latch (planted by `HeapCore` at bind time, same
+    /// discipline as [`dirty_by_class`](Self::dirty_by_class)). `None` until
+    /// bound. See `registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`'s
+    /// doc comment for the full design; read by `drain_dirty_segments` to
+    /// decide whether the per-class scan path may be trusted at all for this
+    /// heap.
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) sidecar_oom_latch: Option<&'static core::sync::atomic::AtomicBool>,
+
+    /// R31-15 (task #486): a stable, process-wide-unique identity for THIS
+    /// `AllocCore`, stamped once at construction ([`new_inner`](Self::new_inner))
+    /// from [`DBG_RESERVATION_OWNER_ID_COUNTER`]'s `fetch_add`. Exists solely
+    /// to bind [`ReservedSmallSegment`](super::reserved_small_segment::ReservedSmallSegment)
+    /// handles to the exact `AllocCore` that minted them — see
+    /// [`dbg_decomp_release`](super::alloc_core_small_pool::AllocCore::dbg_decomp_release)'s
+    /// doc comment for the soundness hole this closes (a handle minted by one
+    /// `AllocCore` could otherwise be handed to a DIFFERENT `AllocCore`'s
+    /// `dbg_decomp_release`, corrupting the wrong heap's pool/table state).
+    ///
+    /// **Deliberately NOT the `&self` address.** An `AllocCore` is `Send` and
+    /// lives inline inside a registry `HeapSlot` / can be moved by ordinary
+    /// Rust value semantics (e.g. returned by value from `AllocCore::new()`),
+    /// so two DIFFERENT logical `AllocCore`s can transiently or permanently
+    /// occupy the same address over a process's lifetime (a moved-from slot's
+    /// old address, or a recycled/reused stack slot in a test loop) — an
+    /// address-based check would falsely accept a stale handle against a new
+    /// owner that happens to reuse the old owner's address. A monotonic
+    /// counter has no such collision: `fetch_add` on a process-global atomic
+    /// never repeats a value for the process lifetime (barring a `u64`
+    /// wraparound, astronomically unreachable for a counter incremented once
+    /// per `AllocCore` construction).
+    ///
+    /// `bench-internals`-gated: this field exists purely to support the
+    /// `dbg_decomp_reserve_and_keep`/`dbg_decomp_release` measurement-only
+    /// hook pair and has no role in any production code path. Gating it
+    /// behind `bench-internals` (rather than the narrower `alloc-decommit`
+    /// that hook pair is also gated on) keeps the field's cost at exactly
+    /// zero in every `production`/default build — `AllocCore` lives inline in
+    /// every `HeapSlot` (`MAX_HEAPS = 4096`), so an always-present field here
+    /// multiplies its size by 4096 regardless of whether any caller ever
+    /// touches the decomposition hooks (the same cost-discipline argument
+    /// [`pool_head`](Self::pool_head)'s doc comment makes for the intrusive
+    /// pool-list redesign).
+    #[cfg(feature = "bench-internals")]
+    pub(super) dbg_reservation_owner_id: u64,
+}

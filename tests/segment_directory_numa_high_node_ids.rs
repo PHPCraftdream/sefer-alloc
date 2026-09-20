@@ -7,7 +7,7 @@
 //! (`crates/numa-shim/src/lib.rs::cpu_to_numa_node`, `for node in 0u32..64`), but
 //! the segment directory's `node_bucket` used to map a segment's `node_id`
 //! to its bucket by using the raw OS node id as a DIRECT array index clamped
-//! at `MAX_NODES = 8` (`src/alloc_core/segment_directory.rs`). Every node id
+//! at `MAX_NODES = 8` (`src/alloc_core/segment/segment_directory/mod.rs`). Every node id
 //! `>= 8` fell into the SAME shared "unknown" bucket regardless of how many
 //! distinct high node ids were actually observed. Because the scan-order
 //! bucket list visits the unknown bucket right after the caller's own

@@ -11,7 +11,7 @@
 //! that clears a bit that was already 0.
 //!
 //! The real production trigger: `sync_directory_for_segment_classes`
-//! (`src/alloc_core/alloc_core_small.rs`) calls `clear_bit` whenever a
+//! (`src/alloc_core/small/alloc_core_small/`) calls `clear_bit` whenever a
 //! ring-drain pass reclaims blocks into a class but the class's `BinTable`
 //! head ends up `FREE_LIST_NULL` again by the time the drain finishes (a
 //! reclaim immediately consumed by a synchronous re-pop). If that segment's

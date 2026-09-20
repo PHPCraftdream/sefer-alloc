@@ -88,7 +88,7 @@ table, per-hypothesis verification ledger).
 ## 1. Scope recap — the shipped Large-path precedent, read in full
 
 `AllocCore::alloc_large` returns `(*mut u8, bool)`
-(`src/alloc_core/alloc_core_large.rs:57`). The bool is `true` iff the
+(`src/alloc_core/large/alloc_core_large.rs:57`). The bool is `true` iff the
 returned allocation lives in a genuinely fresh OS reservation the OS
 zero-fills by construction (Windows `VirtualAlloc` MEM_COMMIT demand-zero;
 Unix anonymous `mmap` zero-fill). `alloc_large_slow` (the only fresh-span
@@ -217,7 +217,7 @@ zero runtime cost.
 ### 3.1 What state is needed, and where
 
 **One new per-segment field**, added to `SegmentHeader`
-(`src/alloc_core/segment_header.rs`), alongside the existing owner-only
+(`src/alloc_core/segment/segment_header/mod.rs`), alongside the existing owner-only
 `bump: usize` (near line 315 per R9-5's citation; the header's `decommitted:
 u32` field is at line 372 and `committed_payload_end: usize` at line 547 in
 the CURRENT tree, confirmed by grep this session):
@@ -396,8 +396,8 @@ result:**
 
 ```text
 $ grep -rn "decommit_empty_segment_impl" src/alloc_core/
-src/alloc_core/alloc_core_small_pool.rs:621:  Self::decommit_empty_segment_impl(meta, base, true);
-src/alloc_core/alloc_core_small_pool.rs:631:  fn decommit_empty_segment_impl(meta: &mut SegmentMeta, base: *mut u8, release_follows: bool) {
+src/alloc_core/small/alloc_core_small_pool/mod.rs:621:  Self::decommit_empty_segment_impl(meta, base, true);
+src/alloc_core/small/alloc_core_small_pool/mod.rs:631:  fn decommit_empty_segment_impl(meta: &mut SegmentMeta, base: *mut u8, release_follows: bool) {
 ```
 
 **Zero production callers pass `release_follows=false`.** The ONLY call
@@ -448,7 +448,7 @@ machinery — no separate body-write primitive. Same conclusion.
 ### 4.6 `hardened`'s generation-bump mechanism
 
 **Verified this session: `bump_gen`
-(`src/alloc_core/segment_header_gen_table.rs:98-110`) writes to
+(`src/alloc_core/segment/segment_header/segment_header_gen_table.rs:98-110`) writes to
 `Node::atomic_u8_at(base, Layout::gen_table_off() + idx)` — a per-segment
 GENERATION TABLE that lives in segment METADATA (confirmed by its own doc
 comment, lines 112-136: "lives in segment metadata, is NOT decommitted with

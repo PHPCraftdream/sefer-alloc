@@ -655,9 +655,9 @@ Core instructions, mandatory for all code in this repository. They
   countered in `src/` or trivially addable — do not assume a class applies
   without checking the counter actually exists first): virgin bump-carves
   vs. recycled free-list pops (`AllocCore::dbg_small_zero_pass_count`,
-  `src/alloc_core/alloc_core_core_diag.rs`); large-cache hits vs. misses
+  `src/alloc_core/alloc_core/alloc_core_core_diag/`); large-cache hits vs. misses
   (`AllocCore`/`HeapCore::dbg_large_cache_hits`,
-  `src/alloc_core/alloc_core.rs` / `src/registry/heap_core_diag.rs`);
+  `src/alloc_core/alloc_core/mod.rs` / `src/registry/heap_core_diag.rs`);
   decommit/release/reserve call counts; promotion events; directory hits
   vs. fallback scans; and pool cap actually resolved AND victim actually
   activated — this last pair is the boundary case where R26-4's own
@@ -669,7 +669,7 @@ Core instructions, mandatory for all code in this repository. They
   in `benches/r29_16_virgin_zero_skip_calloc_wallclock.rs` freed its whole
   batch inside the SAME `b.iter()` closure Criterion calls thousands of
   times per sample, so `alloc_small_with_virgin`'s free-list-pop-first
-  dispatch order (`src/alloc_core/alloc_core_small.rs:274-297`) meant only
+  dispatch order (`src/alloc_core/small/alloc_core_small/mod.rs:274-297`) meant only
   the very first call per sample was a genuine bump-carve — every call after
   that measured the RECYCLED path under the "virgin" label. R26-4's rule did
   not catch this: nothing about the CONFIG was wrong (the `virgin-zero-skip`
@@ -833,7 +833,7 @@ Core instructions, mandatory for all code in this repository. They
   benefit, and latency together. R30-6's hit-rate workload (`8 × 6 MiB`,
   described as "48 MiB/burst") actually rounds up through whole-`SEGMENT`
   (4 MiB) allocation rounding (`AllocCore::alloc_large`,
-  `src/alloc_core/alloc_core_large.rs:190-192`: 6 MiB → 2 segments = 8 MiB
+  `src/alloc_core/large/alloc_core_large.rs:190-192`: 6 MiB → 2 segments = 8 MiB
   usable span/object, × 8 objects = 64 MiB) to land EXACTLY on the 64 MiB
   headroom boundary it was testing — confirmed against R30-6's own
   committed CSV (`burst1_used_max_bytes = 67108864` = exactly 64 MiB in all

@@ -66,7 +66,7 @@
 //! (`dbg_live_count_for` is `alloc-decommit`-gated) AND the small-segment
 //! release/pool machinery itself (`dec_live_and_maybe_decommit` /
 //! `dec_live_batch_and_maybe_decommit`,
-//! `src/alloc_core/alloc_core_small_pool.rs`) is entirely
+//! `src/alloc_core/small/alloc_core_small_pool/mod.rs`) is entirely
 //! `#[cfg(feature = "alloc-decommit")]` — without it, small/medium segments
 //! are never released or live-count-tracked in the first place, so
 //! `dbg_contains_base` would just read `true` forever regardless of whether
@@ -97,7 +97,7 @@ const PROMOTION_THRESHOLD: usize = 256 * 1024;
 
 // Both tests in this file read `a.stats()` — which reads the PROCESS-WIDE
 // `segments_reserved_total`/`segments_released_total` atomics (see
-// `src/alloc_core/os.rs`) — and compute a delta across their own
+// `src/alloc_core/platform/os.rs`) — and compute a delta across their own
 // snapshot-before/snapshot-after window, asserting that delta stays
 // leak-free. `cargo test` runs test functions concurrently across multiple
 // OS threads within the SAME process by default; any OTHER test in this
@@ -363,7 +363,7 @@ fn canary_survives_promotion_and_free_leaves_no_leak_per_base() {
     // Under `medium-classes` (`!HAS_PROMOTION`), every Small/Primordial-kind
     // segment is carved from a single PER-THREAD `small_cur` bump cursor
     // shared across every small/medium size class
-    // (`AllocCore::carve_block`, `src/alloc_core/alloc_core_small.rs`), so
+    // (`AllocCore::carve_block`, `src/alloc_core/small/alloc_core_small/`), so
     // `grown`'s segment routinely hosts OTHER blocks from this test's own
     // earlier `p` carve or the 31-block cold-carve refill batch — some of
     // which may still be sitting in THEIR OWN class's magazine at this
@@ -419,7 +419,7 @@ fn canary_survives_promotion_and_free_leaves_no_leak_per_base() {
     //       `AllocCore::dealloc` Large branch always calls
     //       `self.table.unregister(base)` (cache-admitted, budget-declined,
     //       and no-`alloc-decommit` eager-release alike — see
-    //       `src/alloc_core/alloc_core.rs`'s Large arm) before it returns,
+    //       `src/alloc_core/alloc_core/`'s Large arm) before it returns,
     //       and `dbg_trim_current_thread`'s `evict_all` releases whatever the
     //       cache subsequently held; a Small/Primordial segment that became
     //       fully empty (this test's own block was its last occupant) is

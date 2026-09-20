@@ -74,7 +74,7 @@ R9-4's `tests/medium_classes_wide_correctness.rs` density-measurement pattern.
 
 ### 1.1 Today's carve alignment
 
-`carve_block` (`src/alloc_core/alloc_core_small.rs:1165-1275`) aligns the start
+`carve_block` (`src/alloc_core/small/alloc_core_small/mod.rs:1165-1275`) aligns the start
 of every carved block to the FULL `block_size`:
 
 ```text

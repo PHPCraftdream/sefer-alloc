@@ -115,7 +115,7 @@ stage-2 estimate than R10-4/R11-3's designs, not a small bounded patch.
 
 ### 1.1 Today's `SegmentKind`
 
-`src/alloc_core/segment_header.rs:148-175`:
+`src/alloc_core/segment/segment_header/mod.rs:148-175`:
 
 ```text
 pub(crate) enum SegmentKind {
@@ -214,9 +214,9 @@ only" over a change that touched the general guard.
 ### 2.1 Real constants (re-read this session, not assumed from R10-4)
 
 ```text
-SEGMENT              = 4,194,304 B  (src/alloc_core/os.rs:65, 1 << 22)
-SEGMENT_SHIFT         = 22           (src/alloc_core/segment_table.rs:105)
-MIN_BLOCK             = 16 B         (src/alloc_core/size_classes.rs:62)
+SEGMENT              = 4,194,304 B  (src/alloc_core/platform/os.rs:65, 1 << 22)
+SEGMENT_SHIFT         = 22           (src/alloc_core/segment/segment_table/mod.rs:105)
+MIN_BLOCK             = 16 B         (src/alloc_core/platform/size_classes.rs:62)
 small_meta_end()      = 73,728 B (72 KiB) — non-hardened default build
                         (page-aligned past header+page-map+bin-table+alloc-
                         bitmap+magazine-bitmap+remote-ring, all sized off the
@@ -225,7 +225,7 @@ small_meta_end()      = 73,728 B (72 KiB) — non-hardened default build
                         this same 72 KiB)
 ```
 
-Wide-medium class sizes, confirmed from `src/alloc_core/size_classes.rs:130-132`:
+Wide-medium class sizes, confirmed from `src/alloc_core/platform/size_classes.rs:130-132`:
 
 ```text
 1.25 MiB = 1,310,720 B
@@ -774,8 +774,8 @@ tests did for the original wide-class prototype.
 
 - **No code was written or run this session.** Every density number in §2
   is deterministic geometry (`floor(arena_size / block_size) - 1`), computed
-  by hand from real constants read from `src/alloc_core/os.rs`,
-  `src/alloc_core/size_classes.rs`, and `src/alloc_core/segment_table.rs`
+  by hand from real constants read from `src/alloc_core/platform/os.rs`,
+  `src/alloc_core/platform/size_classes.rs`, and `src/alloc_core/segment/segment_table/mod.rs`
   this session — not estimated, but also not empirically confirmed by a
   carve test (that confirmation is stage 2's job, mirroring R9-4 §5's own
   test suite for the ORIGINAL wide-class density claim).

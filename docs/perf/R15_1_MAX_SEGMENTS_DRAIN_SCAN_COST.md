@@ -18,7 +18,7 @@ delta:** `b117257` (R14-7's docs-only parent commit, `MAX_SEGMENTS = 1024`)
 vs `ffb82bc` (R14-7's raise commit itself, `MAX_SEGMENTS = 4096`) — this is
 the tightest possible commit pair: `git diff --stat b117257 ffb82bc` touches
 exactly one production source line
-(`src/alloc_core/segment_table.rs`'s `MAX_SEGMENTS` constant) plus tests and
+(`src/alloc_core/segment/segment_table/mod.rs`'s `MAX_SEGMENTS` constant) plus tests and
 docs. Every number in this report that compares "before" vs "after" uses
 this exact pair via two `git worktree` checkouts, not a broader window, so
 none of Round 14's other changes (class-aware-dirty latch, medium-realloc
@@ -150,7 +150,7 @@ Investigated and ruled out as the mechanism, in order:
    reasoning above is true of `SegmentTable::from_primordial` itself (it
    really does "perform no memory operation"), but that check stopped one
    frame too early: it did not look at `from_primordial`'s CALLER,
-   `bootstrap::primordial()` (`src/alloc_core/bootstrap.rs`), which DOES run
+   `bootstrap::primordial()` (`src/alloc_core/alloc_core/bootstrap.rs`), which DOES run
    two explicit, unconditional (not `cfg(miri)`-gated) per-word zero-fill
    loops immediately before constructing that `SegmentTable` view — "4b.
    OPT-B" (`for i in 0..segment_table::HASH_CAPACITY { ...
@@ -207,7 +207,7 @@ conclusion — it is NOT `drain_dirty_segments`'s per-word sweep, and it IS paid
 once per heap materialisation, not per operation), but its ROOT CAUSE is
 different from anything §2.3 originally guessed: it is LLVM recognising two
 compile-time-bounded, statically-zero-valued write loops in
-`bootstrap::primordial()` (`src/alloc_core/bootstrap.rs:217-222` and
+`bootstrap::primordial()` (`src/alloc_core/alloc_core/bootstrap.rs:217-222` and
 `:247-252`) as a `memset` idiom and lowering them to two `call memset`
 instructions whose `MAX_SEGMENTS`-derived size arguments quadrupled across the
 raise — not a `mmap`/Valgrind cost-model artifact, not `SegmentTable`, and not
@@ -325,7 +325,7 @@ with one fix applied as part of this task (see §4.3): the example hardcoded
 `WORDS_PER_CLASS = 16` as a literal (correct when written, pre-R14-7) and
 did not notice it had gone stale across the raise. Now reads the live
 `AllocCore::dbg_words_per_class()` value (a new `#[doc(hidden)]` test-only
-accessor added this task, `src/alloc_core/alloc_core_core_diag.rs`, mirroring
+accessor added this task, `src/alloc_core/alloc_core/alloc_core_core_diag/`, mirroring
 the existing `dbg_max_segments()` pattern).
 
 | | before (`MAX_SEGMENTS`=1024, `WORDS_PER_CLASS`=16) | after (`MAX_SEGMENTS`=4096, `WORDS_PER_CLASS`=64) |
@@ -368,7 +368,7 @@ discipline, unchanged by this task).
 
 Computed directly from `class_nonempty_by_node: [[[u64; WORDS_PER_CLASS];
 SMALL_CLASS_COUNT]; NODE_BITMAPS]`'s definition
-(`src/alloc_core/segment_directory.rs`), confirming the task brief's own
+(`src/alloc_core/segment/segment_directory/mod.rs`), confirming the task brief's own
 stated estimate exactly ("~55 КиБ→~220 КиБ"). **Not** independently
 RSS-measured this task (unlike `PerClassDirty` in §4.1) because this
 crate's `numa-aware` feature has no genuine multi-socket NUMA hardware
@@ -579,7 +579,7 @@ would take, and its honestly-estimated ceiling:
     the `callgrind_annotate`/`objdump` evidence for §2.3a's root-cause
     confirmation of the +61,440 Ir delta)
 - Source changes (this task): `AllocCore::dbg_words_per_class()` accessor
-  (`src/alloc_core/alloc_core_core_diag.rs`) and the corresponding fix to
+  (`src/alloc_core/alloc_core/alloc_core_core_diag/`) and the corresponding fix to
   `examples/r13_9_class_aware_dirty_sidecar_rss.rs` (§4.3). No production
   behavior changed — both are test/measurement-only surface.
 - `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST_summary.csv` (R16-3/task

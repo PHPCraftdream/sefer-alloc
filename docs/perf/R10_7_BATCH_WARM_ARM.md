@@ -34,13 +34,13 @@ way the scalar path is (e.g. it always constructs cold local state).
 
 **It can.** Verified directly in source:
 
-- `AllocCore::refill_class_bump_impl` (`src/alloc_core/alloc_core_small_magazine.rs`)
+- `AllocCore::refill_class_bump_impl` (`src/alloc_core/small/alloc_core_small_magazine.rs`)
   opens with a **freelist drain** (`drain_freelist_batch` on `small_cur`, then
   `find_segment_with_free`) and bump-carves **only the remainder** once the
   freelist is exhausted. So a `refill_class_bump` call against an `AllocCore`
   whose freelist was populated by a prior `flush_class` drains those warm blocks
   — no carve, no page fault.
-- `AllocCore::alloc_small` (`src/alloc_core/alloc_core_small.rs:103`) — the
+- `AllocCore::alloc_small` (`src/alloc_core/small/alloc_core_small/mod.rs:103`) — the
   scalar path — **also pops the freelist first** (`pop_free(small_cur)` →
   `find_segment_with_free` → carve).
 

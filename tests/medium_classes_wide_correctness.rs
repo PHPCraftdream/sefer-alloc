@@ -277,7 +277,7 @@ fn fresh_segment_payload() -> usize {
 
 /// The REAL objects-per-fresh-segment count for a given block size, accounting
 /// for the carve path's `align_up(bump, block_size)` requirement
-/// (`src/alloc_core/alloc_core_small.rs::carve_block`: each block must be
+/// (`src/alloc_core/small/alloc_core_small/::carve_block`: each block must be
 /// `block_size`-aligned so the free path's `align_down(ptr, block_size)`
 /// recovers the block start).
 ///

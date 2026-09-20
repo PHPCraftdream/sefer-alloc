@@ -23,7 +23,7 @@
 ## 1. What the pool cap controls
 
 `SmallSegmentPoolConfig::pool_segments` (file:
-`src/alloc_core/small_segment_pool_config.rs`) caps the number of empty small
+`src/alloc_core/config/small_segment_pool_config.rs`) caps the number of empty small
 segments retained in the hysteresis pool. When a small segment empties
 (`live_count == 0`), it is either RETAINED in the pool (pages stay committed,
 free lists intact, no OS round-trip) or RELEASED immediately (decommit + OS

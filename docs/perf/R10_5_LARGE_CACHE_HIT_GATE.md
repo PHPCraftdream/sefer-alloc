@@ -10,7 +10,7 @@ push/pop." An external review pointed out the methodology gap: under
 gated on `alloc-decommit`) is ACTIVE, so a **warm** Large-cache HIT recycles a
 recently-freed span via cheap in-process bookkeeping (header rewrite + table
 re-register — pages stay committed, NO recommit, NO syscall; see
-`src/alloc_core/alloc_core_large.rs` lines 158-166), NOT the full ~90 µs
+`src/alloc_core/large/alloc_core_large.rs` lines 158-166), NOT the full ~90 µs
 `VirtualFree`+`VirtualAlloc` round-trip. So R9-4's ~90 µs number is the
 Large-cache **MISS** cost, not the **typical WARM-cache recycle cost** most
 steady-state programs actually see — R9-4 may have compared the small path

@@ -291,8 +291,8 @@ measurement.
 §1's abstract and §6's closing sentence phrase the pending default-change as
 "promote `DEFAULT_POOL_SEGMENTS` 4→8". That is a literal NO-OP as written:
 `AllocCore::new_with_config` resolves the effective pool cap as
-`min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core.rs:837-839`),
-and `DEFAULT_POOL_BYTE_CAP = 16 MiB` (`src/alloc_core/small_segment_pool_config.rs:117`,
+`min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core/mod.rs:837-839`),
+and `DEFAULT_POOL_BYTE_CAP = 16 MiB` (`src/alloc_core/config/small_segment_pool_config.rs:117`,
 `SEGMENT = 4 MiB`) already resolves to `16 MiB / 4 MiB = 4`, so `min(8, 4) = 4` —
 editing only `DEFAULT_POOL_SEGMENTS` from 4 to 8 leaves the allocator
 byte-identical. The real decision is a PAIRED change

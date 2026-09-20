@@ -13,7 +13,7 @@ Supplementary binary hash (option 4): SHA256
 
 R32-8 (task #499, `docs/perf/R32_8_LARGE_CACHE_DECAY_CLOCK_READ_GATE.md`)
 shipped `DECAY_CLOCK_CHECK_STRIDE = 64`
-(`src/alloc_core/alloc_core_large_cache.rs:30`): once
+(`src/alloc_core/large/alloc_core_large_cache.rs:30`): once
 `maybe_decay_large_cache` is past its headroom fast-exit, it only actually
 reads the clock every 64th call, trading decay-tick promptness for fewer
 `Instant::now()` reads. Its §4 measured the BENEFIT (~61% fewer ns/call above
@@ -26,7 +26,7 @@ across multiple intervals."**
 That assertion was never tested over many CONSECUTIVE sparse intervals. The
 decay mechanism is EVENT-DRIVEN (a tick can only fire on a large alloc/free),
 and `run_decay_step` fires at most ONE step per clock read with NO catch-up
-loop (`src/alloc_core/alloc_core_large_cache.rs:482-486`). A workload doing one
+loop (`src/alloc_core/large/alloc_core_large_cache.rs:482-486`). A workload doing one
 large alloc/free per second over many seconds can keep the throttled arm from
 reading the clock for ~32 consecutive intervals (64 ops / 2 ops-per-cycle),
 while the unthrottled arm fires a tick every interval. The gap between the two
@@ -251,7 +251,7 @@ intervals at 1 alloc+free event/interval:
   denominator 4).
 
 The root cause is structural: `run_decay_step`
-(`src/alloc_core/alloc_core_large_cache.rs:497-511`) runs exactly ONE eviction
+(`src/alloc_core/large/alloc_core_large_cache.rs:497-511`) runs exactly ONE eviction
 step per clock read — there is no loop to catch up on the multiple intervals
 that elapsed since the last tick. So a throttled arm that skips N clock reads
 fires ~1 tick where the unthrottled arm fired ~N, and the retention gap grows by

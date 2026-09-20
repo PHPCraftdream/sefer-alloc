@@ -1,0 +1,424 @@
+//! [`primordial`] — the bootstrap routine that hand-carves the first
+//! [`SegmentTable`] from the first segment (the `_mi_heap_main` analogue).
+//!
+//! This is the primordial bootstrap. It runs ONCE, at `AllocCore::new`, to
+//! establish the self-hosting loop: the primordial segment is reserved; its
+//! header, page map, bin table, and the registry array are laid down at their
+//! fixed [`Layout`] offsets; and the registry's first slot is set to point
+//! back at itself. After this, the safe Cartographer can mutate metadata
+//! through normal `node`-seam writes with no further bootstrap-time writes.
+//!
+//! ## This file is PURE SAFE COMPOSITION
+//!
+//! Every raw memory touch goes through the [`os`](super::super::os) seam (segment
+//! reservation) and the [`node`](super::super::node) seam (typed writes). The
+//! bootstrap composes those already-proven `unsafe` primitives in safe code —
+//! there is NO `unsafe` block in this file. So the crate's structural promise
+//! ("`unsafe` lives ONLY in `os` + `node`") is upheld by the compiler.
+
+use super::super::os::Segment;
+use super::super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
+use super::super::segment_table::{self, SegmentTable};
+
+/// The bootstrap outcome: the primordial [`Segment`] (owned) and the
+/// [`SegmentTable`] view over the registry carved in its payload. The
+/// primordial segment's metadata (header / page map / bin table) is laid down
+/// by `primordial()`; `AllocCore::new` reads it back via `SegmentMeta` when it
+/// needs to mutate the primordial as a small segment.
+pub(crate) struct Primordial {
+    pub segment: Segment,
+    pub table: SegmentTable,
+}
+
+/// Reserve the primordial segment and hand-carve its self-hosted metadata.
+///
+/// This is the analogue of mimalloc's `_mi_heap_main` init: it establishes the
+/// segment that hosts the registry, after which the allocator is self-hosting.
+///
+/// Returns `None` only if the OS refuses the primordial reservation (OOM at
+/// startup — unrecoverable for an allocator, but we propagate rather than
+/// abort so a caller may fall back).
+pub(crate) fn primordial() -> Option<Primordial> {
+    // 1. Reserve the primordial segment (SEGMENT-aligned, SEGMENT bytes). This
+    //    is the ONLY OS allocation primitive on the bootstrap path; everything
+    //    else is safe composition over the segment's bytes.
+    //
+    // R7-B6 (primordial lazy commit): under `primordial-lazy-commit` AND NOT
+    // `numa-aware` (Windows; Unix/miri fall back to the eager, fully-committed
+    // path inside `aligned_vmem::reserve_aligned_lazy` itself), commit ONLY
+    // the metadata + first-chunk prefix — `primordial_meta_end() +
+    // LAZY_FIRST_CHUNK` rounded UP to the runtime OS page size (task #1074) —
+    // instead of the whole 4 MiB segment. `primordial_meta_end()` is the exact
+    // byte offset past every region this function writes below (header, page
+    // map, bin table, [bitmaps under miri], remote ring, registry array, hash
+    // table, free-list array + top) — see `Layout::primordial_meta_end`'s doc
+    // and the const-assert in `segment_header.rs` pinning the sum (with
+    // page-rounding slack) within SEGMENT. Everything this
+    // function writes therefore lands strictly inside the committed prefix by
+    // construction — there is no write-before-commit hazard: the whole
+    // metadata region is committed BEFORE any of the writes below run, not
+    // committed incrementally alongside them. `LAZY_FIRST_CHUNK` beyond
+    // `meta_end` additionally covers the FIRST payload carve (the immediate
+    // post-bootstrap allocation reuses the primordial as its first small
+    // segment, `AllocCore::new_inner`'s `small_cur = primordial_base`), so
+    // that allocation does not need a grow-on-carve commit either. Any carve
+    // that grows past this initial frontier goes through the SAME
+    // `carve_block`/`carve_batch` grow-on-carve path (`alloc_core_small.rs`)
+    // that already handles ordinary small segments — that path reads/writes
+    // `committed_payload_end` generically over `SegmentKind::Small |
+    // SegmentKind::Primordial` (see e.g. `dealloc_small`'s existing
+    // Primordial-aware `payload_start` branch), so no new carve-path code is
+    // needed here.
+    //
+    // `numa-aware` exclusion: the primordial reservation itself never goes
+    // through `numa::reserve_aligned_on_node` (it predates NUMA awareness —
+    // see `AllocCore::new_inner`'s comment), so there is no P2-gate conflict
+    // in the same sense `reserve_small_segment` has. This exclusion is kept
+    // anyway for two reasons: (1) it matches the `alloc-lazy-commit` feature
+    // doc's own blanket statement in `Cargo.toml` ("Under `numa-aware`, the
+    // lazy path is disabled ... to preserve NUMA placement"), so the
+    // primordial does not silently become the one exception to a documented,
+    // crate-wide policy; (2) it keeps `Segment::reserve` (the plain eager
+    // path) reachable under `--all-features` (which enables BOTH
+    // `alloc-lazy-commit` and `numa-aware` together) — without this
+    // exclusion `Segment::reserve` would have no remaining caller in that
+    // configuration once the small-segment AND primordial paths both moved to
+    // their NUMA-gated lazy/eager arms, tripping `-D warnings`' dead-code lint.
+    //
+    // On the eager path (feature-OFF, `small-segment-lazy-commit`-only, or
+    // `numa-aware`), `Segment::reserve` is unchanged — byte-identical to
+    // pre-R7-B6 behaviour. R12-9 (task #260): the gate below is
+    // `primordial-lazy-commit` specifically (NOT the `alloc-lazy-commit`
+    // umbrella) — this is the ONE call site that decides whether the
+    // primordial segment itself is reserved lazily; enabling ONLY
+    // `small-segment-lazy-commit` (without `primordial-lazy-commit`) leaves
+    // this arm on the eager `Segment::reserve` path.
+    #[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
+    let segment = {
+        // Task #1074: round UP to the RUNTIME OS page size. The tight sum is a
+        // multiple of the compile-time `PAGE` (4 KiB) only, which
+        // `aligned_vmem::validate_initial_commit` (commit dd6d027, task #1037)
+        // rejects on any host whose real page size exceeds 4 KiB — this was
+        // the macOS ARM64 (16 KiB-page) release blocker that made
+        // `AllocCore::new()` return `None` (CI run 32083383999, job `test
+        // macos (production)`: 454656 % 16384 = 12288 ≠ 0).
+        let initial_commit =
+            Layout::lazy_initial_commit(Layout::primordial_meta_end(), aligned_vmem::page_size());
+        // Uphold `reserve_lazy`'s full documented contract (non-zero, RUNTIME
+        // page-size multiple, `<= SEGMENT`) — all three hold by construction
+        // (`lazy_initial_commit` rounds to the runtime page size, and the
+        // const-assert in `segment_header.rs` bounds the rounded value with
+        // slack), but assert them anyway so a future layout change that broke
+        // either fails loudly.
+        debug_assert!(
+            initial_commit != 0
+                && initial_commit.is_multiple_of(aligned_vmem::page_size())
+                && initial_commit <= super::super::os::SEGMENT
+        );
+        Segment::reserve_lazy(initial_commit)?
+    };
+    #[cfg(not(all(feature = "primordial-lazy-commit", not(feature = "numa-aware"))))]
+    let segment = Segment::reserve(super::super::os::SEGMENT)?;
+    let base = segment.as_ptr();
+    let reservation = segment.reservation();
+    let reservation_len = segment.reservation_len();
+
+    // 2. Lay down the small-segment header at offset 0 via the node seam. We
+    //    write `bump = 0` here and fix it up after computing the metadata end.
+    let mut meta = SegmentMeta::new(base);
+    meta.write_header(SegmentHeader::small(
+        0,
+        0,
+        reservation.as_ptr(),
+        reservation_len,
+    ));
+
+    // 3. Initialise the page map and bin table at their fixed offsets. The
+    //    `Node::write_*` primitives (called from `init_in_place`) do the raw
+    //    writes; this code only computes offsets.
+    //
+    // R12-11 (task #262): `PageMap` maintenance is diagnostic-only (see its
+    // struct doc) — gated behind `page-map-diag` and elided from the
+    // default/production bootstrap path.
+    #[cfg(feature = "page-map-diag")]
+    let pm_off = Layout::page_map_off();
+    let bt_off = Layout::bin_table_off();
+    let reg_off = Layout::primordial_registry_off();
+    let meta_end = Layout::primordial_meta_end();
+    #[cfg(feature = "page-map-diag")]
+    let meta_pages = Layout::primordial_meta_pages();
+
+    // SAFETY (caller-side reasoning, encoded as the `init_in_place` contract):
+    // `base + pm_off` is within the freshly-reserved segment (compile-time
+    // checked: `Layout::primordial_meta_end() + PAGE <= SEGMENT`), and the
+    // segment is exclusively owned (single-threaded bootstrap). Each
+    // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
+    #[cfg(feature = "page-map-diag")]
+    super::super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
+    super::super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
+    // Initialise the per-segment alloc-bitmap (Phase 13.4a O(1) double-free
+    // guard) to all-zeros ("everything allocated / not-a-block"). Carved at the
+    // fixed `alloc_bitmap_off`; the bits are flipped to FREE as blocks are
+    // pushed onto free lists.
+    //
+    // PERF-PASS-2 (G5/C1, task #50): under `cfg(not(miri))` this explicit
+    // zero-init is SKIPPED — `base` is the PRIMORDIAL segment, reserved a few
+    // lines above via `Segment::reserve` (the ONLY OS allocation primitive on
+    // this bootstrap path — see the module doc), never carved or decommitted
+    // before this point. The OS guarantees fresh pages are zero (see the
+    // matching comment at `AllocCore::reserve_small_segment`'s identical skip,
+    // `alloc_core.rs`), so re-zeroing here is a tautology. Under `miri` the
+    // fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed, so
+    // miri keeps the explicit init unconditionally.
+    #[cfg(miri)]
+    super::super::alloc_bitmap::AllocBitmap::init_in_place(base_plus(
+        base,
+        Layout::alloc_bitmap_off(),
+    ));
+    // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended to
+    // the second (magazine-residency) bitmap — see
+    // `magazine_bitmap.rs`'s module doc and `MagazineBitmap::init_in_place`'s
+    // doc comment. Skipped under `cfg(not(miri))` for the identical reason as
+    // the line above (fresh OS pages read zero; the target init state is
+    // all-zeros).
+    #[cfg(miri)]
+    super::super::magazine_bitmap::MagazineBitmap::init_in_place(base_plus(
+        base,
+        Layout::magazine_bitmap_off(),
+    ));
+    // Initialise the per-segment non-intrusive cross-thread-free ring (the
+    // Variant-2 fix: queues carry offsets, never poison the block). Only under
+    // `alloc-xthread`; without it the ring metadata is reserved (the Layout
+    // always carves it, to keep the byte layout uniform) but left uninitialised
+    // — it is never read on the single-thread path.
+    #[cfg(feature = "alloc-xthread")]
+    {
+        let ring_off = Layout::remote_ring_off();
+        super::super::remote_free_ring::RemoteFreeRing::init_in_place(base, ring_off);
+    }
+    // X7 Ф3 (task #191): zero the per-segment generation table under
+    // `hardened`. Compiled ONLY under `hardened`; under any other feature the
+    // table does not exist and this call is absent (byte-identical to the
+    // pre-X7 build). Without this zeroing, a `gen_at`/`bump_gen` Relaxed load
+    // on a never-written cell is UB (miri-confirmed during Ф1) — the carried-
+    // over Ф1 gap this call closes. The table is NOT re-zeroed on
+    // decommit-reset: the X7 plan §2.2 fixes generation numbering as
+    // CONTINUOUS across decommit-reset, so old generations persist intentionally.
+    #[cfg(feature = "hardened")]
+    {
+        // SAFETY: `base` is a live, exclusively-owned segment whose
+        // generation table is carved and writable.
+        #[allow(unsafe_code)]
+        unsafe {
+            super::super::segment_header::init_gen_table_in_place(base)
+        };
+    }
+    // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
+    //    segment's own base (self-reference). The write goes through `Node`.
+    let reg_slots = base_plus(base, reg_off) as *mut *mut u8;
+    super::super::node::Node::write_struct::<*mut u8>(reg_slots, base);
+
+    // 4b. OPT-B: Initialise the open-addressing hash table at `hash_off`.
+    //     The "empty" sentinel is `null_mut()`, so a freshly-materialised
+    //     table must start all-null. Then insert the primordial base
+    //     (slot 0's value) so `contains_base` works from the very first
+    //     allocation.
+    let hash_off = Layout::primordial_hash_off();
+    let hash_slots = base_plus(base, hash_off) as *mut *mut u8;
+    // Zero-fill each slot to null_mut() (= "empty"). R17-3 (task #320):
+    // under `cfg(not(miri))` this explicit zero-fill is SKIPPED. `base` is
+    // the PRIMORDIAL segment, reserved a few lines above via
+    // `Segment::reserve`/`reserve_lazy` (the ONLY OS allocation primitive on
+    // this bootstrap path — see the module doc), never carved or decommitted
+    // before this point, so the OS guarantees these pages read zero
+    // (`mmap`/`VirtualAlloc`) — exactly the all-`null_mut()` "empty" state
+    // the loop would write; re-zeroing is a tautology. This is the SAME
+    // virgin-page skip the neighbouring `AllocBitmap`/`MagazineBitmap` init
+    // (PERF-PASS-2, G5/C1, task #50) and the page-map/bin-table init already
+    // apply to the OTHER primordial regions. R14-7's `MAX_SEGMENTS`
+    // 1024→4096 raise quadrupled this loop's trip count (LLVM lowers it to a
+    // `memset` of `HASH_CAPACITY * 8 = 2 * MAX_SEGMENTS * 8` bytes); R16-4
+    // (task #314) pinned the resulting flat +61.4K Ir startup regression to
+    // this `memset` in `claim_with_config` via `callgrind_annotate` (see
+    // `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §2.3a). Under `miri`
+    // the fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed,
+    // so miri keeps the explicit zero-fill unconditionally — the identical
+    // discipline as the bitmap inits above.
+    #[cfg(miri)]
+    for i in 0..segment_table::HASH_CAPACITY {
+        let slot = super::super::node::Node::offset(
+            hash_slots as *mut u8,
+            i * core::mem::size_of::<*mut u8>(),
+        ) as *mut *mut u8;
+        super::super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+    }
+    // Insert the primordial base into the hash table (mirrors slot 0 write).
+    // The hash table starts empty, so we hand-probe: start at hash_index(base),
+    // find the first empty slot, and write `base`. Since the table is freshly
+    // zeroed, slot hash_index(base) is guaranteed empty.
+    {
+        let start_idx =
+            (base as usize >> segment_table::SEGMENT_SHIFT) & (segment_table::HASH_CAPACITY - 1);
+        let hash_slot = super::super::node::Node::offset(
+            hash_slots as *mut u8,
+            start_idx * core::mem::size_of::<*mut u8>(),
+        ) as *mut *mut u8;
+        super::super::node::Node::write_struct::<*mut u8>(hash_slot, base);
+    }
+
+    // 4c. Task #135 (Part 1): initialise the free-list index-stack (recycled
+    //     slot indices) and its top-of-stack counter. The stack starts EMPTY
+    //     (top = 0) — slot 0 (primordial) is live and never recyclable, and
+    //     no other slot has been registered yet, so there is nothing to
+    //     recycle. Only entries `[0, top)` are ever read, so with `top = 0`
+    //     (written unconditionally below) NONE are read at bootstrap; each
+    //     entry is first WRITTEN by a real recycle push before it is ever
+    //     read, so the index array's initial contents are observationally
+    //     irrelevant — the zero-fill below is purely defensive.
+    let free_list_off = Layout::primordial_free_list_off();
+    let free_top_off = Layout::primordial_free_top_off();
+    let free_list_slots = base_plus(base, free_list_off) as *mut u32;
+    // R17-3 (task #320): the defensive zero-fill is SKIPPED under
+    // `cfg(not(miri))` by the same reasoning as the hash-table loop
+    // immediately above and the neighbouring bitmap inits: `base` is the
+    // PRIMORDIAL segment's fresh OS-zeroed pages, and (specific to this
+    // loop) `top = 0` means no entry is read before its first real write
+    // anyway. The skip recovers this loop's half of the +61.4K Ir startup
+    // regression R16-4 (task #314) attributed to it (`FREE_LIST_CAPACITY * 4
+    // = MAX_SEGMENTS * 4` bytes, LLVM-lowered to a `memset` — see
+    // `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §2.3a). Under `miri`
+    // the fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed,
+    // so miri keeps the explicit zero-fill unconditionally.
+    #[cfg(miri)]
+    for i in 0..segment_table::FREE_LIST_CAPACITY {
+        let slot = super::super::node::Node::offset(
+            free_list_slots as *mut u8,
+            i * core::mem::size_of::<u32>(),
+        ) as *mut u32;
+        super::super::node::Node::write_u32(slot, 0);
+    }
+    // `top = 0` is the stack's REAL structural initial state (empty), NOT a
+    // zero-fill — it is written unconditionally, independent of the
+    // cfg(miri)-gated array fill above.
+    let free_top_ptr = base_plus(base, free_top_off) as *mut u32;
+    super::super::node::Node::write_u32(free_top_ptr, 0);
+
+    // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
+    //    carving begins). Mark the page map / bin table / registry pages Meta
+    //    in the page map we just wrote.
+    let mut hdr = meta.header();
+    hdr.kind = SegmentKind::Primordial;
+    hdr.bump = meta_end;
+    meta.write_header(hdr);
+
+    // B1 (R7 Workstream B) / R7-B6 (primordial lazy commit): stamp the
+    // committed-payload frontier, mirroring `reserve_small_segment`'s
+    // identical 3-way stamping for ordinary small segments (R8-5, task #218)
+    // — this MUST match step 1's reservation gate exactly, since it stamps
+    // what step 1 actually committed.
+    //
+    //   1. `numa-aware` (any platform): `SEGMENT`. The primordial reservation
+    //      uses the plain eager `Segment::reserve`, and NUMA reservations
+    //      stay fully eager (P2 gate).
+    //
+    //   2. `primordial-lazy-commit` AND NOT `numa-aware` AND real Windows
+    //      (not miri): the page-rounded `meta_end + LAZY_FIRST_CHUNK`
+    //      (task #1074 — exactly what `Segment::reserve_lazy` committed; on
+    //      the 4 KiB pages every real Windows host has, identical to the
+    //      tight sum). `Segment::reserve_lazy`
+    //      did a REAL partial commit via the Windows 2-phase
+    //      `VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)` prefix,
+    //      and the frontier accurately reflects it.
+    //
+    //   3. `primordial-lazy-commit` AND NOT `numa-aware` AND Unix/miri:
+    //      `SEGMENT`. `reserve_aligned_lazy` internally ignores
+    //      `initial_commit` and `mmap`s / `alloc`s the WHOLE segment up front
+    //      (Unix has no separate reserve/commit distinction; miri models no
+    //      RSS). Pre-R8-5 the frontier was understated at `meta_end +
+    //      LAZY_FIRST_CHUNK` here too — sound but pointless, since B2's
+    //      grow-on-carve then ran a `commit_pages` (a correctness no-op on
+    //      these platforms) on every carve past the artificial frontier. R8-5
+    //      stamps `SEGMENT` immediately, matching the OS-level reality and
+    //      restoring the feature's zero-cost-when-unneeded property on
+    //      Unix/miri.
+    //
+    // The genuine Windows-lazy case (2) still goes through B2's grow-on-carve
+    // path on later carves past the frontier; this primordial stamp only
+    // changes the frontier's STARTING value on Unix/miri, not the grow-on-
+    // carve mechanism.
+    //
+    // R12-9 (task #260): the OUTER gate here is the SHARED `any(...)`
+    // condition, not `primordial-lazy-commit` alone — mirroring the
+    // identical fix in `reserve_small_segment` (`alloc_core_small.rs`).
+    // `committed_payload_end` defaults to `0` at construction; whenever
+    // EITHER split sub-feature is on, the shared B2 grow-on-carve check in
+    // `carve_block`/`carve_batch` compiles in and reads this field on every
+    // carve INTO THE PRIMORDIAL SEGMENT TOO (the primordial is carved via
+    // the exact same `carve_block`/`carve_batch` path once bootstrap hands
+    // it to `AllocCore::new_inner` as the first `small_cur` — see this
+    // function's module doc). If `small-segment-lazy-commit` is on but
+    // `primordial-lazy-commit` is off, this stamp must still fire (with the
+    // EAGER `SEGMENT` value, since step 1's reservation gate above took the
+    // eager `Segment::reserve` arm) — otherwise the unstamped `0` looks like
+    // "nothing committed yet" and triggers a spurious grow-on-carve commit
+    // on the primordial's very first carve.
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
+    {
+        #[cfg(all(feature = "primordial-lazy-commit", feature = "numa-aware"))]
+        meta.set_committed_payload_end(super::super::os::SEGMENT);
+        #[cfg(all(
+            feature = "primordial-lazy-commit",
+            not(feature = "numa-aware"),
+            windows,
+            not(miri)
+        ))]
+        meta.set_committed_payload_end(Layout::lazy_initial_commit(
+            meta_end,
+            aligned_vmem::page_size(),
+        ));
+        #[cfg(all(
+            feature = "primordial-lazy-commit",
+            not(feature = "numa-aware"),
+            any(not(windows), miri)
+        ))]
+        meta.set_committed_payload_end(super::super::os::SEGMENT);
+        // `primordial-lazy-commit` OFF (only `small-segment-lazy-commit` is
+        // on): the primordial was reserved EAGERLY (step 1's `else` arm), so
+        // the frontier must be stamped `SEGMENT` unconditionally.
+        #[cfg(not(feature = "primordial-lazy-commit"))]
+        meta.set_committed_payload_end(super::super::os::SEGMENT);
+    }
+
+    // R12-10 (task #261, `virgin-zero-skip`): stamp the payload-virgin bit.
+    // The primordial segment is reserved via `Segment::reserve`/
+    // `reserve_lazy` at step 1 above — a genuinely fresh OS reservation,
+    // zero-guaranteed on every real backend, exactly like an ordinary small
+    // segment's `reserve_small_segment` stamp (see that function's identical
+    // comment). `AllocCore::new_inner` immediately reuses this segment as the
+    // first `small_cur` carve target, so `carve_block`/`carve_batch` must see
+    // the correct bit before the very first post-bootstrap allocation.
+    // Withheld under `cfg!(miri)` for the same reason as every other
+    // freshness signal on this path (miri's `std::alloc` fallback does not
+    // zero).
+    #[cfg(feature = "virgin-zero-skip")]
+    meta.set_payload_virgin(cfg!(not(miri)));
+
+    // 6. Construct the SegmentTable view. `from_primordial` is safe (it
+    //    performs no memory operation — just wraps the pointer + count); the
+    //    contract that slot 0 was written is the bootstrap's invariant.
+    let table =
+        SegmentTable::from_primordial(reg_slots, 1, hash_slots, free_list_slots, free_top_ptr);
+
+    Some(Primordial { segment, table })
+}
+
+/// `base + off` as a `*mut u8`, routed through the `node` seam (`add` is
+/// unsafe; the seam documents the in-bounds contract). The result is
+/// dereferenced later only by code that has proven `off` is within the segment
+/// bounds.
+fn base_plus(base: *mut u8, off: usize) -> *mut u8 {
+    super::super::node::Node::offset(base, off)
+}

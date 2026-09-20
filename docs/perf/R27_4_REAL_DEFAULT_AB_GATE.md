@@ -119,7 +119,7 @@ differences from the R26-3 templates:
 ### Why the effective cap is identical to R26-3 (and why this measurement still matters)
 
 `AllocCore::new_with_config` resolves `pool_cap = min(pool_segments,
-pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core.rs:839`; `SEGMENT = 4 MiB`).
+pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core/mod.rs:839`; `SEGMENT = 4 MiB`).
 `pool_byte_cap` is consumed ONLY by that `min()` — it has no separate budget
 effect (verified: `grep -rn 'pool_byte_cap' src/` resolves to the builder field
 + the `min()` resolution sites, nothing else). So:

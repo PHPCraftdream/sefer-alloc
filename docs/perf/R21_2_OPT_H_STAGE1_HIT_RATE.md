@@ -11,8 +11,8 @@ two-stage discipline, `docs/perf/R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md`
 §5.1).
 
 **Date:** 2026-07-26. **Base revision:** `main` @ `517a85b` (R21-1, task #350)
-plus this task's own uncommitted diff (`src/alloc_core/alloc_core.rs`,
-`src/alloc_core/alloc_core_core_diag.rs`). (Resolved: this diff, including
+plus this task's own uncommitted diff (`src/alloc_core/alloc_core/mod.rs`,
+`src/alloc_core/alloc_core/alloc_core_core_diag/`). (Resolved: this diff, including
 this report itself, was committed as `b6af12d` — see §7's file list and the
 matching note at the end of this document. The "uncommitted" framing above is
 kept as the honest point-in-time record of what was true when this report was
@@ -22,7 +22,7 @@ first drafted, before that commit landed.)
 
 ## 1. What was implemented (recap — see the diff for the actual code)
 
-Two `pub(crate) static AtomicU64` counters in `src/alloc_core/alloc_core.rs`
+Two `pub(crate) static AtomicU64` counters in `src/alloc_core/alloc_core/mod.rs`
 (mirroring `LARGE_ZERO_PASS_CALLS`/`SMALL_ZERO_PASS_CALLS`'s exact pattern:
 storage always compiled, per-event increment gated behind `alloc-stats`):
 
@@ -58,7 +58,7 @@ taken when `new_class != old_class` (OPT-F declined). The branch:
    plain `production` build pays zero cost: no extra branch, no extra load.
 
 Two `#[doc(hidden)]` read accessors, `AllocCore::dbg_opt_h_attempts()` /
-`dbg_opt_h_hits()`, added to `src/alloc_core/alloc_core_core_diag.rs`
+`dbg_opt_h_hits()`, added to `src/alloc_core/alloc_core/alloc_core_core_diag/`
 (mirroring `dbg_wasted_dirty_drains()`'s exact pattern).
 
 ---
@@ -383,9 +383,9 @@ only remaining unexplored variant if a future round wants to revisit this.
 
 ## 7. Files touched by this task
 
-- `src/alloc_core/alloc_core.rs` — `OPT_H_ATTEMPTS`/`OPT_H_HITS` statics; new
+- `src/alloc_core/alloc_core/mod.rs` — `OPT_H_ATTEMPTS`/`OPT_H_HITS` statics; new
   observation-only branch inside `realloc_inplace_fast_path_known_base`.
-- `src/alloc_core/alloc_core_core_diag.rs` — `dbg_opt_h_attempts()` /
+- `src/alloc_core/alloc_core/alloc_core_core_diag/` — `dbg_opt_h_attempts()` /
   `dbg_opt_h_hits()` read accessors.
 - `tests/r21_2_opt_h_stage1_precondition_probe.rs` — new regression test
   (2 tests).
@@ -410,7 +410,7 @@ for this report specifically.)
 (Resolved, R22-4/task #355, 2026-07-26: this statement itself went stale the
 moment the zero-trust review passed and the diff was committed as `b6af12d`
 — `git show b6af12d --stat` confirms this exact file, plus
-`src/alloc_core/alloc_core.rs`, `src/alloc_core/alloc_core_core_diag.rs`,
+`src/alloc_core/alloc_core/mod.rs`, `src/alloc_core/alloc_core/alloc_core_core_diag/`,
 `tests/r21_2_opt_h_stage1_precondition_probe.rs`, `docs/ARCHITECTURE.md`, and
 `docs/perf/OPEN_ITEMS.md`, were all part of that one commit. The self-
 description above was never updated at commit time and sat stale through the

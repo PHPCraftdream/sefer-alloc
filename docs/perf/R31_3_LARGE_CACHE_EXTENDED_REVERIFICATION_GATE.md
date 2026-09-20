@@ -44,10 +44,10 @@ drifted since — see each item for what changed).
 
 1. **Budget-vs-materialisation ordering.** Still intact.
    `AllocCore::large_cache_deposit_budget_infeasible`
-   (`src/alloc_core/alloc_core_large_cache.rs:164`) is still called BEFORE
+   (`src/alloc_core/large/alloc_core_large_cache.rs:164`) is still called BEFORE
    `large_cache_find_free_slot` (`:203`) at both admission call sites
-   (`src/alloc_core/alloc_core.rs:1539`, the Large-`dealloc` branch;
-   `src/alloc_core/alloc_core_large.rs:589`, `reclaim_large_segment`) — the
+   (`src/alloc_core/alloc_core/mod.rs:1539`, the Large-`dealloc` branch;
+   `src/alloc_core/large/alloc_core_large.rs:589`, `reclaim_large_segment`) — the
    exact pre-check ordering R14-5 §1 added. No drift.
 2. **Finite default budget for `large-cache-extended`.** Intact AS A
    MECHANISM, but the NUMERIC VALUE has changed since R14-5 landed — this is
@@ -59,7 +59,7 @@ drifted since — see each item for what changed).
    across many concurrently-active heaps in a thread-per-core server (no
    process-wide coordination between heaps — `AllocCore` is owner-only,
    neither `Send` nor `Sync`). Current source:
-   `src/alloc_core/large_cache_config.rs:159`
+   `src/alloc_core/config/large_cache_config.rs:159`
    (`pub(crate) const DEFAULT_EXTENDED_BUDGET_BYTES: usize = DEFAULT_HEADROOM_BYTES;`).
    R14-5's own report ALREADY carries an R17-9 update note at its top
    disclosing this — this task's re-verification confirms that disclosed
@@ -112,7 +112,7 @@ changes — see §1 item 6 above) via `scripts/paired-ab-runner.mjs`.
 `LargeCacheConfig::DEFAULT` — which under `large-cache-extended` resolves
 `budget_bytes: None` to `Some(DEFAULT_EXTENDED_BUDGET_BYTES)` = **256
 MiB, the current finite default**, via
-`resolved_budget_bytes()` (`src/alloc_core/large_cache_config.rs:340`). This
+`resolved_budget_bytes()` (`src/alloc_core/config/large_cache_config.rs:340`). This
 harness was ALREADY exercising the finite default by construction — no
 change was needed to satisfy the task's "use a finite budget for the
 extended-slot arm" instruction; the original R14-5 report's own harness
@@ -427,7 +427,7 @@ existing default — no new number is being proposed.
 
 ### 5.3 Coordination with R31-9/#473 (`Profile` API rework)
 
-`src/alloc_core/profile.rs`'s current `Profile` enum (`Rss` / `Balanced` /
+`src/alloc_core/config/profile.rs`'s current `Profile` enum (`Rss` / `Balanced` /
 `Throughput`) sets `headroom_bytes` (large-cache decay floor) and the
 small-pool pair (`pool_segments`/`pool_byte_cap`) together — it does NOT
 touch `budget_bytes` (the large-cache hard ceiling this feature's default
@@ -569,7 +569,7 @@ measurements, at two DIFFERENT, explicitly-named layers:
    constructed directly with no TLS heap-claim, no registry slot, no
    per-thread bootstrap indirection. This is deliberately a DIFFERENT,
    LOWER layer than §8.2 — it isolates the `alloc_large` best-fit scan loop
-   itself (`src/alloc_core/alloc_core_large.rs:215-227`) from every other
+   itself (`src/alloc_core/large/alloc_core_large.rs:215-227`) from every other
    cost §8.2's timed region also includes (header rewrite, registry
    register/unregister, magic-store, TLS resolution). §8.2 and §8.3 are
    COMPLEMENTARY measurements of different questions, not two attempts at

@@ -227,9 +227,9 @@ Round-trip assert (held): 8,051 + 759 + 192 + 35 = 9,037.
 
 **A' — the four `5289c66` src files reverted at `5289c66`**
 (`_raw_item56_counterfactual_5289c66_reverted.log`; reverted-to blobs
-`5289c66^:src/alloc_core/segment_table.rs` = `0b480a7a18f204f0aa64af6c734fd41799c8f70c`,
-`5289c66^:src/alloc_core/alloc_core.rs` = `9430055a2c4f008b88c60be3b89d442f3c3d750c`,
-`5289c66^:src/alloc_core/alloc_core_core_diag.rs` = `d97faa597bd34002e394c1eb480ae316bba44b5d`,
+`5289c66^:src/alloc_core/segment/segment_table/mod.rs` = `0b480a7a18f204f0aa64af6c734fd41799c8f70c`,
+`5289c66^:src/alloc_core/alloc_core/mod.rs` = `9430055a2c4f008b88c60be3b89d442f3c3d750c`,
+`5289c66^:src/alloc_core/alloc_core/alloc_core_core_diag/` = `d97faa597bd34002e394c1eb480ae316bba44b5d`,
 `5289c66^:src/registry/heap_core_diag.rs` = `0e6d665045527ca24aead2c12ba889272d756256`):
 every compared arm is byte-identical to the `5df56d3` level — max abs deviation
 **1 Ir** across the whole common-arm set (29 arms sit at exactly +1, the rest

@@ -69,8 +69,8 @@ production-plumbing cost) a prototype is not rushed.
 
 ## 1. Scope recap — what the Large path already does, and why Small is harder
 
-R8-8/R9-1 ships a Large-path zero-skip (`src/alloc_core/alloc_core_large.rs:39-56`,
-57, 267-360; `src/alloc_core/alloc_core.rs:825-833`; `src/registry/heap_core_alloc.rs:
+R8-8/R9-1 ships a Large-path zero-skip (`src/alloc_core/large/alloc_core_large.rs:39-56`,
+57, 267-360; `src/alloc_core/alloc_core/mod.rs:825-833`; `src/registry/heap_core_alloc.rs:
 335-365`). `alloc_large` returns `(*mut u8, bool)`; `alloc_large_slow` (the only
 fresh-span producer) yields `cfg!(not(miri))`; a `large_cache` HIT yields `false`
 everywhere. The signal is **SEGMENT-granular**: one whole 4 MiB (or larger)
@@ -81,7 +81,7 @@ a per-platform delta-assertion against `dbg_large_zero_pass_count`.
 
 The Small path is **fundamentally multi-block-per-segment**: one 4 MiB segment
 holds many same-class blocks, carved incrementally by a per-segment monotonic
-bump cursor (`carve_block`, `src/alloc_core/alloc_core_small.rs:1052-1162`;
+bump cursor (`carve_block`, `src/alloc_core/small/alloc_core_small/mod.rs:1052-1162`;
 batched sibling `carve_batch`, `alloc_core_small.rs:1209-1287`). The block at
 range `[old_bump, old_bump + block_size)` is carved exactly once; later, after
 `dealloc`, it may return to the segment's free list and be re-served by `pop_free`
@@ -131,7 +131,7 @@ since."
 
 **Operational test for "is the block I am about to hand out virgin?".** A block
 served by `alloc_small` reaches the caller through exactly one of two dispatches
-(verified, `src/alloc_core/alloc_core_small.rs:103-150`):
+(verified, `src/alloc_core/small/alloc_core_small/mod.rs:103-150`):
 
 1. **`pop_free` (free-list pop)** — the block was previously carved, handed out,
    and freed. By construction **never virgin**, regardless of OS state.
@@ -150,7 +150,7 @@ distinguished at the call site — no new metadata) AND a **segment-lifetime tes
 ## 3. The per-segment field — `payload_virgin: bool`
 
 Add ONE bit of per-segment state to `SegmentHeader`
-(`src/alloc_core/segment_header.rs`, alongside the existing owner-only
+(`src/alloc_core/segment/segment_header/mod.rs`, alongside the existing owner-only
 `committed_payload_end: usize` at line 547 and `bump: usize` at line 315):
 
 ```text
@@ -191,7 +191,7 @@ virgin signal handed back to `alloc_small`. `pop_free` produces `false`
 unconditionally. `alloc_small` propagates the signal up to `alloc_zeroed`'s small
 arm, which skips `Node::zero` iff the signal is `true` and bumps a new
 `SMALL_ZERO_PASS_CALLS` counter iff it is `false` (mirroring `LARGE_ZERO_PASS_CALLS`,
-`src/alloc_core/alloc_core.rs:214`, `src/alloc_core/alloc_core_core_diag.rs:409-410`).
+`src/alloc_core/alloc_core/mod.rs:214`, `src/alloc_core/alloc_core/alloc_core_core_diag/:409-410`).
 
 **Storage / layout cost.** One byte (one bit, but stored as a `bool` field for
 the same field-atomicity discipline `committed_payload_end`/`bump` use). Inline
@@ -271,12 +271,12 @@ verification (run this session):**
 
 ```text
 === callers of decommit_empty_segment_impl ===
-src/alloc_core/alloc_core_small_pool.rs:621:  Self::decommit_empty_segment_impl(meta, base, true);   ← ONLY caller, hard-coded true
-src/alloc_core/alloc_core_small_pool.rs:631:  fn decommit_empty_segment_impl(...) {                  ← the definition
+src/alloc_core/small/alloc_core_small_pool/mod.rs:621:  Self::decommit_empty_segment_impl(meta, base, true);   ← ONLY caller, hard-coded true
+src/alloc_core/small/alloc_core_small_pool/mod.rs:631:  fn decommit_empty_segment_impl(...) {                  ← the definition
 (+ doc/comment references only)
 
 === callers of decommit_empty_segment_for_release ===
-src/alloc_core/alloc_core_small_pool.rs:359:  Self::decommit_empty_segment_for_release(meta, base);  ← ONLY production caller
+src/alloc_core/small/alloc_core_small_pool/mod.rs:359:  Self::decommit_empty_segment_for_release(meta, base);  ← ONLY production caller
 (+ the definition + doc references)
 ```
 
@@ -400,7 +400,7 @@ The production entry point `HeapCore::alloc_zeroed`
 (`src/registry/heap_core_alloc.rs:318-333`) handles the small arm by calling
 `self.alloc(layout)` (which under `production`/`fastbin` routes through the
 magazine fast path: `HeapCore::alloc` → magazine pop → `refill_magazine_slow` →
-`refill_class_bump_checked` → `carve_batch`, `src/alloc_core/alloc_core_small_magazine.rs`)
+`refill_class_bump_checked` → `carve_batch`, `src/alloc_core/small/alloc_core_small_magazine.rs`)
 and then applying an *unconditional* `Node::zero`. It never calls
 `AllocCore::alloc_zeroed`. So a substrate-only prototype:
 
@@ -433,7 +433,7 @@ flagged as especially high for this task. **Design-only is the honest call.**
 For a *genuinely first-touch, never-reused* `alloc_zeroed` call (the only regime
 the skip benefits), the optimization saves the full explicit `Node::zero` /
 `memset(N)`. `Node::zero` is `core::ptr::write_bytes(ptr, 0, len)`
-(`src/alloc_core/node.rs:131-151`), i.e. a standard memset.
+(`src/alloc_core/platform/node.rs:131-151`), i.e. a standard memset.
 
 **Defensible memset throughput on a modern x86-64 core** (single thread,
 non-temporal for sizes exceeding L3, hot for cache-resident). The honest
@@ -633,7 +633,7 @@ by a file-wide `Mutex` (mirroring `tests/alloc_zeroed_fresh_large_skip.rs:42-51`
   Stage 1.
 - **The magazine-plumbing storage question (Stage 2) is genuinely open.** §11's
   three candidates are sketched, not analyzed; the `hardened` feature's tagged-
-  pointer scheme (`src/alloc_core/remote_free_ring.rs`, `src/alloc_core/segment_header_gen_table.rs`)
+  pointer scheme (`src/alloc_core/segment/remote_free_ring/mod.rs`, `src/alloc_core/segment/segment_header/segment_header_gen_table.rs`)
   may interact with the tag-bit-in-pointer option. This is the real remaining
   design work and is why a production prototype is not rushed.
 - **No `src/` or `Cargo.toml` was modified.** This is a documentation-only

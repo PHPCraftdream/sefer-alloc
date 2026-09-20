@@ -168,7 +168,7 @@ hold an AWS account), needs manual recipe.
 (primary, ~$0.15 / ~8 minutes scripted), Azure `HBv4` alternative,
 explicit "GCP not recommended" note, and a budget breakdown. Run the
 recipe before any release tagged `0.x.y` whose diff touches
-`crates/numa-shim/**`, `src/alloc_core/numa.rs`, or
+`crates/numa-shim/**`, `src/alloc_core/platform/numa.rs`, or
 `segment_header::node_id`.
 
 ### F) Larger GitHub Actions runners

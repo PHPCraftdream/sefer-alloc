@@ -4,7 +4,7 @@ Date: 2026-08-04.
 
 source_identity (captured BEFORE measurement, per CLAUDE.md R29-6):
 `git write-tree` tree SHA **`8b657703084f10aeadebe52f3302b63a965eac5a`**
-(stages `src/alloc_core/alloc_core_large_cache.rs`, `examples/r34_11_catchup_decay_gate.rs`,
+(stages `src/alloc_core/large/alloc_core_large_cache.rs`, `examples/r34_11_catchup_decay_gate.rs`,
 `Cargo.toml`, `scripts/r34_11_catchup_decay_summary.mjs` over base `5c1142f`;
 reconstruct via `git read-tree 8b657703084f10aeadebe52f3302b63a965eac5a`).
 Supplementary binary hash (option 4): SHA256
@@ -14,7 +14,7 @@ Supplementary binary hash (option 4): SHA256
 
 R34-10 (task #529, `docs/perf/R34_10_SPARSE_DECAY_GATE.md`) measured and
 confirmed a real defect: `DECAY_CLOCK_CHECK_STRIDE = 64`
-(`src/alloc_core/alloc_core_large_cache.rs`) causes the throttled arm's
+(`src/alloc_core/large/alloc_core_large_cache.rs`) causes the throttled arm's
 retention gap to **accumulate to 4 segments (16 MiB) and persist for 95.0%
 of the run** (38/40 intervals at ≥3 segments) over consecutive sparse
 intervals at 1 alloc+free event/interval. Root cause: `run_decay_step` fires
@@ -36,7 +36,7 @@ claim.
 
 ## 1. The fix (code change)
 
-In `src/alloc_core/alloc_core_large_cache.rs`, `maybe_decay_large_cache`'s
+In `src/alloc_core/large/alloc_core_large_cache.rs`, `maybe_decay_large_cache`'s
 post-interval-elapsed section changed from a single
 `self.last_decay_tick = Some(now); self.run_decay_step();` to:
 
@@ -298,7 +298,7 @@ other's regime.
 
 ## 9. Files changed
 
-- `src/alloc_core/alloc_core_large_cache.rs` — added `DECAY_CATCHUP_MAX_STEPS
+- `src/alloc_core/large/alloc_core_large_cache.rs` — added `DECAY_CATCHUP_MAX_STEPS
   = 8` constant and replaced the single `run_decay_step()` call in
   `maybe_decay_large_cache` with a bounded catch-up loop (also updated the
   function's doc comment).

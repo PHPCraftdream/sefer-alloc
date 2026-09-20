@@ -55,12 +55,12 @@ the recipe," despite the design itself being logically sound:
 
 2. **Idle does not shrink a grown heap — and this project will not add a thread
    to do it.** R27-3 §3 proved the small-pool decay is event-driven (fires only
-   on `reserve_small_segment`, `src/alloc_core/alloc_core_small.rs:1874`; no
+   on `reserve_small_segment`, `src/alloc_core/small/alloc_core_small/mod.rs:1874`; no
    background thread). A heap that grew to cap 8 and then went idle STAYS at
    cap 8's retention until its owning thread exits (`trim_for_recycle` drains
    it). Shrinking the *growth state itself* during pure idle would require a
    timer/background thread this project has a documented, repeated anti-precedent
-   against (`src/alloc_core/alloc_core.rs:135` "no background thread is needed";
+   against (`src/alloc_core/alloc_core/mod.rs:135` "no background thread is needed";
    `large_cache_config.rs:330`; `large_cache_mode.rs:14`; the `background-
    scavenger` `LargeCacheMode` variant reserved `#[non_exhaustive]` but
    "deferred indefinitely"). So an adaptive design cannot deliver its
@@ -165,9 +165,9 @@ makes the total ~+8 MiB rather than ~+4 MiB (R27-3 §2).
 
 **Decay (R27-3 §3, confirmed by reading source):** the small-pool decay shares
 the large-cache 1000 ms interval (`DEFAULT_DECAY_INTERVAL_MS`,
-`src/alloc_core/large_cache_config.rs:51`) but is **event-driven** — it fires
+`src/alloc_core/config/large_cache_config.rs:51`) but is **event-driven** — it fires
 inline on the `reserve_small_segment` cold path (`maybe_decay_small_pool`,
-`src/alloc_core/alloc_core_small_pool.rs:516`, called at
+`src/alloc_core/small/alloc_core_small_pool/mod.rs:516`, called at
 `alloc_core_small.rs:1874`), evicting one FIFO-oldest pooled segment per tick.
 **No background thread.** Pure idle (no allocations) does NOT decay the pool:
 RSS and `dbg_pooled_count` are flat across R27-3's 2 s idle window. The
@@ -176,7 +176,7 @@ ticks) or until explicit drain / thread-exit / recycle.
 
 ### 2.3 The lifecycle facts (read from source this task)
 
-- **`pool_cap` is set once at materialization** (`src/alloc_core/alloc_core.rs:836-839`,
+- **`pool_cap` is set once at materialization** (`src/alloc_core/alloc_core/mod.rs:836-839`,
   `pool_cap = min(pool_segments, pool_byte_cap / SEGMENT)`) and is an `AllocCore`
   field (`:660-672`), not re-derived per allocation. `SEGMENT = 4 MiB`.
 - **`claim_with_config` is first-claim-wins** (`src/registry/heap_registry.rs:247-299`):
@@ -195,7 +195,7 @@ ticks) or until explicit drain / thread-exit / recycle.
   `LargeCacheMode` enum reserves a `background-scavenger` variant
   (`#[non_exhaustive]`) but it is explicitly "deferred indefinitely"
   (`docs/checkpoints/2026-06-28-numa-complete-perf-investigation.md`).
-- **`DECOMMIT_CALLS`** (`src/alloc_core/alloc_core.rs:221`) is a process-wide
+- **`DECOMMIT_CALLS`** (`src/alloc_core/alloc_core/mod.rs:221`) is a process-wide
   relaxed `AtomicU64`, incremented inside `decommit_empty_segment_impl`
   (`alloc_core_small_pool.rs:745`) — already a cold-path diagnostic, the natural
   template for any new growth-event counter.
@@ -386,7 +386,7 @@ The review identified three options for reclaiming growth after a burst:
 **(a) A genuinely new timer/background mechanism.** This is the only option that
 reclaims retention during *pure idle* (no allocations). It is **REJECTED** by
 this project's documented, repeated anti-precedent: every existing decay is
-event-driven ("no background thread is needed," `src/alloc_core/alloc_core.rs:135`;
+event-driven ("no background thread is needed," `src/alloc_core/alloc_core/mod.rs:135`;
 "no background thread," `large_cache_config.rs:330`, `large_cache_mode.rs:14`).
 The reserved `background-scavenger` `LargeCacheMode` variant is "deferred
 indefinitely." Adding a background thread for the small pool alone would

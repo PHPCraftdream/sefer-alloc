@@ -297,7 +297,7 @@ segments.
 
 | file | change |
 |---|---|
-| `src/alloc_core/alloc_core_small_pool.rs` | +`SegmentStateAccount` / `SegmentStateReconciliation` structs + `dbg_segment_state_reconciliation` method (all `bench-internals`-gated safe `pub`) |
+| `src/alloc_core/small/alloc_core_small_pool/mod.rs` | +`SegmentStateAccount` / `SegmentStateReconciliation` structs + `dbg_segment_state_reconciliation` method (all `bench-internals`-gated safe `pub`) |
 | `src/alloc_core/mod.rs` | +re-export of the two structs under `#[cfg(all(alloc-decommit, bench-internals))]` |
 | `src/registry/heap_core_diag.rs` | +thin `HeapCore::dbg_segment_state_reconciliation` delegation wrapper |
 | `examples/r29_4_segment_state_reconciliation_gate.rs` | NEW — subprocess-per-arm reconciliation probe (2 children: cap4, cap8) |

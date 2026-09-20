@@ -11,7 +11,7 @@ swap is pure dedup). The task, the #174 precedent, and the orchestrator brief al
 sanctioned a reasoned NO-GO. **All 7 in-tree ring/dirty loom models are KEPT**
 (the shipping code is unchanged, so its coverage must stay — the #174 lesson).
 
-## Tier A — `src/alloc_core/remote_free_ring.rs` (raw tier): NO-GO
+## Tier A — `src/alloc_core/segment/remote_free_ring/mod.rs` (raw tier): NO-GO
 
 Structural layout incompatibility with `ring-mpsc`'s `over_raw` / `RawStore`
 (verified against both sources):

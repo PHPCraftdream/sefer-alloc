@@ -193,12 +193,12 @@
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
 //    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty):
-//      * `alloc_core::os`   — thin interop wrapper around aligned-vmem; any
+//      * `alloc_core::platform::os`   — thin interop wrapper around aligned-vmem; any
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `alloc-core`)
-//      * `alloc_core::node` — intrusive free-list node r/w through raw pointers;
+//      * `alloc_core::platform::node` — intrusive free-list node r/w through raw pointers;
 //                             the generalized `hand` discipline. (under `alloc-core`)
-//      * `alloc_core::sidecar` — the owner-only lazily-materialised sidecar
+//      * `alloc_core::platform::sidecar` — the owner-only lazily-materialised sidecar
 //                             primitive (`reserve`/`deref`/`deref_mut`) shared
 //                             by `os`'s SegmentDirectory reservation and
 //                             `large_cache_extended`'s LargeCacheExtension
@@ -221,18 +221,18 @@
 //      * `registry::heap_registry` — `*mut HeapCore` pointer handoff out of a slot.
 //                             (under `alloc-global`)
 //
-//    Optional `numa-aware` path: no new unsafe seams — `alloc_core::numa`
+//    Optional `numa-aware` path: no new unsafe seams — `alloc_core::platform::numa`
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`
 //    unsafe seam was removed in task #1306, together with numa-shim's
 //    `bind_range`). (under `numa-aware`)
 //
 //    Optional `class-aware-dirty` path (R12-7 stage 2, EXPERIMENTAL):
-//      * `alloc_core::dirty_by_class` — dereferences the `OncePtrCell`-
+//      * `alloc_core::platform::dirty_by_class` — dereferences the `OncePtrCell`-
 //                             published per-(segment, class) dirty-bit
 //                             sidecar pointer. (under `class-aware-dirty`)
 //
 //    Optional `large-cache-extended` path (R13-6):
-//      * `alloc_core::large_cache_extended` — the lazily-materialised
+//      * `alloc_core::large::large_cache_extended` — the lazily-materialised
 //                             large-cache extension sidecar (owner-only, no
 //                             `OncePtrCell`); reserves via `sidecar::reserve`,
 //                             dereferences via `sidecar::deref[_mut]`.
@@ -253,7 +253,7 @@
 //  that contract from safe code is UB even though no `unsafe` keyword appears
 //  at the violation site. Concrete membranes to audit as part of the trusted
 //  computing base:
-//    * `alloc_core::node::{write_usize, write_struct, offset, zero, ...}` — safe
+//    * `alloc_core::platform::node::{write_usize, write_struct, offset, zero, ...}` — safe
 //      `pub(crate)` fns whose whole body is a raw r/w; soundness rests on the
 //      caller's bounds/exclusivity/`'static` invariants stated in prose.
 //    * `os::release_segment` — a safe fn; a double call (double-release) from

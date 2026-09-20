@@ -59,7 +59,7 @@ already-reviewed code across this campaign's entire 14-audit history.
   and `size` a page multiple (`lib.rs:543-545`, enforced Windows-side at
   `:1333-1343`). The crate's "safe path" never hits this bug.
 - **The in-tree consumer is unaffected by any option**:
-  `src/alloc_core/numa.rs:61-71` (`bind_segment`) only ever passes 4
+  `src/alloc_core/platform/numa.rs:61-71` (`bind_segment`) only ever passes 4
   MiB-segment-aligned reservations to `bind_range`.
 - **Misaligned `base` is NOT UB** — it's a failed syscall, not memory
   unsafety. Tasks #725/#778 (earlier in this crate's history) deliberately

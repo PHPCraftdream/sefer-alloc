@@ -36,7 +36,7 @@ via `benches/medium_size_sweep.rs`. It explicitly scoped out promotion
 flagged three structural side-effects of the feature that R8-9 did not check but
 which hit EVERY build (and therefore hit the promotion question):
 
-1. **`SIZE_CLASS_TABLE` grows 49 → 55 classes** (`src/alloc_core/size_classes.rs`,
+1. **`SIZE_CLASS_TABLE` grows 49 → 55 classes** (`src/alloc_core/platform/size_classes.rs`,
    the `EXTRAS` cfg block) and `SMALL_MAX` grows ~253 KiB → 1 MiB. Every
    `size → class` lookup now walks a 55-entry table instead of 49; every
    bootstrap-time table/magazine init touches 6 more entries.

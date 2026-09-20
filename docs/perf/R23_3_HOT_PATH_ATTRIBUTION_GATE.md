@@ -102,7 +102,7 @@ brief warned against. **This report isolates them TOGETHER, as the smallest
 honestly separable unit past the routing prefix — see §6.1 for the full
 "not cleanly isolable" writeup.**
 
-### 1.3 Free routing — Tier-1 vs Tier-2 (`src/alloc_core/segment_table.rs:443-489`)
+### 1.3 Free routing — Tier-1 vs Tier-2 (`src/alloc_core/segment/segment_table/mod.rs:443-489`)
 
 Investigated whether a benched WORKLOAD (touching more than `OWN_CACHE_SIZE`
 (4) distinct segments) can portably force a Tier-2 (8192-slot open-addressing
@@ -125,7 +125,7 @@ layout, without inventing a new probe mechanism (it is the exact function
 not as a component that fires within THIS gate's own single-hot-segment
 workload.
 
-### 1.4 Cold carve vs recycle (`src/alloc_core/alloc_core_small.rs:1429`,
+### 1.4 Cold carve vs recycle (`src/alloc_core/small/alloc_core_small/mod.rs:1429`,
 `carve_batch`/`carve_block`)
 
 `AllocCore::carve_batch` (the batched sibling `carve_block_with_refill`'s
@@ -204,11 +204,11 @@ not carried forward.
 
 ## 3. New measurement hooks (`#[doc(hidden)]`, following the exact existing pattern)
 
-1. **`SegmentTable::dbg_hash_contains_only`** (`src/alloc_core/segment_table.rs`)
+1. **`SegmentTable::dbg_hash_contains_only`** (`src/alloc_core/segment/segment_table/mod.rs`)
    — calls `hash_contains` (Tier-2) directly, no Tier-1 cache check, no cache
    fill. Unconditional (no feature gate), mirroring `contains_base`/
    `contains_base_ro` immediately above it in the same file.
-2. **`AllocCore::dbg_hash_contains_only`** (`src/alloc_core/alloc_core_core_diag.rs`)
+2. **`AllocCore::dbg_hash_contains_only`** (`src/alloc_core/alloc_core/alloc_core_core_diag/`)
    — thin delegation, takes a pre-computed base (mirrors
    `dbg_segment_base_of_ptr`'s existing convention of NOT computing the base
    itself).
@@ -461,10 +461,10 @@ here.
 
 ## Files touched
 
-- `src/alloc_core/segment_table.rs` — added
+- `src/alloc_core/segment/segment_table/mod.rs` — added
   `SegmentTable::dbg_hash_contains_only` (measurement-only, unconditional,
   `#[doc(hidden)]`).
-- `src/alloc_core/alloc_core_core_diag.rs` — added
+- `src/alloc_core/alloc_core/alloc_core_core_diag/` — added
   `AllocCore::dbg_hash_contains_only` (thin delegation).
 - `src/registry/heap_core_diag.rs` — added `HeapCore::dbg_hash_contains_only`
   and `HeapCore::dbg_dealloc_own_thread_with_base` (thin delegations,

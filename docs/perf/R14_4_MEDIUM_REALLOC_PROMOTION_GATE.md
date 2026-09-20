@@ -121,7 +121,7 @@ caller's request.**
 
 ### 2.1 Reasoning
 
-`AllocCore::alloc_large` (`src/alloc_core/alloc_core_large.rs`) rounds every
+`AllocCore::alloc_large` (`src/alloc_core/large/alloc_core_large.rs`) rounds every
 request up to a whole `SEGMENT` (4 MiB) multiple unless the opt-in
 `exact-span-large` feature is enabled — and `production` does not include
 `exact-span-large`. So under the mainline `production,medium-classes` build

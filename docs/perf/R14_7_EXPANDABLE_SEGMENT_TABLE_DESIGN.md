@@ -3,7 +3,7 @@
 **Task:** #292 (R14-7, P1/P2) — R13-8
 (`docs/perf/R13_8_MEDIUM_WORKING_SET_JUDGE.md`) found a 100%-reproducible
 capacity cliff: every Large allocation consumes exactly one `SegmentTable`
-slot (`src/alloc_core/segment_table.rs`), independent of feature
+slot (`src/alloc_core/segment/segment_table/mod.rs`), independent of feature
 combination and independent of `alloc-decommit` (whose free-list recycle
 only helps once an object is *freed* — a static live working set never
 benefits from it). With `MAX_SEGMENTS = 1024`, the usable ceiling for
@@ -74,9 +74,9 @@ the `MAX_SEGMENTS` constant:
 The registry array, open-addressing hash table (`HASH_CAPACITY = 2 ×
 MAX_SEGMENTS`), and free-list index stack are all carved from a
 **fixed 4 MiB primordial segment** (`SEGMENT = 1 << 22`,
-`src/alloc_core/os.rs:65`), guarded by a compile-time assert
+`src/alloc_core/platform/os.rs:65`), guarded by a compile-time assert
 (`Layout::primordial_meta_end() + PAGE <= SEGMENT`,
-`src/alloc_core/segment_header.rs:1250`). Measured directly via
+`src/alloc_core/segment/segment_header/mod.rs:1250`). Measured directly via
 `SegmentLayout::PRIMORDIAL_META_END`:
 
 | `MAX_SEGMENTS` | registry+hash+free-list footprint | `PRIMORDIAL_META_END` | headroom to `SEGMENT` (4096 KiB) |
@@ -147,17 +147,17 @@ finding that the wall is binary, not gradual.
 A `grep -rln MAX_SEGMENTS src/` audit (this session) found every
 `O(table size)`-shaped walk in the codebase and classified each:
 
-- **`SegmentTable::bases()`** (`src/alloc_core/segment_table.rs:541`) —
+- **`SegmentTable::bases()`** (`src/alloc_core/segment/segment_table/mod.rs:541`) —
   the only genuine `O(count)` iterator. Its two call sites are
-  `AllocCore::drop` (`src/alloc_core/alloc_core.rs:1929`, one-time process
+  `AllocCore::drop` (`src/alloc_core/alloc_core/mod.rs:1929`, one-time process
   teardown, not a per-op cost) and the defensive `contains_base` fallback
   inside `find_segment_with_free`'s slow path (bounded — see next point).
-- **`find_segment_with_free_impl`** (`src/alloc_core/alloc_core_small.rs:480`)
+- **`find_segment_with_free_impl`** (`src/alloc_core/small/alloc_core_small/mod.rs:480`)
   — the actual hot alloc-miss path. Under `production`'s default
   `alloc-segment-directory` feature, this is **directory-accelerated**: a
   per-class bitmap query, not a linear scan over the table. The directory
   materializes once `table.count() >= DIRECTORY_MATERIALIZE_THRESHOLD`
-  (= 32, `src/alloc_core/segment_directory.rs:117`) and is treated as
+  (= 32, `src/alloc_core/segment/segment_directory/mod.rs:117`) and is treated as
   **authoritative on a miss** (R8-2/task #215) — no scan at all on the
   common miss path. A full linear-scan fallback runs only (a) before the
   directory materializes (first 32 segments) or (b) once every
@@ -228,7 +228,7 @@ exists for the case that headroom is exhausted too.
 
 ### 3.1 Level 0 (unchanged) + level-1 extension blocks
 
-Keep everything in `src/alloc_core/segment_table.rs` exactly as it is today
+Keep everything in `src/alloc_core/segment/segment_table/mod.rs` exactly as it is today
 for the first `MAX_SEGMENTS` slots (level 0): same flat array, same
 open-addressing hash table, same free-list stack, same O(1)
 `register`/`unregister`/`recycle`/`contains_base`. This is the
@@ -280,7 +280,7 @@ A `SegmentId` becomes a tagged index: a couple of high bits select the
 level (0 = the flat array, 1..N = which extension block), the rest is the
 existing within-block index — this is a **compatible, non-breaking widening
 of the existing `u32 segment_id`** field already stored in every
-`SegmentHeader` (`src/alloc_core/segment_header.rs`, `segment_id_at`); the
+`SegmentHeader` (`src/alloc_core/segment/segment_header/mod.rs`, `segment_id_at`); the
 O(1) `unregister`/`recycle` paths that already read `segment_id` directly
 out of the header (task #135's optimization) keep working unchanged — they
 just decode the level tag first, then dispatch to the right block's slot
@@ -411,6 +411,6 @@ discipline (R9-4, R10-4, R11-3, R11-7, R12-13):
 - The tagged-`SegmentId` widening sketch (§3.2) assumes the existing `u32
   segment_id` header field has enough spare bits for a level tag at
   `MAX_EXTENSIONS`-scale — this was not verified against the actual bit
-  layout in `src/alloc_core/segment_header.rs` this session; a real
+  layout in `src/alloc_core/segment/segment_header/mod.rs` this session; a real
   implementation attempt must re-derive the exact bit budget before
   committing to this encoding.

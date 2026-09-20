@@ -175,11 +175,11 @@ R27-3's small-pool gate used a 1024-byte churn workload (matching the pool's
 own 4 MiB segment granularity). The large cache operates on whole large
 spans, so this gate uses a genuinely different workload shape, chosen by
 reading the actual size-class boundary from source
-(`src/alloc_core/size_classes.rs`): under plain `production` (no
+(`src/alloc_core/platform/size_classes.rs`): under plain `production` (no
 `medium-classes`), `SMALL_MAX = 16,384` bytes (16 KiB) — anything larger is
-classified `AllocKind::Large` (`src/alloc_core/alloc_core.rs::classify`) and
+classified `AllocKind::Large` (`src/alloc_core/alloc_core/mod.rs::classify`) and
 goes through `alloc_large`/the large-dealloc admission branch
-(`src/alloc_core/alloc_core.rs:1450-1620`), the only path that populates
+(`src/alloc_core/alloc_core/mod.rs:1450-1620`), the only path that populates
 `large_cache`.
 
 Each thread allocates **8 distinct 34 MiB objects** (`LARGE_OBJ_BYTES = 34 *
@@ -230,7 +230,7 @@ The workload was designed for `8 × 34 MiB = 272 MiB` logical payload per heap.
 The measured `used_post_teardown_max` is **exactly `301,989,888` bytes = 288
 MiB** in every single arm (36/36, byte-identical). This is not a discrepancy —
 `large_cache_used_bytes` tracks `usable_size`, which is
-`SegmentHeader::span_usable` (`src/alloc_core/alloc_core.rs:1474`, "the
+`SegmentHeader::span_usable` (`src/alloc_core/alloc_core/mod.rs:1474`, "the
 physical usable span... NOT recomputed from `large_size`/`large_align`"): the
 **page-rounded, header-inclusive physical reservation**, not the raw
 requested byte count. `288 / 8 = 36 MiB` per cached span — the 34 MiB request
@@ -251,7 +251,7 @@ Every headroom arm (0/16/64/256 MiB) shows an **identical**
 `used_post_teardown_max = 301,989,888` and identical `rss_post_kib` (per
 thread count) — headroom has NO visible effect on the immediate
 post-teardown figure. This is exactly what `maybe_decay_large_cache`'s own
-source predicts (`src/alloc_core/alloc_core_large_cache.rs:320-356`):
+source predicts (`src/alloc_core/large/alloc_core_large_cache.rs:320-356`):
 
 - The FAST-PATH early exit (`if self.large_cache_used_bytes <=
   self.decay_config.headroom_bytes { return; }`) does not apply here once the
@@ -304,7 +304,7 @@ this gate:
 
 The pattern across all four arms is consistent with the source-level
 mechanism: `run_decay_step`'s target is `headroom_bytes`
-(`src/alloc_core/alloc_core_large_cache.rs:366-380`, "live_bytes = 0 in Phase
+(`src/alloc_core/large/alloc_core_large_cache.rs:366-380`, "live_bytes = 0 in Phase
 2... target is therefore simply headroom_bytes"), and eviction proceeds in
 whole-segment units via `evict_at_least`/`evict_one_oldest` (FIFO-oldest
 `seq`), stopping the instant `large_cache_used_bytes` would drop to or below
@@ -317,7 +317,7 @@ segments times ~36 MiB ≈ 216-238 MiB landing just under/at the 256 MiB
 target band with the observed granularity).
 
 **This directly and quantitatively confirms the doc's own claim**
-(`src/alloc_core/large_cache_config.rs:46-48`, *"the cache does not decay
+(`src/alloc_core/config/large_cache_config.rs:46-48`, *"the cache does not decay
 below this level"*): at the shipped 256 MiB default, roughly **238-241 MiB
 per long-lived heap is retained even under maximum forced decay pressure**,
 and — per §3 — **that retention persists indefinitely under pure idle, and

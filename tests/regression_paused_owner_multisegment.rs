@@ -78,7 +78,7 @@ use sefer_alloc::registry::{bootstrap, HeapRegistry};
 const BLOCK_SIZE: usize = 4096;
 
 /// Segment size/alignment (4 MiB — `SEGMENT_SHIFT` = 22 in
-/// `src/alloc_core/segment_table.rs`; not exported, so restated here the
+/// `src/alloc_core/segment/segment_table/mod.rs`; not exported, so restated here the
 /// same way the allocator's own `segment_base_of_ptr` mask works). Used only
 /// to GROUP the owner's blocks by owning segment.
 const SEG_ALIGN: usize = 1 << 22;

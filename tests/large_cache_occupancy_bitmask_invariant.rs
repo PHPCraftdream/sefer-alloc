@@ -15,7 +15,7 @@
 //! bitmask instead of `large_cache_used_bytes`.
 //!
 //! Exercises the SAME two maintenance sites the doc comment on
-//! `large_cache_occupied` (`src/alloc_core/alloc_core.rs`) enumerates —
+//! `large_cache_occupied` (`src/alloc_core/alloc_core/`) enumerates —
 //! `large_cache_slot_set` (admission) and `large_cache_slot_take` (cache hit
 //! AND eviction, both of which call it) — via public alloc/dealloc traffic
 //! that drives deposit, cache-hit reuse, and FIFO eviction, so a lockstep

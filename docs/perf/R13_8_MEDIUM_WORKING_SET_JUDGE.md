@@ -338,7 +338,7 @@ central claim:
   "measurement only" framing: the demonstrated victim is real and
   precisely located (§0 Question 2), but the SIMPLEST closing move —
   raising `MAX_SEGMENTS` (currently 1024, a `pub(crate) const`,
-  `src/alloc_core/segment_table.rs:64`) and re-measuring the same 256-2048
+  `src/alloc_core/segment/segment_table/mod.rs:64`) and re-measuring the same 256-2048
   sweep — has not been tried and would be a natural, low-risk next probe
   before reaching for page-run's much larger design.
 

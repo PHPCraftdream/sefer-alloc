@@ -5,13 +5,14 @@
 //
 // Sol-F1 (task #563) gated the `dbg_*`-only `impl AllocCore` blocks behind
 // `#[cfg(feature = "internals")]` in exactly 3 files
-// (`alloc_core_core_diag.rs`/`alloc_core_small_diag.rs`/
-// `alloc_core_small_reclaim.rs`), and proved the fix with a compile-fail
+// (`alloc_core/alloc_core/alloc_core_core_diag/` /
+// `alloc_core/small/alloc_core_small_diag.rs` /
+// `alloc_core/small/alloc_core_small_reclaim.rs`), and proved the fix with a compile-fail
 // oracle (`scripts/verify-internals-negative-boundary.mjs`) that tests
 // exactly ONE representative method (`dbg_carve_batch`). That single-method
 // oracle passed — but 31 OTHER `dbg_*` methods across 3 DIFFERENT files
-// (`alloc_core_large_cache.rs`, `alloc_core_small_pool.rs`,
-// `alloc_core.rs`'s numa-only methods) remained fully reachable without
+// (`large/alloc_core_large_cache.rs`, `small/alloc_core_small_pool/mod.rs`,
+// `alloc_core/alloc_core/state.rs`'s numa-only methods) remained fully reachable without
 // `internals`, undetected, because nothing checked the REST of the surface.
 // This is finding H2 (P1) of
 // `docs/reviews/2026-08-05-sol-remediation-readonly-review.md`.
@@ -39,7 +40,7 @@ const TESTS_DIR = join(REPO_ROOT, 'tests');
 /** Recursively list every `.rs` file under `dir`, returning paths relative
  * to `dir` (POSIX-separated, so the ALLOWLIST's `file.rs` keys keep working
  * for the historically-flat `src/alloc_core/` layout while also covering any
- * future subdirectory, e.g. `src/alloc_core/deferred_large/`). H2-followup
+ * future subdirectory, e.g. `src/alloc_core/large/deferred_large/`). H2-followup
  * (finding F10): the original version used a non-recursive `readdirSync`,
  * silently invisible to a future `impl AllocCore` block placed in a
  * subdirectory — verified currently harmless (no `pub fn dbg_*` exists under
@@ -65,14 +66,14 @@ function listRsFilesRecursive(dir, root = dir) {
 const ALLOWLIST = new Map([
   // Sol-F1 (task #563): back `AllocStats::stats()`, a stable always-on
   // public API method under plain `production` (src/global/sefer_alloc.rs).
-  ['alloc_core_core_diag.rs::dbg_foreign_or_unroutable_frees', 'backs AllocStats::stats() (task #563)'],
-  ['alloc_core_core_diag.rs::dbg_segments_reserved_total', 'backs AllocStats::stats() (task #563)'],
-  ['alloc_core_core_diag.rs::dbg_segments_released_total', 'backs AllocStats::stats() (task #563)'],
+  ['alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees', 'backs AllocStats::stats() (task #563)'],
+  ['alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total', 'backs AllocStats::stats() (task #563)'],
+  ['alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total', 'backs AllocStats::stats() (task #563)'],
   // H2 (task #572): a 4th sibling of the same class, found by this script's
-  // own first exhaustive run against `alloc_core_small_pool.rs` —
+  // own first exhaustive run against `alloc_core/small/alloc_core_small_pool/mod.rs` —
   // `SeferAlloc::stats()`'s `decommit_calls` field
   // (src/global/sefer_alloc.rs) reads this directly.
-  ['alloc_core_small_pool.rs::dbg_decommit_count', 'backs AllocStats::stats() (task #572)'],
+  ['small/alloc_core_small_pool/mod.rs::dbg_decommit_count', 'backs AllocStats::stats() (task #572)'],
 ]);
 
 /** Walk backward from line index `i` (exclusive) through the contiguous
@@ -238,7 +239,7 @@ if (violations.length > 0) {
 // gated 124 methods across 6 files without re-running that sweep; 39 test
 // files were found to violate it (compiler-confirmed via `cargo test --no-run
 // --tests --features production`), including 2 newly broken by H2's own
-// `alloc_core_small_pool.rs` gating. Fixed in the same commit that added
+// `alloc_core/small/alloc_core_small_pool/mod.rs` gating. Fixed in the same commit that added
 // this check — see that commit's own message for the file list.
 //
 // gatedMethodNames intentionally excludes ALLOWLISTed methods (finding F2 of

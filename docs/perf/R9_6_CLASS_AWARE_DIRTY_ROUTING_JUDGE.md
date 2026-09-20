@@ -66,7 +66,7 @@ class-count.
 
 ## 1. The review's finding — what was claimed
 
-`drain_dirty_segments` (`src/alloc_core/alloc_core_small.rs:1893` after this
+`drain_dirty_segments` (`src/alloc_core/small/alloc_core_small/mod.rs:1893` after this
 task's edits) is called unconditionally at the top of
 `find_segment_with_free_impl` (call sites at `alloc_core_small.rs:374` and
 `:376`, gated `alloc-segment-directory + alloc-xthread + not(numa-aware)`)
@@ -114,12 +114,12 @@ the iteration itself. So the O(D) characterisation is accurate.
 One new diagnostic counter, exactly matching the `DIRTY_SEGMENTS_DRAINED` /
 `LARGE_ZERO_PASS_CALLS` pattern:
 
-- **`directory_stats::WASTED_DIRTY_DRAINS`** (`src/alloc_core/directory_stats.rs`)
+- **`directory_stats::WASTED_DIRTY_DRAINS`** (`src/alloc_core/segment/segment_directory/directory_stats.rs`)
   — a process-wide `AtomicU64`, Relaxed ordering, diagnostic-only. Incremented
   once per drain visit where the segment's ring, once drained, produced ZERO
   reclaimed blocks of the `class_idx` the caller is searching for (i.e. the
   sought class's bit is NOT in the drain's R8-1 `changed_classes` bitmap).
-- **`AllocCore::dbg_wasted_dirty_drains()`** (`src/alloc_core/alloc_core_core_diag.rs`)
+- **`AllocCore::dbg_wasted_dirty_drains()`** (`src/alloc_core/alloc_core/alloc_core_core_diag/`)
   — the `#[doc(hidden)]` read accessor, mirroring `dbg_dirty_segments_drained()`.
 
 Threading the sought class into `drain_dirty_segments` was **not invasive** —
@@ -488,12 +488,12 @@ with this report as the evidence.
 ## 11. Files touched by this task
 
 **`src/` (the single permitted additive counter):**
-- `src/alloc_core/directory_stats.rs` — new `WASTED_DIRTY_DRAINS: AtomicU64`
+- `src/alloc_core/segment/segment_directory/directory_stats.rs` — new `WASTED_DIRTY_DRAINS: AtomicU64`
   + inventory-table row.
-- `src/alloc_core/alloc_core_core_diag.rs` — new
+- `src/alloc_core/alloc_core/alloc_core_core_diag/` — new
   `AllocCore::dbg_wasted_dirty_drains()` accessor (mirrors
   `dbg_dirty_segments_drained()`).
-- `src/alloc_core/alloc_core_small.rs` — `drain_dirty_segments` gains one
+- `src/alloc_core/small/alloc_core_small/mod.rs` — `drain_dirty_segments` gains one
   `class_idx: usize` parameter (call sites at `:374` and `:376` updated);
   4-line counter bump inserted after `sync_directory_for_segment_classes`.
 

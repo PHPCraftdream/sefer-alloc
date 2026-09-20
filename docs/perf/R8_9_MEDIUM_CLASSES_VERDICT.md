@@ -20,7 +20,7 @@ of scope here).
 
 ## 1. Architecture recap — what `medium-classes` covers, and what it does not
 
-`medium-classes` (`src/alloc_core/size_classes.rs`, `EXTRAS` cfg block) appends
+`medium-classes` (`src/alloc_core/platform/size_classes.rs`, `EXTRAS` cfg block) appends
 **six exact size classes** to the small-class table and merges them into the
 same sorted `SIZE_CLASS_TABLE`:
 

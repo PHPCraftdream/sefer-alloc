@@ -174,7 +174,7 @@ and observable in process RSS.
 ### 1.6 Decay mechanism — read from source (not guessed)
 
 The small-segment pool **shares the large-cache decay interval**
-(`maybe_decay_small_pool`, `src/alloc_core/alloc_core_small_pool.rs`, reuses
+(`maybe_decay_small_pool`, `src/alloc_core/small/alloc_core_small_pool/mod.rs`, reuses
 `self.decay_config.decay_interval`; default **1000 ms** from
 `large_cache_config.rs::DEFAULT_DECAY_INTERVAL_MS`). It is **event-driven**:
 it fires inline on the `reserve_small_segment` cold path during allocation

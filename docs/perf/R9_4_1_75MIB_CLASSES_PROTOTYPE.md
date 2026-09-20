@@ -7,7 +7,7 @@ top of the existing six-class `medium-classes` substrate, and measures the
 real density win (vs the review's rough 3x/2x/2x guess) before writing it into
 any report.
 **This IS a code-change task** (unlike the pure-measurement R9-2 / R9-3 tasks
-before it): `src/alloc_core/size_classes.rs` (1 new cfg arm, 3 new constants)
+before it): `src/alloc_core/platform/size_classes.rs` (1 new cfg arm, 3 new constants)
 and `Cargo.toml` (1 new feature entry) are touched. The change is minimal and
 strictly additive — see §1.
 **Date:** 2026-07-20
@@ -30,7 +30,7 @@ medium-classes-wide = ["medium-classes"]
 It **implies `medium-classes`** (which transitively implies `alloc-core`) and
 is NOT part of `production` or any default bundle — exactly like
 `medium-classes` itself. The feature adds **exactly one new cfg arm** in
-`src/alloc_core/size_classes.rs` that appends three exact classes
+`src/alloc_core/platform/size_classes.rs` that appends three exact classes
 (1.25 / 1.5 / 1.75 MiB = `1280 * 1024` / `1536 * 1024` / `1792 * 1024`) on
 top of the existing six-class `medium-classes` `EXTRAS` list. The existing
 two arms (`#[cfg(not(feature = "medium-classes"))]` and the now
@@ -74,7 +74,7 @@ The review's guess used this arithmetic; the REAL density is one lower — see
 
 ### 2.2 The carve-path alignment tax — why REAL density is one lower
 
-`src/alloc_core/alloc_core_small.rs::carve_block` does
+`src/alloc_core/small/alloc_core_small/mod.rs::carve_block` does
 `let aligned_bump = align_up(bump, block_size);` for every carved block. This
 is load-bearing: the free path derives the block start from a pointer via
 `align_down(ptr, block_size)` (the class comes from the caller's `Layout`,
@@ -221,7 +221,7 @@ be 1x; needs a larger medium-arena / page-run layer).
 
 1. **The hardened-ring class-field headroom shrank from 7 to 4.**
    `SMALL_CLASS_COUNT <= 62` is the const-asserted ceiling
-   (`src/alloc_core/remote_free_ring.rs`); adding 3 classes takes the count
+   (`src/alloc_core/segment/remote_free_ring/mod.rs`); adding 3 classes takes the count
    55 → 58, leaving 4 headroom values. A future further bump past 62 needs a
    wider class field; see the `entry_never_collides_with_ring_slot_empty`
    regression test.
@@ -296,8 +296,8 @@ arm is strictly additive and does not touch the six-class substrate.
 
 **fmt + clippy.** `cargo fmt --check` clean after `cargo fmt`. `cargo clippy
 --features "medium-classes-wide" --all-targets -- -D warnings` reports 11
-errors, all PRE-EXISTING in unrelated files (`src/alloc_core/alloc_core_small.rs`
-unused-mut, `src/alloc_core/magazine_bitmap.rs` dead-code) — the identical 11
+errors, all PRE-EXISTING in unrelated files (`src/alloc_core/small/alloc_core_small/mod.rs`
+unused-mut, `src/alloc_core/segment/bitmap/magazine_bitmap.rs` dead-code) — the identical 11
 errors appear with plain `--features "medium-classes"` (the unmodified
 baseline), so this prototype introduces ZERO new clippy warnings. None of
 the 11 errors reference any file this task touched.
@@ -356,7 +356,7 @@ the 11 errors reference any file this task touched.
   the task constraints). The diff is: 1 new feature entry in `Cargo.toml`
   (`medium-classes-wide = ["medium-classes"]` with its documenting comment),
   1 new cfg arm + 3 new constants + a doc-comment update in
-  `src/alloc_core/size_classes.rs`, and the new test file. No existing
+  `src/alloc_core/platform/size_classes.rs`, and the new test file. No existing
   behavior is modified — see K7.
 - **2 MiB is out of scope by design.** It would also be
   `floor(4 MiB / 2 MiB) - 1 = 1` — the same 1x as the Large path — so a fixed

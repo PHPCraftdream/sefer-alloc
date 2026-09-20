@@ -40,7 +40,7 @@ is: on the first grow past the threshold, allocate a **fresh** Large
 segment via `AllocCore::alloc_large`, `copy_nonoverlapping` the full old
 payload into it, then free the old medium block. Every *subsequent* grow of
 the same (now-Large) block rides OPT-G (`try_realloc_inplace_known_base`,
-`src/alloc_core/alloc_core.rs:1901`) for near-zero cost — so the expensive
+`src/alloc_core/alloc_core/mod.rs:1901`) for near-zero cost — so the expensive
 step is specifically **the first crossing**, and specifically **the copy
 that moves the payload out of the medium segment**, not anything about the
 destination.
@@ -61,8 +61,8 @@ segment."
 
 ### 1.1 First claim to verify: "a segment carves fixed-size blocks of ONE class" — FALSE
 
-Read against `src/alloc_core/segment_header.rs`'s `PageMap` doc
-(lines 177–191) and `src/alloc_core/alloc_core_small.rs`'s `carve_block`
+Read against `src/alloc_core/segment/segment_header/mod.rs`'s `PageMap` doc
+(lines 177–191) and `src/alloc_core/small/alloc_core_small/mod.rs`'s `carve_block`
 (lines 1419–1557): a small/medium segment does **not** dedicate itself to one
 size class. It carves from **one segment-wide bump cursor** (`SegmentHeader
 ::bump`, a single `usize` field, `SegmentMeta::bump_of`/`set_bump`,
@@ -205,7 +205,7 @@ gives). When any precondition fails, decline (return `None`/fall through) —
 aside `BinTable`/`hardened` — the cross-thread reclaim path has its own,
 UNCONDITIONAL (not `hardened`-gated) offset-alignment guard that would
 silently discard an OPT-H-misaligned block forever.**
-`src/alloc_core/alloc_core_small_reclaim.rs` has two call sites of the exact
+`src/alloc_core/small/alloc_core_small_reclaim.rs` has two call sites of the exact
 shape `if !(off as u32).is_multiple_of(bs) { return false; }`, where `bs =
 SizeClasses::block_size(class_idx)` and `class_idx` is whatever class the
 *freeing* thread's `Layout` currently maps to: `reclaim_offset_checked`
@@ -339,7 +339,7 @@ intact as the fallback for cases OPT-H cannot serve).
 
 ## 4. Sketch of the new code (file-by-file, not full implementation)
 
-- **`src/alloc_core/alloc_core_small.rs`** — one new `pub(super) fn
+- **`src/alloc_core/small/alloc_core_small/mod.rs`** — one new `pub(super) fn
   try_grow_tail_in_place(&mut self, base: *mut u8, off: usize, old_block_size:
   usize, new_block_size: usize) -> bool`, placed next to `carve_block`
   (`alloc_core_small.rs:1429`) so it can share that function's lazy-commit
@@ -356,7 +356,7 @@ intact as the fallback for cases OPT-H cannot serve).
   extend the existing per-block "mark newly entered pages" loop
   (`carve_block:1546-1554`) over the newly-claimed byte range, for
   diagnostic consistency only (non-load-bearing, per `PageMap`'s own doc).
-- **`src/alloc_core/alloc_core.rs`** — `realloc_inplace_fast_path_known_base`
+- **`src/alloc_core/alloc_core/mod.rs`** — `realloc_inplace_fast_path_known_base`
   (`alloc_core.rs:1778`) gains the OPT-H branch sketched in §2.3, calling the
   new `try_grow_tail_in_place`. Doc comment gains an "# OPT-H" section
   alongside the existing "# OPT-G"/"# OPT-F" sections, same format.
@@ -412,7 +412,7 @@ in the same segment fails precondition 3 unconditionally.
 
 Layering precondition 4 (alignment) on top narrows this further: for the
 medium-class ladder (256 / 320 / 384 / 512 / 768 KiB / 1 MiB,
-`src/alloc_core/size_classes.rs:96-112`), `block_size(new_class)` does not
+`src/alloc_core/platform/size_classes.rs:96-112`), `block_size(new_class)` does not
 evenly divide most `block_size(old_class)` values, so even the one
 tail-adjacent candidate per segment only clears precondition 4 for **some**
 carve-order positions (the divisibility works out for roughly 1-in-3 carve
@@ -695,27 +695,27 @@ NO-GO) is for.
 
 ## 10. Files/lines this document is grounded in (for the next round's reader)
 
-- `src/alloc_core/alloc_core.rs:1509-1912` — `realloc`, `safe_payload_read_span`,
+- `src/alloc_core/alloc_core/mod.rs:1509-1912` — `realloc`, `safe_payload_read_span`,
   `realloc_inplace_fast_path_known_base` (OPT-F/OPT-G, the function OPT-H's
   new branch is added to), `try_realloc_inplace_known_base`,
   `try_grow_large_reserved_capacity` (R12-4, the closest existing precedent
   for "grow into adjacent uncommitted-but-reserved space").
-- `src/alloc_core/alloc_core_small.rs:1419-1557` — `carve_block` (the
+- `src/alloc_core/small/alloc_core_small/mod.rs:1419-1557` — `carve_block` (the
   bump-cursor carve logic OPT-H's tail check and lazy-commit reuse are
   grounded in); `:1608-1660+` — `carve_batch` (confirms the same bump
   discipline for batched carves).
-- `src/alloc_core/alloc_core_small.rs:1735-1835` — `dealloc_small` (the
+- `src/alloc_core/small/alloc_core_small/mod.rs:1735-1835` — `dealloc_small` (the
   class-keyed-by-current-`Layout` free path OPT-H's precondition 4 must stay
   consistent with).
-- `src/alloc_core/segment_header.rs:144-202` — `SegmentKind`, `PageMap`'s
+- `src/alloc_core/segment/segment_header/mod.rs:144-202` — `SegmentKind`, `PageMap`'s
   "mixed-class"/"NOT a reliable class oracle" doc (§1.1's grounding).
-- `src/alloc_core/segment_header.rs:313-407` — `SegmentHeader`'s `bump`
+- `src/alloc_core/segment/segment_header/mod.rs:313-407` — `SegmentHeader`'s `bump`
   field doc (owner-only, single-writer discipline — §7 point 1's grounding).
-- `src/alloc_core/segment_header.rs:992-1011` — `BinTable` (per-class
+- `src/alloc_core/segment/segment_header/mod.rs:992-1011` — `BinTable` (per-class
   free-list heads, §1.2's grounding).
-- `src/alloc_core/segment_header.rs:1084-1160` (approx.) — `SegmentMeta`,
+- `src/alloc_core/segment/segment_header/mod.rs:1084-1160` (approx.) — `SegmentMeta`,
   `bump_of`/`set_bump`.
-- `src/alloc_core/size_classes.rs:85-134` — `EXTRAS` (the six medium classes:
+- `src/alloc_core/platform/size_classes.rs:85-134` — `EXTRAS` (the six medium classes:
   256/320/384/512/768 KiB/1 MiB — §5.2's worked-example ladder).
 - `src/registry/heap_core_free.rs:1-160` — the `medium_promotion_reachable!`
   macro and `MEDIUM_REALLOC_PROMOTION_THRESHOLD` (§3's point that OPT-H's own

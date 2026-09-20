@@ -241,9 +241,9 @@ The task brief flagged a real risk: doubling `COLD_BATCH` might cross a
 segment-capacity boundary the N-sized workload didn't cross, breaking the
 `Ir(k*N) = B + k*N*c` linearity assumption the whole N/2N trick depends on.
 **Checked structurally first:** `SEGMENT = 1 << 22` (4 MiB,
-`src/alloc_core/os.rs:65`); the primordial segment's metadata footprint is
+`src/alloc_core/platform/os.rs:65`); the primordial segment's metadata footprint is
 bounded to `small_meta_end() + PAGE <= SEGMENT` (a compile-time assert,
-`src/alloc_core/segment_header.rs:1280`), leaving nearly the full 4 MiB for
+`src/alloc_core/segment/segment_header/mod.rs:1280`), leaving nearly the full 4 MiB for
 payload. `COLD_BATCH_4N` x 16 B = 1,024 x 16 = 16,384 B, and even
 `COLD_BATCH_4N` x 64 B (the sibling 64 B bench, not measured with a 4N arm
 in this task but the same order of magnitude) = 65,536 B — both a tiny

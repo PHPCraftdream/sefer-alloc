@@ -57,7 +57,7 @@ promotion.
 
 ## 1. Why the cliff exists — the compiled-out directory
 
-`find_segment_with_free_impl` (`src/alloc_core/alloc_core_small.rs`) has two
+`find_segment_with_free_impl` (`src/alloc_core/small/alloc_core_small/mod.rs`) has two
 lookup strategies gated by feature:
 
 1. **Directory-driven O(1) lookup** (lines 458–639): compiled under

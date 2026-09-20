@@ -298,7 +298,7 @@ README §"Where unsafe lives":
    compile error in every feature configuration.
 2. **`#[doc(hidden)]` test-hook forwarders** — 100+ `pub fn dbg_*` accessors,
    deliberately segregated into dedicated `*_diag.rs` / `*_pool.rs` files
-   (`src/alloc_core/alloc_core_core_diag.rs`,
+   (`src/alloc_core/alloc_core/alloc_core_core_diag/`,
    `src/registry/heap_core_diag.rs`, `src/global/tls_heap.rs`,
    `src/registry/bootstrap.rs`, …), exposing otherwise-internal state
    (freelist heads, ring cursors, decommit counters, slot states, fault

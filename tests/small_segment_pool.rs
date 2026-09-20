@@ -146,7 +146,7 @@ fn pool_segments_above_old_hard_cap_is_honoured() {
 /// R27-1 (task #419): a future "promote the default cap to 8" decision is a
 /// PAIRED knob change, NOT a one-knob `DEFAULT_POOL_SEGMENTS` 4→8 edit. The
 /// effective pool cap resolves as `min(pool_segments, pool_byte_cap / SEGMENT)`
-/// (`src/alloc_core/alloc_core.rs:837-839`), so with the default 16 MiB byte cap
+/// (`src/alloc_core/alloc_core/:837-839`), so with the default 16 MiB byte cap
 /// (16 MiB / 4 MiB = 4) raising `pool_segments` alone to 8 is a literal NO-OP
 /// (`min(8, 4) = 4`). This is the CI counterfactual for that bug: it would catch
 /// a future accidental one-knob "promotion" that silently ships no behaviour

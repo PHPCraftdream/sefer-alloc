@@ -35,12 +35,12 @@ finding was.
 
 ## 0. What shipped
 
-`AllocCore::large_cache_occupied: u64` (`src/alloc_core/alloc_core.rs`) — an
+`AllocCore::large_cache_occupied: u64` (`src/alloc_core/alloc_core/mod.rs`) — an
 occupancy bitmask over the COMBINED base+extension index space (bit `i` set
 ⟺ combined slot `i` holds `Some(CachedLarge)`). Replaces
 `large_cache_find_free_slot`'s base-array scan
 (`self.large_cache.iter().position(|s| s.is_none())`,
-`src/alloc_core/alloc_core_large_cache.rs`) with
+`src/alloc_core/large/alloc_core_large_cache.rs`) with
 `large_cache_occupied.trailing_ones() as usize` — the index of the lowest
 CLEAR bit, found without touching the `large_cache` array at all. The
 extension-sidecar fallback path (when the base is full and
@@ -334,9 +334,9 @@ enumeration (§1) as the template for the sidecars' correctness argument.
 
 ## 9. Files changed
 
-- `src/alloc_core/alloc_core.rs` — `large_cache_occupied: u64` field +
+- `src/alloc_core/alloc_core/mod.rs` — `large_cache_occupied: u64` field +
   compile-time width assertions (`LARGE_CACHE_SLOTS [+ LARGE_CACHE_EXTENDED_SLOTS] <= u64::BITS`).
-- `src/alloc_core/alloc_core_large_cache.rs` — `large_cache_slot_set`/
+- `src/alloc_core/large/alloc_core_large_cache.rs` — `large_cache_slot_set`/
   `large_cache_slot_take` maintain the bitmask; `large_cache_find_free_slot`
   uses `trailing_ones()` for the base-slot lookup; new
   `dbg_large_cache_occupied_bits()` test accessor.

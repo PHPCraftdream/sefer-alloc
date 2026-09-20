@@ -11,7 +11,7 @@ process-wide counter deltas across the run to decide between:
   working-set/OPS/sample-size shape at 1024B (pool thrashes: fills, evicts,
   re-reserves anyway);
 - **(ii)** the pool's decay tick (`maybe_decay_small_pool`,
-  `src/alloc_core/alloc_core_small_pool.rs:516`) evicts entries *between*
+  `src/alloc_core/small/alloc_core_small_pool/mod.rs:516`) evicts entries *between*
   criterion iterations (the pool does not survive across the timed samples);
 - **(iii)** residual per-free magazine-overflow batch-flush cost, independent
   of the pool (the "240 of 256 frees bypass the magazine" path itself, not the
@@ -164,7 +164,7 @@ Sefer is at parity wherever the pool is not engaged, (iii) cannot explain the
   batch-flush.
 - **Against (ii) — decay tick.** `maybe_decay_small_pool` evicts **at most one
   pooled segment per `decay_interval`** (default **1000 ms**,
-  `src/alloc_core/large_cache_config.rs:21`) and only on the
+  `src/alloc_core/config/large_cache_config.rs:21`) and only on the
   `reserve_small_segment` cold path. The 1024B Sefer arm's warmup+measurement
   window is ~0.75 s (150 ms warmup + ~600 ms measurement), so decay could fire
   **≤ 1** eviction in the entire run. The measured **248** is ~3 orders of

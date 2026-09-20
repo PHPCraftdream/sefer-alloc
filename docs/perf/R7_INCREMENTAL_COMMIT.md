@@ -9,7 +9,7 @@
 > commit-before-write risk). Measured first-heap **commit Δ: 4.52 MiB → ~0.887
 > MiB** (~5.2×), inside the ≤0.9 MiB target. Still gated `alloc-lazy-commit AND
 > NOT numa-aware`; the eager path is byte-identical when off. See
-> `src/alloc_core/bootstrap.rs` (`primordial` via `Segment::reserve_lazy`).
+> `src/alloc_core/alloc_core/bootstrap.rs` (`primordial` via `Segment::reserve_lazy`).
 
 **Date:** 2026-07-17
 **Base revision:** `main` (post B0–B4 commits: B0 vmem lazy-commit API, B1
@@ -56,7 +56,7 @@ primordial is allocated exactly once per process).
 > above describes the B5-era architecture (base revision, this report's own
 > measurement date). Since commit `8977e88`, the primordial segment is ALSO
 > lazily committed via `Segment::reserve_lazy` — see
-> `src/alloc_core/bootstrap.rs`. The "Consequence" analysis below is historical
+> `src/alloc_core/alloc_core/bootstrap.rs`. The "Consequence" analysis below is historical
 > context for why B5 hit its NO-GO; it is not a description of current behavior.
 
 ### Consequence for the first-heap commit judge

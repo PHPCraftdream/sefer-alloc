@@ -1,0 +1,85 @@
+    /// Iterate over all registered segment bases (read-only). A registry-walk
+    /// primitive used by cross-thread-free routing and (historically) the
+    /// Phase 12.4 abandonment walk (now removed — task #97 / R4-5).
+    ///
+    /// `#[doc(hidden)]` (task #136): `AllocCore` itself is re-exported as
+    /// stable public API (unlike most of `alloc_core`), but this iterator is
+    /// an internal registry-walk primitive, not something an external
+    /// caller is expected to use directly — it leaked into the visible
+    /// public surface only because `AllocCore` is public. Kept `pub` (not
+    /// `pub(crate)`) because `registry::heap_core::HeapCore::segment_bases`
+    /// delegates to it across the crate boundary between `alloc_core` and
+    /// `registry`.
+    #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[doc(hidden)]
+    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
+        self.table.bases()
+    }
+
+    /// O(1) membership test: is `base` one of THIS substrate's registered,
+    /// LIVE (non-NULL) segment bases? Thin delegation to
+    /// `SegmentTable::contains_base` (the OPT-B open-addressing hash table).
+    ///
+    /// Task #135 (Part 2/3): exposes the table's existing O(1) check at the
+    /// `AllocCore` level so `HeapCore::realloc` (own-segment ownership test)
+    /// and `HeapCore::dealloc_routing` (M2 hardening — see its doc comment)
+    /// no longer need to fall back to the O(count) `segment_bases().any(...)`
+    /// scan.
+    ///
+    /// Gated on `alloc-global` only (not also `alloc-xthread`): both call
+    /// sites live in `registry::heap_core::HeapCore`, and the entire
+    /// `registry` module is itself `#[cfg(feature = "alloc-global")]`-gated
+    /// at the crate root (`src/lib.rs`) — `alloc-xthread` alone (without
+    /// `alloc-global`) does not compile `HeapCore` at all, so a wider gate
+    /// here would leave this method genuinely unused under that combination.
+    #[cfg(feature = "alloc-global")]
+    #[inline(always)]
+    pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
+        self.table.contains_base(base)
+    }
+
+    /// RAD-4b (task #72): the current small segment's base, for callers
+    /// outside this module that need to pass it into
+    /// [`reclaim_offset`](Self::reclaim_offset) /
+    /// [`reclaim_offset_checked`](Self::reclaim_offset_checked) (both of
+    /// which take `small_cur` as a plain argument rather than reading `self`,
+    /// since they are associate functions, not methods — see their doc
+    /// comments). `small_cur` itself is `pub(super)` (module-private); this
+    /// thin `pub(crate)` accessor is the sole reason `HeapCore::
+    /// drain_heap_overflow` (`src/registry/heap_core.rs`, `registry` module,
+    /// outside `alloc_core`) needs to exist.
+    ///
+    /// Gated on `all(alloc-xthread, alloc-decommit)`, not `alloc-xthread`
+    /// alone: the sole call site (`heap_core_xthread.rs::drain_heap_overflow`)
+    /// only reads `small_cur` inside its own `#[cfg(feature =
+    /// "alloc-decommit")]` block (it feeds `dec_live_and_maybe_decommit`,
+    /// which exists only under that feature) — `alloc-xthread` without
+    /// `alloc-decommit` (e.g. `hardened medium-classes`) left this method
+    /// genuinely unused (R23-5, task #374).
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-decommit"))]
+    #[must_use]
+    pub(crate) fn small_cur(&self) -> *mut u8 {
+        self.small_cur
+    }
+
+    // Э4 (task #145) "classify once" wrappers `alloc_small_class` /
+    // `dealloc_small_class` were RETIRED in P3 (task #147): their only callers
+    // were the P7 alloc-side and dealloc-side bulk bypasses, both removed here.
+    // The classify-once win survives where it still has a live caller
+    // (`HeapCore::dealloc_own_thread` already resolves the class once); these
+    // one-line pass-throughs are trivially re-addable if a future path needs
+    // a class-resolved single-block primitive again.
+
+    // -----------------------------------------------------------------------
+    // Internals — the safe Cartographer. All raw memory touches go through
+    // `Node`; no `Vec`/`Box`/`HashSet`/`std::alloc`.
+    // -----------------------------------------------------------------------
+
+    /// Classify a `(size, align)` request as Small or Large.
+    #[inline]
+    pub(super) fn classify(size: usize, align: usize) -> AllocKind {
+        match SizeClasses::class_for(size, align) {
+            Some(class_idx) => AllocKind::Small { class_idx },
+            None => AllocKind::Large,
+        }
+    }

@@ -6,7 +6,7 @@
 //! `docs/reviews/...` (task #486's filing) found a CONFIRMED P0 soundness
 //! defect: `AllocCore::dbg_decomp_release(&mut self, handle:
 //! ReservedSmallSegment)` was a **safe** `pub fn`. `ReservedSmallSegment`
-//! (`src/alloc_core/reserved_small_segment.rs`) stored only a `base: *mut
+//! (`src/alloc_core/small/reserved_small_segment.rs`) stored only a `base: *mut
 //! u8` — no owner identity, no lifetime tie to the `AllocCore` that reserved
 //! it. R31-4 (task #467) had already closed unforgeability (private field +
 //! `pub(super)` constructor) and double-release (move-consuming
@@ -55,7 +55,7 @@
 //!    release-build (non-`debug_assert!`) `assert_eq!` on
 //!    `ReservedSmallSegment::owner_id()` vs. `AllocCore::
 //!    dbg_reservation_owner_id` inside `dbg_decomp_release` — see
-//!    `src/alloc_core/alloc_core_small_pool.rs`. This test drives that
+//!    `src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`. This test drives that
 //!    exact path and confirms it panics with the expected message,
 //!    confirming the fix actually rejects the hazard rather than silently
 //!    permitting it.

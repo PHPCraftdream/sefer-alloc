@@ -1,0 +1,148 @@
+/// # ⚠️ Quiescence pin (UBFIX-12 / L-8, 0.3.0) — read before adding any
+/// `Sync`/cross-thread capability to `AllocCore`, or before making registry
+/// heaps droppable
+///
+/// This `drop` walks every segment in `self.table` and releases its OS
+/// reservation (`os::release_segment`) unconditionally — it does NOT perform
+/// any handshake to prove no OTHER thread is concurrently pushing onto one of
+/// these segments' cross-thread remote-free rings
+/// ([`RemoteFreeRing`](super::remote_free_ring::RemoteFreeRing), the
+/// `alloc-xthread` per-segment MPSC the segment header's `owner_thread_free`
+/// stamp routes into) before unmapping. If such a push raced this `drop`, it
+/// would write into memory that is either about to be, or has already been,
+/// unmapped — a use-after-free / wild write on the remote thread's side.
+///
+/// **Today this is reachable-but-moot, not a live bug**, for two independent
+/// reasons, EITHER of which is already sufficient on its own:
+///
+/// 1. **Registry heaps never reach this `drop`.** The `HeapRegistry`/
+///    `HeapCore` substrate that `SeferAlloc`/TLS actually use lives for the
+///    entire process (`HeapCore::new`'s `AllocCore` is never dropped by
+///    `recycle` — `recycle` only flips the slot's state and pushes it onto
+///    `free_slots` for reuse; see `HeapRegistry::recycle`). So the ONLY way
+///    to reach `AllocCore::drop` today is constructing a STANDALONE
+///    `AllocCore` directly (`AllocCore::new`/`::default`, bypassing the
+///    registry entirely) and letting it go out of scope.
+/// 2. **A standalone `AllocCore` cannot be shared across threads in the
+///    first place.** `AllocCore` carries raw pointers (`table`, `small_cur`,
+///    `large_cache` entries) and has no `unsafe impl Sync for AllocCore`
+///    anywhere in this crate (verified by grep at the time of writing) — so
+///    it is `!Sync` by the ordinary auto-trait rules, and a `&AllocCore`
+///    cannot be handed to another thread to begin with. Without a live
+///    `&AllocCore` on some OTHER thread, nothing can call the remote-free
+///    routing that would push onto a segment's `RemoteFreeRing` while this
+///    thread's `drop` is unmapping it — the race this note warns about has
+///    no way to be constructed against a standalone `AllocCore` today.
+///
+/// Both conditions must be independently defeated before this becomes live:
+/// (a) some future change makes registry heaps droppable (e.g. a
+/// decommit-when-empty or heap-teardown policy that actually frees a
+/// `HeapCore`'s `AllocCore`, not just recycles the slot), OR (b) some future
+/// change adds `unsafe impl Sync for AllocCore` (or otherwise exposes a
+/// standalone `AllocCore` for cross-thread sharing outside the registry).
+/// If EITHER lands, this `drop` needs a quiescence handshake — e.g. draining
+/// every segment's `RemoteFreeRing` under a happens-before edge that rules
+/// out a concurrent remote push, or otherwise proving no other thread holds
+/// a reference capable of routing a free into a segment this `drop` is about
+/// to unmap — before it is safe to release segments unconditionally as it
+/// does now. This note is the load-bearing reminder to add that handshake at
+/// that time; do not remove or weaken it while working on (a) or (b) above.
+impl Drop for AllocCore {
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
+                          // boundary when `large-cache-extended` is on, right after
+                          // `self.large_cache_extension` is proven non-null. Sound: the pointer
+                          // was produced only by `reserve_large_cache_extension`
+                          // (typed-initialised), `AllocCore`'s owner-only discipline (neither
+                          // `Send` nor `Sync`) rules out a concurrent reader/writer, and no other
+                          // reference to the sidecar is live across this call (this IS the
+                          // teardown path — no other method runs concurrently with `drop`).
+    fn drop(&mut self) {
+        // OPT-E (alloc-decommit): release any large segments held in the
+        // free-cache BEFORE walking the segment table. The cached entries are
+        // NOT in the table (they were unregistered on deposit), so the normal
+        // `table.bases()` walk below won't see them. We must release them
+        // explicitly here or they would leak.
+        #[cfg(feature = "alloc-decommit")]
+        for slot in &mut self.large_cache {
+            if let Some(cached) = slot.take() {
+                os::release_segment(cached.reservation, cached.reservation_len);
+            }
+        }
+        // R13-7 (task #277): the lazily-materialised extension sidecar holds
+        // large-cache entries the SAME way the base array does (unregistered
+        // from `self.table`, so the `table.bases()` walk below never sees
+        // them) — its reservations must be released here too, or they leak
+        // on drop. The sidecar's OWN VM reservation (the `leak_zeroed_pages`
+        // page(s) backing the `LargeCacheExtension` struct itself) is NOT
+        // released — it is leaked for the process lifetime by design, the
+        // same discipline `directory_sidecar`/`dirty_by_class` already use
+        // for their own sidecars (a bounded, one-time-per-heap cost, not a
+        // growing leak).
+        #[cfg(feature = "large-cache-extended")]
+        if !self.large_cache_extension.is_null() {
+            // SAFETY: see the `#[allow(unsafe_code)]` justification on
+            // `Drop::drop` above.
+            let ext = unsafe {
+                super::large_cache_extended::deref_large_cache_extension_mut(
+                    self.large_cache_extension,
+                )
+            };
+            for slot in &mut ext.slots {
+                if let Some(cached) = slot.take() {
+                    os::release_segment(cached.reservation, cached.reservation_len);
+                }
+            }
+        }
+
+        // Collect every live segment's `(reservation, reservation_len)` into a
+        // fixed-size stack array FIRST, then free them all. We must NOT free
+        // the primordial segment while still reading the registry — the
+        // registry lives IN the primordial's payload, so freeing it would
+        // unmap the array we're iterating over. Collecting up front (into a
+        // stack array, no global-allocator involvement) breaks that aliasing.
+        //
+        // `self.table.bases()` already filters NULL (recycled) slots — those
+        // segments were released by `recycle()` during their decommit cycle and
+        // must NOT be freed again. Only non-NULL (live) segments are collected
+        // and freed here.
+        //
+        // The array is bounded by MAX_SEGMENTS (4096 × 16 B = 64 KiB stack —
+        // fine; a deeply-nested drop chain would be the only concern, and
+        // AllocCore is a top-level owner).
+        let mut to_free: [(*mut u8, usize); super::segment_table::MAX_SEGMENTS] =
+            [(core::ptr::null_mut(), 0usize); super::segment_table::MAX_SEGMENTS];
+        let mut n = 0usize;
+        for base in self.table.bases() {
+            if n >= super::segment_table::MAX_SEGMENTS {
+                break;
+            }
+            let hdr = SegmentHeader::read_at(base);
+            // Every registered segment has a valid reservation recorded (set
+            // at register-time). We free them all — including large segments
+            // whose magic was zeroed by `dealloc` (they are still mapped and
+            // still carry the reservation info in their header).
+            to_free[n] = (hdr.reservation, hdr.reservation_len);
+            n += 1;
+        }
+        // Now free every collected reservation. The primordial (whose payload
+        // hosts the registry) is freed here alongside the rest — safe, because
+        // we no longer read the registry.
+        for &(reservation, reservation_len) in &to_free[..n] {
+            os::release_segment(reservation, reservation_len);
+        }
+    }
+}
+
+// NOTE: `AllocCore` is intentionally NOT `Send` (nor `Sync`) in Phase 8.
+// Phase 8 is single-threaded; `Send` is not needed. Phase 9 (per-thread
+// heaps) will add `Send` at the heap layer (the segment substrate is
+// `Send`-capable, but the claim belongs to the layer that owns the threading
+// discipline, not the substrate itself). Adding it here would require an
+// `unsafe impl` that has no place outside the two named `unsafe` seams.
+
+/// `base + off` as `*mut u8`, routed through the `node` seam. The Cartographer
+/// only ever passes offsets derived from the fixed [`SegLayout`] or the bump
+/// cursor (both bounded by `SEGMENT`).
+pub(super) fn base_add(base: *mut u8, off: usize) -> *mut u8 {
+    Node::offset(base, off)
+}

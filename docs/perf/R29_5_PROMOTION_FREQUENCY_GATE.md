@@ -89,7 +89,7 @@ source: `examples/r29_5_promotion_frequency_gate.rs`.
 ### 2.1 The counters
 
 Five new `bench-internals`-gated diagnostic statics in
-`src/alloc_core/alloc_core.rs` (`PROMOTION_COUNT`, `PROMOTION_BYTES_SUM`,
+`src/alloc_core/alloc_core/mod.rs` (`PROMOTION_COUNT`, `PROMOTION_BYTES_SUM`,
 `PROMOTION_BYTES_MIN`, `PROMOTION_BYTES_MAX`, `PROMOTION_BYTES_HIST` — an
 8-bucket power-of-two-ish histogram: `<4KiB, 4-16KiB, 16-64KiB, 64-128KiB,
 128-256KiB, 256-512KiB, 512-1024KiB, >=1MiB`), incremented exactly once per
@@ -98,7 +98,7 @@ in `src/registry/heap_core_free.rs`, immediately after the existing
 `Node::copy_nonoverlapping` promotion memcpy — the copied-byte count recorded
 is `old_layout.size()`, the exact span that memcpy moves. Read via five new
 `#[doc(hidden)]` safe `pub fn` accessors on `AllocCore`
-(`src/alloc_core/alloc_core_core_diag.rs`), mirroring the existing
+(`src/alloc_core/alloc_core/alloc_core_core_diag/`), mirroring the existing
 `OPT_H_ATTEMPTS`/`OPT_H_HITS` counter-pair convention exactly.
 
 **Safety analysis (CLAUDE.md benchmark-hook rule):** all five accessors are
@@ -239,8 +239,8 @@ previously-unmeasured Stage-1 trigger.
 |---|---|
 | `src/alloc_core/mod.rs` | compile-fix: +`pub(crate) use alloc_core::{...}` re-export block (5 items) under `#[cfg(feature = "bench-internals")]`, following the existing `LARGE_ZERO_PASS_CALLS` precedent |
 | `src/registry/heap_core_free.rs` | compile-fix: 5 reference sites changed from `crate::alloc_core::alloc_core::X` to `crate::alloc_core::X` (no logic change) |
-| `src/alloc_core/alloc_core.rs` | (pre-existing partial work, unchanged by this task) 5 new diagnostic statics + `promotion_byte_bucket` |
-| `src/alloc_core/alloc_core_core_diag.rs` | (pre-existing partial work, unchanged by this task) 5 new `dbg_promotion_*` accessors |
+| `src/alloc_core/alloc_core/mod.rs` | (pre-existing partial work, unchanged by this task) 5 new diagnostic statics + `promotion_byte_bucket` |
+| `src/alloc_core/alloc_core/alloc_core_core_diag/` | (pre-existing partial work, unchanged by this task) 5 new `dbg_promotion_*` accessors |
 | `examples/r29_5_promotion_frequency_gate.rs` | NEW — the Stage-1 measurement probe |
 | `Cargo.toml` | +`[[example]]` entry for `r29_5_promotion_frequency_gate` |
 | `docs/perf/R29_5_PROMOTION_FREQUENCY_GATE.md` | this report (new) |

@@ -15,7 +15,7 @@ promotion recommendation, a measurement only, per this task's brief.
 **Scope correction made during this task (important for reading the numbers
 below):** `virgin-zero-skip` gates ONLY the **Small**-classified `alloc_zeroed`
 path (`AllocCore::alloc_zeroed`'s `AllocKind::Small` arm,
-`src/alloc_core/alloc_core.rs:1305-1338`). The **Large**-classified path's own
+`src/alloc_core/alloc_core/mod.rs:1305-1338`). The **Large**-classified path's own
 freshness-skip (`is_fresh` from `alloc_large`) is a SEPARATE, ALREADY-
 unconditional mechanism shipped in R8-8 (task #221) with no feature gate at
 all — it is not what `virgin-zero-skip` controls and this task does not touch
@@ -34,7 +34,7 @@ routed to the Large path the way it would be if `SMALL_MAX` were smaller.
 Verified against this project's own geometry before picking it (per this
 task's brief), not assumed:
 
-- `os::SEGMENT = 1 << 22` = 4 MiB (`src/alloc_core/os.rs:65`).
+- `os::SEGMENT = 1 << 22` = 4 MiB (`src/alloc_core/platform/os.rs:65`).
 - `SegmentLayout::SMALL_MAX` = 258,752 bytes (~253 KiB) under plain
   `production` — confirmed by direct build (see above).
 - 65,536 (64 KiB) resolves to small-class index 42 of 49 (confirmed via
@@ -63,7 +63,7 @@ already-safe surface:
   counterfactual test (b) already relies on and asserts) to pop the
   just-freed, just-dirtied block back off the free list: never virgin by the
   dispatch conjunct (`alloc_small_with_virgin`'s doc,
-  `src/alloc_core/alloc_core_small.rs:255-263`), so `Node::zero` MUST run.
+  `src/alloc_core/small/alloc_core_small/mod.rs:255-263`), so `Node::zero` MUST run.
 
 Both use only `AllocCore::alloc`/`alloc_zeroed`/`dealloc` (ordinary
 `pub fn`/`pub unsafe fn` production API) plus the pre-existing
@@ -246,7 +246,7 @@ An independent readonly review (`docs/reviews/2026-07-29-r29-readonly-review.md`
 finding P1-4) found a real bug in `bench_virgin`
 (`benches/r29_16_virgin_zero_skip_calloc_wallclock.rs`), confirmed here by
 tracing the actual dispatch order in `alloc_small_with_virgin`
-(`src/alloc_core/alloc_core_small.rs:274-297`): step 1 checks the current
+(`src/alloc_core/small/alloc_core_small/mod.rs:274-297`): step 1 checks the current
 segment's free list FIRST, and only falls through to a genuine bump-carve
 (where `virgin-zero-skip` can fire) at step 3, if no free block exists
 anywhere.
@@ -307,7 +307,7 @@ task #453 (R30-4).
 is EXPECTED Callgrind behavior for this code shape, not a measurement
 defect.**
 
-1. `Node::zero` (`src/alloc_core/node.rs:135-144`) is a direct
+1. `Node::zero` (`src/alloc_core/platform/node.rs:135-144`) is a direct
    `core::ptr::write_bytes(ptr, 0, len)` call — a plain Rust `memset`. For a
    64 KiB length this lowers, on essentially every mainstream target
    (including the `x86_64-unknown-linux-gnu` target this gate's Stage 1

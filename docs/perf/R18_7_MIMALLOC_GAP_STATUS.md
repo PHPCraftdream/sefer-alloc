@@ -61,7 +61,7 @@ gap has had two serious swings taken at it; both are settled.
 ### Э1 is live in the current tree (hot-path verified, not just trusted)
 
 `rg refill_class_bump` finds the Э1 carve path alive and evolved in
-`src/alloc_core/alloc_core_small_magazine.rs:117` (`refill_class_bump`) →
+`src/alloc_core/small/alloc_core_small_magazine.rs:117` (`refill_class_bump`) →
 `:177` (`refill_class_bump_impl`). The body (read at
 `alloc_core_small_magazine.rs:195–275`) confirms the plan's design survived the
 last 11 rounds intact and was *extended*, not reverted:
@@ -294,7 +294,7 @@ that duplicates one already running.
   `:106–168` (post-round4), `:170–225` (post-PERF-PASS 2026-07-10),
   `:655–706` (post-P7 cold-direct + verdict).
 - `docs/perf/IAI_BASELINE.md:48–170` (the local iai `Ir` numbers + P7 delta).
-- `src/alloc_core/alloc_core_small_magazine.rs:117–275` (Э1 `refill_class_bump`
+- `src/alloc_core/small/alloc_core_small_magazine.rs:117–275` (Э1 `refill_class_bump`
   + `refill_class_bump_impl`, hot-path verified live + source-order preserved).
 - `.github/workflows/ci.yml:555–590` (miri jobs), `:978–1133` (the two existing
   weekly/dispatch jobs that an iai job would mirror); `rg iai|perf-gate|valgrind`

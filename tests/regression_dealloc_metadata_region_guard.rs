@@ -23,7 +23,7 @@
 //!
 //! Before the fix landed, temporarily commenting out the
 //! `if (off as usize) < payload_start { return; }` guard in
-//! `AllocCore::dealloc_small` (`src/alloc_core/alloc_core_small.rs`) made
+//! `AllocCore::dealloc_small` (`src/alloc_core/small/alloc_core_small/`) made
 //! this test fail: `dealloc(base+0, ..)` linked the free-list `next` pointer
 //! directly into the segment header (byte 0 is the header's `magic` field —
 //! see `SegmentHeader`), so `SegmentHeader::magic_at(base)` no longer read

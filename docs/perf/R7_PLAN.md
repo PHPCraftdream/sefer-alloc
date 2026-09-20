@@ -32,7 +32,7 @@ scope for Round7.
 These underpin the design and were confirmed against the source:
 
 - **The directory design is semantically complete.** `find_segment_with_free_impl`
-  (`src/alloc_core/alloc_core_small.rs`) selects a segment ONLY by
+  (`src/alloc_core/small/alloc_core_small/mod.rs`) selects a segment ONLY by
   `bt.head(class_idx) != FREE_LIST_NULL` (line ~399). Carve/bump room is a
   SEPARATE concern living on `small_cur`, never consulted by this scan. So a
   per-class `class_nonempty` bitmap covers the scan's selection criterion

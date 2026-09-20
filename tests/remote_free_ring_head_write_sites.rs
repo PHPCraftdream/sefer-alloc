@@ -2,7 +2,7 @@
 //! cursor against the module doc's F10 monotonicity proof.
 //!
 //! R33-4 (task #509): the module doc's formally-stated soundness argument
-//! (`src/alloc_core/remote_free_ring.rs` ~line 101) claimed "the only OTHER
+//! (`src/alloc_core/segment/remote_free_ring/mod.rs` ~line 105) claimed "the only OTHER
 //! write site" was `dbg_set_cursors` when there were actually FOUR
 //! (`drain`, `init_in_place`, `dbg_set_cursors`, `dbg_advance_head_only`).
 //! The round-32 readonly review (§3, finding F3 [P2]) caught it. This test
@@ -24,7 +24,7 @@ fn manifest_dir() -> &'static Path {
 
 /// The write sites to `head` this test pins. If the code gains or loses a
 /// write site, update BOTH this constant AND the module doc's F10 enumeration
-/// (`src/alloc_core/remote_free_ring.rs` ~line 101).
+/// (`src/alloc_core/segment/remote_free_ring/mod.rs` ~line 105).
 const EXPECTED_HEAD_WRITE_SITE_COUNT: usize = 4;
 
 #[test]
@@ -33,9 +33,11 @@ fn head_write_site_count_matches_doc() {
         manifest_dir()
             .join("src")
             .join("alloc_core")
-            .join("remote_free_ring.rs"),
+            .join("segment")
+            .join("remote_free_ring")
+            .join("ops.rs"),
     )
-    .expect("read src/alloc_core/remote_free_ring.rs")
+    .expect("read src/alloc_core/segment/remote_free_ring/ops.rs")
     .replace("\r\n", "\n");
 
     // Three write patterns exist:
@@ -67,7 +69,7 @@ fn head_write_site_count_matches_doc() {
     assert_eq!(
         write_sites.len(),
         EXPECTED_HEAD_WRITE_SITE_COUNT,
-        "src/alloc_core/remote_free_ring.rs has {} write site(s) to `head`, \
+        "src/alloc_core/segment/remote_free_ring/ops.rs has {} write site(s) to `head`, \
          expected {} (R33-4/task #509). The module doc's F10 monotonicity \
          proof (~line 101) enumerates every write site to `head`; if you \
          added or removed one, update BOTH the module doc's enumeration AND \

@@ -616,7 +616,7 @@ const MODEL_RETRY_BOUND: u32 = 3;
 // `RingModelShadow`, mirroring the real `RemoteFreeRing::full_check` +
 // `push` shape exactly (shadow fast path, real-Acquire-load slow path with
 // refresh) so loom can explore interleavings the hand-written soundness
-// argument (see `src/alloc_core/remote_free_ring.rs`'s module doc, "F10 —
+// argument (see `src/alloc_core/segment/remote_free_ring/mod.rs`'s module doc, "F10 —
 // shadow/cached head") cannot enumerate by hand: in particular, a producer
 // reading a STALE `cached_head` concurrently with the SAME slot being
 // reserved by another producer and then drained by the consumer, all in

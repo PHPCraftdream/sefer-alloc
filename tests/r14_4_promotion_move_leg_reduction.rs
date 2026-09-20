@@ -32,7 +32,7 @@
 //! `large-reserved-capacity` (R12-4) exists specifically to restore that
 //! headroom on top of `exact-span-large` (it reserves a geometric multiple of
 //! the request as uncommitted VA and commits the missing tail on demand — see
-//! `try_grow_large_reserved_capacity` in `src/alloc_core/alloc_core.rs`) —
+//! `try_grow_large_reserved_capacity` in `src/alloc_core/alloc_core/`) —
 //! BUT `alloc_core_large.rs`'s own `LARGE_RESERVED_CAP_BYTES`/
 //! `LARGE_RESERVED_CAP_GROWTH_FACTOR` doc comments spell out a second,
 //! independent exclusion: under `numa-aware`, the reservation always takes
@@ -269,7 +269,7 @@ fn repeated_post_promotion_grows_all_hit_opt_g() {
 /// medium ladder (no Large classification at all). A first grow into the 320
 /// KiB medium class necessarily moves (crossing from a smaller class), but a
 /// SECOND grow that stays WITHIN that same 320 KiB class must hit OPT-F
-/// (Small/medium same-class in-place carve, `src/alloc_core/alloc_core.rs`'s
+/// (Small/medium same-class in-place carve, `src/alloc_core/alloc_core/`'s
 /// `realloc_inplace_fast_path_known_base`) — same pointer, no move. This is
 /// the concrete, non-vacuous replacement for the old "just check success"
 /// fallback: it proves growth in this configuration behaves like ordinary
@@ -363,7 +363,7 @@ fn promotion_off_repeated_same_class_grows_all_hit_opt_f() {
     let a = SeferAlloc::new();
 
     // Two same-class pairs from the medium EXTRAS ladder
-    // (`src/alloc_core/size_classes.rs`): (260 KiB -> 320 KiB) then, after an
+    // (`src/alloc_core/platform/size_classes.rs`): (260 KiB -> 320 KiB) then, after an
     // unavoidable cross-class move, (site inside 384 KiB -> 384 KiB).
     let old_size = 16 * 1024;
     let old_layout = layout(old_size);

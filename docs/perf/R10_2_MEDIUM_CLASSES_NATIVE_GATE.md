@@ -87,7 +87,7 @@ wall-clock across 20 rounds:
 
 ### 2.3 Working set design — why 16 objects (> `LARGE_CACHE_SLOTS = 8`)
 
-`src/alloc_core/alloc_core.rs:81` defines `LARGE_CACHE_SLOTS = 8`: the
+`src/alloc_core/alloc_core/mod.rs:81` defines `LARGE_CACHE_SLOTS = 8`: the
 Large-segment free-cache holds up to 8 recently-freed dedicated 4 MiB spans to
 amortise the `VirtualFree`/`VirtualAlloc` round-trip. The working set is
 deliberately 2× this (16 objects): after freeing 16 Large objects, at most 8

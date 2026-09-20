@@ -1,0 +1,176 @@
+
+// ---------------------------------------------------------------------------
+// OPT-E — large-segment free-cache (feature = "alloc-decommit")
+//
+// The hot path for `alloc_large` / `dealloc` large is a full OS round-trip
+// (mmap/VirtualAlloc + munmap/VirtualFree). mimalloc avoids this by keeping a
+// per-allocator page-cache of recently-freed large spans so the next alloc of
+// the same size hits the cache instead of the OS (~800 ns vs ~8–240 µs).
+//
+// We implement a MINIMAL version: a fixed array of LARGE_CACHE_SLOTS entries.
+// The cache is ONLY active under `alloc-decommit` (it uses `table.recycle` for
+// the slot-NULL step, which is only compiled with that feature; this keeps the
+// logic consistent with the decommit-gate on the small-segment recycle path).
+// ---------------------------------------------------------------------------
+
+/// Maximum number of large segments held in the free-cache between uses.
+///
+/// Was 2 (Phase-1 minimal). Task D1: a workload that cycles through more than
+/// two distinct large sizes (e.g. a DBMS with several large-object classes)
+/// permanently evicted-and-recreated past 2 slots, forcing an OS round-trip
+/// on every alloc despite the cache existing. 8 slots gives real headroom for
+/// multi-size workloads while keeping the array (and the eviction scan, which
+/// is O(LARGE_CACHE_SLOTS) and only runs on the large-alloc/dealloc slow path,
+/// not the hot small-object path) cheap. The byte-budget
+/// (`large_cache_budget_bytes`) remains the primary control on total cached
+/// RSS; slot count only bounds how many *distinct* spans can be resident at
+/// once.
+///
+/// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): this base count
+/// stays 8 unconditionally (always-resident, zero-materialisation-cost
+/// array) — a wider working set (16+ distinct sizes, e.g. under
+/// `exact-span-large`'s per-size `usable` — see
+/// `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §4) is
+/// served by the OPT-IN lazily-materialised `large_cache_extension` sidecar
+/// (`large_cache_extended.rs`) layered on top, not by raising this constant.
+/// See that module's doc for why "extend via an additive lazy sidecar"
+/// was chosen over "raise this base array's size".
+#[cfg(feature = "alloc-decommit")]
+pub(super) const LARGE_CACHE_SLOTS: usize = 8;
+
+// R32-12 (task #503, F8 sub-change (2)): compile-time pin that the combined
+// base+extension slot count never exceeds the 64 bits `large_cache_occupied`
+// (below) can address. Base is 8 unconditionally; the extension adds
+// `LARGE_CACHE_EXTENDED_SLOTS` (32, `large_cache_extended.rs`) only under
+// `large-cache-extended`, giving 40 total — comfortably under 64. If a future
+// round raises either constant past this bound, this assertion is the
+// intended trip-wire (widen `large_cache_occupied` to `u128` or a two-word
+// bitmask rather than silently truncating `trailing_ones()`'s addressable
+// range).
+#[cfg(feature = "large-cache-extended")]
+const _: () = assert!(
+    LARGE_CACHE_SLOTS + super::large_cache_extended::LARGE_CACHE_EXTENDED_SLOTS
+        <= u64::BITS as usize
+);
+#[cfg(all(feature = "alloc-decommit", not(feature = "large-cache-extended")))]
+const _: () = assert!(LARGE_CACHE_SLOTS <= u64::BITS as usize);
+
+/// Size-ratio bound: we only reuse a cached entry if its usable_size is at most
+/// `needed * LARGE_CACHE_SIZE_FACTOR`. Without this a very large cached segment
+/// would be permanently reused for every small large-request — wasting RSS
+/// during the cache lifetime. Kept at 2 (as before): a 2× size tolerance is
+/// tight enough to avoid gross RSS waste while still allowing minor rounding
+/// differences between consecutive large allocations of "the same" size.
+#[cfg(feature = "alloc-decommit")]
+pub(super) const LARGE_CACHE_SIZE_FACTOR: usize = 2;
+
+// RAD-3 (E2, task #56): the old `POOL_MAX_SLOTS = 4` compile-time hard cap —
+// a fixed `[*mut u8; POOL_MAX_SLOTS]` storage array that silently clamped any
+// `SmallSegmentPoolConfig::pool_segments` request above 4 — is REMOVED. The
+// pool's storage is now an intrusive doubly-linked list threaded through
+// `SegmentHeader::pool_next`/`pool_prev` (see `alloc_core_small_pool.rs`),
+// so `AllocCore` holds only a head/tail pointer pair + `pooled_count` +
+// `pool_cap`, independent of how large a cap the user configures — no
+// compile-time array bound, and no per-registry-slot storage cost that scales
+// with `MAX_HEAPS` regardless of whether a given heap ever pools a segment
+// (the same class of structural cost RAD-1 removed from the registry's
+// `next_free` bootstrap). `pool_cap` is now HONESTLY the resolved
+// `min(pool_segments, pool_byte_cap / SEGMENT)` — no third `.min(_)` term.
+
+// `LargeCacheMode` now lives in its own file (`large_cache_mode.rs`) per the
+// one-export-per-file rule (task #27); it is re-exported unchanged by
+// `alloc_core::mod.rs`. Imported here so the shard field, the config type, and
+// the `dbg_large_cache_mode` test seam keep referring to it by bare name.
+#[cfg(feature = "alloc-decommit")]
+use super::large_cache_mode::LargeCacheMode;
+
+// ---------------------------------------------------------------------------
+// Phase 2 — lazy exponential decay of the large-cache excess
+// (feature = "alloc-decommit")
+//
+// Strategy: on each large alloc or free, check if enough wall-clock time has
+// elapsed since the last decay tick. If so, compute the excess over the
+// configurable headroom target and FIFO-evict a fraction (decay_rate_bp /
+// 10 000) of that excess back to the OS. This keeps the cache from
+// accumulating unbounded RSS between allocations while remaining "lazy" —
+// no background thread is needed.
+//
+// Parameters are supplied via `LargeCacheConfig` (set once at
+// `AllocCore::new_with_config`; defaults match the old env-var defaults when
+// no variable was set).
+// ---------------------------------------------------------------------------
+
+/// Immutable decay configuration, computed once at `AllocCore::new_with_config`
+/// from a [`LargeCacheConfig`](super::large_cache_config::LargeCacheConfig).
+/// Kept in its own struct to make the intent clear and to allow
+/// `dbg_set_decay_config` to swap it in tests.
+#[cfg(feature = "alloc-decommit")]
+#[derive(PartialEq)]
+pub(super) struct LargeCacheDecayConfig {
+    /// Fraction of the excess to release per tick, in basis points.
+    /// 1000 = 10%, 5000 = 50%, 10000 = 100%.
+    pub(super) decay_rate_bp: u32,
+    /// Minimum wall-clock interval between consecutive decay ticks.
+    pub(super) decay_interval: core::time::Duration,
+    /// Target cache size in bytes. The "excess" above this level is subject
+    /// to decay. On Phase 2 we treat `live_bytes = 0`; the target is just
+    /// `headroom_bytes`. A future phase can add explicit live-count tracking.
+    pub(super) headroom_bytes: usize,
+}
+
+#[cfg(feature = "alloc-decommit")]
+impl LargeCacheDecayConfig {
+    /// Build the decay config from a resolved [`LargeCacheConfig`].
+    ///
+    /// [`LargeCacheConfig`]: super::large_cache_config::LargeCacheConfig
+    fn from_config(cfg: &super::large_cache_config::LargeCacheConfig) -> Self {
+        Self {
+            decay_rate_bp: cfg.resolved_decay_rate_bp(),
+            decay_interval: cfg.resolved_decay_interval(),
+            headroom_bytes: cfg.resolved_headroom_bytes(),
+        }
+    }
+}
+
+/// One entry in the large-segment free-cache.
+///
+/// Invariant: `base` is SEGMENT-aligned, `reservation` was returned by the OS,
+/// `usable_size` equals the `usable` computed in `alloc_large` at the time the
+/// segment was first reserved (i.e. `n_segments * SEGMENT`). The segment's OS
+/// reservation is still live (not yet released to the OS). Pages are kept
+/// COMMITTED (no decommit on deposit) so that a cache hit requires no recommit.
+///
+/// When a cache hit occurs, the caller MUST:
+///   1. Re-register `base` in the `SegmentTable`.
+///   2. Write a fresh `SegmentHeader` over the old one (pages already committed).
+///   3. Return `Node::deref(base, hdr_aligned)` to the caller.
+#[cfg(feature = "alloc-decommit")]
+pub(super) struct CachedLarge {
+    /// Start of the original OS reservation.
+    pub(super) reservation: *mut u8,
+    /// Total size of the OS reservation.
+    pub(super) reservation_len: usize,
+    /// SEGMENT-aligned base of the segment (the "usable" start).
+    pub(super) base: *mut u8,
+    /// The `usable` bytes this reservation covers — `n_segments * SEGMENT` for
+    /// the original allocation. Used to match incoming requests.
+    pub(super) usable_size: usize,
+    /// R12-4 (feature `large-reserved-capacity`): the segment's total
+    /// RESERVED VA span at the time it was deposited (`>= usable_size`) —
+    /// mirrors `SegmentHeader::reserved_capacity`'s bug-#134-shaped carry-
+    /// forward discipline: read from the header's `reserved_capacity` field
+    /// at deposit time and restamped verbatim into the reused header on the
+    /// next cache hit, never recomputed. Without the feature this always
+    /// equals `usable_size` ("reserved == committed", the inert value).
+    #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
+    pub(super) reserved_capacity: usize,
+    /// Insertion sequence number (task D1). Monotonically increasing per
+    /// deposit, taken from `AllocCore::large_cache_seq`. The true FIFO-oldest
+    /// occupied slot is the one with the SMALLEST `seq` — NOT necessarily the
+    /// lowest array index once `LARGE_CACHE_SLOTS > 2` (with more than two
+    /// slots, hits and re-deposits no longer fill/empty strictly in index
+    /// order, so "lowest index = oldest" stops holding; see D1 in
+    /// `docs/checkpoints` history). This field restores a correct FIFO
+    /// ordering independent of slot count.
+    pub(super) seq: u64,
+}

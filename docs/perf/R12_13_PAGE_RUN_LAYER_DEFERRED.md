@@ -102,7 +102,7 @@ R12-3's commit message is explicit about what it does **not** touch:
 changes."* The segment's **alignment stays `SEGMENT` (4 MiB) unconditionally**
 (so `segment_base_of_ptr`'s masking is unaffected), and — critically for
 this task's question — the registration call
-(`self.table.register(slot.base)`, `src/alloc_core/alloc_core_large.rs:294`)
+(`self.table.register(slot.base)`, `src/alloc_core/large/alloc_core_large.rs:294`)
 is completely untouched. **Every Large allocation, exact-span or not, still
 consumes exactly one `SegmentTable` slot and pays exactly one
 `vmem::reserve_aligned`/`reserve_aligned_lazy` OS call.** `exact-span-large`
@@ -129,7 +129,7 @@ with the number of distinct live objects or `SegmentTable` slot pressure;
 ## 3. Does the (b)-shaped gap (`MAX_SEGMENTS` / syscall frequency) actually
 ## bite on a real workload here?
 
-`MAX_SEGMENTS = 1024` (`src/alloc_core/segment_table.rs:64`) is confirmed
+`MAX_SEGMENTS = 1024` (`src/alloc_core/segment/segment_table/mod.rs:64`) is confirmed
 unchanged by R12-3/R12-4 — a hard, compile-time cap on live Large (and
 Small-segment) registrations, extensively guarded by existing regression
 tests (`tests/regression_large_align_no_segment_exhaustion.rs`,
@@ -144,7 +144,7 @@ the 1.25–2.0 MiB range specifically:
 1. **Under the opt-in `medium-classes-wide` feature (landed in the codebase
    since R9-4, but NOT part of `production` and NOT independently GO'd for
    `production` — it carries a large realloc regression), `SMALL_MAX` is
-   1.75 MiB** (`src/alloc_core/size_classes.rs:37,169`: wide classes take
+   1.75 MiB** (`src/alloc_core/platform/size_classes.rs:37,169`: wide classes take
    `SMALL_MAX` from 1 MiB to 1.75 MiB). That means **1.25/1.5/1.75 MiB
    objects route through the Small-class carve path, not Large, only when a
    caller explicitly enables `medium-classes-wide`** — in `production`'s
@@ -244,7 +244,7 @@ composition, exists at that time.
   re-evaluation against already-measured R12-3/R12-4 numbers (reproduced
   personally by the committing agent per `2593d30`'s and `fc155c9`'s commit
   messages) and already-landed (but opt-in, not `production`)
-  `medium-classes-wide` constants (`src/alloc_core/size_classes.rs`), not
+  `medium-classes-wide` constants (`src/alloc_core/platform/size_classes.rs`), not
   new measurement.
 - "No demonstrated victim" (§3 point 2) is an absence-of-evidence finding
   from this repository's own tests/benches/examples/docs, not a proof that
