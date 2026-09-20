@@ -105,8 +105,15 @@ unsafe impl GlobalAlloc for SeferAlloc {
                     // `unsafe fn dealloc`); `dealloc_foreign_routing` applies
                     // the SAME null-base and magic-mismatch guards
                     // `dealloc_foreign_slow` already uses before touching any
-                    // segment memory, so a dangling/garbage `ptr` cannot
-                    // fault here either.
+                    // segment memory, so a LIVE-but-foreign `ptr` (the case
+                    // this arm exists for) is routed or rejected without
+                    // faulting. This is NOT a blanket "safe on any
+                    // dangling/garbage pointer" claim — identical scope to the
+                    // `not(alloc-xthread)` arm below: a pointer into an
+                    // already-RELEASED, unmapped segment faults on the header
+                    // read in either path, and excluding that case is the
+                    // caller's baseline `GlobalAlloc` obligation, not
+                    // something these guards relax.
                     let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
                     crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
                 }
