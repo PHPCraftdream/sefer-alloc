@@ -194,7 +194,7 @@ impl<T> LockFreeRegion<T> {
         // in ASCENDING global-index order: slot[i].next_free = i+1 (or None at
         // the very last slot). free_head then points at the smallest index.
         let mut free_head: Option<u32> = None;
-        let total_pages = u32::try_from(page_count).unwrap_or(0);
+        let total_pages = u32::try_from(page_count).expect("page_count overflows u32");
         for page_idx in 0..total_pages {
             let base = page_idx
                 .checked_mul(page_len)
