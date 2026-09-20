@@ -13,17 +13,12 @@ mod realloc_fastpath;
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 use super::counters::SMALL_ZERO_PASS_CALLS;
 #[cfg(feature = "alloc-stats")]
-use super::counters::{
-    FOREIGN_OR_UNROUTABLE_FREES, LARGE_ZERO_PASS_CALLS, OPT_H_ATTEMPTS, OPT_H_HITS,
-    RELOC_FASTPATH_DECLINE_CALLS, RELOC_INPLACE_LARGE_CALLS, RELOC_INPLACE_SMALL_CALLS,
-};
+use super::counters::{FOREIGN_OR_UNROUTABLE_FREES, LARGE_ZERO_PASS_CALLS};
 #[cfg(feature = "alloc-decommit")]
 use super::CachedLarge;
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-#[cfg(feature = "large-reserved-capacity")]
-use crate::alloc_core::segment_header::align_up;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::alloc_core::size_classes::AllocKind;
 

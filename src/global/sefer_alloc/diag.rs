@@ -1,5 +1,6 @@
 #[cfg(feature = "alloc-decommit")]
 use crate::global::tls_heap::current_for_trim;
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::global::tls_heap::CurrentHeap;
 use crate::global::AllocStats;
 

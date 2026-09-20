@@ -120,6 +120,7 @@
 //!
 //! [`current`]: super::tls_heap::current
 
+#[cfg(feature = "batch-api")]
 mod batch;
 mod core;
 mod diag;
