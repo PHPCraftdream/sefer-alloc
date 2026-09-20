@@ -9,7 +9,7 @@
 //! `pool_segments` = 4/8/16/32 at 1/8/32 threads **sequentially in one
 //! `cargo run --release` process**, claiming a per-thread heap via
 //! `SeferAlloc::with_config`. That is unsound for this registry:
-//! `HeapRegistry::claim_with_config` (`src/registry/heap_registry.rs:209`) is
+//! `HeapRegistry::claim_with_config` (`src/registry/heap_registry/claim.rs:150`) is
 //! first-claim-wins for a slot's whole process lifetime — a re-claimed slot
 //! keeps the config set at first materialisation, incrementing only the
 //! `CONFIG_CONFLICTS` counter (`heap_registry.rs:263`) and arming a

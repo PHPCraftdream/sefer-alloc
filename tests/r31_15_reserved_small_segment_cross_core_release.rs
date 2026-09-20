@@ -139,15 +139,16 @@ fn same_core_release_still_succeeds() {
     unsafe { core_a.dealloc(p, layout) };
 }
 
-/// Same hazard through the `HeapCore` delegation layer (`src/registry/
-/// heap_core_diag.rs`), not just the `AllocCore` layer directly — confirms
+/// Same hazard through the `HeapCore` delegation layer
+/// (`src/registry/heap_core/diag/diag_probes.rs`), not just the `AllocCore`
+/// layer directly — confirms
 /// the fix's owner-id check is not bypassed by going through the thin
 /// forwarding wrapper `HeapCore::dbg_decomp_release` delegates to.
 /// `HeapCore` requires a registry-bound heap (via `with_heap`/similar), so
 /// this drives the SAME underlying `AllocCore::dbg_decomp_release` two ways
 /// on two DIFFERENT standalone `AllocCore`s directly — the `HeapCore`
 /// delegation is a pure 1:1 forward (`self.core.dbg_decomp_release(handle)`,
-/// verified by reading `heap_core_diag.rs`), so exercising `AllocCore`
+/// verified by reading `heap_core/diag/diag_probes.rs`), so exercising `AllocCore`
 /// directly (as the two tests above do) already covers the delegation's
 /// only logic; this test instead documents that equivalence explicitly
 /// rather than standing up full registry-bound heaps (`SeferAlloc`) for two
@@ -158,13 +159,13 @@ fn same_core_release_still_succeeds() {
 fn heap_core_delegation_is_a_pure_forward_to_alloc_core() {
     // This is a documentation-as-test assertion: read
     // `HeapCore::dbg_decomp_release`'s body in
-    // `src/registry/heap_core_diag.rs` and confirm it is exactly
+    // `src/registry/heap_core/diag/diag_probes.rs` and confirm it is exactly
     // `unsafe { self.core.dbg_decomp_release(handle) }` with no additional
     // logic — if that ever changes to do more than forward, this comment
     // (and the claim it documents) goes stale and this test's rationale
     // above should be revisited to add a real registry-bound two-heap
     // counterfactual.
-    let source = include_str!("../src/registry/heap_core_diag.rs");
+    let source = include_str!("../src/registry/heap_core/diag/diag_probes.rs");
     let marker = "pub unsafe fn dbg_decomp_release(&mut self, handle: crate::alloc_core::ReservedSmallSegment) {";
     let idx = source
         .find(marker)

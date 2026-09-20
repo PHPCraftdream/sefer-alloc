@@ -74,7 +74,7 @@
 //!     itself.
 //!
 //! The out-of-contract status of that read is documented at the production
-//! routing site: `src/registry/heap_core_xthread.rs:585-594` (case (b): "a
+//! routing site: `src/registry/heap_core_xthread/routing.rs:144-157` (case (b): "a
 //! double-free of a released, unmapped segment is fundamentally UB (as with
 //! any allocator) and is NOT fixed by this change — only guarded for the
 //! live/mapped case, which is what M2 promises") and `:643-647` (the same

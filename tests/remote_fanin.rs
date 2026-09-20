@@ -52,7 +52,7 @@
 //! overflow counters on every failed poll) only runs if BOTH the ring push
 //! AND the immediate overflow attempt fail (the rare double-saturation case).
 //! See `HeapCore::push_with_overflow_retry`'s doc comment
-//! (`src/registry/heap_core_xthread.rs`) for the full current policy. This
+//! (`src/registry/heap_core_xthread/overflow.rs`) for the full current policy. This
 //! reordering changes WHEN and HOW OFTEN `DBG_RING_OVERFLOW` /
 //! `DBG_RING_PUSH_RETRIED` / `DBG_RING_PUSH_RETRY_EXHAUSTED` tick (each now
 //! fires at most once per logical free that ever saw a full segment ring,

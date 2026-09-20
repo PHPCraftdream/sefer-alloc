@@ -7,22 +7,22 @@
 //! Pure code-movement sibling of `heap_core.rs`; no behavior changed.
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use core::sync::atomic::Ordering;
+use ::core::sync::atomic::Ordering;
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::os;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 
-use super::heap_core::HeapCore;
+use crate::registry::heap_core::HeapCore;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use super::heap_core::TcacheHitCounter;
+use crate::registry::heap_core::TcacheHitCounter;
 
 impl HeapCore {
     /// TEST/DIAGNOSTIC-ONLY (task #133): this heap's own magazine-hit count.
     /// Relaxed load of [`tcache_hits`](Self::tcache_hits) — sound for a
     /// cross-thread diagnostic read (see the field's doc comment). Used by
-    /// [`super::heap_registry::tcache_hits_total`] to aggregate across every
+    /// [`crate::registry::heap_registry::tcache_hits_total`] to aggregate across every
     /// LIVE slot into the process-wide view `stats()` exposes.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[doc(hidden)]
@@ -37,7 +37,7 @@ impl HeapCore {
 
     /// W3: plant the stable handle to THIS heap's slot-resident magazine
     /// (tcache) hit counter. Called by
-    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim) once,
+    /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim) once,
     /// right after the slot is bound (and the `HeapCore` materialised), before
     /// any allocation on this heap runs. `counter` is a `&'static` reference to
     /// the owning slot's `tcache_hits`. Idempotent — on a slot re-claim the
@@ -56,7 +56,7 @@ impl HeapCore {
     #[cfg(feature = "alloc-decommit")]
     pub(crate) fn bind_large_cache_hits(
         &mut self,
-        counter: &'static core::sync::atomic::AtomicU64,
+        counter: &'static ::core::sync::atomic::AtomicU64,
     ) {
         self.core.bind_large_cache_hits(counter);
     }

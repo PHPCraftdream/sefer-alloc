@@ -184,7 +184,7 @@ fn small_churn_16b_2n() {
 // R22-17 (task #368) — dealloc-only isolation arms, to measure what fraction
 // of a free's total Ir the `contains_base` own-thread ownership probe
 // (`HeapCore::dealloc_routing` -> `AllocCore::contains_base` ->
-// `SegmentTable::contains_base`, see `src/registry/heap_core_xthread.rs` and
+// `SegmentTable::contains_base`, see `src/registry/heap_core_xthread/routing.rs` and
 // `src/alloc_core/segment_table.rs`) accounts for.
 //
 // `small_churn_16b` above measures alloc+dealloc TOGETHER; these arms isolate
@@ -212,7 +212,7 @@ fn small_churn_16b_2n() {
 //
 // `dealloc_contains_base_probe_only_16b` isolates `contains_base` ITSELF
 // (via the `#[doc(hidden)]` `dbg_contains_base` measurement hook added in
-// `src/registry/heap_core_diag.rs`), called directly against the same table
+// `src/registry/heap_core/diag/diag_probes.rs`), called directly against the same table
 // state (one primordial segment, already registered by the pre-allocation
 // pass) -- giving the probe's own per-call Ir with NO surrounding free
 // bookkeeping (bitmap/magazine/stamp work) mixed in.
@@ -305,7 +305,7 @@ fn dealloc_free_only_16b() {
 // (`AllocCore::contains_base` -> `SegmentTable::contains_base`), just without
 // the rest of `dealloc_routing`/`dealloc_own_thread_with_base`'s bookkeeping
 // around it -- not an alternate/bypass implementation, see `dbg_contains_base`'s
-// own doc comment in `src/registry/heap_core_diag.rs`.
+// own doc comment in `src/registry/heap_core/diag/diag_probes.rs`.
 #[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
 #[library_benchmark]
 fn dealloc_contains_base_probe_only_16b() {
@@ -394,12 +394,12 @@ fn dealloc_segment_base_of_ptr_probe_only_16b() {
 // ---------------------------------------------------------------------------
 
 // R23-3 -- hot ALLOC, magazine-HIT isolation. `HeapCore::alloc`'s magazine
-// fast path (`src/registry/heap_core_alloc.rs`) is: array pop (decrement
+// fast path (`src/registry/heap_core/alloc/hot.rs`) is: array pop (decrement
 // `count`, read `slots[new_cnt]`) + (under `production`, no `hardened`) one
 // `clear_magazine` bitmap write. To isolate JUST this pop cost (no carve, no
 // refill, no free intermixed), the magazine must already hold resident
-// blocks when the timed hit-drain runs. `TCACHE_CAP` (16, `src/registry/
-// tcache.rs`) bounds how many blocks one class's magazine can hold at once.
+// blocks when the timed hit-drain runs. `TCACHE_CAP` (16,
+// `src/registry/heap_core/state/tcache.rs`) bounds how many blocks one class's magazine can hold at once.
 //
 // **A first draft of this pair used the N/2N technique directly on a
 // repeated fill/drain LOOP (double the CYCLE count for 2N) and got a
@@ -429,7 +429,7 @@ fn dealloc_segment_base_of_ptr_probe_only_16b() {
 // this component (see the paragraph above).
 #[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
 const MAGAZINE_FILL: usize = 16; // TCACHE_CAP, duplicated here (bench-local,
-                                 // registry::tcache::TCACHE_CAP is not `pub`).
+                                 // registry::heap_core::state::tcache::TCACHE_CAP is not `pub`).
                                  // Number of fill (carve+free) cycles BEFORE the timed hit-drain. Matches
                                  // `CHURN_OPS / MAGAZINE_FILL` purely so the shared prefix's total op count is
                                  // the same order of magnitude as this file's other CHURN_OPS-scale arms --
@@ -516,7 +516,7 @@ fn alloc_magazine_hit_only_16b() {
 // F7 (task #495) -- `alloc_zeroed` sibling of the `alloc_magazine_prefill_only_16b`
 // / `alloc_magazine_hit_only_16b` pair immediately above, added to judge the
 // removal of `alloc_small_zeroed_via_magazine`'s hit-arm `stamp_segment_owner`
-// call (`src/registry/heap_core_alloc.rs`). BYTE-IDENTICAL fill loop (still
+// call (`src/registry/heap_core/alloc/hot.rs`). BYTE-IDENTICAL fill loop (still
 // plain `alloc`/`dealloc`, so the magazine ends up populated with
 // NON-virgin blocks -- pushed-back-after-free blocks are never virgin, see
 // `dealloc_own_thread`'s R13-3 comment), so the timed hit-drain below is
@@ -698,7 +698,7 @@ fn dealloc_hash_contains_only_probe_16b() {
 // R23-3 -- free's POST-ROUTING body isolation: the M2 double-free oracle
 // checks (in-magazine bitmap probe + flushed/alloc-bitmap probe) and the
 // magazine push itself, i.e. everything `dealloc_own_thread_with_base`
-// (`src/registry/heap_core_free.rs`) does once ownership is already
+// (`src/registry/heap_core/free/dealloc_own_base.rs`) does once ownership is already
 // established. Investigated first (per the task brief): reading
 // `dealloc_own_thread_with_base`'s body shows the oracle checks and the
 // magazine push share the SAME `base`/`off`/`meta` locals in one straight-
@@ -711,7 +711,7 @@ fn dealloc_hash_contains_only_probe_16b() {
 // warned about. So this arm isolates BOTH together, as the smallest honestly
 // separable unit past the routing prefix.
 //
-// `dbg_dealloc_own_thread_with_base` (`src/registry/heap_core_diag.rs`) is
+// `dbg_dealloc_own_thread_with_base` (`src/registry/heap_core/diag/diag_probes.rs`) is
 // the real `dealloc_own_thread_with_base` body, called with a
 // pre-computed base exactly as `dealloc_routing` calls it once
 // `contains_base` returns true -- so this arm's loop is
@@ -978,11 +978,11 @@ fn dealloc_free_only_16b_n32() {
 // paired arm's isolated delta cancels it.
 //
 // `dealloc_flush_class_only_16b` repeats the IDENTICAL setup, then calls the
-// new `HeapCore::dbg_flush_class_only` hook (`src/registry/heap_core_diag.rs`,
+// new `HeapCore::dbg_flush_class_only` hook (`src/registry/heap_core/diag/diag_probes.rs`,
 // `bench-internals`-gated `unsafe fn` from creation per CLAUDE.md's
 // benchmark-hook rule) on the 8 live-but-not-yet-magazine-resident blocks --
 // the exact `flush_class(class_idx, &slots[0..FLUSH_N])` call production's
-// overflow arm makes (`heap_core_free.rs`), just invoked standalone instead
+// overflow arm makes (`heap_core/free/dealloc_own_base.rs`), just invoked standalone instead
 // of from inside the overflow branch. `Ir(dealloc_flush_class_only_16b) -
 // Ir(dealloc_flush_class_only_16b_prefix)` isolates `flush_class`'s own cost
 // on 8 blocks -- no bitmap-clear pass, no compaction shift, no final push
@@ -1080,7 +1080,7 @@ fn dealloc_flush_class_only_16b() {
 
     // Timed region: `flush_class` standalone on the 8 live blocks -- the
     // exact call production's overflow arm makes
-    // (`heap_core_free.rs`'s magazine-overflow branch), invoked directly
+    // (`heap_core/free/dealloc_own_base.rs`'s magazine-overflow branch), invoked directly
     // instead of from inside that branch. No bitmap-clear pass, no
     // compaction shift, no final magazine push -- those remain outside this
     // call (see the module doc above and
@@ -1099,7 +1099,7 @@ fn dealloc_flush_class_only_16b() {
 // `docs/perf/R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md` has the full
 // decomposition; summary here:
 //
-// The production magazine-hit fast path (src/registry/heap_core_alloc.rs, the
+// The production magazine-hit fast path (src/registry/heap_core/alloc/hot.rs, the
 // RAD-5 E4 block) runs on EVERY magazine hit under `production`:
 //     let base = os::segment_base_of_ptr(issued);
 //     let off = (issued as usize - base as usize) as u32;
@@ -1119,7 +1119,7 @@ fn dealloc_flush_class_only_16b() {
 // isolated delta cancels it.
 //
 // `alloc_clear_magazine_only_16b` repeats the IDENTICAL setup, then calls the
-// new `HeapCore::dbg_clear_magazine_on_hit` hook (src/registry/heap_core_diag.rs,
+// new `HeapCore::dbg_clear_magazine_on_hit` hook (src/registry/heap_core/diag/diag_probes.rs,
 // `bench-internals`-gated `unsafe fn` from creation per CLAUDE.md's
 // benchmark-hook rule) once per magazine-resident block -- the exact production
 // magazine-hit clear, invoked standalone. The blocks' bits ARE set at call time
@@ -1196,7 +1196,7 @@ fn alloc_clear_magazine_only_16b() {
 
     // Timed region: clear each of the 16 magazine-resident blocks' residency
     // bit via the standalone hook -- the EXACT production magazine-hit clear
-    // block (src/registry/heap_core_alloc.rs, RAD-5 E4), invoked standalone.
+    // block (src/registry/heap_core/alloc/hot.rs, RAD-5 E4), invoked standalone.
     // The bits ARE set here (the frees just set them via `mark_magazine`),
     // matching the real magazine-hit scenario.
     for &ptr in &ptrs {
@@ -1463,7 +1463,7 @@ fn alloc_zeroed_calloc_recycled_64k() {
 
 // ---------------------------------------------------------------------------
 // R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
-// N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)
+// N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/heap_core/state/tcache.rs`)
 // is the compile-time constant swept by hand-editing that file between
 // `npm run iai` runs (4, 8, 12, 16) -- these arms themselves do NOT encode
 // FLUSH_N; they measure whatever FLUSH_N the tree is currently built with, so
@@ -2096,7 +2096,7 @@ fn dealloc_batch_fresh_17_16b() {
 // R18-3 (task #330) — the FIRST instruction-count baseline for the dealloc
 // hot path under `production,medium-classes`, the configuration where R17-4's
 // Large-segment `kind_at` routing check (`dealloc_own_thread_with_base`,
-// `src/registry/heap_core_free.rs` branch A) actually COMPILES IN. R17-4's
+// `src/registry/heap_core/free/dealloc_own_base.rs` branch A) actually COMPILES IN. R17-4's
 // "zero hot-path cost" claim was measured only under plain `production` (where
 // branch A compiles out entirely) — this bench closes that proof gap by
 // tracking the path WITH the check present. The R18-3 runtime size gate
@@ -3304,7 +3304,7 @@ fn dealloc_batch_fresh_17_16b() {
 // Uses the same `bootstrap::ensure` + `HeapRegistry::claim` pattern as the
 // dealloc-only isolation arms above. The `dbg_decomp_*` hooks are gated
 // `alloc-decommit + bench-internals` at their declaration
-// (`alloc_core_small_pool.rs`/`heap_core_diag.rs`) — both must be repeated
+// (`alloc_core_small_pool.rs`/`heap_core/diag/`) — both must be repeated
 // here too (same pattern as `dealloc_flush_class_only_16b` above), or this
 // arm would fail to compile under `alloc-xthread` alone.
 #[cfg(all(

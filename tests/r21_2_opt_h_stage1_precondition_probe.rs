@@ -90,7 +90,7 @@
 //!
 //! This test needs precise control over carve order within ONE segment,
 //! without registry-level promotion (`try_promote_to_large`,
-//! `src/registry/heap_core_free.rs`) intercepting the grow before OPT-H's
+//! `src/registry/heap_core/free/realloc.rs`) intercepting the grow before OPT-H's
 //! own check is ever reached. `AllocCore::realloc` has no promotion logic —
 //! it always tries the in-place fast paths (OPT-G/OPT-F/OPT-H's diagnostic)
 //! then falls through to its own move-leg. This mirrors the precedent in

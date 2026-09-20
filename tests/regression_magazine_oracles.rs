@@ -57,7 +57,7 @@ impl Drop for SerialGuard {
 ///
 /// COUNTERFACTUAL: remove the in-magazine `slots` scan
 /// (`for i in 0..cnt { if slots[c][i] == ptr { return; } }`) in
-/// `heap_core.rs::dealloc_own_thread` → RED (the block is pushed twice, so the
+/// `heap_core/free/dealloc.rs::dealloc_own_thread` → RED (the block is pushed twice, so the
 /// next two allocs return the SAME pointer).
 #[test]
 fn in_magazine_double_free_is_noop() {
@@ -96,7 +96,7 @@ fn in_magazine_double_free_is_noop() {
 ///
 /// COUNTERFACTUAL: remove the bitmap oracle
 /// (`if SegmentMeta::new(base).alloc_bitmap().is_free(off) { return; }`) in
-/// `heap_core.rs::dealloc_own_thread` → RED (the flushed block ends up in BOTH
+/// `heap_core/free/dealloc.rs::dealloc_own_thread` → RED (the flushed block ends up in BOTH
 /// the magazine and the BinTable free list → issued twice).
 #[test]
 fn flushed_double_free_is_noop() {

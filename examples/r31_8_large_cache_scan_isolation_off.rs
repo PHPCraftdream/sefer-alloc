@@ -20,7 +20,7 @@ include!("_shared/r31_8_large_cache_scan_isolation_workload.rs");
 /// Base cache: `LARGE_CACHE_SLOTS` (8) is `pub(super)`, not nameable from
 /// `examples/` — hardcoded here as the base cache's well-known, long-stable
 /// size (matches `HeapCore::dbg_large_cache_slot_sizes`'s own hardcoded `8`
-/// return-array length, `src/registry/heap_core_diag.rs`, same rationale).
+/// return-array length, `src/registry/heap_core/diag/queries.rs`, same rationale).
 const BASE_SLOTS: usize = 8;
 const ROUNDS: usize = 200_000;
 

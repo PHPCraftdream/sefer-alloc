@@ -21,7 +21,7 @@
 //! ## R6-OPT-P0-2 round 1 — same bug class, narrower scope
 //!
 //! The slot array is now split into lazily-materialised chunks
-//! (`src/registry/registry_chunk.rs`); `Registry` itself is a plain `static`
+//! (`src/registry/bootstrap/chunk.rs`); `Registry` itself is a plain `static`
 //! with NO lazy init of its own (see `bootstrap.rs`'s module doc). The
 //! CAS-then-publish-then-rollback-on-OOM protocol this test exercises moved
 //! DOWN a level, from "the one `REGISTRY_PTR`" to "one
@@ -46,7 +46,7 @@
 //! `bootstrap::dbg_rollback_chunk_sentinel_reenterable(chunk_idx)`, which
 //! drives the LIVE `Registry::chunks[chunk_idx]` through the
 //! sentinel -> rollback -> postcondition-CAS sequence and restores it
-//! afterward. See that function's doc comment in `src/registry/bootstrap.rs`
+//! afterward. See that function's doc comment in `src/registry/bootstrap/ensure.rs`
 //! for the full safety argument (it only acts when the target chunk pointer
 //! is observed as `null`, so it never disturbs an already-materialised
 //! chunk, and it always restores `null` on exit).

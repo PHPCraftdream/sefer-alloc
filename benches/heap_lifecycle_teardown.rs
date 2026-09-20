@@ -7,7 +7,7 @@
 //!
 //! Round4's N1 (task #95) wired `AbandonGuard::drop`
 //! (`src/global/tls_heap.rs`) to call `HeapCore::trim_for_recycle`
-//! (`src/registry/heap_core.rs`) on thread exit/recycle: flush the entire
+//! (`src/registry/heap_core/state/ownership.rs`) on thread exit/recycle: flush the entire
 //! tcache, drain the small-segment hysteresis pool, and evict the whole large
 //! cache — before the slot is handed back to the registry for reuse. The
 //! canonical churn table (`benches/global_alloc.rs`) never tears a thread

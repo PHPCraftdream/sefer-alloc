@@ -4,7 +4,7 @@
 //! ## Why a fresh process — and why Criterion cannot do this
 //!
 //! The defect this harness judges (RAD-1, since FIXED) was a *first-touch* one:
-//! the registry bootstrap (`src/registry/bootstrap.rs`) used to write `next_free`
+//! the registry bootstrap (`src/registry/bootstrap/`) used to write `next_free`
 //! into all `MAX_HEAPS = 4096` slots at a ~7488 B stride (under `production`;
 //! `HeapSlot` is `#[repr(align(64))]` with the inline `HeapCore` carrying the
 //! magazine + large-cache state), dirtying ~4096 distinct pages ≈ 16 MiB of

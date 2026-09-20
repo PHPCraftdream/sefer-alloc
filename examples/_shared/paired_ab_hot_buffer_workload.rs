@@ -51,7 +51,7 @@
 // - **Teardown (untimed):** free the buffer once, at the end.
 //
 // This directly exercises `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
-// (`src/registry/heap_core_free.rs`, 256 KiB) under `medium-classes`: the
+// (`src/registry/heap_core/free/dealloc.rs`, 256 KiB) under `medium-classes`: the
 // very first grow step (256 -> 320 KiB, or immediately 256 -> 384 KiB
 // depending on ladder walk) already crosses the promotion threshold on the
 // FIRST round, so subsequent rounds repeat the promote-to-Large-then-shrink-

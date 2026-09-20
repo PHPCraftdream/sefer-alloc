@@ -1,6 +1,6 @@
 // RAD-1 / Phase 0(a): process-per-sample first-alloc RSS + latency judge.
 //
-// WHY THIS EXISTS. The registry bootstrap (src/registry/bootstrap.rs) writes
+// WHY THIS EXISTS. The registry bootstrap (src/registry/bootstrap/) writes
 // `next_free` into all MAX_HEAPS=4096 slots at a 7040 B stride on the FIRST
 // allocation of the process, dirtying ~4096 distinct pages (~16 MiB demand-zero
 // RSS) exactly once per process. Criterion and the iai bench run many

@@ -22,7 +22,7 @@
 //! ## Counterfactual (RED without the guard)
 //!
 //! Comment out the `#[cfg(feature = "hardened")]` Large-kind block in
-//! `heap_core.rs::dealloc_own_thread_with_base` and re-run under
+//! `heap_core/free/dealloc_own_base.rs::dealloc_own_thread_with_base` and re-run under
 //! `--features "production hardened"`: `large_ptr_small_layout_free_is_noop`
 //! goes RED — the Large payload address is pushed into the small magazine and
 //! re-issued by a later small alloc, appearing as a duplicate / an address
@@ -218,7 +218,7 @@ fn large_ptr_small_layout_free_is_noop() {
 // The tests below exercise branch (A) (the promotion-reachable path),
 // gated by a RUNTIME check on `HeapCore::dbg_promotion_compiled()` (R22-9,
 // task #360) rather than a hand-written `#[cfg(...)]` mirroring
-// `heap_core_free.rs`'s `medium_promotion_reachable!` predicate. Originally
+// `heap_core/free/dealloc.rs`'s `medium_promotion_reachable!` predicate. Originally
 // (R19-1/R22-5) these were `#[cfg]`-gated, which meant the test functions
 // did not even COMPILE under a feature set where the predicate is false
 // (e.g. `--all-features`, where `numa-aware` + `exact-span-large` are both
@@ -424,7 +424,7 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
 /// size but wrong align previously passed branch (A)'s consistency gate
 /// (`SegmentHeader::large_align_at` did not exist before this task; the
 /// check compared size only). `try_promote_to_large`
-/// (`heap_core_free.rs:~1258`) preserves the ORIGINAL layout's align
+/// (`heap_core/free/realloc.rs:540`) preserves the ORIGINAL layout's align
 /// (`self.core.alloc_large(new_size, old_layout.align())`), so the promoted
 /// segment's `large_align` is exactly the align the block was allocated
 /// with — a free carrying the SAME size but a DIFFERENT align is,

@@ -350,7 +350,7 @@ fn churn_prefill_write<A: GlobalAlloc>(
 /// so `dealloc_own_thread` consults two EXACT oracles -- the in-magazine
 /// `slots` scan and the BinTable `is_free` bitmap, both hot segment metadata
 /// -- on every magazine free, unconditionally and regardless of block-body
-/// contents (see `src/registry/tcache.rs`'s "TCACHE_KEY -- REMOVED" note and
+/// contents (see `src/registry/heap_core/state/tcache.rs`'s "TCACHE_KEY -- REMOVED" note and
 /// `HeapCore::dealloc_own_thread`). The free path therefore never reads or
 /// writes the freed block's body, so dirtying word1 here has NO effect on the
 /// free hot path. The write is kept because it measures the REALISTIC
@@ -1274,8 +1274,8 @@ const BATCH_CEILING_COUNTS: &[usize] = &[8, 16, 32, 64, BATCH_CEILING_OPS];
 /// does NOT add any new public symbol. It measures the CEILING such an API
 /// could deliver by calling the EXISTING internal batch primitives
 /// (`AllocCore::refill_class_bump` / `AllocCore::flush_class`, already used
-/// in production by `src/registry/heap_core_alloc.rs`'s magazine-miss refill
-/// and `src/registry/heap_core_free.rs`'s magazine-overflow flush) directly,
+/// in production by `src/registry/heap_core/alloc/hot.rs`'s magazine-miss refill
+/// and `src/registry/heap_core/free/dealloc_own_base.rs`'s magazine-overflow flush) directly,
 /// exactly the way [`pool_cap_sweep_spread_and_drain`] above already calls
 /// `AllocCore` directly, bypassing `SeferAlloc`/`GlobalAlloc`/TLS entirely.
 ///
@@ -1680,8 +1680,8 @@ fn bench_batch_ceiling_followup(c: &mut Criterion) {
 
             // ── (g) R11-4 dealloc-only isolation: scalar-loop dealloc vs the
             //    NEW batched `dealloc_batch` fast path (magazine-first-fill +
-            //    `flush_class`-overflow, `src/registry/
-            //    heap_core_dealloc_batch.rs`), on the SAME warm `SeferAlloc`
+            //    `flush_class`-overflow,
+            //    `src/registry/heap_core/free/dealloc_batch.rs`), on the SAME warm `SeferAlloc`
             //    heap arm (f) uses. Arm (f) above conflates alloc_batch AND
             //    dealloc_batch in one timed region, so it cannot isolate
             //    dealloc_batch's own before/after — these two arms measure

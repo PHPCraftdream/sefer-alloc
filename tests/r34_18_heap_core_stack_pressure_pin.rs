@@ -7,7 +7,7 @@
 //! `HeapCore` is constructed BY VALUE on the stack of the frame that triggers
 //! a thread's FIRST allocation — `HeapRegistry::claim` does
 //! `HeapCore::new(idx) → heap_ptr.cast::<HeapCore>().write(hc)`
-//! (`src/registry/heap_registry.rs`, both `claim` and `claim_with_config`),
+//! (`src/registry/heap_registry/claim.rs`, both `claim` and `claim_with_config`),
 //! and the process-global fallback does the same inside a
 //! `MaybeUninit<HeapCore>` (`src/global/fallback.rs`). Rust does NOT guarantee
 //! return-value/move elision: on a debug build, or any toolchain/backend that
@@ -20,7 +20,7 @@
 //! ## The two-layer guard
 //!
 //! 1. A **compile-time** `const _: () = assert!(size_of::<HeapCore>() <= 9216)`
-//!    in `src/registry/heap_core.rs` (right after the struct definition) — a
+//!    in `src/registry/heap_core/core.rs` (right after the struct definition) — a
 //!    future field addition that grows `HeapCore` past 9 KiB fails the BUILD,
 //!    not a downstream deployment. This mirrors the established
 //!    `SegmentHeader` pin pattern (`src/alloc_core/segment/segment_header/layout_asserts.rs).
@@ -67,7 +67,7 @@ use sefer_alloc::registry::HeapCore;
 
 /// `HeapCore` must fit within the 9 KiB stack-pressure budget. This mirrors
 /// the compile-time `const _: () = assert!(size_of::<HeapCore>() <= 9216)`
-/// pin in `src/registry/heap_core.rs` at runtime, for the feature set
+/// pin in `src/registry/heap_core/core.rs` at runtime, for the feature set
 /// actually under test — both are unconditional across every composition.
 /// Non-vacuous: the measured size is positive and meaningfully close to the
 /// budget, and a lower bound catches a suspicious shrink.

@@ -12,8 +12,8 @@
 //!
 //! The `debug_assert!` is now a release-surviving `assert!`. This module is
 //! `#![forbid(unsafe_code)]` AND `gen_at`/`bump_gen` have internal callers
-//! across OTHER `forbid` files (`alloc_core_small.rs`, `bootstrap.rs`,
-//! `heap_core.rs`) that cannot host `unsafe` blocks — so the
+//! across OTHER `forbid` files (`alloc_core_small.rs`, `bootstrap/`,
+//! `heap_core/`) that cannot host `unsafe` blocks — so the
 //! `heap_registry`-style `unsafe fn` discipline (T1, commit ce887e5) cannot
 //! apply. A runtime index guard is the soundness fix; base validity stays the
 //! caller's contract (documented), exactly as for the `Node` seam primitives

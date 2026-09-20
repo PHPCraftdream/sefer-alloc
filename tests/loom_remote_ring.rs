@@ -403,7 +403,7 @@ fn drain_empty_ring_is_noop() {
 // =========================================================================
 // RAD-4 (Phase 4, E3a) — overflow-retry composition.
 //
-// `HeapCore::push_with_overflow_retry` (`src/registry/heap_core.rs`) wraps
+// `HeapCore::push_with_overflow_retry` (`src/registry/heap_core_xthread/overflow.rs`) wraps
 // the SAME `RemoteFreeRing::push` this file already models, in a bounded
 // retry loop, on `Err(PushOverflow)`. It adds NO new shared state beyond two
 // `Relaxed` diagnostic counters (no synchronisation role) and calls no new

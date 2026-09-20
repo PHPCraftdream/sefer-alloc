@@ -44,7 +44,7 @@
 //! a safe no-op, matching the existing unstamped-segment behaviour in
 //! `dealloc_small`.
 //!
-//! [`HeapSlot::thread_free`]: super::heap_slot::HeapSlot::thread_free
+//! [`HeapSlot::thread_free`]: crate::registry::heap_slot::HeapSlot::thread_free
 //!
 //! ## `HeapCore` — the sole allocator face
 //!
@@ -58,7 +58,7 @@
 
 use crate::alloc_core::AllocCore;
 #[cfg(feature = "alloc-xthread")]
-use core::sync::atomic::AtomicPtr;
+use ::core::sync::atomic::AtomicPtr;
 
 // TEST-ONLY (0.3.0, task C1 → 0.4.x task #133): magazine (tcache) HIT
 // counter. Originally a single process-wide `static AtomicU64`, bumped by
@@ -102,7 +102,7 @@ use core::sync::atomic::AtomicPtr;
 // `HeapSlot::tcache_hits`.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
-pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
+pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 
 // RAD-4 (Phase 4, E3a) — overflow-safe cross-thread small-block free.
 //
@@ -206,7 +206,7 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 // heap-level overflow ring via another `push_to_heap_overflow` call (retrying
 // ONLY the ring inside the loop was tried first and measurably regressed the
 // high-fan-in judge — see `HeapCore::push_with_overflow_retry`'s doc comment
-// for the measured numbers). See that doc comment (`heap_core_xthread.rs`)
+// for the measured numbers). See that doc comment (`heap_core_xthread`)
 // for the full four-step policy and the `owner_slot_is_live` gate this
 // reordering does NOT change. If the owner is not live (nothing to spin for
 // on the ring), a single further `push_to_heap_overflow` attempt still runs
@@ -255,14 +255,14 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 // the atomic CAS retry, and both counter-increment branches; small enough
 // for miri's interpreter to reach retry exhaustion in a bounded test)
 // WITHOUT changing the retry protocol/logic itself — the exact same idiom
-// `alloc_core_small.rs`/`bootstrap.rs` already use elsewhere in this crate
+// `alloc_core_small.rs`/`bootstrap` already use elsewhere in this crate
 // for miri-only initialisation gates (`grep -rn 'cfg(miri)' src/`), applied
 // here to a workload-size constant instead. Real (non-miri) builds are
 // completely unaffected.
 #[cfg(all(feature = "alloc-xthread", not(miri)))]
-pub(super) const RING_PUSH_RETRY_SPINS: u32 = 8_192;
+pub(crate) const RING_PUSH_RETRY_SPINS: u32 = 8_192;
 #[cfg(all(feature = "alloc-xthread", miri))]
-pub(super) const RING_PUSH_RETRY_SPINS: u32 = 64;
+pub(crate) const RING_PUSH_RETRY_SPINS: u32 = 64;
 
 /// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4): process-
 /// wide count of small-block ring pushes that reached the BOUNDED SPIN-RETRY
@@ -279,8 +279,8 @@ pub(super) const RING_PUSH_RETRY_SPINS: u32 = 64;
 /// diagnostic only, like `DBG_LARGE_XTHREAD_RECLAIMED` / `DBG_RING_OVERFLOW`.
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
-pub static DBG_RING_PUSH_RETRIED: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub static DBG_RING_PUSH_RETRIED: ::core::sync::atomic::AtomicU64 =
+    ::core::sync::atomic::AtomicU64::new(0);
 
 /// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4; retry
 /// shape reworked by R6-REGRESSION/R6-REGRESSION-2): process-wide count of
@@ -295,7 +295,7 @@ pub static DBG_RING_PUSH_RETRIED: core::sync::atomic::AtomicU64 =
 /// one-shot `push_to_heap_overflow` attempt. (There is NO separate post-loop
 /// overflow retry on the live-owner path: the in-loop every-poll overflow
 /// retry subsumed it — see `HeapCore::push_with_overflow_retry`,
-/// `heap_core_xthread.rs`, for the exact control flow.) This counter marks
+/// `heap_core_xthread`, for the exact control flow.) This counter marks
 /// the genuinely-unrecovered residual of the original bounded-leak
 /// behaviour. Distinct from
 /// [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`], which (as of
@@ -307,19 +307,19 @@ pub static DBG_RING_PUSH_RETRIED: core::sync::atomic::AtomicU64 =
 /// the honest signal of an actual lost block under this fix.
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
-pub static DBG_RING_PUSH_RETRY_EXHAUSTED: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub static DBG_RING_PUSH_RETRY_EXHAUSTED: ::core::sync::atomic::AtomicU64 =
+    ::core::sync::atomic::AtomicU64::new(0);
 
 /// The thin, slot-resident heap value.
 ///
-/// Lives inside a [`HeapSlot`](super::heap_slot::HeapSlot)'s `UnsafeCell` and
+/// Lives inside a [`HeapSlot`](crate::registry::heap_slot::HeapSlot)'s `UnsafeCell` and
 /// is handed out to a thread via
-/// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim) as a
+/// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim) as a
 /// `*mut HeapCore`. Single-writer invariant (the owning thread is the only
 /// mutator of its heap's bins) makes the `UnsafeCell` sound.
 pub struct HeapCore {
     /// The owning slot's index in the registry. Used by
-    /// [`recycle`](super::heap_registry::HeapRegistry::recycle) to find the
+    /// [`recycle`](crate::registry::heap_registry::HeapRegistry::recycle) to find the
     /// slot back from a `*mut HeapCore` (12.3 stamps this into segment
     /// headers as the ownership key).
     /// `u32::MAX` is reserved as "not yet bound to a slot" (a freshly-init'd
@@ -332,7 +332,7 @@ pub struct HeapCore {
     pub(crate) core: AllocCore,
     /// Stable `&'static` handle to the cross-thread free-stack head / identity
     /// stamp — which, task H1, now lives in the OWNING
-    /// [`HeapSlot::thread_free`](super::heap_slot::HeapSlot::thread_free)
+    /// [`HeapSlot::thread_free`](crate::registry::heap_slot::HeapSlot::thread_free)
     /// (a `Sync`, process-`'static` slot field) rather than INLINE in this
     /// `HeapCore`.
     ///
@@ -354,7 +354,7 @@ pub struct HeapCore {
     /// Storing the head in the `HeapSlot` (shared by design, `Sync`) removes it
     /// from every `&mut HeapCore` retag range: the owner reaches it through this
     /// `&'static` handle (planted at
-    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim) time,
+    /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim) time,
     /// exactly like [`tcache_hits`](Self::tcache_hits)), and remote freers reach
     /// the SAME slot word through the `owner_thread_free_at(base)` segment-header
     /// stamp — which now stores the slot field's stable `'static` address.
@@ -378,7 +378,7 @@ pub struct HeapCore {
     ///
     /// ⚠️ The `deferred_next` header field this stack reuses as its intrusive
     /// link was historically shared with the (now-removed) abandoned-segments
-    /// stack — see the "ABA defence" note in `heap_registry.rs`. With that
+    /// stack — see the "ABA defence" note in `heap_registry`. With that
     /// substrate gone (task #97 / R4-5), this stack is the SOLE user of
     /// `deferred_next`, so the field-sharing collision it warned about is no
     /// longer possible.
@@ -396,9 +396,9 @@ pub struct HeapCore {
     pub(crate) thread_free: Option<&'static AtomicPtr<u8>>,
 
     /// RAD-4b (task #72): stable `&'static` handle to THIS heap's
-    /// slot-resident [`HeapOverflow`](super::heap_overflow::HeapOverflow)
+    /// slot-resident [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow)
     /// second-chance ring. Planted by
-    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
     /// (via `bind_slot_counters` → [`bind_overflow`](Self::bind_overflow)),
     /// mirroring [`thread_free`](Self::thread_free) /
     /// [`tcache_hits`](Self::tcache_hits) exactly — same rationale: resolving
@@ -420,11 +420,11 @@ pub struct HeapCore {
     /// own). This hoist applies ONLY to the OWNER's own opportunistic drain,
     /// the hot(ter) path the churn benches actually measure.
     #[cfg(feature = "alloc-xthread")]
-    pub(super) overflow: Option<&'static super::heap_overflow::HeapOverflow>,
+    pub(crate) overflow: Option<&'static crate::registry::heap_overflow::HeapOverflow>,
 
     /// Per-thread, per-class magazine cache (Phase P2 — fastbin).
     /// Gated on `alloc-global + fastbin`. Owner-private (single-writer):
-    /// only the owning thread touches it. See `registry::tcache`.
+    /// only the owning thread touches it. See `registry::heap_core::state::tcache`.
     ///
     /// ## D1 invariant (Phase 5/P5)
     ///
@@ -439,18 +439,18 @@ pub struct HeapCore {
     /// fires only when a segment's blocks are ALL on the BinTable free
     /// list (none handed out, none in magazine).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub(crate) tcache: super::tcache::Tcache,
+    pub(crate) tcache: crate::registry::heap_core::state::tcache::Tcache,
 
     /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
     /// heap's magazine HIT counter, which now lives in the owning
-    /// [`HeapSlot::tcache_hits`](super::heap_slot::HeapSlot::tcache_hits) — a
+    /// [`HeapSlot::tcache_hits`](crate::registry::heap_slot::HeapSlot::tcache_hits) — a
     /// `Sync`, process-`'static` slot — rather than inline in this `HeapCore`.
     /// See the module-level comment above [`TcacheHitCounter`] for the full
     /// aliasing-gap rationale (task W3: an aggregator materialising a shared
     /// `&HeapCore` over a struct another thread holds a protected `&mut` into
     /// is UB under Stacked Borrows).
     ///
-    /// Planted by [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// Planted by [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
     /// immediately after the slot is bound (`bind_counters`): it points at the
     /// slot's `AtomicU64`. Because the slot lives in the `'static` registry
     /// array, this pointer is sound for the slot's (process) lifetime and is
@@ -503,7 +503,7 @@ pub struct HeapCore {
     /// Only present under `alloc-global` (the feature that enables
     /// `stamp_segment_owner`).
     #[cfg(feature = "alloc-global")]
-    pub(super) last_stamped_segment: *mut u8,
+    pub(crate) last_stamped_segment: *mut u8,
 
     /// RAD-4b (task #72): owner-private cache of the last `tail` value
     /// observed on this heap's slot-resident `HeapOverflow` ring, refreshed
@@ -511,7 +511,7 @@ pub struct HeapCore {
     /// [`drain_heap_overflow`](Self::drain_heap_overflow) skip the full
     /// Acquire-pair drain protocol (and its unconditional `head.store`) with
     /// a single `Relaxed` load via
-    /// [`HeapOverflow::is_likely_empty`](super::heap_overflow::HeapOverflow::is_likely_empty)
+    /// [`HeapOverflow::is_likely_empty`](crate::registry::heap_overflow::HeapOverflow::is_likely_empty)
     /// on the overwhelmingly common "nothing ever overflowed into this ring"
     /// case — mirrors the OPT-C `last_stamped_segment` cache immediately
     /// above and `RemoteFreeRing`'s own documented `is_likely_empty`
@@ -520,7 +520,7 @@ pub struct HeapCore {
     /// sole writer of `head`/reader of `tail`'s progress via this cache.
     /// Starts at `0` (matches `HeapOverflow`'s all-zero initial `tail`).
     #[cfg(feature = "alloc-xthread")]
-    pub(super) overflow_tail_cache: usize,
+    pub(crate) overflow_tail_cache: usize,
 }
 
 // R34-18 (task #537, F-6 [low]) — compile-time stack-pressure budget pin.
@@ -528,7 +528,7 @@ pub struct HeapCore {
 // `HeapCore` is constructed BY VALUE on the stack of the frame that triggers a
 // thread's FIRST allocation: `HeapRegistry::claim` does
 // `HeapCore::new(idx) → heap_ptr.cast::<HeapCore>().write(hc)`
-// (`heap_registry.rs`, both `claim` and `claim_with_config`), and the
+// (`heap_registry/claim.rs`, both `claim` and `claim_with_config`), and the
 // process-global fallback constructs it the same way inside a
 // `MaybeUninit<HeapCore>` (`global/fallback.rs`). Rust does NOT guarantee
 // return-value/move elision: on a debug build, or any toolchain/backend that
@@ -607,7 +607,7 @@ impl HeapCore {
     /// nothing (task H1 hoisted the head out of `HeapCore`; there is no `Box`),
     /// so the whole path stays M5-clean.
     ///
-    /// Called lazily by [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// Called lazily by [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
     /// when it transitions a slot `FREE → LIVE` and needs to materialise the
     /// heap value in the slot's `UnsafeCell`.
     #[must_use]
@@ -629,7 +629,7 @@ impl HeapCore {
             #[cfg(feature = "alloc-xthread")]
             overflow: None,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-            tcache: super::tcache::Tcache::new(),
+            tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
             // is planted by `HeapRegistry::claim` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
@@ -637,7 +637,7 @@ impl HeapCore {
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
             #[cfg(feature = "alloc-global")]
-            last_stamped_segment: core::ptr::null_mut(),
+            last_stamped_segment: ::core::ptr::null_mut(),
             // RAD-4b: matches `HeapOverflow`'s all-zero initial `tail`.
             #[cfg(feature = "alloc-xthread")]
             overflow_tail_cache: 0,
@@ -673,7 +673,7 @@ impl HeapCore {
             #[cfg(feature = "alloc-xthread")]
             overflow: None,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-            tcache: super::tcache::Tcache::new(),
+            tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
             // is planted by `HeapRegistry::claim` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
@@ -681,7 +681,7 @@ impl HeapCore {
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
             #[cfg(feature = "alloc-global")]
-            last_stamped_segment: core::ptr::null_mut(),
+            last_stamped_segment: ::core::ptr::null_mut(),
             // RAD-4b: matches `HeapOverflow`'s all-zero initial `tail`.
             #[cfg(feature = "alloc-xthread")]
             overflow_tail_cache: 0,

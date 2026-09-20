@@ -1,7 +1,7 @@
 //! P7.4 (Э10) — branchless chunked in-magazine double-free scan: BOUNDS
 //! regression.
 //!
-//! Э10 rewrites the in-magazine DF oracle in `heap_core.rs`
+//! Э10 rewrites the in-magazine DF oracle in `heap_core/free/dealloc_own_base.rs`
 //! (`dealloc_own_thread_with_base`) from a sequential early-exit
 //! `for i in 0..cnt` into a branchless chunked scan: chunks of 4 with an
 //! OR-combined equality (one branch per 4) plus a scalar tail of `cnt % 4`.

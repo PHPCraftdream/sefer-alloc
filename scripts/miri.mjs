@@ -103,8 +103,8 @@ const MATRIX = [
   // `decommit_miri_cycle`.
 ];
 
-// W6: the PLAIN-provenance matrix. `src/registry/bootstrap.rs` (~lines 126-136)
-// documents that the exposed-provenance intrusive stacks — the A1
+// W6: the PLAIN-provenance matrix. `src/alloc_core/large/deferred_large/mod.rs`
+// (Provenance model, ~lines 19-28) documents that the exposed-provenance intrusive stacks — the A1
 // `deferred_large` push/drain stack and the `abandoned_segs` stack — pack real
 // pointer addresses via `expose_provenance` and re-derive them via
 // `with_exposed_provenance_mut` BY DESIGN. That wildcard-provenance shape is

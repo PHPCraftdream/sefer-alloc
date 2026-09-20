@@ -41,7 +41,7 @@
 //! timed churn begins — the exact oracle
 //! `benches/macro_multiseg_steady_state.rs` uses, reused here via the same
 //! `HeapCore::dbg_table_count` accessor (added this task,
-//! `src/registry/heap_core_diag.rs`) so both harnesses share one oracle
+//! `src/registry/heap_core/diag/queries.rs`) so both harnesses share one oracle
 //! definition instead of drifting into two.
 //!
 //! ## Config/process-identity evidence (CLAUDE.md R26-4 rule)

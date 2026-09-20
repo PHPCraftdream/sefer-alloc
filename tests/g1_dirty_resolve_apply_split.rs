@@ -45,9 +45,10 @@ fn xthread_source() -> String {
         manifest_dir()
             .join("src")
             .join("registry")
-            .join("heap_core_xthread.rs"),
+            .join("heap_core_xthread")
+            .join("overflow.rs"),
     )
-    .expect("read src/registry/heap_core_xthread.rs")
+    .expect("read src/registry/heap_core_xthread/overflow.rs")
     .replace("\r\n", "\n")
 }
 
@@ -90,7 +91,7 @@ fn resolved_target_holds_no_raw_segment_pointer() {
     assert_eq!(
         fields,
         [
-            "slot: &'static super::heap_slot::HeapSlot,",
+            "slot: &'static crate::registry::heap_slot::HeapSlot,",
             "word: usize,",
             "bit: u64,",
             "packed: u32,"
@@ -169,7 +170,7 @@ fn old_set_dirty_bit_for_segment_is_gone() {
         "G1: the old post-publish helper `set_dirty_bit_for_segment` read \
          segment memory AFTER the ring publish (use-after-free); it was \
          replaced by the resolve/apply split. Its reappearance in \
-         src/registry/heap_core_xthread.rs is a regression — re-read the G1 \
+         src/registry/heap_core_xthread/overflow.rs is a regression — re-read the G1 \
          section of \
          docs/reviews/2026-09-10-074442-sefer-alloc-global-review-sol-codex-run-1.md"
     );

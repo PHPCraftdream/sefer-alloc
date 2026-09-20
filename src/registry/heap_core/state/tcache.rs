@@ -8,7 +8,7 @@
 //!
 //! **Stale since RAD-5 (2026-07-11), corrected here:** this module's pop no
 //! longer skips ALL dependent loads on the hit path. The alloc-hit magazine
-//! pop (`HeapCore::alloc`, `src/registry/heap_core_alloc.rs`'s RAD-5 E4
+//! pop (`HeapCore::alloc`, `src/registry/heap_core/alloc/hot.rs`'s RAD-5 E4
 //! block) derives `os::segment_base_of_ptr(issued)` from the just-popped
 //! pointer, then does a magazine-residency-bitmap read-modify-write
 //! (`SegmentMeta::new(base).magazine_bitmap().clear_magazine(off)`) at the
@@ -156,7 +156,7 @@ pub(crate) const FLUSH_N: usize = TCACHE_CAP / 2; // 8
 /// `count` is `u8`, not `u16`: `TCACHE_CAP` (16) fits comfortably in a `u8`
 /// (max 255), and every accumulation of `count` is compared against
 /// `TCACHE_CAP` (16) or `FLUSH_N` (8) before use — see the call sites in
-/// `heap_core.rs` (`cnt + 1`, `remaining + 1` after a half-flush) — so no
+/// `free/dealloc_own_base.rs` (`cnt + 1`, `remaining + 1` after a half-flush) — so no
 /// arithmetic on this path ever approaches the `u8` range limit. Shrinking
 /// `count` from `u16` to `u8` also shrinks `PerClass` by 1 byte per class
 /// (49 classes × 1 byte saved), a minor bonus on top of the locality win.
@@ -246,16 +246,16 @@ pub(crate) struct PerClass {
 // one-cache-line locality fails the build instead of silently regressing
 // again the way the missing `#[repr(C)]` did originally.
 const _: () = assert!(
-    core::mem::offset_of!(PerClass, count) == 0,
+    ::core::mem::offset_of!(PerClass, count) == 0,
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
 );
 #[cfg(feature = "virgin-zero-skip")]
 const _: () = assert!(
-    core::mem::offset_of!(PerClass, virgin_mask) == 2,
+    ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
     "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
 );
 const _: () = assert!(
-    core::mem::offset_of!(PerClass, slots) == 8,
+    ::core::mem::offset_of!(PerClass, slots) == 8,
     "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"
 );
 
@@ -264,7 +264,7 @@ impl PerClass {
     const fn new() -> Self {
         Self {
             count: 0,
-            slots: [core::ptr::null_mut(); TCACHE_CAP],
+            slots: [::core::ptr::null_mut(); TCACHE_CAP],
             #[cfg(feature = "virgin-zero-skip")]
             virgin_mask: 0,
         }

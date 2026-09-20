@@ -39,7 +39,7 @@
 //! it to be a live, addressable segment — the owner's subsequent legitimate
 //! free of the SAME pointer would then double-reclaim it. This was verified
 //! by hand during development (temporarily reverting the mitigation branch
-//! in both `heap_core.rs` and `heap.rs` back to an unconditional push).
+//! in both `heap_core/core.rs` and `heap.rs` back to an unconditional push).
 
 #![cfg(all(
     all(feature = "alloc-global", feature = "alloc-xthread"),

@@ -21,21 +21,21 @@
 //!
 //! ## Protocol
 //!
-//! Identical in SHAPE to `bootstrap.rs`'s existing `Registry`-level
+//! Identical in SHAPE to `bootstrap`'s existing `Registry`-level
 //! `UNINIT → INITIALIZING → READY` pointer state-machine, applied per-chunk
-//! instead of once globally — see [`super::bootstrap::Registry::slot`] (the
+//! instead of once globally — see [`super::registry::Registry::slot`] (the
 //! single place that resolves a slot index to a `&'static HeapSlot`, and the
 //! only code in the crate allowed to dereference chunk memory) for the CAS +
 //! spin + publish sequence. This module owns only the chunk's LAYOUT and
 //! sizing constants; the state machine lives with `Registry` in
-//! `bootstrap.rs` (it needs `Registry::chunks` to drive the CAS, so keeping
+//! `bootstrap` (it needs `Registry::chunks` to drive the CAS, so keeping
 //! the state machine there mirrors the existing whole-registry code instead
 //! of splitting one atomic protocol across two files).
 //!
 //! ## Never freed, never moved
 //!
 //! Like the old monolithic registry, a materialised `RegistryChunk` lives for
-//! the process lifetime: `bootstrap.rs`'s per-chunk `ensure_slow` reserves it
+//! the process lifetime: `bootstrap`'s per-chunk `ensure_slow` reserves it
 //! via `aligned_vmem::reserve_aligned` and `mem::forget`s the reservation.
 //! This is load-bearing for `heap_registry::bind_slot_counters`, which plants
 //! `&'static` references into slot fields (`&slot.remote.thread_free`,
@@ -45,12 +45,12 @@
 // This module is plain safe Rust — it has NO `unsafe` of its own (no
 // `#![allow(unsafe_code)]` needed). The `unsafe` operations that back chunk
 // materialisation (raw-pointer field init, dereferencing a published chunk
-// pointer) live in `bootstrap.rs`'s `Registry::slot` / `ensure_chunk_slow`,
+// pointer) live in `bootstrap`'s `Registry::slot` / `ensure_chunk_slow`,
 // which already carries the crate's `#![allow(unsafe_code)]` seam. All this
 // file contributes is the chunk byte-size / slot-array layout constants,
 // computed with `core::mem::size_of`/`align_of` (safe).
 
-use super::heap_slot::HeapSlot;
+use crate::registry::heap_slot::HeapSlot;
 
 /// Number of slots per chunk. 64 is a compromise: small enough that a
 /// single-heap process's commit floor (`CHUNK_SLOTS * size_of::<HeapSlot>()`)
@@ -60,15 +60,15 @@ use super::heap_slot::HeapSlot;
 /// protocol on every few claims.
 pub(crate) const CHUNK_SLOTS: usize = 64;
 
-/// Number of chunks spanning [`MAX_HEAPS`](super::bootstrap::MAX_HEAPS). Kept
-/// as a `pub(crate) const` (not merely a local computation) so `bootstrap.rs`
+/// Number of chunks spanning [`MAX_HEAPS`](super::registry::MAX_HEAPS). Kept
+/// as a `pub(crate) const` (not merely a local computation) so `bootstrap`
 /// can size `Registry::chunks` with it and so a future `MAX_HEAPS` change
 /// that does not divide evenly into `CHUNK_SLOTS` fails the compile-time
 /// assert below rather than silently truncating the slot space.
-pub(crate) const NUM_CHUNKS: usize = super::bootstrap::MAX_HEAPS / CHUNK_SLOTS;
+pub(crate) const NUM_CHUNKS: usize = super::registry::MAX_HEAPS / CHUNK_SLOTS;
 
 const _: () = assert!(
-    NUM_CHUNKS * CHUNK_SLOTS == super::bootstrap::MAX_HEAPS,
+    NUM_CHUNKS * CHUNK_SLOTS == super::registry::MAX_HEAPS,
     "MAX_HEAPS must be an exact multiple of CHUNK_SLOTS so every slot index \
      0..MAX_HEAPS maps to exactly one (chunk_idx, slot_in_chunk) pair with no \
      remainder slots left unreachable"
@@ -78,11 +78,11 @@ const _: () = assert!(
 /// contiguous [`HeapSlot`]s. Heap-allocated (via `aligned_vmem::
 /// reserve_aligned`, the same M5-clean direct-syscall path
 /// `bootstrap::ensure_slow` already uses for the top-level `Registry` — NOT
-/// `std::alloc`), constructed in-place by `bootstrap.rs`'s per-chunk
+/// `std::alloc`), constructed in-place by `bootstrap`'s per-chunk
 /// materialisation path, and never freed or moved for the process lifetime.
 ///
 /// `repr(C)` so the byte layout is deterministic (needed for the raw
-/// field-by-field in-place init in `bootstrap.rs`, which writes each slot's
+/// field-by-field in-place init in `bootstrap`, which writes each slot's
 /// non-zero fields directly through pointer arithmetic rather than
 /// constructing a `RegistryChunk` value and `ptr::write`-ing it whole — the
 /// same reasoning `Registry`'s own in-place init documents: a `CHUNK_SLOTS`-

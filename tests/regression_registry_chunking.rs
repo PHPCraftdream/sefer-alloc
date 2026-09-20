@@ -1,6 +1,6 @@
 //! Regression / deliverable coverage for R6-OPT-P0-2 round 1 — chunking the
-//! registry's slot array (`src/registry/registry_chunk.rs` +
-//! `src/registry/bootstrap.rs`'s per-chunk `Registry::slot`).
+//! registry's slot array (`src/registry/bootstrap/chunk.rs` +
+//! `src/registry/bootstrap/registry.rs`'s per-chunk `Registry::slot`).
 //!
 //! ## What this file proves
 //!

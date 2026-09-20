@@ -8,9 +8,9 @@
 //! code-movement sibling of `heap_core.rs`; no behavior changed.
 
 #[cfg(feature = "alloc-xthread")]
-use core::sync::atomic::AtomicPtr;
+use ::core::sync::atomic::AtomicPtr;
 #[cfg(feature = "alloc-global")]
-use core::sync::atomic::Ordering;
+use ::core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::os;
@@ -19,14 +19,14 @@ use crate::alloc_core::segment_header::pack_owner;
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::segment_header::SegmentMeta;
 
-use super::heap_core::HeapCore;
+use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
     /// task H1: plant the stable `&'static` handle to THIS heap's slot-resident
     /// (or fallback-static) cross-thread free-stack head. Called once, right
     /// after the slot / fallback heap is materialised and before any allocation
     /// on this heap runs, by
-    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
     /// (via `bind_slot_counters`) / `fallback::heap_ptr`. Idempotent — on a
     /// slot re-claim the handle already references the same `'static` word, so
     /// re-planting is a harmless no-op store. Same discipline as
@@ -37,12 +37,15 @@ impl HeapCore {
     }
 
     /// RAD-4b (task #72): plant the stable `&'static` handle to THIS heap's
-    /// slot-resident [`HeapOverflow`](super::heap_overflow::HeapOverflow)
+    /// slot-resident [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow)
     /// ring. Same discipline as [`bind_thread_free`](Self::bind_thread_free) /
     /// [`bind_tcache_hits`](Self::bind_tcache_hits) — called once, right
     /// after the slot binds, from `bind_slot_counters`.
     #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn bind_overflow(&mut self, overflow: &'static super::heap_overflow::HeapOverflow) {
+    pub(crate) fn bind_overflow(
+        &mut self,
+        overflow: &'static crate::registry::heap_overflow::HeapOverflow,
+    ) {
         self.overflow = Some(overflow);
     }
 
@@ -52,7 +55,7 @@ impl HeapCore {
     #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
     pub(crate) fn bind_dirty_segments(
         &mut self,
-        ds: &'static [core::sync::atomic::AtomicU64;
+        ds: &'static [::core::sync::atomic::AtomicU64;
                      crate::alloc_core::segment_directory::WORDS_PER_CLASS],
     ) {
         self.core.dirty_segments = Some(ds);
@@ -78,7 +81,7 @@ impl HeapCore {
     #[cfg(feature = "class-aware-dirty")]
     pub(crate) fn bind_sidecar_oom_latch(
         &mut self,
-        latch: &'static core::sync::atomic::AtomicBool,
+        latch: &'static ::core::sync::atomic::AtomicBool,
     ) {
         self.core.sidecar_oom_latch = Some(latch);
     }
@@ -94,7 +97,7 @@ impl HeapCore {
     #[inline(always)]
     pub(crate) fn thread_free_head(&self) -> *const AtomicPtr<u8> {
         self.thread_free
-            .map_or(core::ptr::null(), |h| h as *const AtomicPtr<u8>)
+            .map_or(::core::ptr::null(), |h| h as *const AtomicPtr<u8>)
     }
 
     /// Stamp a segment's header with this heap's ownership. Two parts:
@@ -127,7 +130,7 @@ impl HeapCore {
     /// - A cache miss (base changed or Relaxed-load mismatch) falls through
     ///   to the slow path which restores the Acquire/Release protocol.
     #[inline(always)]
-    pub(super) fn stamp_segment_owner(&mut self, ptr: *mut u8) {
+    pub(crate) fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
         let base = os::segment_base_of_ptr(ptr);
 
@@ -155,7 +158,7 @@ impl HeapCore {
             }
             // Ownership mismatch (e.g., recycled segment): clear the cache
             // and run the slow path.
-            self.last_stamped_segment = core::ptr::null_mut();
+            self.last_stamped_segment = ::core::ptr::null_mut();
         }
 
         // -----------------------------------------------------------------------

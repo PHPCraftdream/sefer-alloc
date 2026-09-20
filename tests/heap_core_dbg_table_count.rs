@@ -3,7 +3,7 @@
 //! `AllocCore::dbg_table_count` (the segment table's high-water registered
 //! slot count) already has coverage at the `AllocCore` level
 //! (`tests/segment_table_o1.rs`). This file covers the NEW thin delegation
-//! added at the `HeapCore` level (`src/registry/heap_core_diag.rs`), which
+//! added at the `HeapCore` level (`src/registry/heap_core/diag/queries.rs`), which
 //! the R32-9 macro-bench harness (`benches/macro_multiseg_steady_state.rs`,
 //! `examples/r32_9_macro_multiseg_steady_state_ab_gate.rs`) uses as its
 //! path-activation oracle: a claimed `HeapCore` must report a count that

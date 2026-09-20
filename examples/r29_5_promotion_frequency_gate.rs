@@ -6,7 +6,7 @@
 //! (remap-instead-of-copy) design's precondition — before ANYONE designs or
 //! prototypes an OS-level `mremap` for the medium→Large realloc-promotion
 //! memcpy (`HeapCore::try_promote_to_large`,
-//! `src/registry/heap_core_free.rs`), does the promotion path actually have
+//! `src/registry/heap_core/free/realloc.rs`), does the promotion path actually have
 //! a material VICTIM? Per the independent review's explicit rule ("No
 //! victim, no implementation"): if promotions are RARE relative to total
 //! allocation activity, OR the copied-byte counts are SMALL, the asymptotic

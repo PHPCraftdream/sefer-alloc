@@ -13,7 +13,7 @@
 //!      so any such intra-doc link is broken. Zero exceptions.
 //!
 //!   2. NO `` `Heap` `` doc-comment mention (the removed TYPE) outside the
-//!      single allowed site: `registry/heap_core.rs`, whose module doc
+//!      single allowed site: `registry/heap_core/core.rs`, whose module doc
 //!      legitimately describes the removal in the PAST tense. Note this is
 //!      distinct from the LIVE, unrelated `fallback::with_heap` internal
 //!      function (a similar name, NOT the removed type) — that file contains
@@ -86,7 +86,7 @@ fn no_crate_heap_module_path() {
 fn no_removed_heap_type_doc_mentions() {
     // The ONLY file allowed to mention the removed `Heap` type — its module
     // doc records the removal in the past tense.
-    let allowed = src_dir().join("registry").join("heap_core.rs");
+    let allowed = src_dir().join("registry").join("heap_core").join("core.rs");
 
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
@@ -117,7 +117,7 @@ fn no_removed_heap_type_doc_mentions() {
 }
 
 /// Regression-guard against the SPECIFIC pre-task-H1 `thread_free` prose in
-/// `registry/heap_core.rs`, `global/fallback.rs`, and `global/sefer_alloc.rs`.
+/// `registry/heap_core/core.rs`, `global/fallback.rs`, and `global/sefer_alloc.rs`.
 ///
 /// Task #13 (the W3/H1 hoist) moved the cross-thread free-stack head OUT of an
 /// inline `HeapCore` field into the owning `HeapSlot::thread_free` slot word
@@ -143,7 +143,7 @@ fn no_stale_pre_h1_thread_free_prose() {
     // removed by task #31 that would only reappear via a genuine regression.
     let cases: &[(&str, &[&str])] = &[
         (
-            "registry/heap_core.rs",
+            "registry/heap_core/core.rs",
             &[
                 "ThreadFreeStack is Box-allocated",
                 "`ThreadFreeStack` is `Box`-allocated",
@@ -228,7 +228,7 @@ fn no_stale_abandon_adopt_substrate_references() {
     // a module-doc sentence that explicitly frames it as removed/historical
     // (grep-verified at the time this guard was written; see the file diffs
     // for the exact "previously ... was removed" phrasing).
-    let allowed: &[&str] = &["global/tls_heap.rs", "registry/bootstrap.rs"];
+    let allowed: &[&str] = &["global/tls_heap.rs", "registry/bootstrap/mod.rs"];
     let allowed_paths: Vec<PathBuf> = allowed
         .iter()
         .map(|rel| src_dir().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)))
@@ -278,7 +278,7 @@ fn no_stale_abandon_adopt_substrate_references() {
 ///      `tests/no_panic_doc_accuracy.rs`) — release `assert!`/`.expect()`/
 ///      `unreachable!()` sites kept as deliberate defence-in-depth, which
 ///      abort the process via the `#[rustc_nounwind]` `GlobalAlloc` shims.
-///   2. `Registry::ensure_chunk` in `src/registry/bootstrap.rs` calls
+///   2. `Registry::ensure_chunk` in `src/registry/bootstrap/registry.rs` calls
 ///      `std::process::abort()` directly and unconditionally on
 ///      chunk-materialisation OOM on the ALLOC path (the free path is
 ///      fallible instead, via `slot_or_none`/`try_ensure_chunk`, R34-15).
@@ -292,7 +292,7 @@ fn no_stale_abandon_adopt_substrate_references() {
 ///     `sefer_alloc.rs` (the tripwires doc) and at the direct
 ///     `std::process::abort()` call, so the corrected wording itself cannot
 ///     silently regress into vague prose that re-introduces the same gap.
-///   * `src/registry/bootstrap.rs` still actually contains the
+///   * `src/registry/bootstrap/registry.rs` still actually contains the
 ///     `std::process::abort()` call the corrected wording cites — if that
 ///     call is ever removed/softened, this test forces a conscious
 ///     Cargo.toml wording update rather than leaving a now-stale citation.
@@ -325,7 +325,7 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
          'never panic/abort' overclaim without the qualifying caveat (Sol-F3 \
          regression). Ordinary failure paths are no-op/null, but five \
          release-surviving invariant tripwires (src/global/sefer_alloc.rs) \
-         and registry-chunk alloc-path OOM (src/registry/bootstrap.rs) \
+         and registry-chunk alloc-path OOM (src/registry/bootstrap/registry.rs) \
          terminate the process by design. See \
          docs/reviews/2026-08-05-sol-release-readonly-review.md finding F3."
     );
@@ -339,17 +339,23 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
         block.contains("std::process::abort()"),
         "Cargo.toml's `alloc-global` comment must cite the direct \
          `std::process::abort()` call on the alloc path (registry chunk OOM, \
-         `src/registry/bootstrap.rs`) — Sol-F3 regression guard."
+         `src/registry/bootstrap/registry.rs`) — Sol-F3 regression guard."
     );
 
-    // The corrected wording cites a REAL abort() call — if bootstrap.rs's
+    // The corrected wording cites a REAL abort() call — if bootstrap/registry.rs's
     // abort is ever removed/softened without updating Cargo.toml, fail here
     // instead of leaving a stale citation.
-    let bootstrap = fs::read_to_string(manifest.join("src").join("registry").join("bootstrap.rs"))
-        .expect("read src/registry/bootstrap.rs");
+    let bootstrap = fs::read_to_string(
+        manifest
+            .join("src")
+            .join("registry")
+            .join("bootstrap")
+            .join("registry.rs"),
+    )
+    .expect("read src/registry/bootstrap/registry.rs");
     assert!(
         bootstrap.contains("std::process::abort()"),
-        "src/registry/bootstrap.rs no longer calls `std::process::abort()` \
+        "src/registry/bootstrap/registry.rs no longer calls `std::process::abort()` \
          directly — Cargo.toml's `alloc-global` comment cites this call as \
          part of the accurate panic/abort contract (Sol-F3); if the abort \
          was removed or made fallible, update Cargo.toml's wording \
@@ -881,7 +887,7 @@ fn lib_rs_seam_inventory_matches_canonical_grep() {
 
 /// Parse the compile-time offset pinned by a `const _: () = assert!(
 /// core::mem::offset_of!(PerClass, <field>) == <n>, ...)` block in
-/// `registry/tcache.rs`. The `==` operand is the source of truth
+/// `registry/heap_core/state/tcache.rs`. The `==` operand is the source of truth
 /// (compile-time checked), so this is the canonical value the prose must
 /// match. Returns `None` if the assert block is absent (e.g. a field was
 /// removed or the assert renamed) so the caller can fail with a clear message.
@@ -967,7 +973,11 @@ fn parse_perclass_prose_offset(region: &str, field: &str, all_fields: &[&str]) -
 /// regardless of features).
 #[test]
 fn perclass_doc_offsets_match_const_asserts() {
-    let path = src_dir().join("registry").join("tcache.rs");
+    let path = src_dir()
+        .join("registry")
+        .join("heap_core")
+        .join("state")
+        .join("tcache.rs");
     let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
     // The three fields whose offsets are both prose-documented AND pinned by a
@@ -990,7 +1000,7 @@ fn perclass_doc_offsets_match_const_asserts() {
         Some(r) => r,
         None => panic!(
             "the F4 layout prose anchors (`{start_anchor}` ... `{end_anchor}`) \
-             were not found in registry/tcache.rs — has the layout paragraph \
+             were not found in registry/heap_core/state/tcache.rs — has the layout paragraph \
              been rewritten? Update this test's anchors to match."
         ),
     };
@@ -1000,7 +1010,7 @@ fn perclass_doc_offsets_match_const_asserts() {
         let Some(assert_val) = parse_perclass_const_assert_offset(&text, field) else {
             offenders.push(format!(
                 "no `offset_of!(PerClass, {field}) == N` const-assert found in \
-                 registry/tcache.rs — was the assert removed or renamed?"
+                 registry/heap_core/state/tcache.rs — was the assert removed or renamed?"
             ));
             continue;
         };
@@ -1021,7 +1031,7 @@ fn perclass_doc_offsets_match_const_asserts() {
 
     assert!(
         offenders.is_empty(),
-        "PerClass's documented field offsets in registry/tcache.rs disagree \
+        "PerClass's documented field offsets in registry/heap_core/state/tcache.rs disagree \
          with its own `offset_of!` const-asserts (the compile-time source of \
          truth). The const-asserts pin the #[repr(C)] magazine cache-line \
          layout; the prose must state the SAME numbers. Drifts:\n{}",

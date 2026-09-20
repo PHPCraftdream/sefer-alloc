@@ -115,7 +115,7 @@ const TARGET_CLASS: usize = 48;
 const TRIGGER_CLASS: usize = 47;
 
 /// Number of distinct target segments to construct — strictly greater than
-/// `EMPTIED_BASES_CAP` (64, private to `heap_core_xthread.rs`) so at least 2
+/// `EMPTIED_BASES_CAP` (64, private to `heap_core_xthread/drain.rs`) so at least 2
 /// segments exceed the dedup buffer in one drain pass.
 const SEGMENT_COUNT: usize = 66;
 

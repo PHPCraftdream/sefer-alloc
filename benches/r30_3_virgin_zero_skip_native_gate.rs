@@ -55,7 +55,7 @@
 //!    of an already-materialised slot reuses the SAME `HeapCore`, segments
 //!    and free lists included; `recycle` only flips the slot back to
 //!    `FREE`, it does not tear the segments down -- see
-//!    `src/registry/heap_registry.rs:118-181` and the CLAUDE.md R26-4
+//!    `src/registry/heap_registry/claim.rs:59-235` and the CLAUDE.md R26-4
 //!    "config-sweep same-process-reuse" rule, the SAME hazard class one
 //!    level higher, generalized from config values to free-list state).
 //!    `AllocCore::new()` performs a real fresh OS primordial reservation
@@ -71,7 +71,7 @@
 //!    already counts, process-wide, every Small `alloc_zeroed` call that took
 //!    the explicit-zero (non-virgin) path -- it is bumped in EXACTLY the
 //!    branch `virgin-zero-skip` bypasses (`alloc_core.rs:1310-1319`,
-//!    `heap_core_alloc.rs:546-584`). No new hook was needed: reading this
+//!    `heap_core/alloc/hot.rs:544-648`). No new hook was needed: reading this
 //!    counter before and after a batch gives `explicit_zero_calls`, so
 //!    `virgin_activation_pct = 100 - 100 * explicit_zero_calls / batch_len`.
 //!    A cell whose intended-path activation falls under `MIN_ACTIVATION_PCT`

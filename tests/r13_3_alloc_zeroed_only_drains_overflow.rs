@@ -9,7 +9,7 @@
 //! `AllocCore::alloc_small_with_virgin` directly, carrying the virgin
 //! signal) and called `AllocCore::alloc_small_with_virgin` with NO drain
 //! prelude — unlike the Large branch of the SAME function (which explicitly
-//! replicates `alloc`'s two drains, `heap_core_alloc.rs` ~ lines 373-379) and
+//! replicates `alloc`'s two drains, `heap_core/alloc/hot.rs` ~ lines 585-630) and
 //! unlike the ordinary Small path (which gets the drains for free via
 //! `refill_magazine_slow` on every magazine miss, see the UBFIX-10/RAD-4b
 //! comments there). A calloc-heavy workload — the EXACT target profile this

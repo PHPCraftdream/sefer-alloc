@@ -363,7 +363,7 @@ fn ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe() {
 /// than being buried inside `ac4a`'s broader safety check. Uses the
 /// process-wide `heaps_claimed_high_water` diagnostic (via
 /// [`SeferAlloc::stats`]) as the oracle: it is a monotonically-increasing
-/// count of registry slots ever minted (`src/registry/heap_registry.rs`'s
+/// count of registry slots ever minted (`src/registry/heap_registry/stack.rs`'s
 /// `bump_count`), so "unchanged across the trim call" is exactly "no new
 /// slot was claimed."
 ///

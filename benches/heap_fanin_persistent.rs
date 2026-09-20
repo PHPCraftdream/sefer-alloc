@@ -191,7 +191,7 @@
 //!   for a future claimant to reuse the whole `HeapCore` in place, Phase
 //!   12.5 whole-slot reuse). This is exactly the condition
 //!   `HeapCore::push_with_overflow_retry`'s `owner_slot_is_live` gate checks
-//!   (`src/registry/heap_core_xthread.rs`): a `FREE` slot short-circuits the
+//!   (`src/registry/heap_core_xthread/overflow.rs`): a `FREE` slot short-circuits the
 //!   whole `RING_PUSH_RETRY_SPINS` spin window and skips straight to
 //!   `HeapOverflow`/the bounded-leak fallback — the highest-pressure,
 //!   most-pathological point on the owner-state axis, exactly as the task
@@ -263,7 +263,7 @@
 //!   load-bearing for a later measurement; out of scope here.
 //! - **Lost/exhausted entries**: the `DBG_RING_PUSH_RETRY_EXHAUSTED` delta
 //!   IS this number — by construction (see `push_with_overflow_retry`'s doc
-//!   comment in `src/registry/heap_core_xthread.rs`) it counts exactly the
+//!   comment in `src/registry/heap_core_xthread/overflow.rs`) it counts exactly the
 //!   frees that failed even the `HeapOverflow` second-chance path.
 //! - **Time-to-reclaim** (`paused` / `exited` only): wall-clock from "owner
 //!   resumes `alloc()` calls" to "the owner's reclaim pass completes" (a

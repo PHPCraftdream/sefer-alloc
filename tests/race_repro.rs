@@ -38,7 +38,7 @@
 //!
 //! ## Gating
 //!
-//! `alloc-global,alloc-xthread`. The naive restore in `heap_core.rs` must be
+//! `alloc-global,alloc-xthread`. The naive restore in `heap_core/core.rs` must be
 //! in place (this test is meaningless under the shipped discard).
 //!
 //! ## Crashes under heavy system load — most likely the test's own watchdog (R18-1, task #329)

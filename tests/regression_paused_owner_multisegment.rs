@@ -1,7 +1,7 @@
 //! R6-REVIEW-F2: fast wall-clock regression guard for the MULTI-SEGMENT
 //! paused-owner shape — the gap the round-6 single-entry fast-concede memo
 //! left open and the [`STALL_CONCESSION_WAYS`]-way concession cache in
-//! `HeapCore::push_with_overflow_retry` (`src/registry/heap_core_xthread.rs`,
+//! `HeapCore::push_with_overflow_retry` (`src/registry/heap_core_xthread/overflow.rs`,
 //! `LAST_STALL_CONCESSIONS`) closes.
 //!
 //! ## What the single-entry memo missed
@@ -265,6 +265,6 @@ fn paused_owner_multisegment_interleave_completes_fast() {
          segment thrashes under frees interleaved across 2+ saturated segments of a \
          paused owner, re-paying the full ~128-round stall patience on every push. See \
          `LAST_STALL_CONCESSIONS` / `STALL_CONCESSION_WAYS` in \
-         `src/registry/heap_core_xthread.rs`."
+         `src/registry/heap_core_xthread/overflow.rs`."
     );
 }

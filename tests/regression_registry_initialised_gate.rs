@@ -6,7 +6,7 @@
 //!
 //! The first cut of the #133 per-heap-counter aggregation
 //! (`tcache_hits_total` / `large_cache_hits_total` in
-//! `src/registry/heap_registry.rs`) used `idx < count` (`Registry::count`,
+//! `src/registry/heap_registry/counters.rs`) used `idx < count` (`Registry::count`,
 //! bumped by `bump_count`) as its "safe to dereference `heap`" gate. That is
 //! WRONG: `bump_count` runs *before* the slot's `FREE → LIVE` CAS, and
 //! `HeapCore::new()` (which reserves an OS segment -- not instantaneous)

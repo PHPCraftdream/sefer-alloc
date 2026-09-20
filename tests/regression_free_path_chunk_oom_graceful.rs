@@ -10,7 +10,7 @@
 //! chunk-materialisation OOM it called `std::process::abort()` inside
 //! `ensure_chunk_slow`. The three free-path callers
 //! (`set_dirty_bit_for_segment`, `resolve_heap_overflow`, `owner_slot_is_live`
-//! in `heap_core_xthread.rs`) each had a defensive early-return for garbled
+//! in `heap_core_xthread/overflow.rs`) each had a defensive early-return for garbled
 //! owner ids, but `slot()` itself was the single point that could still abort
 //! — reachable from `SeferAlloc::dealloc` → `dealloc_foreign_routing` →
 //! `push_with_overflow_retry` → the three callers above. `GlobalAlloc::dealloc`

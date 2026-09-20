@@ -32,7 +32,7 @@
 //! links it onto the freelist → `drain_freelist_batch` pulls it into
 //! `out[filled..]` → the SAME pointer now appears twice in `out`.
 //!
-//! **The fix** (applied in `src/registry/heap_core_alloc.rs`):
+//! **The fix** (applied in `src/registry/heap_core/alloc/batch.rs`):
 //! 1. Defer the magazine-residency bit clear: step 1 no longer calls
 //!    `clear_magazine` per pop; the bits stay SET through step 2.
 //! 2. Remove the `if k == c { return false; }` short-circuit from step 2's

@@ -13,7 +13,7 @@
 //! ## Entry-point layer (CLAUDE.md's entry-point-honesty rule)
 //!
 //! **`HeapCore::alloc` / `HeapCore::alloc_zeroed` / `HeapCore::realloc`**
-//! (`src/registry/heap_core_alloc.rs`, `src/registry/heap_core_free.rs`) --
+//! (`src/registry/heap_core/alloc/hot.rs`, `src/registry/heap_core/free/realloc.rs`) --
 //! the SAME layer R31-0 used (a fresh `HeapCore` claimed per rep via
 //! `HeapRegistry::claim`, magazine path included), which is the exact chain
 //! `SeferAlloc`'s real `#[global_allocator]` (`src/global/sefer_alloc.rs`)
@@ -28,7 +28,7 @@
 //!
 //! 1. **Plain `alloc`, virgin scenario** (fresh heap, same-class burst, no
 //!    zeroing requested at all). Source-confirmed
-//!    (`heap_core_alloc.rs:207-221`) that `virgin-zero-skip` adds exactly
+//!    (`heap_core/alloc/hot.rs:207-220`) that `virgin-zero-skip` adds exactly
 //!    ONE extra unconditional `u16` AND-with-inverted-bit per magazine-HIT
 //!    pop on this path (`self.tcache.classes[c].virgin_mask &= !(1u16 <<
 //!    new_cnt)`) -- a defensive mask-invariant maintenance write, not a
@@ -36,9 +36,9 @@
 //!    could add to the allocator's single hottest path (per CLAUDE.md).
 //! 2. **Plain `alloc`, recycled scenario** (primed dirty block, tight LIFO
 //!    `alloc`+`dealloc` loop) -- same single-AND cost on the hit path, plus
-//!    the free-path masks-shift/clear sites in `heap_core_free.rs`
-//!    (`dealloc_own_thread_with_base`'s two push arms, lines ~738 and
-//!    ~792/812) and `heap_core_dealloc_batch.rs` (line ~350) -- all
+//!    the free-path masks-shift/clear sites in `heap_core/free/dealloc_own_base.rs`
+//!    (`dealloc_own_thread_with_base`'s two push arms, lines ~534-536 and
+//!    ~588-610) and `heap_core/free/dealloc_batch.rs` (line ~350) -- all
 //!    unconditional, feature-gated `u16` bit ops, never a branch on content.
 //! 3. **`alloc_zeroed`, recycled scenario** -- NOT re-measured fresh here.
 //!    R31-0 §3.2 ALREADY measured this exact arm (recycled `alloc_zeroed`,
@@ -49,11 +49,11 @@
 //!    add evidence, only noise. See this report's own §3 for the citation
 //!    and why it still counts as "the same regime" for this report's
 //!    purposes.
-//! 4. **`realloc`** -- source-confirmed (`heap_core_free.rs`'s `realloc`,
-//!    lines ~911-1000+) that `realloc` contains ZERO direct
+//! 4. **`realloc`** -- source-confirmed (`heap_core/free/realloc.rs`'s `realloc`,
+//!    lines ~123-530+) that `realloc` contains ZERO direct
 //!    `#[cfg(feature = "virgin-zero-skip")]` code of its own. Its move leg
 //!    is explicitly documented as funnelling through `HeapCore::alloc`/
-//!    `dealloc` ("MUST-1" doc comment, `heap_core_free.rs:926`), so any cost
+//!    `dealloc` ("MUST-1" doc comment, `heap_core/free/realloc.rs:56`), so any cost
 //!    `realloc` pays is 100% inherited from arms 1-2 above, not a separate
 //!    code path. This gate includes ONE confirmatory wall-clock cell (not a
 //!    full sweep) per the task brief's own permission ("if it doesn't [touch
@@ -62,9 +62,9 @@
 //! ## A known confound this gate does NOT reproduce (filed separately, task #495)
 //!
 //! `alloc_small_zeroed_via_magazine`'s magazine-HIT arm
-//! (`heap_core_alloc.rs:373`) pays an extra `self.stamp_segment_owner(issued)`
+//! (`heap_core/alloc/hot.rs:337`) pays an extra `self.stamp_segment_owner(issued)`
 //! call that plain `alloc`'s equivalent hit arm explicitly documents it does
-//! NOT pay ("P4: NO stamp here", `heap_core_alloc.rs:~160`). This gate's
+//! NOT pay ("P4: NO stamp here", `heap_core/alloc/hot.rs:160`). This gate's
 //! plain-`alloc` arms therefore measure a CHEAPER baseline than
 //! `alloc_zeroed`'s hit arm on that one dimension, for a reason unrelated to
 //! `virgin-zero-skip` itself (the asymmetry exists on BOTH the OFF and ON
@@ -84,12 +84,12 @@
 //!   2. **`HeapCore::dbg_tcache_virgin_mask(c)` sampled immediately after the
 //!      FIRST burst call of each virgin rep.** Source-confirmed (not
 //!      assumed): plain `alloc`'s OWN magazine-miss path
-//!      (`refill_magazine_slow`, `heap_core_alloc.rs:665`) never writes
+//!      (`refill_magazine_slow`, `heap_core/alloc/hot.rs:685`) never writes
 //!      `virgin_mask` at all -- only `alloc_zeroed`'s sibling miss path
 //!      (`refill_magazine_slow_virgin`) sets bits. So on an `alloc`-only
 //!      workload the mask for this class must read EXACTLY 0 after every
 //!      refill, proving the per-hit AND this gate measures
-//!      (`heap_core_alloc.rs:218-220`) is unconditionally clearing an
+//!      (`heap_core/alloc/hot.rs:218-220`) is unconditionally clearing an
 //!      ALREADY-ZERO bit here -- a real, but always-a-no-op, per-hit cost on
 //!      a plain-`alloc` workload specifically (never a benefit; the mask is
 //!      never populated on this path to begin with). `NA` on the OFF binary
@@ -296,14 +296,14 @@ fn report_cell(
     let exp_hits = expected_hits_alloc(scenario, BURST, refill_n);
 
     // Retention-mask oracle: plain `alloc`'s OWN miss path
-    // (`refill_magazine_slow`, `heap_core_alloc.rs:665`) never writes
+    // (`refill_magazine_slow`, `heap_core/alloc/hot.rs:685`) never writes
     // `PerClass::virgin_mask` -- ONLY `alloc_zeroed`'s sibling miss path
     // (`refill_magazine_slow_virgin`) sets bits. Confirmed in source before
     // writing this oracle (not assumed): `refill_magazine_slow`'s body has
     // no `virgin_mask` reference at all. So on a workload built ENTIRELY
     // from plain `alloc` (this arm), the mask for this class must read
     // EXACTLY 0 after every miss-triggered refill, regardless of refill_n --
-    // proving the per-hit AND this gate measures (`heap_core_alloc.rs:218-220`)
+    // proving the per-hit AND this gate measures (`heap_core/alloc/hot.rs:218-220`)
     // is unconditionally clearing an already-zero bit here: a real, but
     // always-a-no-op, per-hit cost on an `alloc`-only workload. `NA` when
     // the feature is off (field does not exist) or scenario is recycled

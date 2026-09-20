@@ -26,7 +26,7 @@
 //!
 //! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
 //! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
-//! - `registry_chunk` — R6-OPT-P0-2 (round 1): a lazily-materialised,
+//! - `bootstrap::chunk` — R6-OPT-P0-2 (round 1): a lazily-materialised,
 //!   fixed-size shard of the slot array (`RegistryChunk`), so a process only
 //!   ever pays the OS commit cost for the chunks it actually touches.
 //! - [`heap_overflow`] — RAD-4b: the slot-resident second-chance MPSC
@@ -46,12 +46,6 @@
 pub mod bootstrap;
 #[doc(hidden)]
 pub mod heap_core;
-mod heap_core_alloc;
-mod heap_core_dealloc_batch;
-mod heap_core_diag;
-mod heap_core_free;
-mod heap_core_ownership;
-mod heap_core_tcache;
 mod heap_core_xthread;
 // `pub` (doc-hidden) only so a standalone miri UB-detection test
 // (`tests/miri_heap_overflow_unit.rs`) can reach `HeapOverflow`'s
@@ -67,9 +61,6 @@ pub mod heap_overflow;
 pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
-mod registry_chunk;
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-pub(crate) mod tcache;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;

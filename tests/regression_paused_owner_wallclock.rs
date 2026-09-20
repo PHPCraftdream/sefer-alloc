@@ -6,7 +6,7 @@
 //! ## What broke
 //!
 //! `345fa9b` scaled the bounded spin-retry loop in
-//! `HeapCore::push_with_overflow_retry` (`src/registry/heap_core_xthread.rs`)
+//! `HeapCore::push_with_overflow_retry` (`src/registry/heap_core_xthread/overflow.rs`)
 //! from `RING_PUSH_RETRY_SPINS` (8,192 native) to `RETRY_LOOP_ITERATIONS`
 //! (2,097,152 = 8,192 × 256; a historical constant, since deleted —
 //! R6-REVIEW-F5 — the loop is now bounded by the probe-round model,
@@ -200,7 +200,7 @@ fn paused_owner_sustained_saturation_completes_fast() {
          a bounded spin-retry loop that is mathematically bounded in ITERATION count but \
          pathologically slow in WALL-CLOCK time under sustained contention with a \
          live-but-never-draining owner. See `HeapCore::push_with_overflow_retry`'s doc \
-         comment (`src/registry/heap_core_xthread.rs`) for the fix (capped probe rounds \
+         comment (`src/registry/heap_core_xthread/overflow.rs`) for the fix (capped probe rounds \
          with a real OS-level sleep between rounds, not one flat multi-million-iteration \
          busy-spin)."
     );

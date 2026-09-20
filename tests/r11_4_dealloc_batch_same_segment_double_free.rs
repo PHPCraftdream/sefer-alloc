@@ -1,6 +1,6 @@
 //! R11-4 counterfactual: `SeferAlloc::dealloc_batch`'s new batched fast path
-//! (magazine-first-fill + `flush_class`-overflow, `src/registry/
-//! heap_core_dealloc_batch.rs`) must still degrade a double-free inside ONE
+//! (magazine-first-fill + `flush_class`-overflow,
+//! `src/registry/heap_core/free/dealloc_batch.rs`) must still degrade a double-free inside ONE
 //! `dealloc_batch` call to a benign no-op — not corruption, not a crash —
 //! when two entries of the SAME call reference blocks in the SAME segment
 //! (one of which duplicates an already-freed pointer).

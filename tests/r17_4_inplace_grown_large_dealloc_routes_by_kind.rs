@@ -4,7 +4,7 @@
 //! ## The bug this pins
 //!
 //! The fastbin magazine dealloc dispatch
-//! (`HeapCore::dealloc_own_thread_with_base`, `src/registry/heap_core_free.rs`)
+//! (`HeapCore::dealloc_own_thread_with_base`, `src/registry/heap_core/free/dealloc_own_base.rs`)
 //! keys on `SizeClasses::class_for(layout.size())`, NOT on the segment's
 //! `kind`. Under `medium-classes` (`SMALL_MAX` == 1 MiB), a Large segment can
 //! LEGITIMATELY be freed with a layout whose size classifies small: R14-4's
@@ -58,7 +58,7 @@ const ALIGN: usize = 8;
 const PROMOTION_THRESHOLD: usize = 256 * 1024;
 
 /// Mirrors the promotion call site's `#[cfg]`
-/// (`src/registry/heap_core_free.rs`): promotion compiles in unless
+/// (`src/registry/heap_core/free/realloc.rs`): promotion compiles in unless
 /// `exact-span-large` is tightening the span to zero headroom (unless
 /// `large-reserved-capacity` restores it AND `numa-aware` is not overriding
 /// it). When this is `false`, growth stays on the ordinary medium ladder and

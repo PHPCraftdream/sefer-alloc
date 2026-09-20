@@ -14,7 +14,7 @@
 //! same shared workload file. Under `medium-classes`, the single buffer
 //! routes through the small path (six exact medium classes, 256 KiB–1 MiB)
 //! until it crosses `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
-//! (`src/registry/heap_core_free.rs`, 256 KiB) on its first grow step, at
+//! (`src/registry/heap_core/free/dealloc.rs`, 256 KiB) on its first grow step, at
 //! which point it promotes to a dedicated Large segment exactly like the
 //! baseline arm's block was all along — this harness's per-round reset back
 //! to `REALLOC_BASE` (256 KiB) then repeats that same first-crossing

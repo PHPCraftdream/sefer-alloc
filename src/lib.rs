@@ -211,15 +211,25 @@
 //                             `static mut MaybeUninit<HeapCore>` + atomic-init
 //                             state-machine + spinlock-guarded `&mut` handout.
 //                             (under `alloc-global`)
-//      * `registry::bootstrap`     — primordial-segment carve / SegmentTable
-//                             bootstrap seam — raw-pointer footprint carving
-//                             of the metadata region under the atomic
-//                             single-writer bootstrap protocol.
+//      * `registry::bootstrap::registry` — primordial-segment carve / SegmentTable
+//                             bootstrap seam — `Registry` struct, raw-pointer
+//                             footprint carving of the metadata region, and
+//                             the process-global `static REGISTRY`.
+//                             (under `alloc-global`)
+//      * `registry::bootstrap::ensure` — the process-global `ensure()` accessor
+//                             and the per-chunk materialisation slow path
+//                             (`ensure_chunk_slow`). (under `alloc-global`)
+//      * `registry::bootstrap::overflow_sidecar` — lazy `HeapOverflow` sidecar
+//                             materialisation (CAS-then-spin-then-publish).
 //                             (under `alloc-global`)
 //      * `registry::heap_slot`     — `Sync`/`Send` impls + `UnsafeCell` hand-off.
 //                             (under `alloc-global`)
-//      * `registry::heap_registry` — `*mut HeapCore` pointer handoff out of a slot.
-//                             (under `alloc-global`)
+//      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
+//                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
+//      * `registry::heap_registry::stack` — the `free_slots` tagged Treiber
+//                             stack (`StackStorage` impls). (under `alloc-global`)
+//      * `registry::heap_registry::counters` — registry diagnostics/aggregators
+//                             over slot-resident counters. (under `alloc-global`)
 //
 //    Optional `numa-aware` path: no new unsafe seams — `alloc_core::platform::numa`
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`

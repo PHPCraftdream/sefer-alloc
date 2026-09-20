@@ -22,7 +22,7 @@
 //! Post-fix, a remote free of a Large segment pushes the segment's `base`
 //! onto the OWNING heap's deferred-free stack (`HeapCore::thread_free`,
 //! reused as a second Treiber-stack head — see the field doc in
-//! `src/registry/heap_core.rs`). The owner drains that stack lazily on its
+//! `src/registry/heap_core/core.rs`). The owner drains that stack lazily on its
 //! own `alloc_large` slow path (`HeapCore::drain_large_deferred_free`,
 //! called from `HeapCore::alloc` before a Large-classified request reaches
 //! `AllocCore::alloc_large`), reclaiming each queued segment via
@@ -244,7 +244,7 @@ fn xthread_large_free_reclaims_segments_no_leak() {
 /// double-unmap).
 ///
 /// The fix (see the doc comment on `push_large_deferred_free` in
-/// `src/registry/heap_core.rs`) makes the push idempotent per-`base` via a
+/// `src/alloc_core/large/deferred_large/push.rs`) makes the push idempotent per-`base` via a
 /// `compare_exchange` on the link word from `ABANDONED_TAIL`: only the first
 /// pusher of a given `base` may link it; a second push of the SAME `base`
 /// observes the link word already claimed and returns as a no-op.

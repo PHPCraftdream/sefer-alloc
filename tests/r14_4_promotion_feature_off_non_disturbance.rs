@@ -1,7 +1,7 @@
 //! R14-4 (task #289) test (d) — feature-OFF non-disturbance: without
 //! `medium-classes`, the promotion code (`try_promote_to_large` and its
 //! `#[cfg(feature = "medium-classes")]`-gated call site in
-//! `HeapCore::realloc`, `src/registry/heap_core_free.rs`) compiles out
+//! `HeapCore::realloc`, `src/registry/heap_core/free/realloc.rs`) compiles out
 //! entirely, and realloc behaviour for sizes that WOULD have been medium
 //! under that feature is unchanged: without `medium-classes` such sizes
 //! already classify Large from the start (there is no medium ladder to

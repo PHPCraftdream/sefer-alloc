@@ -64,7 +64,7 @@
 //! after establishing the floor, every arm hard-asserts
 //! `HeapCore::dbg_table_count() >= MIN_LIVE_SEGMENTS_ORACLE` (64) BEFORE
 //! entering the timed churn region. `dbg_table_count` (added this task,
-//! `src/registry/heap_core_diag.rs`) reads the segment table's registered
+//! `src/registry/heap_core/diag/queries.rs`) reads the segment table's registered
 //! high-water count directly off the SAME `HeapCore` the churn workload
 //! runs against — not a separate/inferred proxy — and because this
 //! harness's floor objects are never freed during the assert window, the

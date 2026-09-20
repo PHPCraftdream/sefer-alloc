@@ -1,5 +1,5 @@
 //! R24-8 (task #386) — correctness test for the `STAGE_CAP` reduction
-//! (`src/registry/heap_core_dealloc_batch.rs`).
+//! (`src/registry/heap_core/free/dealloc_batch.rs`).
 //!
 //! `STAGE_CAP` was reduced from 512 to 64 (R24-8, Investigation 2). At
 //! `STAGE_CAP = 64`, a batch of N blocks does:

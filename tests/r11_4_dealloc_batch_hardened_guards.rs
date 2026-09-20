@@ -1,5 +1,5 @@
 //! R11-4 zero-trust review follow-up — `HeapCore::dealloc_batch`'s batched
-//! fast path (`dealloc_batch_small`, `src/registry/heap_core_dealloc_batch.rs`)
+//! fast path (`dealloc_batch_small`, `src/registry/heap_core/free/dealloc_batch.rs`)
 //! must honour the SAME two `hardened` guards the scalar
 //! `dealloc_own_thread_with_base` path applies BEFORE the M2 oracles:
 //!

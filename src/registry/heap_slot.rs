@@ -70,7 +70,7 @@
 // single-writer invariant below. Integration tests that still need to
 // read/preset these fields go through the narrow `#[doc(hidden)]` accessors on
 // `Registry` (`dbg_slot_state`/`dbg_slot_generation`/`dbg_slot_preset_generation`,
-// in `bootstrap.rs`) — read accessors are safe, the ONE writer is `unsafe fn`.
+// in `bootstrap`) — read accessors are safe, the ONE writer is `unsafe fn`.
 #![allow(unsafe_code)]
 
 use core::cell::UnsafeCell;
@@ -304,7 +304,7 @@ pub(crate) struct HeapSlotRemote {
     /// `STATE_LIVE` check at all (unlike the advisory `owner_slot_is_live`
     /// probe `push_with_overflow_retry` uses for a different purpose) — a
     /// remote free can and does land on a segment whose owning slot has
-    /// JUST been recycled (`heap_core_xthread.rs`'s own `owner_slot_is_live`
+    /// JUST been recycled (`heap_core_xthread`'s own `owner_slot_is_live`
     /// doc comment calls the analogous race "benign" for the overflow-ring
     /// destination, precisely because nothing else in this registry assumes
     /// slot-exit quiescence for cross-thread writers). A plain reset at
@@ -372,7 +372,7 @@ pub struct HeapSlot {
     /// code could `state.store(STATE_FREE, ..)` on a LIVE slot and re-push it
     /// onto `free_slots`, breaking the single-writer invariant the
     /// `unsafe impl Sync` below depends on (R4-MS-4). Integration tests read it
-    /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap.rs`).
+    /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap`).
     pub(crate) state: AtomicU8,
     /// Bumped on every successful (re)claim — the M8/M9 generation. Combined
     /// with the slot index it forms the unique `(index, generation)` owner

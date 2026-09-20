@@ -6,7 +6,7 @@
 //! magazine miss on a large small-class (block_size in the hundreds of KiB)
 //! would park `16 * block_size` — several MiB — in a single idle thread's
 //! per-class magazine after just one refill. `refill_n_for_class` (task D3,
-//! `src/registry/tcache.rs`) replaces the fixed count with a per-class byte
+//! `src/registry/heap_core/state/tcache.rs`) replaces the fixed count with a per-class byte
 //! budget (`REFILL_BYTE_BUDGET = 64 KiB`), so large classes get fewer blocks
 //! per refill while small classes are unaffected (their `TCACHE_CAP`-sized
 //! refill already fits comfortably under the budget).

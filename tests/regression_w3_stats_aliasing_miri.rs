@@ -4,7 +4,7 @@
 //! ## What W3 fixed
 //!
 //! The process-wide stats aggregators (`tcache_hits_total` /
-//! `large_cache_hits_total` in `src/registry/heap_registry.rs`) used to read
+//! `large_cache_hits_total` in `src/registry/heap_registry/counters.rs`) used to read
 //! each heap's hit counter through `(*heap_ptr).…` — materialising a shared
 //! `&HeapCore`/`&AllocCore` over a struct the OWNING thread concurrently holds
 //! a protected `&mut` into (the `alloc(&mut self, …)` protector). Forming a

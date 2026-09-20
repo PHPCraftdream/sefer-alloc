@@ -1,5 +1,5 @@
 //! R25-4 (task #398) — isolated `HeapCore`-level correctness oracle for the
-//! `dealloc_batch` multi-flush path (`src/registry/heap_core_dealloc_batch.rs`),
+//! `dealloc_batch` multi-flush path (`src/registry/heap_core/free/dealloc_batch.rs`),
 //! proving the property `tests/r24_8_dealloc_batch_multi_flush.rs` explicitly
 //! disclaims it cannot prove.
 //!
@@ -14,7 +14,7 @@
 //! release).
 //!
 //! The expected transition is NOT "live_count drops by N": per the D1
-//! invariant documented on `HeapCore::tcache` (`src/registry/heap_core.rs`),
+//! invariant documented on `HeapCore::tcache` (`src/registry/heap_core/core.rs`),
 //! *"a magazine-resident block COUNTS AS LIVE... magazine push/pop do NOT
 //! touch live_count... magazine flush calls dealloc_small -> dec_live"*. The
 //! multi-flush batched path (`dealloc_batch_small`) fills the magazine
@@ -54,7 +54,7 @@
 //! To confirm this test is non-vacuous at `STAGE_CAP = 64` (i.e. it would
 //! actually catch a broken multi-flush path, not just compile and pass by
 //! construction): temporarily changed the mid-loop flush guard in
-//! `dealloc_batch_small` (`src/registry/heap_core_dealloc_batch.rs`) from
+//! `dealloc_batch_small` (`src/registry/heap_core/free/dealloc_batch.rs`) from
 //!
 //! ```text
 //! if staged == STAGE_CAP {
@@ -125,7 +125,7 @@ impl Drop for SerialGuard {
     }
 }
 
-/// `TCACHE_CAP` (`src/registry/tcache.rs`) is `pub(crate)`, invisible from
+/// `TCACHE_CAP` (`src/registry/heap_core/state/tcache.rs`) is `pub(crate)`, invisible from
 /// `tests/` — mirrored here as a literal, exactly like
 /// `tests/r24_8_dealloc_batch_multi_flush.rs`'s own doc comment already does
 /// for `STAGE_CAP`/`TCACHE_CAP`.

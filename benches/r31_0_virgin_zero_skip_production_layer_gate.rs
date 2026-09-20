@@ -17,14 +17,14 @@
 //!
 //! That conclusion is TRUE for bare `AllocCore` and FALSE for the actual
 //! `production + virgin-zero-skip` configuration. The PRODUCTION call chain is:
-//!   `HeapCore::alloc_zeroed` (`src/registry/heap_core_alloc.rs:524`)
+//!   `HeapCore::alloc_zeroed` (`src/registry/heap_core/alloc/hot.rs:544`)
 //!     -> `alloc_small_zeroed_via_magazine` (`:337`)
-//!       -> on a magazine MISS: `refill_magazine_slow_virgin` (`:413`)
+//!       -> on a magazine MISS: `refill_magazine_slow_virgin` (`:433`)
 //!         -> `AllocCore::refill_class_bump_virgin_checked`
 //! This refill carves `refill_n_for_class(block_size)` blocks (clamped to
 //! `TCACHE_CAP = 16` by a 64 KiB byte budget), issues ONE to the caller, and
 //! STORES the retained `refill_n-1` blocks' virgin bits into
-//! `PerClass::virgin_mask` (`heap_core_alloc.rs:472`). Later magazine HITS read
+//! `PerClass::virgin_mask` (`heap_core/alloc/hot.rs:492`). Later magazine HITS read
 //! and clear their bit (`:354-356`) and STILL skip the explicit zero pass --
 //! i.e. virginity is preserved across an ENTIRE freshly-carved refill, not
 //! just the first block. `tests/r13_3_magazine_virgin_hit_skips_zero.rs`

@@ -2,7 +2,7 @@
 //! and the `HeapCore::dealloc_routing` M2-reorder hardening.
 //!
 //! ## What changed (see `src/alloc_core/segment/segment_table/mod.rs` / `alloc_core/alloc_core/mod.rs
-//! / `src/registry/heap_core.rs` for the full rationale)
+//! / `src/registry/heap_core_xthread/routing.rs` for the full rationale)
 //!
 //! - `register`/`unregister`/`recycle` used to scan the slot array `[0,
 //!   count)` linearly for a NULL slot / a matching base. They now use:

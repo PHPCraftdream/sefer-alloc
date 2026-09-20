@@ -22,7 +22,7 @@
 //! comment: "OPT-G in-place realloc growth has less committed headroom to
 //! grow into before falling back to the slow path" — an explicitly
 //! documented, intentional trade-off, not a bug). `try_promote_to_large`
-//! (`src/registry/heap_core_free.rs`) pads the promoted block to exactly
+//! (`src/registry/heap_core/free/realloc.rs`) pads the promoted block to exactly
 //! `new_size`, so under `exact-span-large` the promoted segment's
 //! `span_usable` equals the promotion request with no slack at all — the
 //! VERY NEXT grow (which by construction asks for strictly more) can never
@@ -51,7 +51,7 @@
 //! on the ordinary medium ladder had promotion never fired at all — see
 //! `docs/reviews/2026-07-24-r15-plan.md` finding P2-3. R15-3 (task #305) is
 //! the code-level fix: `try_promote_to_large` and its call site in
-//! `HeapCore::realloc` (`src/registry/heap_core_free.rs`) are now gated by
+//! `HeapCore::realloc` (`src/registry/heap_core/free/realloc.rs`) are now gated by
 //! the SAME extended `#[cfg]` predicate as `HAS_PROMOTION` below, so in the
 //! zero-headroom combination the promotion mechanism does not compile in at
 //! all — growth of a medium-classified block instead behaves exactly like
@@ -90,7 +90,7 @@ use sefer_alloc::SeferAlloc;
 const ALIGN: usize = 8;
 
 /// Mirrors the EXACT `#[cfg]` predicate now gating `try_promote_to_large` and
-/// its call site in `src/registry/heap_core_free.rs` (R15-3, task #305).
+/// its call site in `src/registry/heap_core/free/realloc.rs` (R15-3, task #305).
 /// `true` iff the promotion mechanism is compiled in for this build: either
 /// there is no `exact-span-large` tightness to begin with, or
 /// `large-reserved-capacity` is present AND `numa-aware` is not overriding it
@@ -104,7 +104,7 @@ const HAS_PROMOTION: bool = !cfg!(feature = "exact-span-large")
 
 /// R16-5 (task #315, review finding P3-2): `HAS_PROMOTION` above hand-mirrors
 /// the real `#[cfg]` predicate gating `try_promote_to_large` in
-/// `src/registry/heap_core_free.rs` — a future edit to that predicate
+/// `src/registry/heap_core/free/realloc.rs` — a future edit to that predicate
 /// without a matching edit here would silently desync the two, making this
 /// file's `HAS_PROMOTION`-gated tests wrong (skipping/asserting the wrong
 /// branch) without any compile error to catch it. This canary cross-checks
@@ -118,13 +118,13 @@ fn has_promotion_matches_real_compiled_predicate() {
         HeapCore::dbg_promotion_compiled(),
         "this file's hand-mirrored HAS_PROMOTION constant has drifted out of \
          sync with the real #[cfg] predicate gating try_promote_to_large in \
-         src/registry/heap_core_free.rs — update HAS_PROMOTION's derivation \
+         src/registry/heap_core/free/realloc.rs — update HAS_PROMOTION's derivation \
          to match"
     );
 }
 
 /// The exact threshold `try_promote_to_large`'s call site checks
-/// (`MEDIUM_REALLOC_PROMOTION_THRESHOLD` in `src/registry/heap_core_free.rs`)
+/// (`MEDIUM_REALLOC_PROMOTION_THRESHOLD` in `src/registry/heap_core/free/dealloc.rs`)
 /// — kept in sync manually since the constant itself is private to `src/`
 /// (and, as of R15-3, only compiled in under the same `HAS_PROMOTION`
 /// predicate — this test-side copy is unconditional so it can be used to

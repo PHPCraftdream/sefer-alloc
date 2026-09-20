@@ -29,7 +29,7 @@
 //!     --features "production alloc-stats"
 //! ```
 //!
-//! Run once per `FLUSH_N` value (hand-edit `src/registry/tcache.rs`'s
+//! Run once per `FLUSH_N` value (hand-edit `src/registry/heap_core/state/tcache.rs`'s
 //! `FLUSH_N` const between runs, matching the iai sweep's own protocol) to
 //! reproduce the sweep's refill-count axis.
 
@@ -93,7 +93,7 @@ fn main() {
 
     println!("=== R25-3 oscillating live-set probe ===");
     println!(
-        "(FLUSH_N is a private pub(crate) const in src/registry/tcache.rs -- \
+        "(FLUSH_N is a private pub(crate) const in src/registry/heap_core/state/tcache.rs -- \
          record which value was compiled in when citing this run's output; \
          see docs/perf/R25_3_FLUSH_N_SWEEP_GATE_summary.csv for the per-value \
          results already collected)"

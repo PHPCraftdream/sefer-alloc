@@ -1178,7 +1178,7 @@ mod remote_density {
     /// on a FRESH, never-before-used `AllocCore`) then diverged from the
     /// REUSED heap's actual remaining capacity, producing a real panic
     /// ("a block landed on a DIFFERENT segment than expected") during this
-    /// harness's own development. `MAX_HEAPS` (`src/registry/bootstrap.rs`)
+    /// harness's own development. `MAX_HEAPS` (`src/registry/bootstrap/registry.rs`)
     /// is 4096; this matrix's total trial count (`DENSITY_S_VALUES.len() *
     /// DIRTY_PCTS.len() * remote_repeats_for(s)`, `remote_repeats_for` scaled
     /// down at large S) is comfortably under that ceiling, so leaking one

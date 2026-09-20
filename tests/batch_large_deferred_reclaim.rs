@@ -7,7 +7,7 @@
 //! cross-thread free lands the block on the OWNER's deferred-free stack)
 //! accumulated one held SegmentTable slot per cycle: the owner's high-water
 //! table count grew O(cycles) instead of staying bounded. The fix (in
-//! `src/registry/heap_core_alloc.rs`) makes `alloc_batch_large` drain the
+//! `src/registry/heap_core/alloc/batch.rs`) makes `alloc_batch_large` drain the
 //! deferred-free stack, and makes the non-fastbin `alloc_batch` classify once
 //! and delegate Large batches to `alloc_batch_large` (carrying the
 //! `drain_heap_overflow` prelude for Small batches).

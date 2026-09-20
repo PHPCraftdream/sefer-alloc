@@ -117,12 +117,12 @@
 //!    null until first genuine overflow past the inline tier) covering
 //!    indices `INLINE_CAP..HEAP_OVERFLOW_CAP`. Reserved via
 //!    `aligned_vmem::reserve_aligned` — the SAME M5-clean direct-syscall path
-//!    `bootstrap.rs` already uses for the registry's chunks — via a THIRD
+//!    `bootstrap` already uses for the registry's chunks — via a THIRD
 //!    instance of round 1's CAS(null→SENTINEL)→reserve→publish(Release)/
 //!    spin(Acquire) protocol, this time keyed on ONE ring's sidecar pointer
 //!    instead of a chunk-array slot. See [`super::bootstrap::ensure_overflow_sidecar`]
 //!    for the materialisation function and the module doc there for why this
-//!    lives in `bootstrap.rs` rather than here (the unsafe-seam placement
+//!    lives in `bootstrap` rather than here (the unsafe-seam placement
 //!    decision).
 //!
 //! **`INLINE_CAP = 64`** — sized against three concrete anchors, mirroring
@@ -193,7 +193,7 @@
 // `unsafe` seam), a `HeapSlot` is an ordinary Rust struct living in the
 // process-`'static` registry array, so its fields are reachable through
 // ordinary safe references. The sidecar's OS reservation and raw-pointer
-// dereference (round 2) live in `bootstrap.rs`'s EXISTING `#![allow(unsafe_code)]`
+// dereference (round 2) live in `bootstrap`'s EXISTING `#![allow(unsafe_code)]`
 // seam instead of a new one here — see `super::bootstrap::ensure_overflow_sidecar`
 // and its module doc's "unsafe-seam placement" note for why. There is no
 // `#![allow(unsafe_code)]` in this file.
@@ -231,7 +231,7 @@ use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 /// (every `base == 0`, i.e. [`ENTRY_EMPTY_BASE`]) is the SAME all-zero
 /// pattern the OS already hands back for a freshly reserved page — exactly
 /// RAD-1's "never write it, so it is never first-touched" lazy-init
-/// discipline (`bootstrap.rs`'s module doc). A slot that never overflows a
+/// discipline (`bootstrap`'s module doc). A slot that never overflows a
 /// segment ring never writes a single byte of the inline array and never
 /// materialises the sidecar, so it never pays either cost regardless of
 /// `MAX_HEAPS` (4096) claimed slots.
@@ -335,7 +335,7 @@ const ENTRY_EMPTY_BASE: *mut u8 = core::ptr::null_mut();
 /// the pre-round-1 whole registry).
 ///
 /// Plain safe-Rust atomics, exactly like the inline tier — `pub(crate)` so
-/// `bootstrap.rs` can in-place-initialise and index it (OS-zeroed pages are
+/// `bootstrap` can in-place-initialise and index it (OS-zeroed pages are
 /// already a fully valid state, matching `RegistryChunk`'s own "nothing to
 /// write" argument), while staying opaque to everything outside the registry.
 pub(crate) struct HeapOverflowSidecar {
@@ -385,7 +385,7 @@ pub struct HeapOverflow {
 /// compared" contract as `bootstrap::SENTINEL_INITIALIZING`, reused here for
 /// the third instance of the CAS(null→SENTINEL)→reserve→publish protocol
 /// (whole-registry, then per-chunk, now per-overflow-sidecar). Defined here
-/// (not imported from `bootstrap.rs`) because this constant is part of THIS
+/// (not imported from `bootstrap`) because this constant is part of THIS
 /// module's public field contract (`sidecar`'s three-state protocol), even
 /// though the CAS/reserve/publish logic that drives it lives in
 /// `bootstrap::ensure_overflow_sidecar`.
@@ -401,7 +401,7 @@ impl HeapOverflow {
     /// provides (see [`HEAP_OVERFLOW_CAP`]'s RSS-discipline note) — so this
     /// `const fn` costs no `.data` footprint the way a non-zero const
     /// initialiser would (RAD-1's `next_free = NEXT_FREE_TAIL` lesson,
-    /// referenced in `bootstrap.rs`'s module doc).
+    /// referenced in `bootstrap`'s module doc).
     #[allow(clippy::declare_interior_mutable_const)]
     const ENTRY_BASE_ZERO: AtomicPtr<u8> = AtomicPtr::new(ENTRY_EMPTY_BASE);
     #[allow(clippy::declare_interior_mutable_const)]
@@ -567,7 +567,7 @@ impl HeapOverflow {
     /// that loop is a re-check of an already-known-full-or-recovering ring,
     /// not a new diagnostic event; counting each of up to
     /// `RETRY_ROUND_SPINS` × `RETRY_ROUND_SAFETY_CAP` re-polls (see
-    /// `heap_core_xthread.rs`'s probe-round model) would tax `overflow_count`
+    /// `heap_core_xthread`'s probe-round model) would tax `overflow_count`
     /// with a
     /// locked RMW per poll for no informational gain — mirrors
     /// `RemoteFreeRing::try_push_uncounted`'s identical rationale (see that

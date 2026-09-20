@@ -19,7 +19,7 @@
 //! ## Counterfactual (verified RED without the guard)
 //!
 //! Comment out the `#[cfg(feature = "hardened")]` interior-ptr block in
-//! `heap_core.rs::dealloc_own_thread_with_base` and re-run under
+//! `heap_core/free/dealloc_own_base.rs::dealloc_own_thread_with_base` and re-run under
 //! `--features hardened`: `interior_ptr_free_is_noop` goes RED — the interior
 //! pointer is pushed into the magazine and re-issued (or aliases a real block
 //! in the cold-storm distinctness check). Restoring the guard → GREEN.

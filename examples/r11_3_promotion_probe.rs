@@ -9,7 +9,7 @@
 //! ## Why this file exists as a standalone example, not a change to `src/`
 //!
 //! Per the task's design-only gate, no shipping allocator source
-//! (`src/registry/heap_core_free.rs`, `src/alloc_core/alloc_core.rs`, ...) is
+//! (`src/registry/heap_core/free/`, `src/alloc_core/alloc_core.rs`, ...) is
 //! modified. This harness gets an honest measurement of "what would happen if
 //! the move-leg diverted to Large" WITHOUT touching those files, by
 //! implementing the diversion logic HERE, at the call site, using only the

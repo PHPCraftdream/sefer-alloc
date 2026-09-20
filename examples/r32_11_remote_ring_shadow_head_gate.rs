@@ -490,7 +490,7 @@ fn run_adversarial() -> (u64, u64, u64, u64) {
     // stale, forcing the slow path) but ALSO triggers a completely different,
     // much more expensive mechanism: `HeapCore::push_with_overflow_retry`'s
     // bounded stalled-round retry loop (`RETRY_STALLED_ROUNDS_GIVE_UP = 128`,
-    // `src/registry/heap_core_xthread.rs`), which spins waiting for ANY
+    // `src/registry/heap_core_xthread/overflow.rs`), which spins waiting for ANY
     // observable owner drain progress before conceding to the bounded leak.
     // With zero owner progress for the whole burst, every cross-thread free
     // pays the FULL stalled-retry budget — measured directly: 8,000 pushes

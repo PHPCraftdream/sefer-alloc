@@ -19,7 +19,7 @@
 //! ## Counterfactual (verified RED without the guard — see task #153 report)
 //!
 //! Comment out the `#[cfg(feature = "alloc-decommit")] if (off as usize) >=
-//! meta.bump_of() { return; }` block in `heap_core.rs::dealloc_own_thread` and
+//! meta.bump_of() { return; }` block in `heap_core/free/dealloc.rs::dealloc_own_thread` and
 //! re-run: `bogus_uncarved_free_is_noop` goes RED — the bogus uncarved address
 //! is issued by a subsequent alloc, so either the "not issued" assertion trips
 //! or the cold-storm distinctness assertion trips (the bogus address aliases a

@@ -62,7 +62,7 @@ impl Drop for SerialGuard {
 ///
 /// COUNTERFACTUAL (do NOT enable in production): to verify T2 is not vacuous,
 /// temporarily remove the in-magazine `slots` scan (`for i in 0..cnt { ... }`)
-/// in `heap_core.rs::dealloc_own_thread` and re-run this test. It MUST fail
+/// in `heap_core/free/dealloc.rs::dealloc_own_thread` and re-run this test. It MUST fail
 /// (`assert_ne!` on p1, p2 trips because the magazine pushes p twice).
 #[test]
 fn t2_double_free_magazine_block_is_noop() {
@@ -217,7 +217,7 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
 ///      `ptrs[0]`. Count occurrences of `ptrs[0]` in the issued set.
 ///
 /// COUNTERFACTUAL: remove the bitmap check (`if bm.is_free(off) { return; }`)
-/// in `heap_core.rs::dealloc_own_thread` and this assert MUST trip with
+/// in `heap_core/free/dealloc.rs::dealloc_own_thread` and this assert MUST trip with
 /// `target_count == 2` (one from the magazine slot, one from the BinTable
 /// pop_free).
 #[test]

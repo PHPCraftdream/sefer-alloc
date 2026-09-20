@@ -67,9 +67,9 @@
 //!
 //! ## Accessors this test relies on (both added by this task)
 //!
-//! - `HeapCore::dbg_tcache_contains(c, ptr)` (`src/registry/heap_core_diag.rs`)
+//! - `HeapCore::dbg_tcache_contains(c, ptr)` (`src/registry/heap_core/diag/queries.rs`)
 //!   — safe read-only scan of `tcache.classes[c].slots[0..count]`.
-//! - `HeapCore::dbg_is_free_for(ptr)` (`src/registry/heap_core_diag.rs`) —
+//! - `HeapCore::dbg_is_free_for(ptr)` (`src/registry/heap_core/diag/queries.rs`) —
 //!   thin forwarder to the pre-existing `AllocCore::dbg_is_free_for`, exposed
 //!   at the `HeapCore` level for this test. Both are `#[doc(hidden)]` safe
 //!   reads (no raw-pointer metadata writes) — see their doc comments for why
@@ -78,7 +78,7 @@
 //!
 //! ## Mutation counterfactual (run by the orchestrator, reverted before finish)
 //!
-//! Two mutations are applied to `src/registry/heap_core_dealloc_batch.rs`,
+//! Two mutations are applied to `src/registry/heap_core/free/dealloc_batch.rs`,
 //! each run against THIS test (and `r25_4`) to confirm non-vacuity, then
 //! reverted:
 //!
@@ -133,7 +133,7 @@ impl Drop for SerialGuard {
     }
 }
 
-/// `TCACHE_CAP` (`src/registry/tcache.rs`) is `pub(crate)` — mirrored here as
+/// `TCACHE_CAP` (`src/registry/heap_core/state/tcache.rs`) is `pub(crate)` — mirrored here as
 /// a literal, exactly like `tests/r25_4_dealloc_batch_multi_flush_oracle.rs`.
 const TCACHE_CAP: usize = 16;
 

@@ -2,7 +2,7 @@
 //!
 //! This file holds the `impl HeapCore { .. }` block for
 //! [`HeapCore::dealloc_batch`], the counterpart of
-//! [`HeapCore::alloc_batch`](super::heap_core_alloc) on the free side. Pure
+//! [`HeapCore::alloc_batch`](crate::registry::heap_core::alloc) on the free side. Pure
 //! new surface (no existing method's behavior changes) — see the module doc
 //! comment on [`dealloc_batch`](HeapCore::dealloc_batch) for the full design
 //! and the magazine-vs-`flush_class` trade-off it makes explicit.
@@ -31,9 +31,9 @@ use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
 
-use super::heap_core::HeapCore;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
-use super::tcache::TCACHE_CAP;
+use crate::registry::heap_core::state::tcache::TCACHE_CAP;
+use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
     /// R11-4 — **batched deallocation**.
@@ -94,7 +94,7 @@ impl HeapCore {
     /// small-layout free or an interior-pointer free would fall through to
     /// the M2 oracles and read/write the Large block's own payload bytes as
     /// if they were a Small segment's bitmap, exactly the corruption F7's
-    /// own doc comment (`heap_core_free.rs`) warns against.
+    /// own doc comment (`free/dealloc_own_base.rs`) warns against.
     ///
     /// Accepted blocks are pushed into the magazine array DIRECTLY (batched
     /// slot writes instead of the scalar path's one-push-then-maybe-flush
@@ -285,7 +285,7 @@ impl HeapCore {
 
             // ── F7 (task #25): Large-segment kind guard (HARDENED) ──
             // Identical guard, identical order, to
-            // `dealloc_own_thread_with_base` (`heap_core_free.rs`): this
+            // `dealloc_own_thread_with_base` (`free/dealloc_own_base.rs`): this
             // method's ownership gate above (`contains_base`) does NOT
             // distinguish Small vs. Large — both are "this heap's
             // registered segments" — so a caller-contract-violating free

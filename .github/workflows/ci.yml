@@ -1760,14 +1760,14 @@ jobs:
         run: cargo test --features "hardened batch-api internals" --no-fail-fast
       # R22-1 (task #352): commit 46ea2db (R19-1, task #337) fixed a real
       # hardened/UAF-shaped contract-violation bug in the Large-dealloc branch
-      # (A) of `src/registry/heap_core_free.rs` -- under `hardened`, it now
+      # (A) of `src/registry/heap_core/free/dealloc_own_base.rs` -- under `hardened`, it now
       # checks `large_layout_consistent(base, layout.size())` before treating a
       # cross-thread Large free as legitimate. Both that branch and its two new
       # regression tests (`promoted_large_matching_free_actually_frees`,
       # `large_ptr_small_layout_free_is_noop_branch_a` in
       # `tests/regression_hardened_large_kind_own_free.rs`) require BOTH
       # `hardened` AND the "promotion-reachable" predicate encoded in the
-      # `medium_promotion_reachable!` macro (`heap_core_free.rs`, ~line 97):
+      # `medium_promotion_reachable!` macro (`heap_core/free/dealloc.rs`, ~line 69):
       # `medium-classes AND (not(exact-span-large) OR (large-reserved-capacity
       # AND not(numa-aware)))`. No row above satisfies both: none of the three
       # steps in THIS job turn on `medium-classes` at all, so branch (A) does
@@ -1971,7 +1971,7 @@ jobs:
         run: cargo build --features "alloc-global alloc-xthread fastbin alloc-decommit"
       # R16-1 (task #311, P1): R15-3 (task #305, commit 4de4ef2) added a
       # compile-time `#[cfg]` gate around `try_promote_to_large`
-      # (`src/registry/heap_core_free.rs`) that splits the Small/medium ->
+      # (`src/registry/heap_core/free/realloc.rs`) that splits the Small/medium ->
       # Large realloc promotion (R14-4/task #289, the largest Round 14 perf
       # item) into two MUTUALLY EXCLUSIVE compiled behaviours depending on
       # whether the build has grow headroom past a promoted block's committed
@@ -2911,7 +2911,8 @@ jobs:
 
   miri-plain:
     # W6: PLAIN-provenance miri for the exposed-provenance intrusive stacks.
-    # `src/registry/bootstrap.rs` (~lines 126-136) documents that the A1
+    # `src/alloc_core/large/deferred_large/mod.rs` (Provenance model, ~lines 19-28)
+    # documents that the A1
     # `deferred_large` push/drain stack and the `abandoned_segs` stack pack a
     # real pointer's address via `expose_provenance` and re-derive it via
     # `with_exposed_provenance_mut` BY DESIGN. That wildcard-provenance shape is
@@ -3283,7 +3284,7 @@ jobs:
       # magazine / fastbin production layer UNINSTRUMENTED by TSan. Add a second
       # step over the flagship `production` feature set (fastbin + decommit) on
       # the multi-threaded tests. This is the run that actually exercises the
-      # Э5 non-atomic per-heap counters (heap_core.rs `tcache_hits`,
+      # Э5 non-atomic per-heap counters (heap_core/core.rs `tcache_hits`,
       # alloc_core.rs `large_cache_hits` — a split load+store the single-writer
       # claim must justify) AND the `stats()` aggregation that reads REMOTE
       # heaps' counters (the initialised-gate, #133) — the classic TSan target.
