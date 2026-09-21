@@ -94,11 +94,14 @@
 //!      `large_cache_slot_set` (`alloc-decommit`).
 //!
 //!   All four live in the large-cache slot take/set helpers. Their callers
-//!   only ever pass an index proven occupied by `large_cache_slot_get` /
-//!   `oldest_occupied_slot`, which read the `large_cache` array directly —
-//!   NOT the `large_cache_occupied` bitmask introduced by R32-12 (task #503).
+//!   only ever pass an index proven occupied by an ARRAY read: the best-fit
+//!   scan and `oldest_occupied_slot` enumerate candidate indices from the
+//!   `large_cache_occupied` bitmask (R32-12, task #503; wired into these two
+//!   scans by #1985) but still consult `large_cache_slot_get(i)` before using
+//!   a slot, and only ever return an index whose ARRAY entry was `Some`.
 //!   A bitmask/array desync therefore cannot reach these `.expect()`/
-//!   `unreachable!()` arms: the worst a desync can do is
+//!   `unreachable!()` arms — a stale set bit merely makes a scan SKIP that
+//!   index. The worst a desync can do is
 //!   `large_cache_find_free_slot` handing back an index the array already
 //!   holds occupied (an overwrite on `set`, silent data loss — never a
 //!   take-side panic). `tests/no_panic_doc_accuracy.rs` pins the four by
