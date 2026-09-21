@@ -96,7 +96,8 @@ pub(crate) const SEGMENT_MAGIC: u32 = 0x5E_F5_E0_01;
 
 /// Owner-state bit layout.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-pub(crate) const OWNER_STATE_LIVE: u64 = 0;
+#[doc(hidden)]
+pub const OWNER_STATE_LIVE: u64 = 0;
 /// Mask for the state bit (bit 0).
 const OWNER_STATE_MASK: u64 = 0x1;
 /// Bit-shift for the owner heap id field (starts at bit 1).
@@ -111,23 +112,68 @@ const OWNER_GEN_SHIFT: u32 = 32;
 /// Sentinel owner id meaning "not bound to any heap yet" (a freshly-reserved
 /// segment before its first stamp). Distinct from a real slot index (which is
 /// `< MAX_HEAPS`).
-pub(crate) const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
+#[doc(hidden)]
+pub const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
+
+/// Owner id of the process-global fallback heap (src/global/fallback.rs) — the
+/// fallback is NOT a registry slot, so it cannot carry a slot index, and its
+/// historical sentinel `u32::MAX` was NOT representable in the 31-bit id
+/// field: `pack_owner`'s shift leaked bit 32 into the generation field and
+/// `unpack_owner_id` returned `OWNER_ID_NONE`, so `stamp_segment_owner`'s
+/// OPT-C fast-path compare (`unpack_owner_id(cur) == self.id`) could never
+/// hit on the fallback heap. Chosen constraints (each pinned by the const
+/// asserts below): < 2^31 so `pack_owner`/`unpack_owner_id` round-trip it
+/// exactly (the property the OPT-C compare needs); `!= OWNER_ID_NONE`; and
+/// >= 4096 (`MAX_HEAPS`, src/registry/bootstrap/registry.rs) so every
+/// owner-id -> slot resolution (`>= MAX_HEAPS` bounds check, e.g.
+/// `heap_core_xthread::ring::owner_slot_is_live`) keeps treating
+/// fallback-stamped segments as out-of-range, exactly as the old
+/// masks-to-OWNER_ID_NONE behaviour did.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+#[doc(hidden)]
+pub const OWNER_ID_FALLBACK: u32 = 0x7FFF_FFFE;
+
+const _: () = assert!(
+    (OWNER_ID_FALLBACK as u64) < (1u64 << 31),
+    "OWNER_ID_FALLBACK must be representable in the 31-bit owner-id field \
+     so pack_owner/unpack_owner_id round-trip it exactly"
+);
+const _: () = assert!(
+    OWNER_ID_FALLBACK != OWNER_ID_NONE,
+    "OWNER_ID_FALLBACK must not collide with the unstamped-segment sentinel"
+);
+const _: () = assert!(
+    OWNER_ID_FALLBACK as usize >= 4096,
+    "OWNER_ID_FALLBACK must stay outside every real registry slot index \
+     (< MAX_HEAPS = 4096) so owner-id resolution keeps treating it as \
+     out-of-range"
+);
 
 /// Pack `(state, owner_id, generation)` into one `u64` word (the layout
 /// documented above the [`OWNER_STATE_LIVE`] constant). `const` so the header
 /// constructors can build the initial packed word at compile time.
+///
+/// `owner_id` is masked to the 31-bit id field before shifting, so no input
+/// can leak across a field boundary (bug #1981: the unmasked shift let
+/// `u32::MAX` set bit 32 — the generation field's LSB — and round-trip as
+/// [`OWNER_ID_NONE`], never `u32::MAX`). An id >= 2^31 therefore clamps
+/// rather than round-trips, which is why every id actually stamped into an
+/// `owner_state` word — every `HeapCore::id`, plus the
+/// [`OWNER_ID_FALLBACK`] sentinel — must stay < 2^31.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+#[doc(hidden)]
 #[inline(always)]
-pub(crate) const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u64 {
+pub const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u64 {
     (state & OWNER_STATE_MASK)
-        | ((owner_id as u64) << OWNER_ID_SHIFT)
+        | (((owner_id as u64) & ((1u64 << 31) - 1)) << OWNER_ID_SHIFT)
         | ((generation as u64) << OWNER_GEN_SHIFT)
 }
 
 /// Unpack the owner heap id from an owner-state word.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+#[doc(hidden)]
 #[inline(always)]
-pub(crate) const fn unpack_owner_id(word: u64) -> u32 {
+pub const fn unpack_owner_id(word: u64) -> u32 {
     ((word & OWNER_ID_MASK) >> OWNER_ID_SHIFT) as u32
 }
 

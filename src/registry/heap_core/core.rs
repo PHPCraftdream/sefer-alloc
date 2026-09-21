@@ -323,7 +323,16 @@ pub struct HeapCore {
     /// slot back from a `*mut HeapCore` (12.3 stamps this into segment
     /// headers as the ownership key).
     /// `u32::MAX` is reserved as "not yet bound to a slot" (a freshly-init'd
-    /// slot has `id = u32::MAX` until `claim` overwrites it).
+    /// slot has `id = u32::MAX` until `claim` overwrites it). The
+    /// process-global fallback heap instead uses `OWNER_ID_FALLBACK`
+    /// (0x7FFF_FFFE, `alloc_core::segment_header`).
+    ///
+    /// Invariant: any id that will be stamped into a segment's `owner_state`
+    /// must stay < 2^31 so `pack_owner`/`unpack_owner_id` round-trip it
+    /// exactly (the OPT-C stamp-cache compare unpacks the stored word and
+    /// compares against this id). Do not reintroduce a >= 2^31 sentinel here:
+    /// the `u32::MAX` "unbound" value is safe only because it never reaches
+    /// `pack_owner` — it is overwritten by `claim` before any alloc.
     pub(crate) id: u32,
     /// The segment substrate this heap owns. Owns the primordial + any
     /// additionally-reserved small/large segments. Phase 12.1: free-list

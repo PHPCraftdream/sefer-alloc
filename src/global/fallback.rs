@@ -211,10 +211,14 @@ pub fn heap_ptr() -> *mut HeapCore {
                 );
             }
             // We are the sole initialiser. Construct the HeapCore in place.
-            // `HeapCore::new` uses the sentinel id `u32::MAX` ("not bound to
-            // a registry slot") — the fallback is NOT a registry slot; it is
-            // a standalone process-global heap.
-            match HeapCore::new(u32::MAX) {
+            // The fallback is NOT a registry slot, so it cannot carry a slot
+            // index: it carries the dedicated `OWNER_ID_FALLBACK` sentinel —
+            // round-trip-stable through `pack_owner`/`unpack_owner_id` (so
+            // `stamp_segment_owner`'s OPT-C stamp-cache compare can hit) and
+            // out-of-range for every owner-id→slot resolution. `u32::MAX`
+            // remains reserved for "not yet bound to a slot" on freshly-init'd
+            // registry slots.
+            match HeapCore::new(crate::alloc_core::segment_header::OWNER_ID_FALLBACK) {
                 Some(hc) => {
                     // SAFETY: we won the init race (STATE_INITIALIZING); no
                     // other thread can read `FALLBACK` until we publish
