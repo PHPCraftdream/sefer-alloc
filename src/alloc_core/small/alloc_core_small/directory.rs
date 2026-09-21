@@ -399,6 +399,19 @@ impl AllocCore {
         let scan_source: &[core::sync::atomic::AtomicU64] = ds.as_slice();
 
         for (w, ds_word) in scan_source.iter().enumerate() {
+            // #1983: a plain Relaxed LOAD-filter before the read-and-clear
+            // swap — skip the `lock xchg`-class RMW entirely when the word
+            // reads 0. Sound because the swap below is used purely as
+            // "read-and-clear": a load that races a producer's concurrent
+            // `fetch_or` (setting a bit between this load and the `continue`)
+            // just leaves that bit set until a LATER drain — precisely the
+            // module's own documented P4 bounded-deferral contract (see
+            // `remote_free_ring/mod.rs`'s "a later drain picks it up"). On a
+            // non-zero load the swap still runs, unchanged, preserving the
+            // Release/Acquire pairing with the producer below.
+            if ds_word.load(core::sync::atomic::Ordering::Relaxed) == 0 {
+                continue;
+            }
             // Acquire: pairs with the producer's Release fetch_or (either the
             // per-segment bit or, under `class-aware-dirty`, the per-class
             // bit — both use the identical Release/Acquire pairing).
