@@ -78,6 +78,55 @@ impl HeapCore {
         ))]
         let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
 
+        // #1982: hand the single classification to the shared body instead of
+        // letting a second caller re-derive it. `alloc_zeroed`'s small arm
+        // calls `alloc_with_class` directly with the `class` it already
+        // computed, so a calloc-shaped small request classifies ONCE for the
+        // whole call chain — the call-chain half of the Э9 "classify ONCE"
+        // rule that had only ever been applied inside this function.
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        {
+            self.alloc_with_class(layout, class)
+        }
+        #[cfg(not(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        )))]
+        {
+            self.alloc_with_class(layout)
+        }
+    }
+
+    /// The body of [`alloc`](Self::alloc), taking the size-class
+    /// classification as a parameter so callers that already computed it do
+    /// not pay for it twice (#1982).
+    ///
+    /// `class` is the `Option<usize>` from
+    /// `SizeClasses::class_for(size.max(MIN_BLOCK), align)` — `None` means
+    /// Large-classified. The parameter is `#[cfg]`-gated to exactly the
+    /// configurations whose bodies consume it (`alloc-xthread`'s Large-drain
+    /// check and the `alloc-global + fastbin` magazine routing), so a build
+    /// with neither feature neither passes nor computes a classification,
+    /// exactly as before this split.
+    ///
+    /// `#[inline(always)]`: this is a pure extraction of `alloc`'s own body,
+    /// and `alloc` is itself `#[inline(always)]` — the split must not put a
+    /// call boundary on the hottest path in the allocator.
+    #[must_use]
+    #[inline(always)]
+    fn alloc_with_class(
+        &mut self,
+        layout: Layout,
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        class: Option<usize>,
+    ) -> *mut u8 {
+
         // 0.3.0 (task A1): drain this heap's cross-thread Large-segment
         // deferred-free stack before a Large-classified request reaches
         // `AllocCore::alloc_large`'s slow path. Uses the single `class`
@@ -609,7 +658,25 @@ impl HeapCore {
             // Small-classified: delegate ENTIRELY to the existing `alloc` +
             // unconditional `Node::zero` (byte-identical to the pre-task
             // path — this is the `virgin-zero-skip`-OFF behaviour).
-            let ptr = self.alloc(layout);
+            //
+            // #1982: call `alloc_with_class` rather than `alloc`, handing it
+            // the `class` computed at the top of this function. `alloc`'s only
+            // work before its shared body IS that classification, so this is
+            // the same path with the duplicate `class_for` removed — the
+            // call-chain half of Э9's "classify ONCE" (P7.1, task #160), which
+            // had only ever been applied WITHIN `alloc`. Plain `production`
+            // does not enable `virgin-zero-skip`, so this is the arm every
+            // calloc-shaped small allocation actually takes there.
+            #[cfg(any(
+                feature = "alloc-xthread",
+                all(feature = "alloc-global", feature = "fastbin")
+            ))]
+            let ptr = self.alloc_with_class(layout, class);
+            #[cfg(not(any(
+                feature = "alloc-xthread",
+                all(feature = "alloc-global", feature = "fastbin")
+            )))]
+            let ptr = self.alloc_with_class(layout);
             if !ptr.is_null() {
                 Node::zero(ptr, size);
             }
