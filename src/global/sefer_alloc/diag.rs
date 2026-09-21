@@ -26,12 +26,18 @@ impl SeferAlloc {
     /// themselves absent. Safe to call on a metrics-scrape hot path.
     ///
     /// WITH `alloc-stats`, the two hit counters are aggregated by a walk over
-    /// the initialized registry slots (each a Relaxed atomic load of that
-    /// slot's counter — still no locks and no segment walk; only registry slot
-    /// metadata is touched, never segment payloads). `stats()` is then
-    /// O(initialized-slot-count) for those two fields; every other field
-    /// remains a single relaxed load. Still safe to poll periodically — just
-    /// no longer O(1) with `alloc-stats` on.
+    /// all MINTED registry slots (`0..count`, the high-water mark of slots
+    /// ever claimed) — each slot costs one Acquire load of
+    /// `HeapSlot::initialised`, skipped immediately if `false`, else one
+    /// further Relaxed atomic load of that slot's counter; still no locks and
+    /// no segment walk, only registry slot metadata is touched, never segment
+    /// payloads. When both counters are compiled in (`alloc-decommit` +
+    /// `fastbin`, both present under `production`), this is a SINGLE fused
+    /// walk (#1986) — one pass over the slot array summing both counters,
+    /// not two independent passes. `stats()` is then
+    /// O(minted-slot-count) for those two fields; every other field remains
+    /// a single relaxed load. Still safe to poll periodically — just no
+    /// longer O(1) with `alloc-stats` on.
     ///
     /// The counters are **process-wide**, not per-`SeferAlloc`-instance: if a
     /// process installs more than one `SeferAlloc` (unusual, but not
@@ -58,11 +64,23 @@ impl SeferAlloc {
     /// Runnable form: `tests/sefer_alloc_examples.rs`.
     #[must_use]
     pub fn stats(&self) -> AllocStats {
+        // #1986: fuse the two hit-counter registry walks into one pass when
+        // both are compiled in (`alloc-decommit` + `fastbin`, both present
+        // under `production`) — halves the per-slot walk `stats()` does
+        // under `alloc-stats`. Each counter's own feature gate is preserved
+        // exactly (see the four mutually-exclusive arms below); only the
+        // WALK is fused when both apply, never the feature surface.
+        #[cfg(all(feature = "alloc-decommit", feature = "fastbin"))]
+        let (tcache_hits, large_cache_hits) = crate::registry::tcache_and_large_cache_hits_total();
+        #[cfg(all(feature = "alloc-decommit", not(feature = "fastbin")))]
+        let (tcache_hits, large_cache_hits) = (0u64, crate::registry::large_cache_hits_total());
+        #[cfg(all(not(feature = "alloc-decommit"), feature = "fastbin"))]
+        let (tcache_hits, large_cache_hits) = (crate::registry::tcache_hits_total(), 0u64);
+        #[cfg(all(not(feature = "alloc-decommit"), not(feature = "fastbin")))]
+        let (tcache_hits, large_cache_hits) = (0u64, 0u64);
+
         AllocStats {
-            #[cfg(feature = "alloc-decommit")]
-            large_cache_hits: crate::registry::large_cache_hits_total(),
-            #[cfg(not(feature = "alloc-decommit"))]
-            large_cache_hits: 0,
+            large_cache_hits,
 
             #[cfg(feature = "alloc-decommit")]
             decommit_calls: crate::alloc_core::AllocCore::dbg_decommit_count(),
@@ -75,10 +93,7 @@ impl SeferAlloc {
             #[cfg(not(feature = "alloc-xthread"))]
             large_xthread_reclaimed: 0,
 
-            #[cfg(feature = "fastbin")]
-            tcache_hits: crate::registry::tcache_hits_total(),
-            #[cfg(not(feature = "fastbin"))]
-            tcache_hits: 0,
+            tcache_hits,
 
             #[cfg(feature = "alloc-xthread")]
             ring_overflows: crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW

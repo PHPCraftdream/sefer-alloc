@@ -71,6 +71,12 @@ mod stack;
 pub use claim::HeapRegistry;
 #[cfg(feature = "alloc-decommit")]
 pub use counters::large_cache_hits_total;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+pub use counters::tcache_and_large_cache_hits_total;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub use counters::tcache_hits_total;
 pub use counters::{config_conflicts_total, heaps_claimed_high_water};

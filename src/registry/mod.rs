@@ -85,6 +85,13 @@ pub use heap_registry::heaps_claimed_high_water;
 #[cfg(feature = "alloc-decommit")]
 #[doc(hidden)]
 pub use heap_registry::large_cache_hits_total;
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+#[doc(hidden)]
+pub use heap_registry::tcache_and_large_cache_hits_total;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 pub use heap_registry::tcache_hits_total;

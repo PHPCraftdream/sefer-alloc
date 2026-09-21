@@ -258,6 +258,56 @@ pub fn large_cache_hits_total() -> u64 {
     }
 }
 
+/// DIAGNOSTIC (#1986): fused single-pass variant of [`tcache_hits_total`] +
+/// [`large_cache_hits_total`] for [`SeferAlloc::stats()`](crate::SeferAlloc::stats)'s
+/// own use — one registry-slot walk instead of two when BOTH counters are
+/// compiled in (`alloc-global + fastbin + alloc-decommit`, all present under
+/// `production`). The two standalone accessors are UNCHANGED and still exist
+/// for any caller that needs only one counter, or needs it independent of the
+/// other's feature gate (both have callers outside `stats()` — see
+/// `tests/regression_percounter_perheap_aggregation.rs` and friends).
+///
+/// Soundness and the `initialised`-gate rationale are IDENTICAL to
+/// [`tcache_hits_total`] / [`large_cache_hits_total`] above (same walk, same
+/// per-slot Acquire/Release pairing, same happens-before argument) — see
+/// those functions' doc comments for the full writeup; not repeated here.
+///
+/// Like both standalone accessors, the WALK is additionally gated on
+/// `alloc-stats` (R3-A, round3 finding N1): without it both slot-resident
+/// counters are compile-time 0, so this returns `(0, 0)` with no loop, to
+/// keep `stats()` O(1) on a metrics-scrape hot path as its doc promises.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-decommit"
+))]
+#[doc(hidden)]
+#[must_use]
+pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
+    #[cfg(feature = "alloc-stats")]
+    {
+        let reg = ensure();
+        let count = reg.count.load(Ordering::Acquire) as usize;
+        let mut tcache_total: u64 = 0;
+        let mut large_cache_total: u64 = 0;
+        for idx in 0..count.min(MAX_HEAPS) {
+            let slot = reg.slot(idx);
+            if !slot.initialised.load(Ordering::Acquire) {
+                continue;
+            }
+            tcache_total =
+                tcache_total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
+            large_cache_total = large_cache_total
+                .saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
+        }
+        (tcache_total, large_cache_total)
+    }
+    #[cfg(not(feature = "alloc-stats"))]
+    {
+        (0, 0)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // UBFIX-5 test-only hooks (M-5 / L-9a regression coverage).
 //
