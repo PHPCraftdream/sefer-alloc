@@ -217,6 +217,27 @@ impl AllocCore {
         matches!(self.large_cache_budget_bytes, Some(budget) if usable_size > budget)
     }
 
+    /// P1-3 (#1985, follow-through on R32-12/task #503): the occupancy
+    /// bitmask restricted to the currently-addressable COMBINED slots
+    /// (`large_cache_scan_bound()`); bits at or above the bound are always
+    /// clear. Scan loops iterate only the set bits of this value
+    /// (`trailing_zeros` + clear-lowest) instead of walking every slot and
+    /// paying one `Option` discriminant load per empty slot — O(popcount),
+    /// not O(bound). The bound guard keeps `1 << bound` well-defined even if
+    /// a future round ever raised the slot counts to/past `u64::BITS`
+    /// (today pinned strictly below by the compile-time assertions on
+    /// `large_cache_occupied`); a bound of 0 would yield an empty mask.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(in crate::alloc_core) fn large_cache_occupied_within_bound(&self) -> u64 {
+        let bound = self.large_cache_scan_bound();
+        if bound < u64::BITS as usize {
+            self.large_cache_occupied & ((1u64 << bound) - 1)
+        } else {
+            self.large_cache_occupied
+        }
+    }
+
     /// Find a free slot to admit a new deposit into, in the COMBINED index
     /// space: scans the base 8 slots first (no materialisation cost), then —
     /// only if `large-cache-extended` is on and the base is full — lazily
@@ -737,17 +758,37 @@ impl AllocCore {
 
     /// Find the occupied COMBINED slot (see [`CombinedSlot`]) with the
     /// smallest `seq` — the true FIFO-oldest entry (task D1). Returns `None`
-    /// if the cache is empty. `O(large_cache_scan_bound())` — 8 with
-    /// `large-cache-extended` off or not-yet-materialised, up to 40 once
-    /// materialised; only called on the large-alloc/dealloc slow paths
-    /// (never the small hot path), so the linear scan is not
-    /// performance-sensitive at either size.
+    /// if the cache is empty. P1-3 (#1985): iterates only the set bits of
+    /// [`large_cache_occupied_within_bound`](Self::large_cache_occupied_within_bound)
+    /// — O(popcount) slot reads, not one `Option` discriminant load per slot
+    /// over `large_cache_scan_bound()` (8 with `large-cache-extended` off or
+    /// not-yet-materialised, up to 40 once materialised). Still only called
+    /// on the large-alloc/dealloc slow paths (never the small hot path).
+    /// Short-circuits on `seq == 0`: that is the initial `large_cache_seq`
+    /// value, so no occupied slot can beat it (the counter is monotonic) —
+    /// and on u64 wraparound the old `min_by_key` picked the LOWEST-INDEX
+    /// slot holding the minimum seq, which is exactly what this loop still
+    /// returns, so the short-circuit is behavior-preserving even there.
     #[cfg(feature = "alloc-decommit")]
     fn oldest_occupied_slot(&self) -> Option<CombinedSlot> {
-        (0..self.large_cache_scan_bound())
-            .filter_map(|i| self.large_cache_slot_get(i).map(|c| (i, c.seq)))
-            .min_by_key(|&(_, seq)| seq)
-            .map(|(i, _)| i)
+        let mut occupied = self.large_cache_occupied_within_bound();
+        let mut best_idx: Option<CombinedSlot> = None;
+        let mut best_seq = u64::MAX;
+        while occupied != 0 {
+            let i = occupied.trailing_zeros() as usize;
+            occupied &= occupied - 1; // clear the lowest set bit
+            if let Some(c) = self.large_cache_slot_get(i) {
+                if c.seq < best_seq {
+                    best_idx = Some(i);
+                    best_seq = c.seq;
+                    if c.seq == 0 {
+                        // Initial counter value — cannot be beaten.
+                        break;
+                    }
+                }
+            }
+        }
+        best_idx
     }
 
     /// Evict the FIFO-oldest cached entry (smallest `seq`, task D1 — see

@@ -210,20 +210,27 @@ impl AllocCore {
         // every 4 MiB request.
         #[cfg(feature = "alloc-decommit")]
         {
-            // G11 (task #51) — BEST-FIT: scan ALL slots and pick the compatible
+            // G11 (task #51) — BEST-FIT: consider every cached entry and pick the compatible
             // entry with the SMALLEST `usable_size`, instead of taking the first
             // fit. A cached entry is compatible when it is big enough
             // (`usable_size >= usable`) yet not wastefully large
             // (`usable_size <= usable * LARGE_CACHE_SIZE_FACTOR`). Best-fit keeps
             // the tightest span for this request and leaves the larger cached
             // spans available for larger future requests — reducing internal
-            // fragmentation / RSS waste versus first-fit, at
-            // O(large_cache_scan_bound()) cost on the cold large-alloc path
-            // (negligible: 8 with `large-cache-extended` off/not-yet-
-            // materialised, up to 40 once materialised — R13-7, task #277).
+            // fragmentation / RSS waste versus first-fit, at cost that now
+            // iterates only OCCUPIED slots via the R32-12 occupancy bitmask
+            // (P1-3, #1985) — O(popcount), not O(large_cache_scan_bound()).
             let mut hit_idx: Option<usize> = None;
             let mut best_usable: usize = usize::MAX;
-            for i in 0..self.large_cache_scan_bound() {
+            // P1-3 (#1985): iterate only OCCUPIED slots via the R32-12
+            // occupancy bitmask (same "bit i set ⟺ slot i is Some"
+            // invariant `large_cache_find_free_slot` already relies on)
+            // instead of paying one `Option` discriminant load per slot
+            // across `large_cache_scan_bound()`.
+            let mut occupied = self.large_cache_occupied_within_bound();
+            while occupied != 0 {
+                let i = occupied.trailing_zeros() as usize;
+                occupied &= occupied - 1; // clear the lowest set bit
                 if let Some(slot) = self.large_cache_slot_get(i) {
                     if slot.usable_size >= usable
                         && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
