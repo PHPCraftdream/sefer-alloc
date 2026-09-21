@@ -353,7 +353,6 @@ impl AllocCore {
         if self.directory_sidecar.is_null() {
             return;
         }
-        let small_cur = self.small_cur;
 
         // R13-1 (task #271, P0 fix), R14-2 (task #287): the coarse-only
         // latch, checked BEFORE resolving the per-class slice at all — see
@@ -447,62 +446,16 @@ impl AllocCore {
                     continue;
                 }
 
-                // REUSE the existing A3/scan drain body (P1-compliant).
-                let mut meta_for_ring = SegmentMeta::new(base);
-                let ring = meta_for_ring.remote_ring();
-                let cached_head = meta_for_ring.ring_drain_head_of();
-                if ring.tail_relaxed() != cached_head {
+                // REUSE the existing A3/scan drain body (P1-compliant) via
+                // the shared [`drain_segment_ring`](AllocCore::drain_segment_ring).
+                match self.drain_segment_ring(
+                    base,
+                    #[cfg(feature = "fastbin")]
+                    is_in_magazine,
+                ) {
+                    super::find_segment::RingDrainOutcome::Skipped => {}
                     #[cfg(feature = "alloc-decommit")]
-                    let mut decommit_happened = false;
-                    // R8-1 (task #214): accumulate the set of classes this drain
-                    // pass touches, so the post-drain directory sync inspects
-                    // ONLY those classes (O(popcount)) instead of re-sweeping
-                    // all SMALL_CLASS_COUNT classes.
-                    let mut changed_classes: u64 = 0;
-                    let new_head = ring.drain(|off| {
-                        #[cfg(feature = "fastbin")]
-                        let reclaimed = Self::reclaim_offset_checked(base, off, &is_in_magazine);
-                        #[cfg(not(feature = "fastbin"))]
-                        let reclaimed = Self::reclaim_offset(base, off);
-                        if reclaimed {
-                            #[cfg(feature = "alloc-decommit")]
-                            if Self::dec_live_and_maybe_decommit(base, small_cur) {
-                                decommit_happened = true;
-                            }
-                            // R10-3: gate the class bit on `reclaimed` — a
-                            // rejected entry never mutated the BinTable for its
-                            // class (every early `return false` in
-                            // reclaim_offset[_checked] precedes `set_head`/
-                            // `mark_free`), so recording it would (a) cause a
-                            // spurious directory sync for an unchanged class
-                            // and (b) make the R9-6 WASTED_DIRTY_DRAINS metric
-                            // under-count: a drain that rejected every entry of
-                            // the sought class still looked "not wasted".
-                            changed_classes |=
-                                1u64 << crate::alloc_core::remote_free_ring::entry_class_idx(off);
-                        }
-                    });
-                    // A2 post-drain directory sync.
-                    {
-                        let sid = SegmentHeader::segment_id_at(base) as usize;
-                        self.sync_directory_for_segment_classes(base, sid, changed_classes);
-                    }
-                    // R9-6 (class-aware dirty routing judge, measurement-only):
-                    // if this drain — triggered by a `find_segment_with_free_impl(class_idx)`
-                    // call — produced ZERO reclaimed blocks of the sought class
-                    // (the sought class's bit is NOT in `changed_classes`), it
-                    // was wasted work from THAT caller's perspective. Per-(segment,
-                    // class) dirty routing would have avoided visiting this segment
-                    // entirely. Purely diagnostic — no algorithmic effect.
-                    #[cfg(feature = "alloc-stats")]
-                    if changed_classes & (1u64 << class_idx) == 0 {
-                        crate::alloc_core::directory_stats::WASTED_DIRTY_DRAINS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    }
-                    // P1-b: decommit/pool hysteresis.
-                    #[cfg(feature = "alloc-decommit")]
-                    if decommit_happened {
-                        self.release_or_pool_empty_segment(base);
+                    super::find_segment::RingDrainOutcome::Decommitted => {
                         // The segment is now released/pooled; skip the head
                         // refresh (the segment may be unmapped).
                         // R7-A0: count this dirty segment as drained.
@@ -511,8 +464,23 @@ impl AllocCore {
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         continue;
                     }
-                    // P1-d: refresh the ring_drain_head cache.
-                    meta_for_ring.set_ring_drain_head(new_head);
+                    #[cfg_attr(not(feature = "alloc-stats"), allow(unused_variables))]
+                    super::find_segment::RingDrainOutcome::Drained { changed_classes } => {
+                        // R9-6 (class-aware dirty routing judge,
+                        // measurement-only): if this drain — triggered by a
+                        // `find_segment_with_free_impl(class_idx)` call —
+                        // produced ZERO reclaimed blocks of the sought class
+                        // (the sought class's bit is NOT in
+                        // `changed_classes`), it was wasted work from THAT
+                        // caller's perspective. Per-(segment, class) dirty
+                        // routing would have avoided visiting this segment
+                        // entirely. Purely diagnostic — no algorithmic effect.
+                        #[cfg(feature = "alloc-stats")]
+                        if changed_classes & (1u64 << class_idx) == 0 {
+                            crate::alloc_core::directory_stats::WASTED_DIRTY_DRAINS
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
                 }
 
                 // R7-A0: count this dirty segment as drained.
