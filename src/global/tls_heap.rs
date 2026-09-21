@@ -26,8 +26,9 @@
 //! `*mut HeapCore` is sound to cache and dereference under the
 //! **single-writer invariant**: the ONLY mutator of a heap's bins is its
 //! owning thread (the one that won the `FREE → LIVE` CAS in `claim`).
-//! `current()` is called only on the owning thread (it reads its own TLS),
-//! so the `&mut HeapCore` it yields is exclusive. No other thread writes
+//! Every resolver in this module is called only on the owning thread (it
+//! reads its own TLS), so the `&mut HeapCore` it yields is exclusive. No
+//! other thread writes
 //! these bins; cross-thread frees go through the segment's `RemoteFreeRing`,
 //! not the bins directly. The registry's atomic protocol (M5-clean bootstrap,
 //! claim/recycle CAS) establishes the single writer; this file relies on
@@ -66,7 +67,7 @@
 //!     resolvers' `try_with` returns `Err` → they route to the always-live
 //!     Fallback heap, which is likewise safe.
 //!
-//! Every resolver ([`current`], [`current_for_alloc`],
+//! Every binding resolver ([`current_for_alloc`],
 //! [`current_for_alloc_with_config`]) checks for `TORN` before the
 //! non-null check and, on a match, routes to the always-live fallback heap
 //! instead of re-arming a new slot (which would leak the just-recycled one
@@ -77,13 +78,14 @@
 //!
 //! ## Never-null (M10)
 //!
-//! [`current()`] returns a non-null `*mut HeapCore` in every case:
-//! - the cached pointer is set → return it;
-//! - the cached pointer is null (first call) → `bind_slow` claims a slot
-//!   and publishes it, or on registry exhaustion falls back to the
+//! [`current_for_alloc()`] resolves to a non-null `*mut HeapCore` in every
+//! case:
+//! - the cached pointer is set → return it (tagged [`CurrentHeap::Own`]);
+//! - the cached pointer is null (first call) → `bind_slow_tagged` claims a
+//!   slot and publishes it, or on registry exhaustion falls back to the
 //!   primordial heap;
-//! - the TLS slot is destroyed (thread teardown) → `fallback_ptr` returns
-//!   the always-live process-global fallback heap.
+//! - the TLS slot is destroyed (thread teardown) → the fallback branch
+//!   resolves to the always-live process-global fallback heap.
 //!
 //! So the alloc face never returns null for a serviceable request (M10).
 
@@ -100,7 +102,6 @@
 
 use core::cell::Cell;
 
-use crate::global::fallback;
 use crate::registry::{HeapCore, HeapRegistry};
 
 /// Sentinel value stamped into [`LOCAL`] by [`mark_local_torn`] the instant
@@ -124,7 +125,7 @@ const TORN: *mut HeapCore = usize::MAX as *mut HeapCore;
 
 thread_local! {
     /// The cached raw pointer to this thread's heap (a slot in the global
-    /// [`HeapRegistry`]). `null` until the first call to [`current()`];
+    /// [`HeapRegistry`]). `null` until the first call to [`current_for_alloc`];
     /// non-null thereafter, until the thread exits — at which point the
     /// [`AbandonGuard`] recycles the slot AND stamps this cell to [`TORN`]
     /// (via [`mark_local_torn`]) BEFORE releasing it, so a post-teardown
@@ -140,7 +141,7 @@ thread_local! {
     static LOCAL: Cell<*mut HeapCore> = const { Cell::new(core::ptr::null_mut()) };
 
     /// The thread-exit abandon guard. Holds a COPY of the heap pointer
-    /// (set in [`bind_slow`]) so its `Drop` does not need to read `LOCAL`
+    /// (set in [`finish_bind`]) so its `Drop` does not need to read `LOCAL`
     /// (which may already be torn down). On drop: if the copy is non-null,
     /// abandon the heap's segments to the registry (a no-op stub in 12.3;
     /// the real walk arrives in 12.4) and recycle the slot. Null copy →
@@ -151,7 +152,7 @@ thread_local! {
 /// The per-thread abandon guard. See the module docs for the TLS destructor
 /// ordering reasoning.
 struct AbandonGuard {
-    /// A copy of the heap pointer this thread bound via [`bind_slow`]. Read
+    /// A copy of the heap pointer this thread bound via [`bind_slow_tagged`]. Read
     /// ONLY in `Drop` (never in `LOCAL`-reading code paths). Storing the
     /// copy here is what makes the guard robust to `LOCAL` being torn down
     /// first.
@@ -296,73 +297,10 @@ impl Drop for AbandonGuard {
         // writes that caused the corruption.
         //
         // SAFETY: `heap` was returned by `HeapRegistry::claim` (set in
-        // `bind_slow`) and has not yet been recycled (the guard drops once,
+        // `finish_bind`) and has not yet been recycled (the guard drops once,
         // on thread exit). The slot is still LIVE; `recycle` is the matching
         // half of `claim` (CAS LIVE→FREE + push_free_slot).
         unsafe { HeapRegistry::recycle(heap) };
-    }
-}
-
-/// The hot accessor: return the current thread's heap pointer, never null.
-///
-/// Fast path: a single TLS load + null check. On first call (null) it calls
-/// `bind_slow` (cold); if the TLS is torn down (thread teardown) it calls
-/// `fallback_ptr` (cold) — the process-global fallback heap, also never
-/// null.
-///
-/// This is the un-tagged variant, for callers that do not need to
-/// distinguish own-thread vs fallback (the alloc face uses
-/// [`current_for_alloc`] instead).
-///
-/// # Locking obligation on the fallback pointer
-///
-/// By discarding the tag this accessor erases a synchronisation obligation
-/// that [`current_for_alloc`] surfaces via [`CurrentHeap::Fallback`]: on the
-/// TORN and `Err` (TLS-teardown) branches the returned pointer is the
-/// process-**global fallback heap**, shared by every thread whose TLS is
-/// unavailable. Mutable (`&mut HeapCore`) access to the OWN-thread pointer is
-/// sound lock-free (single-writer registry-slot invariant), but the fallback
-/// pointer has NO such owner — mutating it is sound ONLY under the
-/// `fallback::with_heap` spinlock. A caller cannot tell from the bare pointer
-/// which case it got, so a direct-API consumer of `current()` must either treat
-/// the result as read-only or route every mutation through `fallback::with_heap`
-/// (the tagged [`current_for_alloc`] is the safe default — prefer it). This
-/// obligation is why the accessor is currently unused by the alloc face.
-///
-/// L-9g: kept `pub(crate)` (not `pub`) precisely because of the hazard above —
-/// the untagged pointer is easy to misuse across a crate boundary where the
-/// caller cannot see this doc comment's obligation at the call site. Crate-
-/// internal callers already have the full context; an external consumer that
-/// needs this distinction should use the tagged [`current_for_alloc`] /
-/// [`CurrentHeap`] instead.
-///
-/// Inlined so the fast path collapses to a TLS-get + branch in the callers.
-#[must_use]
-#[inline]
-#[allow(dead_code)] // The alloc face uses `current_for_alloc` (tagged). Kept for direct API.
-pub(crate) fn current() -> *mut HeapCore {
-    match LOCAL.try_with(|c| c.get()) {
-        // Э2 (task #145) — TWO SENTINELS, ONE BRANCH. `null = 0` and
-        // `TORN = usize::MAX` are the two ends of the address range; every
-        // REAL `*mut HeapCore` sits strictly between them. So a single
-        // unsigned compare separates "real pointer" (the hot path) from
-        // "either sentinel" (both cold):
-        //   real p (1..=MAX-1): p.addr()-1 ∈ 0..=MAX-2, all `< MAX-1` → fast
-        //   null (0):           0.wrapping_sub(1) = MAX,   NOT `< MAX-1` → cold
-        //   TORN (MAX):         MAX-1,                     NOT `< MAX-1` → cold
-        // The cold arm then splits on the exact value (0 → bind, MAX → torn),
-        // preserving the #129 mapping BYTE-for-BYTE (null → `bind_slow`,
-        // TORN → `fallback_ptr`).
-        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => p,
-        // Cold split: null (first call / reset) → bind a slot; TORN (this
-        // thread's GUARD already recycled its slot — the cached pointer is
-        // stale and MUST NOT be dereferenced) → route to the fallback rather
-        // than `bind_slow` (which would re-arm the dropped GUARD and leak the
-        // freshly recycled slot). See "TLS destructor ordering".
-        Ok(p) if p.is_null() => bind_slow(),
-        Ok(_) => fallback_ptr(), // p == TORN
-        // TLS destroyed (thread teardown): fall back, never null.
-        Err(_) => fallback_ptr(),
     }
 }
 
@@ -408,8 +346,8 @@ pub fn current_for_alloc() -> CurrentHeap {
         // Fallback. The `dbg_teardown_then_resolve_is_fallback` #129 hook
         // relies on TORN → Fallback and is preserved.
         Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
-        // First call on this thread: bind a slot. bind_slow returns either
-        // an Own pointer or, on registry exhaustion, the fallback marker.
+        // First call on this thread: bind a slot. bind_slow_tagged returns
+        // either an Own pointer or, on registry exhaustion, the fallback marker.
         Ok(p) if p.is_null() => bind_slow_tagged(),
         // Stale post-recycle pointer (this thread's GUARD already dropped) —
         // see "TLS destructor ordering" in the module doc. MUST route to
@@ -469,7 +407,7 @@ pub enum CurrentHeapForDealloc {
 /// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
 ///   identical fast path to [`current_for_alloc`]'s `Own` arm, unchanged.
 /// - `null` (never bound) → [`CurrentHeapForDealloc::ForeignNoBind`]. Does
-///   **not** call `bind_slow`/`bind_slow_tagged` — that is the entire point
+///   **not** call `bind_slow_tagged` — that is the entire point
 ///   of this task: a thread whose TLS is null has never allocated anything
 ///   of its own under this allocator instance (`SeferAlloc::alloc` always
 ///   binds on first use), so any pointer reaching `dealloc` here must have
@@ -513,7 +451,7 @@ pub fn current_for_dealloc() -> CurrentHeapForDealloc {
 ///
 /// **Config is taken by reference** so the hot fast path (TLS pointer
 /// cached) never materialises the ~40-byte `LargeCacheConfig` value on the
-/// stack. The 40-byte copy happens only on the cold `bind_slow` branch,
+/// stack. The 40-byte copy happens only on the cold `bind_slow_tagged_with_config` branch,
 /// where it is amortised across the thread's lifetime.
 ///
 /// Only present under `alloc-decommit` — without that feature the config
@@ -543,7 +481,7 @@ pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfi
 /// Same `LOCAL`-read shape as [`current_for_alloc`]/[`current_for_dealloc`],
 /// but ALL three "no live own-thread heap" cases — `null` (never bound),
 /// `TORN` (this thread's `AbandonGuard` already recycled its slot), and
-/// `Err` (TLS destroyed) — map to `None`. **Never calls `bind_slow`/
+/// `Err` (TLS destroyed) — map to `None`. **Never calls
 /// `bind_slow_tagged` and never resolves the fallback pointer**: unlike
 /// [`current_for_alloc`] (whose `null` arm binds) and unlike
 /// [`current_for_dealloc`] (whose bind-less arm still routes a live
@@ -571,29 +509,15 @@ pub fn current_for_trim() -> Option<*mut HeapCore> {
     }
 }
 
-/// Bind a registry slot to this thread: claim, publish the pointer into
-/// `LOCAL`, arm the [`AbandonGuard`] with a copy, install the cross-thread
-/// TFS (under `alloc-xthread`), and return the pointer (or, on registry
-/// exhaustion, the fallback marker). `#[cold]` — runs once per thread.
+/// Claim a registry slot, used by [`current_for_alloc`] so the alloc face
+/// knows whether it got an own-thread slot or the fallback (and therefore
+/// whether to take the lock-free path or the spinlock path). `#[cold]` —
+/// runs once per thread.
 ///
 /// On registry exhaustion (every slot is LIVE and the free pool is empty —
 /// pathological: > `MAX_HEAPS` simultaneous threads), returns
 /// [`CurrentHeap::Fallback`] (the alloc face then routes through the
 /// always-live primordial heap — never null, M10).
-#[cold]
-fn bind_slow() -> *mut HeapCore {
-    match bind_slow_tagged() {
-        CurrentHeap::Own(p) => p,
-        // Registry exhausted / OOM: the fallback pointer (re-fetched here
-        // for the un-tagged API; never null unless the fallback itself OOM'd
-        // at init, in which case the caller surfaces null).
-        CurrentHeap::Fallback => fallback_ptr(),
-    }
-}
-
-/// The tagged variant of [`bind_slow`], used by [`current_for_alloc`] so the
-/// alloc face knows whether it got an own-thread slot or the fallback (and
-/// therefore whether to take the lock-free path or the spinlock path).
 #[cold]
 fn bind_slow_tagged() -> CurrentHeap {
     let heap = HeapRegistry::claim();
@@ -657,7 +581,7 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 /// registry-exhaustion / primordial-OOM branch above does. `LOCAL` is
 /// published only AFTER the guard is confirmed armed, so a partially-bound
 /// state (guard armed, `LOCAL` not yet set) can only ever be the LESS severe
-/// case: `current()`/`current_for_alloc()` would just re-enter `bind_slow`
+/// case: `current_for_alloc()` would just re-enter `bind_slow_tagged`
 /// next call (a re-claim, cheap — `claim` reuses the same slot when
 /// `new_gen != 1`) rather than reading a claimed-but-unguarded slot.
 ///
@@ -686,21 +610,14 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
         return CurrentHeap::Fallback;
     }
 
-    // Guard is armed. Publish into LOCAL (so subsequent `current()` calls hit
-    // the fast path). If THIS fails (rarer still, and less severe — the
-    // guard is already armed and will recycle correctly on thread exit),
-    // every call on this thread simply re-enters `bind_slow` and re-claims
-    // (cheap re-claim of the same slot), never reading a stale/unset LOCAL.
+    // Guard is armed. Publish into LOCAL (so subsequent `current_for_alloc()`
+    // calls hit the fast path). If THIS fails (rarer still, and less severe —
+    // the guard is already armed and will recycle correctly on thread exit),
+    // every call on this thread simply re-enters `bind_slow_tagged` and
+    // re-claims (cheap re-claim of the same slot), never reading a
+    // stale/unset LOCAL.
     let _ = LOCAL.try_with(|c| c.set(heap));
     CurrentHeap::Own(heap)
-}
-
-/// The fallback heap pointer — the process-global always-live heap. Used
-/// when the TLS is destroyed (thread teardown) or the registry is exhausted.
-/// Never null (M10). `#[cold]` — these windows are rare.
-#[cold]
-fn fallback_ptr() -> *mut HeapCore {
-    fallback::heap_ptr()
 }
 
 /// Test-only hook (task #129): deterministically exercises the TORN→Fallback
@@ -797,9 +714,9 @@ pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
 /// by — or shared with — another thread aliases two threads onto one
 /// [`HeapCore`], violating the single-writer invariant this module's
 /// "Soundness of the raw pointer" section rests on, which is UB. An arbitrary
-/// or dangling non-null pointer is likewise UB: the next `current()` /
-/// `current_for_alloc` resolver classifies a non-nullish value as
-/// `CurrentHeap::Own` and dereferences it.
+/// or dangling non-null pointer is likewise UB: the next `current_for_alloc`
+/// resolver classifies a non-nullish value as `CurrentHeap::Own` and
+/// dereferences it.
 ///
 /// `#[doc(hidden)]` — not part of the public API.
 // R29-7 (task #438): `pub unsafe fn` + `bench-internals`-gated. This hook

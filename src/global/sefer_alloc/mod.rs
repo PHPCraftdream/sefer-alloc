@@ -17,28 +17,30 @@
 //! libtest's reentrant harness: `RefCell::try_borrow_mut` returns `Err` on
 //! a reentrant borrow → the alloc face returned null → std aborted.
 //!
-//! Phase 12.3 replaces that with [`tls_heap::current`](super::tls_heap::current):
-//! a raw `Cell<*mut HeapCore>` TLS cache (no borrow state to fail) over the
+//! Phase 12.3 replaces that with
+//! [`tls_heap::current_for_alloc`](super::tls_heap::current_for_alloc): a raw
+//! `Cell<*mut HeapCore>` TLS cache (no borrow state to fail) over the
 //! global [`HeapRegistry`](crate::registry::HeapRegistry). The heap lives in
 //! a registry slot (not in TLS); thread exit recycles the slot (whole-slot
 //! reuse — the `HeapCore` stays whole, not dropped). The alloc face is therefore **reentrancy-safe**
-//! (M5) and **never-null** (M10): [`current`] returns a non-null pointer in
-//! every case (cached slot, fresh claim, or the process-global fallback
-//! heap).
+//! (M5) and **never-null** (M10): [`current_for_alloc`] resolves to a
+//! non-null pointer in every case (cached slot, fresh claim, or the
+//! process-global fallback heap).
 //!
 //! ## M5 (reentrancy-freedom) -- how it is upheld
 //!
 //! The whole point (§4 M5, §8 of `ALLOC_PLAN.md`): when WE are the global
 //! allocator, ANY use of `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
 //! alloc path would recurse infinitely. This module contains NONE of those.
-//! `current()` is a plain thread-local load + null check. `bind_slow` claims
-//! a registry slot (which bootstraps via the OS aperture, never `std::alloc`);
-//! the bind path performs NO `std::alloc` at all: since task H1 (#13), the
-//! cross-thread free head (TFS) is a slot-resident `'static AtomicPtr<u8>`
-//! (or `FALLBACK_TFS` for the fallback heap), planted by
-//! `HeapCore::bind_thread_free` at claim time — before `bind_slow` ever sees
-//! the heap pointer, so no per-bind allocation is needed at all (a `Box`
-//! there would have recursed into `SeferAlloc::alloc` → `bind_slow` → …; see
+//! `current_for_alloc()` is a plain thread-local load + null check.
+//! `bind_slow_tagged` claims a registry slot (which bootstraps via the OS
+//! aperture, never `std::alloc`); the bind path performs NO `std::alloc` at
+//! all: since task H1 (#13), the cross-thread free head (TFS) is a
+//! slot-resident `'static AtomicPtr<u8>` (or `FALLBACK_TFS` for the fallback
+//! heap), planted by `HeapCore::bind_thread_free` at claim time — before
+//! `bind_slow_tagged` ever sees the heap pointer, so no per-bind allocation is
+//! needed at all (a `Box` there would have recursed into `SeferAlloc::alloc`
+//! → `bind_slow_tagged` → …; see
 //! `registry::heap_core`). The `HeapCore` alloc/dealloc paths are pure safe integer
 //! arithmetic + the `node` seam (intrusive pointer r/w). No `std` collection
 //! is reachable from here.
@@ -49,10 +51,11 @@
 //! null on failure (OOM, a foreign pointer, a layout we refuse to serve);
 //! `dealloc` is a safe no-op on any failure (an unrecognised block is leaked
 //! rather than corrupting state); `alloc_zeroed` is `alloc` + zero-fill:
-//! - `alloc`: `current()` → `&mut HeapCore` → `HeapCore::alloc` (returns
-//!   null on OOM). If `current()` itself yields the fallback (TLS teardown),
-//!   the fallback's `with_heap` returns `None` only on true OOM → null.
-//! - `dealloc`: `current()` → `HeapCore::dealloc`. If TLS is torn down, the
+//! - `alloc`: `current_for_alloc()` → `&mut HeapCore` → `HeapCore::alloc`
+//!   (returns null on OOM). If `current_for_alloc()` itself yields the
+//!   fallback (TLS teardown), the fallback's `with_heap` returns `None` only
+//!   on true OOM → null.
+//! - `dealloc`: `current_for_alloc()` → `HeapCore::dealloc`. If TLS is torn down, the
 //!   fallback's `with_heap` deallocs under the spinlock; a torn-down-TLS
 //!   dealloc still routes correctly (the segment's owner routes via the
 //!   header). On any failure this is a no-op (the block is leaked safely).
@@ -129,7 +132,7 @@
 //! regardless of the consumer's panic strategy. Stated here explicitly
 //! rather than left implicit inside the failure-path bullets above.
 //!
-//! [`current`]: super::tls_heap::current
+//! [`current_for_alloc`]: super::tls_heap::current_for_alloc
 
 #[cfg(feature = "batch-api")]
 mod batch;

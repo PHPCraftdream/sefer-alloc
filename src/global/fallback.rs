@@ -3,8 +3,9 @@
 //!
 //! A process-global, always-live [`HeapCore`] for the **pre-TLS** (very
 //! early runtime init, before any thread's TLS is set up) and **post-TLS-
-//! teardown** windows. The alloc face routes here when [`tls_heap::current`]
-//! cannot serve a thread-local heap; the fallback is therefore the
+//! teardown** windows. The alloc face routes here when
+//! [`tls_heap::current_for_alloc`] cannot serve a thread-local heap; the
+//! fallback is therefore the
 //! embodiment of **M10 — never-null when serviceable**: the alloc face
 //! returns null only on true OOM, never because "no heap is bound right
 //! now".
@@ -56,7 +57,7 @@
 //! into it; hoisting the head to a `'static` avoids that entirely, with no
 //! first-alloc `Box` and no OOM-on-install case to handle.)
 //!
-//! [`tls_heap::current`]: super::tls_heap::current
+//! [`tls_heap::current_for_alloc`]: super::tls_heap::current_for_alloc
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented fallback-heap seam (Phase 12.3).

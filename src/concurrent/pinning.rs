@@ -184,8 +184,11 @@ impl PinnedRunner {
     ///   worker threads. A `ShardedRegion<T>` is `Send + Sync` iff `T` is
     ///   (mirroring [`EpochRegion<T>`](crate::concurrent::EpochRegion), whose
     ///   `AtomicSlot<T>` is `Send + Sync` iff `T` is).
-    /// - `F: Fn(...) + Sync` and `R: Send` so the (shared) closure and each
-    ///   worker's return value can cross the thread boundary.
+    /// - `F: Fn(...) + Sync` so the shared closure can cross the thread
+    ///   boundary. No `R: Send` bound: each worker's return value is
+    ///   produced and discarded on the SAME spawned thread (`let _ =
+    ///   f(...)` below) — it never crosses a thread boundary, so `R` carries
+    ///   no such obligation.
     ///
     /// # Panics
     ///
@@ -195,11 +198,11 @@ impl PinnedRunner {
     where
         T: Send + Sync,
         F: Fn(u16, &ShardedRegion<T>) -> R + Sync,
-        R: Send,
     {
         // The closure is `Sync` so every spawned thread can hold a shared `&F`.
-        // `R: Send` so a worker's return value could be collected (we discard
-        // it here; collectors that need returns should wrap their own channel).
+        // The return value is discarded on the worker thread that produced it
+        // (never crosses a thread boundary); collectors that need returns
+        // should wrap their own channel.
         let f = &f;
         scope(|s| {
             for (i, &core) in self.cores.iter().enumerate() {
@@ -235,7 +238,6 @@ impl PinnedRunner {
     where
         T: Send + Sync,
         F: Fn(u16, &ShardedRegion<T>) -> R + Sync,
-        R: Send,
     {
         self.run(region, f);
     }

@@ -146,7 +146,7 @@ impl AllocCore {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         // 1. Try the free list of the current small segment.
-        if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+        if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
             return ptr;
         }
         // 2. Current segment's class free list is empty: scan the OTHER owned
@@ -192,7 +192,7 @@ impl AllocCore {
         // fails loudly under any debug-assertions build instead of silently
         // double-issuing a block.
         if let Some(seg) = self.find_segment_with_free(class_idx) {
-            if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+            if let Some(ptr) = self.pop_free(seg, class_idx) {
                 debug_assert!(
                     {
                         let base = os::segment_base_of_ptr(ptr);
@@ -223,7 +223,7 @@ impl AllocCore {
             Some(_) => {
                 // Retry once on the fresh segment. Recurse-free: a single
                 // direct retry (not a loop that could grow unboundedly).
-                if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+                if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
                     return ptr;
                 }
                 // no-panic: a fresh small segment is guaranteed by construction
@@ -253,7 +253,7 @@ impl AllocCore {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                        if let Some(ptr) = self.pop_free(seg, class_idx) {
                             return ptr;
                         }
                     }
@@ -296,7 +296,7 @@ impl AllocCore {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         // 1. Current segment's free list — never virgin (dispatch conjunct).
-        if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+        if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
             return (ptr, false);
         }
         // 2. Other owned segments' free lists — never virgin (dispatch
@@ -305,7 +305,7 @@ impl AllocCore {
         //    entry point is reached only outside the fastbin magazine, same
         //    as `alloc_small` itself).
         if let Some(seg) = self.find_segment_with_free(class_idx) {
-            if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+            if let Some(ptr) = self.pop_free(seg, class_idx) {
                 return (ptr, false);
             }
         }
@@ -324,7 +324,7 @@ impl AllocCore {
                 // to mirror `alloc_small`'s identical retry shape; it never
                 // actually hits in practice, but if it somehow did, a
                 // free-list-served block is never virgin regardless.
-                if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+                if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
                     return (ptr, false);
                 }
                 let fresh_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
@@ -343,7 +343,7 @@ impl AllocCore {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                        if let Some(ptr) = self.pop_free(seg, class_idx) {
                             return (ptr, false);
                         }
                     }
@@ -357,12 +357,7 @@ impl AllocCore {
     /// null if the free list is empty. Writes the block's `next` word to null
     /// (it becomes the new head) via the node seam.
     #[inline(always)]
-    fn pop_free(
-        &mut self,
-        segment: *mut u8,
-        class_idx: usize,
-        block_size: usize,
-    ) -> Option<*mut u8> {
+    fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Option<*mut u8> {
         #[cfg(feature = "alloc-decommit")]
         let mut meta = SegmentMeta::new(segment);
         #[cfg(not(feature = "alloc-decommit"))]
@@ -450,7 +445,6 @@ impl AllocCore {
                 crate::alloc_core::segment_header::bump_gen(segment, head_off as usize)
             };
         }
-        let _ = block_size; // block_size is the caller's invariant; not needed here.
         Some(block_ptr)
     }
 

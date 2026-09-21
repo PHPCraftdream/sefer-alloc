@@ -22,7 +22,7 @@ use super::SeferAlloc;
 // overlap), and M4 (alignment/size fidelity) -- verified by the Phase 8/9
 // differential proptests and miri. `HeapCore` returns null on OOM (never
 // panics -- the substrate panic sites were hardened in Phase 11). If the
-// TLS heap is unavailable (thread teardown), `current()` returns the
+// TLS heap is unavailable (thread teardown), `current_heap()` returns the
 // process-global fallback heap (never null); `dealloc` on the fallback is
 // sound under the fallback's spinlock. M10 (never-null for serviceable
 // requests) is upheld: the only null return is true OOM.
