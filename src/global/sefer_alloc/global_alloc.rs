@@ -155,7 +155,17 @@ unsafe impl GlobalAlloc for SeferAlloc {
         }
     }
 
-    #[inline]
+    // #1987: `#[inline(always)]`, matching `alloc`/`dealloc` above. All four
+    // `GlobalAlloc` methods are the same shape — a tiny tagged dispatch over
+    // `current_heap()` — and `alloc_zeroed` is the calloc-shaped entry
+    // (`vec![0; n]`, `Box::new([0; N])`, `__rust_alloc_zeroed`) that real
+    // workloads hit nearly as often as `alloc`. The previous split (two
+    // `inline(always)`, two `inline`) predated the `sefer_alloc.rs` ->
+    // `sefer_alloc/` file split (marker counts were identical on both sides
+    // of it) and had no recorded rationale; uniform `inline(always)` is the
+    // choice, so a future reader does not have to guess which half was
+    // deliberate.
+    #[inline(always)]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         match self.current_heap() {
             CurrentHeap::Fallback => {
@@ -166,7 +176,10 @@ unsafe impl GlobalAlloc for SeferAlloc {
         }
     }
 
-    #[inline]
+    // #1987: `#[inline(always)]` — see `alloc_zeroed` above for the rationale
+    // (all four `GlobalAlloc` methods share one dispatch shape and now one
+    // inlining policy).
+    #[inline(always)]
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();

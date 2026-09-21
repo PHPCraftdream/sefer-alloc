@@ -1,4 +1,9 @@
-#[cfg(feature = "alloc-decommit")]
+// #1990: gated to match `trim_current_thread` below — `HeapCore::trim_for_recycle`
+// does real work under `alloc-global + fastbin` too, not only `alloc-decommit`.
+#[cfg(any(
+    feature = "alloc-decommit",
+    all(feature = "alloc-global", feature = "fastbin")
+))]
 use crate::global::tls_heap::current_for_trim;
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::global::tls_heap::CurrentHeap;
@@ -152,7 +157,29 @@ impl SeferAlloc {
     /// `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`. Measured cost
     /// side (trim latency + next-burst cold-start cost): the same report's
     /// later "Cost side" section (task #492).
-    #[cfg(feature = "alloc-decommit")]
+    /// # Feature gate (#1990)
+    ///
+    /// Gated on `any(alloc-decommit, all(alloc-global, fastbin))` — the union
+    /// of the configurations in which [`HeapCore::trim_for_recycle`] actually
+    /// does something, not just the `alloc-decommit` half. Its steps carry
+    /// INDEPENDENT gates (`src/registry/heap_core/state/ownership.rs`): the
+    /// tcache flush is `all(alloc-global, fastbin)`, the small-pool drain and
+    /// large-cache evict are `alloc-decommit`. Before this, the method was
+    /// `alloc-decommit`-only, so a `fastbin`-without-`alloc-decommit` build
+    /// had no public trim API AT ALL — not a degraded one — even though its
+    /// magazines were flushable, and `AbandonGuard::drop`
+    /// (`src/global/tls_heap.rs`) already called `trim_for_recycle` there
+    /// unconditionally at thread exit. R31-10/task #474 established the same
+    /// fact for the `dbg_trim_current_thread` hook below and made it
+    /// unconditional; this brings the public API into line.
+    ///
+    /// In a build with only one of the two features, this performs whatever
+    /// subset that build supports — the same "each sub-operation carries its
+    /// own feature gate" contract `trim_for_recycle` documents.
+    #[cfg(any(
+        feature = "alloc-decommit",
+        all(feature = "alloc-global", feature = "fastbin")
+    ))]
     pub fn trim_current_thread(&self) {
         if let Some(heap) = current_for_trim() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
