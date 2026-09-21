@@ -1555,7 +1555,7 @@ required-features = ["alloc-global", "alloc-xthread", "internals"]
 [[bench]]
 name = "heap_xthread"
 harness = false
-required-features = ["alloc-core", "alloc-xthread"]
+required-features = ["alloc-core", "alloc-xthread", "internals"]
 
 # R5-R5 (round5 performance review §6.2, §8.2 item 2, §10 Stage C): measures
 # `SegmentTable`'s backward-shift deletion (R4-8/N3) cost as a function of
@@ -2384,7 +2384,7 @@ required-features = ["alloc-global"]
 # own `#![cfg(...)]` gate, for an apples-to-apples comparison.
 [[example]]
 name = "sol_f1_dbg_carve_batch_negative_probe"
-required-features = ["alloc-core"]
+required-features = ["alloc-core", "internals"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
