@@ -7,6 +7,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::claim::{push_back_after_oom, HeapRegistry};
 use crate::registry::bootstrap::{ensure, MAX_HEAPS};
+#[cfg(feature = "alloc-stats")]
+use crate::registry::heap_slot::HeapSlot;
 use crate::registry::heap_slot::{STATE_FREE, STATE_LIVE};
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
@@ -143,32 +145,10 @@ pub fn tcache_hits_total() -> u64 {
     // `heap_core.rs`).
     #[cfg(feature = "alloc-stats")]
     {
-        let reg = ensure();
-        let count = reg.count.load(Ordering::Acquire) as usize;
         let mut total: u64 = 0;
-        for idx in 0..count.min(MAX_HEAPS) {
-            // R6-OPT-P0-2: `idx < count <= MAX_HEAPS`. `slot()` transparently
-            // materialises (or finds already-materialised) exactly the
-            // chunks this `count`-bounded walk touches — no special-casing
-            // needed: every index in `0..count` was, by construction, either
-            // freshly minted by `bump_count` or popped off `free_slots`, both
-            // of which already call `slot()` on it, so its owning chunk is
-            // ALREADY materialised by the time this walk reaches it. The call
-            // here is therefore always a fast-path hit (one Acquire load, two
-            // comparisons), never a fresh chunk materialisation — but it is
-            // still correct even in the hypothetical where it wasn't, because
-            // `slot()` unconditionally guarantees the chunk exists before
-            // returning.
-            let slot = reg.slot(idx);
-            // The `initialised` gate (task #133): keep it for the documented
-            // ordering. With the W3 move it is no longer load-bearing for SAFETY
-            // (the counter lives in the slot itself — an un-bound slot's
-            // `tcache_hits` is a zero `AtomicU64`, sound to read and contributing
-            // 0), but a mid-mint slot must still not be summed, and the Acquire
-            // here pairs with `claim`'s Release publish for that ordering.
-            if !slot.initialised.load(Ordering::Acquire) {
-                continue;
-            }
+        // #1994: shared walk/gate loop — see `walk_initialised_slots`'s doc
+        // for the full initialised-gate soundness argument (identical here).
+        walk_initialised_slots(|slot| {
             // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
             // `(*heap_ptr).…` deref, so NO shared `&HeapCore` is ever materialised
             // over a struct the owning thread concurrently holds a protected `&mut`
@@ -177,7 +157,7 @@ pub fn tcache_hits_total() -> u64 {
             // `Sync` atomic — sound from any thread; observes the owner's
             // monotonic single-writer increments.
             total = total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
-        }
+        });
         total
     }
     #[cfg(not(feature = "alloc-stats"))]
@@ -226,22 +206,10 @@ pub fn large_cache_hits_total() -> u64 {
     // UNCHANGED.
     #[cfg(feature = "alloc-stats")]
     {
-        let reg = ensure();
-        let count = reg.count.load(Ordering::Acquire) as usize;
         let mut total: u64 = 0;
-        for idx in 0..count.min(MAX_HEAPS) {
-            // R6-OPT-P0-2: `idx < count <= MAX_HEAPS`. See the identical
-            // reasoning in `tcache_hits_total` above — every index in
-            // `0..count` was minted/popped through `slot()` already, so its
-            // chunk is already materialised; `slot()` is still the correct
-            // (and only sanctioned) way to resolve it.
-            let slot = reg.slot(idx);
-            // The `initialised` gate — see `tcache_hits_total`'s (identical
-            // rationale): kept for the documented ordering, no longer load-bearing
-            // for safety after the W3 move (the counter is in the slot itself).
-            if !slot.initialised.load(Ordering::Acquire) {
-                continue;
-            }
+        // #1994: shared walk/gate loop — see `walk_initialised_slots`'s doc
+        // for the full initialised-gate soundness argument (identical here).
+        walk_initialised_slots(|slot| {
             // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
             // `(*heap_ptr).core.…` deref, so NO shared `&HeapCore`/`&AllocCore` is
             // ever materialised over a struct the owning thread concurrently holds
@@ -249,7 +217,7 @@ pub fn large_cache_hits_total() -> u64 {
             // the old `(*heap_ptr).core.dbg_large_cache_hits()` read had. Relaxed
             // load of a shared `Sync` atomic — sound from any thread.
             total = total.saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
-        }
+        });
         total
     }
     #[cfg(not(feature = "alloc-stats"))]
@@ -286,25 +254,48 @@ pub fn large_cache_hits_total() -> u64 {
 pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
     #[cfg(feature = "alloc-stats")]
     {
-        let reg = ensure();
-        let count = reg.count.load(Ordering::Acquire) as usize;
         let mut tcache_total: u64 = 0;
         let mut large_cache_total: u64 = 0;
-        for idx in 0..count.min(MAX_HEAPS) {
-            let slot = reg.slot(idx);
-            if !slot.initialised.load(Ordering::Acquire) {
-                continue;
-            }
+        walk_initialised_slots(|slot| {
             tcache_total =
                 tcache_total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
             large_cache_total = large_cache_total
                 .saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
-        }
+        });
         (tcache_total, large_cache_total)
     }
     #[cfg(not(feature = "alloc-stats"))]
     {
         (0, 0)
+    }
+}
+
+/// #1994 (registry review P3-1): the shared "walk every minted slot, skip
+/// un-initialised ones, visit the rest" loop that backed three separately
+/// copy-pasted per-slot walks (`tcache_hits_total`, `large_cache_hits_total`,
+/// `tcache_and_large_cache_hits_total` above). Each caller supplies its own
+/// `visit` closure to accumulate whichever counter(s) it aggregates —
+/// see `tcache_hits_total`'s doc comment for the full soundness argument
+/// this loop's `initialised`-gate rests on (identical for every caller: the
+/// Acquire load pairs with `claim`'s Release publish after
+/// `heap_ptr.write(hc)` completes, so a mid-mint slot is never visited).
+#[cfg(feature = "alloc-stats")]
+fn walk_initialised_slots(mut visit: impl FnMut(&'static HeapSlot)) {
+    let reg = ensure();
+    let count = reg.count.load(Ordering::Acquire) as usize;
+    for idx in 0..count.min(MAX_HEAPS) {
+        // R6-OPT-P0-2: `idx < count <= MAX_HEAPS`. `slot()` transparently
+        // materialises (or finds already-materialised) exactly the chunks
+        // this `count`-bounded walk touches — every index in `0..count` was,
+        // by construction, either freshly minted by `bump_count` or popped
+        // off `free_slots`, both of which already call `slot()` on it, so
+        // its owning chunk is already materialised by the time this walk
+        // reaches it.
+        let slot = reg.slot(idx);
+        if !slot.initialised.load(Ordering::Acquire) {
+            continue;
+        }
+        visit(slot);
     }
 }
 

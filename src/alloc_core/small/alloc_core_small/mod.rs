@@ -819,15 +819,20 @@ impl AllocCore {
         // condition is always false). Fires only on the Windows lazy path.
         // R12-9 (task #260): shared between the split sub-features, same as
         // `carve_block`'s identical block.
+        // How many blocks fit from `aligned_start` to the segment end,
+        // capped by the caller's slice. Computed ONCE (#1994: previously
+        // recomputed a second time, identically, inside the lazy-commit
+        // growth check below) — shared by that check's `batch_end` and the
+        // final carve's bump advance.
+        let room = (SEGMENT - aligned_start) / block_size;
+        let n = out.len().min(room);
         #[cfg(any(
             feature = "primordial-lazy-commit",
             feature = "small-segment-lazy-commit"
         ))]
         {
             let frontier = meta.committed_payload_end_of();
-            let batch_room = (SEGMENT - aligned_start) / block_size;
-            let batch_n = out.len().min(batch_room);
-            let batch_end = aligned_start + batch_n * block_size;
+            let batch_end = aligned_start + n * block_size;
             if batch_end > frontier {
                 // Round the batch end UP to the next GROW_CHUNK boundary,
                 // clamped to SEGMENT (never commit past the segment end).
@@ -842,10 +847,6 @@ impl AllocCore {
                 meta.set_committed_payload_end(new_frontier);
             }
         }
-        // How many blocks fit from `aligned_start` to the segment end, capped by
-        // the caller's slice.
-        let room = (SEGMENT - aligned_start) / block_size;
-        let n = out.len().min(room);
         // Advance the bump cursor ONCE to just past the last carved block —
         // byte-identical to the final `set_bump` of the n-th sequential carve.
         meta.set_bump(aligned_start + n * block_size);

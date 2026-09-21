@@ -648,8 +648,11 @@ impl HeapCore {
     /// to their counted namesakes except for the diagnostic-counter bump on
     /// the full-ring branch — see each one's own doc comment); the counted
     /// `push` methods themselves are unmodified.
+    // #1994: this is a ~270-line cold retry-loop with a `sleep` — `#[inline]`
+    // cannot be honoured on a function this shape and contradicted its
+    // callers' `#[cold]` discipline. Plain (no hint) lets the compiler's own
+    // cold-path heuristics apply.
     #[cfg(feature = "alloc-xthread")]
-    #[inline]
     pub(super) fn push_with_overflow_retry(
         ring: &crate::alloc_core::remote_free_ring::RemoteFreeRing,
         base: *mut u8,

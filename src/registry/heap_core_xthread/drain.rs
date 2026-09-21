@@ -205,6 +205,72 @@ impl HeapCore {
         #[cfg(feature = "alloc-decommit")]
         let mut emptied_overflowed = false;
 
+        // #1994 (registry review P3-3): the post-reclaim bookkeeping
+        // (directory sync + decommit dedup) is IDENTICAL whether an entry
+        // was reclaimed via the `fastbin`-checked call below or the plain
+        // one — only the reclaim call itself differs (magazine-residency
+        // check vs none). Factored into one closure so the two arms below
+        // share it instead of copy-pasting ~20 lines of bookkeeping each.
+        // Each of `base`/`packed`/`mut` is used by a DIFFERENT one of the two
+        // `#[cfg]` blocks inside (`alloc-segment-directory` needs `packed`;
+        // `alloc-decommit` needs `base` and the `mut` capture), so every
+        // feature combination missing one or both leaves a different subset
+        // legitimately unused — allow unconditionally rather than enumerate
+        // all four cases (the reclaim call itself, in the outer closures
+        // below, is what actually consumes `base`/`packed` either way).
+        #[allow(unused_variables, unused_mut)]
+        let mut on_reclaimed = |base: *mut u8, packed: u32| {
+            // R11-2 (Bug 1): sync the segment directory inline per
+            // successful reclaim — mirrors the ESTABLISHED pattern in
+            // `drain_dirty_segments` / `find_segment_with_free_impl`'s
+            // per-segment ring drain, but with a per-entry immediate sync
+            // (1u64 << class_idx) instead of a batched bitmask, because
+            // `HeapOverflow` is a cross-segment MPSC ring (one drain call
+            // can touch many different bases).
+            //
+            // R13-12 (task #285): `sync_directory_for_segment_classes` lives
+            // in the `impl AllocCore` block gated
+            // `#[cfg(feature = "alloc-segment-directory")]`
+            // (`alloc_core_small.rs`) — a feature independent from
+            // `alloc-xthread`/`fastbin`. No combination of THIS module's own
+            // features pulls it in, so the call must be gated here too
+            // (mirrors every other call site of this method:
+            // `alloc_core_small.rs:895`, `:1220`, `:2170`,
+            // `alloc_core_small_reclaim.rs:529`). Without the directory sync
+            // the drain still reclaims the blocks (BinTable mutation happens
+            // unconditionally above); only the directory sidecar's bitmap
+            // goes unsynced, which is fine because the sidecar itself does
+            // not exist without this feature.
+            #[cfg(feature = "alloc-segment-directory")]
+            {
+                let sid = SegmentHeader::segment_id_at(base) as usize;
+                let class_idx = crate::alloc_core::remote_free_ring::entry_class_idx(packed);
+                self.core
+                    .sync_directory_for_segment_classes(base, sid, 1u64 << class_idx);
+            }
+            // R11-2 (Bug 2): collect the base for deferred pool/release if
+            // the segment just went empty.
+            #[cfg(feature = "alloc-decommit")]
+            {
+                if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
+                    let already = emptied_bases.iter().take(emptied_count).any(|&b| b == base);
+                    if !already {
+                        if emptied_count < EMPTIED_BASES_CAP {
+                            emptied_bases[emptied_count] = base;
+                            emptied_count += 1;
+                        } else {
+                            // R12-6: a distinct 65th+ base emptied via this
+                            // drain's overflow-ring reclaims — the dedup
+                            // buffer has no room left. Recorded here so the
+                            // post-drain fallback sweep below picks it (and
+                            // any sibling overflow bases) up.
+                            emptied_overflowed = true;
+                        }
+                    }
+                }
+            }
+        };
+
         #[cfg(feature = "fastbin")]
         {
             // No "class `c` currently being refilled" context exists at this
@@ -222,59 +288,7 @@ impl HeapCore {
                         .magazine_bitmap()
                         .is_in_magazine(poff)
                 }) {
-                    // R11-2 (Bug 1): sync the segment directory inline per
-                    // successful reclaim — mirrors the ESTABLISHED pattern
-                    // in `drain_dirty_segments` / `find_segment_with_free_impl`'s
-                    // per-segment ring drain, but with a per-entry immediate
-                    // sync (1u64 << class_idx) instead of a batched bitmask,
-                    // because `HeapOverflow` is a cross-segment MPSC ring
-                    // (one drain call can touch many different bases).
-                    //
-                    // R13-12 (task #285): `sync_directory_for_segment_classes`
-                    // lives in the `impl AllocCore` block gated
-                    // `#[cfg(feature = "alloc-segment-directory")]`
-                    // (`alloc_core_small.rs`) — a feature independent from
-                    // `alloc-xthread`/`fastbin`. No combination of THIS
-                    // module's own features pulls it in, so the call must be
-                    // gated here too (mirrors every other call site of this
-                    // method: `alloc_core_small.rs:895`, `:1220`, `:2170`,
-                    // `alloc_core_small_reclaim.rs:529`). Without the
-                    // directory sync the drain still reclaims the blocks
-                    // (BinTable mutation happens unconditionally above); only
-                    // the directory sidecar's bitmap goes unsynced, which is
-                    // fine because the sidecar itself does not exist without
-                    // this feature.
-                    #[cfg(feature = "alloc-segment-directory")]
-                    {
-                        let sid = SegmentHeader::segment_id_at(base) as usize;
-                        let class_idx =
-                            crate::alloc_core::remote_free_ring::entry_class_idx(packed);
-                        self.core
-                            .sync_directory_for_segment_classes(base, sid, 1u64 << class_idx);
-                    }
-                    // R11-2 (Bug 2): collect the base for deferred
-                    // pool/release if the segment just went empty.
-                    #[cfg(feature = "alloc-decommit")]
-                    {
-                        if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
-                            let already =
-                                emptied_bases.iter().take(emptied_count).any(|&b| b == base);
-                            if !already {
-                                if emptied_count < EMPTIED_BASES_CAP {
-                                    emptied_bases[emptied_count] = base;
-                                    emptied_count += 1;
-                                } else {
-                                    // R12-6: a distinct 65th+ base emptied via
-                                    // this drain's overflow-ring reclaims —
-                                    // the dedup buffer has no room left.
-                                    // Recorded here so the post-drain
-                                    // fallback sweep below picks it (and any
-                                    // sibling overflow bases) up.
-                                    emptied_overflowed = true;
-                                }
-                            }
-                        }
-                    }
+                    on_reclaimed(base, packed);
                 }
             });
         }
@@ -282,39 +296,7 @@ impl HeapCore {
         {
             self.overflow_tail_cache = overflow.drain(|base, packed| {
                 if AllocCore::reclaim_offset(base, packed) {
-                    // R13-12 (task #285): see the symmetric `#[cfg]` note in
-                    // the `fastbin` arm above — `sync_directory_for_segment_classes`
-                    // requires `alloc-segment-directory`, which is independent
-                    // of the features gating this file/arm.
-                    #[cfg(feature = "alloc-segment-directory")]
-                    {
-                        let sid = SegmentHeader::segment_id_at(base) as usize;
-                        let class_idx =
-                            crate::alloc_core::remote_free_ring::entry_class_idx(packed);
-                        self.core
-                            .sync_directory_for_segment_classes(base, sid, 1u64 << class_idx);
-                    }
-                    #[cfg(feature = "alloc-decommit")]
-                    {
-                        if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
-                            let already =
-                                emptied_bases.iter().take(emptied_count).any(|&b| b == base);
-                            if !already {
-                                if emptied_count < EMPTIED_BASES_CAP {
-                                    emptied_bases[emptied_count] = base;
-                                    emptied_count += 1;
-                                } else {
-                                    // R12-6: a distinct 65th+ base emptied via
-                                    // this drain's overflow-ring reclaims —
-                                    // the dedup buffer has no room left.
-                                    // Recorded here so the post-drain
-                                    // fallback sweep below picks it (and any
-                                    // sibling overflow bases) up.
-                                    emptied_overflowed = true;
-                                }
-                            }
-                        }
-                    }
+                    on_reclaimed(base, packed);
                 }
             });
         }

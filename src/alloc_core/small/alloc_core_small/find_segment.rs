@@ -712,60 +712,27 @@ impl AllocCore {
                         continue;
                     }
                     // Local or unknown node — use it immediately.
-                    // Mechanism 2 (task #51): if this segment was RETAINED in the
-                    // pool (empty, committed), it is now being reused — remove it
-                    // from the pool so it is not later re-pooled a second time (a
-                    // double-entry that would double-recycle its base). This is
-                    // the hysteresis WIN: the emptied segment's free blocks are
-                    // re-served here with no OS reserve/release round-trip.
-                    #[cfg(feature = "alloc-decommit")]
-                    self.unpool_if_present(base);
-                    // R8-2 (task #215): if we reached the linear scan via the
-                    // periodic re-validation branch (directory feature ON and
-                    // streak hit the period), the directory's MISS was wrong —
-                    // this segment actually has a free block. Self-heal the bit
-                    // in-place and bump the canary counter.
-                    #[cfg(feature = "alloc-segment-directory")]
-                    if periodic_revalidation_active || rescue {
-                        let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                        self.publish_nonempty(base, class_idx, slot_idx);
-                        // R9-8: only the PERIODIC re-validation path bumps the
-                        // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is
-                        // counted separately by `DIRECTORY_RESCUE_OOM_AVOIDED`
-                        // at its caller, so the two drift signals stay
-                        // distinguishable in diagnostics.
-                        #[cfg(feature = "alloc-stats")]
-                        if periodic_revalidation_active {
-                            crate::alloc_core::directory_stats::DIRECTORY_MISS_SELF_HEAL
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        }
-                    }
+                    self.finalize_hit(
+                        base,
+                        class_idx,
+                        #[cfg(feature = "alloc-segment-directory")]
+                        periodic_revalidation_active,
+                        #[cfg(feature = "alloc-segment-directory")]
+                        rescue,
+                    );
                     return Some(base);
                 }
                 // Without numa-aware: same as before — return the first match.
                 #[cfg(not(feature = "numa-aware"))]
                 {
-                    // Mechanism 2 (task #51): un-pool on reuse (see the
-                    // numa-aware arm above for the double-pool rationale).
-                    #[cfg(feature = "alloc-decommit")]
-                    self.unpool_if_present(base);
-                    // R8-2 (task #215): periodic-re-validation self-heal —
-                    // see the numa-aware arm above for the full rationale.
-                    #[cfg(feature = "alloc-segment-directory")]
-                    if periodic_revalidation_active || rescue {
-                        let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                        self.publish_nonempty(base, class_idx, slot_idx);
-                        // R9-8: only the PERIODIC re-validation path bumps the
-                        // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is
-                        // counted separately by `DIRECTORY_RESCUE_OOM_AVOIDED`
-                        // at its caller, so the two drift signals stay
-                        // distinguishable in diagnostics.
-                        #[cfg(feature = "alloc-stats")]
-                        if periodic_revalidation_active {
-                            crate::alloc_core::directory_stats::DIRECTORY_MISS_SELF_HEAL
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        }
-                    }
+                    self.finalize_hit(
+                        base,
+                        class_idx,
+                        #[cfg(feature = "alloc-segment-directory")]
+                        periodic_revalidation_active,
+                        #[cfg(feature = "alloc-segment-directory")]
+                        rescue,
+                    );
                     return Some(base);
                 }
             }
@@ -775,30 +742,65 @@ impl AllocCore {
         // empty / all recycled).
         #[cfg(feature = "numa-aware")]
         {
-            // Mechanism 2 (task #51): un-pool the fallback on reuse too.
-            #[cfg(feature = "alloc-decommit")]
             if let Some(fb) = fallback {
-                self.unpool_if_present(fb);
-            }
-            // R8-2 (task #215): periodic-re-validation self-heal — see the
-            // local-hit arm above for the full rationale. Fires on the
-            // foreign-fallback success path under the same condition.
-            #[cfg(feature = "alloc-segment-directory")]
-            if periodic_revalidation_active || rescue {
-                if let Some(fb) = fallback {
-                    let slot_idx = SegmentHeader::segment_id_at(fb) as usize;
-                    self.publish_nonempty(fb, class_idx, slot_idx);
-                    #[cfg(feature = "alloc-stats")]
-                    if periodic_revalidation_active {
-                        crate::alloc_core::directory_stats::DIRECTORY_MISS_SELF_HEAL
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    }
-                }
+                self.finalize_hit(
+                    fb,
+                    class_idx,
+                    #[cfg(feature = "alloc-segment-directory")]
+                    periodic_revalidation_active,
+                    #[cfg(feature = "alloc-segment-directory")]
+                    rescue,
+                );
             }
             fallback
         }
         #[cfg(not(feature = "numa-aware"))]
         None
+    }
+
+    /// #1994 (alloc_core review): shared "hit finalize" step reused by the
+    /// three near-identical directory-self-heal blocks in the linear scan
+    /// above (the numa-aware local/unknown-node hit, the plain non-numa hit,
+    /// and the numa-aware foreign-node fallback) — un-pool `base` if it was
+    /// retained in the pool (Mechanism 2, task #51), then self-heal a stale
+    /// directory MISS if this scan reached `base` via the periodic
+    /// re-validation or rescue path (R8-2, task #215 / R9-8, task #230).
+    #[allow(unused_variables)]
+    #[inline]
+    fn finalize_hit(
+        &mut self,
+        base: *mut u8,
+        class_idx: usize,
+        #[cfg(feature = "alloc-segment-directory")] periodic_revalidation_active: bool,
+        #[cfg(feature = "alloc-segment-directory")] rescue: bool,
+    ) {
+        // Mechanism 2 (task #51): if this segment was RETAINED in the pool
+        // (empty, committed), it is now being reused — remove it from the
+        // pool so it is not later re-pooled a second time (a double-entry
+        // that would double-recycle its base). This is the hysteresis WIN:
+        // the emptied segment's free blocks are re-served here with no OS
+        // reserve/release round-trip.
+        #[cfg(feature = "alloc-decommit")]
+        self.unpool_if_present(base);
+        // R8-2 (task #215): if this scan reached `base` via the periodic
+        // re-validation branch (directory feature ON and streak hit the
+        // period) or the R9-8 rescue path, the directory's MISS was wrong —
+        // this segment actually has a free block. Self-heal the bit in-place
+        // and bump the canary counter.
+        #[cfg(feature = "alloc-segment-directory")]
+        if periodic_revalidation_active || rescue {
+            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            self.publish_nonempty(base, class_idx, slot_idx);
+            // R9-8: only the PERIODIC re-validation path bumps the
+            // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is counted
+            // separately by `DIRECTORY_RESCUE_OOM_AVOIDED` at its caller, so
+            // the two drift signals stay distinguishable in diagnostics.
+            #[cfg(feature = "alloc-stats")]
+            if periodic_revalidation_active {
+                crate::alloc_core::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            }
+        }
     }
 
     /// R7-A3 / R11-6: validate ONE directory candidate (segment-table slot
