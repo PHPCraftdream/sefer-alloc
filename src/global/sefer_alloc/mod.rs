@@ -50,7 +50,10 @@
 //! **Failure paths (the common case) never panic.** `alloc`/`realloc` return
 //! null on failure (OOM, a foreign pointer, a layout we refuse to serve);
 //! `dealloc` is a safe no-op on any failure (an unrecognised block is leaked
-//! rather than corrupting state); `alloc_zeroed` is `alloc` + zero-fill:
+//! rather than corrupting state); `alloc_zeroed` delegates to
+//! `HeapCore::alloc_zeroed` (an explicit zero-fill for a reused/non-virgin
+//! block; under the opt-in `virgin-zero-skip` feature, a genuinely virgin
+//! bump-carved block skips the fill entirely — see that method's own doc):
 //! - `alloc`: `current_for_alloc()` → `&mut HeapCore` → `HeapCore::alloc`
 //!   (returns null on OOM). If `current_for_alloc()` itself yields the
 //!   fallback (TLS teardown), the fallback's `with_heap` returns `None` only
@@ -63,7 +66,9 @@
 //!   own-thread reallocs delegate to `AllocCore::realloc`, which short-circuits
 //!   when the block can stay put), falling back to `alloc` + copy + `dealloc`
 //!   otherwise — all null-returning.
-//! - `alloc_zeroed`: `alloc` + zero-fill.
+//! - `alloc_zeroed`: `HeapCore::alloc_zeroed` — explicit zero-fill on a
+//!   reused/non-virgin block, or (opt-in `virgin-zero-skip`) a skipped fill
+//!   on a genuinely virgin bump-carved block.
 //!
 //! **Four release-surviving invariant tripwires (abort by design).** Beyond
 //! those failure paths a small number of "cannot happen" checks remain as
@@ -77,7 +82,7 @@
 //! silent corruption would be strictly worse than an immediate abort, so a
 //! future bug that broke one trips loudly at the point of corruption instead
 //! of continuing with inconsistent state (defence in depth). The four, all
-//! reachable from this file's `GlobalAlloc` impl under `production`:
+//! reachable from `global_alloc.rs`'s `GlobalAlloc` impl under `production`:
 //!
 //!   (Line numbers are deliberately omitted here — they drift as unrelated
 //!   edits shift surrounding code; `tests/no_panic_doc_accuracy.rs` pins the

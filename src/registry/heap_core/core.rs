@@ -5,9 +5,11 @@
 //! thin (segment-centric free state lives in each segment's `BinTable`, not
 //! in a heap-local array), so the per-slot heap needs to carry only:
 //!
-//! - its **id** (its slot index + the slot's `generation`), used by the 12.3
-//!   ownership stamping on segment headers (`owner = heap id + generation`)
-//!   and the M8/M9 coherence checks, and
+//! - its **id** (its slot index — or, for the fallback heap, the reserved
+//!   `OWNER_ID_FALLBACK` sentinel; see `pack_owner`'s doc), used by the 12.3
+//!   ownership stamping on segment headers (`owner = OWNER_STATE_LIVE | id`,
+//!   with the stamp's generation sub-field hardcoded to 0 — the adoption
+//!   substrate that once bumped it was removed, task #97 / R4-5), and
 //! - the **segment substrate** ([`AllocCore`]) that owns this heap's segments
 //!   and performs all per-segment `BinTable` arithmetic.
 //!

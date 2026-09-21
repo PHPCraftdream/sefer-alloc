@@ -450,9 +450,9 @@ pub fn current_for_dealloc() -> CurrentHeapForDealloc {
 /// without touching the config.
 ///
 /// **Config is taken by reference** so the hot fast path (TLS pointer
-/// cached) never materialises the ~40-byte `LargeCacheConfig` value on the
-/// stack. The 40-byte copy happens only on the cold `bind_slow_tagged_with_config` branch,
-/// where it is amortised across the thread's lifetime.
+/// cached) never materialises a `LargeCacheConfig` value copy on the
+/// stack. That copy happens only on the cold `bind_slow_tagged_with_config`
+/// branch, where it is amortised across the thread's lifetime.
 ///
 /// Only present under `alloc-decommit` — without that feature the config
 /// concept does not exist and [`current_for_alloc`] is used directly.

@@ -5,9 +5,14 @@
 //! Each slot is a fixed-size record carved from the registry's primordial
 //! segment. Its lifecycle is `FREE → LIVE → FREE → …`: a `claim` flips it
 //! `FREE → LIVE` and bumps `generation`; a `recycle` flips it back `FREE`.
-//! The `generation` field is the M8/M9 coherence key used elsewhere in the
-//! registry (segment-header owner stamping) to distinguish successive
-//! occupants of the same slot index.
+//! `generation` is NOT the M8/M9 coherence key: the segment-header owner
+//! stamp (`pack_owner`, `alloc_core/segment/segment_header/mod.rs`) packs the
+//! slot's `id` with a generation field that is always 0 (the adoption
+//! substrate that once bumped it was removed — task #97 / R4-5). This
+//! slot's own `generation` is production-dead: it is written on every
+//! `claim`/`claim_with_config` but read by nothing outside the `#[doc(hidden)]`
+//! test/diagnostic accessors (`dbg_slot_generation` and friends,
+//! `registry/bootstrap/registry.rs`).
 //!
 //! **It is NOT read on the TLS alloc path.** The stale-TLS-pointer hazard
 //! (a thread's cached `*mut HeapCore` outliving its slot's `recycle`) is
@@ -374,18 +379,26 @@ pub struct HeapSlot {
     /// `unsafe impl Sync` below depends on (R4-MS-4). Integration tests read it
     /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap`).
     pub(crate) state: AtomicU8,
-    /// Bumped on every successful (re)claim — the M8/M9 generation. Combined
-    /// with the slot index it forms the unique `(index, generation)` owner
-    /// key stamped into segment headers (12.3). Starts at 0; the first claim
+    /// Bumped on every successful (re)claim. Starts at 0; the first claim
     /// sees generation 1, the first recycle-then-claim sees 2, etc.
     ///
-    /// **Atomic** (not a plain `u32` as in the §2.1 sketch) because a later
-    /// reader — the 12.3 stale-TLS-pointer check — loads this from a
-    /// DIFFERENT thread than the writer (the claimer). The single-writer
-    /// invariant (the CAS winner is the sole writer until it recycles) holds,
-    /// but cross-thread reads still require atomic synchronisation to avoid a
-    /// data race. `Release` on the bump (in `claim`) pairs with the reader's
-    /// `Acquire` load after observing `state == LIVE`.
+    /// **Production-dead.** Despite the name overlap, this is NOT the M8/M9
+    /// owner-stamp coherence key — that key is `pack_owner`'s segment-header
+    /// stamp (`alloc_core/segment/segment_header/mod.rs`), which packs the
+    /// slot's `id` with a generation field hardcoded to 0 (the adoption
+    /// substrate that once bumped it was removed — task #97 / R4-5). This
+    /// field is written on every `claim`/`claim_with_config` but read by
+    /// nothing outside the `#[doc(hidden)]` test/diagnostic accessors below.
+    /// In particular it is NOT consulted by the 12.3 stale-TLS-pointer check
+    /// — that check uses the `TORN` sentinel in `global::tls_heap` instead
+    /// (a same-thread poison-then-check, not a cross-thread generation
+    /// compare; see that module's doc).
+    ///
+    /// **Atomic** (not a plain `u32` as in the §2.1 sketch) so the
+    /// diagnostic accessors below can read it from a different thread than
+    /// the writer (the claimer) without a data race, even though it has no
+    /// production reader today. `Release` on the bump (in `claim`) pairs
+    /// with an `Acquire` load on the read side.
     ///
     /// **Width — `AtomicU64` (task W7a):** a `u32` generation wraps at `2^32`
     /// recycles (`FREE → LIVE → FREE` cycles = thread deaths). On a

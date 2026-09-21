@@ -23,9 +23,11 @@ impl AllocCore {
     /// purely from segment-header metadata — WITHOUT trusting any
     /// caller-supplied `Layout`.
     ///
-    /// [`realloc`](Self::realloc) and `HeapCore::realloc` are SAFE `pub fn`s
-    /// (no `unsafe` marker), so they must not let a bogus `old_layout.size()`
-    /// drive an out-of-bounds read in the move leg's
+    /// [`realloc`](Self::realloc) and `HeapCore::realloc` are `unsafe pub fn`s
+    /// (their signature already trusts the caller's `old_layout`) — this is
+    /// defence-in-depth, not a soundness requirement of the signature itself:
+    /// a caller bug that passes a bogus `old_layout.size()` must not turn
+    /// into an out-of-bounds read in the move leg's
     /// [`Node::copy_nonoverlapping`]. `contains_base(base)` proves the segment
     /// is OURS and MAPPED, but says nothing about how large the block at
     /// `payload` actually is; this method supplies that missing upper bound.

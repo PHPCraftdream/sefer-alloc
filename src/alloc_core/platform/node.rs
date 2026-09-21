@@ -1,7 +1,7 @@
 //! [`Node`] — the **intrusive free-list node seam**: the second confined
 //! `unsafe` module of the Phase 8 substrate.
 //!
-//! This generalizes the `concurrent::hand` discipline to raw byte spans. A
+//! This generalizes the `concurrent::epoch::hand` discipline to raw byte spans. A
 //! freed block stores its free-list `next` pointer **inside itself** (the
 //! first word of the freed block), so the allocator's free list needs zero
 //! out-of-band metadata — the free block IS the node. This is exactly how
@@ -121,10 +121,13 @@ impl Node {
         // SAFETY: `segment_base` is the start of an OS-reserved span owned by
         // this allocator (the `Segment` is alive — the safe Cartographer holds
         // a borrow of the segment table that owns it). `offset < segment_len`
-        // by the caller's contract, so `segment_base + offset` lies within the
-        // span. `add` on a raw pointer computes the address (no dereference),
-        // which is always sound; the resulting pointer is dereferenced later
-        // only by the user, who owns the block by then.
+        // by the caller's contract, so `segment_base + offset` lies strictly
+        // within that same allocated object — the load-bearing precondition
+        // `add` requires (per its std contract: both the start and resulting
+        // pointer must stay in bounds of the same allocation; `wrapping_add`
+        // is the variant that would need no such precondition). The resulting
+        // pointer is dereferenced later only by the user, who owns the block
+        // by then.
         unsafe { segment_base.add(offset) }
     }
 

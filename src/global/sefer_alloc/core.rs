@@ -272,10 +272,10 @@ impl SeferAlloc {
     ///
     /// Under `not(alloc-decommit)` this delegates to the config-free
     /// [`current_for_alloc`]; under `alloc-decommit` it passes `&self.config`
-    /// (a single pointer load, not a ~40-byte value copy) into
+    /// (a single pointer load, not a value copy) into
     /// [`current_for_alloc_with_config`]. The reference avoids
     /// materialising the config on the hot fast path — the dereference
-    /// happens only on the cold `bind_slow` branch.
+    /// happens only on the cold `bind_slow_tagged_with_config` branch.
     #[inline(always)]
     pub(super) fn current_heap(&self) -> CurrentHeap {
         #[cfg(feature = "alloc-decommit")]

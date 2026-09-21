@@ -137,12 +137,23 @@ impl<T> Clone for Snapshot<T> {
 ///
 /// ## Generation saturation
 ///
-/// If a slot's generation would reach `u32::MAX` on removal, the slot is
-/// **retired**: it is left `Vacant` (so old handles go stale as usual) but is
-/// **not** threaded back onto the free list, so it is never reused. This
-/// mirrors the classic generational-arena rule and keeps generation wrap (and
-/// therefore ABA) impossible. Unlike the slotmap-backed [`Region`](crate::Region),
-/// this tier owns its own slot table, so it handles saturation itself.
+/// If a slot's generation is ALREADY `u32::MAX` when it is removed, the slot
+/// is **retired**: it is left `Vacant` (so old handles go stale as usual) but
+/// is **not** threaded back onto the free list, so it is never reused. A slot
+/// at `u32::MAX - 1` is instead bumped to `u32::MAX` and threaded back onto
+/// the free list for one final reuse (see [`remove`](Self::remove)'s own doc
+/// for the exact boundary). This keeps generation wrap (and therefore ABA)
+/// impossible. Unlike the slotmap-backed [`Region`](crate::Region), this tier
+/// owns its own slot table, so it handles saturation itself.
+///
+/// **Diverges from the epoch tier** ([`EpochRegion`](crate::concurrent::EpochRegion),
+/// `epoch::hand`'s `try_evict_at`): that tier retires the slot that LANDS ON
+/// `u32::MAX` (i.e. at the `MAX - 1 → MAX` transition), one reuse earlier
+/// than this tier. Both are sound (neither ever mints or hands out a live
+/// handle at generation `u32::MAX`); they simply differ on whether generation
+/// `u32::MAX` itself is ever occupied again after being reached. Not yet
+/// unified — noted here so the divergence is a documented choice, not a
+/// silent inconsistency.
 ///
 /// ## Concurrency notes
 ///

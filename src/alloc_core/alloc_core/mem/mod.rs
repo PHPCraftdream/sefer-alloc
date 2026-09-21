@@ -552,12 +552,12 @@ impl AllocCore {
         // R2-1 (soundness): the move leg copies `old_layout.size().min(
         // new_size)` bytes OUT of `ptr`. `contains_base(base)` proved the
         // segment is ours & mapped, but NOT that the block is as large as
-        // `old_layout` claims — and this is a SAFE `pub fn` (no `unsafe`
-        // marker), so unlike `GlobalAlloc::realloc` (whose `unsafe` signature
-        // makes the caller's `old_layout` a trusted precondition) a bogus
-        // `old_layout` (e.g. 8 MiB claimed for a 16-byte block) must not drive
-        // an out-of-bounds read. The write side is always safe (`copy <=
-        // new_size <= the fresh allocation`); the unsound half is the READ.
+        // `old_layout` claims. This is defence-in-depth under the `unsafe fn`
+        // contract above (R6-MS-1/2): the signature already trusts the
+        // caller's `old_layout`, but a caller bug (e.g. 8 MiB claimed for a
+        // 16-byte block) must not turn into an out-of-bounds read here. The
+        // write side is always safe (`copy <= new_size <= the fresh
+        // allocation`); the unsound half this guards is the READ.
         // Reject (return null, `ptr` untouched) when the claimed old size
         // exceeds the segment's actual committed span.
         if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
