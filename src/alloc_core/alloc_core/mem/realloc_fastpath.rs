@@ -166,7 +166,10 @@ impl AllocCore {
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
-        assert!(
+        // #1984 (P1-2): was a release `assert!`; both callers already prove
+        // `contains_base(base)` on the same path, so this stays debug-only
+        // (no-panic entry points; F12 falsification-pin style).
+        debug_assert!(
             self.table.contains_base_ro(base),
             "known-base realloc called for a segment not owned by this core"
         );

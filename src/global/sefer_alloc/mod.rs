@@ -62,43 +62,38 @@
 //!   otherwise — all null-returning.
 //! - `alloc_zeroed`: `alloc` + zero-fill.
 //!
-//! **Five release-surviving invariant tripwires (abort by design).** Beyond
+//! **Four release-surviving invariant tripwires (abort by design).** Beyond
 //! those failure paths a small number of "cannot happen" checks remain as
 //! *release* panics (not `debug_assert!`). Each is a precondition the
 //! immediate caller already proves on the same `&mut self` owner-only path,
 //! so under correct operation none is reachable; an independent audit
 //! (release-stabilization F-5) could not construct a violation of any of the
-//! five. They are deliberately kept as release panics rather than softened to
+//! four. They are deliberately kept as release panics rather than softened to
 //! silent no-ops (the contrasting `AllocCore::reclaim_offset` style —
 //! "bounds-check FIRST and no-op"): each guards allocator metadata whose
 //! silent corruption would be strictly worse than an immediate abort, so a
 //! future bug that broke one trips loudly at the point of corruption instead
-//! of continuing with inconsistent state (defence in depth). The five, all
+//! of continuing with inconsistent state (defence in depth). The four, all
 //! reachable from this file's `GlobalAlloc` impl under `production`:
 //!
 //!   (Line numbers are deliberately omitted here — they drift as unrelated
 //!   edits shift surrounding code; `tests/no_panic_doc_accuracy.rs` pins the
-//!   five by message string + occurrence count instead, which is the
+//!   four by message string + occurrence count instead, which is the
 //!   drift-proof identifier. File + function name is unambiguous without a
 //!   line number.)
 //!
-//!   1. `alloc_core/alloc_core/mem/realloc_fastpath.rs` — `assert!(self.table
-//!      .contains_base_ro(base), "known-base realloc …")` in
-//!      `realloc_inplace_fast_path_known_base`; the caller
-//!      (`AllocCore::realloc` / `HeapCore::realloc`) already proved
-//!      `contains_base(base)` one call up.
-//!   2. `alloc_core/large/alloc_core_large_cache.rs` — `.expect("large_cache
+//!   1. `alloc_core/large/alloc_core_large_cache.rs` — `.expect("large_cache
 //!      _slot_take: empty base slot")` in `large_cache_slot_take`
 //!      (`alloc-decommit`, in `production`).
-//!   3. `alloc_core/large/alloc_core_large_cache.rs` — `.expect("large_cache
+//!   2. `alloc_core/large/alloc_core_large_cache.rs` — `.expect("large_cache
 //!      _slot_take: empty extension slot")` in `large_cache_slot_take`
 //!      (`alloc-decommit`).
-//!   4. `alloc_core/large/alloc_core_large_cache.rs` — `unreachable!(…)` in
+//!   3. `alloc_core/large/alloc_core_large_cache.rs` — `unreachable!(…)` in
 //!      `large_cache_slot_take` (`alloc-decommit`).
-//!   5. `alloc_core/large/alloc_core_large_cache.rs` — `unreachable!(…)` in
+//!   4. `alloc_core/large/alloc_core_large_cache.rs` — `unreachable!(…)` in
 //!      `large_cache_slot_set` (`alloc-decommit`).
 //!
-//!   Sites 2–5 live in the large-cache slot take/set helpers. Their callers
+//!   All four live in the large-cache slot take/set helpers. Their callers
 //!   only ever pass an index proven occupied by `large_cache_slot_get` /
 //!   `oldest_occupied_slot`, which read the `large_cache` array directly —
 //!   NOT the `large_cache_occupied` bitmask introduced by R32-12 (task #503).
@@ -106,8 +101,21 @@
 //!   `unreachable!()` arms: the worst a desync can do is
 //!   `large_cache_find_free_slot` handing back an index the array already
 //!   holds occupied (an overwrite on `set`, silent data loss — never a
-//!   take-side panic). `tests/no_panic_doc_accuracy.rs` pins the five by
+//!   take-side panic). `tests/no_panic_doc_accuracy.rs` pins the four by
 //!   their message strings.
+//!
+//!   A former FIFTH release tripwire — the ownership re-check in
+//!   `realloc_inplace_fast_path_known_base`
+//!   (`alloc_core/alloc_core/mem/realloc_fastpath.rs`: `assert!(self.table
+//!   .contains_base_ro(base), "known-base realloc …")`) — was
+//!   demoted to `debug_assert!` (#1984, alloc-core perf review P1-2). Both
+//!   callers (`AllocCore::realloc` / `HeapCore::realloc`) already prove
+//!   `contains_base(base)` on the same path before calling, so the re-probe
+//!   was redundant, and a release-surviving panic on the alloc path
+//!   contradicted the no-panic discipline above. The check is retained as a
+//!   debug-only falsification pin (the F12 style in `alloc_core_large.rs`);
+//!   `tests/no_panic_doc_accuracy.rs` pins both its message string and its
+//!   demoted form.
 //!
 //! **Panic-in-`GlobalAlloc` is abort, not UB.** On current Rust the
 //! `__rust_alloc` / `__rust_dealloc` / `__rust_realloc` / `__rust_alloc_zeroed`
