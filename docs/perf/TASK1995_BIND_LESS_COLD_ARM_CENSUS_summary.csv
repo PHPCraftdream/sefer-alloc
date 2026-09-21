@@ -1,0 +1,13 @@
+run,phase,n,elapsed_ns_total,ns_per_round,fallback_lock_delta,slots_filled,fill_elapsed_ms,exhausted_vs_warm_ns_ratio
+1,warm_own_slot,2000,18000,9.0,0,,,
+1,fill_registry,,,,,4095,63.437,
+1,exhausted_bind_less,2000,110800,55.4,2000,,,
+1,summary,,,,,,,6.16
+2,warm_own_slot,2000,28300,14.2,0,,,
+2,fill_registry,,,,,4095,79.168,
+2,exhausted_bind_less,2000,170800,85.4,2000,,,
+2,summary,,,,,,,6.04
+3,warm_own_slot,2000,27100,13.6,0,,,
+3,fill_registry,,,,,4095,101.001,
+3,exhausted_bind_less,2000,155100,77.5,2000,,,
+3,summary,,,,,,,5.72

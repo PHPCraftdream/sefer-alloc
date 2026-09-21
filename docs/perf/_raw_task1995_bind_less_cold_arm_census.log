@@ -1,0 +1,23 @@
+# Task #1995 bind-less cold arm census — raw probe output
+# Binary: target/release/examples/task1995_bind_less_cold_arm_census.exe
+# Built: cargo build --release --example task1995_bind_less_cold_arm_census --features "production internals"
+# Repro: cargo run --release --example task1995_bind_less_cold_arm_census --features "production internals"
+
+## run 1
+phase=warm_own_slot n=2000 elapsed_ns_total=18000 ns_per_round=9.0 fallback_lock_delta=0
+phase=fill_registry slots_filled=4095 elapsed_ms=63.437
+phase=exhausted_bind_less n=2000 elapsed_ns_total=110800 ns_per_round=55.4 fallback_lock_delta=2000
+summary=exhausted_vs_warm_ns_ratio value=6.16
+
+## run 2
+phase=warm_own_slot n=2000 elapsed_ns_total=28300 ns_per_round=14.2 fallback_lock_delta=0
+phase=fill_registry slots_filled=4095 elapsed_ms=79.168
+phase=exhausted_bind_less n=2000 elapsed_ns_total=170800 ns_per_round=85.4 fallback_lock_delta=2000
+summary=exhausted_vs_warm_ns_ratio value=6.04
+
+## run 3
+phase=warm_own_slot n=2000 elapsed_ns_total=27100 ns_per_round=13.6 fallback_lock_delta=0
+phase=fill_registry slots_filled=4095 elapsed_ms=101.001
+phase=exhausted_bind_less n=2000 elapsed_ns_total=155100 ns_per_round=77.5 fallback_lock_delta=2000
+summary=exhausted_vs_warm_ns_ratio value=5.72
+

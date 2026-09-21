@@ -1178,6 +1178,19 @@ required-features = ["alloc-global"]
 name = "r21_2_opt_h_stage1_probe"
 required-features = ["alloc-global", "medium-classes", "alloc-stats"]
 
+# Task #1995 (global review P1-3) census: how often/expensive is the
+# "bind-less cold arm" (registry exhaustion / TLS-teardown-during-alloc,
+# both currently repeating the full claim attempt on every alloc call)
+# actually likely to be in practice? See the probe's own module doc and
+# `docs/perf/TASK1995_BIND_LESS_COLD_ARM_CENSUS.md` for the full writeup.
+# `internals` is required to reach `sefer_alloc::registry`/`sefer_alloc::global`
+# (both externally `pub` only under `alloc-global + internals`); `production`
+# (which implies `alloc-decommit`) exercises the FULL described cost,
+# including the extra per-attempt config copy the review's finding notes.
+[[example]]
+name = "task1995_bind_less_cold_arm_census"
+required-features = ["production", "internals"]
+
 # R10-5 (task #230): process-level A/B/B/A judge for the warm-Large-cache-hit
 # question R9-4 §2.4 left open. Two wrappers around ONE shared warm-recycle
 # workload (`examples/_shared/paired_ab_large_cache_workload.rs`, `include!`d

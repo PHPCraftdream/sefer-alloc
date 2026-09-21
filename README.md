@@ -1330,7 +1330,7 @@ those guarantees.
 
 This is a verification-first build. Every claim above is backed by a tool,
 a test file, and a reproducible command. **256 integration test files** ship
-in `tests/`; **83 example binaries** in `examples/`; **25 benches** in
+in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **15 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1338,7 +1338,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 | Tool | What it proves | Where in repo |
 |---|---|---|
 | Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (256 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (83 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | **Root (15 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `ArrayIndexStack`) |
