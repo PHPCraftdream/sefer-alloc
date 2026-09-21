@@ -135,6 +135,16 @@ pub struct EpochRegion<T> {
     /// (single consumer). `Mutex<Vec<u32>>` because `crossbeam-queue` is not
     /// in the resolved dependency tree (see the module docs for the tradeoff).
     remote_free: Mutex<Vec<u32>>,
+    /// "`remote_free` may be non-empty" hint (#1989), so the owner's drain can
+    /// skip acquiring [`Self::remote_free`]'s lock entirely in the common
+    /// zero-remote-traffic case. Set to `true` by `remote_evict` AFTER its
+    /// push releases the queue lock; cleared by `drain_remote_free` while
+    /// HOLDING that lock, before it takes the queue. Relaxed throughout: it
+    /// orders no data — the queue's own mutex carries every happens-before
+    /// edge — and a lost race only costs one spurious lock acquisition or one
+    /// owner-op of extra drain latency, never a lost index (the full argument
+    /// is in `drain_remote_free`).
+    remote_free_pending: core::sync::atomic::AtomicBool,
     /// Number of currently-live (occupied) entries. `AtomicUsize` so a remote
     /// remover can decrement it without the owner mutex (Phase 7b).
     len: AtomicUsize,
@@ -163,6 +173,7 @@ impl<T> EpochRegion<T> {
             slots: slots.into_boxed_slice(),
             state: Mutex::new(FreeState { free }),
             remote_free: Mutex::new(Vec::new()),
+            remote_free_pending: core::sync::atomic::AtomicBool::new(false),
             len: AtomicUsize::new(0),
         }
     }
@@ -220,7 +231,35 @@ impl<T> EpochRegion<T> {
     /// is simply not pushed to `state.free`; the slot stays vacant at gen
     /// `u32::MAX` forever (intentionally abandoned — see `try_evict_at`).
     fn drain_remote_free(&self, state: &mut FreeState) {
-        // Fast path: no remote frees → no lock acquisition.
+        // Fast path: no remote frees → no lock acquisition. Before #1989 this
+        // comment described an optimization that did not exist — the lock was
+        // taken unconditionally and the `is_empty()` check happened INSIDE it,
+        // so every owner `insert`/`remove` paid a second mutex acquisition
+        // (after the writer mutex) even with zero remote traffic, contending
+        // the very cache line remote evictors hammer.
+        //
+        // The flag is a plain `AtomicBool`, not the pending-COUNT the review
+        // sketched: a count incremented AFTER the push can underflow, because
+        // a drain may take an item whose increment has not landed yet and then
+        // subtract it (counter 1, pusher pushes item 2 without having
+        // incremented, drainer takes 2 and subtracts 2 → wrap). A boolean has
+        // no such arithmetic and is sufficient — the drain takes the WHOLE
+        // queue, so "something is pending" is all it needs to know.
+        //
+        // Why no index can be stranded: an index is pushed while holding the
+        // queue lock, and the flag is set to `true` only AFTER that lock is
+        // released; the drain clears the flag while HOLDING the lock and takes
+        // the queue in the same critical section. So for any pushed index
+        // either (a) it was already in the queue when the drain took it — it is
+        // drained now — or (b) it was not, in which case its pusher has still
+        // to run its `store(true)`, leaving the flag set for the next drain.
+        // The only cost of losing the race is a spurious `true` (one wasted
+        // lock acquisition on the next owner op) or a deferred index (drained
+        // one owner op later) — the same eventual-drain cadence this design
+        // already accepts. An index can never be lost.
+        if !self.remote_free_pending.load(core::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
         // We peek-lock: take the queue, and if non-empty, drain it into the
         // free list. A Mutex<Vec> swap-then-extend is the cheapest drain.
         let drained = {
@@ -232,6 +271,11 @@ impl<T> EpochRegion<T> {
                 // there" — `lock().unwrap_or_else(|e| e.into_inner())`.
                 Err(e) => e.into_inner(),
             };
+            // Clear the flag while HOLDING the lock, BEFORE taking the queue —
+            // see the stranding argument above. A pusher that has not yet run
+            // its `store(true)` will set it again after we release the lock.
+            self.remote_free_pending
+                .store(false, core::sync::atomic::Ordering::Relaxed);
             if q.is_empty() {
                 return;
             }
@@ -395,6 +439,13 @@ impl<T> EpochRegion<T> {
                 // still a valid free slot; recover the queue and push anyway.
                 Err(e) => e.into_inner().push(handle.index),
             }
+            // #1989: publish "the queue may be non-empty" AFTER the push has
+            // released the queue lock, so the owner's `drain_remote_free` can
+            // skip locking when no remote evictor has run. Relaxed: this flag
+            // orders no data (the queue mutex does), and the ordering argument
+            // for why no index can be stranded is in `drain_remote_free`.
+            self.remote_free_pending
+                .store(true, core::sync::atomic::Ordering::Relaxed);
         }
         true
     }
