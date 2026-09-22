@@ -178,12 +178,21 @@ impl<T> AtomicSlot<T> {
     /// `guard` keeps the pointed-to `T` alive until at least the next epoch
     /// advance after the reader unpins, so the dereference is valid for the
     /// whole call to `f`.
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Sync` — `f`
+    /// receives `&T`, and multiple threads may call `read_with` on the SAME
+    /// slot concurrently (this method takes `&self`, never `&mut self`), so
+    /// soundly sharing `&T` across those threads requires `T: Sync` (the
+    /// exact definition of the bound: `T: Sync` iff `&T: Send`).
     pub(crate) fn read_with<R>(
         &self,
         expected_gen: u32,
         guard: &Guard,
         f: impl FnOnce(&T) -> R,
-    ) -> Option<R> {
+    ) -> Option<R>
+    where
+        T: Sync,
+    {
         // Step 1: Acquire-load the generation. If it does not match the handle,
         // the handle is stale (or the slot was reused at a later generation):
         // refuse to read. This is the ABA guard (I3).
@@ -267,7 +276,25 @@ impl<T> AtomicSlot<T> {
     /// generation. This is part of the [`try_evict_at`] no-reinstall proof.
     ///
     /// [`try_evict_at`]: AtomicSlot::try_evict_at
-    pub(crate) fn install(&self, value: T) -> u32 {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — the value installed here may later be reclaimed via
+    /// [`try_evict_at`](Self::try_evict_at)'s `guard.defer_destroy`, which
+    /// hands the value to `crossbeam-epoch`'s GLOBAL collector. The
+    /// collector may run the destructor on ANY thread at a later epoch
+    /// boundary — not necessarily the thread that called `install` or the
+    /// thread that later evicts it — regardless of whether this
+    /// `AtomicSlot`/`EpochRegion` value itself ever crosses threads.
+    /// Confirmed empirically before this fix: installing then removing an
+    /// `Rc<i32>` (a `!Send` type) through the safe `EpochRegion` API
+    /// compiled and ran with zero errors or warnings about the bound.
+    /// `'static` because `crossbeam_epoch::Guard::defer_destroy`'s own
+    /// safety contract requires it (a deferred destructor must not borrow
+    /// data that could go out of scope before the collector runs it).
+    pub(crate) fn install(&self, value: T) -> u32
+    where
+        T: Send + 'static,
+    {
         let owned = Owned::new(value);
         // Release-publish the pointer. A reader's Acquire load of this pointer
         // (and the Acquire load of the generation, which precedes it in
@@ -315,7 +342,15 @@ impl<T> AtomicSlot<T> {
     ///   (uniquely owns the reclamation). `reusable` is `false` iff the slot
     ///   saturated (caller retires it).
     /// - [`EvictOutcome::Stale`] if the CAS failed (caller treats as no-op).
-    pub(crate) fn try_evict_at(&self, expected_gen: u32, guard: &Guard) -> EvictOutcome {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — this method's own `guard.defer_destroy(old)` call below is
+    /// the exact reclamation hazard `install`'s doc comment describes; see
+    /// that comment for the full rationale.
+    pub(crate) fn try_evict_at(&self, expected_gen: u32, guard: &Guard) -> EvictOutcome
+    where
+        T: Send + 'static,
+    {
         // Saturation guard: a handle carrying `u32::MAX` cannot be live. A slot
         // reaches generation MAX only via eviction (which RETIRES it — never
         // re-adds to a free list), and `install` (which mints handles) never

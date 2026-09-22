@@ -1,0 +1,16 @@
+# Compile-fail fixture — compiled ONLY by root
+# tests/regression_r2_02_epoch_region_non_send_value.rs (never by the
+# workspace: the detached [workspace] table below opts it out, and cargo
+# does not auto-discover nested test dirs, mirroring
+# crates/tagged-index-stack/tests/compile_fail/*/Cargo.toml and
+# tests/compile_fail/r2_01_segment_bases_outlives_owner/Cargo.toml).
+[workspace]
+
+[package]
+name = "r2_02_epoch_region_non_send_value_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sefer-alloc = { path = "../../..", features = ["experimental"] }

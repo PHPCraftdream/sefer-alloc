@@ -200,7 +200,14 @@ impl<T> EpochRegion<T> {
     /// **Lock-free:** pins an epoch guard and reads the slot atomically; never
     /// takes the writer mutex. The borrow is confined to the call — `f` may not
     /// store the reference.
-    pub fn get_with<R>(&self, handle: EpochHandle<T>, f: impl FnOnce(&T) -> R) -> Option<R> {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Sync` —
+    /// `read_with` may share `&T` across concurrently-calling threads; see
+    /// its own doc comment (`hand.rs`) for the full rationale.
+    pub fn get_with<R>(&self, handle: EpochHandle<T>, f: impl FnOnce(&T) -> R) -> Option<R>
+    where
+        T: Sync,
+    {
         let guard = epoch::pin();
         let slot = self.slots.get(handle.index as usize)?;
         slot.read_with(handle.generation, &guard, f)
@@ -211,7 +218,7 @@ impl<T> EpochRegion<T> {
     /// [`get_with`](Self::get_with).
     pub fn get_cloned(&self, handle: EpochHandle<T>) -> Option<T>
     where
-        T: Clone,
+        T: Clone + Sync,
     {
         self.get_with(handle, T::clone)
     }
@@ -318,7 +325,15 @@ impl<T> EpochRegion<T> {
     ///
     /// Panics if the writer mutex is poisoned (a writer panicked while holding
     /// it). Readers are unaffected.
-    pub fn insert(&self, value: T) -> Result<EpochHandle<T>, T> {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — an inserted value may later be reclaimed via
+    /// `AtomicSlot::install`'s eventual `defer_destroy`; see that method's
+    /// doc comment (`hand.rs`) for the full rationale.
+    pub fn insert(&self, value: T) -> Result<EpochHandle<T>, T>
+    where
+        T: Send + 'static,
+    {
         let mut state = self.state.lock().expect("writer mutex poisoned");
         // Owner drains any indices a remote remover freed since its last op
         // (single-consumer drain). This is what makes a remote `remote_evict`
@@ -360,7 +375,15 @@ impl<T> EpochRegion<T> {
     /// # Panics
     ///
     /// Panics if the writer mutex is poisoned. Readers are unaffected.
-    pub fn remove(&self, handle: EpochHandle<T>) -> bool {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — this calls `AtomicSlot::try_evict_at`, which may
+    /// `defer_destroy` the removed value; see that method's doc comment
+    /// (`hand.rs`) for the full rationale.
+    pub fn remove(&self, handle: EpochHandle<T>) -> bool
+    where
+        T: Send + 'static,
+    {
         let guard = epoch::pin();
         let Some(slot) = self.slots.get(handle.index as usize) else {
             return false;
@@ -413,7 +436,15 @@ impl<T> EpochRegion<T> {
     /// concurrent owner `remove` or another `remote_evict` for the same handle
     /// fails the CAS and returns `false` (no double-free, no double-decrement).
     /// See the `try_evict_at` SAFETY proof for the no-reinstall argument.
-    pub(crate) fn remote_evict(&self, handle: EpochHandle<T>) -> bool {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — same `defer_destroy` rationale as [`remove`](Self::remove);
+    /// see `AtomicSlot::install`'s doc comment (`hand.rs`) for the full
+    /// argument.
+    pub(crate) fn remote_evict(&self, handle: EpochHandle<T>) -> bool
+    where
+        T: Send + 'static,
+    {
         let guard = epoch::pin();
         let Some(slot) = self.slots.get(handle.index as usize) else {
             return false;

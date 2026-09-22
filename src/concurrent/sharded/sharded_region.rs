@@ -370,7 +370,14 @@ impl<T> ShardedRegion<T> {
     /// # Panics
     ///
     /// Panics if the shard's writer mutex is poisoned.
-    pub fn insert(&self, value: T) -> Result<ShardedHandle<T>, T> {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — delegates to `EpochRegion::insert`, whose doc comment has
+    /// the full `defer_destroy` rationale.
+    pub fn insert(&self, value: T) -> Result<ShardedHandle<T>, T>
+    where
+        T: Send + 'static,
+    {
         let shard = self.claim_or_get_shard();
         match self.inner.shards[usize::from(shard)].insert(value) {
             Ok(inner) => Ok(ShardedHandle::new(shard, inner)),
@@ -390,7 +397,14 @@ impl<T> ShardedRegion<T> {
     /// via the seqlock regardless of whether the owning thread is alive. So a
     /// DEAD thread's live slots stay resolvable (asserted in
     /// `tests/sharded_remote.rs`).
-    pub fn get_with<R>(&self, handle: ShardedHandle<T>, f: impl FnOnce(&T) -> R) -> Option<R> {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Sync` —
+    /// delegates to `EpochRegion::get_with`, whose doc comment has the full
+    /// concurrent-shared-read rationale.
+    pub fn get_with<R>(&self, handle: ShardedHandle<T>, f: impl FnOnce(&T) -> R) -> Option<R>
+    where
+        T: Sync,
+    {
         let shard = self.inner.shards.get(usize::from(handle.shard))?;
         shard.get_with(handle.inner, f)
     }
@@ -400,7 +414,7 @@ impl<T> ShardedRegion<T> {
     /// like [`get_with`](Self::get_with).
     pub fn get_cloned(&self, handle: ShardedHandle<T>) -> Option<T>
     where
-        T: Clone,
+        T: Clone + Sync,
     {
         self.get_with(handle, T::clone)
     }
@@ -425,7 +439,14 @@ impl<T> ShardedRegion<T> {
     ///
     /// Panics if the owning shard's writer mutex is poisoned (owner path only;
     /// the remote path takes no writer mutex).
-    pub fn remove(&self, handle: ShardedHandle<T>) -> bool {
+    ///
+    /// R2-02 (independent src review round 2, task #2004): `T: Send +
+    /// 'static` — delegates to `EpochRegion::remove`/`remote_evict`, whose
+    /// doc comments have the full `defer_destroy` rationale.
+    pub fn remove(&self, handle: ShardedHandle<T>) -> bool
+    where
+        T: Send + 'static,
+    {
         let Some(shard) = self.inner.shards.get(usize::from(handle.shard)) else {
             return false;
         };
