@@ -171,8 +171,8 @@ impl HeapCore {
                 // is a MIN_BLOCK-aligned offset.
                 #[allow(unsafe_code)]
                 unsafe {
-                    crate::alloc_core::segment_header::bump_gen(base, off)
-                };
+                    Self::bump_gen_on_issue(base, off);
+                }
             }
             out[filled] = issued;
             filled += 1;
@@ -242,8 +242,8 @@ impl HeapCore {
                         // `off` is a MIN_BLOCK-aligned offset.
                         #[allow(unsafe_code)]
                         unsafe {
-                            crate::alloc_core::segment_header::bump_gen(base as *mut u8, off)
-                        };
+                            Self::bump_gen_on_issue(base as *mut u8, off);
+                        }
                     }
                 }
             }
@@ -275,9 +275,7 @@ impl HeapCore {
         // regress: this loop does exactly the same number of RMWs the
         // old per-pop clear did, just batched at the end.
         for &p in &out[..magazine_drained] {
-            let base = os::segment_base_of_ptr(p);
-            let off = (p as usize - base as usize) as u32;
-            SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+            let _ = Self::clear_magazine_on_issue(p);
         }
 
         filled

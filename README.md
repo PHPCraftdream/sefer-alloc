@@ -681,7 +681,7 @@ item-scoped regions.
 | [`src/alloc_core/segment/remote_free_ring/ops.rs`](src/alloc_core/segment/remote_free_ring/ops.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
 | [`src/alloc_core/segment/segment_directory/mod.rs`](src/alloc_core/segment/segment_directory/mod.rs) | 2 | `init_node_ids_raw` (`numa-aware` and non-`numa-aware` variants) — `unsafe fn` boundary; writes the `node_ids` repair through `core::ptr::addr_of_mut!` without ever materialising a `&mut SegmentDirectory` over the not-yet-fully-valid sidecar (R17-1, task #318 — the `reserve_zeroed_with` fixup closure) |
 | [`src/alloc_core/segment/segment_header/segment_header_gen_table.rs`](src/alloc_core/segment/segment_header/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
-| [`src/registry/heap_core/alloc/hot.rs`](src/registry/heap_core/alloc/hot.rs) | 4 | Internal `bump_gen` call-site blocks in `alloc` / `alloc_small_zeroed_via_magazine` / `refill_magazine_slow` / `refill_magazine_slow_virgin` (R13-3, `virgin-zero-skip` magazine plumbing) (hardened path) |
+| [`src/registry/heap_core/alloc/hot.rs`](src/registry/heap_core/alloc/hot.rs) | 5 | Internal `bump_gen` call-site blocks in `alloc` / `alloc_small_zeroed_via_magazine` / `refill_magazine_slow` / `refill_magazine_slow_virgin` (R13-3, `virgin-zero-skip` magazine plumbing) (hardened path), plus the shared `bump_gen_on_issue` helper (task #2000) those four sites now call |
 | [`src/registry/heap_core/alloc/batch.rs`](src/registry/heap_core/alloc/batch.rs) | 2 | Internal `bump_gen` call-site blocks in `alloc_batch` (both feature variants) (hardened path) |
 | [`src/registry/heap_core/free/dealloc_batch.rs`](src/registry/heap_core/free/dealloc_batch.rs) | 7 | `dealloc_batch` / `dealloc_batch_small` — `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into scalar `dealloc` / `AllocCore::flush_class` (R11-4) |
 | [`src/registry/heap_core/diag/queries.rs`](src/registry/heap_core/diag/queries.rs) | 2 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) |
@@ -699,7 +699,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **25** tier-1 module-level seams (19 in
-`src/`, 6 in `crates/`) plus **101** tier-2 item-scoped allows across **35**
+`src/`, 6 in `crates/`) plus **102** tier-2 item-scoped allows across **35**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

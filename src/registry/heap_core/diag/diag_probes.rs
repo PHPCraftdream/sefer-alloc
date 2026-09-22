@@ -12,26 +12,18 @@
 
 use crate::registry::heap_core::HeapCore;
 
-// The three imports below are referenced ONLY by the
-// `alloc-global` + `fastbin` + `bench-internals`-gated hooks in this file
-// (`dbg_dealloc_own_thread_with_base`, `dbg_clear_magazine_on_hit`), so each
-// carries that identical predicate — the same file-head cfg-import
-// convention as `heap_core/free/realloc.rs`. Ungated, they would be
-// unused-import warnings in every configuration without `fastbin` /
-// `bench-internals` (unlike the `diag` sibling, whose import list carries
-// the former flat file's warning history verbatim).
-#[cfg(all(
-    feature = "alloc-global",
-    feature = "fastbin",
-    feature = "bench-internals"
-))]
-use crate::alloc_core::os;
-#[cfg(all(
-    feature = "alloc-global",
-    feature = "fastbin",
-    feature = "bench-internals"
-))]
-use crate::alloc_core::segment_header::SegmentMeta;
+// Referenced ONLY by the `alloc-global` + `fastbin` + `bench-internals`-gated
+// `dbg_dealloc_own_thread_with_base` hook in this file, so it carries that
+// identical predicate — the same file-head cfg-import convention as
+// `heap_core/free/realloc.rs`. Ungated, it would be an unused-import warning
+// in every configuration without `fastbin` / `bench-internals` (unlike the
+// `diag` sibling, whose import list carries the former flat file's warning
+// history verbatim).
+//
+// Task #2000: `os` / `SegmentMeta` (the OTHER former consumers of this same
+// gate) were removed — `dbg_clear_magazine_on_hit` now calls the shared
+// `HeapCore::clear_magazine_on_issue` instead of inlining its own
+// `os::segment_base_of_ptr` + `SegmentMeta::new(..).magazine_bitmap()` copy.
 #[cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
@@ -344,13 +336,14 @@ impl HeapCore {
     /// iai baseline was taken; there is nothing to measure"). See
     /// `docs/perf/R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md`.
     ///
-    /// Unlike `dbg_flush_class_only` (which delegates to one callable production
-    /// function), this hook INLINES the production block byte-for-byte: in
-    /// production the three lines are straight-line code inside the
-    /// magazine-hit branch, not a callable function, so the faithful isolation
-    /// is an exact textual copy of that straight-line block (no
-    /// alternate/bypass implementation, no extra bookkeeping). `issued` carries
-    /// the identical value the production block already receives at its call
+    /// Task #2000: like `dbg_flush_class_only`, this hook now delegates to
+    /// one callable production function, [`HeapCore::clear_magazine_on_issue`]
+    /// — before that task, the three lines were straight-line code inside the
+    /// magazine-hit branch with no callable function to delegate to, so the
+    /// faithful isolation was an exact textual copy instead; extracting the
+    /// shared helper closed that gap, so this hook calls it directly and
+    /// cannot drift from what production actually runs. `issued` carries the
+    /// identical value the production block already receives at its call
     /// site (`self.tcache.classes[c].slots[new_cnt]` — the just-popped
     /// magazine-resident block).
     ///
@@ -382,15 +375,15 @@ impl HeapCore {
     #[inline(always)]
     #[allow(unsafe_code)] // R29-10: `unsafe fn` boundary, mirrors `dbg_flush_class_only` above.
     pub unsafe fn dbg_clear_magazine_on_hit(&self, issued: *mut u8) {
-        // Byte-for-byte copy of the production magazine-hit clear block
-        // (`heap_core/alloc/hot.rs`'s RAD-5 E4 lines), so the isolated Ir is the
-        // real in-context cost, not an invented mechanism.
+        // Task #2000: calls the SAME shared step the production magazine-hit
+        // arms now call (`HeapCore::clear_magazine_on_issue`,
+        // `heap_core/alloc/hot.rs`) instead of an independent textual copy —
+        // strictly stronger than the former "byte-for-byte copy" contract
+        // (a shared call site cannot drift; a textual copy could).
         // SAFETY: forwarded from this caller's identical `# Safety` contract —
         // `issued` is a live block in an owned segment, exactly as production
         // assumes at the magazine-hit call site.
-        let base = os::segment_base_of_ptr(issued);
-        let off = (issued as usize - base as usize) as u32;
-        SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+        let _ = Self::clear_magazine_on_issue(issued);
     }
 
     // ── R29-3 (task #434) — segment-lifecycle decomposition delegation ──────

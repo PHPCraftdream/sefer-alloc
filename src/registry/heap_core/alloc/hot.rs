@@ -24,6 +24,54 @@ impl HeapCore {
     // `alloc-xthread` also drain the TFS and stamp segment ownership.
     // -----------------------------------------------------------------------
 
+    /// Task #2000 (registry review P3-1): the shared "clear this block's
+    /// magazine-residency bit at issue time" step — a single-block magazine
+    /// HIT (a fresh refill's issued block never sets this bit to begin with,
+    /// so only the two hit arms, `alloc` and `alloc_small_zeroed_via_magazine`,
+    /// need this) clears the RAD-5 (E4) bit `refill_class_bump[_checked]`'s
+    /// `mark_magazine` set on admission. Returns `(base, off)` so an
+    /// immediately-following `hardened` generation bump
+    /// ([`bump_gen_on_issue`](Self::bump_gen_on_issue)) can reuse them instead
+    /// of re-deriving `base` via a second `segment_base_of_ptr` call — before
+    /// this task both hit arms recomputed `base`/`off` independently for the
+    /// clear and the hardened bump back to back, a real (if small)
+    /// double-computation this extraction closes as a side effect of
+    /// deduplication, not a separate fix.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub(in crate::registry::heap_core) fn clear_magazine_on_issue(issued: *mut u8) -> (*mut u8, usize) {
+        let base = os::segment_base_of_ptr(issued);
+        let off = issued as usize - base as usize;
+        SegmentMeta::new(base)
+            .magazine_bitmap()
+            .clear_magazine(off as u32);
+        (base, off)
+    }
+
+    /// Task #2000: the shared "bump the block's generation at magazine issue"
+    /// step (X7 Ф3, task #191) — six near-identical inline copies of this
+    /// exact call existed across `hot.rs`/`batch.rs`/`diag_probes.rs` before
+    /// this task. The block leaves the allocator's bookkeeping (the
+    /// magazine) and enters the caller's hands at this life transition;
+    /// compiled ONLY under `hardened` (non-hardened builds never call this —
+    /// every call site keeps its own `#[cfg(feature = "hardened")]` guard).
+    ///
+    /// # Safety
+    ///
+    /// `base` must be a live, exclusively-owned segment; `off` must be a
+    /// MIN_BLOCK-aligned offset of a real block within it — the same
+    /// precondition every inlined call site this replaces already
+    /// documented locally.
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    #[allow(unsafe_code)]
+    pub(super) unsafe fn bump_gen_on_issue(base: *mut u8, off: usize) {
+        // SAFETY: forwarded from this fn's own contract, documented above.
+        unsafe {
+            crate::alloc_core::segment_header::bump_gen(base, off)
+        };
+    }
+
     /// Allocate `layout.size()` bytes satisfying `layout.align()`. Returns a
     /// non-null `*mut u8` on success, or null on OOM. Memory is
     /// **uninitialised** (matching `GlobalAlloc::alloc`).
@@ -278,11 +326,8 @@ impl HeapCore {
                         // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
                         // measured cost of this specific store on
                         // `small_churn_16b` et al.
-                        {
-                            let base = os::segment_base_of_ptr(issued);
-                            let off = (issued as usize - base as usize) as u32;
-                            SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
-                        }
+                        #[cfg_attr(not(feature = "hardened"), allow(unused_variables))]
+                        let (base, off) = Self::clear_magazine_on_issue(issued);
                         // X7 Ф3 (task #191) touch (a): bump the generation at
                         // ISSUE. The block leaves the allocator's bookkeeping
                         // (the magazine) and enters the caller's hands — this
@@ -291,14 +336,14 @@ impl HeapCore {
                         // `cfg(not)` branch is a bare passthrough).
                         #[cfg(feature = "hardened")]
                         {
-                            let base = os::segment_base_of_ptr(issued);
-                            let off = (issued as usize) - (base as usize);
-                            // SAFETY: `base` is a live, exclusively-owned
-                            // segment; `off` is a MIN_BLOCK-aligned offset.
+                            // SAFETY: `base`/`off` describe the block just
+                            // cleared above — a live, exclusively-owned
+                            // segment and a MIN_BLOCK-aligned offset within
+                            // it (`clear_magazine_on_issue`'s own contract).
                             #[allow(unsafe_code)]
                             unsafe {
-                                crate::alloc_core::segment_header::bump_gen(base, off)
-                            };
+                                Self::bump_gen_on_issue(base, off);
+                            }
                         }
                         return issued;
                     }
@@ -403,21 +448,18 @@ impl HeapCore {
             let bit = 1u16 << new_cnt;
             let is_virgin = (self.tcache.classes[c].virgin_mask & bit) != 0;
             self.tcache.classes[c].virgin_mask &= !bit;
-            {
-                let base = os::segment_base_of_ptr(issued);
-                let off = (issued as usize - base as usize) as u32;
-                SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
-            }
+            #[cfg_attr(not(feature = "hardened"), allow(unused_variables))]
+            let (base, off) = Self::clear_magazine_on_issue(issued);
             #[cfg(feature = "hardened")]
             {
-                let base = os::segment_base_of_ptr(issued);
-                let off = (issued as usize) - (base as usize);
-                // SAFETY: `base` is a live, exclusively-owned segment; `off`
-                // is a MIN_BLOCK-aligned offset.
+                // SAFETY: `base`/`off` describe the block just cleared
+                // above — a live, exclusively-owned segment and a
+                // MIN_BLOCK-aligned offset within it
+                // (`clear_magazine_on_issue`'s own contract).
                 #[allow(unsafe_code)]
                 unsafe {
-                    crate::alloc_core::segment_header::bump_gen(base, off)
-                };
+                    Self::bump_gen_on_issue(base, off);
+                }
             }
             // F7 (task #495): NO stamp here — same P4 reasoning as `alloc`'s
             // own magazine-hit arm above. Every block that can ever sit in
@@ -549,11 +591,13 @@ impl HeapCore {
             let base = os::segment_base_of_ptr(issued);
             let off = (issued as usize) - (base as usize);
             // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
-            // MIN_BLOCK-aligned offset.
+            // MIN_BLOCK-aligned offset (this fresh refill never marked
+            // magazine-residency, so there is no clear_magazine step here —
+            // see `bump_gen_on_issue`'s doc for the shared step this is).
             #[allow(unsafe_code)]
             unsafe {
-                crate::alloc_core::segment_header::bump_gen(base, off)
-            };
+                Self::bump_gen_on_issue(base, off);
+            }
         }
         (issued, is_virgin)
     }
@@ -853,8 +897,8 @@ impl HeapCore {
             // MIN_BLOCK-aligned offset.
             #[allow(unsafe_code)]
             unsafe {
-                crate::alloc_core::segment_header::bump_gen(base, off)
-            };
+                Self::bump_gen_on_issue(base, off);
+            }
         }
         issued
     }
