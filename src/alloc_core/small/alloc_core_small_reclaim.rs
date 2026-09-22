@@ -91,7 +91,18 @@ impl AllocCore {
     ///
     /// `F` receives `(ptr: *mut u8, class_idx: usize)` and must return `true`
     /// if the block is currently resident in the owner's magazine for that class.
-    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+    ///
+    /// Task #2000: gated on `alloc-xthread` alone (not additionally on
+    /// `fastbin`) since [`reclaim_offset`](Self::reclaim_offset) — the
+    /// `not(fastbin)` caller — now delegates here with an always-`false`
+    /// predicate rather than carrying its own byte-for-byte-duplicated guard
+    /// chain. The `#[cfg(feature = "hardened")]` generational check below
+    /// stays correct for that delegation: `hardened` requires `fastbin`
+    /// (`Cargo.toml`), so it can never be active on the `not(fastbin)` path
+    /// `reclaim_offset` uses — the hardened branch simply does not compile in
+    /// there, identical to `reclaim_offset`'s own pre-#2000 body, which never
+    /// had a hardened arm at all.
+    #[cfg(feature = "alloc-xthread")]
     pub(crate) fn reclaim_offset_checked<F: Fn(*mut u8, usize) -> bool>(
         base: *mut u8,
         packed: u32,
@@ -224,123 +235,17 @@ impl AllocCore {
         true
     }
 
+    /// The `not(fastbin)` sibling of [`reclaim_offset_checked`](Self::reclaim_offset_checked)
+    /// — no magazine exists in this configuration, so there is no
+    /// in-magazine leg to consult. Delegates to `reclaim_offset_checked` with
+    /// an always-`false` residency predicate (task #2000: this used to be a
+    /// byte-for-byte-duplicated copy of `reclaim_offset_checked`'s guard
+    /// chain, minus the magazine check — see that function's doc for the
+    /// full guard-by-guard rationale, which applies identically here).
     #[cfg(feature = "alloc-xthread")]
     #[cfg_attr(feature = "fastbin", allow(dead_code))]
     pub(crate) fn reclaim_offset(base: *mut u8, packed: u32) -> bool {
-        // Unpack the offset and the class the cross-thread freer stamped.
-        let (off, class_idx) = crate::alloc_core::remote_free_ring::unpack_entry(packed);
-        let off = off as usize;
-        let class_idx = class_idx as usize;
-        // Contract (see this fn's docs: "defence-in-depth against a garbled ring
-        // value — no abort, just skip"): the ring entry's class field physically
-        // carries 10 bits (0..1023), but only `SMALL_CLASS_COUNT` classes exist.
-        // A garbled entry (e.g. a user heap-overflow writing into this segment's
-        // metadata region) can present `class_idx >= SMALL_CLASS_COUNT`, which
-        // would index `SIZE_CLASS_TABLE` out of bounds in `block_size` below and
-        // panic inside the global allocator → process abort. Bounds-check FIRST
-        // and no-op (return the skip signal) instead, honouring the no-panic
-        // alloc-path discipline.
-        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            return false;
-        }
-        let ptr = Node::deref(base, off);
-        // Field-specific reads: this runs on the Owner's alloc path
-        // (find_segment_with_free's lazy ring drain), concurrent with a
-        // Remote's `dealloc_routing` field reads. A full-struct
-        // `SegmentHeader::read_at` here would race them; reading individual
-        // fields via their offsets touches bytes disjoint from any racing
-        // writer, so there is no data race.
-        if SegmentHeader::magic_at(base) != crate::alloc_core::segment_header::SEGMENT_MAGIC {
-            return false;
-        }
-        let kind = SegmentHeader::kind_at(base);
-        if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
-            return false;
-        }
-        // Sanity: the offset must be a whole number of `block_size` units. carve
-        // aligns the bump to `block_size`, so a real block offset is always a
-        // multiple of its class's block_size. A mis-aligned offset would write
-        // the free-list `next` into the middle of a block — the §13 corruption.
-        // This never fires for a correctly-packed entry; it is defence-in-depth
-        // against a garbled ring value (no abort — just skip, matching the
-        // defensive `dealloc` contract).
-        let bs = SizeClasses::block_size(class_idx) as u32;
-        if !(off as u32).is_multiple_of(bs) {
-            return false;
-        }
-        // H-1 (UBFIX-3): reject an offset in the segment's OWN metadata
-        // region (header / page map / bin table / …) rather than payload —
-        // see `reclaim_offset_checked`'s identical guard for the full
-        // rationale. Primordial segments have the larger footprint (extra
-        // registry/hash/free-list regions), so they use
-        // `primordial_meta_end()`.
-        let payload_start = if kind == SegmentKind::Primordial {
-            SegLayout::primordial_meta_end()
-        } else {
-            SegLayout::small_meta_end()
-        };
-        if off < payload_start {
-            return false;
-        }
-        let meta = SegmentMeta::new(base);
-        // Phase 35 (M6 decommit) — the STALE-RING-INTO-DECOMMITTED-SEGMENT guard.
-        // When a segment empties it is decommitted AND reset: its `bump` returns
-        // to `small_meta_end()` and its alloc bitmap is zeroed. A ring entry that
-        // arrives (or lingers) for an offset in the now-decommitted payload would
-        // pass the bitmap `is_free` check (the reset cleared every bit), and the
-        // reclaim below would `write_next` into a DECOMMITTED page — a UAF / write
-        // to unmapped memory. The bump guard closes this: a real, currently-carved
-        // block always has `off < bump`; an offset `>= bump` is either uncarved or
-        // (post-reset) in the decommitted region — no-op, never touch the page.
-        // This is the concrete realization of design §1.3 ("reclaim does a no-op
-        // BEFORE touching the block on a stale entry") for the reset bitmap. The
-        // owner is the sole `bump` writer, and reclaim runs owner-side, so this
-        // field read is consistent (no concurrent bump write).
-        //
-        // M-1 (UBFIX-3): previously `#[cfg(feature = "alloc-decommit")]`-only,
-        // so non-decommit builds had NO upper bound — a stale/garbled
-        // `off >= bump` value sailed straight through. Corruption containment
-        // must not depend on the decommit feature; unconditional now.
-        if off >= meta.bump_of() {
-            return false;
-        }
-        // Inline of `dealloc_small` (self-less): double-free guard + push to
-        // BinTable. We cannot call the `&mut self` method from here (this fn is
-        // an associated function), so we replicate the body. The replication is
-        // small and the invariant is identical.
-        let mut bt = meta.bin_table();
-        // O(1) exact double-free guard (Phase 13.4a): test the segment's alloc
-        // bitmap instead of walking the free list. The owner is the bitmap's
-        // sole writer (reclaim runs on the owner — see this fn's docs), so the
-        // read/modify/write needs no atomics. Replaces the former inline O(N)
-        // `free_list_contains` walk that gave reclaim the same O(N²) regression
-        // as own-thread free.
-        let mut bm = meta.alloc_bitmap();
-        if bm.is_free(off as u32) {
-            return false; // Already on a free list (M2 double-free): no-op.
-        }
-        let block_nn = match NonNull::new(ptr) {
-            Some(nn) => nn,
-            None => return false,
-        };
-        let old_head = bt.head(class_idx);
-        let old_head_ptr = if old_head == FREE_LIST_NULL {
-            core::ptr::null_mut()
-        } else {
-            Node::deref(base, old_head as usize)
-        };
-        Node::write_next(block_nn, old_head_ptr);
-        bt.set_head(class_idx, off as u32);
-        bm.mark_free(off as u32);
-        // Phase 35 (M6): a cross-thread-freed block is now back on the free
-        // list → one fewer live block. R10-3: `dec_live_and_maybe_decommit`
-        // is now called by the CALLER (the drain closure) after this fn
-        // returns `true`, so the return value can mean "BinTable was
-        // mutated" rather than "decommit fired". Previously this returned
-        // `dec_live_and_maybe_decommit`'s result, which was `false` under
-        // `not(alloc-decommit)` and `false` whenever decommit didn’t fire —
-        // making the return value useless for tracking BinTable changes.
-        true
+        Self::reclaim_offset_checked(base, packed, &|_ptr, _class_idx| false)
     }
 }
 

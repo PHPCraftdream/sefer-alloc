@@ -493,7 +493,17 @@ pub(crate) fn pack_entry(off: u32, class_idx: u32) -> u32 {
 }
 
 /// Unpack a ring entry into `(offset, class_idx)`.
-#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+///
+/// Task #2000: `#[cfg_attr]` widened to mirror [`pack_entry`]'s own —
+/// `reclaim_offset` no longer inlines its own `unpack_entry` call (it
+/// delegates to `reclaim_offset_checked`, whose `hardened`/non-hardened
+/// unpack split lives in ITS body, same shape as `entry_class_idx` above),
+/// so under a `hardened` build this fn has no live caller left, same as
+/// `pack_entry` already anticipated.
+#[cfg_attr(
+    any(not(feature = "alloc-xthread"), feature = "hardened"),
+    allow(dead_code)
+)]
 #[inline(always)]
 pub(crate) fn unpack_entry(packed: u32) -> (u32, u32) {
     (packed & ENTRY_OFF_MASK, packed >> ENTRY_OFF_BITS)
