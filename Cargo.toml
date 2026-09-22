@@ -2397,7 +2397,7 @@ required-features = ["alloc-global"]
 # own `#![cfg(...)]` gate, for an apples-to-apples comparison.
 [[example]]
 name = "sol_f1_dbg_carve_batch_negative_probe"
-required-features = ["alloc-core", "internals"]
+required-features = ["alloc-core"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
