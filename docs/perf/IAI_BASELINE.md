@@ -1507,3 +1507,40 @@ refresh is owed per `CLAUDE.md`'s own rule; this section exists because it
 is a NEW baseline (the arms did not exist before), not a refresh of an
 existing one.
 
+## Task #1999 (2026-09-22) — `alloc_zeroed_magazine_{prefill,hit}_only_16b` stub-to-real jump; #1982 re-measured NULL
+
+**`alloc_zeroed_magazine_prefill_only_16b` and `alloc_zeroed_magazine_hit_only_16b`
+jump from `Ir=3` to `Ir≈8,700-9,100` in this and every future `npm run iai`
+run — this is the stub being replaced with a real body, NOT a regression.**
+Before this task, the `not(feature = "virgin-zero-skip")` arm of this pair
+(the arm `npm run iai`'s own default features, `production bench-internals
+internals`, actually compile — `production` does not include
+`virgin-zero-skip`) was a `black_box(0u8)` no-op stub, so these two rows
+never measured a real allocator call. Full writeup, entry-point
+justification, and the re-measurement of #1982 (task #1982, `68fe92ef`) this
+gap had blocked: `docs/perf/TASK1999_ALLOC_ZEROED_STUB_GAP.md`.
+
+**Measured (`production bench-internals internals`, WSL Ubuntu-24.04,
+`iai-callgrind-runner 0.14.2`, valgrind 3.22.0):**
+
+| source | prefill Ir | hit Ir | 16-hit marginal (hit − prefill) |
+|---|---:|---:|---:|
+| stub (any commit before this task) | 3 | 3 | n/a |
+| before #1982 (`105d89e2` + this task's bench diff) | 8,561 | 8,952 | 391 |
+| after #1982 (this task's own HEAD) | 8,707 | 9,098 | 391 |
+
+**#1982 re-measurement verdict: NULL.** The 16-hit marginal cost — the
+actual per-call `alloc_zeroed` cost the classify-once split touches — is
+**391 Ir before and after #1982, to the last digit.** Both rows' raw Ir did
+shift by a constant +146 (a codegen-shape change to `alloc` itself, now a
+wrapper around `alloc_with_class`, visible on the prefill arm too even
+though it never calls `alloc_zeroed`), but that shift cancels exactly in the
+marginal figure the bench pair is designed to isolate. Confirms, with real
+numbers, #1982's own commit message: "NO SPEEDUP MEASURED OR CLAIMED."
+
+Raw logs: `docs/perf/_raw_task1999_alloc_zeroed_stub_gap_after_1982.log`,
+`docs/perf/_raw_task1999_alloc_zeroed_stub_gap_before_1982.log`. Summary CSV:
+`docs/perf/TASK1999_ALLOC_ZEROED_STUB_GAP_summary.csv`. `production`'s
+feature composition is unchanged by this task (only `benches/perf_gate_iai.rs`'s
+two stub bodies changed) — no README refresh owed.
+

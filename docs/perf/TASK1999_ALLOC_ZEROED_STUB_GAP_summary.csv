@@ -1,0 +1,7 @@
+measurement,commit_or_ref,bench_function,ir,l1_hits,l2_hits,ram_hits,est_cycles
+stub_baseline,7bbdbd57 (pre-task #1999),alloc_zeroed_magazine_prefill_only_16b,3,4,0,1,39
+stub_baseline,7bbdbd57 (pre-task #1999),alloc_zeroed_magazine_hit_only_16b,3,4,0,1,39
+before_1982,105d89e2 + this commit's bench-file diff,alloc_zeroed_magazine_prefill_only_16b,8561,11382,90,286,21842
+before_1982,105d89e2 + this commit's bench-file diff,alloc_zeroed_magazine_hit_only_16b,8952,11862,91,293,22572
+after_1982,7bbdbd57 + this commit's bench-file diff (task #1999 HEAD),alloc_zeroed_magazine_prefill_only_16b,8707,11553,90,288,22083
+after_1982,7bbdbd57 + this commit's bench-file diff (task #1999 HEAD),alloc_zeroed_magazine_hit_only_16b,9098,12035,91,293,22745

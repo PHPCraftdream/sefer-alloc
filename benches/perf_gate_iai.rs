@@ -626,11 +626,23 @@ fn alloc_zeroed_magazine_hit_only_16b() {
     black_box(&ptrs);
 }
 
-// No-op stubs so `library_benchmark_group!` resolves when `virgin-zero-skip`
-// is absent (mirrors the R24-8 `batch-api` stub pattern used elsewhere in
-// this file). Without `virgin-zero-skip`, `alloc_zeroed`'s small-classified
-// branch does not route through `alloc_small_zeroed_via_magazine` at all, so
-// there is no hit arm to measure in that configuration.
+// Task #1999: these two rows were `black_box(0u8)` no-op stubs from R23-3
+// through R34 -- `npm run iai` runs under `production bench-internals
+// internals` (`scripts/iai.mjs`'s own `DEFAULT_FEATURES`), which does NOT
+// include `virgin-zero-skip`, so the gate that actually guards this repo
+// measured Ir=3 (a black_box, not an allocator call) for both rows while the
+// calloc-shaped path plain `production` users actually execute (small
+// `alloc_zeroed` without `virgin-zero-skip`) had zero instruction-count
+// coverage. See `docs/perf/IAI_BASELINE.md`'s note at these two rows for the
+// stub-to-real Ir jump this produced (NOT a regression).
+//
+// BYTE-IDENTICAL prefill loop to `alloc_magazine_prefill_only_16b` (plain
+// `alloc`/`dealloc` -- fill/free never depended on `virgin-zero-skip`; a
+// freed block is never virgin regardless of this feature, R13-3), so this
+// pair shares the SAME shared-prefix-subtraction technique R23-3 established
+// for the `virgin-zero-skip` sibling pair above: subtracting the prefill
+// arm's Ir from the hit arm's Ir isolates exactly `MAGAZINE_FILL` (16) hits'
+// cost, fill cost cancelled exactly.
 #[cfg(all(
     target_os = "linux",
     feature = "alloc-xthread",
@@ -639,9 +651,54 @@ fn alloc_zeroed_magazine_hit_only_16b() {
 ))]
 #[library_benchmark]
 fn alloc_zeroed_magazine_prefill_only_16b() {
-    black_box(0u8);
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for _ in 0..PREFILL_CYCLES {
+        // Carve 16 fresh blocks (never magazine-resident before -- these are
+        // carve/refill misses, not hits).
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { (*heap).alloc(layout) };
+        }
+        black_box(&ptrs);
+        // Populate the magazine: free all 16 -- each push lands in the
+        // magazine (count 0 -> 16). After the LAST cycle the magazine is
+        // left holding 16 resident blocks and this arm does NOT drain them --
+        // exactly the shared prefix the hit arm below adds ONE more step onto.
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, freed exactly once.
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
 }
 
+// Task #1999 -- BYTE-IDENTICAL to `alloc_zeroed_magazine_prefill_only_16b`
+// immediately above except for ONE added step after the shared prefill loop:
+// drain the 16 blocks the last fill cycle just pushed, via `alloc_zeroed`
+// instead of `alloc`. Without `virgin-zero-skip`, `HeapCore::alloc_zeroed`'s
+// small-classified branch delegates ENTIRELY to `alloc_with_class` (the SAME
+// magazine pop `alloc_magazine_hit_only_16b` exercises) followed by an
+// UNCONDITIONAL `Node::zero` (`src/registry/heap_core/alloc/hot.rs`'s
+// `not(feature = "virgin-zero-skip")` arm) -- there is no virgin bypass to
+// activate or avoid in this configuration, so no separate path-activation
+// oracle is needed the way the `virgin-zero-skip` sibling pair's own comment
+// describes (that oracle exists to prove a HIT, not a MISS/refill, was
+// taken; this branch has no virgin/non-virgin split at all, only
+// hit-vs-miss, and the prefill loop's `dealloc` guarantees a resident,
+// poppable block exactly as it does for the plain `alloc_magazine_hit_only_16b`
+// row). Every one of these 16 calls is therefore a magazine HIT. Subtracting
+// the prefill arm's Ir from this arm's Ir isolates 16 hits' cost INCLUDING
+// the unconditional zero-fill -- the calloc-shaped cost plain `production`
+// actually pays on every non-virgin small `alloc_zeroed` call. Layer:
+// `HeapCore::alloc_zeroed` -- the SAME layer `SeferAlloc::alloc_zeroed`'s
+// `#[global_allocator]` chain reaches, per CLAUDE.md's entry-point rule.
 #[cfg(all(
     target_os = "linux",
     feature = "alloc-xthread",
@@ -650,7 +707,37 @@ fn alloc_zeroed_magazine_prefill_only_16b() {
 ))]
 #[library_benchmark]
 fn alloc_zeroed_magazine_hit_only_16b() {
-    black_box(0u8);
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for _ in 0..PREFILL_CYCLES {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { (*heap).alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, freed exactly once.
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
+    // Timed-in-spirit region: drain the magazine ONE more time via
+    // `alloc_zeroed`. `count` starts at 16 (just populated by the last
+    // prefill cycle) and every one of these 16 calls pops from it -- all 16
+    // are magazine HITS, never a miss/refill.
+    for slot in ptrs.iter_mut() {
+        // SAFETY: `heap` was returned live (non-null) by `HeapRegistry::claim`
+        // above and is dereferenced only on the claiming thread; `layout` has
+        // non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc_zeroed(layout) };
+    }
+    black_box(&ptrs);
 }
 
 // R23-3 -- free routing, Tier-2 (8192-slot open-addressing hash probe)
