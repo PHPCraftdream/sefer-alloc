@@ -57,13 +57,26 @@
 //! Values still LIVE when the region is dropped ARE dropped by
 //! [`EpochRegion`]'s `Drop` (under `&mut` exclusivity), so I5 holds for them.
 
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Mutex;
 
 use crossbeam_epoch as epoch;
 
 use crate::concurrent::epoch::hand::{AtomicSlot, EvictOutcome};
 use crate::concurrent::EpochHandle;
+
+/// Source of [`EpochRegion::region_id`]: a process-global, monotonically
+/// increasing counter, one tick per `EpochRegion` constructed (R2-03,
+/// independent src review round 2, task #2005). Starts at 1 so `0` stays
+/// unused (not currently relied upon as a sentinel, but kept free of the
+/// live id space defensively). `Relaxed`: this counter establishes no
+/// happens-before relationship of its own — it only needs each call to
+/// observe a value no other call has ever observed, which `fetch_add`
+/// already guarantees atomically regardless of ordering. A `u64` cannot
+/// realistically wrap within a process's lifetime (billions of regions
+/// constructed per second, sustained for centuries), so no overflow
+/// handling is needed, unlike this tier's `u32` index/generation spaces.
+static NEXT_EPOCH_REGION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Writer-serialised bookkeeping: the free list (a stack of vacant slot
 /// indices). Held inside the writer `Mutex`, so the writer that holds the lock
@@ -125,6 +138,17 @@ struct FreeState {
     note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
 )]
 pub struct EpochRegion<T> {
+    /// R2-03 (independent src review round 2, task #2005): this region's
+    /// never-reused instance identity, assigned from
+    /// [`NEXT_EPOCH_REGION_ID`] at construction. Stamped into every handle
+    /// this region mints ([`EpochHandle::new`]) and checked FIRST — before
+    /// any slot lookup or generation CAS — by every operation that takes a
+    /// handle, so a handle minted by a DIFFERENT `EpochRegion<T>` is
+    /// rejected outright rather than being evaluated against this region's
+    /// slot table (where its raw `(index, generation)` may coincidentally
+    /// match a real slot). See the struct-level and `EpochHandle` docs for
+    /// the concrete cross-instance hazard this closes.
+    region_id: u64,
     slots: Box<[AtomicSlot<T>]>,
     /// Writer-only bookkeeping (free list). The eviction and the live count
     /// are NOT under this lock (Phase 7b): the evict is a CAS, and `len` is an
@@ -170,6 +194,7 @@ impl<T> EpochRegion<T> {
             .map(|i| u32::try_from(i).expect("index fits u32 (checked above)"))
             .collect();
         Self {
+            region_id: NEXT_EPOCH_REGION_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             slots: slots.into_boxed_slice(),
             state: Mutex::new(FreeState { free }),
             remote_free: Mutex::new(Vec::new()),
@@ -204,10 +229,17 @@ impl<T> EpochRegion<T> {
     /// R2-02 (independent src review round 2, task #2004): `T: Sync` —
     /// `read_with` may share `&T` across concurrently-calling threads; see
     /// its own doc comment (`hand.rs`) for the full rationale.
+    ///
+    /// R2-03 (independent src review round 2, task #2005): rejects a handle
+    /// minted by a DIFFERENT `EpochRegion<T>` instance (`region_id`
+    /// mismatch) before any slot lookup — see the struct doc.
     pub fn get_with<R>(&self, handle: EpochHandle<T>, f: impl FnOnce(&T) -> R) -> Option<R>
     where
         T: Sync,
     {
+        if handle.region_id != self.region_id {
+            return None;
+        }
         let guard = epoch::pin();
         let slot = self.slots.get(handle.index as usize)?;
         slot.read_with(handle.generation, &guard, f)
@@ -348,7 +380,7 @@ impl<T> EpochRegion<T> {
         // fetch_add (not the mutex-guarded `state.len`) so a concurrent remote
         // remover's fetch_sub races correctly (Phase 7b accounting).
         self.len.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        Ok(EpochHandle::new(index, generation))
+        Ok(EpochHandle::new(self.region_id, index, generation))
     }
 
     /// Removes the value for `handle` from the OWNER thread, returning `true`
@@ -380,10 +412,18 @@ impl<T> EpochRegion<T> {
     /// 'static` — this calls `AtomicSlot::try_evict_at`, which may
     /// `defer_destroy` the removed value; see that method's doc comment
     /// (`hand.rs`) for the full rationale.
+    ///
+    /// R2-03 (independent src review round 2, task #2005): rejects a handle
+    /// minted by a DIFFERENT `EpochRegion<T>` instance (`region_id`
+    /// mismatch) before any slot lookup or generation CAS — see the struct
+    /// doc.
     pub fn remove(&self, handle: EpochHandle<T>) -> bool
     where
         T: Send + 'static,
     {
+        if handle.region_id != self.region_id {
+            return false;
+        }
         let guard = epoch::pin();
         let Some(slot) = self.slots.get(handle.index as usize) else {
             return false;
@@ -441,10 +481,18 @@ impl<T> EpochRegion<T> {
     /// 'static` — same `defer_destroy` rationale as [`remove`](Self::remove);
     /// see `AtomicSlot::install`'s doc comment (`hand.rs`) for the full
     /// argument.
+    ///
+    /// R2-03 (independent src review round 2, task #2005): rejects a handle
+    /// minted by a DIFFERENT `EpochRegion<T>` instance (`region_id`
+    /// mismatch) before any slot lookup or generation CAS — see the struct
+    /// doc.
     pub(crate) fn remote_evict(&self, handle: EpochHandle<T>) -> bool
     where
         T: Send + 'static,
     {
+        if handle.region_id != self.region_id {
+            return false;
+        }
         let guard = epoch::pin();
         let Some(slot) = self.slots.get(handle.index as usize) else {
             return false;

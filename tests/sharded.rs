@@ -378,12 +378,19 @@ fn worker(tid: usize, region: &ShardedRegion<Tagged>) -> usize {
 /// region carries the shard id the router assigned it, and the router ALWAYS
 /// uses that `handle.shard` to pick the shard — it never probes a foreign shard.
 ///
-/// Because each `EpochRegion` claims the lowest free index first, two handles
-/// minted in different shards may share the SAME inner `(index, generation)`.
-/// That is FINE — they are still distinct `ShardedHandle`s (different `.shard`),
-/// and each resolves ONLY through the router to its own shard. There is no way
-/// to make `region.get(h0)` accidentally read shard 1's slot: `h0.shard == 0`
-/// and the router routes by that field.
+/// Because each shard is its own `EpochRegion` and each claims the lowest
+/// free index first, two handles minted in different shards may share the
+/// same raw `(index, generation)`. Routing was ALWAYS sound regardless (the
+/// `ShardedHandle.shard` field is the routing truth, independent of the
+/// inner handle's own equality) — but since R2-03 (independent src review
+/// round 2, task #2005) the inner `EpochHandle`s are ALSO distinct even when
+/// `(index, generation)` coincide: each shard is a separately-constructed
+/// `EpochRegion` with its own never-reused `region_id`, so
+/// `EpochHandle::eq` (which now compares `region_id` too) tells them apart
+/// on its own. There is no way to make `region.get(h0)` accidentally read
+/// shard 1's slot: `h0.shard == 0` and the router routes by that field, and
+/// — as of R2-03 — a handle minted in shard 1 would ALSO be rejected outright
+/// if it were (incorrectly) presented to shard 0's underlying `EpochRegion`.
 #[test]
 fn router_uses_handle_shard_and_handles_from_distinct_shards_are_distinct() {
     let region = ShardedRegion::<u64>::with_shards(3, 8);
@@ -412,12 +419,16 @@ fn router_uses_handle_shard_and_handles_from_distinct_shards_are_distinct() {
     );
     let (_, inner0) = ShardedRegion::<u64>::split_handle(h0);
     let (_, inner1) = ShardedRegion::<u64>::split_handle(h1);
-    // The inner handles are very likely identical (both index 0, generation 0)
-    // — which is exactly WHY the shard field is the routing truth.
-    assert_eq!(
+    // R2-03 (independent src review round 2, task #2005): the inner handles
+    // are ALSO distinct now, even though both shards claim raw index 0 at
+    // generation 0 — each shard's `EpochRegion` has its own `region_id`, and
+    // `EpochHandle::eq` compares it. This is a STRONGER guarantee than the
+    // pre-R2-03 behavior (where these would have compared equal and only the
+    // shard field distinguished them) — routing was always sound either way.
+    assert_ne!(
         inner0, inner1,
-        "both shards claim the lowest index first, so inner handles coincide; \
-         the shard field is what distinguishes them"
+        "since R2-03, inner handles from different shards are distinct via \
+         region_id even when (index, generation) coincide"
     );
 
     // Removing h0 affects ONLY shard 0; h1 (shard 1) is untouched.

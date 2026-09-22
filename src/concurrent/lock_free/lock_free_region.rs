@@ -15,11 +15,23 @@
 //! encapsulates the atomic pointer + memory ordering, so this module stays
 //! under the crate's `#![forbid(unsafe_code)]`.
 
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
 
 use crate::concurrent::LockFreeHandle;
+
+/// Source of [`LockFreeRegion::region_id`]: a process-global, monotonically
+/// increasing counter, one tick per `LockFreeRegion` constructed (R2-03,
+/// independent src review round 2, task #2005). Mirrors
+/// `epoch_region::NEXT_EPOCH_REGION_ID` — see that constant's doc for the
+/// full rationale (starts at 1, `Relaxed`, no realistic `u64` overflow).
+/// Deliberately a SEPARATE counter (not shared with the epoch tier's): the
+/// two handle types (`LockFreeHandle<T>` vs `EpochHandle<T>`) are already
+/// statically distinct, so their id spaces never need to be compared against
+/// each other.
+static NEXT_LOCK_FREE_REGION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Log2 of the number of slots per page. A page holds `1 << PAGE_BITS` = 64
 /// slots — small enough that copy-on-write of one page is cheap, large enough
@@ -165,6 +177,16 @@ impl<T> Clone for Snapshot<T> {
     note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
 )]
 pub struct LockFreeRegion<T> {
+    /// R2-03 (independent src review round 2, task #2005): this region's
+    /// never-reused instance identity, assigned from
+    /// [`NEXT_LOCK_FREE_REGION_ID`] at construction. Stamped into every
+    /// handle this region mints ([`LockFreeHandle::new`]) and checked FIRST
+    /// — before any slot lookup — by [`get`](Self::get)/[`remove`](Self::remove),
+    /// so a handle minted by a DIFFERENT `LockFreeRegion<T>` is rejected
+    /// outright rather than being evaluated against this region's page
+    /// table. See [`LockFreeHandle`]'s doc for the cross-instance hazard
+    /// this closes.
+    region_id: u64,
     /// The atomically-published snapshot. `load` is lock-free; `store` is a
     /// single Release swap.
     state: ArcSwap<Snapshot<T>>,
@@ -177,6 +199,7 @@ impl<T> LockFreeRegion<T> {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            region_id: NEXT_LOCK_FREE_REGION_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             state: ArcSwap::new(Arc::new(Snapshot {
                 pages: Vec::new(),
                 free_head: None,
@@ -234,6 +257,7 @@ impl<T> LockFreeRegion<T> {
             pages.push(Arc::new(slots));
         }
         Self {
+            region_id: NEXT_LOCK_FREE_REGION_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             state: ArcSwap::new(Arc::new(Snapshot {
                 pages,
                 free_head,
@@ -265,8 +289,15 @@ impl<T> LockFreeRegion<T> {
     /// any lock. The returned [`Arc<T>`] is owned, so the caller holds no guard
     /// after this returns — the snapshot is reclaimed by refcounting once no
     /// reader pins it.
+    ///
+    /// R2-03 (independent src review round 2, task #2005): rejects a handle
+    /// minted by a DIFFERENT `LockFreeRegion<T>` instance (`region_id`
+    /// mismatch) before any slot lookup — see the struct doc.
     #[must_use]
     pub fn get(&self, handle: LockFreeHandle<T>) -> Option<Arc<T>> {
+        if handle.region_id != self.region_id {
+            return None;
+        }
         let snap = self.state.load();
         let page = snap.pages.get((handle.index >> PAGE_BITS) as usize)?;
         let slot = &page[(handle.index as usize) & (PAGE - 1)];
@@ -313,7 +344,7 @@ impl<T> LockFreeRegion<T> {
 
         next.len += 1;
         self.state.store(Arc::new(next));
-        LockFreeHandle::new(index, generation)
+        LockFreeHandle::new(self.region_id, index, generation)
     }
 
     /// Removes and returns the value for `handle`, or `None` if it is already
@@ -334,7 +365,14 @@ impl<T> LockFreeRegion<T> {
     /// slot is **retired** — left `Vacant` (so old handles still go stale) but
     /// *not* threaded onto the free list, so it is never reused. This keeps
     /// generation wrap impossible at the cost of one slot per `2^32` reuses.
+    ///
+    /// R2-03 (independent src review round 2, task #2005): rejects a handle
+    /// minted by a DIFFERENT `LockFreeRegion<T>` instance (`region_id`
+    /// mismatch) before any slot lookup — see the struct doc.
     pub fn remove(&self, handle: LockFreeHandle<T>) -> Option<Arc<T>> {
+        if handle.region_id != self.region_id {
+            return None;
+        }
         let _guard = self.writers.lock().expect("writer mutex poisoned");
         let cur = self.state.load_full();
         let mut next: Snapshot<T> = (*cur).clone();

@@ -390,6 +390,42 @@ impl<T> AtomicSlot<T> {
         // subsequent reader's Acquire load observes null (never the about-to-
         // be-destroyed pointer).
         let old: Shared<'_, T> = self.value.swap(Shared::null(), Ordering::AcqRel, guard);
+        // R2-03 (independent src review round 2, task #2005): `old` CAN be
+        // null here — e.g. a handle from a DIFFERENT `EpochRegion<T>`
+        // instance (before `EpochRegion`'s own `region_id` gate rejects it
+        // upfront) whose raw `(index, generation)` coincidentally matches
+        // THIS slot's current, but never-installed/vacant, generation. The
+        // CAS above only checks the numeric generation — it has no way to
+        // know whether a value was ever actually published at it. Treat a
+        // null `old` as NOT a real eviction: no value existed to reclaim, so
+        // report `Stale` (the caller's existing no-op path) rather than
+        // `Evicted`, so it does NOT decrement `len` or re-add this index to
+        // the free list (which is already vacant/free — double-adding it
+        // would let two live installs collide on the same slot). The
+        // generation bump from the CAS above is harmless to leave in place:
+        // no live handle was ever minted at the pre-CAS generation for a
+        // slot that was never installed, so nothing legitimate goes stale
+        // because of it.
+        //
+        // This was PREVIOUSLY documented as "defer_destroy(null) is a
+        // no-op" — that claim is WRONG and was never load-bearing safety
+        // reasoning, just an inaccurate comment: `crossbeam_epoch::Shared::
+        // into_owned` (which `defer_destroy`'s deferred closure calls)
+        // carries `debug_assert!(!self.is_null(), "converting a null
+        // `Shared` into `Owned`")`, and the `Owned` reconstruction it feeds
+        // itself asserts `data != 0`. In a debug build this panics — on
+        // whichever thread the epoch collector later runs the deferred
+        // closure on, not necessarily this one. In a release build (asserts
+        // compiled out) it reconstructs an `Owned<T>` pointing at address 0
+        // and drops it, an out-of-bounds/null deallocation — undefined
+        // behavior. Confirmed empirically before this fix: an
+        // `EpochRegion::remove` call with a cross-instance handle targeting
+        // a genuinely never-installed (vacant) slot won the generation CAS,
+        // reported `true` (a phantom removal), and underflowed the target
+        // region's `len` to `usize::MAX`.
+        if old.is_null() {
+            return EvictOutcome::Stale;
+        }
         // SAFETY: identical contract to `evict`'s defer_destroy, restated for
         // the multi-thread eviction context:
         //  1. WE WON THE CAS — so we are the UNIQUE thread that may reclaim a
@@ -414,15 +450,9 @@ impl<T> AtomicSlot<T> {
         //     loaded `old` did so under a pinned `guard`; `defer_destroy(old)`
         //     frees the pointee only after the next epoch advance past every
         //     such reader's guard. We do NOT dereference `old` here.
-        //  4. `old` MAY BE NULL: if the slot was already vacant at
-        //     `expected_gen` (e.g. a retire-without-reuse left it vacant, or
-        //     a prior `drop_value` ran under exclusive access — impossible
-        //     concurrently but defensive), `defer_destroy(null)` is a no-op.
-        //     A CAS win at `expected_gen` against a slot a live handle pointed
-        //     at implies a value WAS installed (the handle was minted by an
-        //     install), so in practice `old` is non-null; the null guard is
-        //     belt-and-braces. We trust the caller (EpochRegion) to only call
-        //     this for handles it minted.
+        //  4. NON-NULL: checked immediately above — a null `old` returns
+        //     `Stale` before reaching this point, so `defer_destroy` here
+        //     only ever runs on a genuine, previously-installed pointer.
         unsafe {
             guard.defer_destroy(old);
         }
