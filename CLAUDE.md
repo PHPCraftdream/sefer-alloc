@@ -602,6 +602,34 @@ Core instructions, mandatory for all code in this repository. They
      `flush_magazine_class` prototype but left the R24-2-era
      `dbg_overflow_bitmap_clear_pass` hook it depended on in place under the
      wider gate, undiscovered until an independent review caught it.
+  4. **Point 2's "the one sanctioned exception is `dbg_push_to_ring`" is
+     superseded, not contradicted, by `tests/dbg_hook_safety_tripwire.rs`'s
+     R30-2 redesign** (task #1996 finding, verified against the live test
+     file rather than acted on blind): that test enforces a BROADER, already-
+     shipped mechanical rule — every crate-public `dbg_*` hook must be either
+     `bench-internals`-gated OR individually allowlisted in that file's
+     `PURE_OBSERVERS`/`SAFE_MUTATORS` tables with a one-line invariant
+     justification (read-only; or delegates to the real production code path;
+     or the mutation is bounded to inert bookkeeping that cannot produce UB or
+     a wrong pointer). ~80 hooks across `src/` are allowlisted this way today.
+     `dbg_fallback_lock_acquisitions`, `dbg_panic_in_with_heap_releases_lock`,
+     `dbg_teardown_then_resolve_is_fallback`, and
+     `dbg_teardown_then_resolve_is_foreign_no_bind` (`src/global/`) were
+     flagged by an independent review as inconsistent stragglers relative to
+     their `bench-internals`-gated siblings in the same files — but all four
+     are already correctly classified and justified in that allowlist (the
+     `safe_dbg_hooks_match_reviewed_allowlist` test passes), matching the
+     SAME treatment given to the ~80 other entries, none of which self-
+     document their exemption at the definition site either (the allowlist is
+     deliberately the ONE place the justification lives, not duplicated per
+     call site). Re-gating just these four behind `bench-internals` would
+     have been LESS consistent with the codebase's actual practice, not more
+     — it would single out 4 of ~84 identically-shaped exemptions for
+     different treatment for no reason tied to their actual risk. No code
+     changed for task #1996; this point is the fix — recording, in the one
+     place a future sweep reads before re-flagging the same non-issue, that
+     the tripwire's allowlist (not point 2's single named exception) is the
+     current, comprehensive resolution mechanism.
 - **A benchmark/report that sweeps a runtime configuration value across
   multiple arms (e.g. `pool_segments`, cache sizes, thread counts fed through
   `with_config`/similar) MUST report, per arm, the evidence that the arm
