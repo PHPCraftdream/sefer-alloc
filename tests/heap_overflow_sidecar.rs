@@ -171,7 +171,7 @@ fn sidecar_stays_null_until_inline_tier_exhausted_then_materialises() {
 /// materialise-after-rollback recovery.
 #[test]
 fn sidecar_rollback_is_recoverable_no_permanent_wedge() {
-    let ring = HeapOverflow::new_boxed_for_test();
+    let mut ring = HeapOverflow::new_boxed_for_test();
 
     // Advance tail to INLINE_CAP (draining as we go) so the ring is
     // positioned exactly at the inline/sidecar boundary — the state a real
@@ -258,7 +258,7 @@ fn sidecar_rollback_is_recoverable_no_permanent_wedge() {
 /// FINAL, successful push.
 #[test]
 fn repeated_sidecar_rollback_cycles_never_corrupt_cursors() {
-    let ring = HeapOverflow::new_boxed_for_test();
+    let mut ring = HeapOverflow::new_boxed_for_test();
     let inline_cap = ring.dbg_fill_and_drain_inline_tier_for_test();
     assert!(inline_cap > 0);
 

@@ -69,7 +69,7 @@ fn drain_fully_drained_returns_stop_position_equal_to_tail() {
 /// `loom_heap_overflow_drain_guard.rs`.
 #[test]
 fn drain_stopping_at_unpublished_slot_returns_stop_position_not_tail() {
-    let ring = HeapOverflow::new_boxed_for_test();
+    let mut ring = HeapOverflow::new_boxed_for_test();
     // Slot 0: fully published. tail: 0 -> 1.
     assert!(ring.push(synthetic_base(0), 111));
     // Slot 1: reserved but NOT published (the mid-push window). tail: 1 -> 2;
@@ -104,7 +104,7 @@ fn drain_stopping_at_unpublished_slot_returns_stop_position_not_tail() {
 /// gap, it does not "catch up" to `t` on a second call).
 #[test]
 fn second_drain_after_early_stop_parks_at_the_gap() {
-    let ring = HeapOverflow::new_boxed_for_test();
+    let mut ring = HeapOverflow::new_boxed_for_test();
     assert!(ring.push(synthetic_base(0), 111));
     ring.dbg_reserve_unpublished_for_test();
 

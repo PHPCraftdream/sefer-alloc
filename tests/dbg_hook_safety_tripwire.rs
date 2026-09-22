@@ -405,11 +405,11 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
     ),
     (
         "src/registry/heap_overflow.rs::dbg_rollback_sidecar_sentinel_for_test",
-        "panics if the sidecar pointer is not already null on entry (self-checked precondition); drives only the real rollback sequence",
+        "R2-07 (task #2009): &mut self, only reachable via new_boxed_for_test's exclusively-owned standalone ring, never a shared production HeapOverflow; panics if the sidecar pointer is not already null on entry (self-checked precondition); drives only the real rollback sequence",
     ),
     (
         "src/registry/heap_overflow.rs::dbg_reserve_unpublished_for_test",
-        "[DEBUG_ASSERT ONLY] advances a REAL HeapOverflow ring's tail without publishing; bound to the inline tier is a debug_assert (compiled out in release) not a release-surviving guard, but misuse only corrupts this ring's own tail bookkeeping/occupancy accounting, never a caller-visible pointer",
+        "R2-07 (task #2009): &mut self, only reachable via new_boxed_for_test's exclusively-owned standalone ring; advances a REAL HeapOverflow ring's tail without publishing, but the inline-tier bound is now a real assert! in every profile (release-surviving), not a debug_assert -- misuse can no longer advance tail into the sidecar range without a backing store",
     ),
     (
         "src/registry/heap_overflow.rs::dbg_fill_and_drain_inline_tier_for_test",

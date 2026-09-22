@@ -463,6 +463,22 @@ impl HeapOverflow {
     /// (`new_boxed_for_test`) is never contended by another test, so this
     /// hook needs no "only if UNINIT" guard.
     ///
+    /// R2-07 (independent src review round 2, task #2009): `&mut self`, not
+    /// `&self` — this hook drives a real materialisation-sentinel CAS
+    /// followed by an UNCONDITIONAL null store on `self.sidecar`. Against a
+    /// registry-resident, `&'static`-shared `HeapOverflow` a genuine
+    /// concurrent `ensure_overflow_sidecar` caller could observe the
+    /// sentinel this hook installs, lose its own CAS, and spin in the loser
+    /// branch waiting for a real pointer; this hook's final unconditional
+    /// null store would then read as "the winner hit OOM" to that spinning
+    /// caller, injecting a spurious sidecar-materialisation failure into
+    /// live production traffic this probe never touched. `&mut self` makes
+    /// that unreachable BY CONSTRUCTION: the only way to obtain it is
+    /// [`new_boxed_for_test`](Self::new_boxed_for_test)'s exclusively-owned
+    /// `Box`, never the shared `&'static HeapSlot` production reaches this
+    /// ring through — mirrors R2-04's identical `&self` -> `&mut self`
+    /// fix for `EpochRegion`'s test-only generation setter.
+    ///
     /// # Panics
     ///
     /// Panics if this ring's sidecar pointer is not currently `null` (a
@@ -470,7 +486,7 @@ impl HeapOverflow {
     /// constructed standalone ring before any real push has touched the
     /// sidecar range).
     #[doc(hidden)]
-    pub fn dbg_rollback_sidecar_sentinel_for_test(&self) -> bool {
+    pub fn dbg_rollback_sidecar_sentinel_for_test(&mut self) -> bool {
         super::bootstrap::dbg_rollback_overflow_sidecar_sentinel_reenterable(&self.sidecar)
     }
 
@@ -489,6 +505,18 @@ impl HeapOverflow {
     /// below only reaches a sidecar index after a successful `ensure_sidecar`
     /// call for THAT same push, or on the drain side, only for an index a
     /// producer already proved reachable by successfully publishing into it).
+    ///
+    /// R2-07 (independent src review round 2, task #2009): this precondition
+    /// check is a real `assert!`, not a `debug_assert!` — the guard directly
+    /// upstream of an `unsafe` pointer dereference
+    /// ([`bootstrap::deref_overflow_sidecar`](super::bootstrap::deref_overflow_sidecar)),
+    /// so a release build must never silently compile it out and proceed to
+    /// dereference a null/sentinel pointer. Production callers never pay for
+    /// this in practice (the wedge-hazard-safe ordering in
+    /// [`push_impl`](Self::push_impl) already guarantees the precondition
+    /// unconditionally before this is ever reached), so this is defense in
+    /// depth against a caller contract violation, not a documented-cost
+    /// tradeoff.
     #[inline]
     fn slot(&self, raw: usize) -> (&AtomicPtr<u8>, &AtomicU32) {
         let idx = raw % HEAP_OVERFLOW_CAP;
@@ -497,7 +525,7 @@ impl HeapOverflow {
         } else {
             let p = self.sidecar.load(Ordering::Acquire);
             let p_usize = p.addr();
-            debug_assert!(
+            assert!(
                 p_usize != 0 && p_usize != SIDECAR_SENTINEL_INITIALIZING,
                 "HeapOverflow::slot: sidecar index {idx} reached before sidecar materialised"
             );
@@ -798,14 +826,41 @@ impl HeapOverflow {
     /// there is no CAS (a plain store suffices under the single-writer test
     /// discipline), and no full-check (the test controls occupancy), and no
     /// sidecar-materialisation attempt (the reserved index is caller-chosen
-    /// and must stay within `INLINE_CAP` for this hook — see the `debug_assert`
-    /// below). Leaves the reserved slot's `base` at [`ENTRY_EMPTY_BASE`], so a
-    /// subsequent `drain` stops there exactly as it would against a real
-    /// racing producer.
+    /// and must stay within `INLINE_CAP` for this hook — see the boundary
+    /// check below). Leaves the reserved slot's `base` at
+    /// [`ENTRY_EMPTY_BASE`], so a subsequent `drain` stops there exactly as
+    /// it would against a real racing producer.
+    ///
+    /// R2-07 (independent src review round 2, task #2009): `&mut self`, not
+    /// `&self` (same rationale as
+    /// [`dbg_rollback_sidecar_sentinel_for_test`](Self::dbg_rollback_sidecar_sentinel_for_test)'s
+    /// doc comment — obtainable only through a genuinely, exclusively owned
+    /// standalone ring, never a shared production one), and the `t <
+    /// INLINE_CAP` bound is now a real `assert!` that fires in EVERY build
+    /// profile, not a `debug_assert!` that release builds compile out. The
+    /// pre-fix `debug_assert!` let a release build (`internals` alone, no
+    /// `debug_assertions`) advance `tail` past `INLINE_CAP` with the sidecar
+    /// left unmaterialised; the next `drain`/`push` call on that index would
+    /// reach [`slot`](Self::slot)'s sidecar branch with `self.sidecar` still
+    /// `null`, and `slot`'s OWN precondition check was — until this same
+    /// fix, see that method's doc comment — also only a `debug_assert!`,
+    /// so the release build would dereference a null pointer through
+    /// [`bootstrap::deref_overflow_sidecar`](super::bootstrap::deref_overflow_sidecar).
+    /// Rejecting the call outright in all profiles closes that path at its
+    /// one real origin (this hook is the only caller that can ever violate
+    /// `slot`'s precondition — see `slot`'s doc comment for the full call-site
+    /// audit) rather than only detecting it after the fact.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ring's current `tail` already sits at or past
+    /// `INLINE_CAP` — this hook supports reserving only within the
+    /// always-inline tier; the sidecar tier needs a real `ensure_sidecar`
+    /// call to back an unpublished reservation soundly.
     #[doc(hidden)]
-    pub fn dbg_reserve_unpublished_for_test(&self) {
+    pub fn dbg_reserve_unpublished_for_test(&mut self) {
         let t = self.tail.load(Ordering::Relaxed);
-        debug_assert!(
+        assert!(
             t < INLINE_CAP,
             "dbg_reserve_unpublished_for_test: only supports reserving within the \
              always-inline tier (0..INLINE_CAP); the sidecar tier needs a real \
