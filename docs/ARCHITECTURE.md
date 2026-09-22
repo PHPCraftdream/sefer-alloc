@@ -505,7 +505,7 @@ steers each pinned thread's fresh segments to its node.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (257 files) |
+| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (258 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs`, `tests/regression_ring_drain_guard_miri.rs`; package-specific `tagged-index-stack` target `narrow_domain_unchecked_storage` in `scripts/miri.mjs` executes in-domain unchecked accesses only |
 | loom | Cross-thread protocol correctness under bounded interleavings | **Root (15 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `TaggedIndexStack`). `tests/no_stale_loom_files.rs` remains a structural CI guard, not itself a loom suite. |

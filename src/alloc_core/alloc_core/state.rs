@@ -166,11 +166,24 @@ impl AllocCore {
     /// caller is expected to use directly — it leaked into the visible
     /// public surface only because `AllocCore` is public. Kept `pub` (not
     /// `pub(crate)`) because `registry::heap_core::HeapCore::segment_bases`
-    /// delegates to it across the crate boundary between `alloc_core` and
-    /// `registry`.
+    /// delegates to it (both modules are in the same crate; the delegation
+    /// does not itself require `pub` over `pub(crate)`, but downgrading is
+    /// left as a separate, non-safety-critical follow-up — see
+    /// `docs/reviews/2026-09-22-120730-src-review-xa-round-2.md`, R2-01).
+    ///
+    /// R2-01 (task #2003): the return type is `+ '_` — bound to `&self`'s
+    /// lifetime. Before this, edition 2021's return-position-`impl-Trait`
+    /// elision rules did NOT capture the elided `&self` lifetime here (the
+    /// closure inside `SegmentTable::bases` only closes over `Copy` data, so
+    /// nothing forced the capture), so a safe caller could hold this
+    /// iterator past `AllocCore`'s own drop and still call `next()` — a real
+    /// UAF from 100% safe code, confirmed empirically (a probe returning the
+    /// iterator from a function that drops its local `AllocCore` compiled
+    /// cleanly pre-fix). `+ '_` closes it: the iterator can no longer
+    /// outlive the `AllocCore` it borrows from.
     #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
     #[doc(hidden)]
-    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
+    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.table.bases()
     }
 

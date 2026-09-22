@@ -675,7 +675,12 @@ impl SegmentTable {
     ///   double-free.
     /// - `find_segment_with_free` to scan segments for a free block.
     /// - `contains_base` (defensive dealloc check).
-    pub(crate) fn bases(&self) -> impl Iterator<Item = *mut u8> {
+    ///
+    /// R2-01 (task #2003): `+ '_` binds the returned iterator to `&self`'s
+    /// lifetime, closing a real UAF — see `base_at`'s doc comment (below)
+    /// for why an interleaved-mutation caller must use `base_at` instead of
+    /// holding this iterator across a `recycle(...)` call regardless.
+    pub(crate) fn bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         let slots = self.slots;
         let n = self.count as usize;
         (0..n)
@@ -691,19 +696,23 @@ impl SegmentTable {
     /// an out-of-range index — the caller distinguishes "recycled" from
     /// "out of range" via `count()` if needed.
     ///
-    /// **Why this exists (task #126):** `bases()`'s returned `impl Iterator`
-    /// captures the elided lifetime of `&self` (return-position `impl Trait`
-    /// lifetime-capture rule), even though the closure itself only closes over
-    /// `Copy` data (`slots`, `n`) and performs no actual borrow of `self`'s
-    /// fields after construction. That capture is enough to make the
-    /// borrow-checker treat a live `bases()` iterator as holding `&self.table`,
-    /// which conflicts with an interleaved `&mut self.table.recycle(...)` call
-    /// (needed by `find_segment_with_free` to recycle segments that empty out
-    /// mid-scan). `base_at` sidesteps this: each call is a self-contained
-    /// pointer read with no returned borrow, so the caller can freely
-    /// interleave `base_at(i)` reads with `recycle(...)` calls in the same
-    /// index-driven loop — no pre-collect buffer needed, and no bound on how
-    /// many segments can be recycled in one scan.
+    /// **Why this exists (task #126; corrected by R2-01/task #2003):**
+    /// `bases()`'s returned `impl Iterator` now (post-`+ '_'`, task #2003)
+    /// captures `&self`'s lifetime, which conflicts with an interleaved
+    /// `&mut self.table.recycle(...)` call (needed by `find_segment_with_free`
+    /// to recycle segments that empty out mid-scan) — holding a live
+    /// `bases()` iterator across such a call is correctly a borrow-check
+    /// error. (Before task #2003's fix, `bases()`'s return type did NOT
+    /// actually capture that lifetime under edition 2021's RPIT elision
+    /// rules — the closure only closes over `Copy` data, so nothing forced
+    /// the capture — making this comment's premise inaccurate at the time it
+    /// was written; the conclusion below was always the right engineering
+    /// call regardless.) `base_at` sidesteps needing `bases()` here at all:
+    /// each call is a self-contained pointer read with no returned borrow,
+    /// so the caller can freely interleave `base_at(i)` reads with
+    /// `recycle(...)` calls in the same index-driven loop — no pre-collect
+    /// buffer needed, and no bound on how many segments can be recycled in
+    /// one scan.
     #[inline(always)]
     pub(crate) fn base_at(&self, i: usize) -> *mut u8 {
         if i >= self.count as usize {

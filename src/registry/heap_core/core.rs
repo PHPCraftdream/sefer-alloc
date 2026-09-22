@@ -712,8 +712,12 @@ impl HeapCore {
     /// `#[doc(hidden)] pub` so integration tests can obtain a real segment
     /// base (the test-only pub surface of the registry, documented in
     /// `mod.rs`).
+    ///
+    /// R2-01 (task #2003): `+ '_` threads the same lifetime bind through
+    /// this re-export — see `AllocCore::segment_bases`'s doc comment for the
+    /// full UAF rationale this closes.
     #[doc(hidden)]
-    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
+    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.core.segment_bases()
     }
 

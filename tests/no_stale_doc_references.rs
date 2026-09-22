@@ -494,6 +494,21 @@ fn verification_inventory_matches_docs() {
             "verification docs must name the tagged-index-stack narrow-domain Miri target"
         );
     }
+    // R2-01 (task #2003): `contains` alone false-positives the moment a
+    // CURRENT count's decimal representation happens to END with a stale
+    // one's digits (e.g. a legitimate "85 example binaries" contains the
+    // literal substring "5 example binaries") — checked here via a
+    // digit-boundary scan, not plain substring containment, so a stale
+    // claim is only flagged when it is not immediately preceded by another
+    // ASCII digit (i.e. it is not just the tail of a larger current number).
+    fn contains_stale_count(haystack: &str, stale: &str) -> bool {
+        haystack.match_indices(stale).any(|(idx, _)| {
+            haystack[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_ascii_digit())
+        })
+    }
     for stale in [
         "111 integration test files",
         "5 example binaries",
@@ -501,7 +516,7 @@ fn verification_inventory_matches_docs() {
         "11 loom models",
     ] {
         assert!(
-            !readme_verification.contains(stale),
+            !contains_stale_count(readme_verification, stale),
             "README verification evidence retains stale inventory claim `{stale}`"
         );
     }
