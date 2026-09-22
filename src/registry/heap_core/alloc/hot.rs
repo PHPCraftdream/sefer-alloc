@@ -72,6 +72,81 @@ impl HeapCore {
         };
     }
 
+    /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
+    /// and [`refill_magazine_slow_virgin`](Self::refill_magazine_slow_virgin) —
+    /// they call two DIFFERENT `AllocCore` substrate refills (plain vs
+    /// virgin-mask-tracking) and (the virgin sibling only) do extra
+    /// virgin-mask bookkeeping before this point, but from here on the two
+    /// were byte-for-byte identical: given `n` freshly-refilled blocks now
+    /// resident in `tcache.classes[c].slots[0..n]`, stamp each distinct
+    /// source segment (P4 hoist + Э11 stamp-dedupe), mark the first `n-1` as
+    /// magazine-resident (RAD-5), pop the last (`slots[n-1]`) for the caller,
+    /// and (hardened only) bump its generation at issue.
+    ///
+    /// # Preconditions
+    ///
+    /// `n >= 1` — both callers already return their own OOM signal (`null`
+    /// for the plain sibling, `(null, false)` for the virgin one) on `n == 0`
+    /// BEFORE calling this, so this function never sees that case. `n` must
+    /// be the exact count the caller's own substrate refill call just wrote
+    /// into `tcache.classes[c].slots[0..n]`.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    fn finish_magazine_refill(&mut self, c: usize, n: usize) -> *mut u8 {
+        debug_assert!(n >= 1, "finish_magazine_refill requires n >= 1 (OOM is the caller's job)");
+        // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
+        // pulled block's source segment, but call `stamp_segment_owner`
+        // only when the block's segment base CHANGES from the previous
+        // block's. Idempotent per segment; one stamp per distinct source.
+        let mut prev_base = usize::MAX;
+        for i in 0..n {
+            let p = self.tcache.classes[c].slots[i];
+            if !p.is_null() {
+                let base = os::segment_base_of_ptr(p) as usize;
+                if base != prev_base {
+                    self.stamp_segment_owner(p);
+                    prev_base = base;
+                }
+            }
+        }
+        // Pop the top, leave n-1 in the magazine.
+        let new_cnt = n - 1;
+        self.tcache.classes[c].count = new_cnt as u8;
+        // RAD-5: mark the n-1 blocks REMAINING in the magazine as
+        // magazine-resident (refill = existing `mark_alloc`/leave-unset on
+        // `AllocBitmap` inside the caller's substrate refill call, unchanged,
+        // PLUS this `mark_magazine` for every block landing in the
+        // magazine). The block at `new_cnt` is popped to the caller below and
+        // must NOT be marked (it is being issued, not retained).
+        for &p in &self.tcache.classes[c].slots[0..new_cnt] {
+            let pbase = os::segment_base_of_ptr(p);
+            let poff = (p as usize - pbase as usize) as u32;
+            SegmentMeta::new(pbase)
+                .magazine_bitmap()
+                .mark_magazine(poff);
+        }
+        let issued = self.tcache.classes[c].slots[new_cnt];
+        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. The block
+        // leaves the allocator's bookkeeping (the magazine) and enters the
+        // caller's hands — this is the life transition. This is the refill
+        // path's issue point (the refill fills n slots, then pops ONE off the
+        // top for the caller; the remaining n-1 are still allocator-owned in
+        // the magazine and are bumped on THEIR respective pops). Compiled ONLY
+        // under `hardened`; non-hardened is byte-identical.
+        #[cfg(feature = "hardened")]
+        {
+            let base = os::segment_base_of_ptr(issued);
+            let off = (issued as usize) - (base as usize);
+            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
+            // MIN_BLOCK-aligned offset.
+            #[allow(unsafe_code)]
+            unsafe {
+                Self::bump_gen_on_issue(base, off);
+            }
+        }
+        issued
+    }
+
     /// Allocate `layout.size()` bytes satisfying `layout.align()`. Returns a
     /// non-null `*mut u8` on success, or null on OOM. Memory is
     /// **uninitialised** (matching `GlobalAlloc::alloc`).
@@ -553,30 +628,14 @@ impl HeapCore {
         if n == 0 {
             return (::core::ptr::null_mut(), false); // true OOM
         }
-        let mut prev_base = usize::MAX;
-        for i in 0..n {
-            let p = self.tcache.classes[c].slots[i];
-            if !p.is_null() {
-                let base = os::segment_base_of_ptr(p) as usize;
-                if base != prev_base {
-                    self.stamp_segment_owner(p);
-                    prev_base = base;
-                }
-            }
-        }
-        let new_cnt = n - 1;
-        self.tcache.classes[c].count = new_cnt as u8;
-        for &p in &self.tcache.classes[c].slots[0..new_cnt] {
-            let pbase = os::segment_base_of_ptr(p);
-            let poff = (p as usize - pbase as usize) as u32;
-            SegmentMeta::new(pbase)
-                .magazine_bitmap()
-                .mark_magazine(poff);
-        }
         // Store the retained blocks' virgin bits (indices `0..new_cnt`); the
         // popped block (index `new_cnt`) is reported via the return value and
         // must NOT leave a stale set bit in the retained mask (same "bits >=
         // count are 0" invariant every other mutation site maintains).
+        // Computed BEFORE the shared tail (which also computes/writes
+        // `new_cnt`'s `count` field, a DIFFERENT field from `virgin_mask` —
+        // no ordering dependency between the two field writes).
+        let new_cnt = n - 1;
         let retained_bits_mask: u16 = if new_cnt >= 16 {
             u16::MAX
         } else {
@@ -585,20 +644,10 @@ impl HeapCore {
         self.tcache.classes[c].virgin_mask = virgin_mask & retained_bits_mask;
         let issued_bit = 1u16 << new_cnt;
         let is_virgin = (virgin_mask & issued_bit) != 0;
-        let issued = self.tcache.classes[c].slots[new_cnt];
-        #[cfg(feature = "hardened")]
-        {
-            let base = os::segment_base_of_ptr(issued);
-            let off = (issued as usize) - (base as usize);
-            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
-            // MIN_BLOCK-aligned offset (this fresh refill never marked
-            // magazine-residency, so there is no clear_magazine step here —
-            // see `bump_gen_on_issue`'s doc for the shared step this is).
-            #[allow(unsafe_code)]
-            unsafe {
-                Self::bump_gen_on_issue(base, off);
-            }
-        }
+        // Task #2002: stamp-dedupe / mark_magazine / count / hardened
+        // bump_gen tail, shared verbatim with `refill_magazine_slow` — see
+        // `finish_magazine_refill`'s own doc for the full rationale.
+        let issued = self.finish_magazine_refill(c, n);
         (issued, is_virgin)
     }
 
@@ -850,56 +899,9 @@ impl HeapCore {
         if n == 0 {
             return ::core::ptr::null_mut(); // true OOM
         }
-        // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
-        // pulled block's source segment, but call `stamp_segment_owner`
-        // only when the block's segment base CHANGES from the previous
-        // block's. Idempotent per segment; one stamp per distinct source.
-        let mut prev_base = usize::MAX;
-        for i in 0..n {
-            let p = self.tcache.classes[c].slots[i];
-            if !p.is_null() {
-                let base = os::segment_base_of_ptr(p) as usize;
-                if base != prev_base {
-                    self.stamp_segment_owner(p);
-                    prev_base = base;
-                }
-            }
-        }
-        // Pop the top, leave n-1 in the magazine.
-        let new_cnt = n - 1;
-        self.tcache.classes[c].count = new_cnt as u8;
-        // RAD-5: mark the n-1 blocks REMAINING in the magazine as
-        // magazine-resident (refill = existing `mark_alloc`/leave-unset on
-        // `AllocBitmap` inside `refill_class_bump_checked`, unchanged, PLUS
-        // this `mark_magazine` for every block landing in the magazine). The
-        // block at `new_cnt` is popped to the caller below and must NOT be
-        // marked (it is being issued, not retained).
-        for &p in &self.tcache.classes[c].slots[0..new_cnt] {
-            let pbase = os::segment_base_of_ptr(p);
-            let poff = (p as usize - pbase as usize) as u32;
-            SegmentMeta::new(pbase)
-                .magazine_bitmap()
-                .mark_magazine(poff);
-        }
-        let issued = self.tcache.classes[c].slots[new_cnt];
-        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. The block
-        // leaves the allocator's bookkeeping (the magazine) and enters the
-        // caller's hands — this is the life transition. This is the refill
-        // path's issue point (the refill fills n slots, then pops ONE off the
-        // top for the caller; the remaining n-1 are still allocator-owned in
-        // the magazine and are bumped on THEIR respective pops). Compiled ONLY
-        // under `hardened`; non-hardened is byte-identical.
-        #[cfg(feature = "hardened")]
-        {
-            let base = os::segment_base_of_ptr(issued);
-            let off = (issued as usize) - (base as usize);
-            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
-            // MIN_BLOCK-aligned offset.
-            #[allow(unsafe_code)]
-            unsafe {
-                Self::bump_gen_on_issue(base, off);
-            }
-        }
-        issued
+        // Task #2002: stamp-dedupe / mark_magazine / count / hardened
+        // bump_gen tail, shared verbatim with `refill_magazine_slow_virgin`
+        // — see `finish_magazine_refill`'s own doc for the full rationale.
+        self.finish_magazine_refill(c, n)
     }
 }
