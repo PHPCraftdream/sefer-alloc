@@ -86,10 +86,7 @@ pub(super) enum SmallFreeGuard {
             feature = "medium-classes",
             any(
                 not(feature = "exact-span-large"),
-                all(
-                    feature = "large-reserved-capacity",
-                    not(feature = "numa-aware")
-                )
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
             )
         )),
         allow(dead_code)
@@ -192,7 +189,12 @@ pub(super) enum SmallFreeGuard {
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[inline(always)]
 #[allow(unused_variables)] // `c`/`layout`/`base` each go unused under some feature subsets.
-pub(super) fn small_free_guard(base: *mut u8, ptr: *mut u8, c: usize, layout: Layout) -> SmallFreeGuard {
+pub(super) fn small_free_guard(
+    base: *mut u8,
+    ptr: *mut u8,
+    c: usize,
+    layout: Layout,
+) -> SmallFreeGuard {
     #[cfg(feature = "hardened")]
     use crate::alloc_core::size_classes::SizeClasses;
 
@@ -224,10 +226,7 @@ pub(super) fn small_free_guard(base: *mut u8, ptr: *mut u8, c: usize, layout: La
             feature = "medium-classes",
             any(
                 not(feature = "exact-span-large"),
-                all(
-                    feature = "large-reserved-capacity",
-                    not(feature = "numa-aware")
-                )
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
             )
         ))
     ))]

@@ -257,7 +257,10 @@ impl<T> EpochRegion<T> {
         // lock acquisition on the next owner op) or a deferred index (drained
         // one owner op later) — the same eventual-drain cadence this design
         // already accepts. An index can never be lost.
-        if !self.remote_free_pending.load(core::sync::atomic::Ordering::Relaxed) {
+        if !self
+            .remote_free_pending
+            .load(core::sync::atomic::Ordering::Relaxed)
+        {
             return;
         }
         // We peek-lock: take the queue, and if non-empty, drain it into the

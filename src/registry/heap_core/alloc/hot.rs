@@ -39,7 +39,9 @@ impl HeapCore {
     /// deduplication, not a separate fix.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
-    pub(in crate::registry::heap_core) fn clear_magazine_on_issue(issued: *mut u8) -> (*mut u8, usize) {
+    pub(in crate::registry::heap_core) fn clear_magazine_on_issue(
+        issued: *mut u8,
+    ) -> (*mut u8, usize) {
         let base = os::segment_base_of_ptr(issued);
         let off = issued as usize - base as usize;
         SegmentMeta::new(base)
@@ -67,9 +69,7 @@ impl HeapCore {
     #[allow(unsafe_code)]
     pub(super) unsafe fn bump_gen_on_issue(base: *mut u8, off: usize) {
         // SAFETY: forwarded from this fn's own contract, documented above.
-        unsafe {
-            crate::alloc_core::segment_header::bump_gen(base, off)
-        };
+        unsafe { crate::alloc_core::segment_header::bump_gen(base, off) };
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -93,7 +93,10 @@ impl HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
     fn finish_magazine_refill(&mut self, c: usize, n: usize) -> *mut u8 {
-        debug_assert!(n >= 1, "finish_magazine_refill requires n >= 1 (OOM is the caller's job)");
+        debug_assert!(
+            n >= 1,
+            "finish_magazine_refill requires n >= 1 (OOM is the caller's job)"
+        );
         // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
         // pulled block's source segment, but call `stamp_segment_owner`
         // only when the block's segment base CHANGES from the previous
@@ -249,7 +252,6 @@ impl HeapCore {
         ))]
         class: Option<usize>,
     ) -> *mut u8 {
-
         // 0.3.0 (task A1): drain this heap's cross-thread Large-segment
         // deferred-free stack before a Large-classified request reaches
         // `AllocCore::alloc_large`'s slow path. Uses the single `class`
