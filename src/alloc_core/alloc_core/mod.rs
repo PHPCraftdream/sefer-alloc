@@ -568,8 +568,17 @@ pub struct AllocCore {
 
     /// Number of segments currently linked into the pool list
     /// (`pool_head`/`pool_tail` + each entry's `pool_next`/`pool_prev`).
+    ///
+    /// `u32`, not `usize` (task #1998): `AllocCore` lives inline in every
+    /// registry `HeapSlot` (`MAX_HEAPS = 4096`), so each field's width here is
+    /// a 4096x multiplier on registry footprint — the same cost discipline
+    /// [`pool_head`](Self::pool_head)'s and
+    /// [`dbg_reservation_owner_id`](Self::dbg_reservation_owner_id)'s doc
+    /// comments already apply. Bounded by [`pool_cap`](Self::pool_cap), which
+    /// is itself clamped to `u32::MAX` at resolution time, so this field can
+    /// never legitimately need more than 32 bits.
     #[cfg(feature = "alloc-decommit")]
-    pub(super) pooled_count: usize,
+    pub(super) pooled_count: u32,
 
     /// Resolved runtime cap on pooled segments: `min(config.pool_segments,
     /// config.pool_byte_cap / SEGMENT)`. `0` = pool disabled (every empty
@@ -583,8 +592,18 @@ pub struct AllocCore {
     /// only by the byte budget) — the value returned by
     /// [`dbg_pool_cap`](Self::dbg_pool_cap) is always the true operative cap,
     /// observable and un-clamped.
+    ///
+    /// `u32`, not `usize` (task #1998, same registry-footprint discipline as
+    /// [`pooled_count`](Self::pooled_count)'s doc comment). Resolution
+    /// (`AllocCore::new_with_config`) clamps `min(pool_segments,
+    /// pool_byte_cap / SEGMENT)` to `u32::MAX` before storing — a resolved
+    /// cap above `u32::MAX` segments would mean the caller configured
+    /// `>= 16 EiB` of pooled segments (`u32::MAX * SEGMENT` at `SEGMENT` = 4
+    /// MiB), not a real deployment; the clamp only prevents a silent
+    /// truncation wraparound for that unreachable-in-practice input, it does
+    /// not change behavior for any value a real config can produce.
     #[cfg(feature = "alloc-decommit")]
-    pub(super) pool_cap: usize,
+    pub(super) pool_cap: u32,
 
     /// Wall-clock time of the last small-pool decay tick. `None` = never ticked.
     /// Mirrors [`last_decay_tick`](Self::last_decay_tick) for the large cache.

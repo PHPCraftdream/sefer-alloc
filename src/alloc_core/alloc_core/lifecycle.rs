@@ -52,6 +52,21 @@ impl LargeCacheDecayConfig {
     }
 }
 
+/// Task #1998: resolve the empty-small-segment pool cap (`min(by_segments,
+/// by_bytes)`) into `AllocCore::pool_cap`'s storage width, `u32`. Shared by
+/// [`AllocCore::new_with_config`], [`AllocCore::live_config_matches`], and
+/// `new_inner`'s direct-default construction so the three sites (which MUST
+/// agree — see `live_config_matches`'s own "drift hazard" doc comment) share
+/// one clamp instead of three independently-typed copies. `unwrap_or(u32::MAX)`
+/// is the clamp: a resolved value above `u32::MAX` segments means the caller
+/// configured `>= 16 EiB` of pooled segments (`u32::MAX * SEGMENT` at
+/// `SEGMENT` = 4 MiB) — not a real configuration this crate needs to support
+/// exactly, just one that must not silently wrap.
+#[cfg(feature = "alloc-decommit")]
+fn resolve_pool_cap_u32(by_segments: usize, by_bytes: usize) -> u32 {
+    u32::try_from(by_segments.min(by_bytes)).unwrap_or(u32::MAX)
+}
+
 impl AllocCore {
     /// Bootstrap the allocator using default large-cache configuration.
     ///
@@ -140,7 +155,7 @@ impl AllocCore {
         let pool_cfg = config.resolved_pool();
         let by_segments = pool_cfg.resolved_pool_segments();
         let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
-        core.pool_cap = by_segments.min(by_bytes);
+        core.pool_cap = resolve_pool_cap_u32(by_segments, by_bytes);
         Some(core)
     }
 
@@ -179,7 +194,7 @@ impl AllocCore {
         let pool_cfg = requested.resolved_pool();
         let by_segments = pool_cfg.resolved_pool_segments();
         let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
-        self.pool_cap == by_segments.min(by_bytes)
+        self.pool_cap == resolve_pool_cap_u32(by_segments, by_bytes)
     }
 
     /// Inner bootstrap: reserve the primordial segment and hand-carve its
@@ -275,11 +290,11 @@ impl AllocCore {
             #[cfg(feature = "alloc-decommit")]
             pooled_count: 0,
             #[cfg(feature = "alloc-decommit")]
-            pool_cap:
-                crate::alloc_core::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS.min(
-                    crate::alloc_core::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_BYTE_CAP
-                        / SEGMENT,
-                ),
+            pool_cap: resolve_pool_cap_u32(
+                crate::alloc_core::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS,
+                crate::alloc_core::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_BYTE_CAP
+                    / SEGMENT,
+            ),
             #[cfg(feature = "alloc-decommit")]
             last_pool_decay_tick: None,
             #[cfg(feature = "alloc-segment-directory")]

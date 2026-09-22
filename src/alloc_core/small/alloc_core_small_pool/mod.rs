@@ -493,7 +493,7 @@ impl AllocCore {
     /// (`dec_live_and_maybe_decommit`, `release_empty_segment_now`).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    fn pool_push_front(head: &mut *mut u8, tail: &mut *mut u8, count: &mut usize, base: *mut u8) {
+    fn pool_push_front(head: &mut *mut u8, tail: &mut *mut u8, count: &mut u32, base: *mut u8) {
         let mut meta = SegmentMeta::new(base);
         meta.set_pool_prev(ptr::null_mut());
         meta.set_pool_next(*head);
@@ -517,7 +517,7 @@ impl AllocCore {
     /// [`pool_push_front`](Self::pool_push_front).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    fn pool_unlink(head: &mut *mut u8, tail: &mut *mut u8, count: &mut usize, base: *mut u8) {
+    fn pool_unlink(head: &mut *mut u8, tail: &mut *mut u8, count: &mut u32, base: *mut u8) {
         let meta = SegmentMeta::new(base);
         let prev = meta.pool_prev_of();
         let next = meta.pool_next_of();
@@ -737,7 +737,10 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub fn dbg_pooled_count(&self) -> usize {
-        self.pooled_count
+        // Widening `as` cast (task #1998: storage narrowed to u32, accessor
+        // stays usize) — always lossless: `usize` is at least as wide as
+        // `u32` on every platform this crate supports.
+        self.pooled_count as usize
     }
 
     /// TEST-ONLY (Mechanism 2, task #51; RAD-3/E2 task #56): the resolved
@@ -750,7 +753,10 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub fn dbg_pool_cap(&self) -> usize {
-        self.pool_cap
+        // Widening `as` cast (task #1998: storage narrowed to u32, accessor
+        // stays usize) — always lossless: `usize` is at least as wide as
+        // `u32` on every platform this crate supports.
+        self.pool_cap as usize
     }
 
     /// TEST-ONLY (Mechanism 2, task #51): forcibly DRAIN the hysteresis pool —
