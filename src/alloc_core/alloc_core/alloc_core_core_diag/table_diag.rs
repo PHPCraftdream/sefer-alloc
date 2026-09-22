@@ -23,13 +23,15 @@ impl AllocCore {
     /// EVERY build's layout (layout-stable across feature configs); this accessor
     /// is only compiled under `numa-aware` because the test that reads it is also
     /// gated on that feature.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[cfg(feature = "numa-aware")]
     pub fn dbg_node_id_for(&self, ptr: *mut u8) -> Option<u32> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
         Some(SegmentMeta::new(base).node_id_of())
     }
 
@@ -47,13 +49,19 @@ impl AllocCore {
     /// reader of `PageMap::class_of` in the whole codebase, and `PageMap` is
     /// only maintained (written) under that same feature. See
     /// `PageMap`'s struct doc / the feature's `Cargo.toml` doc.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc. The
+    /// `page_idx` computation below still legitimately uses the caller's
+    /// `ptr` (only for arithmetic against the two addresses — not a
+    /// dereference), matching `base`'s address since both denote the same
+    /// segment.
     #[doc(hidden)]
     #[cfg(feature = "page-map-diag")]
     pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
             SegmentHeader::kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
@@ -182,18 +190,23 @@ impl AllocCore {
     /// segment (field-specific read, mirrors what
     /// `SegmentTable::unregister`/`recycle` now use internally for their O(1)
     /// slot lookup).
+    ///
+    /// R2-05 (independent src review round 2, task #2007): the guard below
+    /// now returns (not just checks) the table's own STORED (canonical)
+    /// pointer, and the header read goes through THAT pointer, not `ptr`'s
+    /// caller-derived address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     pub fn dbg_segment_id_of(&self, ptr: *mut u8) -> u32 {
-        let base = os::segment_base_of_ptr(ptr);
+        let candidate = os::segment_base_of_ptr(ptr);
         // R2-3: release-surviving membership guard (replaces a debug-only
         // debug_assert! that compiled out in release, leaving the raw header
         // read unguarded). This module is #![forbid(unsafe_code)], so the
         // heap_registry-style `unsafe fn` discipline does not apply — a real
         // runtime guard is the soundness fix here.
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_segment_id_of: ptr's segment is not owned by this AllocCore"
-        );
+        let base = self
+            .table
+            .canonical_base_of(candidate)
+            .expect("dbg_segment_id_of: ptr's segment is not owned by this AllocCore");
         SegmentHeader::segment_id_at(base)
     }
 

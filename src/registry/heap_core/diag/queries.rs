@@ -25,14 +25,19 @@ impl HeapCore {
     /// segment owned by this heap's substrate. Used by
     /// `tests/heap_core_tcache_stamp.rs` to verify the stamp-hoist wrote
     /// the correct ownership.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// STORED (canonical) segment base `segment_bases()` yields, not `ptr`'s
+    /// caller-derived address — matching an address alone does not grant
+    /// provenance to read through it (see `SegmentTable::canonical_base_of`'s
+    /// doc for the full rationale). `.find` (not `.any`) so the matched,
+    /// canonical `*mut u8` survives past the membership check.
     #[doc(hidden)]
     #[cfg(feature = "alloc-global")]
     pub fn dbg_owner_id_for(&self, ptr: *mut u8) -> Option<u32> {
         use crate::alloc_core::segment_header::{unpack_owner_id, SegmentMeta};
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.core.segment_bases().any(|b| b == base) {
-            return None;
-        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.core.segment_bases().find(|&b| b == candidate)?;
         let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
         let word = owner_atomic.load(Ordering::Relaxed);
         Some(unpack_owner_id(word))
@@ -317,7 +322,7 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_directory_bit_for_ptr(&self, ptr: *mut u8, class_idx: usize) -> Option<bool> {
         use crate::alloc_core::segment_header::SegmentHeader;
-        let base = os::segment_base_of_ptr(ptr);
+        let candidate = os::segment_base_of_ptr(ptr);
         // R29-17 (task #448): containment guard BEFORE the segment_id_at read.
         // segment_id_at dereferences the segment header (`Node::read_u32`), so
         // a null/foreign/arbitrary `ptr` whose segment-aligned base is unmapped
@@ -327,9 +332,14 @@ impl HeapCore {
         // shape of `dbg_segment_id_of` in `alloc_core_core_diag.rs`: this fn
         // already returns `Option<bool>` and documents "ptr is foreign → None",
         // and the single existing caller passes a genuinely live block.
-        if !self.core.segment_bases().any(|b| b == base) {
-            return None;
-        }
+        //
+        // R2-05 (independent src review round 2, task #2007): the
+        // `segment_id_at` read below now goes through the STORED (canonical)
+        // segment base `segment_bases()` yields, not `ptr`'s caller-derived
+        // address — `.find` (not `.any`) so the matched, canonical `*mut u8`
+        // survives past the membership check. See
+        // `SegmentTable::canonical_base_of`'s doc for the full rationale.
+        let base = self.core.segment_bases().find(|&b| b == candidate)?;
         let sid = SegmentHeader::segment_id_at(base) as usize;
         self.core.dbg_directory_get_bit(class_idx, sid)
     }

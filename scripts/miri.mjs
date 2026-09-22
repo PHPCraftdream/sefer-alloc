@@ -20,6 +20,16 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 
 const MATRIX = [
   ['experimental', 'region_invariants'],
+  // R2-05 (independent src review round 2, task #2007): the `dbg_*`
+  // diagnostic accessors previously read allocator metadata through a
+  // caller-derived pointer whose ADDRESS matched a live segment but had NO
+  // provenance over it (constructed via `ptr::without_provenance_mut`) --
+  // strict-provenance UB even though the membership check passed. Small,
+  // feature-minimal target (`alloc-core internals` only) per this file's
+  // short-scenario policy; see the test's own module doc for the full
+  // mechanism and why the remaining feature-gated accessors are covered
+  // functionally (not under miri) by `regression_r2_05_diag_provenance`.
+  ['alloc-core internals', 'regression_r2_05_diag_provenance_miri'],
   // R34-5-followup (task #524): `internals` added — `decommit_miri_cycle`'s
   // `#![cfg(...)]` gate (added by R34-3/task #522) requires it; without it
   // this entry silently compiled to 0 tests (the "pass by absence" class

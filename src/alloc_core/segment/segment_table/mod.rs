@@ -578,11 +578,52 @@ impl SegmentTable {
     /// fill. Kept separate so the read-only surface does not require `&mut`.
     #[inline(always)]
     pub(crate) fn contains_base_ro(&self, base: *mut u8) -> bool {
+        self.canonical_base_of(base).is_some()
+    }
+
+    /// R2-05 (independent src review round 2, task #2007): like
+    /// [`contains_base_ro`](Self::contains_base_ro), but returns the STORED,
+    /// canonical segment-base pointer — the exact `*mut u8` THIS table
+    /// registered (carrying the allocator's own provenance over the
+    /// segment) — instead of a bool.
+    ///
+    /// # Why this exists
+    ///
+    /// `base` is used only as a lookup KEY here: its ADDRESS is compared
+    /// against every stored entry, never dereferenced by this method itself.
+    /// A caller that derives `base` from an arbitrary/caller-supplied
+    /// pointer (e.g. a `dbg_*` diagnostic accessor's `ptr` argument) and then
+    /// confirms `contains_base_ro(base)` has only proven that SOME live
+    /// segment happens to share `base`'s ADDRESS — not that `base` itself
+    /// has valid provenance over that segment's memory. Under Rust's
+    /// strict-provenance model, matching an address does not grant
+    /// provenance: safe code can construct a pointer with the same address
+    /// as a live allocation but zero provenance over it (e.g. via
+    /// `ptr::without_provenance_mut`, or arithmetic on an unrelated
+    /// allocation that happens to land on the same address), and
+    /// dereferencing such a pointer is undefined behavior even though the
+    /// address is "correct". Reading allocator metadata through `base`
+    /// itself after only an address-membership check is exactly that hazard.
+    ///
+    /// The fix is to read allocator metadata through the pointer THIS
+    /// method returns (the table's own stored entry, which was written by
+    /// [`register`](Self::register) from a pointer the allocator itself
+    /// derived and therefore genuinely has provenance over the segment) —
+    /// never through the caller-supplied `base` that was only used as the
+    /// lookup key. `own_cache`'s stored values carry the same guarantee:
+    /// every write to it (`contains_base`'s Tier-1 fill) only ever stores a
+    /// `base` that a PRODUCTION call site passed — `contains_base_ro`
+    /// (used by every diagnostic accessor with an untrusted caller pointer)
+    /// is documented never to write the cache, so a diagnostic call can
+    /// never poison it with a provenance-less pointer.
+    #[inline(always)]
+    pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
         let idx = Self::cache_index(base);
-        if self.own_cache[idx] == base && !base.is_null() {
-            return true;
+        let cached = self.own_cache[idx];
+        if cached == base && !base.is_null() {
+            return Some(cached);
         }
-        self.hash_contains(base)
+        self.hash_find(base)
     }
 
     /// MEASUREMENT-ONLY (R23-3, task #372): call the Tier-2 open-addressing

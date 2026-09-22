@@ -223,16 +223,31 @@ impl SegmentTable {
     /// terminates the probe — a `false` result is always correct.
     #[inline(always)]
     pub(super) fn hash_contains(&self, base: *mut u8) -> bool {
+        self.hash_find(base).is_some()
+    }
+
+    /// R2-05 (independent src review round 2, task #2007): like
+    /// [`hash_contains`](Self::hash_contains), but returns the STORED entry
+    /// (this table's own canonical pointer, carrying the allocator's
+    /// provenance over the segment) instead of a bool. `base` is used only
+    /// as a lookup KEY (its address is compared against stored entries); the
+    /// pointer this method returns — never `base` itself — is what a caller
+    /// may soundly dereference. See `SegmentTable::canonical_base_of`'s doc
+    /// for the full rationale (matching an address does not grant
+    /// provenance: safe code can construct a pointer with the same address
+    /// as a live segment but no provenance over it).
+    #[inline(always)]
+    pub(super) fn hash_find(&self, base: *mut u8) -> Option<*mut u8> {
         let start = Self::hash_index(base);
         let mut i = start;
         loop {
             let entry = self.hash_slot_read(i);
             if entry.is_null() {
                 // Empty slot: the probe chain ends here; base is not present.
-                return false;
+                return None;
             }
             if entry == base {
-                return true;
+                return Some(entry);
             }
             // A different live entry: skip and continue.
             i = (i + 1) & (HASH_CAPACITY - 1);
@@ -241,7 +256,7 @@ impl SegmentTable {
                 // slot. This can only happen if the table is completely full of
                 // live entries. Under the guaranteed ≤ 50% load factor this
                 // cannot occur, but handle it defensively.
-                return false;
+                return None;
             }
         }
     }

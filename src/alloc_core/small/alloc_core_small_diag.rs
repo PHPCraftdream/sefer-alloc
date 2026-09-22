@@ -47,13 +47,17 @@ impl AllocCore {
     /// (`u32::MAX`) if the list is empty. Lets the batch-drain regression test
     /// observe `set_head`'s exact post-drain value directly (partial drain →
     /// remaining head; full drain → NULL).
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_freelist_head_for(&self, ptr: *mut u8, class_idx: usize) -> u32 {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
+        let candidate = os::segment_base_of_ptr(ptr);
+        let Some(base) = self.table.canonical_base_of(candidate) else {
             return FREE_LIST_NULL;
-        }
+        };
         // R6-MS-3 (round5 memory_safety_review R5-MS-3): release-mode class-index
         // bounds guard. Belt-and-suspenders alongside `BinTable::head`'s own
         // check — this is a doc-hidden test hook taking a raw caller-controlled
@@ -71,13 +75,17 @@ impl AllocCore {
     /// `false` ⟺ the block is ALLOCATED (handed out). Lets the batch-drain test
     /// assert every drained block ends bitmap-allocated, exactly as `pop_free`
     /// leaves it.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
+        let candidate = os::segment_base_of_ptr(ptr);
+        let Some(base) = self.table.canonical_base_of(candidate) else {
             return false;
-        }
+        };
         let off = (ptr as usize - base as usize) as u32;
         SegmentMeta::new(base).alloc_bitmap().is_free(off)
     }
@@ -219,6 +227,10 @@ impl AllocCore {
     /// (feature-OFF, Unix, miri, or `numa-aware`); on the lazy path returns
     /// the page-rounded `small_meta_end() + LAZY_FIRST_CHUNK` for a fresh
     /// segment (task #1074 — equal to the tight sum on 4 KiB-page hosts).
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[must_use]
     #[cfg(any(
@@ -226,10 +238,8 @@ impl AllocCore {
         feature = "small-segment-lazy-commit"
     ))]
     pub fn dbg_committed_payload_end_for(&self, ptr: *mut u8) -> Option<usize> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
             SegmentHeader::kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial

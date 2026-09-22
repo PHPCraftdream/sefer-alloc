@@ -22,14 +22,20 @@ impl AllocCore {
     /// the exact byte at the `kind` field's offset). Lets a test capture the
     /// legitimate byte before corrupting it, and confirm the corruption
     /// actually landed.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): the raw read below
+    /// goes through the table's own STORED (canonical) pointer, not `ptr`'s
+    /// caller-derived address — see `SegmentTable::canonical_base_of`'s doc
+    /// for why matching an address alone does not grant provenance to read
+    /// through it.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_kind_byte_of(&self, ptr: *mut u8) -> u8 {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_kind_byte_of: ptr's segment is not owned by this AllocCore"
-        );
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self
+            .table
+            .canonical_base_of(candidate)
+            .expect("dbg_kind_byte_of: ptr's segment is not owned by this AllocCore");
         let off = core::mem::offset_of!(SegmentHeader, kind);
         Node::read_u8(Node::offset(base, off) as *const u8)
     }
@@ -111,14 +117,18 @@ impl AllocCore {
     /// [`dbg_kind_byte_of`](Self::dbg_kind_byte_of), which reads the RAW byte
     /// without going through `kind_at`'s decode at all — this accessor is
     /// what actually proves the decode's behaviour.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): decodes through
+    /// the table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_kind_at_tag: ptr's segment is not owned by this AllocCore"
-        );
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self
+            .table
+            .canonical_base_of(candidate)
+            .expect("dbg_kind_at_tag: ptr's segment is not owned by this AllocCore");
         match SegmentHeader::kind_at(base) {
             SegmentKind::Primordial => 0,
             SegmentKind::Small => 1,
@@ -131,13 +141,17 @@ impl AllocCore {
     /// header of `ptr`'s segment. Uses a direct field read (same pattern as
     /// `large_size_at` but without the `alloc-xthread` feature gate) so
     /// integration tests can verify the stored value after an in-place realloc.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer — see
+    /// `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     pub fn dbg_large_size_of(&self, ptr: *mut u8) -> usize {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_large_size_of: ptr's segment is not owned by this AllocCore"
-        );
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self
+            .table
+            .canonical_base_of(candidate)
+            .expect("dbg_large_size_of: ptr's segment is not owned by this AllocCore");
         let off = core::mem::offset_of!(SegmentHeader, large_size);
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
@@ -148,13 +162,17 @@ impl AllocCore {
     /// `dbg_large_size_of`. Lets integration tests verify the `exact-span-large`
     /// feature actually shrinks the physical reservation below a whole
     /// `SEGMENT` (4 MiB), instead of only inferring it indirectly from RSS.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer — see
+    /// `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     pub fn dbg_span_usable_of(&self, ptr: *mut u8) -> usize {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_span_usable_of: ptr's segment is not owned by this AllocCore"
-        );
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self
+            .table
+            .canonical_base_of(candidate)
+            .expect("dbg_span_usable_of: ptr's segment is not owned by this AllocCore");
         let off = core::mem::offset_of!(SegmentHeader, span_usable);
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
@@ -166,13 +184,17 @@ impl AllocCore {
     /// `large-reserved-capacity` feature actually reserves extra VA beyond
     /// the committed `span_usable`, and that a growing `realloc` commits
     /// into it without moving the allocation.
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer — see
+    /// `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     pub fn dbg_reserved_capacity_of(&self, ptr: *mut u8) -> usize {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_reserved_capacity_of: ptr's segment is not owned by this AllocCore"
-        );
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self
+            .table
+            .canonical_base_of(candidate)
+            .expect("dbg_reserved_capacity_of: ptr's segment is not owned by this AllocCore");
         let off = core::mem::offset_of!(SegmentHeader, reserved_capacity);
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
@@ -244,14 +266,16 @@ impl AllocCore {
     /// directly (e.g. after a fresh reservation, or after forcing the
     /// decommit-retain regression path via
     /// [`dbg_force_decommit_retain`](Self::dbg_force_decommit_retain)).
+    ///
+    /// R2-05 (independent src review round 2, task #2007): reads through the
+    /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
+    /// address — see `SegmentTable::canonical_base_of`'s doc.
     #[doc(hidden)]
     #[cfg(feature = "virgin-zero-skip")]
     #[must_use]
     pub fn dbg_payload_virgin_for(&self, ptr: *mut u8) -> Option<bool> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
             SegmentHeader::kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
