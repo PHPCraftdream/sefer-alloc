@@ -221,7 +221,9 @@ fn region_drop_runs_live_value_destructors_once() {
 fn eviction_landing_on_max_generation_retires_the_slot_instead_of_reusing_it() {
     // Single-slot region: index 0 is the only slot, so whether it goes back
     // to the free list is directly observable via a following insert.
-    let region = EpochRegion::<u32>::with_capacity(1);
+    // `mut`: R2-04 (task #2006) made _set_slot_generation_for_tests take
+    // &mut self (exclusive access is now part of its safety contract).
+    let mut region = EpochRegion::<u32>::with_capacity(1);
 
     // Force the (still-vacant) slot 0 to one generation below the sentinel.
     // `install` (inside `insert`) does not bump the generation, so the handle

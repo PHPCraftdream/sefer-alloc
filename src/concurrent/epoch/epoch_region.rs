@@ -546,16 +546,28 @@ impl<T> EpochRegion<T> {
     ///
     /// Production code MUST NEVER call this. The caller MUST only target a
     /// slot it knows is currently vacant (e.g. index `0` on a freshly
-    /// `with_capacity`-created region, before any insert) — forcing the
-    /// generation of an OCCUPIED slot desyncs it from the installed value's
-    /// true generation, a self-inflicted ABA hazard this method does nothing
-    /// to prevent.
+    /// `with_capacity`-created region, before any insert).
+    ///
+    /// R2-04 (independent src review round 2, task #2006): previously took
+    /// `&self`, reachable under plain `experimental` (no `internals`
+    /// needed) on any `&EpochRegion<T>` — a call could hand an old, already-
+    /// stale handle CAS rights back (including mid-race with a concurrent
+    /// eviction), and the CODE never enforced the prose-only "vacant slots
+    /// only" contract, so calling it on an occupied slot silently desynced
+    /// the generation from the installed value's true generation (a self-
+    /// inflicted ABA hazard). Now takes `&mut self`: the borrow checker
+    /// proves EXCLUSIVE access to the WHOLE region for the call (no other
+    /// thread can hold any reference to it, structurally ruling out the
+    /// mid-eviction race), and [`AtomicSlot::set_generation_for_tests`]
+    /// asserts the target slot is actually vacant before touching the
+    /// generation.
     ///
     /// # Panics
     ///
-    /// Panics if `index` is out of range for this region's capacity.
+    /// Panics if `index` is out of range for this region's capacity, or if
+    /// the target slot currently holds a live value (is occupied).
     #[doc(hidden)]
-    pub fn _set_slot_generation_for_tests(&self, index: u32, generation: u32) {
+    pub fn _set_slot_generation_for_tests(&mut self, index: u32, generation: u32) {
         self.slots[index as usize].set_generation_for_tests(generation);
     }
 }

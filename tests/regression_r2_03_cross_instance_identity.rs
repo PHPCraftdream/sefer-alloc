@@ -90,15 +90,25 @@ fn epoch_cross_instance_occupied_target_is_rejected_without_state_change() {
 
 #[test]
 fn epoch_cross_instance_saturated_target_is_rejected_without_state_change() {
-    let region_a: EpochRegion<&'static str> = EpochRegion::with_capacity(4);
+    // Single-slot regions: `EpochRegion`'s free list is LIFO (the first
+    // insert into a multi-slot region claims the HIGHEST index, not index
+    // 0, despite a doc comment on `with_capacity` claiming otherwise --
+    // confirmed empirically; that stale comment is a separate, out-of-scope
+    // defect for R2-23's doc/code sweep), so a capacity > 1 region cannot
+    // reliably target "the slot the next insert will claim" by index 0
+    // alone. With capacity 1, `_set_slot_generation_for_tests(0, ..)` and
+    // the following `insert` are UNAMBIGUOUSLY the same slot.
+    let mut region_a: EpochRegion<&'static str> = EpochRegion::with_capacity(1);
     // Force slot 0 to the saturation generation BEFORE installing, then
     // insert: install() does not bump the generation, so the minted handle
     // carries generation == u32::MAX (the documented, sanctioned use of
-    // this test-only hook — see its own doc comment).
+    // this test-only hook — see its own doc comment). R2-04 (task #2006)
+    // made this hook take &mut self, so this call needs exclusive access --
+    // trivially available here since region_a has no other borrows yet.
     region_a._set_slot_generation_for_tests(0, u32::MAX);
     let handle_a = region_a.insert("attacker").unwrap();
 
-    let region_b: EpochRegion<&'static str> = EpochRegion::with_capacity(4);
+    let mut region_b: EpochRegion<&'static str> = EpochRegion::with_capacity(1);
     // region_b: slot 0 vacant at generation u32::MAX too (a genuine
     // retired/saturated slot) -- the numeric (index, generation) match is
     // real, not coincidental, so only the region_id check can reject this.

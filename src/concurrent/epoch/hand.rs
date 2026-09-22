@@ -149,11 +149,44 @@ impl<T> AtomicSlot<T> {
     /// 1` saturation-retirement edge of [`try_evict_at`](Self::try_evict_at)
     /// without driving ~4 billion real insert/remove cycles (which the
     /// project's short-scenario test policy forbids). Production code MUST
-    /// NEVER call this: it does not touch `value`, so calling it on an
-    /// occupied slot desyncs the generation from the installed value's true
-    /// generation (a self-inflicted ABA hazard) — the test call sites gate
-    /// this to freshly-`with_capacity`-created, still-vacant slots only.
-    pub(crate) fn set_generation_for_tests(&self, generation: u32) {
+    /// NEVER call this.
+    ///
+    /// R2-04 (independent src review round 2, task #2006): previously took
+    /// `&self` and never checked occupancy — reachable under plain
+    /// `experimental` (no `internals` needed) on any `&EpochRegion<T>`, an
+    /// arbitrary generation store could hand an old, already-stale handle
+    /// CAS rights back (including mid-race with a concurrent eviction that
+    /// had already won the CAS and not yet finished its pointer swap), or
+    /// silently desync the generation from an OCCUPIED slot's real
+    /// generation (a self-inflicted ABA hazard). Now takes `&mut self`:
+    /// Rust's borrow checker proves EXCLUSIVE access for the whole call — no
+    /// other thread can hold ANY reference (shared or exclusive) to this
+    /// slot's owning region while this runs, structurally ruling out the
+    /// mid-eviction race — and the call asserts the slot is actually
+    /// vacant before touching the generation, turning the prose-only
+    /// "vacant slots only" contract into an enforced one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slot currently holds a live value (is occupied).
+    pub(crate) fn set_generation_for_tests(&mut self, generation: u32) {
+        // SAFETY: `&mut self` proves exclusive access to this slot for the
+        // whole call — no concurrent reader (no pinned guard can reference
+        // it) and no concurrent writer, identical to `drop_value`'s own
+        // justification for `unprotected()` above. A plain load under it is
+        // sound and sufficient to observe occupancy (no reclamation race is
+        // possible under exclusive access).
+        let occupied = unsafe {
+            let guard = crossbeam_epoch::unprotected();
+            !self.value.load(Ordering::Relaxed, guard).is_null()
+        };
+        assert!(
+            !occupied,
+            "set_generation_for_tests called on an OCCUPIED slot -- this \
+             test-only hook is sanctioned only for a freshly-vacant slot \
+             (see its own doc); forcing the generation of a live slot would \
+             desync it from the installed value's true generation"
+        );
         self.generation.store(generation, Ordering::Release);
     }
 
