@@ -180,6 +180,22 @@ const PLAIN_MATRIX = [
     'alloc-global alloc-xthread internals',
     'regression_xthread_small_ring_miri',
   ],
+  // R2-06 (independent src review round 2, task #2008): the
+  // `deferred_next`-vs-diagnostic-snapshot data race. Runs a real owner
+  // `HeapCore::dbg_segment_state_reconciliation()` walk (which reads every
+  // registered segment's header, including Large ones, via
+  // `SegmentHeader::read_at`) CONCURRENTLY with a remote thread's real
+  // cross-thread Large frees (`dealloc_routing` -> `push_large_deferred_free`,
+  // a genuine atomic CAS/store on that segment's `deferred_next`). BEFORE the
+  // fix (`Node::read_struct_with_atomic_word`) this reported a
+  // non-atomic-read-vs-atomic-RMW data race under plain miri; AFTER the fix
+  // it is clean. Needs the elevated preemption rate (see PLAIN_MIRIFLAGS) so
+  // the scheduler lands a remote deferred-free write inside a live owner
+  // `read_at` snapshot.
+  [
+    'alloc-global alloc-xthread alloc-decommit bench-internals internals',
+    'regression_r2_06_header_race_miri',
+  ],
 ];
 
 const args = process.argv.slice(2);

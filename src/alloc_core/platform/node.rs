@@ -38,6 +38,7 @@
 
 use core::mem::size_of;
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// A free-list node: the first word of a freed block stores the `*mut u8` of
 /// the NEXT free block (or null for the tail). This constant is the number of
@@ -227,6 +228,80 @@ impl Node {
         // SAFETY: caller guarantees `src` is valid for `size_of::<T>()` bytes,
         // properly aligned, in a live segment. `T: Copy` → plain bit copy.
         unsafe { src.read() }
+    }
+
+    /// Like [`read_struct`](Self::read_struct), but for a type `T` with ONE
+    /// `u64`-sized field that a concurrent thread may genuinely mutate via a
+    /// real atomic RMW/store — the field at byte offset `atomic_word_off`.
+    /// R2-06 (independent src review round 2, task #2008).
+    ///
+    /// A plain `read_struct::<T>` performs ONE non-atomic load over `T`'s
+    /// WHOLE byte range, including that field's bytes. Under Rust's memory
+    /// model this is a data race — and therefore undefined behavior —
+    /// against a concurrent atomic write to those SAME bytes, regardless of
+    /// whether the caller later discards or overwrites the torn value: the
+    /// race is in the non-atomic READ touching memory a concurrent atomic
+    /// operation touches, not in what happens to the result afterward
+    /// (overwriting a racily-read value does not retroactively make the read
+    /// itself sound).
+    ///
+    /// This avoids that hazard structurally: it copies the bytes BEFORE and
+    /// the bytes AFTER the atomic word via two plain (non-overlapping,
+    /// non-racing) byte copies, then fills the word itself via a REAL atomic
+    /// load (`Relaxed` — this is a snapshot read with no synchronization
+    /// obligation of its own; a caller needing to ACT on the word's value
+    /// under a synchronization protocol must use that protocol's own atomic
+    /// view, not this generic snapshot helper), so the non-atomic copies
+    /// never touch the word's bytes at all.
+    ///
+    /// `src` MUST be valid for `size_of::<T>()` bytes, properly aligned for
+    /// `T`, in a live segment. `atomic_word_off + size_of::<u64>() <=
+    /// size_of::<T>()`, and the 8 bytes at that offset MUST be `u64`-aligned
+    /// within `T`'s layout (true for every `#[repr(C)]` header field this
+    /// crate reads this way — the crate never packs a `u64` field at a
+    /// sub-8-byte alignment).
+    #[inline]
+    pub(crate) fn read_struct_with_atomic_word<T: Copy>(src: *const T, atomic_word_off: usize) -> T {
+        use core::mem::MaybeUninit;
+
+        let total = size_of::<T>();
+        let word_size = size_of::<u64>();
+        debug_assert!(
+            atomic_word_off + word_size <= total,
+            "read_struct_with_atomic_word: atomic word out of range"
+        );
+        // SAFETY: caller guarantees `src` is valid+aligned for `size_of::<T>()`
+        // bytes in a live segment, and that `atomic_word_off` names a
+        // `u64`-aligned 8-byte field within that range. We split the copy
+        // into the byte ranges strictly BEFORE and strictly AFTER the atomic
+        // word (disjoint from it and from each other, so `copy_nonoverlapping`
+        // applies), leaving exactly those 8 bytes of `out` uninitialised until
+        // the atomic load below fills them — the non-atomic copies below
+        // never read the atomic word's bytes.
+        unsafe {
+            let mut out = MaybeUninit::<T>::uninit();
+            let out_ptr = out.as_mut_ptr().cast::<u8>();
+            let src_ptr = src.cast::<u8>();
+            let word_end = atomic_word_off + word_size;
+            if atomic_word_off > 0 {
+                core::ptr::copy_nonoverlapping(src_ptr, out_ptr, atomic_word_off);
+            }
+            if word_end < total {
+                core::ptr::copy_nonoverlapping(
+                    src_ptr.add(word_end),
+                    out_ptr.add(word_end),
+                    total - word_end,
+                );
+            }
+            // Real atomic load of the word, at the same offset a writer's
+            // `&AtomicU64` view (e.g. `SegmentMeta::deferred_next_atomic`)
+            // targets — this is the ONLY access to those 8 bytes here, so it
+            // cannot race the writer's own atomic RMW/store.
+            let atomic_ptr = src_ptr.add(atomic_word_off).cast::<AtomicU64>();
+            let word = (*atomic_ptr).load(Ordering::Relaxed);
+            core::ptr::write_unaligned(out_ptr.add(atomic_word_off).cast::<u64>(), word);
+            out.assume_init()
+        }
     }
 
     /// Read a single `usize` from `src` (aligned). Used by the field-specific

@@ -922,8 +922,28 @@ impl SegmentHeader {
     /// Read the header at `base` (segment base, any kind) THROUGH the node
     /// seam. Returns a copy of the header. `base` MUST be a live segment base
     /// with a valid header at offset 0.
+    ///
+    /// R2-06 (independent src review round 2, task #2008): `deferred_next`
+    /// is the cross-thread deferred-large-free protocol's intrusive Treiber
+    /// link word — a REMOTE thread may CAS/store it at any time via
+    /// [`SegmentMeta::deferred_next_atomic`] (`push_large_deferred_free`),
+    /// independent of whatever this snapshot's caller owns/holds. A plain
+    /// full-struct load (the old implementation, `Node::read_struct`) would
+    /// read those bytes non-atomically — a data race, and therefore
+    /// undefined behavior, against that concurrent atomic write, regardless
+    /// of whether a given call site happens to be safe in practice (several
+    /// are, by protocol construction, but proving that per call site is
+    /// fragile and does not scale to every current AND future caller of this
+    /// function). [`Node::read_struct_with_atomic_word`] closes this
+    /// structurally: it never performs a non-atomic read over
+    /// `deferred_next`'s bytes at all, filling them via a real atomic load
+    /// instead — so `read_at` is sound for EVERY caller, including a
+    /// diagnostic/census walk over segments this thread does not own.
     pub(crate) fn read_at(base: *mut u8) -> Self {
-        Node::read_struct::<SegmentHeader>(base as *const SegmentHeader)
+        Node::read_struct_with_atomic_word::<SegmentHeader>(
+            base as *const SegmentHeader,
+            core::mem::offset_of!(SegmentHeader, deferred_next),
+        )
     }
 }
 
