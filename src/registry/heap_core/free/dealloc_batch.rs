@@ -12,20 +12,6 @@ use core::alloc::Layout;
 
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::os;
-#[cfg(all(
-    feature = "batch-api",
-    feature = "hardened",
-    feature = "alloc-global",
-    feature = "fastbin"
-))]
-use crate::alloc_core::segment_header::SegmentHeader;
-#[cfg(all(
-    feature = "batch-api",
-    feature = "hardened",
-    feature = "alloc-global",
-    feature = "fastbin"
-))]
-use crate::alloc_core::segment_header::SegmentKind;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
@@ -34,6 +20,12 @@ use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
+// Task #2002: the shared F7/H1/M2 guard chain, extracted to
+// `free/dealloc_own_base.rs` — see `small_free_guard`'s own doc comment for
+// the full guard-by-guard rationale this file's `dealloc_batch_small` now
+// shares verbatim with `dealloc_own_thread_with_base`.
+#[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
+use super::dealloc_own_base::{small_free_guard, SmallFreeGuard};
 
 impl HeapCore {
     /// R11-4 — **batched deallocation**.
@@ -281,59 +273,39 @@ impl HeapCore {
                 continue;
             }
 
-            let off = (p as usize - base as usize) as u32;
-
-            // ── F7 (task #25): Large-segment kind guard (HARDENED) ──
-            // Identical guard, identical order, to
-            // `dealloc_own_thread_with_base` (`free/dealloc_own_base.rs`): this
-            // method's ownership gate above (`contains_base`) does NOT
-            // distinguish Small vs. Large — both are "this heap's
-            // registered segments" — so a caller-contract-violating free
-            // (small-classified `layout`, but `ptr` actually lives in a
-            // LARGE segment) would otherwise fall through to the M2 oracles
-            // below and read/write the Large block's own payload bytes as
-            // if they were a Small segment's bitmap. Reject as a no-op
-            // BEFORE the oracles, exactly as the scalar path does.
-            #[cfg(feature = "hardened")]
-            {
-                if SegmentHeader::kind_at(base) == SegmentKind::Large {
-                    continue; // Large-segment free via small layout — no-op
+            // Task #2002: the shared F7/H1/M2 guard chain — see
+            // `small_free_guard`'s own doc comment
+            // (`free/dealloc_own_base.rs`) for the full guard-by-guard
+            // rationale. This method's ownership gate above
+            // (`contains_base`) does NOT distinguish Small vs. Large — both
+            // are "this heap's registered segments" — so F7 matters here
+            // specifically: without it a caller-contract-violating
+            // Large-via-small-layout free would fall through to the M2
+            // oracles and read/write the Large block's own payload bytes as
+            // if they were a Small segment's bitmap.
+            //
+            // Before this task, this method's own hand-copied guard body had
+            // NO equivalent to `small_free_guard`'s F7 branch (A) — under
+            // `medium-classes` promotion WITHOUT `hardened`, a LEGITIMATE
+            // promoted-and-grown Large block freed via `dealloc_batch` had
+            // no Large-kind check at all and fell straight into the M2
+            // oracles, corrupting the Large block's own payload. Routing to
+            // the real substrate free on `RouteToLargeFree` (mirroring the
+            // "not owned" fallback immediately above) closes that gap.
+            let (off, meta) = match small_free_guard(base, p, c, layout) {
+                SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
+                SmallFreeGuard::RejectNoOp => continue,
+                SmallFreeGuard::RouteToLargeFree => {
+                    // SAFETY: caller upholds the dealloc-batch contract for
+                    // `p`; `dealloc` performs its own Large-segment free via
+                    // the substrate.
+                    #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into scalar `dealloc`.
+                    unsafe {
+                        self.dealloc(p, layout)
+                    };
+                    continue;
                 }
-            }
-
-            // ── H1 (task #167): interior-pointer guard (HARDENED) ──
-            // Identical guard, identical order, to
-            // `dealloc_own_thread_with_base`: a block start of class `c`
-            // always sits at a segment offset that is a whole multiple of
-            // `block_size(c)`. An INTERIOR pointer is blind to the M2
-            // oracles below (bitmap granularity can alias a different bit),
-            // so reject it as a no-op here too.
-            #[cfg(feature = "hardened")]
-            {
-                let off_h = (p as usize).wrapping_sub(base as usize);
-                let bs = SizeClasses::block_size(c);
-                if !off_h.is_multiple_of(bs) {
-                    continue; // interior-pointer free — no-op
-                }
-            }
-
-            let meta = SegmentMeta::new(base);
-
-            // M2 oracle 1 (identical accessor + order to
-            // `dealloc_own_thread_with_base`): in-magazine double-free.
-            if meta.magazine_bitmap().is_in_magazine(off) {
-                continue; // in-magazine double-free — no-op
-            }
-            // M2 oracle 2: decommit stale-free guard (same accessor,
-            // same gate).
-            #[cfg(feature = "alloc-decommit")]
-            if (off as usize) >= meta.bump_of() {
-                continue;
-            }
-            // M2 oracle 3: flushed-then-double-freed guard (same accessor).
-            if meta.alloc_bitmap().is_free(off) {
-                continue; // flushed-then-double-freed — no-op
-            }
+            };
 
             // Accepted. Magazine-first: fill up to `TCACHE_CAP` directly
             // (batched slot writes — no per-block flush check).
