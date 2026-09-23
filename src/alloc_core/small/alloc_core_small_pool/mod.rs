@@ -74,20 +74,38 @@ mod decomp_hooks;
 pub struct SegmentStateAccount {
     /// Number of registered segments classified into this state.
     pub count: usize,
-    /// Bytes backed by physical memory for segments in this state
-    /// (metadata + committed payload).
+    /// The OS COMMIT CHARGE implied by each segment's frontier/backend
+    /// contract (metadata + committed payload, in virtual bytes
+    /// committed) — NOT a measured RSS figure.
     pub committed_bytes: u64,
     /// Total virtual-address reservation bytes for segments in this state.
     pub reserved_bytes: u64,
 }
 
-/// R29-4 MEASUREMENT-ONLY: a full per-state reconciliation of every
-/// registered segment of one heap. Every non-NULL segment-table slot is
-/// classified into exactly ONE state; `total` is the sum of all per-state
-/// accounts (plus `unknown_count` segments whose kind byte was corrupt).
-/// The identity `sum(per_state.count) + unknown_count == table.count()`
-/// holds by construction (every slot classified), making the accounting
-/// self-verifying — no unaccounted-for residual bucket.
+/// R29-4 MEASUREMENT-ONLY: a full per-state reconciliation of one heap,
+/// built from TWO separate enumerations: the live segment-table slots
+/// (the walk classifies every non-NULL slot into exactly ONE state) and
+/// the occupied large-cache slots (enumerated separately into
+/// `large_cached` — a cache deposit unregisters the segment BEFORE zeroing
+/// its header magic, so cached entries are never visible to the table
+/// walk). `total` is the sum of all per-state accounts (including
+/// `large_cached`), plus `unknown_count` segments whose kind byte decoded
+/// to `Unknown`.
+///
+/// R2-14 (corrected identity):
+/// `total.count + unknown_count + table_recycled_null_slots
+/// == table_high_water + large_cached.count` — every LIVE table slot
+/// (`table_high_water` minus the NULL recycled slots) is classified
+/// exactly once into a table-walk state or `unknown_count`; `large_cached`
+/// then adds the separately-enumerated cache entries. The pre-R2-14 claim
+/// `sum(per_state.count) + unknown_count == table.count()` was FALSE: the
+/// walk skips NULL slots while `SegmentTable::count()` is a HIGH-WATER
+/// mark (slots ever written, including recycled holes), and cached Large
+/// segments were invisible to the walk entirely.
+///
+/// `committed_bytes` is the OS commit charge implied by each segment's
+/// frontier/backend contract (virtual bytes committed), NOT a measured
+/// RSS figure.
 #[doc(hidden)]
 #[cfg(feature = "bench-internals")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -117,6 +135,17 @@ pub struct SegmentStateReconciliation {
     /// Segments whose `kind` byte decoded to `Unknown` (corrupt header) —
     /// should always be 0 in a well-formed heap.
     pub unknown_count: usize,
+    /// Snapshot of `SegmentTable::count()` at walk time: the number of
+    /// slots EVER written (the table's high-water mark), including
+    /// currently-NULL recycled holes. Deliberately NOT the live-segment
+    /// count — the live count is `table_high_water -
+    /// table_recycled_null_slots`.
+    pub table_high_water: usize,
+    /// NULL (recycled) slots within `0..table_high_water` — skipped by the
+    /// classification walk, counted here so callers can reconcile `total`
+    /// against `table_high_water` (see the struct-level corrected
+    /// identity).
+    pub table_recycled_null_slots: usize,
 }
 
 #[cfg(feature = "bench-internals")]
@@ -799,29 +828,44 @@ impl AllocCore {
         drained
     }
 
-    /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile every registered segment
-    /// of this heap into exactly ONE state, with committed/reserved bytes
-    /// totalled per state. Iterates every non-NULL segment-table slot
-    /// (`table.base_at(i)` for `i in 0..table.count()`), reads each segment's
-    /// header, and classifies it into one of seven mutually-exclusive states
-    /// (see [`SegmentStateReconciliation`]). The identity
-    /// `sum(per_state.count) + unknown_count == table.count()` holds by
-    /// construction: every slot is classified, none is skipped.
+    /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile this heap's segment
+    /// state via a DUAL enumeration (R2-14): (1) every LIVE (non-NULL)
+    /// segment-table slot — `table.base_at(i)` for `i in
+    /// 0..table.count()`, skipping NULL recycled slots — is classified
+    /// into exactly ONE of seven mutually-exclusive states (see
+    /// [`SegmentStateReconciliation`]); (2) every OCCUPIED slot of the
+    /// per-heap combined large-cache array is enumerated separately into
+    /// `large_cached`, because cached Large segments are NOT in the table
+    /// (a deposit unregisters the segment first) and so can never be
+    /// classified from table slots.
+    ///
+    /// The identity `total.count + unknown_count + table_recycled_null_slots
+    /// == table_high_water + large_cached.count` holds by construction:
+    /// every live table slot is classified exactly once (or counted as
+    /// `unknown_count`), every skipped NULL slot is counted in
+    /// `table_recycled_null_slots`, and `large_cached` accounts for the
+    /// separately-enumerated cache slots. `table_high_water`
+    /// (`SegmentTable::count()`) is a HIGH-WATER mark — slots ever written,
+    /// including recycled holes — NOT the live-segment count.
     ///
     /// **Safety analysis (CLAUDE.md benchmark-hook rule):** this is a plain
     /// SAFE `pub fn`, NOT `unsafe fn`, because:
     /// 1. It does NOT derive a segment base from a caller-provided raw
     ///    pointer — every base comes from `self.table.base_at(i)`, the
     ///    table's OWN non-NULL slot (inherently validated by the table's
-    ///    register/recycle invariant). This is a strictly WEAKER access
-    ///    pattern than `dbg_live_count_for` / `dbg_is_decommitted_for`
-    ///    (which take a caller `*mut u8` and validate via
-    ///    `contains_base_ro`), both of which are already safe `pub fn`.
+    ///    register/recycle invariant), and the cache-side reads go through
+    ///    the existing safe `&self` accessors `large_cache_scan_bound()` /
+    ///    `large_cache_slot_get(idx)` (`alloc_core_large_cache.rs`) — no new
+    ///    unsafe, no raw-pointer parameters. This is a strictly WEAKER
+    ///    access pattern than `dbg_live_count_for` /
+    ///    `dbg_is_decommitted_for` (which take a caller `*mut u8` and
+    ///    validate via `contains_base_ro`), both of which are already safe
+    ///    `pub fn`.
     /// 2. It performs NO mutation — read-only classification.
     /// 3. The per-segment header reads (`SegmentMeta::new(base).header()`,
-    ///    field-specific reads for `live_count`/`decommitted`/`pool_prev`)
-    ///    are the SAME seam the existing `dbg_*_for` accessors use, on bases
-    ///    the table guarantees are live and mapped.
+    ///    field-specific reads for `live_count`/`decommitted`/`pool_prev`/
+    ///    the committed frontier) are the SAME seam the existing `dbg_*_for`
+    ///    accessors use, on bases the table guarantees are live and mapped.
     ///
     /// `bench-internals`-gated (rule 2: no production caller). The
     /// `alloc-decommit` gate is inherited from this file's module-level gate
@@ -833,20 +877,55 @@ impl AllocCore {
     pub fn dbg_segment_state_reconciliation(&self) -> SegmentStateReconciliation {
         let mut rec = SegmentStateReconciliation::default();
         let n = self.table.count() as usize;
+        // R2-14: `SegmentTable::count()` is the table's HIGH-WATER mark
+        // (slots ever written, including currently-NULL recycled holes) —
+        // snapshot it verbatim; it is deliberately NOT the live-segment
+        // count.
+        rec.table_high_water = n;
         let small_cur = self.small_cur;
         let seg_bytes = SEGMENT as u64;
 
         for i in 0..n {
             let base = self.table.base_at(i);
             if base.is_null() {
-                continue; // Recycled slot — not counted.
+                // Recycled slot: below the high-water mark but no longer
+                // live. Skipped by the classification walk — counted here so
+                // callers can reconcile `total` against `table_high_water`
+                // (see the struct-level corrected identity).
+                rec.table_recycled_null_slots += 1;
+                continue;
             }
+
+            // Commit charge for this segment (metadata + committed payload):
+            // the owner-only `committed_payload_end` frontier — the byte
+            // offset up to which payload pages are committed, set at
+            // bootstrap (`alloc_core/bootstrap.rs`) or small-segment
+            // reservation (`alloc_core_small/reserve.rs`) and advanced by
+            // grow-on-carve (`alloc_core_small/mod.rs`). On eager backends
+            // the field is inert (never stamped, and the accessor below is
+            // cfg'd out of such builds) while the backend commits the WHOLE
+            // segment at reservation time, so SEGMENT is the contract value
+            // there. The `small_decommitted_retained` state deliberately
+            // does NOT use this value — see that branch.
+            #[cfg(any(
+                feature = "primordial-lazy-commit",
+                feature = "small-segment-lazy-commit"
+            ))]
+            let frontier_committed = SegmentMeta::new(base).committed_payload_end_of() as u64;
+            #[cfg(not(any(
+                feature = "primordial-lazy-commit",
+                feature = "small-segment-lazy-commit"
+            )))]
+            let frontier_committed = seg_bytes;
 
             let kind = SegmentHeader::kind_at(base);
             match kind {
                 SegmentKind::Primordial => {
+                    // Lazy-commit frontier (SEGMENT on eager backends — set
+                    // at bootstrap, advanced by grow-on-carve); the whole 4
+                    // MiB reservation stays reserved either way.
                     rec.primordial.count += 1;
-                    rec.primordial.committed_bytes += seg_bytes;
+                    rec.primordial.committed_bytes += frontier_committed;
                     rec.primordial.reserved_bytes += seg_bytes;
                 }
                 SegmentKind::Small => {
@@ -878,6 +957,14 @@ impl AllocCore {
                         // `tests/segment_state_reconciliation_oracle.rs`
                         // pins this formula in both policy worlds (see
                         // docs/CORRECTNESS_OPEN_ITEMS.md item 74).
+                        //
+                        // R2-14: this branch keeps the formula below and does
+                        // NOT read the frontier — on the eager path the
+                        // decommit does not reset the frontier (it stays
+                        // stale at SEGMENT — see `decommit.rs`), so a frontier
+                        // read would over-report here; on the lazy path the
+                        // retain leg resets the frontier to exactly this
+                        // formula's value.
                         #[cfg(feature = "small-segment-lazy-commit")]
                         let meta_bytes = (SegLayout::small_decommit_start()
                             + crate::alloc_core::alloc_core_small::LAZY_FIRST_CHUNK)
@@ -888,18 +975,28 @@ impl AllocCore {
                         rec.small_decommitted_retained.committed_bytes += meta_bytes;
                         rec.small_decommitted_retained.reserved_bytes += seg_bytes;
                     } else if is_pooled {
+                        // Pool admission never decommits or resets metadata
+                        // (`release_or_pool_empty_segment`'s doc): a pooled
+                        // segment keeps its pages committed exactly as at
+                        // the instant it emptied, so the frontier IS the
+                        // commit charge (SEGMENT on eager backends).
                         rec.small_pooled.count += 1;
-                        rec.small_pooled.committed_bytes += seg_bytes;
+                        rec.small_pooled.committed_bytes += frontier_committed;
                         rec.small_pooled.reserved_bytes += seg_bytes;
                     } else if live > 0 || is_cur {
+                        // The frontier is the live grow-on-carve commit point
+                        // of an actively-carved segment (SEGMENT on eager
+                        // backends).
                         rec.small_active.count += 1;
-                        rec.small_active.committed_bytes += seg_bytes;
+                        rec.small_active.committed_bytes += frontier_committed;
                         rec.small_active.reserved_bytes += seg_bytes;
                     } else {
                         // live == 0, not pooled, not small_cur, not decommitted
                         // — the "registered empty but not pooled" orphan state.
+                        // Same frontier discipline as active/pooled (SEGMENT
+                        // on eager backends).
                         rec.small_empty_orphan.count += 1;
-                        rec.small_empty_orphan.committed_bytes += seg_bytes;
+                        rec.small_empty_orphan.committed_bytes += frontier_committed;
                         rec.small_empty_orphan.reserved_bytes += seg_bytes;
                     }
                 }
@@ -907,23 +1004,40 @@ impl AllocCore {
                     let hdr = SegmentMeta::new(base).header();
                     let span = hdr.span_usable as u64;
                     let res_len = hdr.reservation_len as u64;
-                    // A cached Large segment has its `magic` field atomically
-                    // zeroed at deposit (`alloc_core.rs` large-cache deposit
-                    // path); an active Large segment retains `SEGMENT_MAGIC`.
-                    let is_cached = hdr.magic == 0;
-                    if is_cached {
-                        rec.large_cached.count += 1;
-                        rec.large_cached.committed_bytes += span;
-                        rec.large_cached.reserved_bytes += res_len;
-                    } else {
-                        rec.large_active.count += 1;
-                        rec.large_active.committed_bytes += span;
-                        rec.large_active.reserved_bytes += res_len;
-                    }
+                    // R2-14: every registered Large slot is ACTIVE. A
+                    // large-cache deposit unregisters the segment BEFORE
+                    // zeroing its magic (`alloc_core/mem/mod.rs` deposit
+                    // path; `alloc_core/large.rs` remote reclaim path), so a
+                    // cached entry is never visible to this walk — cached
+                    // segments are enumerated from the per-heap cache array
+                    // below, and a registered Large slot always carries
+                    // SEGMENT_MAGIC (the old `hdr.magic == 0` cached branch
+                    // was structurally dead).
+                    rec.large_active.count += 1;
+                    rec.large_active.committed_bytes += span;
+                    rec.large_active.reserved_bytes += res_len;
                 }
                 SegmentKind::Unknown => {
                     rec.unknown_count += 1;
                 }
+            }
+        }
+
+        // R2-14 — second enumeration: the OCCUPIED slots of the per-heap
+        // combined large-cache array (base + extension). Deposits keep the
+        // pages COMMITTED (no decommit on deposit — see the deposit-site
+        // comment in `alloc_core/mem/mod.rs`), so `usable_size` (the
+        // carried-forward committed span) is the commit charge, and
+        // `reservation_len` is the real OS reservation descriptor for
+        // reserved bytes (the R12-4 `reserved_capacity` VA span is
+        // deliberately NOT reported as reserved). Reads go through the
+        // existing safe `&self` accessors — no new unsafe.
+        let bound = self.large_cache_scan_bound();
+        for idx in 0..bound {
+            if let Some(entry) = self.large_cache_slot_get(idx) {
+                rec.large_cached.count += 1;
+                rec.large_cached.committed_bytes += entry.usable_size as u64;
+                rec.large_cached.reserved_bytes += entry.reservation_len as u64;
             }
         }
 

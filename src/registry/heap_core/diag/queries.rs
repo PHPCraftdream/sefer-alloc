@@ -393,10 +393,15 @@ impl HeapCore {
     /// `HeapCore` level (mirroring `dbg_pooled_count`'s / `dbg_pool_cap`'s
     /// existing delegation pattern in this file) so the R29-4 probe can
     /// snapshot the per-state segment accounting from a claimed heap.
-    /// Returns a [`SegmentStateReconciliation`] that classifies every
-    /// registered segment into exactly one state. Read-only `&self`;
-    /// does NOT mutate allocator state. `bench-internals`-gated
-    /// (no production caller → R25-10 sub-rule 2).
+    /// Returns a [`SegmentStateReconciliation`] built from a DUAL
+    /// enumeration: every registered segment is classified into exactly
+    /// one state, and the heap's occupied large-cache slots are enumerated
+    /// separately into `large_cached` (a cache deposit unregisters the
+    /// segment first, so cached Large segments are never in the segment
+    /// table). Its `committed_bytes` figures are the OS commit charge
+    /// implied by each segment's frontier/backend contract, NOT a measured
+    /// RSS figure. Read-only `&self`; does NOT mutate allocator state.
+    /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated
     /// [`AllocCore::dbg_segment_state_reconciliation`] moved behind
