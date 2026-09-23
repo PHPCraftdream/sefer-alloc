@@ -1,6 +1,5 @@
 //! `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE`
-//! claim (plain and config-plumbed), OOM push-back, and the
-//! config-conflict rollback guard.
+//! claim (plain and config-plumbed) and OOM push-back.
 #![allow(unsafe_code)]
 
 use core::sync::atomic::Ordering;
@@ -132,12 +131,13 @@ impl HeapRegistry {
     /// an already-initialised slot whose live (resolved) policy differs from
     /// `config`, the mismatch is counted in [`CONFIG_CONFLICTS`] (visible via
     /// [`SeferAlloc::stats`](crate::SeferAlloc::stats)'s `config_conflicts`
-    /// field) and surfaced with a `debug_assert!` in debug builds. The slot's
-    /// existing config silently wins — this is a detect-and-signal fix, not a
-    /// reconfigure (reconfigure-with-trim needs old-owner quiescence that
-    /// does not cleanly exist for the general case). The counter is the
-    /// release-safe signal; the `debug_assert!` is the development-time loud
-    /// signal.
+    /// field). The slot's existing config silently wins — this is a
+    /// detect-and-signal fix, not a reconfigure (reconfigure-with-trim needs
+    /// old-owner quiescence that does not cleanly exist for the general
+    /// case). The counter is the ONLY signal, in every build profile: this
+    /// is the cold bind path behind every `GlobalAlloc` method, and a
+    /// `GlobalAlloc` method must never unwind (R2-08, task #2010 — a former
+    /// debug-build `debug_assert!` here did).
     ///
     /// **OOM-on-materialisation push-back:** identical to `claim`'s — see
     /// that method's doc comment for the full rationale. On `HeapCore::new_with_config`
@@ -198,45 +198,17 @@ impl HeapRegistry {
                 let heap_ptr = slot.heap.get().cast::<HeapCore>();
                 let matches = unsafe { (*heap_ptr).live_config_matches(&config) };
                 if !matches {
-                    // Count FIRST (always compiled in — this is a cold path,
-                    // one increment per mismatched bind, not a hot-path RMW
-                    // worth gating behind `alloc-stats`).
+                    // The counter is the ONLY signal, in every build profile
+                    // (always compiled in — one increment per mismatched
+                    // bind on this cold path, not a hot-path RMW worth gating
+                    // behind `alloc-stats`). R2-08 (task #2010): this branch
+                    // is the cold bind behind every `GlobalAlloc` method and
+                    // is reachable by a legitimate multi-instance config
+                    // collision, so it must not panic — a former
+                    // `debug_assert!` here unwound out of `GlobalAlloc::alloc`
+                    // in debug builds (UB per the trait's contract). The slot
+                    // stays LIVE and is returned below: first-wins.
                     CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
-                    // R6-CQ-3 (panic-safety): arm a rollback guard BEFORE the
-                    // debug_assert! below. The FREE→LIVE CAS at the top of
-                    // this loop iteration already popped this slot off
-                    // `free_slots` (or minted it via `count`); the
-                    // `debug_assert!` panics in debug builds, and without this
-                    // guard the panic would propagate before the `return`
-                    // below — leaking the slot as LIVE-but-caller-never-
-                    // received-the-pointer (stuck LIVE forever, never
-                    // reclaimable). The guard's `Drop` restores the slot to
-                    // FREE + `free_slots` (identical to `recycle` /
-                    // `push_back_after_oom`) DURING the unwind, BEFORE the
-                    // panic crosses this function's frame.
-                    let guard = ConflictRollback {
-                        reg,
-                        slot,
-                        idx: idx as u32,
-                    };
-                    // Development-time loud signal. In release this is
-                    // compiled out, leaving the counter as the silent signal.
-                    // The counter was already incremented above, so even if
-                    // this fires the diagnostic is observable via `stats()`.
-                    debug_assert!(
-                        matches,
-                        "sefer-alloc: config conflict on recycled heap slot {} — \
-                         the slot's existing config silently overrides the \
-                         requested one (check SeferAlloc::stats().config_conflicts)",
-                        idx
-                    );
-                    // Reached only in release (the assert is compiled out) —
-                    // forget the guard so its `Drop` does NOT restore the
-                    // slot, leaving it LIVE for the `return` below as
-                    // intended. On the debug-build panic path this line is
-                    // never reached, so the guard drops during unwind and
-                    // performs the rollback.
-                    core::mem::forget(guard);
                 }
             }
             // R11-5: same NUMA-cache invalidation as `claim` — runs in BOTH
@@ -443,60 +415,4 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
         "push_back_after_oom: slot was not LIVE; pushing it again would double-push"
     );
     push_free_slot(reg, idx);
-}
-
-/// R6-CQ-3 (panic-safety): RAII rollback guard armed in the config-conflict
-/// branch of [`HeapRegistry::claim_with_config`]. When dropped, it performs
-/// the SAME `LIVE → FREE` CAS + `free_slots` push as
-/// [`push_back_after_oom`] / [`HeapRegistry::recycle`], restoring the slot
-/// to the free pool.
-///
-/// **Why this guard exists:** by the time `claim_with_config` reaches the
-/// config-mismatch branch it has already won the `FREE → LIVE` CAS (popping
-/// the slot off `free_slots`, or minting it via `count`). The mismatch is
-/// signalled with a `debug_assert!`, which PANICS in debug builds. Without a
-/// rollback that panic propagates before the function's `return`, so the
-/// caller never receives the `*mut HeapCore`, can never call `recycle` on
-/// it, and the slot is stuck `LIVE` forever — a genuine leak that shrinks
-/// the reachable `MAX_HEAPS` pool by one per conflict. Arming this guard
-/// around the `debug_assert!` means the slot is restored to `FREE` +
-/// `free_slots` DURING the unwind, BEFORE the panic crosses the function
-/// boundary, so the leak cannot occur regardless of whether the caller
-/// catches the panic.
-///
-/// **Disarm (non-panic path):** the owning code calls [`core::mem::forget`]
-/// on the guard once the `debug_assert!` has returned without panicking
-/// (release builds, where the assert is compiled out). `forget` suppresses
-/// `Drop`, so a normal `return` leaves the slot `LIVE` for the caller as
-/// intended. On the panic path `forget` is never reached and `Drop` runs
-/// during the unwind — the guard is therefore "armed iff not yet forgotten".
-///
-/// **Panic-safety of `Drop` itself:** `Drop` only runs a CAS and
-/// `push_free_slot` (both atomic; neither panics in release — the P4-3
-/// `debug_assert!` inside `push_back_after_oom` can panic in debug builds,
-/// but only on the already-violated sole-writer invariant, where aborting is
-/// the acceptable outcome), and the `&'static`
-/// slot/registry references it holds remain valid for the entire unwind, so
-/// there is no double-panic/abort risk and no `catch_unwind` /
-/// `AssertUnwindSafe` is needed at the source level — the guard drops during
-/// natural unwinding. (Under `panic = "abort"` the `debug_assert!` aborts the
-/// process and the guard never runs, but then there is no leak either: the
-/// process is gone.)
-// Constructed only inside `claim_with_config`'s config-mismatch branch,
-// itself `#[cfg(feature = "alloc-decommit")]`-gated (that method is "only
-// present under `alloc-decommit`" — see its own doc comment above). A build
-// without `alloc-decommit` (e.g. `hardened medium-classes`) would otherwise
-// leave this struct never constructed (R23-5, task #374).
-#[cfg(feature = "alloc-decommit")]
-struct ConflictRollback {
-    reg: &'static Registry,
-    slot: &'static HeapSlot,
-    idx: u32,
-}
-
-#[cfg(feature = "alloc-decommit")]
-impl Drop for ConflictRollback {
-    fn drop(&mut self) {
-        push_back_after_oom(self.reg, self.slot, self.idx);
-    }
 }

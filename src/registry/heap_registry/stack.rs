@@ -239,8 +239,8 @@ pub(super) fn push_free_slot(reg: &Registry, idx: u32) {
     // out under `--release` and cannot be relied on for a safety argument.
     // SAFETY: `StackOps::push_index`'s three-clause caller contract (link
     // domain + liveness + exclusive ownership epoch), upheld for
-    // all three callers of `push_free_slot` (`recycle`, `push_back_after_oom`,
-    // and `ConflictRollback::drop` → `push_back_after_oom`):
+    // both callers of `push_free_slot` (`recycle` and `push_back_after_oom`;
+    // R2-08 removed the third, `ConflictRollback::drop`):
     // - LINK DOMAIN: every index reaching here is `< MAX_HEAPS` release-actively
     //   — recycled indices via `recycle`'s `if idx >= MAX_HEAPS { return; }`
     //   early return (~line 356), freshly-minted indices via `bump_count`'s
@@ -255,7 +255,7 @@ pub(super) fn push_free_slot(reg: &Registry, idx: u32) {
     //   caller's release-active `LIVE → FREE` CAS win (~line 368); an
     //   already-FREE slot loses that CAS and early-returns without pushing, so
     //   a slot still on the free list can never reach the push; (b)
-    //   `push_back_after_oom` (also via `ConflictRollback::drop`) — here the
+    //   `push_back_after_oom` — here the
     //   liveness leg is the documented sole-writer invariant, NOT a
     //   release-active gate: the caller won the slot's `FREE → LIVE` CAS in
     //   `claim`/`claim_with_config` and is its sole writer until the push, so

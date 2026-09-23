@@ -856,8 +856,8 @@ pub struct PushOverflow;
 /// F-7 (R34-17/task #536) — RAII guard that publishes [`RemoteFreeRing::drain`]'s
 /// `head` cursor on drop, so a `reclaim` closure that unwinds mid-drain still
 /// commits the progress made before the panic. Mirrors the `LockGuard`
-/// (`global::fallback`, task L4) / `ConflictRollback` (`registry::heap_registry`,
-/// R6-CQ-3) panic-safety pattern already in this crate. The guard is the SOLE
+/// (`global::fallback`, task L4) panic-safety pattern already in this crate.
+/// The guard is the SOLE
 /// writer of `head` on the drain path: the pre-F-7 explicit
 /// `head.store(h, Release)` after the loop was removed in favour of this `Drop`,
 /// so there is exactly one publish whether the drain completes normally or

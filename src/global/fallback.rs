@@ -365,8 +365,7 @@ impl Drop for LockGuard {
 /// so the guard's `Drop` is a no-op — it must NOT clobber a just-published READY.
 ///
 /// Mirrors the panic-safety form of [`LockGuard`] (one function down, for the
-/// spinlock) and `ConflictRollback` (`registry::heap_registry`, for a slot's
-/// FREE→LIVE CAS): same shape, applied to the bootstrap state-machine one level
+/// spinlock): same shape, applied to the bootstrap state-machine one level
 /// above where `LockGuard` already guards the spinlock. Before this guard, an
 /// unwind out of `HeapCore::new` / the in-place `write` / `bind_thread_free`
 /// left `INIT_STATE` stuck at `INITIALIZING` permanently — every subsequent

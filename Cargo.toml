@@ -182,10 +182,12 @@ alloc-xthread = ["alloc-core"]
 # checked branches (OOM, a foreign pointer, a layout we refuse to serve)
 # return null / are a safe no-op, never panic. This is NOT a blanket
 # never-panic/never-abort guarantee for the whole entry-point surface --
-# see `src/global/sefer_alloc.rs`'s module doc for the five release-surviving
-# invariant tripwires deliberately kept as release panics (which abort the
-# process via the `#[rustc_nounwind]` `GlobalAlloc` shims, defence-in-depth,
-# not UB) and `src/registry/bootstrap.rs`'s `Registry::ensure_chunk` for the
+# see `src/global/sefer_alloc.rs`'s module doc for the four release-surviving
+# invariant tripwires deliberately kept as release panics (defence-in-depth,
+# unreachable under correct operation; NOT a guaranteed abort -- no
+# `GlobalAlloc` method may unwind, and the crate does not lean on the std
+# shims to contain one, see that doc's R2-08 note) and
+# `src/registry/bootstrap.rs`'s `Registry::ensure_chunk` for the
 # direct `std::process::abort()` on alloc-path chunk-materialisation OOM
 # (the free path is fallible instead, via `slot_or_none`/`try_ensure_chunk`,
 # R34-15). Reentrancy-free (M5) is upheld structurally: no

@@ -8,15 +8,18 @@
 //!
 //! When a recycled, already-materialised slot is re-claimed with a *different*
 //! `LargeCacheConfig`, the mismatch is now counted in
-//! `AllocStats::config_conflicts` (and surfaced with a `debug_assert!` in
-//! debug builds). The slot's existing config still wins (first-
-//! materialisation-wins), but the event is no longer fully silent.
+//! `AllocStats::config_conflicts`. The slot's existing config still wins
+//! (first-materialisation-wins), but the event is no longer fully silent.
+//! (A `debug_assert!` that used to accompany the counter was removed by
+//! R2-08 / task #2010: this is the cold bind path behind every `GlobalAlloc`
+//! method, which must never unwind — the strict no-panic check lives in
+//! `tests/regression_r2_08_globalalloc_no_unwind.rs`. The `catch_unwind`s
+//! below are kept as tolerant harnesses.)
 //!
 //! **RED (before fix):** `claim_with_config` on an already-initialised slot
 //! silently ignores the caller's config — no counter, no signal.
 //!
-//! **GREEN (after fix):** the counter increments; the debug_assert fires in
-//! debug builds (caught with `catch_unwind`).
+//! **GREEN (after fix):** the counter increments.
 //!
 //! Also verifies no false positive: re-claiming with a *matching* config does
 //! not trigger the conflict signal.
@@ -82,14 +85,13 @@ fn config_conflict_detected_on_recycled_slot() {
 
     // 3. Re-claim — LIFO free_slots means we reuse the same slot. The slot
     //    is already initialised with CONFIG_A; CONFIG_B differs → conflict.
-    //    In debug builds the debug_assert fires AFTER the counter is
-    //    incremented; catch_unwind handles that so we can still read the
-    //    counter.
+    //    (Pre-R2-08 a debug_assert fired here after the counter increment;
+    //    the tolerant catch_unwind is kept from that era.)
     let result = std::panic::catch_unwind(|| {
         // claim_with_config copies the config (by value), which is UnwindSafe.
         HeapRegistry::claim_with_config(CONFIG_B)
     });
-    // Debug: result is Err (debug_assert panicked). Release: result is Ok.
+    // Post-R2-08: Ok in every profile (strictly asserted in regression_r2_08).
     if let Ok(heap2) = result {
         // SAFETY: heap2 was returned by claim_with_config; clean up.
         unsafe { HeapRegistry::recycle(heap2) };
@@ -103,8 +105,8 @@ fn config_conflict_detected_on_recycled_slot() {
     );
 
     // 4. R6-CQ-3 (panic-safety / no-leak): the config-conflict signal must
-    //    NOT leak the slot. Whether the debug_assert panicked (debug) or the
-    //    mismatched re-claim returned normally (release), the slot must be
+    //    NOT leak the slot. The mismatched re-claim returns normally (every
+    //    profile since R2-08; formerly a debug-build panic), and the slot must be
     //    reclaimable on the NEXT claim — and LIFO free_slots reuse means it
     //    is the SAME slot index. Pre-fix this failed in debug builds: the
     //    panic left the slot stuck LIVE and out of free_slots, so the
@@ -128,7 +130,7 @@ fn config_conflict_detected_on_recycled_slot() {
 }
 
 /// Re-claim a recycled slot with the *same* config → no conflict, no
-/// debug_assert. This is the false-positive guard: a normal single-config
+/// panic. This is the false-positive guard: a normal single-config
 /// usage pattern must not trip the signal.
 #[test]
 fn matching_config_does_not_trigger_conflict_signal() {
@@ -140,14 +142,13 @@ fn matching_config_does_not_trigger_conflict_signal() {
 
     let before = SeferAlloc::new().stats().config_conflicts;
 
-    // Re-claim with the SAME config. This should NOT trigger the debug_assert
-    // (in debug builds) and should NOT increment the counter. We use
-    // catch_unwind to detect a debug_assert false positive: if it fires,
-    // result is Err and we fail with a clear message.
+    // Re-claim with the SAME config. This must NOT panic and must NOT
+    // increment the counter. catch_unwind turns any panic into a clear
+    // failure message.
     let result = std::panic::catch_unwind(|| HeapRegistry::claim_with_config(CONFIG_A));
     let heap2 = match result {
         Ok(h) => h,
-        Err(panic) => panic!("false positive: debug_assert fired on a matching config: {panic:?}"),
+        Err(panic) => panic!("false positive: claim panicked on a matching config: {panic:?}"),
     };
     assert!(!heap2.is_null());
 
@@ -180,6 +181,11 @@ fn matching_config_does_not_trigger_conflict_signal() {
 /// id and proves it is reclaimable after the conflict panic — failing
 /// pre-fix (a different id, because the original leaked) and passing post-fix
 /// (same id, restored by the guard).
+///
+/// **R2-08 (task #2010):** the conflict no longer panics in any profile (the
+/// `debug_assert!` and, with it, the rollback guard are gone), so step 3 now
+/// always takes the `Ok` branch; the no-leak property this test pins still
+/// holds and is still checked.
 #[test]
 fn slot_not_leaked_after_config_conflict_panic() {
     let _serial = SerialGuard::acquire();
@@ -193,9 +199,9 @@ fn slot_not_leaked_after_config_conflict_panic() {
     unsafe { HeapRegistry::recycle(heap_a) };
 
     // 3. Re-claim with CONFIG_B — same slot (LIFO), already initialised with
-    //    CONFIG_A → conflict → debug_assert panics in debug builds.
-    //    (Release builds: no panic; Ok branch recycles the returned pointer so
-    //    the slot is back in free_slots for the re-claim check below.)
+    //    CONFIG_A → conflict → counted, returns normally (R2-08); the Ok
+    //    branch recycles the returned pointer so the slot is back in
+    //    free_slots for the re-claim check below.
     let result = std::panic::catch_unwind(|| {
         // claim_with_config copies the config (by value), which is UnwindSafe.
         HeapRegistry::claim_with_config(CONFIG_B)

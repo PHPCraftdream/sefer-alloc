@@ -70,7 +70,8 @@
 //!   reused/non-virgin block, or (opt-in `virgin-zero-skip`) a skipped fill
 //!   on a genuinely virgin bump-carved block.
 //!
-//! **Four release-surviving invariant tripwires (abort by design).** Beyond
+//! **Four release-surviving invariant tripwires (fail-loud by design,
+//! unreachable under correct operation).** Beyond
 //! those failure paths a small number of "cannot happen" checks remain as
 //! *release* panics (not `debug_assert!`). Each is a precondition the
 //! immediate caller already proves on the same `&mut self` owner-only path,
@@ -128,14 +129,50 @@
 //!   `tests/no_panic_doc_accuracy.rs` pins both its message string and its
 //!   demoted form.
 //!
-//! **Panic-in-`GlobalAlloc` is abort, not UB.** On current Rust the
-//! `__rust_alloc` / `__rust_dealloc` / `__rust_realloc` / `__rust_alloc_zeroed`
-//! shims are `#[rustc_nounwind]`, so a panic that escapes any `GlobalAlloc`
-//! method aborts the process — it is not undefined behaviour. Nothing in this
-//! crate relies on anything stronger, and nothing requires a downstream
-//! `panic = "abort"` profile: the nounwind shims guarantee the abort
-//! regardless of the consumer's panic strategy. Stated here explicitly
-//! rather than left implicit inside the failure-path bullets above.
+//! **`GlobalAlloc` methods must not unwind — upheld at the source, NOT
+//! delegated to the std shims (R2-08).** `GlobalAlloc`'s safety contract
+//! forbids unwinding out of `alloc` / `dealloc` / `realloc` / `alloc_zeroed`,
+//! unconditionally. This crate does not rely on the std `__rust_alloc` /
+//! `__rust_dealloc` / `__rust_realloc` / `__rust_alloc_zeroed` shims being
+//! `#[rustc_nounwind]` to make an escaping panic harmless:
+//!
+//! - a DIRECT trait call (`GlobalAlloc::alloc(&instance, layout)`, generic
+//!   `A: GlobalAlloc` or `&dyn GlobalAlloc` code) never passes through those
+//!   shims at all;
+//! - even on the `#[global_allocator]` path the marking is not an
+//!   abort-on-unwind guarantee to lean on: on rustc 1.97.0
+//!   (x86_64-pc-windows-msvc, debug) the pre-R2-08 config-conflict panic
+//!   unwound straight through `__rust_alloc` and `alloc::alloc::Global` to
+//!   the thread boundary instead of aborting
+//!   (`tests/regression_r2_08_global_allocator_path_no_unwind.rs` records
+//!   the scenario);
+//! - either way the panic runtime first runs the panic hook (the default hook
+//!   can allocate; a user hook may do anything) and, when unwinding, boxes
+//!   the panic payload through the global allocator — re-entering this
+//!   allocator mid-operation — before any abort could happen.
+//!
+//! So the guarantee is made where the code is: no path reachable from a
+//! `GlobalAlloc` method by a contract-respecting caller — steady state or the
+//! cold TLS bind / registry-claim path, debug or release, `panic = "unwind"`
+//! or `"abort"` — panics. Expected-but-unusual conditions are signalled
+//! without panicking: OOM → null; an unrecognised pointer → no-op; a
+//! multi-instance config collision on a recycled registry slot → first-wins
+//! plus the always-compiled [`AllocStats::config_conflicts`] counter (a
+//! former debug-build `debug_assert!` there unwound out of
+//! `GlobalAlloc::alloc` — R2-08, `tests/regression_r2_08_globalalloc_no_unwind.rs`).
+//! The one deliberate process kill on the alloc path is a direct
+//! `std::process::abort()` (registry chunk-materialisation OOM,
+//! `registry/bootstrap/registry.rs`), which neither unwinds nor runs the
+//! panic hook. What remains panic-capable on these paths is internal-invariant
+//! checking only — the `debug_assert!`s, bounds-checked indexing / `expect`s
+//! on internally-derived indices (e.g. a size-class index), and the four
+//! release tripwires above — none of which a contract-respecting caller
+//! (valid non-zero-size `Layout`, live pointer, any configuration) can reach
+//! without a bug in this crate having already corrupted allocator metadata.
+//! Should one ever fire, its outcome is whatever the panic runtime does on
+//! the given call surface — NOT a guaranteed abort.
+//!
+//! [`AllocStats::config_conflicts`]: crate::AllocStats::config_conflicts
 //!
 //! [`current_for_alloc`]: super::tls_heap::current_for_alloc
 

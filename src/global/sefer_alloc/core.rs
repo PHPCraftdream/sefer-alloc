@@ -206,11 +206,14 @@ impl SeferAlloc {
     /// hits a slot that was already materialised with a *different* config, the
     /// mismatch is no longer fully silent: it is counted in
     /// [`config_conflicts`](AllocStats::config_conflicts) (visible via
-    /// [`stats()`](Self::stats)), and a `debug_assert!` fires in debug builds.
-    /// The slot's existing config still wins (this is a detect-and-signal
-    /// fix, not a reconfigure), but a non-zero `config_conflicts` is the
-    /// signature that multiple incompatible instances are competing for the
-    /// same registry slots.
+    /// [`stats()`](Self::stats)). That counter is the only signal, in every
+    /// build profile: the conflict is detected on the cold bind path behind
+    /// every [`GlobalAlloc`](::core::alloc::GlobalAlloc) method, which must
+    /// never panic (R2-08 — a former debug-build `debug_assert!` here
+    /// unwound out of `GlobalAlloc::alloc`). The slot's existing config still
+    /// wins (this is a detect-and-signal fix, not a reconfigure), but a
+    /// non-zero `config_conflicts` is the signature that multiple
+    /// incompatible instances are competing for the same registry slots.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub const fn with_config(config: crate::alloc_core::LargeCacheConfig) -> Self {

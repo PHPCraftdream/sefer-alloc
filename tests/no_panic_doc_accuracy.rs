@@ -32,6 +32,14 @@
 //!     and does NOT contain the old unqualified overclaim. If the section is
 //!     rewritten back to "NEVER panics" without the caveat, this fails.
 //!
+//! R2-08 (task #2010) later found point (3) above wrong: a DIRECT trait call
+//! never passes through the `#[rustc_nounwind]` std shims, and even on the
+//! `#[global_allocator]` path a pre-R2-08 panic was observed to unwind
+//! through `__rust_alloc` rather than abort. The doc now states the
+//! normative "`GlobalAlloc` methods must not unwind — upheld at the source"
+//! rule instead; `no_panic_doc_is_qualified` also pins that the old
+//! "Panic-in-`GlobalAlloc` is abort, not UB" claim stays gone.
+//!
 //! Doc/source-text only: never links against the crate, so it runs in every
 //! feature configuration (mirrors `tests/no_stale_doc_references.rs`).
 
@@ -134,10 +142,29 @@ fn no_panic_doc_is_qualified() {
         "sefer_alloc.rs still carries the unqualified 'NEVER panics' overclaim (F-5 regression)"
     );
 
-    // The panic=abort caveat must name the mechanism explicitly.
+    // The shim mechanism must still be named — as what the crate does NOT
+    // rely on (R2-08), not as an abort guarantee.
     assert!(
         doc.contains("rustc_nounwind"),
-        "sefer_alloc.rs 'No-panic' section must state the #[rustc_nounwind] abort guarantee"
+        "sefer_alloc.rs 'No-panic' section must name the #[rustc_nounwind] shims"
+    );
+    // R2-08: the shim-based "abort, not UB" claim is false for a direct trait
+    // call (and was observed false on the #[global_allocator] path too); it
+    // must not come back, and the normative no-unwind rule must stay.
+    assert!(
+        !doc.contains("Panic-in-`GlobalAlloc` is abort, not UB"),
+        "sefer_alloc.rs reintroduced the R2-08 overclaim that a panic escaping \
+         GlobalAlloc is a guaranteed abort via the #[rustc_nounwind] shims"
+    );
+    assert!(
+        doc.contains("`GlobalAlloc` methods must not unwind"),
+        "sefer_alloc.rs must state the normative R2-08 rule that GlobalAlloc \
+         methods must not unwind (upheld at the source, not by the std shims)"
+    );
+    assert!(
+        doc.contains("DIRECT trait call"),
+        "sefer_alloc.rs must say a direct GlobalAlloc trait call bypasses the \
+         std shims (R2-08)"
     );
 
     // The remaining four tripwires must be acknowledged as abort-by-design.
