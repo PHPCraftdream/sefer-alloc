@@ -87,6 +87,20 @@ struct FreeState {
     /// Stack of indices of vacant, reusable slots. Retired (saturated) slots
     /// are never pushed back, so they vanish from circulation.
     free: Vec<u32>,
+    /// R2-21 (independent src review round 2): owner-side scratch buffer the
+    /// remote-free queue is swapped into by `drain_remote_free`. Swapping
+    /// (instead of `core::mem::take`, which left the queue a fresh
+    /// zero-capacity `Vec` and destroyed the old buffer) keeps ONE paid-for
+    /// allocation on EACH side across drain cycles: the queue keeps the
+    /// scratch's former buffer so producer pushes stop reallocating under the
+    /// queue mutex, and the scratch keeps the queue's former buffer so the
+    /// next drain needs no allocation either. Both capacities grow lazily to
+    /// the largest burst seen and never shrink; after the first two drain
+    /// cycles the steady state allocates nothing. Owner-only: lives behind
+    /// the writer mutex like `free` (the drain runs with `&mut FreeState`).
+    /// INVARIANT: empty at the start of every drain (drained to len 0 at the
+    /// end of the previous one).
+    drain_scratch: Vec<u32>,
 }
 
 /// A fixed-capacity, handle-addressed store of `T` with **lock-free reads**,
@@ -158,6 +172,10 @@ pub struct EpochRegion<T> {
     /// `remote_evict`. The owner drains this at the start of its next op
     /// (single consumer). `Mutex<Vec<u32>>` because `crossbeam-queue` is not
     /// in the resolved dependency tree (see the module docs for the tradeoff).
+    /// R2-21 (independent src review round 2): the drain now SWAPS this queue
+    /// with the owner-side [`FreeState::drain_scratch`] instead of taking it,
+    /// so this buffer's capacity survives every non-empty drain (see
+    /// `drain_remote_free`).
     remote_free: Mutex<Vec<u32>>,
     /// "`remote_free` may be non-empty" hint (#1989), so the owner's drain can
     /// skip acquiring [`Self::remote_free`]'s lock entirely in the common
@@ -196,7 +214,10 @@ impl<T> EpochRegion<T> {
         Self {
             region_id: NEXT_EPOCH_REGION_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             slots: slots.into_boxed_slice(),
-            state: Mutex::new(FreeState { free }),
+            state: Mutex::new(FreeState {
+                free,
+                drain_scratch: Vec::new(),
+            }),
             remote_free: Mutex::new(Vec::new()),
             remote_free_pending: core::sync::atomic::AtomicBool::new(false),
             len: AtomicUsize::new(0),
@@ -269,6 +290,15 @@ impl<T> EpochRegion<T> {
     /// even if a future push site stops gating on `reusable`. A skipped index
     /// is simply not pushed to `state.free`; the slot stays vacant at gen
     /// `u32::MAX` forever (intentionally abandoned — see `try_evict_at`).
+    ///
+    /// The buffer handover is a SWAP with the owner-side
+    /// [`FreeState::drain_scratch`] (R2-21, independent src review round 2), not
+    /// a `core::mem::take`: taking would hand the queue's buffer to the
+    /// (short-lived) local and leave the queue a fresh zero-capacity `Vec`, so
+    /// every remote-free burst re-grew it — allocating under the remote-queue
+    /// mutex, the one lock producers contend on. The swap keeps one paid-for
+    /// buffer on each side across drain cycles; see the `drain_scratch` doc for
+    /// the steady-state argument.
     fn drain_remote_free(&self, state: &mut FreeState) {
         // Fast path: no remote frees → no lock acquisition. Before #1989 this
         // comment described an optimization that did not exist — the lock was
@@ -302,9 +332,16 @@ impl<T> EpochRegion<T> {
         {
             return;
         }
-        // We peek-lock: take the queue, and if non-empty, drain it into the
-        // free list. A Mutex<Vec> swap-then-extend is the cheapest drain.
-        let drained = {
+        // We peek-lock: swap the queue with the owner's scratch buffer and
+        // release the lock; the index-by-index transfer into the free list
+        // then happens OUTSIDE the queue lock. The swap (not
+        // `core::mem::take`, R2-21) is O(1) — a pointer exchange — so the
+        // critical section does not grow, and it leaves a buffer on EACH
+        // side: the queue keeps the scratch's former buffer (producer pushes
+        // stop reallocating under this mutex once warm) and the scratch keeps
+        // the queue's, so the next drain allocates nothing either. The
+        // scratch's clearing (`drain(..)` below) also stays outside the lock.
+        {
             let mut q = match self.remote_free.lock() {
                 Ok(q) => q,
                 // A remote remover panicked while holding the queue lock. The
@@ -321,9 +358,18 @@ impl<T> EpochRegion<T> {
             if q.is_empty() {
                 return;
             }
-            core::mem::take(&mut *q)
-        };
-        for index in drained {
+            debug_assert!(
+                state.drain_scratch.is_empty(),
+                "drain scratch must be empty between drains",
+            );
+            core::mem::swap(&mut *q, &mut state.drain_scratch);
+        }
+        // The scratch now holds the drained indices (and the queue's former
+        // buffer); `drain(..)` yields them in FIFO order like the old
+        // take-and-iterate while KEEPING the buffer's capacity for the next
+        // cycle (a plain `for index in ...` over a taken Vec would destroy
+        // it — the exact R2-21 defect).
+        for index in state.drain_scratch.drain(..) {
             // Defensive re-check: a retired (gen == u32::MAX) slot must never
             // re-enter the free list (see doc above). `AtomicSlot::generation`
             // is an Acquire load — cheap, and this loop is already off the hot
@@ -569,6 +615,25 @@ impl<T> EpochRegion<T> {
     #[doc(hidden)]
     pub fn _set_slot_generation_for_tests(&mut self, index: u32, generation: u32) {
         self.slots[index as usize].set_generation_for_tests(generation);
+    }
+
+    /// **Diagnostics/testing only.** Identity of the remote-free queue's
+    /// backing buffer, captured under the queue lock: `(data pointer as
+    /// usize, len, capacity)`.
+    ///
+    /// Exists SOLELY so an integration test can prove (R2-21) that
+    /// `drain_remote_free` REUSES the queue's buffer across drain cycles
+    /// (pointer and capacity survive a non-empty drain) instead of replacing
+    /// it with a fresh zero-capacity `Vec`. The pointer value is for identity
+    /// comparison ONLY — it MUST NOT be dereferenced, offset, or converted
+    /// back to a reference.
+    #[doc(hidden)]
+    pub fn _remote_free_queue_buffer_identity_for_tests(&self) -> (usize, usize, usize) {
+        let q = match self.remote_free.lock() {
+            Ok(q) => q,
+            Err(e) => e.into_inner(),
+        };
+        (q.as_ptr() as usize, q.len(), q.capacity())
     }
 }
 

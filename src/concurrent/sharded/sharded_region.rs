@@ -546,6 +546,19 @@ impl<T> ShardedRegion<T> {
     pub fn _reset_my_shard_binding_for_tests() {
         MY_SHARD.with(|cell| cell.set(None));
     }
+
+    /// **Diagnostics/testing only** (R2-21): forwards the shard's
+    /// `EpochRegion::_remote_free_queue_buffer_identity_for_tests` —
+    /// `None` if `shard` is out of range. Same identity-only contract as the
+    /// forwarded hook (the pointer must never be dereferenced).
+    #[doc(hidden)]
+    pub fn _remote_free_queue_buffer_identity_for_tests(
+        &self,
+        shard: u16,
+    ) -> Option<(usize, usize, usize)> {
+        let shard = self.inner.shards.get(usize::from(shard))?;
+        Some(shard._remote_free_queue_buffer_identity_for_tests())
+    }
 }
 
 impl<T> Default for ShardedRegion<T> {
