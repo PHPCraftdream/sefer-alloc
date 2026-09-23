@@ -80,6 +80,16 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// Deliberately an exact `==` pin (unlike the coarser `<=PAGE` bound below):
 /// this is the value the F12 targeted-write optimization's correctness
 /// argument was verified against, not a "stays under a budget" bound.
+///
+/// R2-17 (docs/reviews/2026-09-22-120730-src-review-xa-round-2.md §R2-17): this pin is a 64-bit truth by virtue of the crate-root R2-17
+/// target gate in `src/lib.rs`, which rejects any `alloc-core`-built (and
+/// therefore any allocator-feature) build on a `target_pointer_width != 64`
+/// target outright — so 144 is only ever evaluated where `*mut u8`/`usize`
+/// are 8 bytes wide and the `repr(C)` arithmetic the F12 argument rests on
+/// actually holds. The pin itself stays UNCONDITIONAL on purpose: if the
+/// crate-root gate is ever removed or weakened, this assert must keep
+/// failing loudly on any target whose ABI breaks the 144-byte premise,
+/// rather than silently letting a mismatched header layout through.
 const _: () = assert!(size_of::<SegmentHeader>() == 144);
 
 /// R34-14 (task #533): exhaustive field-classification compile-time pin for

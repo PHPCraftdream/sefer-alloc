@@ -245,6 +245,17 @@ pub(crate) struct PerClass {
 // an accidental removal of `#[repr(C)]`) that breaks the documented
 // one-cache-line locality fails the build instead of silently regressing
 // again the way the missing `#[repr(C)]` did originally.
+//
+// R2-17 (docs/reviews/2026-09-22-120730-src-review-xa-round-2.md §R2-17): the `slots`-at-offset-8 premise is a 64-bit truth by virtue of the
+// crate-root R2-17 target gate in `src/lib.rs`, which rejects any
+// `alloc-core`-built (and therefore any allocator-feature) build on a
+// `target_pointer_width != 64` target outright — so `#[repr(C)]`'s padding of
+// the pointer array up to its own 8-byte alignment is only ever evaluated
+// where `*mut u8` really is 8 bytes wide (on a 32-bit ABI `slots` starts at
+// offset 4). The assert itself stays UNCONDITIONAL on purpose: if the
+// crate-root gate is ever removed or weakened, this pin must keep failing
+// loudly instead of silently admitting a 32-bit magazine layout that the
+// documented one-cache-line locality argument never covered.
 const _: () = assert!(
     ::core::mem::offset_of!(PerClass, count) == 0,
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
@@ -254,6 +265,11 @@ const _: () = assert!(
     ::core::mem::offset_of!(PerClass, virgin_mask) == 2,
     "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
 );
+// R2-17: this is the concrete pin the crate-root gate in `src/lib.rs` exists
+// to host — `slots` reaches offset 8 only on a 64-bit `repr(C)` ABI, and the
+// R2-17 target gate already rejects every 32-bit allocator build, so this
+// assert stays unconditional (see the F4 note above for the full rationale,
+// docs/reviews/2026-09-22-120730-src-review-xa-round-2.md §R2-17).
 const _: () = assert!(
     ::core::mem::offset_of!(PerClass, slots) == 8,
     "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"

@@ -379,6 +379,46 @@ seam is a hard error). Complete inventory:
 
 ---
 
+## Target support
+
+This is an explicit support decision, not an accident of whatever happened
+to compile last. The allocator is pinned to 64-bit layouts — the F12
+exact-size pin `size_of::<SegmentHeader>() == 144`
+(`src/alloc_core/segment/segment_header/layout_asserts.rs`) and the F4
+`#[repr(C)]` pin `offset_of!(PerClass, slots) == 8`
+(`src/registry/heap_core/state/tcache.rs`) are both true only where
+`*mut u8` / `usize` are 8 bytes wide, and the `AtomicU64`-based publication
+and ownership protocol they protect has not been audited at 32-bit pointer
+widths. Rather than let a 32-bit `--features production` build fail with two
+cryptic `error[E0080]` const-assert diagnostics and no explanation, the
+crate root declares the boundary (decision R2-17,
+`docs/reviews/2026-09-22-120730-src-review-xa-round-2.md` §R2-17): any build
+with `alloc-core` — and therefore every feature built on it
+(`alloc-global`, `production`, `fastbin`, …) — is rejected at compile time on
+a non-64-bit target by the gate in `src/lib.rs`. Allocator support for
+32-bit pointer widths is a possible future undertaking, not a configuration
+toggle: it requires re-deriving the pinned layouts for the target ABI and
+re-auditing the atomics, and is scoped out here. The region-only
+`Region<T>` surface is unaffected and stays available on 32-bit (std or
+no_std). If you see the gate, the marker message to grep for is
+`sefer-alloc: allocator features require a 64-bit target`.
+
+| Target class | Region-only (`Region<T>`) | Allocator (`alloc-core`/`production`/…) |
+|---|---|---|
+| x86_64 (linux-gnu, windows-msvc) | supported (CI) | supported (CI) |
+| aarch64 (linux-gnu via cross, apple-darwin) | supported (CI) | supported (CI, incl. weak-memory rows) |
+| other 64-bit pointer-width targets | expected to work, not CI-tested, no claim | compiles by construction (the layout pins are pointer-width-conditional), untested, no claim |
+| 32-bit pointer-width targets (e.g. i686-*) | supported (std or no_std) | REJECTED at compile time by the R2-17 gate (crate-root `compile_error!`); the pinned 144-byte segment header / offset-8 magazine layouts and the AtomicU64 protocol have not been audited for 32-bit |
+
+The support boundary is pinned in both directions by
+`tests/regression_r2_17_64bit_target_gate.rs`: the allocator build must fail
+on a 32-bit target with the gate message, and the region-only
+`--no-default-features` build must still succeed there. Both rows skip (with
+a printed reason) on machines with no 32-bit std target installed; the manual
+command sequence is in that file's module doc.
+
+---
+
 ## Why bother
 
 Two things, both rare in the same crate.
@@ -1329,7 +1369,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **273 integration test files** ship
+a test file, and a reproducible command. **274 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **16 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1337,7 +1377,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (273 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (274 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
