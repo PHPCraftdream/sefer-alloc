@@ -113,6 +113,16 @@ impl<T> Clone for Snapshot<T> {
     }
 }
 
+impl<T> Snapshot<T> {
+    /// The slot for global slot index `index`, or `None` if `index` is out of
+    /// the page table's range. A pure lookup — clones nothing, allocates
+    /// nothing, and touches no page refcount (R2-20).
+    fn slot(&self, index: u32) -> Option<&Slot<T>> {
+        let page = self.pages.get((index >> PAGE_BITS) as usize)?;
+        Some(&page[(index as usize) & (PAGE - 1)])
+    }
+}
+
 /// A handle-addressed store of `T` with **lock-free reads** and serialised,
 /// page-granularity copy-on-write writes.
 ///
@@ -303,8 +313,7 @@ impl<T> LockFreeRegion<T> {
             return None;
         }
         let snap = self.state.load();
-        let page = snap.pages.get((handle.index >> PAGE_BITS) as usize)?;
-        let slot = &page[(handle.index as usize) & (PAGE - 1)];
+        let slot = snap.slot(handle.index)?;
         if slot.generation != handle.generation {
             return None;
         }
@@ -317,9 +326,20 @@ impl<T> LockFreeRegion<T> {
     /// Whether `handle` currently resolves to a live value.
     ///
     /// Lock-free, like [`get`](Self::get).
+    ///
+    /// R2-20 (independent src review round 2, task #2022): inspects the slot's
+    /// occupancy directly instead of routing through
+    /// [`get`](Self::get) — answering a boolean never clones and drops an
+    /// [`Arc<T>`] (pure refcount churn on the live path).
     #[must_use]
     pub fn contains(&self, handle: LockFreeHandle<T>) -> bool {
-        self.get(handle).is_some()
+        if handle.region_id != self.region_id {
+            return false;
+        }
+        let snap = self.state.load();
+        snap.slot(handle.index).is_some_and(|slot| {
+            slot.generation == handle.generation && matches!(slot.state, SlotState::Occupied(_))
+        })
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).
@@ -373,29 +393,53 @@ impl<T> LockFreeRegion<T> {
     /// R2-03 (independent src review round 2, task #2005): rejects a handle
     /// minted by a DIFFERENT `LockFreeRegion<T>` instance (`region_id`
     /// mismatch) before any slot lookup — see the struct doc.
+    ///
+    /// R2-20 (independent src review round 2, task #2022): a **rejected**
+    /// `remove` (stale, already-removed, or out-of-range handle) validates
+    /// against the current snapshot and returns `None` WITHOUT building a next
+    /// snapshot or cloning a page — no copy-on-write allocations or page-`Arc`
+    /// refcount bumps. Those costs are paid only when a removal succeeds.
     pub fn remove(&self, handle: LockFreeHandle<T>) -> Option<Arc<T>> {
         if handle.region_id != self.region_id {
             return None;
         }
         let _guard = self.writers.lock().expect("writer mutex poisoned");
-        let cur = self.state.load_full();
-        let mut next: Snapshot<T> = (*cur).clone();
 
+        // R2-20 (independent src review round 2, task #2022): validate against
+        // the CURRENT snapshot first — a borrowed, allocation-free read — and
+        // only pay for the copy-on-write snapshot/page clones when the removal
+        // will actually succeed. A stale, removed, or out-of-range handle used
+        // to pay for the full page-table clone (and, once in range, the page
+        // clone too) before being rejected: O(P) page-table copy/refcount
+        // work plus a page allocation under the writer mutex for a no-op.
+        // Writers are serialised by this mutex and readers never store, so the
+        // snapshot validated here is the same one mutated below.
+        let cur = self.state.load();
         let page_idx = (handle.index >> PAGE_BITS) as usize;
         let off = (handle.index as usize) & (PAGE - 1);
-        let page_arc = next.pages.get(page_idx)?;
-        let mut new_page: Vec<Slot<T>> = (**page_arc).clone();
-        let slot = &mut new_page[off];
-
-        // Validate generation: stale or already-vacant → None (I2/I3).
+        let slot = cur.slot(handle.index)?;
+        // Stale or already-removed → None (I2/I3) at O(1), zero allocations.
         if slot.generation != handle.generation {
             return None;
         }
+        // Defensive (same invariant as the match below): a generation match on
+        // a Vacant slot is impossible; reject before paying for any clone.
+        if !matches!(slot.state, SlotState::Occupied(_)) {
+            return None;
+        }
+
+        // Validated — now build the next snapshot: same CoW as before.
+        let snapshot: &Snapshot<T> = &cur;
+        let mut next: Snapshot<T> = snapshot.clone();
+        // The page provably exists: `next` is a clone of the snapshot we just
+        // validated against (writers are serialised; readers never store).
+        let mut new_page: Vec<Slot<T>> = (*next.pages[page_idx]).clone();
+        let slot = &mut new_page[off];
         let value = match core::mem::replace(&mut slot.state, SlotState::Vacant { next_free: None })
         {
             SlotState::Occupied(v) => v,
-            // Generation matched but slot is Vacant: impossible — a Vacant slot
-            // never carries a generation that a live handle was minted at.
+            // Unreachable — the Occupied pre-check above ran on the same
+            // snapshot (see the R2-20 comment); kept for exhaustiveness.
             SlotState::Vacant { .. } => return None,
         };
 
@@ -419,6 +463,24 @@ impl<T> LockFreeRegion<T> {
         next.len -= 1;
         self.state.store(Arc::new(next));
         Some(value)
+    }
+
+    /// R2-20 (independent src review round 2, task #2022): test-only hook minting
+    /// a handle for an ARBITRARY `(index, generation)` pair carrying THIS
+    /// region's `region_id`. The public API only ever mints handles to slots
+    /// that exist, so an integration test in `tests/` cannot otherwise reach the
+    /// out-of-range page-table reject path of
+    /// [`get`](Self::get)/[`contains`](Self::contains)/[`remove`](Self::remove).
+    ///
+    /// Same established `#[doc(hidden)]` test-only-export pattern as
+    /// `EpochRegion::_set_slot_generation_for_tests` and
+    /// `ShardedRegion::_reset_my_shard_binding_for_tests`: not stable API, and
+    /// no soundness impact — it only NAMES a slot; it reads, writes, and
+    /// creates nothing.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _forge_handle_for_tests(&self, index: u32, generation: u32) -> LockFreeHandle<T> {
+        LockFreeHandle::new(self.region_id, index, generation)
     }
 }
 
