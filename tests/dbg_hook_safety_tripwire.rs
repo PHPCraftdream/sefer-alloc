@@ -400,6 +400,10 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "claims a real slot via the production pick_slot/CAS/push_back_after_oom path; reproduces, does not invent, the real post-OOM rollback state",
     ),
     (
+        "src/registry/heap_registry/counters.rs::dbg_bump_count_without_materialising",
+        "R2-11 (task #2013): delegates to the real production bump_count (a single AtomicU32::fetch_add on Registry::count, the identical op pick_slot/claim always perform); the minted index is never pushed onto free_slots and never claimed, matching count_for_test's already-accepted 'count only ever grows across the suite' cost -- bounded, inert bookkeeping, cannot produce UB or hand out a wrong pointer",
+    ),
+    (
         "src/registry/heap_core/state/tcache_flush.rs::dbg_flush_all",
         "calls the real production flush_all_tcache path used by ordinary teardown",
     ),

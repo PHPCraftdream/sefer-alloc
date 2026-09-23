@@ -279,19 +279,36 @@ pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
 /// this loop's `initialised`-gate rests on (identical for every caller: the
 /// Acquire load pairs with `claim`'s Release publish after
 /// `heap_ptr.write(hc)` completes, so a mid-mint slot is never visited).
+///
+/// R2-11 (task #2013): this walk resolves each index via
+/// [`Registry::slot_if_materialised`], NOT [`Registry::slot`]. An index in
+/// `0..count` is NOT guaranteed to have its owning chunk already
+/// materialised by the time this walk reaches it — `bump_count`
+/// (`heap_registry::stack`) bumps `count` and returns immediately; it is the
+/// CALLER (`claim`/`claim_with_config`), as a separate later step, that
+/// calls `reg.slot(idx)` and thereby materialises the chunk. A `stats()`
+/// call racing that window used to reach `reg.slot(idx)` here too — driving
+/// this "cheap, read-only" walk into a real OS chunk reservation, a
+/// spin-wait on the claiming thread's in-flight initialisation, or (on
+/// chunk-materialisation OOM) `std::process::abort()`, none of which a
+/// metrics snapshot should ever risk. `slot_if_materialised` is a pure
+/// `Acquire` peek — `None` for a chunk that is not yet `READY` — and this
+/// loop simply `continue`s past that index for this call, exactly as it
+/// already skips a materialised-but-not-yet-`initialised` slot below: a
+/// chunk that isn't even materialised yet certainly holds no `initialised`
+/// slot either, so skipping it is a benign, self-correcting omission (the
+/// very next `stats()` call sees it once the real claim finishes).
 #[cfg(feature = "alloc-stats")]
 fn walk_initialised_slots(mut visit: impl FnMut(&'static HeapSlot)) {
     let reg = ensure();
     let count = reg.count.load(Ordering::Acquire) as usize;
     for idx in 0..count.min(MAX_HEAPS) {
-        // R6-OPT-P0-2: `idx < count <= MAX_HEAPS`. `slot()` transparently
-        // materialises (or finds already-materialised) exactly the chunks
-        // this `count`-bounded walk touches — every index in `0..count` was,
-        // by construction, either freshly minted by `bump_count` or popped
-        // off `free_slots`, both of which already call `slot()` on it, so
-        // its owning chunk is already materialised by the time this walk
-        // reaches it.
-        let slot = reg.slot(idx);
+        // R2-11: non-materialising peek — see this function's doc comment.
+        // Skip (do not panic, block, or abort) an index whose owning chunk
+        // has not yet been published.
+        let Some(slot) = reg.slot_if_materialised(idx) else {
+            continue;
+        };
         if !slot.initialised.load(Ordering::Acquire) {
             continue;
         }
@@ -378,4 +395,48 @@ pub fn dbg_slot_initialised(idx: u32) -> bool {
     // chunked slot array.
     let slot = reg.slot(idx as usize);
     slot.initialised.load(Ordering::Acquire)
+}
+
+// ---------------------------------------------------------------------------
+// R2-11 (task #2013) test-only hook: deterministically reproduce the
+// `bump_count`-then-`slot()` window `walk_initialised_slots` used to race
+// into.
+// ---------------------------------------------------------------------------
+
+/// Test-only hook (R2-11/task #2013): mint a fresh slot index via
+/// [`bump_count`](super::stack::bump_count) ALONE — deliberately stopping
+/// short of the follow-up `reg.slot(idx)` call that `pick_slot`'s only
+/// production caller, `claim`/`claim_with_config`, always performs
+/// immediately afterward.
+///
+/// This reproduces, on demand and deterministically (no timing-dependent
+/// thread race needed), the EXACT window the R2-11 finding is about: `count`
+/// bumped and visible to any `Acquire` reader, while the newly-minted
+/// index's owning chunk has NOT been touched — because in production nothing
+/// but the follow-up `slot()` call (which this hook skips) would materialise
+/// it. A caller can use the returned index with
+/// [`Registry::dbg_chunk_is_materialised`](crate::registry::bootstrap::Registry::dbg_chunk_is_materialised)
+/// to observe that the chunk stays un-materialised across a call to the
+/// stats aggregation path, proving the fix never performs the OS
+/// reservation / spin-wait / abort a pre-fix `reg.slot(idx)` call in that
+/// same path could have triggered.
+///
+/// Returns `None` on registry exhaustion (mirrors `bump_count`'s own `None`
+/// case). The minted index is never pushed onto `free_slots` and never
+/// claimed — it is intentionally left "high-water-mark used but forever
+/// unclaimed", harmless for a test suite that claims nowhere near
+/// `MAX_HEAPS` slots (same accepted cost `count_for_test`'s doc already
+/// documents: `count` is monotonic across the whole test binary).
+///
+/// `internals`-gated, mirroring the R34-15 chunk-materialisation-OOM test
+/// hooks (`bootstrap::dbg_set_inject_chunk_oom` / `dbg_slot_or_none`) — this
+/// hook does not touch allocator metadata through a raw pointer (it is a
+/// plain `AtomicU32::fetch_add`, the same op `bump_count` always performs),
+/// so it needs no `unsafe`.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_bump_count_without_materialising() -> Option<u32> {
+    let reg = ensure();
+    super::stack::bump_count(reg).map(|idx| idx as u32)
 }

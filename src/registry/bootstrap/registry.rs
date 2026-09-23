@@ -205,6 +205,71 @@ impl Registry {
         Some(unsafe { chunk.slots.get_unchecked(slot_in_chunk) })
     }
 
+    /// Genuinely non-materialising peek for the **stats/diagnostic read path**
+    /// (R2-11/task #2013). Returns `Some(&'static HeapSlot)` only if the
+    /// owning chunk is ALREADY published (a pure `Acquire` load — the exact
+    /// same fast-path check [`ensure_chunk`](Self::ensure_chunk) /
+    /// [`try_ensure_chunk`](Self::try_ensure_chunk) already perform before
+    /// falling through to [`ensure_chunk_slow`]), and `None` otherwise —
+    /// WITHOUT ever calling `ensure_chunk_slow`. Unlike [`slot`](Self::slot)
+    /// and [`slot_or_none`](Self::slot_or_none), this method never performs an
+    /// OS reservation, never spin-waits on a concurrent initialiser, and never
+    /// aborts: a chunk observed not-yet-`READY` is simply reported absent for
+    /// THIS call.
+    ///
+    /// **Why this exists.** `walk_initialised_slots`
+    /// (`heap_registry::counters`) — the shared loop backing
+    /// `SeferAlloc::stats()`'s hit-rate aggregation — used to call
+    /// [`slot`](Self::slot) on every index in `0..count`, on the (refuted)
+    /// assumption that every such index's owning chunk was already
+    /// materialised by the time the walk reached it. In fact `bump_count`
+    /// (`heap_registry::stack`) mints a fresh index by bumping `count` and
+    /// returns immediately — it does NOT call `slot()` itself; the caller
+    /// (`claim`/`claim_with_config`) calls `reg.slot(idx)` as a SEPARATE,
+    /// later step. A concurrent `stats()` call can observe the just-bumped
+    /// `count` and reach that index before the claiming thread's own
+    /// `slot()` call has materialised the chunk — driving `stats()` (meant to
+    /// be a cheap, read-only diagnostic snapshot) into a real OS reservation,
+    /// a spin-wait on the claimer's in-flight initialisation, or — on
+    /// chunk-materialisation OOM — `std::process::abort()`. This accessor
+    /// closes that: the walk now SKIPS an index whose chunk is not yet
+    /// ready, exactly as it already skips an index whose slot is not yet
+    /// `initialised` — both are the same "this slot hasn't finished being
+    /// claimed yet" case, benign to omit from one snapshot (the very next
+    /// `stats()` call observes it once the real claim finishes).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx >= MAX_HEAPS` (same internal-contract-violation
+    /// discipline as [`slot`](Self::slot) / [`slot_or_none`](Self::slot_or_none)
+    /// — every caller derives `idx` from a `count`-bounded loop).
+    ///
+    /// `alloc-stats`-gated: its sole caller, `walk_initialised_slots`
+    /// (`heap_registry::counters`), only exists under that feature (the
+    /// per-slot counters it aggregates are themselves only ever incremented
+    /// under `alloc-stats` — see that function's own doc comment). Gating
+    /// this method the same way avoids an unused-`pub(crate)`-method dead-code
+    /// lint in any feature configuration without `alloc-stats`.
+    #[cfg(feature = "alloc-stats")]
+    #[inline]
+    pub(crate) fn slot_if_materialised(&self, idx: usize) -> Option<&'static HeapSlot> {
+        debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
+        let chunk_idx = idx / CHUNK_SLOTS;
+        let slot_in_chunk = idx % CHUNK_SLOTS;
+        let p = self.chunks[chunk_idx].get()?;
+        // SAFETY: identical argument to `ensure_chunk`'s fast path above —
+        // `OncePtrCell::get` returned `Some` only after observing a real
+        // (non-null, non-sentinel) pointer under `Acquire`, which the
+        // initialising thread published with `Release` after the OS
+        // reservation's pages were fully valid (OS-zeroed pages already form
+        // a valid `RegistryChunk`). The reservation is leaked
+        // (`leak_zeroed_pages`) and lives for the process lifetime, so
+        // `&'static` is sound.
+        let chunk = unsafe { p.as_ref() };
+        // SAFETY: `slot_in_chunk < CHUNK_SLOTS` by construction (`% CHUNK_SLOTS`).
+        Some(unsafe { chunk.slots.get_unchecked(slot_in_chunk) })
+    }
+
     /// Ensure chunk `chunk_idx` is materialised, then return a `&'static
     /// RegistryChunk` reference to it. Fast path: [`OncePtrCell::get`] (one
     /// `Acquire` load + non-null/non-sentinel check, inside the cell). Slow

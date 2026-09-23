@@ -81,3 +81,8 @@ pub use counters::tcache_and_large_cache_hits_total;
 pub use counters::tcache_hits_total;
 pub use counters::{config_conflicts_total, heaps_claimed_high_water};
 pub use counters::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
+// R2-11 (task #2013): test-only hook to deterministically reproduce the
+// `bump_count`-then-`slot()` window `walk_initialised_slots` used to race
+// into — see `counters::dbg_bump_count_without_materialising`'s doc comment.
+#[cfg(feature = "internals")]
+pub use counters::dbg_bump_count_without_materialising;
