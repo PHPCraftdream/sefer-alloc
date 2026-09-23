@@ -348,7 +348,7 @@ pub struct AllocCore {
     /// since R2-12).
     #[cfg(feature = "large-cache-extended")]
     pub(in crate::alloc_core) large_cache_extension:
-        *mut super::large_cache_extended::LargeCacheExtension,
+        *mut super::super::large_cache_extended::LargeCacheExtension,
 
     /// R2-12: the owned VM reservation backing
     /// [`Self::large_cache_extension`] — `Some` iff the pointer field above
