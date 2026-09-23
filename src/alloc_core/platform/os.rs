@@ -529,8 +529,7 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 /// token in `AllocCore::directory_sidecar_vm`) and dereferences it via
 /// [`sidecar::deref`] / [`sidecar::deref_mut`].
 #[cfg(feature = "alloc-segment-directory")]
-pub(crate) fn reserve_directory_sidecar(
-) -> Option<(
+pub(crate) fn reserve_directory_sidecar() -> Option<(
     *mut crate::alloc_core::segment_directory::SegmentDirectory,
     crate::alloc_core::sidecar::AccountedSidecar,
 )> {
