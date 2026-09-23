@@ -463,6 +463,14 @@ impl AllocCore {
     /// BYPASSES the stride so a forced tick still fires deterministically on
     /// every call, exactly as before this change (see its own doc for how).
     ///
+    /// **R2-18 zero-interval exception:** a caller-configured zero
+    /// `decay_interval` bypasses the stride throttle entirely (see the
+    /// in-body comment at the gate) and also does not demote the first
+    /// eligible event to a timer-priming pass — with a zero deadline any
+    /// elapsed time satisfies the check, so the first event primes the timer
+    /// AND fires one decay step, matching `LargeCacheConfig`'s
+    /// `decay_interval_ms` documentation of "tick on every large alloc/free".
+    ///
     /// **R34-11 (task #530) catch-up loop:** when the stride throttle does let
     /// many intervals elapse between clock reads (sparse-traffic regime), a
     /// single read now fires as many decay steps as intervals are due, bounded
@@ -514,8 +522,15 @@ impl AllocCore {
         // is fine — `% DECAY_CLOCK_CHECK_STRIDE` on a wrapped value is still
         // a valid stride position, just not the "true" call count; only the
         // periodicity matters, not the absolute count.
+        // R2-18: a caller-configured zero `decay_interval` is documented as
+        // "tick on every large alloc/free", so it BYPASSES the stride throttle
+        // below — a stride gate in front of a zero wait would demote that
+        // promise to "every 64th eligible call". The per-call clock-read cost
+        // is confined to callers who explicitly opted into interval = 0.
+        let zero_interval = self.decay_config.decay_interval.is_zero();
         self.large_cache_decay_op_count = self.large_cache_decay_op_count.wrapping_add(1);
         if !forced
+            && !zero_interval
             && !self
                 .large_cache_decay_op_count
                 .is_multiple_of(DECAY_CLOCK_CHECK_STRIDE)
@@ -542,7 +557,16 @@ impl AllocCore {
                 // would decay with an arbitrarily large "elapsed" (since the
                 // epoch), potentially flushing the cache unnecessarily.
                 self.last_decay_tick = Some(now);
-                return;
+                // R2-18: with a zero interval that rationale is moot — any
+                // elapsed satisfies a zero deadline — and demoting the first
+                // eligible event to a prime-only pass would contradict the
+                // documented "tick on every large alloc/free". Fall through
+                // with a zero elapsed so the first event primes AND decays.
+                if zero_interval {
+                    core::time::Duration::ZERO
+                } else {
+                    return;
+                }
             }
         };
         if elapsed < self.decay_config.decay_interval {
@@ -699,7 +723,7 @@ impl AllocCore {
     /// (which are process-global and therefore flaky in parallel runs).
     ///
     /// - `rate_bp`: decay rate in basis points (100 = 1%, 1000 = 10%).
-    /// - `interval_ms`: minimum ms between ticks (0 = fire on every call).
+    /// - `interval_ms`: minimum ms between ticks (0 = fire on every eligible call — bypasses the R32-8 stride throttle, R2-18).
     /// - `headroom`: target cache size in bytes.
     #[cfg(feature = "internals")]
     #[doc(hidden)]

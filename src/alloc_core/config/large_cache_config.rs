@@ -296,9 +296,12 @@ impl LargeCacheConfig {
     /// Set the minimum wall-clock interval between decay ticks, in
     /// milliseconds.
     ///
-    /// A value of `0` means "tick on every large alloc/free" (useful for
-    /// testing; zero ms is accepted). Higher values reduce the frequency of
-    /// decay checks and OS calls.
+    /// A value of `0` means "tick on every eligible large alloc/free" (useful
+    /// for testing; zero ms is accepted): every event that finds the cache
+    /// above its headroom floor decays in that same call — the first eligible
+    /// event included (no timer-priming pass) — and the clock-read stride
+    /// throttle described on [`LargeCacheMode::Lazy`] is bypassed entirely.
+    /// Higher values reduce the frequency of decay checks and OS calls.
     ///
     /// Default: 1000 ms (1 second).
     #[must_use]
@@ -326,8 +329,13 @@ impl LargeCacheConfig {
     /// Set the cache operating mode.
     ///
     /// - `LargeCacheMode::Lazy` (default and currently the only variant):
-    ///   event-driven — a decay tick fires inline on the next large alloc/free
-    ///   after the interval has elapsed. No background thread; idle processes
+    ///   event-driven — a decay tick fires inline on a large alloc/free once
+    ///   the interval has elapsed. To keep the hot path free of clock reads,
+    ///   once the cache is above its headroom floor the clock is consulted on
+    ///   at most every 64th such event, so a tick that comes due fires up to
+    ///   63 events late (never early). A zero `decay_interval_ms`
+    ///   configuration bypasses this throttle and ticks on every eligible
+    ///   event, the first one included. No background thread; idle processes
     ///   pay nothing.
     ///
     /// `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future

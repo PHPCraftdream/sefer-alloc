@@ -63,9 +63,8 @@ fn fill_cache(ac: &mut AllocCore, l: Layout, count: usize) -> Option<usize> {
 #[test]
 fn decay_releases_excess_over_target() {
     let mut ac = AllocCore::new().expect("primordial");
-    // Disable budget, set decay config: 50% rate, 0ms interval, 0 headroom.
+    // Disable budget; fill under the default config first (256 MiB headroom → no organic decay during fill), THEN arm the instant-decay config.
     ac.dbg_set_large_cache_budget(None);
-    ac.dbg_set_decay_config(5000, 0, 0);
 
     let l = layout(4); // 4 MiB nominal → ~8 MiB usable (2 segments)
 
@@ -76,6 +75,8 @@ fn decay_releases_excess_over_target() {
             return;
         }
     };
+
+    ac.dbg_set_decay_config(5000, 0, 0);
 
     // With 0ms interval and timer primed, the next force tick fires immediately.
     ac.dbg_force_decay_tick();
@@ -276,4 +277,127 @@ fn config_decay_rate_percent() {
         rate_bp, 2500,
         "decay_rate_percent(25) must produce 2500 bp; got {rate_bp}"
     );
+}
+
+// ── test 6 ───────────────────────────────────────────────────────────────────
+
+/// R2-18: `decay_interval = 0` must tick on the FIRST eligible organic event.
+///
+/// Deterministic counterfactual (no sleeps, no wall-clock reads by the test):
+/// with headroom=0 and rate=100%, the first large op that finds the cache
+/// above headroom must decay the entire cache in that same call. Before the
+/// R2-18 fix that call only PRIMED `last_decay_tick` (and the next 63 calls
+/// were stride-blocked), so the pre-filled cache survived and this assertion
+/// failed with the cache still holding bytes.
+#[test]
+fn zero_interval_decays_on_first_eligible_op() {
+    let mut ac = AllocCore::new().expect("primordial");
+    ac.dbg_set_large_cache_budget(None);
+
+    let l = layout(4); // 4 MiB nominal → segment-sized usable
+
+    // Fill under the DEFAULT config (256 MiB headroom → the decay fast-path
+    // exits before `large_cache_decay_op_count` is ever incremented, so no
+    // organic tick and op_count stays 0).
+    let used = match fill_cache(&mut ac, l, 2) {
+        Some(u) if u > 0 => u,
+        _ => {
+            eprintln!("OOM or cache empty — skipping zero_interval_decays_on_first_eligible_op");
+            return;
+        }
+    };
+
+    // Arm interval=0 / headroom=0 / rate=100%. This also resets
+    // `last_decay_tick` to `None` — the exact "first eligible event" state.
+    ac.dbg_set_decay_config(10_000, 0, 0);
+
+    // A single large alloc is the first eligible organic event (its decay tick
+    // runs at the entry of `alloc_large`, before the cache lookup).
+    let p = ac.alloc(l);
+    if p.is_null() {
+        eprintln!("OOM — skipping zero_interval_decays_on_first_eligible_op");
+        return;
+    }
+    let used_after_first_op = ac.dbg_large_cache_used();
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by the matching alloc above, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, l) };
+
+    assert_eq!(
+        used_after_first_op, 0,
+        "interval=0 must decay on the FIRST eligible op (cache held {used} bytes \
+         before it); pre-R2-18 code only primed the timer on that call and left \
+         the cache intact"
+    );
+}
+
+// ── test 7 ───────────────────────────────────────────────────────────────────
+
+/// R2-18: at `decay_interval = 0` EVERY eligible organic event ticks — not
+/// just every 64th (`DECAY_CLOCK_CHECK_STRIDE`) — including rare, isolated
+/// single operations.
+///
+/// Deterministic counterfactual: alternating 4 MiB / 8 MiB nominal layouts,
+/// headroom=0, rate=100%. Every cycle asserts the cache holds EXACTLY the
+/// just-deposited span's usable bytes and nothing else: the alloc-side entry
+/// tick evicts the previous deposit, the free-side tick runs BEFORE its own
+/// deposit, so one span is cached between cycles. Pre-fix, the first post-prime
+/// event only primed and the following ops were stride-blocked, so the older
+/// deposit was never evicted and the cache held BOTH spans (≈ s1 + s2 bytes),
+/// failing the very first cycle's equality.
+#[test]
+fn zero_interval_ticks_on_every_eligible_op() {
+    let mut ac = AllocCore::new().expect("primordial");
+    ac.dbg_set_large_cache_budget(None);
+
+    let l1 = layout(4); // usable s1
+    let l2 = layout(8); // usable s2 ≠ s1 (different slot/size class)
+
+    // Discover usable sizes and warm the cache under the DEFAULT config (no
+    // organic decay; op_count stays 0). After this: cache = [s1, s2].
+    let s1 = match fill_cache(&mut ac, l1, 1) {
+        Some(u) if u > 0 => u,
+        _ => {
+            eprintln!("OOM — skipping zero_interval_ticks_on_every_eligible_op");
+            return;
+        }
+    };
+    let both = match fill_cache(&mut ac, l2, 1) {
+        Some(u) if u > s1 => u,
+        _ => {
+            eprintln!(
+                "OOM or unexpected cache state — skipping zero_interval_ticks_on_every_eligible_op"
+            );
+            return;
+        }
+    };
+    let s2 = both - s1;
+    assert_ne!(
+        s1, s2,
+        "test premise: the two layouts must cache to different usable sizes"
+    );
+
+    // Arm interval=0 / headroom=0 / rate=100% (resets `last_decay_tick`).
+    ac.dbg_set_decay_config(10_000, 0, 0);
+
+    // 8 alternating single-op cycles (≪ 64 — deep inside the pre-fix stride
+    // window). After each dealloc the cache must hold exactly the span that
+    // was just deposited and nothing older.
+    let expected = [s1, s2, s1, s2, s1, s2, s1, s2];
+    let layouts = [l1, l2, l1, l2, l1, l2, l1, l2];
+    for (cycle, (&l, &want)) in layouts.iter().zip(expected.iter()).enumerate() {
+        let ptr = ac.alloc(l);
+        if ptr.is_null() {
+            eprintln!("OOM at cycle {cycle} — skipping zero_interval_ticks_on_every_eligible_op");
+            return;
+        }
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by the matching alloc above, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(ptr, l) };
+        let used = ac.dbg_large_cache_used();
+        assert_eq!(
+            used, want,
+            "cycle {cycle}: interval=0 must tick on every eligible op, leaving \
+             exactly the fresh deposit cached; pre-R2-18 stride-blocked ticks \
+             let older deposits pile up"
+        );
+    }
 }
