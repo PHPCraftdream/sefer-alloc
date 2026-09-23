@@ -157,6 +157,10 @@ impl AllocCore {
     /// conjunct false). Gated on `virgin-zero-skip` end-to-end so a build
     /// without the feature never materialises this variant or its extra
     /// per-iteration bit-set logic.
+    ///
+    /// R2-15: clears `virgin_out` before refilling; only virgin slots below
+    /// `filled` may be set afterward. Accepts at most 16 output slots, checked
+    /// in every profile. The magazine caller is bounded by `TCACHE_CAP <= 16`.
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-xthread",
@@ -170,6 +174,14 @@ impl AllocCore {
         is_in_magazine: &F,
         virgin_out: &mut u16,
     ) -> usize {
+        const VIRGIN_MASK_BITS: usize = u16::BITS as usize;
+        assert!(
+            out.len() <= VIRGIN_MASK_BITS,
+            "refill_class_bump_virgin_checked: out.len() ({}) exceeds the u16 virgin mask capacity ({VIRGIN_MASK_BITS} bits)",
+            out.len(),
+        );
+        // Clear reused output bits before any partial or early return.
+        *virgin_out = 0;
         self.refill_class_bump_impl(class_idx, out, is_in_magazine, Some(virgin_out))
     }
 
