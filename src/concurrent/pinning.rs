@@ -75,7 +75,9 @@ use crate::concurrent::ShardedRegion;
 /// Construct with [`PinnedRunner::new`] (which probes the host's available
 /// cores); the runner's worker count is `min(cores, region.shard_count())` so a
 /// region with fewer shards than cores is not over-subscribed. Use
-/// [`PinnedRunner::with_workers`] to cap the worker count explicitly.
+/// [`PinnedRunner::with_workers`] to cap the worker count explicitly. That cap
+/// is bound to the region the CONSTRUCTOR saw; [`run`](Self::run) re-applies
+/// it against the region it is actually given.
 ///
 /// ## Example
 ///
@@ -139,8 +141,11 @@ impl PinnedRunner {
         Some(Self { cores })
     }
 
-    /// The number of workers this runner will spawn (also the number of cores
-    /// it will attempt to pin, and the number of shards it will bind).
+    /// The MAXIMUM number of workers this runner can spawn (also the maximum
+    /// number of cores it will attempt to pin and shards it will bind). A
+    /// [`run`](Self::run) over a region with fewer shards than this spawns
+    /// proportionally fewer workers: `min(self.worker_count(),
+    /// region.shard_count())`.
     #[must_use]
     pub fn worker_count(&self) -> usize {
         self.cores.len()
@@ -178,6 +183,19 @@ impl PinnedRunner {
     /// Pinning is best-effort: if the OS refuses the affinity, the worker still
     /// runs and the shard binding still routes deterministically.
     ///
+    /// # Worker count vs. the region given to `run`
+    ///
+    /// The runner is sized against the region passed to its constructor, but
+    /// `run` accepts any `ShardedRegion<T>`. If THAT region has fewer shards
+    /// than [`worker_count`](Self::worker_count), only the first
+    /// `region.shard_count()` workers spawn: worker `i` fires only for
+    /// `i < region.shard_count()`, and every callback that actually fires is
+    /// genuinely bound to the shard id it receives (its inserts route there —
+    /// a worker whose bind failed would fall back to the round-robin claim,
+    /// so it is never run). This keeps the "worker `i` is bound to shard `i`"
+    /// promise true for every fired callback regardless of which region
+    /// `run` is given.
+    ///
     /// # Bounds
     ///
     /// - `T: Send + Sync` so the shared `&ShardedRegion<T>` is `Send` across the
@@ -205,7 +223,12 @@ impl PinnedRunner {
         // should wrap their own channel.
         let f = &f;
         scope(|s| {
-            for (i, &core) in self.cores.iter().enumerate() {
+            // R2-16: the worker count was capped against the CONSTRUCTOR's
+            // region only, and `run` accepts any region — against a smaller
+            // one, workers past `region.shard_count()` used to fire with
+            // out-of-range shard ids (their bind failed and the result was
+            // ignored). Truncate to the region actually given.
+            for (i, &core) in self.cores.iter().enumerate().take(region.shard_count()) {
                 // SAFETY: none — `core_affinity` is a safe wrapper. The shard
                 // id fits `u16` because `ShardedRegion` caps `shard_count` at
                 // `u16::MAX`, and we capped workers to `shard_count`.
@@ -218,12 +241,16 @@ impl PinnedRunner {
                     // the bind + closure run on the intended core when honored.
                     let _ = Self::pin_current_thread_to_core(core);
                     // Deterministic routing bind: shard == worker == core.
-                    // The result is ignored: `shard_id` is always in range here
-                    // (worker index < shard_count by construction), so this
-                    // always returns true; the `let _` acknowledges that.
-                    let _ = region.bind_current_thread_to_shard(shard_id);
-                    // Discard the return; collectors wrap their own sync.
-                    let _ = f(shard_id, region);
+                    // `bind_current_thread_to_shard` fails only when the shard
+                    // is out of range, which the `take` above rules out — but
+                    // a failed bind must never fire the callback (an unbound
+                    // worker's inserts route by the round-robin claim
+                    // instead), so the closure runs only behind a successful
+                    // bind; the failure is not ignored.
+                    if region.bind_current_thread_to_shard(shard_id) {
+                        // Discard the return; collectors wrap their own sync.
+                        let _ = f(shard_id, region);
+                    }
                 });
             }
         });

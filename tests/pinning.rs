@@ -226,3 +226,68 @@ fn pinned_runner_then_cross_thread_remove() {
     );
     assert_eq!(region.len(), 0, "all removed → region empty");
 }
+
+// ---------------------------------------------------------------------------
+// 4. R2-16: run() with a SMALLER region than the constructor saw.
+// ---------------------------------------------------------------------------
+
+/// R2-16 counterfactual: a runner constructed against a LARGE region, then
+/// run against a SMALLER one, must never fire a callback with an out-of-range
+/// shard id, and every fired callback must be genuinely bound (its inserts
+/// route to the shard id it was handed). Before the fix, `run` spawned the
+/// full constructor-capped worker list: every worker past the smaller
+/// region's shard count got a rejected (false) bind whose result was
+/// ignored, still received its out-of-range `shard_id`, and its insert fell
+/// back to the round-robin claim — landing in a shard different from the id
+/// the callback saw, failing the assertions below.
+#[test]
+fn pinned_runner_run_with_smaller_region_fires_only_bound_in_range_shards() {
+    let big = Arc::new(ShardedRegion::<u64>::with_shards(8, 64));
+    let runner = match PinnedRunner::with_workers(&big, 8) {
+        Some(r) => r,
+        None => {
+            eprintln!("skip: core_affinity::get_core_ids returned None on this host");
+            return;
+        }
+    };
+    // The counterfactual needs >= 2 workers: with a single worker there is no
+    // out-of-range shard id even pre-fix, so nothing would be proven. Hosts
+    // that enumerate fewer than 2 cores skip (mirroring the best-effort
+    // contract of the other runner tests).
+    if runner.worker_count() < 2 {
+        eprintln!("skip: host enumerated <2 cores; the mismatch is not constructible");
+        return;
+    }
+
+    let small = Arc::new(ShardedRegion::<u64>::with_shards(1, 64));
+    let fired = Arc::new(Mutex::new(Vec::<(u16, u16)>::new()));
+    runner.run_arc(&small, |shard_id, region| {
+        let h = region
+            .insert(u64::from(shard_id))
+            .expect("shard has capacity");
+        fired.lock().unwrap().push((shard_id, h.shard()));
+    });
+
+    let fired = fired.lock().unwrap();
+    assert!(!fired.is_empty(), "the run must fire at least one callback");
+    assert!(
+        fired.len() <= small.shard_count(),
+        "run must not fire more callbacks than the region it was given has shards"
+    );
+    for &(given, routed) in fired.iter() {
+        assert!(
+            usize::from(given) < small.shard_count(),
+            "callback received out-of-range shard id {given} for a {}-shard region",
+            small.shard_count()
+        );
+        assert_eq!(
+            given, routed,
+            "callback must be genuinely bound: its insert must route to the \
+             shard id it was given"
+        );
+    }
+    // Accounting: exactly the fired callbacks' inserts are live, all in the
+    // smaller region (the constructor's larger region is untouched).
+    assert_eq!(small.len(), fired.len(), "accounting holds");
+    assert!(big.is_empty(), "the constructor region must be untouched");
+}
