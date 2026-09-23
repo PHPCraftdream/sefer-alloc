@@ -2,6 +2,9 @@
 //!
 //! Feature-gated: `alloc-lazy-commit` + `alloc-decommit` (both required for the
 //! full lifecycle: lazy reserve, grow-on-carve, decommit/pool/reuse).
+//! The seven fault-injection scenarios additionally require the TEST-ONLY
+//! `lazy-commit-fault-injection` fixture feature (R2-19: the ordinary
+//! lazy-commit edges no longer pull in `aligned-vmem/fault-injection`).
 //!
 //! These tests verify the B4 scenario list from R7_PLAN.md:
 //!   - First block of each chunk; block exactly on a chunk boundary.
@@ -385,6 +388,7 @@ fn batch_crosses_several_boundaries() {
 /// bump not moved, committed_payload_end not moved, live_count unchanged,
 /// and the allocation returns null. Counterfactual: if the bump were
 /// advanced before the commit check, it would be wrong after the failure.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn carve_block_commit_failure_state_unchanged() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -456,6 +460,7 @@ fn carve_block_commit_failure_state_unchanged() {
 /// When `commit_pages` fails on carve_batch, 0 blocks are returned and
 /// state is unchanged. Counterfactual: without the pre-commit check,
 /// blocks would be carved into uncommitted memory.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn carve_batch_commit_failure_returns_zero_blocks() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -513,6 +518,7 @@ fn carve_batch_commit_failure_returns_zero_blocks() {
 /// and fails exactly the k-th. After the k-th failure, subsequent commits
 /// succeed normally. Counterfactual: without the k-th-commit hook, we can
 /// only fail ALL commits (B2 hook), not a specific mid-sequence one.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn kth_commit_fails_carve_block() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -594,6 +600,7 @@ fn kth_commit_fails_carve_block() {
 /// Same as scenario 7 but exercises carve_batch: arm B4 to fail the 2nd
 /// commit, issue batches that each trigger a commit, and verify the 2nd
 /// batch returns 0.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn kth_commit_fails_carve_batch() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -646,6 +653,7 @@ fn kth_commit_fails_carve_batch() {
 
 /// After a commit failure, disarming the fault hook and retrying the same
 /// allocation succeeds. The frontier advances normally.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn retry_after_failure_succeeds() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -790,6 +798,7 @@ fn decommit_partial_recommit_continue() {
 /// fresh carve target and the FIRST carve into it re-grew the frontier via a
 /// real grow-commit, so arming a fault at commit #1 directly targeted the
 /// reused segment's own recommit.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn pool_reuse_with_fault_mid_reuse() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -1414,6 +1423,7 @@ fn multiple_size_classes_lazy() {
 /// B4 is armed but B2 is not, B2's semantics are unchanged. When both are
 /// armed, B2 fires first. Counterfactual: if B4 replaced B2's hook, the
 /// existing B2/B3 tests would break.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn b4_hook_does_not_break_b2() {
     let (mut a, second_ptr) = alloc_past_primordial();

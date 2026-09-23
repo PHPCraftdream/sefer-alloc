@@ -755,14 +755,20 @@ numa-aware-mock = ["numa-aware"]
 # Additive over `alloc-core`; off by default, NOT part of `production` or
 # any default-on bundle. Feature-OFF builds are byte-for-byte identical.
 #
-# Also pulls in `aligned-vmem/fault-injection`: the R7-B4 grow-on-carve
-# rollback tests need to force a REAL commit to fail at an exact point in a
-# live allocation sequence (not aligned-vmem's mock backend — enabled since
-# task #962 via the `--cfg aligned_vmem_mock` build flag, no longer a Cargo
+# R2-19 (task #2021): this edge no longer pulls in
+# `aligned-vmem/fault-injection`. The R7-B4 grow-on-carve rollback tests
+# still need to force a REAL commit to fail at an exact point in a live
+# allocation sequence (not aligned-vmem's mock backend — enabled since task
+# #962 via the `--cfg aligned_vmem_mock` build flag, no longer a Cargo
 # feature — which replaces the whole backend; sefer needs the real segment
-# reservation + real commit accounting under test). `os::commit_pages`
-# delegates to `aligned_vmem::fault_injection`'s hook instead of carrying its
-# own COMMIT_FAIL_* atomics (absorbed into vmem, CRATE-P2 follow-up).
+# reservation + real commit accounting under test), but that test-only edge
+# now lives exclusively in the dedicated `lazy-commit-fault-injection`
+# fixture feature below: plain `production` reaches this crate through
+# `primordial-lazy-commit`, and must not compile vmem's test-only
+# `FAULT_STATE: Mutex<_>` hook — acquired on EVERY real commit even when
+# nothing is armed — into its commit path. `os::commit_pages` still
+# delegates to `aligned_vmem::fault_injection`'s hook when that fixture
+# feature is on (absorbed into vmem, CRATE-P2 follow-up).
 #
 # R12-9 (task #260): `alloc-lazy-commit` is a PURE COMBINATOR — a convenience
 # alias that turns on BOTH `primordial-lazy-commit` AND
@@ -802,9 +808,11 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 # #223) that keeps the sibling `small-segment-lazy-commit` policy out of
 # `production` — that regression fired on repeated
 # empty→pool→reuse→refill cycles of *ordinary* small segments, a lifecycle
-# the primordial segment structurally never enters. Also pulls in
-# `aligned-vmem/fault-injection` for the same B2/B4 fault-injection reason as
-# the original `alloc-lazy-commit`. Part of `production` since R12-9 (the
+# the primordial segment structurally never enters. Does NOT pull in
+# `aligned-vmem/fault-injection` — R2-19 (task #2021) moved that test-only
+# edge to the dedicated `lazy-commit-fault-injection` fixture feature below,
+# so plain `production` no longer compiles the fault hook. Part of
+# `production` since R12-9 (the
 # measured GO in `docs/perf/R12_9_PRIMORDIAL_LAZY_COMMIT.md`, confirmed by
 # the user): the sibling `small-segment-lazy-commit` stays opt-in only.
 # Feature-OFF: the primordial reservation is the plain eager
@@ -812,7 +820,6 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 primordial-lazy-commit = [
     "alloc-core",
     "aligned-vmem/lazy-commit",
-    "aligned-vmem/fault-injection",
 ]
 # R12-9 (task #260, P1): lazily commit ordinary (non-primordial) small
 # segments — `reserve_small_segment`'s `reserve_aligned_lazy` call, plus B3's
@@ -832,6 +839,26 @@ primordial-lazy-commit = [
 small-segment-lazy-commit = [
     "alloc-core",
     "aligned-vmem/lazy-commit",
+]
+# R2-19 (task #2021, docs/reviews/2026-09-22-120730-src-review-xa-round-2.md):
+# TEST-ONLY fixture package for the lazy-commit fault-injection hooks — the
+# ONLY edge to `aligned-vmem/fault-injection` left in this manifest. The
+# R7-B2/B4 rollback tests arm vmem's real-path hooks (via
+# `AllocCore::dbg_arm_commit_fail` / `dbg_arm_commit_fail_at`) to force a
+# REAL commit to fail at an exact point in a live allocation sequence;
+# aligned-vmem's mock backend cannot serve them (see `alloc-lazy-commit`
+# above). Before R2-19 BOTH lazy-commit policy features implied
+# `aligned-vmem/fault-injection`, so plain `production` (via
+# `primordial-lazy-commit`) transitively compiled vmem's test-only
+# `FAULT_STATE: Mutex<_>` into every real commit: even with nothing armed,
+# `try_commit_range` paid one uncontended mutex acquire per commit,
+# serializing independent commit slow paths process-wide. Enabling this
+# feature is now the only way a sefer build compiles the hook; no
+# production or opt-in bundle turns it on — only `--all-features` and
+# fault-arming test configurations. The release-vs-test split is asserted
+# mechanically by `tests/release_graph_no_fault_injection.rs`.
+lazy-commit-fault-injection = [
+    "alloc-lazy-commit",
     "aligned-vmem/fault-injection",
 ]
 # R12-10 (task #261, P1, Stage 1+2 of the design docs below): Small-path

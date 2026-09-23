@@ -2,6 +2,9 @@
 //! (grow-on-carve) logic in `carve_block` and `carve_batch`.
 //!
 //! Feature-gated: `alloc-lazy-commit` (which implies `alloc-core`).
+//! The two fault-injection tests additionally require the TEST-ONLY
+//! `lazy-commit-fault-injection` fixture feature (R2-19: the ordinary
+//! lazy-commit edges no longer pull in `aligned-vmem/fault-injection`).
 //!
 //! These tests verify:
 //!   - Carving exactly at a chunk boundary commits the next chunk.
@@ -319,6 +322,11 @@ fn batch_crossing_several_boundaries_one_commit() {
 /// committed_payload_end not moved, live_count unchanged, page map
 /// unwritten, and the allocation returns null. A subsequent normal
 /// allocation still works.
+///
+/// R2-19: requires the TEST-ONLY `lazy-commit-fault-injection` fixture
+/// feature — the ordinary lazy-commit edges no longer pull in
+/// `aligned-vmem/fault-injection`.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn commit_failure_leaves_state_unchanged() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -455,6 +463,7 @@ fn fill_entire_lazy_segment() {
 
 /// When `commit_pages` fails mid-batch (because the batch end exceeds the
 /// frontier), carve_batch returns 0 blocks with no state change.
+#[cfg(feature = "lazy-commit-fault-injection")]
 #[test]
 fn carve_batch_commit_failure_returns_zero() {
     let (mut a, second_ptr) = alloc_past_primordial();

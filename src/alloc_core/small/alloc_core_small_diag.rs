@@ -270,11 +270,12 @@ impl AllocCore {
     ///
     /// CRATE-P2 follow-up: delegates to `aligned_vmem::fault_injection`'s
     /// real-path hook (absorbed from sefer's former `os::COMMIT_FAIL_ARMED`).
+    /// Compiled only under the TEST-ONLY `lazy-commit-fault-injection`
+    /// fixture feature (R2-19): the ordinary lazy-commit policy features no
+    /// longer imply `aligned-vmem/fault-injection`, so plain `production`
+    /// never compiles this hook — or vmem's `FAULT_STATE` mutex — at all.
     #[doc(hidden)]
-    #[cfg(any(
-        feature = "primordial-lazy-commit",
-        feature = "small-segment-lazy-commit"
-    ))]
+    #[cfg(feature = "lazy-commit-fault-injection")]
     pub fn dbg_arm_commit_fail(&self, n: u32) {
         aligned_vmem::fault_injection::arm_fail_next(n);
     }
@@ -291,11 +292,12 @@ impl AllocCore {
     ///
     /// CRATE-P2 follow-up: delegates to `aligned_vmem::fault_injection`'s
     /// real-path hook (absorbed from sefer's former `os::COMMIT_FAIL_AT_*`).
+    /// Compiled only under the TEST-ONLY `lazy-commit-fault-injection`
+    /// fixture feature (R2-19): the ordinary lazy-commit policy features no
+    /// longer imply `aligned-vmem/fault-injection`, so plain `production`
+    /// never compiles this hook — or vmem's `FAULT_STATE` mutex — at all.
     #[doc(hidden)]
-    #[cfg(any(
-        feature = "primordial-lazy-commit",
-        feature = "small-segment-lazy-commit"
-    ))]
+    #[cfg(feature = "lazy-commit-fault-injection")]
     pub fn dbg_arm_commit_fail_at(&self, k: u32) {
         aligned_vmem::fault_injection::arm_fail_at(k);
     }

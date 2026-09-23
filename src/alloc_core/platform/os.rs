@@ -679,8 +679,10 @@ pub(crate) unsafe fn read_directory_node_bucket(
 /// The B2/B4 "fail the next N" / "fail the k-th" commit-failure fault
 /// injectors used to live here as sefer-local `COMMIT_FAIL_*` atomics. They
 /// have been absorbed into `aligned_vmem::fault_injection` (feature
-/// `aligned-vmem/fault-injection`, pulled in additively by
-/// `alloc-lazy-commit`): the hook now lives on vmem's REAL commit path
+/// `aligned-vmem/fault-injection`, pulled in ONLY by the test-only
+/// `lazy-commit-fault-injection` fixture feature since R2-19 — no ordinary
+/// lazy-commit policy edge implies it any more): the hook now lives on
+/// vmem's REAL commit path
 /// (`try_commit_range`, checked immediately before the real syscall), so
 /// this function needs no fault-injection logic of its own — arming is done
 /// directly against `aligned_vmem::fault_injection::{arm_fail_next,
