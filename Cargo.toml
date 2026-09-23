@@ -2428,6 +2428,15 @@ required-features = ["alloc-global"]
 name = "sol_f1_dbg_carve_batch_negative_probe"
 required-features = ["alloc-core"]
 
+# R2-20: this regression uses the arbitrary-handle test hook, which is
+# deliberately absent from ordinary `experimental` builds. Keep the Cargo test
+# target itself gated too, so plain `--features experimental` does not build an
+# empty integration-test binary.
+[[test]]
+name = "regression_r2_20_lock_free_rejected_no_cow"
+path = "tests/regression_r2_20_lock_free_rejected_no_cow.rs"
+required-features = ["experimental", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

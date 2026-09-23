@@ -52,7 +52,7 @@
 //!    uses).
 
 #![allow(deprecated)]
-#![cfg(feature = "experimental")]
+#![cfg(all(feature = "experimental", feature = "bench-internals"))]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;

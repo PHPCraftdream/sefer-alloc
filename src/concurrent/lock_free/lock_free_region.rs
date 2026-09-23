@@ -465,18 +465,21 @@ impl<T> LockFreeRegion<T> {
         Some(value)
     }
 
-    /// R2-20 (independent src review round 2, task #2022): test-only hook minting
-    /// a handle for an ARBITRARY `(index, generation)` pair carrying THIS
-    /// region's `region_id`. The public API only ever mints handles to slots
-    /// that exist, so an integration test in `tests/` cannot otherwise reach the
-    /// out-of-range page-table reject path of
+    /// R2-20 (independent src review round 2, task #2022): test/bench hook
+    /// minting a handle for an ARBITRARY `(index, generation)` pair carrying
+    /// THIS region's `region_id`. It intentionally bypasses opaque-handle
+    /// identity and can access or remove another live slot's value. Normal
+    /// `experimental` builds do not expose it; this hook is gated by
+    /// `bench-internals`.
+    /// The public API only mints handles to slots that exist, so the regression
+    /// test cannot otherwise reach the out-of-range page-table reject path of
     /// [`get`](Self::get)/[`contains`](Self::contains)/[`remove`](Self::remove).
     ///
-    /// Same established `#[doc(hidden)]` test-only-export pattern as
-    /// `EpochRegion::_set_slot_generation_for_tests` and
-    /// `ShardedRegion::_reset_my_shard_binding_for_tests`: not stable API, and
-    /// no soundness impact — it only NAMES a slot; it reads, writes, and
-    /// creates nothing.
+    /// It remains safe: `get`/`contains`/`remove` still validate bounds,
+    /// generation, and occupancy before accessing a slot; operations return
+    /// owned values and use no caller-provided pointer. The hook only creates
+    /// a handle and does not mutate region state.
+    #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
     #[must_use]
     pub fn _forge_handle_for_tests(&self, index: u32, generation: u32) -> LockFreeHandle<T> {
