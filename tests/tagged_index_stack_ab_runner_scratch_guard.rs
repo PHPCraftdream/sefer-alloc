@@ -15,6 +15,8 @@
 
 use std::fs;
 use std::io;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -74,6 +76,21 @@ fn exclusive_dir_under(base: &Path, label: &str) -> DirGuard {
 
 fn exclusive_temp_dir(label: &str) -> DirGuard {
     exclusive_dir_under(&std::env::temp_dir(), label)
+}
+
+#[cfg(windows)]
+fn assert_short_link_path(repo_root: &Path) {
+    let candidate = repo_root.join(
+        "target/tis_p3_ab-123456/build-check-links_relaxed/target-production/\
+         x86_64-pc-windows-msvc/debug/deps/\
+         libtis_p3ab_build_check_links_relaxed-0000000000000000.rlib",
+    );
+    let path_len = candidate.as_os_str().encode_wide().count();
+    assert!(
+        path_len < 260,
+        "fixture's representative MSVC linker input path is {path_len} UTF-16 units (must stay below MAX_PATH): {}",
+        candidate.display()
+    );
 }
 
 fn node_available() -> bool {
@@ -226,11 +243,31 @@ fn copy_file(src: &Path, dst: &Path) {
 fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
     let repo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = repo_dir.join("crates/tagged-index-stack");
-    // Keep the disposable repository outside the canonical system temp root:
-    // the runner must prove those roots are disjoint in both directions.
+    // Keep Windows fixtures short and outside the runner's canonical temp root.
+    #[cfg(windows)]
+    let parent = {
+        let temp_root = std::env::temp_dir();
+        let temp_parent = temp_root.parent().expect("system temp parent");
+        exclusive_dir_under(temp_parent, label)
+    };
+    #[cfg(not(windows))]
     let parent = exclusive_dir_under(&repo_dir.join("target"), label);
     let root = parent.path().join("repo");
     fs::create_dir_all(&root).expect("create skeleton repo root");
+    #[cfg(windows)]
+    {
+        assert_short_link_path(&root);
+        let canonical_temp_root =
+            fs::canonicalize(std::env::temp_dir()).expect("canonicalize the system temp root");
+        let canonical_repo_root = fs::canonicalize(&root).expect("canonicalize fixture repo root");
+        assert!(
+            !canonical_repo_root.starts_with(&canonical_temp_root)
+                && !canonical_temp_root.starts_with(&canonical_repo_root),
+            "fixture repo and system temp roots must remain disjoint: {} vs {}",
+            canonical_repo_root.display(),
+            canonical_temp_root.display()
+        );
+    }
 
     // Dummy workspace manifest: the repo-intact probes below check this file.
     fs::write(root.join("Cargo.toml"), "[workspace]\n").expect("write dummy Cargo.toml");
@@ -968,7 +1005,20 @@ fn build_check_success_leaves_no_scratch_root() {
         before, after,
         "successful build-check left a scratch root under <repo>/target"
     );
+    let fixture_root = root_guard.path().to_path_buf();
+    drop(root_guard);
+    assert!(
+        !fixture_root.exists(),
+        "fixture repo survived its owning directory guard: {}",
+        fixture_root.display()
+    );
+    let fixture_parent = parent.path().to_path_buf();
     drop(parent);
+    assert!(
+        !fixture_parent.exists(),
+        "fixture parent survived its owning directory guard: {}",
+        fixture_parent.display()
+    );
 }
 
 /// A config in the fresh invocation cwd's ancestor chain must be reported

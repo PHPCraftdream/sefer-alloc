@@ -83,9 +83,16 @@ ambiguity into link targets.
 
 ## Recently resolved — full closure trail
 
-*(Entries below are in the order they appeared in the main index's
-"Recently resolved" section at split time. Each is byte-identical to its
-pre-split text.)*
+*(Legacy entries below retain their split-time order and byte-identical
+text. Newer closure narratives are added with their item numbers and dates.)*
+
+150. **Flaky test: `tagged_index_stack_ab_runner_scratch_guard::build_check_success_leaves_no_scratch_root` failed during its inner Windows link step.** (Filed 2026-09-23.)
+
+   **Observed failure and root cause.** The test copies a minimal repo fixture, then invokes the runner's real build-check path, which creates another scratch tree under that fixture's `target/`. The pre-fix targeted test reproduced LNK1104. The linker diagnostic named an inaccessible input `.rlib` (not an output executable), under the nested path shape `target/tis_runner_guard_<id>_lifecycle_ok/repo/target/tis_p3_ab-<suffix>/build-check-links_relaxed/target-production/x86_64-pc-windows-msvc/debug/deps/libtis_p3ab_build_check_links_relaxed-<hash>.rlib`. The absolute path measured **281 UTF-16 code units**, exceeding the Windows `MAX_PATH` boundary. This replaced the earlier worktree-depth correlation with a measured link operand and path length.
+
+   **Fix and counterfactual.** On Windows, fixtures now live in unique directories beside the canonical temp root: this shortens their path while keeping the runner's own Cargo temp directory a disjoint sibling, not an ancestor or descendant. `exclusive_dir_under` still exclusively creates the fixture parent, and its `DirGuard` recursively removes that private parent; the returned repo guard and runner cleanup remain unchanged. A Windows-only assertion uses `std::os::windows::ffi::OsStrExt::encode_wide()` to count actual UTF-16 code units in a representative deepest `.rlib` path and requires fewer than 260. With that bound in force, `build_check_success_leaves_no_scratch_root` passed its inner production and activation builds and verified no scratch-root leak. The earlier temporary attempt to place the fixture inside the canonical temp root was rejected by the runner's existing ancestry-isolation check; placing it beside that root preserves the check. No retry or skip was introduced.
+
+   **Verification:** the exact targeted test first failed before the fix with the captured 281-unit LNK1104 operand, then passed after relocation with the path-bound assertion active. `rustfmt --check` and `git diff --check` passed. The fixture relocation, closure bookkeeping, and UTF-16 measurement were accepted together.
 
 77. **[M1, record correction — closed on filing] Commit bodies `d58bd67` (task #1086) and `a988e51` (task #1085) both claim a below-real-page skip treatment that only TWO of the THREE forced-page test files actually received: the record, not the code, was wrong.** (Filed and corrected 2026-08-18, task #1096/finding M1.)
 

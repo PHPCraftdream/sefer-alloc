@@ -198,18 +198,16 @@ directly, which still works and needs no table at all).
   50/51/54/55/64/65/70/72/73/74/76/88/92 are each "a real test exists, but
   no gate runs it, or runs it under the wrong profile/feature set"; 19/25
   are the same shape for MSRV and a compile-fail harness specifically.
-- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (5
-  cards) — flaky / order-dependent / scheduler-sensitive tests. Criterion:
+- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (3
+  open cards; resolved cards remain as closure pointers) — flaky /
+  order-dependent / scheduler-sensitive tests. Criterion:
   a test that fails intermittently because of timing, thread ordering, or
   shared process-wide state — an ACTUALLY-OBSERVED nondeterministic
   failure, not a coverage gap (no test exists) or a platform gap (no
-  runner exists). Evidence: 12/14 are both literal "failed once, could not
-  reliably reproduce" filings with their own root-cause investigations;
-  63/69 are a scheduler-sensitive threshold and a missing serialization
-  guard; 96 is a CI-observed scheduler-jitter threshold failure the test's
-  own comment already accepts as a risk class — all five are about a
-  test's own execution nondeterminism, a materially different defect from
-  "nothing runs this test" (category 4).
+  runner exists). Open items 145–147 document allocator-test observations;
+  resolved entries remain as pointers, including item 150's captured
+  Windows linker-path failure and verified short-path fix. This separates
+  test execution nondeterminism from "nothing runs this test" (category 4).
 - **`docs/correctness-open-items/TRACKED_correctness_residuals.md`**
   (4 cards) — documented-but-unproven panic-/unwind-safety residuals in
   shipping code. Criterion: a known, honestly-recorded gap in a

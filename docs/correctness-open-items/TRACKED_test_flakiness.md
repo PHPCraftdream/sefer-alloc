@@ -13,11 +13,8 @@ the tier.
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
 **Card count:** 10 (items 12, 14, 63, 69, 96, 143, 145, 146, 147, 150).
-**145, 146, 147 and 150** are OPEN; 12, 14, 63, 69, 96 and 143 are CLOSED
-pointers whose full narratives live in RESOLVED.md. (147 was already
-present in this file's card body but had not been folded into this count
-line before item 150 was added, 2026-09-23 — a pre-existing header/body
-mismatch, corrected in the same edit rather than compounded.) Verify,
+**145, 146 and 147** are OPEN; 12, 14, 63, 69, 96, 143 and 150 are CLOSED
+pointers whose closure narratives live in RESOLVED.md / ARCHIVE.md. Verify,
 never hand-count:
 
 ```text
@@ -340,100 +337,4 @@ resolved" in RESOLVED.md.)_
     - Whether the failure is Linux-specific or merely load-specific. Only one
       observation exists, on Linux CI, and this box is Windows.
 
-150. **[T, filed 2026-09-23] `tagged_index_stack_ab_runner_scratch_guard::build_check_success_leaves_no_scratch_root`
-    fails with a Windows `link.exe` LNK1104 ("cannot open file") in every
-    `git worktree` checkout, never in the primary checkout; mechanism
-    correlated with path depth, not confirmed.** Informally treated as a
-    "known sanctioned flake" across this session's own checkpoints
-    (`docs/checkpoints/2026-09-20-0712.md`,
-    `docs/checkpoints/2026-09-22-0015.md`,
-    `docs/checkpoints/2026-09-22-0940.md`,
-    `docs/checkpoints/2026-09-22-1520.md`,
-    `docs/checkpoints/2026-09-22-2138.md`,
-    `docs/checkpoints/2026-09-23-1620.md`) since at least 2026-09-20, but
-    never filed as a tracked card until now — this item exists to close
-    that gap, per this repo's own "flaky tests... flagged from any source"
-    scope for `docs/CORRECTNESS_OPEN_ITEMS.md`.
-
-    **What IS established.**
-    - The failing test builds a full throwaway copy of the repo
-      (`build_repo_copy`, `tests/tagged_index_stack_ab_runner_scratch_guard.rs:226`)
-      and drives the `tis-p3-ab-runner` harness through a real
-      `cargo build` of a `tis_p3ab_build_check_base` "harness" bin inside a
-      second, runner-owned `mkdtemp` scratch root nested under that copy's
-      own `target/` (`:776`'s `scratch_roots_under` comment). The observed
-      failure is always at the LINK step of that inner build: `error:
-      linking with `link.exe` failed: exit code: 1104` immediately followed
-      by `error: could not compile `tis_p3ab_build_check_base` (bin
-      "harness") due to 1 previous error`. LNK1104 is MSVC link.exe's
-      "cannot open file" diagnostic for the artifact it is trying to write.
-    - It reproduces ONLY inside `git worktree` checkouts under
-      `worktrees/<slug>/` (i.e. every `/wrush`-style task worktree this
-      session used), and has NEVER been observed in the primary checkout
-      (`D:\dev\rust\sefer-alloc` directly) across dozens of full-matrix
-      verification runs spanning at least four days of session checkpoints.
-      The worktree path is one path segment deeper than the primary
-      checkout's own root, and the inner build additionally nests a
-      repo-copy root plus a second `mkdtemp` scratch root plus the usual
-      `target/debug/deps/<bin>-<hash>.exe` tail — the leading correlated
-      hypothesis is that this combination is what pushes the final linked
-      artifact's absolute path length into whatever boundary makes
-      `link.exe` unable to open its output file on this host, but the
-      literal path length at the moment of failure has never been captured
-      (no run has logged the exact scratch-root path at failure time), so
-      this is a strong correlation, not a proven mechanism.
-    - It is genuinely isolated, not a symptom of a cascading failure: R2-20's
-      own verification run (this session, 2026-09-23) reran the full 4-row
-      test matrix with only this one test name excluded four separate times
-      and got 13/13 of its sibling tests green every time, with no leftover
-      scratch roots and no zombie processes found — consistent with a
-      transient link-step race rather than a corrupted build tree. Every
-      other task this session that hit it (recorded across the checkpoints
-      cited above) reports the identical single-test, single-error
-      signature — never a different test, never a different link error.
-    - It is unrelated to any of this session's own R2-xx code changes: it
-      recurs identically across worktrees branched from many different
-      `main` SHAs and touching completely disjoint source files (pinning,
-      lock-free removal, sidecar accounting, doc-only fixes, ...), which
-      rules out any one diff as the cause.
-
-    **What is NOT established, and must not be assumed by whoever picks
-    this up.**
-    - The literal root cause. Path-length sensitivity is a hypothesis
-      backed only by the worktree-vs-primary-checkout correlation above,
-      not by a captured `link.exe` verbose log, a measured path length at
-      the moment of failure, or a reproduction with an artificially
-      shortened/lengthened worktree name to test the boundary directly.
-      Antivirus/indexer file-lock contention on a freshly-written `.exe`
-      (a second classic LNK1104 cause on Windows, unrelated to path length)
-      has not been ruled out either — nothing in this session's evidence
-      distinguishes the two.
-    - Whether it is specific to THIS test's double-nested-scratch-build
-      shape or would affect any sufficiently deep build under a worktree —
-      no other test in the suite builds a throwaway nested repo copy this
-      way, so there is no second data point to compare against.
-    - A fix. No attempt has been made to shorten the path (e.g. relocating
-      `git worktree add` targets, or the runner's own scratch-root naming)
-      or to add retry-on-LNK1104 logic to the runner; this card documents
-      the observed behavior so it stops being re-diagnosed from scratch
-      every task, not a remediation.
-
-    **Current practice (informal, now formalized by this card):** every
-    per-task verification matrix in this session treats EXACTLY this test
-    name plus an LNK1104 diagnostic as an expected, non-blocking result —
-    present or absent, it is never treated as evidence of a regression in
-    the task's own diff — while any OTHER test failure, or this same test
-    failing with a DIFFERENT error, is treated as a real signal requiring
-    investigation.
-
-    **Next trigger:** a reproduction captured with `cargo build -vv` (or
-    equivalent verbose linker invocation) to log the exact failing output
-    path and its length, which would either confirm or rule out the
-    path-length hypothesis directly; or a reproduction in the PRIMARY
-    checkout (which would rule out path depth entirely and point at
-    antivirus/indexer contention instead).
-    **Evidence:** the checkpoint citations above (dated 2026-09-20 through
-    2026-09-23); this session's R2-16 test matrix
-    (`.rush/stdin/r2-16-testmatrix.log`, 2026-09-23) and R2-20 test matrix
-    (`.rush/stdin/r2-20-testmatrix.log`, 2026-09-23), each showing the
-    identical single-test LNK1104 failure with all other tests green.
+150. **[T, CLOSED] `tagged_index_stack_ab_runner_scratch_guard::build_check_success_leaves_no_scratch_root`** — CLOSED 2026-09-23. Captured LNK1104 named an input `.rlib` at 281 UTF-16 units; relocating the Windows fixture below a short, unique sibling of the system temp root and enforcing a <260-unit representative link path fixed the targeted test. Full closure evidence: `RESOLVED.md` item 150 and `ARCHIVE.md` item 150.
