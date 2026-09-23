@@ -34,4 +34,9 @@ pub(crate) mod os;
 /// module doc for why `PerClassDirty` (cross-thread-published via
 /// `OncePtrCell`) is NOT migrated onto this type.
 pub(crate) mod sidecar;
+/// R2-12: process-wide reservation/release accounting for the owner-only
+/// sidecars (`sidecar.rs`'s `AccountedSidecar` token) — the leak-fix
+/// acceptance oracle. Pure counters + one `dbg_*` snapshot accessor; see the
+/// module doc for the three counter breakouts and the `internals` gating.
+pub(crate) mod sidecar_stats;
 pub(crate) mod size_classes;

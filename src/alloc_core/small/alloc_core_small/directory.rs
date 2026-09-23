@@ -54,6 +54,7 @@ impl AllocCore {
                           // owner-only discipline (neither `Send` nor `Sync`) rules
                           // out a concurrent writer, and no other reference to the
                           // sidecar is live across this call.
+                          // R2-12: the returned reference is OWNER-TIED (`&'a` from `self`), not `'static` — the sidecar's VM span is released when this core drops its `directory_sidecar_vm` token.
     pub(in crate::alloc_core) fn maybe_materialize_directory(&mut self) {
         // Fast path: already materialised.
         if !self.directory_sidecar.is_null() {
@@ -66,8 +67,12 @@ impl AllocCore {
             return;
         }
         // Slow path: reserve the sidecar via direct OS VM (M5-clean).
-        let ptr = match os::reserve_directory_sidecar() {
-            Some(p) => p,
+        // R2-12: the returned token OWNS the sidecar's VM span; it is stored
+        // in `self.directory_sidecar_vm` below so the span is released when
+        // this core drops (before R2-12 the span was leaked for the process
+        // lifetime — unbounded under standalone create/drop churn).
+        let (ptr, vm) = match os::reserve_directory_sidecar() {
+            Some(pair) => pair,
             None => return, // OOM — mechanism stays off, not an error.
         };
         // One-time rebuild: walk every registered small/primordial segment,
@@ -83,10 +88,11 @@ impl AllocCore {
         // fully valid state. `AllocCore`'s owner-only discipline (neither
         // `Send` nor `Sync`) rules out a concurrent writer, and no other
         // reference to this sidecar is live across this call.
-        let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr) };
+        let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr, &*self) };
         dir.rebuild_from_table(&self.table);
 
         self.directory_sidecar = ptr;
+        self.directory_sidecar_vm = Some(vm);
     }
 
     /// Return a shared reference to the materialised directory sidecar, or
@@ -99,6 +105,7 @@ impl AllocCore {
                           // discipline (neither `Send` nor `Sync`) rules out a
                           // concurrent writer. The returned `&SegmentDirectory` does
                           // not outlive this call.
+                          // R2-12: the returned reference is OWNER-TIED (`&'a` from `self`), not `'static` — the sidecar's VM span is released when this core drops its `directory_sidecar_vm` token.
     pub(in crate::alloc_core) fn directory(
         &self,
     ) -> Option<&crate::alloc_core::segment_directory::SegmentDirectory> {
@@ -106,7 +113,7 @@ impl AllocCore {
             None
         } else {
             // SAFETY: see the `#[allow(unsafe_code)]` justification above.
-            Some(unsafe { crate::alloc_core::sidecar::deref(self.directory_sidecar) })
+            Some(unsafe { crate::alloc_core::sidecar::deref(self.directory_sidecar, self) })
         }
     }
 
@@ -120,6 +127,7 @@ impl AllocCore {
                           // (neither `Send` nor `Sync`) rules out a concurrent
                           // reader/writer, and no other reference to the sidecar is
                           // live across this call.
+                          // R2-12: the returned reference is OWNER-TIED (`&'a` from `self`), not `'static` — the sidecar's VM span is released when this core drops its `directory_sidecar_vm` token.
     pub(in crate::alloc_core) fn directory_mut(
         &mut self,
     ) -> Option<&mut crate::alloc_core::segment_directory::SegmentDirectory> {
@@ -127,7 +135,7 @@ impl AllocCore {
             None
         } else {
             // SAFETY: see the `#[allow(unsafe_code)]` justification above.
-            Some(unsafe { crate::alloc_core::sidecar::deref_mut(self.directory_sidecar) })
+            Some(unsafe { crate::alloc_core::sidecar::deref_mut(self.directory_sidecar, &*self) })
         }
     }
 

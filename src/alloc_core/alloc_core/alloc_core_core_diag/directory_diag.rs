@@ -404,7 +404,7 @@ impl AllocCore {
             // initialised by that constructor. `AllocCore`'s owner-only
             // discipline rules out a concurrent writer, and no other
             // reference to this sidecar is live across this call.
-            let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr) };
+            let dir = unsafe { crate::alloc_core::sidecar::deref_mut(ptr, &*self) };
             // Zero out all bits first, then rebuild from scratch.
             // R11-6: iterate all node buckets.
             for nb in 0..crate::alloc_core::segment_directory::NODE_BITMAPS {

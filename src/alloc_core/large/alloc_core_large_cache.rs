@@ -111,7 +111,7 @@ impl AllocCore {
             // SAFETY: see the `#[allow(unsafe_code)]` justification above this
             // function.
             let ext = unsafe {
-                large_cache_extended::deref_large_cache_extension(self.large_cache_extension)
+                large_cache_extended::deref_large_cache_extension(self.large_cache_extension, self)
             };
             ext.slots[idx - LARGE_CACHE_SLOTS].as_ref()
         }
@@ -159,7 +159,10 @@ impl AllocCore {
             // SAFETY: see the `#[allow(unsafe_code)]` justification above this
             // function.
             let ext = unsafe {
-                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension)
+                large_cache_extended::deref_large_cache_extension_mut(
+                    self.large_cache_extension,
+                    &*self,
+                )
             };
             let taken = ext.slots[idx - LARGE_CACHE_SLOTS]
                 .take()
@@ -292,13 +295,21 @@ impl AllocCore {
         #[cfg(feature = "large-cache-extended")]
         {
             if self.large_cache_extension.is_null() {
-                let ptr = large_cache_extended::reserve_large_cache_extension()?;
+                // R2-12: the returned token owns the sidecar's VM span and
+                // is stored in `self.large_cache_extension_vm` below, so the
+                // span is released when this core drops (before R2-12 it
+                // was leaked for the process lifetime).
+                let (ptr, vm) = large_cache_extended::reserve_large_cache_extension()?;
                 self.large_cache_extension = ptr;
+                self.large_cache_extension_vm = Some(vm);
             }
             // SAFETY: see the `#[allow(unsafe_code)]` justification above this
             // function.
             let ext = unsafe {
-                large_cache_extended::deref_large_cache_extension(self.large_cache_extension)
+                large_cache_extended::deref_large_cache_extension(
+                    self.large_cache_extension,
+                    &*self,
+                )
             };
             ext.slots
                 .iter()
@@ -345,7 +356,10 @@ impl AllocCore {
             // SAFETY: see the `#[allow(unsafe_code)]` justification above this
             // function.
             let ext = unsafe {
-                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension)
+                large_cache_extended::deref_large_cache_extension_mut(
+                    self.large_cache_extension,
+                    &*self,
+                )
             };
             ext.slots[idx - LARGE_CACHE_SLOTS] = Some(entry);
             self.large_cache_occupied |= 1u64 << idx;
@@ -381,7 +395,7 @@ impl AllocCore {
         // SAFETY: see the `#[allow(unsafe_code)]` justification above this
         // function.
         let ext = unsafe {
-            large_cache_extended::deref_large_cache_extension(self.large_cache_extension)
+            large_cache_extended::deref_large_cache_extension(self.large_cache_extension, self)
         };
         for (i, slot) in ext.slots.iter().enumerate() {
             out[i] = slot.as_ref().map(|c| c.usable_size);

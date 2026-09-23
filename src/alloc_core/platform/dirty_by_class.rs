@@ -91,6 +91,21 @@
 //! heap's FIRST class-routed cross-thread free, mirroring `HeapOverflow`'s
 //! own two-tier "cheap until genuinely needed" discipline.
 //!
+//! ## R2-12 note: the explicitly-sanctioned process-lifetime leak
+//!
+//! Unlike the owner-only sidecars (`SegmentDirectory`,
+//! `LargeCacheExtension` — see `alloc_core::sidecar`'s `AccountedSidecar`),
+//! THIS sidecar's span deliberately stays leaked for the process lifetime,
+//! and that is now an explicit, justified exception rather than a default
+//! discipline. It is genuine process-global shared state: the FIRST of
+//! several racing cross-thread producers to CAS-publish wins
+//! materialisation, so no single owner could hold a release token; and the
+//! span is bounded by the registry's `MAX_HEAPS` slots (slots are never
+//! dropped), so it is a one-time-per-slot cost, never a per-standalone-core
+//! growing leak. The standalone-`AllocCore` churn scenario that made the
+//! owner-only sidecars' leak a bug (R2-12) cannot materialise this sidecar
+//! at all (a standalone core's `dirty_by_class` handle is never bound).
+//!
 //! `class-aware-dirty` is EXPERIMENTAL: opt-in, additive over `alloc-xthread`
 //! + `alloc-segment-directory`, NOT part of `production`. With the feature
 //! OFF, none of this module's code exists in the binary and

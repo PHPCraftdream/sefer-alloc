@@ -70,6 +70,12 @@ pub(crate) use platform::node;
 #[cfg(feature = "numa-aware")]
 #[doc(hidden)]
 pub use platform::numa;
+/// R2-12: process-wide owner-sidecar reservation/release accounting — the
+/// sidecar-leak-fix acceptance oracle (`platform::sidecar_stats`). Test-only
+/// surface in the same `#[doc(hidden)]` spirit as the rest of this module's
+/// internal reexports: NOT stable public API.
+#[cfg(feature = "internals")]
+pub use platform::sidecar_stats::{dbg_sidecar_reservation_stats, SidecarReservationStats};
 pub(crate) use platform::os;
 // `allow(unused_imports)`: a `pub(crate) mod` declaration (this file's
 // pre-reorg form) is exempt from the unused-imports lint, but the equivalent

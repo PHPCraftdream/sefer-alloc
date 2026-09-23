@@ -399,9 +399,22 @@ pub struct AllocCore {
     /// `*mut`, not `AtomicPtr` — mirrors `directory_sidecar`, not
     /// `dirty_by_class`; see `large_cache_extended`'s module doc for why no
     /// `OncePtrCell` is needed here). Dereferenced via
-    /// `large_cache_extended::deref_large_cache_extension[_mut]`.
+    /// `large_cache_extended::deref_large_cache_extension[_mut]` (owner-tied
+    /// since R2-12).
     #[cfg(feature = "large-cache-extended")]
     pub(super) large_cache_extension: *mut super::large_cache_extended::LargeCacheExtension,
+
+    /// R2-12: the owned VM reservation backing
+    /// [`Self::large_cache_extension`] — `Some` iff the pointer field above
+    /// is non-null (the pairing invariant is written only at
+    /// `large_cache_find_free_slot`'s materialisation and consumed by
+    /// `AllocCore`'s `Drop`). Dropping this token releases the sidecar's OS
+    /// span, so a standalone core's extension no longer leaks its
+    /// reservation (R2-12); a registry heap's token lives for the slot's
+    /// process lifetime (the slot is never dropped — the explicitly
+    /// sanctioned process-global case, bounded by `MAX_HEAPS`).
+    #[cfg(feature = "large-cache-extended")]
+    pub(super) large_cache_extension_vm: Option<super::sidecar::AccountedSidecar>,
 
     /// Per-shard byte budget for the large-cache. `None` = unbounded (any span
     /// may be admitted as long as a free slot exists). When set, the sum of
@@ -623,14 +636,27 @@ pub struct AllocCore {
     ///
     /// `null` = directory not yet materialised (either below threshold, or
     /// sidecar OOM). A non-null value is a valid, OS-zeroed-or-rebuilt
-    /// `*mut SegmentDirectory` leaked for the process lifetime. Dereferenced
-    /// via `os::deref_directory_sidecar[_mut]`.
+    /// `*mut SegmentDirectory` whose VM span is owned by the paired
+    /// `directory_sidecar_vm` token (R2-12): the span lives exactly as long
+    /// as this `AllocCore`. Dereferenced
+    /// via `crate::alloc_core::sidecar::deref[_mut]` (owner-tied since R2-12).
     ///
     /// Nothing queries this directory for lookups yet (A3 scope). A1 adds
     /// only the storage, lazy materialisation, one-time rebuild, and the dbg
     /// accessor.
     #[cfg(feature = "alloc-segment-directory")]
     pub(super) directory_sidecar: *mut super::segment_directory::SegmentDirectory,
+
+    /// R2-12: the owned VM reservation backing [`Self::directory_sidecar`]
+    /// — `Some` iff the pointer field above is non-null (the pairing is
+    /// written at `maybe_materialize_directory`'s materialisation and
+    /// consumed by `AllocCore`'s `Drop`). Dropping the token releases the
+    /// directory sidecar's OS span (under `numa-aware`, the
+    /// `NODE_BITMAPS`-multiplied one), so a standalone core no longer leaks
+    /// it (R2-12); a registry heap's token lives for the slot's process
+    /// lifetime (sanctioned, bounded by `MAX_HEAPS`).
+    #[cfg(feature = "alloc-segment-directory")]
+    pub(super) directory_sidecar_vm: Option<super::sidecar::AccountedSidecar>,
 
     /// R8-2 (task #215) / R9-8 (task #230): consecutive genuine directory
     /// misses (no candidate validated) since the last full-scan re-validation

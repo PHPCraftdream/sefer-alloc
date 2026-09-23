@@ -231,6 +231,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_occupied_bits",
     "src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_budget",
     "src/alloc_core/large/alloc_core_large_cache.rs::dbg_large_cache_mode",
+    "src/alloc_core/platform/sidecar_stats.rs::dbg_sidecar_reservation_stats",
     "src/alloc_core/alloc_core/state.rs::dbg_cached_numa_node",
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_freelist_head_for",
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_is_free_for",

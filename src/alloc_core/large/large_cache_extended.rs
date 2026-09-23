@@ -91,14 +91,17 @@
 //! `tests/large_cache_extended_off_no_overflow_capacity.rs`).
 
 // Named `unsafe` seam: the SOLE documented reason to hold `unsafe` here is
-// dereferencing a materialised sidecar pointer as `&'static
-// LargeCacheExtension` / `&'static mut LargeCacheExtension` in
+// dereferencing a materialised sidecar pointer as `&'a
+// LargeCacheExtension` / `&'a mut LargeCacheExtension` in
 // `deref_large_cache_extension[_mut]` — sound because the pointer is only
 // ever produced by `reserve_large_cache_extension` in this same module (via
 // `sidecar::reserve`, which typed-initialises it — see that function's own
 // safety contract) and the owner-only single-writer discipline (`AllocCore`
 // is neither `Send` nor `Sync`; see its own doc comment) rules out any
-// concurrent aliasing writer/reader. (R14-9, task #294: the typed-init
+// concurrent aliasing writer/reader; the owner-tied lifetime bounds the
+// reference by the owner that holds the `AccountedSidecar` token (R2-12: the
+// span is released when that token drops, so a `'static` reference would be
+// unsound). (R14-9, task #294: the typed-init
 // `ptr::write` step itself now lives in `alloc_core::sidecar::reserve`,
 // shared with `os.rs`'s directory-sidecar reservation — this module no
 // longer duplicates it.)
@@ -121,8 +124,13 @@ pub(crate) struct LargeCacheExtension {
 /// Reserve and construct a [`LargeCacheExtension`] sidecar via direct OS VM
 /// reservation (M5-clean — `AllocCore`'s alloc path must not recurse into
 /// `std::alloc`/`Vec`/`Box`; see `alloc_core.rs`'s module doc). Returns
-/// `Some(ptr)` on success (valid for the process lifetime, EXPLICITLY
-/// typed-initialised via [`crate::alloc_core::sidecar::reserve`] — the OS-zeroed bytes
+/// `Some((ptr, sidecar))` on success — `ptr` is valid until the caller drops
+/// `sidecar`, the [`AccountedSidecar`](crate::alloc_core::sidecar::AccountedSidecar)
+/// token that OWNS the span, which the caller (the owning `AllocCore`, via its
+/// `large_cache_extension_vm` field) must store alongside the pointer so the
+/// span is released with the core (R2-12; the span is NO longer "valid for the
+/// process lifetime"). `ptr` is EXPLICITLY typed-initialised via
+/// [`crate::alloc_core::sidecar::reserve`] — the OS-zeroed bytes
 /// `leak_zeroed_pages` hands back are never trusted as-is to already encode
 /// an all-`None` `[Option<CachedLarge>; _]`; whether `Option`'s all-zero
 /// bytes form a valid niche encoding for a given payload type is an
@@ -147,47 +155,62 @@ pub(crate) struct LargeCacheExtension {
 /// state), so there is no all-zero-valid subset for a `reserve_zeroed_with`
 /// fixup to leave untouched.
 #[must_use]
-pub(crate) fn reserve_large_cache_extension() -> Option<*mut LargeCacheExtension> {
-    crate::alloc_core::sidecar::reserve(LargeCacheExtension {
-        slots: [const { None }; LARGE_CACHE_EXTENDED_SLOTS],
-    })
+pub(crate) fn reserve_large_cache_extension(
+) -> Option<(*mut LargeCacheExtension, crate::alloc_core::sidecar::AccountedSidecar)> {
+    crate::alloc_core::sidecar::reserve(
+        crate::alloc_core::sidecar::SidecarKind::LargeCacheExtension,
+        LargeCacheExtension {
+            slots: [const { None }; LARGE_CACHE_EXTENDED_SLOTS],
+        },
+    )
 }
 
 /// Dereference a materialised extension sidecar pointer as
-/// `&LargeCacheExtension`. Thin forwarder to [`crate::alloc_core::sidecar::deref`]
+/// `&LargeCacheExtension`, with the lifetime of the `owner`
+/// reference (R2-12: OWNER-TIED — the span is released when the owner's
+/// `AccountedSidecar` token drops, so a `'static` reference would be
+/// unsound). Thin forwarder to [`crate::alloc_core::sidecar::deref`]
 /// (R14-9, task #294) — kept as a named, `LargeCacheExtension`-typed function
 /// so call sites read the same as before the sidecar primitive was
 /// extracted.
 ///
 /// `unsafe fn` for the same reason [`crate::alloc_core::sidecar::deref`] itself is: two
 /// safe-looking calls to this (or [`deref_large_cache_extension_mut`]) back
-/// to back would otherwise materialise aliasing `&'static`/`&'static mut`
-/// references with no `unsafe` token at either call site — real UB under
-/// Stacked/Tree Borrows that the type system could not catch.
+/// to back would otherwise materialise aliasing `&`/`&mut` references with no
+/// `unsafe` token at either call site — real UB under Stacked/Tree Borrows
+/// that the type system could not catch.
 ///
 /// # Safety
 ///
 /// - `p` must be non-null and was returned by [`reserve_large_cache_extension`]
-///   (so it points at a value [`crate::alloc_core::sidecar::reserve`] typed-initialised).
+///   (so it points at a value [`crate::alloc_core::sidecar::reserve`]
+///   typed-initialised), and the owning `AccountedSidecar` returned alongside
+///   it must not have been dropped (for this crate's caller: the owning
+///   `AllocCore` must still be alive — the `owner` reference passed here
+///   enforces exactly that bound).
 /// - The calling thread is the sole owner (`AllocCore` is neither `Send` nor
 ///   `Sync`; see its doc comment in `alloc_core.rs`), so no concurrent
 ///   writer can race this read.
-/// - The `&'static` returned must not be held live across any call that may
-///   produce a `&mut LargeCacheExtension` to the SAME sidecar (i.e.
-///   [`deref_large_cache_extension_mut`]) — callers must not let the two
-///   borrows overlap.
+/// - The `&LargeCacheExtension` returned must not be held live across any
+///   call that may produce a `&mut LargeCacheExtension` to the SAME sidecar
+///   (i.e. [`deref_large_cache_extension_mut`]) — callers must not let the
+///   two borrows overlap.
 #[inline]
-pub(crate) unsafe fn deref_large_cache_extension(
+pub(crate) unsafe fn deref_large_cache_extension<O>(
     p: *const LargeCacheExtension,
-) -> &'static LargeCacheExtension {
+    _owner: &O,
+) -> &LargeCacheExtension {
     // SAFETY: forwarded verbatim from this function's own caller contract
     // above, which is `crate::alloc_core::sidecar::deref`'s contract specialised to
     // `LargeCacheExtension`.
-    unsafe { crate::alloc_core::sidecar::deref(p) }
+    unsafe { crate::alloc_core::sidecar::deref(p, _owner) }
 }
 
 /// Dereference a materialised extension sidecar pointer as
-/// `&mut LargeCacheExtension`. Thin forwarder to
+/// `&mut LargeCacheExtension`, with the lifetime of the `owner`
+/// reference (R2-12: OWNER-TIED — the span is released when the owner's
+/// `AccountedSidecar` token drops, so a `'static mut` reference would be
+/// unsound). Thin forwarder to
 /// [`crate::alloc_core::sidecar::deref_mut`] — see [`deref_large_cache_extension`]'s doc
 /// for why this stays a named wrapper.
 ///
@@ -196,17 +219,29 @@ pub(crate) unsafe fn deref_large_cache_extension(
 /// # Safety
 ///
 /// - `p` must be non-null and was returned by [`reserve_large_cache_extension`]
-///   (so it points at a value [`crate::alloc_core::sidecar::reserve`] typed-initialised).
+///   (so it points at a value [`crate::alloc_core::sidecar::reserve`]
+///   typed-initialised), and the owning `AccountedSidecar` returned alongside
+///   it must not have been dropped (the `owner` reference bounds this).
 /// - The calling thread is the sole owner (`AllocCore` is neither `Send` nor
 ///   `Sync`), so no concurrent reader or writer can race this access.
 /// - No other reference (shared or mutable) to this sidecar may be live for
-///   the duration of the returned `&'static mut`'s use.
+///   the duration of the returned `&mut`'s use.
 #[inline]
-pub(crate) unsafe fn deref_large_cache_extension_mut(
+// `clippy::mut_from_ref` is a false positive here: the returned `&mut
+// LargeCacheExtension` does NOT derive its mutability from the shared
+// `_owner` reference (whose pointee is the owning struct, not this
+// sidecar's span) — it derives from the caller-attested-exclusive raw
+// pointer `p`, whose exclusivity this `unsafe fn`'s `# Safety` contract
+// above governs. `_owner` is a pure LIFETIME BINDER (R2-12: the returned
+// reference must not outlive the owner that holds the sidecar's
+// `AccountedSidecar` reservation token) and is never dereferenced.
+#[allow(clippy::mut_from_ref)]
+pub(crate) unsafe fn deref_large_cache_extension_mut<O>(
     p: *mut LargeCacheExtension,
-) -> &'static mut LargeCacheExtension {
+    _owner: &O,
+) -> &mut LargeCacheExtension {
     // SAFETY: forwarded verbatim from this function's own caller contract
     // above, which is `crate::alloc_core::sidecar::deref_mut`'s contract specialised to
     // `LargeCacheExtension`.
-    unsafe { crate::alloc_core::sidecar::deref_mut(p) }
+    unsafe { crate::alloc_core::sidecar::deref_mut(p, _owner) }
 }

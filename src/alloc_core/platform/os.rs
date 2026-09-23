@@ -500,10 +500,15 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 // ever dereferences it (no cross-thread race, no CAS protocol needed —
 // simpler than the `HeapOverflow` sidecar, which IS cross-thread).
 
-/// Reserve and construct a [`SegmentDirectory`] sidecar. Returns `Some(ptr)`
-/// on success (the pointer is valid for the process lifetime, a fully valid
-/// initial state), or `None` on OOM (sidecar OOM is NOT allocator OOM — the
-/// mechanism simply stays off and the linear scan fallback is used).
+/// Reserve and construct a [`SegmentDirectory`] sidecar. Returns
+/// `Some((ptr, sidecar))` on success — `ptr` is the fully-valid initial
+/// state and `sidecar` (the [`sidecar::AccountedSidecar`] token) OWNS the
+/// span's VM reservation, released exactly once when the caller drops the
+/// token (for this crate's single caller: when the owning `AllocCore` drops
+/// its `directory_sidecar_vm` field — R2-12; the span is NO longer leaked
+/// for the process lifetime), or `None` on OOM (sidecar OOM is NOT allocator
+/// OOM — the mechanism simply stays off and the linear scan fallback is
+/// used).
 ///
 /// Uses [`sidecar::reserve_zeroed_with`] rather than [`sidecar::reserve`]:
 /// `SegmentDirectory`'s bitmap fields (`class_nonempty_by_node`,
@@ -520,11 +525,23 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 /// [`sidecar::reserve`] call would risk an avoidable stack copy; the
 /// in-place fixup avoids it.
 ///
-/// The caller stores the pointer in `AllocCore::directory_sidecar` and
-/// dereferences it via [`sidecar::deref`] / [`sidecar::deref_mut`].
+/// The caller stores the pointer in `AllocCore::directory_sidecar` (and the
+/// token in `AllocCore::directory_sidecar_vm`) and dereferences it via
+/// [`sidecar::deref`] / [`sidecar::deref_mut`].
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) fn reserve_directory_sidecar(
-) -> Option<*mut crate::alloc_core::segment_directory::SegmentDirectory> {
+) -> Option<(
+    *mut crate::alloc_core::segment_directory::SegmentDirectory,
+    crate::alloc_core::sidecar::AccountedSidecar,
+)> {
+    // R2-12: the accounting key. Under `numa-aware` the span is multiplied
+    // by `NODE_BITMAPS` and routes into the NUMA-flavored counter;
+    // non-numa builds route into the plain directory counter — exactly one
+    // of the two flavors is live per build.
+    #[cfg(feature = "numa-aware")]
+    let kind = crate::alloc_core::sidecar::SidecarKind::NumaDirectory;
+    #[cfg(not(feature = "numa-aware"))]
+    let kind = crate::alloc_core::sidecar::SidecarKind::Directory;
     // SAFETY: `SegmentDirectory`'s bitmap fields (`class_nonempty_by_node`,
     // `active_bits_by_node`) are the only fields `init_node_ids_raw` leaves
     // untouched, and both are valid at all-zero (every bit/count clear is a
@@ -539,7 +556,7 @@ pub(crate) fn reserve_directory_sidecar(
     // `AllocCore::directory_sidecar` and dereferenced only via
     // `sidecar::deref`/`deref_mut`).
     unsafe {
-        crate::alloc_core::sidecar::reserve_zeroed_with(|p| {
+        crate::alloc_core::sidecar::reserve_zeroed_with(kind, |p| {
             crate::alloc_core::segment_directory::SegmentDirectory::init_node_ids_raw(p);
         })
     }
@@ -586,8 +603,9 @@ pub(crate) unsafe fn read_directory_class_words(
 ) -> [u64; crate::alloc_core::segment_directory::WORDS_PER_CLASS] {
     debug_assert!(!p.is_null(), "read_directory_class_words: null pointer");
     // SAFETY: `p` is non-null, PAGE-aligned, valid for
-    // `size_of::<SegmentDirectory>()` bytes, leaked for the process lifetime
-    // (same validity contract as `deref_directory_sidecar`). `addr_of!`
+    // `size_of::<SegmentDirectory>()` bytes, alive until the owning
+    // `AllocCore` drops the sidecar's `AccountedSidecar` reservation token
+    // (R2-12; the pointer must not be used after that). `addr_of!`
     // forms a raw pointer to the target field WITHOUT creating any
     // intermediate `&SegmentDirectory`, and `.read()` performs a single
     // valid, properly-aligned, non-overlapping copy of a plain-`u64` array
@@ -631,8 +649,9 @@ pub(crate) unsafe fn read_directory_node_bucket(
         return crate::alloc_core::segment_directory::MAX_NODES;
     }
     // SAFETY: `p` is non-null, PAGE-aligned, valid for
-    // `size_of::<SegmentDirectory>()` bytes, leaked for the process lifetime
-    // (same validity contract as `deref_directory_sidecar`). `addr_of!` forms
+    // `size_of::<SegmentDirectory>()` bytes, alive until the owning
+    // `AllocCore` drops the sidecar's `AccountedSidecar` reservation token
+    // (R2-12; the pointer must not be used after that). `addr_of!` forms
     // a raw pointer to the `node_ids` field WITHOUT creating any intermediate
     // `&SegmentDirectory`, and `.read()` performs a single valid, properly-
     // aligned, non-overlapping copy of a plain-`u32` array (no interior

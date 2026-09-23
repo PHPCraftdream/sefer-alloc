@@ -5,7 +5,7 @@
 //! `new_with_config`, `live_config_matches`, and `new_inner`, the
 //! `LargeCacheDecayConfig::from_config` constructor, and the
 //! `bench-internals`-gated `DBG_RESERVATION_OWNER_ID_COUNTER` source.
-//! Teardown: the `Drop` implementation that releases every OS reservation,
+//! Teardown: the `Drop` implementation that releases every OS reservation (including the owner-only sidecar spans via their `*_vm` reservation tokens, R2-12),
 //! plus the `base_add` node-seam offset helper. Pure code movement; no
 //! behavior changed.
 
@@ -247,6 +247,8 @@ impl AllocCore {
             large_cache_occupied: 0,
             #[cfg(feature = "large-cache-extended")]
             large_cache_extension: core::ptr::null_mut(),
+            #[cfg(feature = "large-cache-extended")]
+            large_cache_extension_vm: None,
             #[cfg(feature = "alloc-decommit")]
             large_cache_budget_bytes: None,
             #[cfg(feature = "alloc-decommit")]
@@ -299,6 +301,8 @@ impl AllocCore {
             last_pool_decay_tick: None,
             #[cfg(feature = "alloc-segment-directory")]
             directory_sidecar: core::ptr::null_mut(),
+            #[cfg(feature = "alloc-segment-directory")]
+            directory_sidecar_vm: None,
             #[cfg(feature = "alloc-segment-directory")]
             directory_miss_streak: [0; SMALL_CLASS_COUNT],
             #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
@@ -391,12 +395,17 @@ impl Drop for AllocCore {
         // large-cache entries the SAME way the base array does (unregistered
         // from `self.table`, so the `table.bases()` walk below never sees
         // them) — its reservations must be released here too, or they leak
-        // on drop. The sidecar's OWN VM reservation (the `leak_zeroed_pages`
-        // page(s) backing the `LargeCacheExtension` struct itself) is NOT
-        // released — it is leaked for the process lifetime by design, the
-        // same discipline `directory_sidecar`/`dirty_by_class` already use
-        // for their own sidecars (a bounded, one-time-per-heap cost, not a
-        // growing leak).
+        // on drop. R2-12: the sidecar's OWN VM span is released too — via
+        // the `large_cache_extension_vm` reservation token, whose `Drop`
+        // runs immediately after this body (struct fields drop after
+        // `Drop::drop` returns), so the span cannot be released while the
+        // cached entries above are still being read through it. (Before
+        // R2-12 the span was leaked for the process lifetime — defensible
+        // for registry heaps, an unbounded leak under standalone core
+        // churn; the directory sidecar's token gets the same treatment.
+        // `dirty_by_class`'s `PerClassDirty` stays a documented
+        // process-global leak: it is CAS-published cross-thread, so no
+        // single owner could hold a release token.)
         #[cfg(feature = "large-cache-extended")]
         if !self.large_cache_extension.is_null() {
             // SAFETY: see the `#[allow(unsafe_code)]` justification on
@@ -404,6 +413,7 @@ impl Drop for AllocCore {
             let ext = unsafe {
                 crate::alloc_core::large_cache_extended::deref_large_cache_extension_mut(
                     self.large_cache_extension,
+                    &*self,
                 )
             };
             for slot in &mut ext.slots {
