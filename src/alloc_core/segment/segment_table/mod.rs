@@ -55,5 +55,5 @@ mod harness;
 mod hash;
 
 #[path = "segment_table_impl.rs"]
-mod implementation;
-pub use implementation::*;
+mod segment_table_impl;
+pub use segment_table_impl::*;

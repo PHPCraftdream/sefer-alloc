@@ -66,5 +66,5 @@ mod mem;
 mod state;
 
 #[path = "alloc_core_impl.rs"]
-mod implementation;
-pub use implementation::*;
+mod alloc_core_impl;
+pub use alloc_core_impl::*;

@@ -27,6 +27,6 @@ mod find_segment;
 mod reserve;
 
 #[path = "alloc_core_small_impl.rs"]
-mod implementation;
+mod alloc_core_small_impl;
 #[allow(unused_imports)]
-pub(crate) use implementation::*;
+pub(crate) use alloc_core_small_impl::*;

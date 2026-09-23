@@ -46,5 +46,5 @@ mod descriptors;
 mod layout_asserts;
 
 #[path = "segment_header_impl.rs"]
-mod implementation;
-pub use implementation::*;
+mod segment_header_impl;
+pub use segment_header_impl::*;

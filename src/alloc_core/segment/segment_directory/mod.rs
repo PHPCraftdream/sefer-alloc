@@ -102,5 +102,5 @@
 //! lifetime (same discipline as `RegistryChunk` / `HeapOverflowSidecar`).
 
 #[path = "segment_directory_impl.rs"]
-mod implementation;
-pub(crate) use implementation::*;
+mod segment_directory_impl;
+pub(crate) use segment_directory_impl::*;
