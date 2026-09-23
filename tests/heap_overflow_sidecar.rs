@@ -109,7 +109,8 @@ fn sidecar_stays_null_until_inline_tier_exhausted_then_materialises() {
              materialise in this configuration"
         );
         let mut got = Vec::new();
-        ring.drain(|base, packed| got.push((base, packed)));
+        ring.try_drain(|base, packed| got.push((base, packed)))
+            .expect("drain must not be busy on this single-threaded test ring");
         assert_eq!(
             got,
             vec![(synthetic_base(9999), 777)],
@@ -130,7 +131,8 @@ fn sidecar_stays_null_until_inline_tier_exhausted_then_materialises() {
     // reachable but functionally correct, not merely "materialised and
     // never read").
     let mut got = Vec::new();
-    ring.drain(|base, packed| got.push((base, packed)));
+    ring.try_drain(|base, packed| got.push((base, packed)))
+        .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!(
         got,
         vec![(synthetic_base(9999), 777)],
@@ -224,7 +226,8 @@ fn sidecar_rollback_is_recoverable_no_permanent_wedge() {
              materialise in this configuration"
         );
         let mut got = Vec::new();
-        ring.drain(|base, packed| got.push((base, packed)));
+        ring.try_drain(|base, packed| got.push((base, packed)))
+            .expect("drain must not be busy on this single-threaded test ring");
         assert_eq!(
             got,
             vec![(synthetic_base(42), 123)],
@@ -241,7 +244,8 @@ fn sidecar_rollback_is_recoverable_no_permanent_wedge() {
     );
 
     let mut got = Vec::new();
-    ring.drain(|base, packed| got.push((base, packed)));
+    ring.try_drain(|base, packed| got.push((base, packed)))
+        .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!(
         got,
         vec![(synthetic_base(42), 123)],
@@ -273,6 +277,7 @@ fn repeated_sidecar_rollback_cycles_never_corrupt_cursors() {
     // After 5 simulated failed attempts, a real push must still land cleanly.
     assert!(ring.push(synthetic_base(7), 700));
     let mut got = Vec::new();
-    ring.drain(|base, packed| got.push((base, packed)));
+    ring.try_drain(|base, packed| got.push((base, packed)))
+        .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!(got, vec![(synthetic_base(7), 700)]);
 }

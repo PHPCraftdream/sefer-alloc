@@ -125,7 +125,7 @@ impl HeapCore {
         // bases that go fully empty (`live_count` hits 0) during this drain
         // pass, to finalize via `release_or_pool_empty_segment` AFTER the
         // drain fully returns. This MUST be deferred, not done inline: a
-        // single `overflow.drain(...)` call can process entries targeting
+        // single `overflow.try_drain(...)` call can process entries targeting
         // MANY different segment bases, and the SAME base can appear in
         // multiple entries. If base X goes empty at entry #2 of 5 targeting
         // base X, calling `release_or_pool_empty_segment(base X)` right there
@@ -271,6 +271,17 @@ impl HeapCore {
             }
         };
 
+        // R2-13: `try_drain` returns `None` when this ring's
+        // exclusive-consumer token is already held (a reentrant drain
+        // racing itself through a callback that re-enters the allocator's
+        // own slow paths — the single-consumer requirement is now ENFORCED
+        // by the token instead of assumed from this call site). The busy
+        // outcome is a benign skip: leave `overflow_tail_cache` untouched
+        // so `is_likely_empty` keeps comparing the stale cache against a
+        // possibly-advanced `tail` and re-triggers the full drain on the
+        // next opportunistic call — the same "a later drain picks it up"
+        // liveness contract the unpublished-slot stop already relies on.
+
         #[cfg(feature = "fastbin")]
         {
             // No "class `c` currently being refilled" context exists at this
@@ -280,7 +291,7 @@ impl HeapCore {
             // refill) — this drain reclaims entries of ANY class, so the
             // predicate unconditionally checks the magazine-residency bitmap,
             // mirroring `dbg_drain_all_rings_impl`'s general-purpose pattern.
-            self.overflow_tail_cache = overflow.drain(|base, packed| {
+            if let Some(stop) = overflow.try_drain(|base, packed| {
                 if AllocCore::reclaim_offset_checked(base, packed, &|ptr, _k| {
                     let pbase = os::segment_base_of_ptr(ptr);
                     let poff = (ptr as usize - pbase as usize) as u32;
@@ -290,15 +301,19 @@ impl HeapCore {
                 }) {
                     on_reclaimed(base, packed);
                 }
-            });
+            }) {
+                self.overflow_tail_cache = stop;
+            }
         }
         #[cfg(not(feature = "fastbin"))]
         {
-            self.overflow_tail_cache = overflow.drain(|base, packed| {
+            if let Some(stop) = overflow.try_drain(|base, packed| {
                 if AllocCore::reclaim_offset(base, packed) {
                     on_reclaimed(base, packed);
                 }
-            });
+            }) {
+                self.overflow_tail_cache = stop;
+            }
         }
 
         // R11-2 (Bug 2): finalize each emptied base now that the drain has

@@ -87,7 +87,7 @@ fn dbg_reserve_unpublished_for_test_still_works_within_inline_tier() {
     ring.dbg_reserve_unpublished_for_test();
 
     let mut reclaimed = 0u32;
-    let stop = ring.drain(|_, _| reclaimed += 1);
+    let stop = ring.try_drain(|_, _| reclaimed += 1);
     assert_eq!(reclaimed, 0, "the reserved-but-unpublished slot must not be reclaimed");
-    assert_eq!(stop, 0, "drain must stop at the unpublished slot (index 0)");
+    assert_eq!(stop, Some(0), "drain must stop at the unpublished slot (index 0)");
 }

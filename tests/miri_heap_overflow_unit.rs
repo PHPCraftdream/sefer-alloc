@@ -107,7 +107,7 @@ fn heap_overflow_concurrent_push_drain_no_ub() {
     tb.join().unwrap();
 
     let mut seen = std::collections::HashMap::new();
-    ring.drain(|base, packed| {
+    ring.try_drain(|base, packed| {
         // UNTORN check: `base`'s tag (recovered from the synthetic address)
         // must match `packed` exactly, by construction of how they were
         // pushed together above.
@@ -117,7 +117,8 @@ fn heap_overflow_concurrent_push_drain_no_ub() {
             "torn entry: base tag {tag} paired with packed {packed} (expected {tag})"
         );
         *seen.entry(tag).or_insert(0u32) += 1;
-    });
+    })
+    .expect("drain must not be busy on this single-threaded test ring");
 
     assert_eq!(
         seen.len(),
@@ -146,9 +147,10 @@ fn heap_overflow_sequential_push_drain_no_ub() {
         assert!(ring.push(synthetic_base(i), i as u32));
     }
     let mut count = 0u32;
-    ring.drain(|_base, _packed| {
+    ring.try_drain(|_base, _packed| {
         count += 1;
-    });
+    })
+    .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!(
         count, 8,
         "first drain must reclaim exactly the 8 pushed entries"
@@ -156,9 +158,10 @@ fn heap_overflow_sequential_push_drain_no_ub() {
 
     // Second drain (nothing pushed since) must be a no-op.
     let mut second_count = 0u32;
-    ring.drain(|_base, _packed| {
+    ring.try_drain(|_base, _packed| {
         second_count += 1;
-    });
+    })
+    .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!(
         second_count, 0,
         "drain of an already-drained ring must reclaim nothing"

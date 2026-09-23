@@ -31,7 +31,7 @@ impl HeapCore {
     /// between this load and the array index below) resolves to either the
     /// SAME heap (harmless) or a DIFFERENT live heap's slot (the pushed
     /// entry sits in the wrong heap's overflow ring, drained on ITS next
-    /// opportunistic pass — not a correctness hazard: `HeapOverflow::drain`'s
+    /// opportunistic pass — not a correctness hazard: `HeapOverflow::try_drain`'s
     /// `reclaim_offset(_checked)` call independently re-validates `base`'s
     /// `magic`/`kind`/bounds before touching anything, exactly as the
     /// existing per-segment ring drain already does for the identical class

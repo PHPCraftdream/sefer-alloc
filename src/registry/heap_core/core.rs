@@ -518,7 +518,7 @@ pub struct HeapCore {
 
     /// RAD-4b (task #72): owner-private cache of the last `tail` value
     /// observed on this heap's slot-resident `HeapOverflow` ring, refreshed
-    /// from [`HeapOverflow::drain`]'s return value. Lets
+    /// from [`HeapOverflow::try_drain`](crate::registry::heap_overflow::HeapOverflow::try_drain)'s return value. Lets
     /// [`drain_heap_overflow`](Self::drain_heap_overflow) skip the full
     /// Acquire-pair drain protocol (and its unconditional `head.store`) with
     /// a single `Relaxed` load via
