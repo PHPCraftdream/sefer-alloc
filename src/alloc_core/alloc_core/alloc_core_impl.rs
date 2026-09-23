@@ -139,7 +139,7 @@ use crate::alloc_core::large_cache_mode::LargeCacheMode;
 // ---------------------------------------------------------------------------
 
 /// Immutable decay configuration, computed once at `AllocCore::new_with_config`
-/// from a [`LargeCacheConfig`](super::large_cache_config::LargeCacheConfig).
+/// from a [`LargeCacheConfig`](super::super::large_cache_config::LargeCacheConfig).
 /// Kept in its own struct to make the intent clear and to allow
 /// `dbg_set_decay_config` to swap it in tests.
 #[cfg(feature = "alloc-decommit")]
@@ -372,7 +372,7 @@ pub struct AllocCore {
     /// Set via [`LargeCacheConfig::budget_bytes`] passed to
     /// [`AllocCore::new_with_config`].
     ///
-    /// [`LargeCacheConfig::budget_bytes`]: super::large_cache_config::LargeCacheConfig::budget_bytes
+    /// [`LargeCacheConfig::budget_bytes`]: super::super::large_cache_config::LargeCacheConfig::budget_bytes
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) large_cache_budget_bytes: Option<usize>,
 
@@ -516,7 +516,7 @@ pub struct AllocCore {
     /// the stale-ring-while-pooled soundness argument, unchanged by this
     /// restructure).
     ///
-    /// [`SmallSegmentPoolConfig`]: super::small_segment_pool_config::SmallSegmentPoolConfig
+    /// [`SmallSegmentPoolConfig`]: super::super::small_segment_pool_config::SmallSegmentPoolConfig
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) pool_head: *mut u8,
 
@@ -662,9 +662,9 @@ pub struct AllocCore {
     /// R31-15 (task #486): a stable, process-wide-unique identity for THIS
     /// `AllocCore`, stamped once at construction ([`new_inner`](Self::new_inner))
     /// from [`DBG_RESERVATION_OWNER_ID_COUNTER`]'s `fetch_add`. Exists solely
-    /// to bind [`ReservedSmallSegment`](super::reserved_small_segment::ReservedSmallSegment)
+    /// to bind [`ReservedSmallSegment`](super::super::reserved_small_segment::ReservedSmallSegment)
     /// handles to the exact `AllocCore` that minted them — see
-    /// [`dbg_decomp_release`](super::alloc_core_small_pool::AllocCore::dbg_decomp_release)'s
+    /// [`dbg_decomp_release`](super::super::alloc_core_small_pool::AllocCore::dbg_decomp_release)'s
     /// doc comment for the soundness hole this closes (a handle minted by one
     /// `AllocCore` could otherwise be handed to a DIFFERENT `AllocCore`'s
     /// `dbg_decomp_release`, corrupting the wrong heap's pool/table state).

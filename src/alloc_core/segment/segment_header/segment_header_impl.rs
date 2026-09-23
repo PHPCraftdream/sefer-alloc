@@ -906,7 +906,7 @@ impl SegmentHeader {
 }
 
 /// X7 Ф1 (task #189) — the generation-table byte-level accessors moved to
-/// [`segment_header_gen_table`](super::segment_header_gen_table) (task
+/// [`segment_header_gen_table`](super::super::segment_header_gen_table) (task
 /// R6-CQ-7c's split); re-exported at this path (doc-hidden test-only
 /// forwarder — CLAUDE.md's "one file, one export" exception category 1) so
 /// existing callers of `sefer_alloc::alloc_core::segment_header::{gen_at,

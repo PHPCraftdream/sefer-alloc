@@ -1,11 +1,12 @@
 //! Small-path hot cluster of [`AllocCore`] (mechanical split of
 //! `alloc_core.rs`).
 //!
-//! This file holds the `impl AllocCore { .. }` block for the small-object
-//! alloc / dealloc / carve / segment-reserve hot path. The cross-thread
-//! reclaim, magazine batch, and diagnostics blocks live in their sibling
-//! files (`alloc_core_small_reclaim`, `alloc_core_small_magazine`,
-//! `alloc_core_small_diag`). Pure code-movement; no behavior changed.
+//! This module wires the small-object allocation path and re-exports the
+//! implementation in `alloc_core_small_impl.rs`.
+//! Free-list operations are grouped in `dealloc.rs`, optional directory
+//! maintenance in `directory.rs`, segment lookup in `find_segment.rs`, and
+//! reservation logic in `reserve.rs`. Cross-thread reclaim, magazine batch,
+//! and diagnostics remain in their sibling modules.
 
 // Mechanical-split siblings of the former flat `alloc_core_small.rs`.
 // `directory` keeps a `cfg` gate here (not only on its items) because the

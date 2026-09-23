@@ -8,13 +8,14 @@
 //! Membrane Inversion — the safe slot-table discipline governs OS memory
 //! instead of consuming `std` collections.
 //!
-//! ## This file is PURE SAFE DATA + ARITHMETIC
+//! ## Layout and access discipline
 //!
-//! Every raw memory touch goes through the [`node`](crate::alloc_core::node) seam. This
-//! file declares only `#[repr(C)]` struct layouts, `const` offsets, and
-//! methods that compute indices / route reads & writes through `Node`. There
-//! is NO `unsafe` here — so the crate's structural promise ("`unsafe` lives
-//! ONLY in `os` + `node`") is upheld by the compiler.
+//! [`SegmentHeader`] and its accessors are defined in
+//! `segment_header_impl.rs`; descriptor layouts are
+//! defined in `descriptors.rs`, with compile-time checks in
+//! `layout_asserts.rs`. Raw memory access is routed through the
+//! [`node`](crate::alloc_core::node) seam. This module wires those pieces
+//! together and preserves their `segment_header::` paths.
 //!
 //! ## Layout of a small segment
 //!
