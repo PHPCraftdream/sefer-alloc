@@ -42,8 +42,12 @@
 //! `foreign_or_unroutable_frees` is the field to alert on for a cross-thread-
 //! free leak under an `alloc-global`-without-`alloc-xthread` misconfiguration,
 //! and requires the `alloc-stats` feature to be populated).
-//! `stats()` is a handful of relaxed atomic loads (no locks, no allocation),
-//! safe to poll on a metrics-scrape timer (requires the `alloc-global` feature;
+//! `stats()` is lock-free and allocation-free, but its cost is
+//! feature-dependent: without `alloc-stats` it is a handful of relaxed atomic
+//! loads (O(1)); with `alloc-stats` on, the two hit counters are summed by an
+//! O(minted-slot-count) walk over registry slot metadata (see
+//! `SeferAlloc::stats`'s own doc for the precise contract). Safe to poll on a
+//! metrics-scrape timer either way (requires the `alloc-global` feature;
 //! runnable form in `tests/sefer_alloc_examples.rs`):
 //!
 //! ```text
@@ -239,7 +243,9 @@
 //    unsafe seam was removed in task #1306, together with numa-shim's
 //    `bind_range`). (under `numa-aware`)
 //
-//    Optional `class-aware-dirty` path (R12-7 stage 2, EXPERIMENTAL):
+//    Optional `class-aware-dirty` path (R12-7 stage 2; promoted into
+//                             `production` in R13-9/task #279 — no longer
+//                             experimental):
 //      * `alloc_core::platform::dirty_by_class` — dereferences the `OncePtrCell`-
 //                             published per-(segment, class) dirty-bit
 //                             sidecar pointer. (under `class-aware-dirty`)

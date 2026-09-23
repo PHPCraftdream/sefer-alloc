@@ -1,7 +1,9 @@
 #![allow(deprecated)]
 //! [`EpochRegion<T>`] — fixed-capacity, lock-free reads, writer-serialised
 //! writes, with `crossbeam-epoch` reclamation (Phase 3b-II), extended in
-//! Phase 7b with a **lock-free cross-thread removal** path.
+//! Phase 7b with a **cross-thread removal** path (the eviction CAS itself is
+//! lock-free; the remote bookkeeping afterward briefly takes a queue mutex —
+//! see "Writers serialised" below).
 //!
 //! **Status — legacy/research-tier:** superseded by the production `alloc-xthread`
 //! cross-thread free path; kept under the `experimental` feature for backward
@@ -9,10 +11,12 @@
 //! below. No new development is planned (see the `concurrent` module docs).
 //!
 //! This tier trades the zero-`unsafe` RCU of [`LockFreeRegion`](super::LockFreeRegion)
-//! (3b-I) for **O(1) per-slot writes** (no snapshot clone) at the cost of the
-//! crate's single confined `unsafe` organ, [`AtomicSlot<T>`] (see
-//! [`hand`](super::hand)). All pointer/`unsafe` work lives in that one module;
-//! this file is 100% safe code on top of [`AtomicSlot`]'s safe API.
+//! (3b-I) for **O(1) per-slot writes** (no snapshot clone) at the cost of a
+//! confined `unsafe` seam, [`AtomicSlot<T>`] (see [`hand`](super::hand)) —
+//! one of the crate's named `#![allow(unsafe_code)]` modules (see the unsafe
+//! inventory in `src/lib.rs`). All pointer/`unsafe` work of THIS tier lives in
+//! that one module; this file is 100% safe code on top of [`AtomicSlot`]'s
+//! safe API.
 //!
 //! ## Design
 //!
@@ -22,9 +26,13 @@
 //! - **Writers serialised** by an internal `Mutex` — but in Phase 7b the mutex
 //!   owns ONLY the free-list bookkeeping and the remote-free queue drain. The
 //!   eviction itself (value swap + generation bump) is a single atomic CAS in
-//!   [`AtomicSlot::try_evict_at`], which ANY thread may perform. So a
-//!   cross-thread [`remote_evict`](Self::remote_evict) NEVER takes the owner
-//!   mutex — it is lock-free.
+//!   [`AtomicSlot::try_evict_at`], which ANY thread may perform. A
+//!   cross-thread [`remote_evict`](Self::remote_evict) is therefore lock-free
+//!   ONLY in its eviction step: after a winning CAS the remover still
+//!   ENQUEUES the freed index into the `Mutex<Vec<u32>>` remote-free queue
+//!   (below) — a brief blocking section on the REMOTE thread. What
+//!   `remote_evict` never takes is the OWNER's writer mutex: the read path
+//!   and the value swap stay lock-free; the enqueue bookkeeping does not.
 //! - **Reads are lock-free:** a reader pins an epoch guard and calls
 //!   [`AtomicSlot::read_with`]; no mutex is taken.
 //!
@@ -105,10 +113,12 @@ struct FreeState {
 
 /// A fixed-capacity, handle-addressed store of `T` with **lock-free reads**,
 /// writer-serialised writes, and `crossbeam-epoch` reclamation — plus (Phase 7b)
-/// a **lock-free cross-thread removal** path.
+/// a cross-thread removal path whose eviction CAS is lock-free (the
+/// remote-free enqueue afterward briefly takes a queue mutex).
 ///
-/// This is Phase 3b-II (extended in 7b): the lock-free design that admits the
-/// crate's single confined `unsafe` organ (`AtomicSlot<T>`) in exchange for
+/// This is Phase 3b-II (extended in 7b): the design admits a confined
+/// `unsafe` seam (`AtomicSlot<T>`, one of the crate's named
+/// `#![allow(unsafe_code)]` modules) in exchange for
 /// O(1) per-slot writes (no snapshot clone, unlike
 /// [`LockFreeRegion`](super::LockFreeRegion)).
 ///
@@ -502,12 +512,14 @@ impl<T> EpochRegion<T> {
         true
     }
 
-    /// **Phase 7b:** lock-free cross-thread removal. Any thread (owner OR
+    /// **Phase 7b:** cross-thread removal. Any thread (owner OR
     /// remote) may call this to remove `handle` WITHOUT taking the owner's
     /// writer mutex. Performs the generation-CAS eviction (the single
-    /// linearization point), and on success enqueues the freed index into the
-    /// per-shard remote-free queue (which the owner drains on its next op) and
-    /// decrements `len`. Returns `true` if this call evicted a live value,
+    /// linearization point — the lock-free part of the path), and on success
+    /// enqueues the freed index into the per-shard remote-free queue (a
+    /// `Mutex<Vec<u32>>`: a brief blocking lock on the CALLING thread, which
+    /// the owner drains on its next op) and decrements `len`. Returns `true`
+    /// if this call evicted a live value,
     /// `false` if the handle was already stale/removed/out-of-range (I2).
     ///
     /// This is the path [`ShardedRegion`](crate::concurrent::ShardedRegion)

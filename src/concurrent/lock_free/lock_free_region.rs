@@ -161,11 +161,15 @@ impl<T> Clone for Snapshot<T> {
 /// **Diverges from the epoch tier** ([`EpochRegion`](crate::concurrent::EpochRegion),
 /// `epoch::hand`'s `try_evict_at`): that tier retires the slot that LANDS ON
 /// `u32::MAX` (i.e. at the `MAX - 1 → MAX` transition), one reuse earlier
-/// than this tier. Both are sound (neither ever mints or hands out a live
-/// handle at generation `u32::MAX`); they simply differ on whether generation
-/// `u32::MAX` itself is ever occupied again after being reached. Not yet
-/// unified — noted here so the divergence is a documented choice, not a
-/// silent inconsistency.
+/// than this tier — so the epoch tier never mints a handle at `u32::MAX`.
+/// This tier DOES hand out exactly ONE live handle at generation `u32::MAX`:
+/// the `MAX - 1 → MAX` slot is threaded back onto the free list for its one
+/// final reuse, and only the removal of THAT handle (found at generation
+/// `u32::MAX`) retires the slot. Both are sound — generation wrap (and
+/// therefore ABA) is impossible in either; they simply differ on whether
+/// generation `u32::MAX` itself is ever occupied again after being reached.
+/// Not yet unified — noted here so the divergence is a documented choice, not
+/// a silent inconsistency.
 ///
 /// ## Concurrency notes
 ///

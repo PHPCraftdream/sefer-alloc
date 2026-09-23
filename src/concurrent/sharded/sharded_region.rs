@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 //! [`ShardedRegion<T>`] — N-way parallel writes via thread-local shard binding,
-//! with **lock-free cross-thread removal** and a **shard lifecycle** (Phase 7b,
+//! with cross-thread removal (lock-free eviction CAS, blocking remote-free
+//! enqueue) and a **shard lifecycle** (Phase 7b,
 //! `experimental`; supersedes 7a's claim-and-never-release model).
 //!
 //! **Status — legacy/research-tier:** superseded by the production `alloc-xthread`
@@ -46,10 +47,12 @@
 //! - if it equals the CALLING thread's claimed shard → owner path
 //!   ([`EpochRegion::remove`], which takes the shard's writer mutex for
 //!   free-list bookkeeping only; the evict itself is a CAS).
-//! - otherwise → the **lock-free** [`EpochRegion::remote_evict`], which performs
-//!   the generation-CAS eviction WITHOUT taking the owner shard's writer mutex
-//!   and enqueues the freed index into a per-shard remote-free queue the owner
-//!   drains later.
+//! - otherwise → [`EpochRegion::remote_evict`], which performs the
+//!   generation-CAS eviction WITHOUT taking the owner shard's writer mutex
+//!   (only the eviction CAS is lock-free), then enqueues the freed index into
+//!   a per-shard remote-free queue (`Mutex<Vec<u32>>`) — a brief blocking
+//!   lock on the REMOTE thread, never on the owner shard's writer mutex —
+//!   for the owner to drain later.
 //!
 //! This is the 7b win: a non-owner-thread remove does not contend on the owner
 //! shard's lock.
@@ -183,8 +186,9 @@ const MAX_SHARDS: usize = u16::MAX as usize;
 /// router that lazily binds each writer thread to one shard, **releasable** on
 /// thread exit (Phase 7b).
 ///
-/// See the [module docs](self) for the design, the router, the lock-free
-/// cross-thread removal, and the shard lifecycle.
+/// See the [module docs](self) for the design, the router, the cross-thread
+/// removal (lock-free eviction CAS; blocking remote-free enqueue), and the
+/// shard lifecycle.
 #[deprecated(
     since = "0.1.0",
     note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
@@ -426,10 +430,12 @@ impl<T> ShardedRegion<T> {
     /// **7b routing:** if `handle.shard` equals the CALLING thread's claimed
     /// shard, this takes the OWNER path ([`EpochRegion::remove`], which takes
     /// the shard's writer mutex for free-list bookkeeping only — the evict
-    /// itself is a CAS). Otherwise it takes the **lock-free** remote path
-    /// ([`EpochRegion::remote_evict`]), which performs the generation-CAS
-    /// eviction WITHOUT the owner shard's writer mutex and enqueues the freed
-    /// index for the owner to drain later. A thread that has not yet claimed a
+    /// itself is a CAS). Otherwise it takes the remote path
+    /// ([`EpochRegion::remote_evict`]), which performs the lock-free
+    /// generation-CAS eviction WITHOUT the owner shard's writer mutex, then
+    /// enqueues the freed index (briefly taking the remote-free queue's
+    /// `Mutex<Vec<u32>>` on the CALLING thread) for the owner to drain later.
+    /// A thread that has not yet claimed a
     /// shard is treated as remote for every handle.
     ///
     /// If `handle.shard` is out of range, this returns `false` rather than

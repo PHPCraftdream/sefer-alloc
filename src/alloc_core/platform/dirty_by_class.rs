@@ -106,9 +106,11 @@
 //! owner-only sidecars' leak a bug (R2-12) cannot materialise this sidecar
 //! at all (a standalone core's `dirty_by_class` handle is never bound).
 //!
-//! `class-aware-dirty` is EXPERIMENTAL: opt-in, additive over `alloc-xthread`
-//! + `alloc-segment-directory`, NOT part of `production`. With the feature
-//! OFF, none of this module's code exists in the binary and
+//! `class-aware-dirty` is opt-in and additive over `alloc-xthread` +
+//! `alloc-segment-directory`; since R13-9 (task #279) it is part of the
+//! `production` bundle (see `Cargo.toml`'s `production = [...]` list), so a
+//! plain `--features production` build compiles this module in. With the
+//! feature OFF, none of this module's code exists in the binary and
 //! `HeapSlotRemote`/`AllocCore` are byte-for-byte unchanged.
 
 // This file is a named `unsafe` seam (mirrors `alloc_core::os`'s directory-

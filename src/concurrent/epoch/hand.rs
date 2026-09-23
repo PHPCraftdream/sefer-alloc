@@ -1,9 +1,17 @@
-//! [`AtomicSlot<T>`] — the crate's single confined `unsafe` organ (Phase 3b-II).
+//! [`AtomicSlot<T>`] — one of the crate's confined `unsafe` seams (Phase
+//! 3b-II), the one on the legacy/research-tier `experimental` path.
 //!
-//! This is the **only** module in the whole crate with
-//! `#![allow(unsafe_code)]`. The crate is `#![forbid(unsafe_code)]` everywhere
-//! else, so the structural promise "the `unsafe` is one module" is
-//! **compiler-checked**, not asserted in prose.
+//! This module carries `#![allow(unsafe_code)]` under the `experimental`
+//! feature. The crate root does NOT blanket-`forbid` `unsafe`: with no
+//! features it is `#![forbid(unsafe_code)]`; with `experimental`,
+//! `alloc-core`, or `alloc-global` on it is `#![deny(unsafe_code)]`, and
+//! several named seams (this module plus the production `alloc_core::
+//! platform::*`, `global::*`, and `registry::bootstrap`/`heap_*` modules)
+//! lift the deny with their own module-level `#![allow(unsafe_code)]` — see
+//! the unsafe inventory in `src/lib.rs`. The structural promise "the `unsafe`
+//! is confined to named modules" is **compiler-checked** in every
+//! configuration, not asserted in prose; the set of named modules is simply
+//! larger than this one.
 //!
 //! [`AtomicSlot<T>`] hides ALL pointer/`unsafe` work behind a minimal, total,
 //! safe-to-use API. [`EpochRegion`](crate::concurrent::EpochRegion) is then
@@ -35,11 +43,11 @@
 //! pinned guard.
 
 // The crate is `#![deny(unsafe_code)]` with `experimental` on (see
-// `src/lib.rs`); this is the ONE documented exception: the confined `Hand`
-// organ. `allow` lifts the crate-level `deny` for this file only, so the
-// confinement is enforced structurally by the compiler — `unsafe` anywhere
-// else is a hard error. (With no features the crate is `forbid` and this
-// module is not compiled at all.)
+// `src/lib.rs`); this module is ONE of the documented seams lifting that deny
+// (the production path lifts it in its own modules — see the inventory in
+// `src/lib.rs`). `allow` lifts the crate-level `deny` for this file, so
+// `unsafe` anywhere OUTSIDE a named seam is a hard error. (With no features
+// the crate is `forbid` and this module is not compiled at all.)
 #![allow(unsafe_code)]
 
 use core::sync::atomic::Ordering;
@@ -101,10 +109,10 @@ pub(crate) enum EvictOutcome {
 ///   single linearization point of a removal.
 ///
 /// `T` is stored on the heap behind a `crossbeam_epoch::Atomic<T>`; the slot
-/// itself is plain data (an atomic `u32` and an atomic-pointer word) and is
-/// `Send + Sync` for every `T` (the slot does not own a `T` until `install`,
-/// and the pointed-to `T` is reclaimed by the epoch collector, not dropped by
-/// the slot).
+/// itself is plain data (an atomic `u32` and an atomic-pointer word). Its
+/// hand-written `Send`/`Sync` impls (bottom of this file) are BOUNDED:
+/// `AtomicSlot<T>` is `Send`/`Sync` only where `T: Send + Sync` — an
+/// unbounded impl would let a non-`Send` `T` (e.g. `Rc`) cross threads.
 pub(crate) struct AtomicSlot<T> {
     /// Generation of the current occupant. Bumped (Release) on every eviction
     /// so handles minted at an older generation go stale (I3 — no ABA). A
@@ -532,8 +540,9 @@ impl<T> AtomicSlot<T> {
 // Hand-written `Send`/`Sync`: an `AtomicSlot<T>` does not own a `T` while
 // vacant, and while occupied the `T` is shared (read-only to readers) and
 // reclaimed by the epoch collector (not dropped by the slot). The slot is
-// therefore `Send + Sync` for every `T` (matches `crossbeam_epoch::Atomic<T>`,
-// which is unconditionally `Send + Sync`).
+// `Send + Sync` only where `T: Send + Sync` (matching the bounded
+// `crossbeam_epoch::Atomic<T>` impls), NOT for every `T` — see the impl
+// SAFETY notes below for why both bounds are required.
 //
 // PHASE 7b RE-AUDIT (relaxed "any thread may evict via try_evict_at" contract):
 // pre-7b the ONLY mutator was the single writer holding the region's writer

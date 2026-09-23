@@ -262,10 +262,14 @@ impl LargeCacheConfig {
     /// `0` is a valid, least-surprising finite ceiling: it means "cache
     /// nothing" — every deposit immediately fails the budget check and the
     /// span is released to the OS instead of cached (large-cache disabled).
-    /// This is a stored `Some(0)`, distinct from the default `None`
-    /// (unbounded, any span admissible). If you want *unbounded* caching,
-    /// simply don't call `budget_bytes` (or don't call it with `0`) — the
-    /// default already is unbounded.
+    /// This is a stored `Some(0)`, distinct from the default `None`. The
+    /// default's RESOLVED meaning is feature-dependent: with
+    /// `large-cache-extended` OFF, `None` resolves to unbounded (any span
+    /// admissible); with `large-cache-extended` ON, an unset budget resolves
+    /// to the FINITE `DEFAULT_EXTENDED_BUDGET_BYTES` (see the
+    /// `resolved_budget_bytes` doc and R14-5), so under that feature the
+    /// cache is always budget-bounded and *unbounded* caching is not
+    /// available.
     ///
     /// (Before task #136 this method treated `0` as an alias for `None`
     /// — i.e. "unlimited" — which is the opposite of what `0` intuitively
@@ -273,18 +277,25 @@ impl LargeCacheConfig {
     /// `LargeCacheConfig` API, so it is not a breaking change for any
     /// released version.)
     ///
-    /// Default: `None` (unbounded — any span is admissible).
+    /// Default: stored `None` — resolves to unbounded only with
+    /// `large-cache-extended` OFF (see above for the feature-dependent
+    /// resolved meaning).
     #[must_use]
     pub const fn budget_bytes(mut self, bytes: usize) -> Self {
         self.budget_bytes = Some(bytes);
         self
     }
 
-    /// Set the headroom floor in bytes.
+    /// Set the decay headroom target in bytes.
     ///
-    /// The decay step does not release bytes below this level. A higher
-    /// headroom means the cache retains more memory between ticks (less
-    /// aggressive trimming).
+    /// This is the decay step's trigger/target, NOT a hard floor the cache is
+    /// never released below. A tick fires only when cached bytes EXCEED this
+    /// level, and then releases `decay_rate_percent` of the excess — but
+    /// eviction releases WHOLE FIFO-oldest spans, so a tick can overshoot and
+    /// leave the cache BELOW this level, and other paths may take it lower
+    /// still (a deposit that fails the budget check evicts to fit; teardown
+    /// drains the cache entirely). A higher headroom means the cache retains
+    /// more memory between ticks (less aggressive trimming).
     ///
     /// Default: 256 MiB.
     #[must_use]

@@ -2355,3 +2355,435 @@ fn no_ring_overflow_leak_overclaim_in_alloc_stats_docs() {
          `cross_thread_frees_lost` as the field to check for an actual loss"
     );
 }
+
+// ── R2-23 (independent src review round 2): doc/code contradiction guards ────
+
+/// Read a source file and return its DOC-COMMENT PROSE with runs of
+/// whitespace collapsed, by delegating to the shared [`flatten_whitespace`].
+///
+/// `flatten_whitespace` by itself makes a token check resilient to
+/// markdown-style line-wrapping, but a WRAPPED doc comment still carries its
+/// `//!` / `///` leader on every continuation line, so a sentence that wraps
+/// mid-phrase never matches a plain whitespace collapse of the raw file text
+/// (raw: `lock-free` + `//!` + `ONLY in its eviction step`; prose:
+/// `lock-free ONLY in its eviction step`). Dropping the leaders first means an
+/// R2-23 pin written as ONE sentence survives a later re-wrap of the source
+/// line without anyone having to reword the prose. Non-doc lines (code and
+/// `//` comments) are passed through untouched, so raw-code pins (the bounded
+/// `unsafe impl` lines in the epoch-hand guard below) stay exact.
+fn doc_prose(path: &Path) -> String {
+    let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let leaders_stripped: Vec<&str> = text
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            trimmed
+                .strip_prefix("///")
+                .or_else(|| trimmed.strip_prefix("//!"))
+                .unwrap_or(line)
+        })
+        .collect();
+    flatten_whitespace(&leaders_stripped.join("\n"))
+}
+
+/// R2-23 (independent src review round 2) — `concurrent::epoch::hand`'s module
+/// doc described `AtomicSlot` as the ONE `unsafe` module in the crate under a
+/// blanket `#![forbid(unsafe_code)]` and claimed the type was `Send + Sync`
+/// "for every `T`", while the code has always been bounded:
+/// `unsafe impl<T: Send + Sync> Send/Sync for AtomicSlot<T>`. The crate root
+/// (`src/lib.rs`) actually uses a CONDITIONAL `forbid`/`deny` with a
+/// multi-module seam inventory, and this module is one of several confined
+/// seams. The contradiction was fixed DOC-SIDE ONLY, so this guard pins both
+/// directions: the impls must stay exactly this bounded (a widened
+/// `unsafe impl<T> Send` would be a soundness regression smuggled in as a
+/// "doc fix"), and the module doc must describe itself as ONE seam and state
+/// the `T: Send + Sync` bound.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn epoch_hand_doc_matches_conditional_confinement_and_bounded_impls() {
+    let path = src_dir().join("concurrent").join("epoch").join("hand.rs");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let flat = doc_prose(&path);
+
+    // The bounded impls are checked RAW: they are single-line code, not prose,
+    // and must keep this exact shape.
+    for impl_src in [
+        "unsafe impl<T: Send + Sync> Send for AtomicSlot<T>",
+        "unsafe impl<T: Send + Sync> Sync for AtomicSlot<T>",
+    ] {
+        assert!(
+            text.contains(impl_src),
+            "src/concurrent/epoch/hand.rs: the `{impl_src}` impl must stay bounded \
+             by `T: Send + Sync` (R2-23) — the stale doc claimed it was \
+             unconditional, but the fix was DOC-SIDE ONLY; a widened impl here \
+             would trade a wording bug for a soundness bug.",
+        );
+    }
+
+    // The module doc must describe itself as ONE of several confined seams
+    // (inventoried in src/lib.rs) — not the only one.
+    assert!(
+        flat.contains("one of the crate's confined `unsafe` seams"),
+        "src/concurrent/epoch/hand.rs: the module doc must describe \
+         `AtomicSlot` as ONE of the crate's confined `unsafe` seams (the \
+         inventory lives in src/lib.rs), not as the sole such module (R2-23) — \
+         the crate root's `forbid(unsafe_code)` is conditional and several \
+         modules lift it.",
+    );
+    // ... and it must state the bound the impls actually carry.
+    assert!(
+        flat.contains("only where `T: Send + Sync`"),
+        "src/concurrent/epoch/hand.rs: the `Send`/`Sync` description must state \
+         that `AtomicSlot<T>` is `Send`/`Sync` only where `T: Send + Sync` — \
+         the impls are bounded, so prose claiming it holds for every `T` is a \
+         doc/code contradiction (R2-23).",
+    );
+
+    // Negatives — the crate root uses conditional forbid/deny with several
+    // seams, and these impls are bounded.
+    for stale in [
+        "only** module in the whole crate",
+        "`#![forbid(unsafe_code)]` everywhere",
+        "the ONE documented exception",
+        "is `Send + Sync` for every `T`",
+        "which is unconditionally `Send + Sync`",
+    ] {
+        assert!(
+            !flat.contains(stale),
+            "src/concurrent/epoch/hand.rs: the stale claim `{stale}` reappeared \
+             (R2-23). `AtomicSlot` is ONE of several confined unsafe seams (the \
+             crate root's forbid is conditional, not `everywhere`), and it is \
+             `Send`/`Sync` only for `T: Send + Sync`, not unconditionally.",
+        );
+    }
+}
+
+/// R2-23 (independent src review round 2) — both cross-thread eviction paths
+/// (`EpochRegion::remote_evict` in `concurrent/epoch/epoch_region.rs` and its
+/// `ShardedRegion` counterpart in `concurrent/sharded/sharded_region.rs`) were
+/// documented as blanket "lock-free" paths. In reality only the eviction CAS
+/// is lock-free: after a winning compare-and-swap the remover ENQUEUES the
+/// freed index into a `Mutex<Vec<u32>>` remote-free queue, i.e. a brief
+/// blocking lock on the CALLING (remote) thread. This guard forbids the stale
+/// blanket claims and requires each file's doc to name the blocking section
+/// and the queue, so a reader cannot re-derive "it is lock-free" from the
+/// prose.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn remote_evict_doc_names_the_blocking_bookkeeping() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    // (file, positive needles that file's doc must carry)
+    let sites: &[(&str, &[&str])] = &[
+        (
+            "src/concurrent/epoch/epoch_region.rs",
+            &[
+                "lock-free ONLY in its eviction step",
+                "brief blocking section on the REMOTE thread",
+                "`Mutex<Vec<u32>>`",
+            ],
+        ),
+        (
+            "src/concurrent/sharded/sharded_region.rs",
+            &["only the eviction CAS is lock-free", "brief blocking"],
+        ),
+    ];
+
+    for (rel, positives) in sites {
+        let path = manifest.join(rel);
+        let flat = doc_prose(&path);
+
+        for stale in [
+            "it is lock-free",
+            "the **lock-free** [`EpochRegion::remote_evict`]",
+        ] {
+            assert!(
+                !flat.contains(stale),
+                "{rel}: still carries the stale blanket claim `{stale}` about the \
+                 cross-thread `remote_evict` path (R2-23). Only the eviction CAS \
+                 is lock-free; the remote-free ENQUEUE takes the \
+                 `Mutex<Vec<u32>>` queue lock on the CALLING (remote) thread, so \
+                 the doc must not describe the whole path as lock-free.",
+            );
+        }
+
+        for needle in positives.iter().copied() {
+            assert!(
+                flat.contains(needle),
+                "{rel}: the `remote_evict` doc must name the blocking bookkeeping \
+                 — missing `{needle}` (R2-23). Only the eviction CAS is \
+                 lock-free; the remote-free enqueue takes the \
+                 `Mutex<Vec<u32>>` queue lock (a brief blocking section on the \
+                 REMOTE thread), and the prose has to say so.",
+            );
+        }
+    }
+}
+
+/// R2-23 (independent src review round 2) — `concurrent::lock_free`'s
+/// generation-saturation doc claimed that neither region tier "ever mints or
+/// hands out a live handle at generation" `u32::MAX`. `LockFreeRegion` DOES:
+/// a slot at `u32::MAX - 1` is bumped to `u32::MAX` and threaded back onto the
+/// free list for exactly one final reuse, and only the removal of THAT handle
+/// retires the slot. (The epoch tier diverges and retires one reuse earlier.)
+/// This guard forbids the stale blanket claim and requires the doc to state
+/// the real policy, so the divergence with the epoch tier stays a documented
+/// choice rather than a silent contradiction.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn lock_free_generation_max_doc_matches_the_final_reuse_policy() {
+    let path = src_dir()
+        .join("concurrent")
+        .join("lock_free")
+        .join("lock_free_region.rs");
+    let flat = doc_prose(&path);
+
+    assert!(
+        !flat.contains("neither ever mints or hands out a live handle at generation"),
+        "src/concurrent/lock_free/lock_free_region.rs: the stale blanket claim \
+         that neither tier hands out a live handle at generation `u32::MAX` \
+         reappeared (R2-23). `LockFreeRegion` DOES hand out exactly one live \
+         handle at generation `u32::MAX` — the MAX-1 → MAX slot's one final \
+         reuse, removed (and the slot retired) at insert_reusing/remove.",
+    );
+
+    assert!(
+        flat.contains("exactly ONE live handle at generation `u32::MAX`"),
+        "src/concurrent/lock_free/lock_free_region.rs: the generation-saturation \
+         doc must state that this tier hands out exactly ONE live handle at \
+         generation `u32::MAX` (the MAX-1 → MAX slot's one final reuse, removed \
+         at insert_reusing/remove) (R2-23).",
+    );
+}
+
+/// R2-23 (independent src review round 2) — `alloc_core::platform::dirty_by_class`
+/// still described `class-aware-dirty` as "EXPERIMENTAL: opt-in ... NOT part of
+/// `production`", and `src/lib.rs`'s feature-grid bullet called it experimental,
+/// even though the feature joined the `production` bundle back in R13-9/task
+/// #279. `Cargo.toml`'s `production = [...]` line is the single source of
+/// truth, so this guard parses it (`parse_production_feature_list`) and then
+/// pins every prose site that contradicts it, in both directions: the stale
+/// EXPERIMENTAL/not-in-production claims are forbidden, and the current
+/// "part of the `production` bundle, promoted since R13-9" wording is
+/// required.
+///
+/// Doc-only guard: reads Cargo.toml + source text, never links the crate, so
+/// it runs in every feature configuration.
+#[test]
+fn class_aware_dirty_doc_status_matches_cargo_toml_production() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo = fs::read_to_string(manifest.join("Cargo.toml")).expect("read Cargo.toml");
+    let features = parse_production_feature_list(&cargo);
+    assert!(
+        features.iter().any(|f| f == "class-aware-dirty"),
+        "Cargo.toml's `production = [...]` bundle no longer lists \
+         `class-aware-dirty` — if the manifest ever changes, this pin's doc \
+         wording (the feature IS part of `production`, promoted in \
+         R13-9/task #279) must be revisited (R2-23).",
+    );
+
+    let path = src_dir()
+        .join("alloc_core")
+        .join("platform")
+        .join("dirty_by_class.rs");
+    let flat = doc_prose(&path);
+
+    for stale in ["NOT part of `production`", "is EXPERIMENTAL: opt-in"] {
+        assert!(
+            !flat.contains(stale),
+            "src/alloc_core/platform/dirty_by_class.rs: still describes \
+             `class-aware-dirty` with the pre-R13-9 status claim `{stale}` \
+             (R2-23). The feature joined the `production` bundle in \
+             R13-9/task #279, so it is neither outside `production` nor \
+             experimental.",
+        );
+    }
+
+    // The review paraphrased this as "part of the `production` bundle since
+    // R13-9"; the source states the same fact in its own word order, so the
+    // pin is the verbatim landed sentence (which also names task #279).
+    assert!(
+        flat.contains("since R13-9 (task #279) it is part of the `production` bundle"),
+        "src/alloc_core/platform/dirty_by_class.rs: must state that \
+         `class-aware-dirty` is part of the `production` bundle, promoted in \
+         R13-9/task #279 (R2-23) — Cargo.toml's `production = [...]` is the \
+         source of truth and this module's status prose contradicts it.",
+    );
+
+    let lib_rs_path = manifest.join("src").join("lib.rs");
+    let lib_rs = fs::read_to_string(&lib_rs_path).unwrap_or_else(|e| panic!("read lib.rs: {e}"));
+    let line = lib_rs
+        .lines()
+        .find(|l| l.contains("Optional `class-aware-dirty` path"))
+        .expect("src/lib.rs must keep the `Optional `class-aware-dirty` path` feature-grid bullet (R2-23)");
+    assert!(
+        !line.contains("EXPERIMENTAL"),
+        "src/lib.rs's `Optional `class-aware-dirty` path` bullet still calls the \
+         feature EXPERIMENTAL (R2-23) — it was promoted into `production` in \
+         R13-9/task #279.",
+    );
+    assert!(
+        line.contains("promoted into"),
+        "src/lib.rs's `Optional `class-aware-dirty` path` bullet must say the \
+         feature was promoted into `production` (R13-9/task #279), not merely \
+         list it (R2-23) — this is the crate root's own status call and it must \
+         match Cargo.toml's `production = [...]`.",
+    );
+}
+
+/// R2-23 (independent src review round 2) — the crate-root `stats()` blurb in
+/// `src/lib.rs` described the snapshot as "a handful of relaxed atomic loads
+/// (no locks, no allocation), safe to poll" flat out. With `alloc-stats` on,
+/// the two hit counters are summed by an O(minted-slot-count) walk over
+/// registry slot metadata, so the cost is feature-dependent and the blurb
+/// must carry that caveat. This guard forbids the flat "handful of loads"
+/// claim and requires BOTH halves of the real contract: the
+/// `alloc-stats`-on O(minted-slot-count) walk, and the feature-OFF
+/// handful-of-loads case it generalises from.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn crate_root_stats_blurb_matches_method_level_contract() {
+    let path = src_dir().join("lib.rs");
+    let flat = doc_prose(&path);
+
+    assert!(
+        !flat.contains(
+            "is a handful of relaxed atomic loads (no locks, no allocation), safe to poll"
+        ),
+        "src/lib.rs: the crate-root `stats()` blurb must not describe the \
+         alloc-stats walk as a flat handful of loads (R2-23) — with \
+         `alloc-stats` on the two hit counters are summed by an \
+         O(minted-slot-count) walk over registry slot metadata, so the cost is \
+         feature-dependent and `safe to poll` needs that caveat.",
+    );
+
+    for needle in [
+        "O(minted-slot-count) walk",
+        "without `alloc-stats` it is a handful of relaxed atomic loads",
+    ] {
+        assert!(
+            flat.contains(needle),
+            "src/lib.rs: the crate-root `stats()` blurb must spell out the \
+             feature-dependent contract — missing `{needle}` (R2-23). \
+             `SeferAlloc::stats`'s own doc states the O(minted-slot-count) \
+             walk under `alloc-stats` and the handful of relaxed atomic loads \
+             without it; the crate-root summary must not contradict it.",
+        );
+    }
+}
+
+/// R2-23 (independent src review round 2) — `alloc_core::config::large_cache_config`
+/// carried two contradictions about the extended large-cache budget: that
+/// "the default already is unbounded" (with `large-cache-extended` OFF the
+/// default resolves to unbounded, but with it ON the default resolves to the
+/// FINITE `DEFAULT_EXTENDED_BUDGET_BYTES`, so the RESOLVED meaning is
+/// feature-dependent), and that "the decay step does not release bytes below
+/// this level" (the decay trigger/target is an anti-thrashing floor, NOT a
+/// hard floor the cache is held at — eviction releases whole FIFO-oldest
+/// spans, so a tick can overshoot). This guard forbids both stale claims and
+/// requires the doc to name the feature-dependent default, the constant, the
+/// trigger/target-vs-hard-floor distinction, and the overshoot.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn large_cache_config_doc_matches_budget_and_headroom_behavior() {
+    let path = src_dir()
+        .join("alloc_core")
+        .join("config")
+        .join("large_cache_config.rs");
+    let flat = doc_prose(&path);
+
+    for stale in [
+        "the default already is unbounded",
+        "The decay step does not release bytes below this level",
+    ] {
+        assert!(
+            !flat.contains(stale),
+            "src/alloc_core/config/large_cache_config.rs: the stale claim \
+             `{stale}` reappeared (R2-23). The default budget's RESOLVED \
+             meaning is feature-dependent (unbounded with \
+             `large-cache-extended` OFF, the finite \
+             `DEFAULT_EXTENDED_BUDGET_BYTES` with it ON), and the decay \
+             trigger/target is NOT a hard floor the cache is held at — a tick \
+             can overshoot it because whole FIFO-oldest spans are released.",
+        );
+    }
+
+    for needle in [
+        "RESOLVED meaning is feature-dependent",
+        "DEFAULT_EXTENDED_BUDGET_BYTES",
+        "trigger/target, NOT a hard floor",
+        "overshoot",
+    ] {
+        assert!(
+            flat.contains(needle),
+            "src/alloc_core/config/large_cache_config.rs: the large-cache \
+             budget/headroom doc must keep the R2-23 wording — missing \
+             `{needle}`. The default's RESOLVED meaning is feature-dependent \
+             (finite `DEFAULT_EXTENDED_BUDGET_BYTES` under \
+             `large-cache-extended`), and the decay trigger/target is an \
+             anti-thrashing floor a tick can overshoot, not a hard floor.",
+        );
+    }
+}
+
+/// R2-23 (independent src review round 2) — no `OwnedSidecar` type exists in
+/// this crate. `alloc_core::platform::sidecar` deliberately exposes FREE
+/// FUNCTIONS over `*mut T` (`reserve`, `reserve_zeroed_with`, `deref`,
+/// `deref_mut`) with no wrapping handle type at all, so any `OwnedSidecar`
+/// mention anywhere in `src/**/*.rs` is a stale reference to an API that was
+/// never added (or was removed). This guard fails on the first such mention in
+/// any source file, and separately pins the module doc's statement of the
+/// free-function surface.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn no_owned_sidecar_references_anywhere() {
+    let mut files = Vec::new();
+    rs_files(&src_dir(), &mut files);
+    assert!(!files.is_empty(), "no source files found");
+
+    let mut offenders = Vec::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("read source");
+        for (i, line) in text.lines().enumerate() {
+            if line.contains("OwnedSidecar") {
+                offenders.push(format!("{}:{}: {}", file.display(), i + 1, line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "no `OwnedSidecar` type exists (R2-23) — the sidecar module exposes \
+         the reserve/reserve_zeroed_with/deref/deref_mut free functions over \
+         `*mut T` (deliberately no wrapping handle type). These references \
+         point at an API that was never added:\n{}",
+        offenders.join("\n"),
+    );
+
+    let path = src_dir()
+        .join("alloc_core")
+        .join("platform")
+        .join("sidecar.rs");
+    let flat = doc_prose(&path);
+    for name in &["[`reserve`]", "[`reserve_zeroed_with`]", "[`deref`]", "[`deref_mut`]"] {
+        assert!(
+            flat.contains(name),
+            "src/alloc_core/platform/sidecar.rs: the module doc must name the \
+             free function {name} it exposes over `*mut T` (R2-23) — that \
+             surface is exactly why there is no `OwnedSidecar` handle type to \
+             guard.",
+        );
+    }
+}
