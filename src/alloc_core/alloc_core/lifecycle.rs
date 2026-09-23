@@ -329,7 +329,7 @@ impl AllocCore {
 /// reservation (`os::release_segment`) unconditionally — it does NOT perform
 /// any handshake to prove no OTHER thread is concurrently pushing onto one of
 /// these segments' cross-thread remote-free rings
-/// ([`RemoteFreeRing`](super::remote_free_ring::RemoteFreeRing), the
+/// (`RemoteFreeRing`, the
 /// `alloc-xthread` per-segment MPSC the segment header's `owner_thread_free`
 /// stamp routes into) before unmapping. If such a push raced this `drop`, it
 /// would write into memory that is either about to be, or has already been,

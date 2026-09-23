@@ -205,7 +205,7 @@ impl SeferAlloc {
     /// **Detecting the conflict (task #95 / N2):** when a later `claim_with_config`
     /// hits a slot that was already materialised with a *different* config, the
     /// mismatch is no longer fully silent: it is counted in
-    /// [`config_conflicts`](AllocStats::config_conflicts) (visible via
+    /// [`config_conflicts`](crate::global::AllocStats::config_conflicts) (visible via
     /// [`stats()`](Self::stats)). That counter is the only signal, in every
     /// build profile: the conflict is detected on the cold bind path behind
     /// every [`GlobalAlloc`](::core::alloc::GlobalAlloc) method, which must
@@ -253,7 +253,7 @@ impl SeferAlloc {
     /// semantics (per-slot / per-thread "first to materialise wins") — the
     /// same rules apply here, since this is `with_config` under a named
     /// preset. Does NOT change [`SeferAlloc::new`]'s defaults — this is a
-    /// new, opt-in constructor alongside it ([`Profile::DEFAULT`] resolves
+    /// new, opt-in constructor alongside it ([`Profile::DEFAULT`](crate::alloc_core::Profile::DEFAULT) resolves
     /// to byte-identical settings to [`SeferAlloc::new`] should you want the
     /// same starting point to chain axis overrides from).
     #[cfg(feature = "alloc-decommit")]

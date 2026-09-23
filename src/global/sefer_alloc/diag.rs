@@ -152,7 +152,7 @@ impl SeferAlloc {
     /// binding is torn down (`TORN`, mid-teardown), and on a thread whose
     /// TLS storage is already destroyed. **Fixed post-R31-10 (task #492):**
     /// an earlier version of this method resolved via the alloc-side
-    /// [`current_heap`](SeferAlloc::current_heap), which — for a freshly-bound,
+    /// `current_heap`, which — for a freshly-bound,
     /// never-allocated thread — would itself claim a fresh registry slot
     /// and bind an (empty) per-thread heap (`global::tls_heap::finish_bind`)
     /// purely as a side effect of asking "is there anything to trim?",
@@ -162,7 +162,7 @@ impl SeferAlloc {
     /// calls `trim_current_thread()` speculatively across many threads —
     /// some of which never allocate — would claim a registry slot for every
     /// one of them regardless. This method now resolves via
-    /// [`tls_heap::current_for_trim`](super::super::tls_heap::current_for_trim), a
+    /// `tls_heap::current_for_trim`, a
     /// **passive** resolver that reports "no live heap yet" instead of
     /// binding one, so a thread with nothing to trim claims nothing.
     ///
@@ -185,7 +185,7 @@ impl SeferAlloc {
     /// # Feature gate (#1990)
     ///
     /// Gated on `any(alloc-decommit, all(alloc-global, fastbin))` — the union
-    /// of the configurations in which [`HeapCore::trim_for_recycle`] actually
+    /// of the configurations in which `HeapCore::trim_for_recycle` actually
     /// does something, not just the `alloc-decommit` half. Its steps carry
     /// INDEPENDENT gates (`src/registry/heap_core/state/ownership.rs`): the
     /// tcache flush is `all(alloc-global, fastbin)`, the small-pool drain and

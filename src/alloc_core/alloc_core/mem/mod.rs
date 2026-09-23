@@ -63,7 +63,7 @@ impl AllocCore {
     /// the opt-in `virgin-zero-skip` feature (R12-10, task #261) is enabled,
     /// in which case the identical freshness-skip discipline applies to a
     /// genuinely virgin (never-before-served) bump-carved block — see
-    /// [`alloc_small_with_virgin`](Self::alloc_small_with_virgin)'s doc for
+    /// `alloc_small_with_virgin`'s doc for
     /// the exact virginity predicate. A free-list-served (reused) block is
     /// NEVER treated as virgin and is always zeroed explicitly, exactly as
     /// before this feature existed.
@@ -162,7 +162,7 @@ impl AllocCore {
     ///
     /// # Safety
     ///
-    /// The caller must uphold the [`GlobalAlloc::dealloc`] contract for `ptr`
+    /// The caller must uphold the [`GlobalAlloc::dealloc`](::core::alloc::GlobalAlloc::dealloc) contract for `ptr`
     /// and `layout`. Concretely:
     ///
     /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
@@ -458,7 +458,7 @@ impl AllocCore {
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// Two in-place fast paths are attempted first (shared with
-    /// [`try_realloc_inplace_known_base`](Self::try_realloc_inplace_known_base), which [`HeapCore::realloc`](crate::registry::HeapCore)
+    /// `try_realloc_inplace_known_base`, which `HeapCore::realloc`
     /// calls so its alloc leg can route through the magazine-aware
     /// `HeapCore::alloc`):
     ///
@@ -492,18 +492,18 @@ impl AllocCore {
     /// pointer this `AllocCore` does not recognise is never legitimate.
     ///
     /// This is an **`unsafe fn`** (R6-MS-1/2): the move leg's
-    /// [`Node::copy_nonoverlapping`](crate::alloc_core::node::Node) reads
+    /// `Node::copy_nonoverlapping` reads
     /// `old_layout.size()` bytes out of `ptr`, and trusts the caller's
     /// `old_layout`/`ptr` exactly as `GlobalAlloc::realloc` does. The crate's
     /// former posture was a safe `pub fn` bounded by
-    /// [`safe_payload_read_span`](Self::safe_payload_read_span); that was
+    /// `safe_payload_read_span`; that was
     /// reversed after the round5 review showed the same-class in-place branch
     /// resurrecting a freed block and the foreign/move legs being reachable
     /// from safe code. See `# Safety` and `CHANGELOG.md` (R6-MS-1/2).
     ///
     /// # Safety
     ///
-    /// The caller must uphold the [`GlobalAlloc::realloc`] contract for `ptr`
+    /// The caller must uphold the [`GlobalAlloc::realloc`](::core::alloc::GlobalAlloc::realloc) contract for `ptr`
     /// and `old_layout`:
     ///
     /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE

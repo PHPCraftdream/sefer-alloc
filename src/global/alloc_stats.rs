@@ -122,7 +122,7 @@ pub struct AllocStats {
     /// it increments only when EVERY tier of that chain failed and the freed
     /// block was genuinely discarded (it stays mapped and unused — a bounded,
     /// sound, non-UB leak; see "Overflow semantics" in
-    /// [`remote_free_ring`](crate::alloc_core::remote_free_ring)'s module
+    /// `remote_free_ring`'s module
     /// docs for the bare-ring contract that chain is built on). Reading
     /// `ring_overflows` in isolation cannot distinguish a rescued free from a
     /// lost one: `tests/r2_22_ring_overflows_doc_semantics.rs` pins the
