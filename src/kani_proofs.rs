@@ -235,6 +235,18 @@ mod pack_proofs {
 // arithmetic identity those methods rely on, generalised to every `head` and
 // every occupancy in `0..=RING_CAP`, which the existing native tests check
 // only pointwise.
+//
+// R2-10 (task #2012) honesty note: the two proofs below are exhaustive over
+// `head`/advance-count for a SINGLE `head.wrapping_add(n)` step
+// (`kani::assume(n <= RING_CAP)`) — they say NOTHING about whether a
+// capacity-check snapshot taken before a full `u32` wrap can still validate
+// a CAS taken long after it (a temporal, multi-step, multi-threaded
+// property no per-call Kani proof can express). That hazard is real,
+// reproduced at a reduced scale in `tests/loom_remote_ring_tail_aba.rs`, and
+// tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 149 — see
+// `src/alloc_core/segment/remote_free_ring/mod.rs`'s module doc, "R2-10 — the
+// tail-CAS ABA hazard" section, for the full writeup. Do not read the two
+// proofs below as covering that class of bug; they do not.
 #[cfg(all(kani, feature = "alloc-core"))]
 mod ring_wrap_proofs {
     use crate::alloc_core::remote_free_ring::RING_CAP;

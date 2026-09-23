@@ -43,6 +43,9 @@ const FEATURES = {
   loom_remote_ring: 'alloc-core,alloc-xthread',
   // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard model.
   loom_remote_ring_drain_guard: 'alloc-core,alloc-xthread',
+  // R2-10 (task #2012): the tail-CAS ABA hazard reduced-width reproduction
+  // (narrow-model counterfactuals) + the wide-model closure demonstration.
+  loom_remote_ring_tail_aba: 'alloc-core,alloc-xthread',
   // #141: the A1 deferred-large push/drain model (found the #143 push leak).
   loom_deferred_large: 'alloc-core,alloc-xthread',
   // R2 (#154) + #164: magazine↔RemoteFreeRing composition shadow model.

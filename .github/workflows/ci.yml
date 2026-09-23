@@ -3142,6 +3142,7 @@ jobs:
             --test loom_remote_ring \
             --test loom_deferred_large \
             --test loom_remote_ring_drain_guard \
+            --test loom_remote_ring_tail_aba \
             --test loom_dirty_publish \
             --test loom_dirty_multi_segment \
             --test loom_class_aware_dirty 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
@@ -3149,6 +3150,9 @@ jobs:
           grep -F "test correct_ring_never_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_no_guard_double_extracts_or_corrupts - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_stale_cache_not_reset_across_segment_reuse - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_narrow_tail_stale_cas_violates_capacity_invariant - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test correct_wide_tail_stale_cas_rejects_after_same_finite_script ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_non_atomic_push_loses_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_relaxed_dirty_loses_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test class_a_triggered_visit_recovers_class_b_entry ... ok" "$RUNNER_TEMP/loom-xthread.log"

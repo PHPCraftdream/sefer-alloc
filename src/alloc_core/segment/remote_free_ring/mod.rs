@@ -357,6 +357,86 @@
 //! Phase 12.5 discard (which leaked the ENTIRE cross-thread-free chain per slot
 //! recycle) and, crucially, it is a *correctness-preserving* fallback, not a
 //! correctness violation — the race is gone.
+//!
+//! ## R2-10 (task #2012) — the tail-CAS ABA hazard (honest, open residual)
+//!
+//! **The hazard.** `push`/`try_push_uncounted` read `t = tail.load(Relaxed)`,
+//! check capacity via `full_check(t)` (which reads `head` at THAT instant),
+//! and only THEN attempt `tail.compare_exchange_weak(t, t+1, ...)`. Nothing
+//! binds the CAS's compare value to the SPECIFIC incarnation of the ring
+//! state the capacity check reasoned about — only to the numeric value `t`.
+//! If a producer is preempted AFTER its capacity check succeeds but BEFORE
+//! its CAS runs, and enough OTHER producers + the consumer complete a full
+//! `u32` wrap (net `2^32` pushes) while it is stalled, `tail`'s CURRENT
+//! value can coincidentally equal the stalled producer's stale snapshot
+//! again. Its CAS then succeeds — not because the capacity check it already
+//! performed is still valid, but by numeric coincidence across two different
+//! "incarnations" of the same `u32` value. The result: an over-capacity
+//! reservation that overwrites a live, undrained entry in the recycled slot
+//! (a torn/lost update) and/or violates the ring's own
+//! `tail.wrapping_sub(head) <= RING_CAP` occupancy invariant.
+//!
+//! **Why the existing Kani proofs (`src/kani_proofs.rs`'s `ring_wrap_proofs`
+//! module, `wrapping_sub_recovers_advance_count` /
+//! `full_check_matches_true_occupancy_at_the_boundary`) do NOT cover this.**
+//! Both proofs are exhaustive over `head`/advance-count for a SINGLE
+//! `head.wrapping_add(n)` step (`kani::assume(n <= RING_CAP)`) — they prove
+//! the modular-arithmetic occupancy check is exact GIVEN that single-step
+//! assumption, which is a genuinely different property from "can a snapshot
+//! taken before a full wrap still validate a CAS taken after it." Kani
+//! proves properties of ONE call in isolation; this hazard is a TEMPORAL,
+//! multi-step, multi-threaded property (a value read long before an
+//! arbitrary number of intervening operations, compared against a value
+//! read long after) that Kani's per-call proof model cannot express at all
+//! — not a gap in how exhaustively those two proofs cover their own claim,
+//! a difference in what claim they make.
+//!
+//! **Reduced-width loom evidence.** `tests/loom_remote_ring_tail_aba.rs`
+//! reproduces the exact mechanism above at a tractable scale (cursors wrap
+//! at `MOD = 4` instead of `2^32`, so a full incarnation cycle is 4 pushes,
+//! not billions):
+//! `counterfactual_narrow_tail_stale_cas_violates_capacity_invariant` and
+//! `counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry`
+//! are `#[should_panic]` counterfactuals proving the hazard is real on the
+//! CURRENT protocol shape (occupancy violation and, separately, an actual
+//! lost live entry). `correct_wide_tail_stale_cas_rejects_after_same_finite_script`
+//! re-runs the IDENTICAL finite reproduction script against a cursor wide
+//! enough (relative to that script) that the same coincidence cannot occur
+//! — the reduced-scale stand-in for the real fix (widen `head`/`tail`/
+//! `cached_head` from `u32` to `u64`; a `u64` wraparound "would take
+//! centuries under any realistic throughput" per the originating review).
+//!
+//! **Status: NOT fixed in this round.** The minimal correct fix (widen the
+//! cursors to `u64`) is layout-preserving in principle (`CURSOR_BLOCK`'s
+//! existing 128-byte padding has room for two 8-byte cursors + the
+//! `overflow` counter on the producer line without changing `FOOTPRINT`),
+//! but its full blast radius touches this module's `HEAD_OFF`/`TAIL_OFF`/
+//! `CACHED_HEAD_OFF` layout constants, every `dbg_*` test hook with a `u32`
+//! head/tail signature (`dbg_cursors`, `dbg_set_cursors`,
+//! `dbg_advance_head_only`, `head_relaxed`, `tail_relaxed`, `drain`'s return
+//! type), `src/kani_proofs.rs`'s `ring_wrap_proofs` module, and — most
+//! substantially — test files built specifically AROUND the `u32` wrap
+//! boundary as the ring's "one genuinely reachable" hazard
+//! (`tests/regression_ring_cursor_wrap.rs`, `tests/remote_ring_shadow_head.rs`
+//! — both explicitly construct scenarios crossing `u32::MAX -> 0`), whose
+//! entire premise would need a conceptual (not just mechanical) rewrite once
+//! the wrap boundary moves to `u64::MAX` (a THIRD file,
+//! `tests/remote_free_ring_head_write_sites.rs`, uses these same `dbg_*`
+//! hooks but only structurally counts write-site occurrences in the source
+//! text — it is type-agnostic and would need no conceptual change, only a
+//! recompile check). This is judged too large to complete and fully
+//! zero-trust-verify in one task cycle, for a hazard requiring
+//! ~`2^32` operations during ONE producer's stall — the same order of
+//! magnitude of rarity this file's own "F10 wrap argument precondition"
+//! section above already accepts for a related hazard ("No code change is
+//! warranted for a hazard this remote"). Tracked as
+//! `docs/CORRECTNESS_OPEN_ITEMS.md` item 149
+//! (`docs/correctness-open-items/ACTIVE.md`), which records the concrete
+//! fix design (u64 widening, layout-preserving) so a future round can
+//! implement it without re-deriving the analysis — mirroring how item 148
+//! (R2-09, the same review round) scoped an equally large redesign out of
+//! its own task cycle with an honest interim record rather than a rushed
+//! partial fix.
 
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
