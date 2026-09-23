@@ -1,0 +1,780 @@
+use super::*;
+use core::mem::size_of;
+
+#[doc(hidden)]
+pub use harness::SegmentHashHarness;
+
+/// R23-6 (task #375) DIAGNOSTIC ONLY: process-wide count of hash-slot probe
+/// steps performed by a SINGLE [`SegmentTable::hash_remove`] call's
+/// backward-shift scan (the `j = (j+1) & mask` walk documented on
+/// `hash_remove` — one increment per slot visited while scanning the cluster
+/// for a shift candidate). This is the exact quantity
+/// `tests/regression_segment_table_tombstone_rebuild.rs`'s
+/// `backshift_no_latency_spike_at_threshold_boundary` wall-clock check was
+/// trying to approximate: "no single delete does more than a small,
+/// cluster-bounded amount of work — never `O(HASH_CAPACITY)`". A wall-clock
+/// nanosecond measurement is a noisy PROXY for this; this counter is the
+/// exact thing.
+///
+/// Deliberately a MAX, not a running sum: the correctness claim under test is
+/// a per-call BOUND ("no single delete is a dramatic outlier"), not a total
+/// amount of work across many deletes — a sum would conflate "many small
+/// deletes" with "one large delete" the same way the wall-clock test's own
+/// max/median ratio does NOT (it isolates the single worst call). Reset via
+/// [`reset_hash_remove_max_scan_steps`] at the start of a measurement window
+/// so each test/bench run reads a clean high-water mark.
+///
+/// **This counter has ZERO effect on allocator behavior** — `hash_remove`'s
+/// control flow is unchanged; this only counts steps the walk was already
+/// going to take. Read via
+/// [`AllocCore::dbg_hash_remove_max_scan_steps`](crate::alloc_core::alloc_core::AllocCore::dbg_hash_remove_max_scan_steps).
+/// Reads 0 unless `alloc-stats` is on — the per-step increment is gated
+/// behind `alloc-stats`, matching
+/// [`OPT_H_ATTEMPTS`](crate::alloc_core::alloc_core::OPT_H_ATTEMPTS)'s convention; the
+/// static itself is always compiled so the accessor has a stable definition
+/// regardless of the rest of the feature set. Relaxed ordering — a
+/// diagnostic count, not a synchronization primitive.
+pub(crate) static HASH_REMOVE_MAX_SCAN_STEPS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R23-6 (task #375): reset [`HASH_REMOVE_MAX_SCAN_STEPS`] to 0. Test/bench
+/// hook — lets a measurement window (e.g. one wave of a threshold-boundary
+/// test) start from a clean high-water mark instead of accumulating across
+/// the whole process lifetime.
+#[doc(hidden)]
+pub fn reset_hash_remove_max_scan_steps() {
+    HASH_REMOVE_MAX_SCAN_STEPS.store(0, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Maximum number of simultaneously live segments the registry can hold WITHOUT
+/// recycling. Each live large/huge allocation consumes one segment slot; each
+/// small segment can serve thousands of small allocations. Under `alloc-decommit`
+/// the effective limit is unbounded: empty segments (including empty small
+/// segments) are recycled (their slot is NULLed) and reused by future
+/// `register` calls. Without `alloc-decommit`, only the EMPTY small-segment
+/// recycle path is disabled; the free-list still recycles any released segment
+/// slot (large allocations still recycle their slot on free via
+/// `unregister`/`recycle`, unconditionally). Long-running processes with many
+/// small-segment carve/decay cycles will pin small-segment slots and eventually
+/// hit this cap.
+pub(crate) const MAX_SEGMENTS: usize = 4096;
+
+/// The footprint of the registry (slots) array in the primordial segment. Fixed
+/// and known at compile time so the bootstrap can carve it deterministically.
+pub(crate) const REGISTRY_FOOTPRINT: usize = MAX_SEGMENTS * size_of::<*mut u8>();
+
+/// Capacity of the open-addressing hash table (OPT-B). Load factor ≤ 50%
+/// so `HASH_CAPACITY = 2 * MAX_SEGMENTS`. Power of two for cheap modulo via
+/// bitmasking.
+pub(crate) const HASH_CAPACITY: usize = 2 * MAX_SEGMENTS; // 8192
+
+/// Footprint of the hash table in the primordial segment.
+/// `HASH_CAPACITY` entries × `sizeof(*mut u8)` = 64 KiB.
+pub(crate) const HASH_FOOTPRINT: usize = HASH_CAPACITY * size_of::<*mut u8>();
+
+/// Capacity of the free-list stack of recyclable slot indices (task #135,
+/// Part 1). One `u32` per possible slot — the free-list can never hold more
+/// entries than there are slots (`MAX_SEGMENTS`), so this bound is exact (no
+/// separate overflow path is needed).
+pub(crate) const FREE_LIST_CAPACITY: usize = MAX_SEGMENTS;
+
+/// Footprint of the free-list stack (the index array only; the top-of-stack
+/// counter is a separate `u32` field carved right after it — see
+/// `Layout::primordial_free_list_off` / `primordial_free_top_off`).
+pub(crate) const FREE_LIST_FOOTPRINT: usize = FREE_LIST_CAPACITY * size_of::<u32>();
+
+/// PERF-P2 (eureka Э3) — number of slots in the direct-mapped own-segment
+/// cache. A power of two (indexed by masking) kept deliberately tiny (start
+/// small, measure before growing). The cache holds ONLY bases proven present
+/// by a won `hash_contains` probe (it *remembers proven*, never *asserts*),
+/// and every table-mutation path that can remove a base
+/// (`unregister`/`recycle`) clears the matching slot IN THE SAME FUNCTION that
+/// mutates the hash — so complete invalidation is structural, not a
+/// remember-to-invalidate discipline scattered across call sites.
+///
+/// R32-10 (task #501, F2): raised 4 -> 16 after MEASURING (not assuming) the
+/// original value's real-world cost. `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`
+/// §F2 identified that a Large-heavy workload with N concurrently-live
+/// Large objects (N > 4) thrashes a 4-entry direct-mapped cache by
+/// construction, but `docs/perf/R23_3_HOT_PATH_ATTRIBUTION_GATE.md` §1.3/§6.2
+/// had found no PORTABLE way to force this Tier-2 fallback to build a judge
+/// (the cache index depends on OS-assigned addresses). This round built the
+/// missing instrument instead of relying on prediction: a process-wide
+/// Tier-1 hit/miss counter (`CONTAINS_BASE_TIER1_HITS`/`_MISSES`,
+/// `bench-internals`-gated, this same file's `contains_base`) plus an
+/// OBSERVATIONAL workload (`examples/r32_10_own_cache_tier1_thrash_gate.rs`)
+/// that repeatedly `realloc`s (in-place, same size — no free, no unregister)
+/// K concurrently-live Large objects and reads the REAL resulting hit rate
+/// back from the allocator's own counters — sidestepping the address-
+/// prediction problem entirely.
+///
+/// **Measured (see `docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md` for
+/// the full sweep, raw logs, and derivation script):** at `OWN_CACHE_SIZE=4`,
+/// EVERY tested K (4/8/16/24/32/48/64) thrashed completely — 0.00% Tier-1
+/// hit rate, even at K == OWN_CACHE_SIZE (confirming the survey's own point:
+/// the cache is direct-mapped, not associative, so even N == cache-size only
+/// avoids collision if the OS happens to hand out bases whose bits 22+ don't
+/// collide — which it did not on this measured run). At `OWN_CACHE_SIZE=16`:
+/// K=4 and K=8 jump to 99.99% hit rate (32764-65528 hits out of
+/// 32768-65536 calls, both cache sizes' runs 7-repetition median), K=16+
+/// still thrashes (0.00%, one K=32 outlier run showing partial ~9.4% from a
+/// favorable single-launch address collision pattern the rest of that arm's
+/// repetitions did not reproduce) — a genuine, large, reproducible hit-rate
+/// win at the K range this cache size can actually hold. The LATENCY delta
+/// on the SAME workload/arms was NOT clearly separable from this harness's
+/// own run-to-run noise (~24-29 ns/op across every arm regardless of hit
+/// rate) — an honest null on the wall-clock axis, consistent with OPEN_ITEMS
+/// item 1's own component pricing (a Tier-1 hit vs Tier-2 miss differs by
+/// only ~4 Ir, a few ns at most, small against the whole `realloc` call's
+/// cost). The standing ±10 raw-Ir churn kill-gate (four small-object
+/// benches) is untouched by this change — it only affects `SegmentTable`'s
+/// per-heap struct size and the Large-object ownership check. Must stay a
+/// power of two — [`cache_index`](SegmentTable::cache_index) masks with
+/// `OWN_CACHE_SIZE - 1`.
+pub(crate) const OWN_CACHE_SIZE: usize = 16;
+
+const _: () = assert!(
+    OWN_CACHE_SIZE.is_power_of_two(),
+    "OWN_CACHE_SIZE must be a power of two -- SegmentTable::cache_index masks with OWN_CACHE_SIZE - 1"
+);
+
+/// Bit-shift of the segment size (log₂(SEGMENT = 4 MiB) = 22). Used by the
+/// hash function to convert a segment base into a table index. Exposed as
+/// `pub(crate)` so the bootstrap can seed the primordial hash entry before
+/// the `SegmentTable` struct exists (the bootstrap must not call any
+/// `SegmentTable` methods before `from_primordial`).
+pub(crate) const SEGMENT_SHIFT: usize = 22;
+
+/// A self-hosted segment registry: a fixed-capacity array of segment-base
+/// pointers plus a high-water count, carved from the primordial segment.
+///
+/// The registry does NOT own the segments it lists — ownership lives with
+/// [`crate::alloc_core::AllocCore`] (which holds the owning [`crate::alloc_core::os::Segment`]
+/// handles). The registry is the *index* over them, used by drop/census; the
+/// hot path resolves owners via `segment_of(ptr)` (no registry lookup).
+///
+/// Under `alloc-decommit`, recycled slots hold `null_mut()` — the OS
+/// reservation for those segments has been released. [`bases`](Self::bases)
+/// filters them out; [`register`] reuses them before appending.
+pub(crate) struct SegmentTable {
+    /// Pointer to the first slot of the registry array (lives in the
+    /// primordial segment's payload). `MAX_SEGMENTS` entries.
+    slots: *mut *mut u8,
+    /// PERF-P2 (Э3) — a tiny fixed-size direct-mapped cache of segment bases
+    /// that have been PROVEN present by a won `hash_contains` probe. It is an
+    /// inline struct field (NOT primordial-resident memory), zero-initialised
+    /// (all `null_mut()`) in `from_primordial`.
+    ///
+    /// ## Invariant (the correctness keystone — a stale hit is UB / M2 breach)
+    ///
+    /// `own_cache[i]` is either `null_mut()` (empty) or a base that is
+    /// CURRENTLY registered and live in the hash table. A cache HIT
+    /// (`own_cache[cache_index(base)] == base`, non-null) therefore carries the
+    /// exact same guarantee as `hash_contains(base) == true`: the segment is
+    /// registered, live, and mapped by us. This invariant is preserved
+    /// STRUCTURALLY: the ONLY places that fill the cache are won probes, and
+    /// the ONLY places that can remove a base from the hash (`unregister`,
+    /// `recycle`) clear the matching cache slot in the SAME function,
+    /// immediately after `hash_remove`. You cannot drop a base from the table
+    /// without passing through code that also evicts it from the cache.
+    own_cache: [*mut u8; OWN_CACHE_SIZE],
+    /// High-water mark: the number of slots that have EVER been written
+    /// (including currently-NULL recyclable slots). Segments 0 (the
+    /// primordial) is always at index 0 and is never recycled.
+    count: u32,
+    /// OPT-B: open-addressing hash table for O(1) `contains_base`. Lives in
+    /// the primordial segment immediately after the slots array. Capacity is
+    /// `HASH_CAPACITY` entries. Two-state encoding (backward-shift deletion
+    /// in `hash_remove` — R4-8/N3 — never leaves tombstones):
+    /// - `null_mut()` → empty (terminates a probe chain)
+    /// - other        → live segment base (SEGMENT-aligned pointer)
+    pub(super) hash_slots: *mut *mut u8,
+    /// Task #135 (Part 1): a stack of recycled (NULL) slot indices, carved in
+    /// the primordial segment immediately after the hash table. `FREE_LIST_CAPACITY`
+    /// (= `MAX_SEGMENTS`) `u32` entries; only `[0, free_top)` are meaningful.
+    /// `unregister`/`recycle` push the just-vacated index here (O(1));
+    /// `register` pops from here first (O(1)) before falling back to append.
+    free_list: *mut u32,
+    /// Pointer to the free-list's top-of-stack counter (a single `u32` carved
+    /// right after `free_list`'s `FREE_LIST_CAPACITY` entries). The number of
+    /// valid (push-order) entries currently on the free-list stack.
+    free_top: *mut u32,
+}
+
+impl SegmentTable {
+    /// Construct the registry view over an already-laid-down array in the
+    /// primordial segment. Used by the bootstrap after it has carved the slot
+    /// array and the hash table (the bootstrap writes slot 0 and clears the
+    /// hash array through the `node` seam BEFORE calling this — this
+    /// constructor performs NO memory operation, it just wraps the pointers +
+    /// count).
+    ///
+    /// # Caller's contract
+    ///
+    /// `slots` must point to `REGISTRY_FOOTPRINT` bytes inside the primordial
+    /// segment, with slot 0 already set to the primordial base. `hash_slots`
+    /// must point to `HASH_FOOTPRINT` bytes (all zeroed / `null_mut()`) for the
+    /// open-addressing hash table. `count` is the current live count (1 for
+    /// just the primordial). This method is safe because it does not touch
+    /// memory — it only stores the pointers; the contract is the caller's
+    /// invariant, enforced by the bootstrap being the sole caller.
+    pub(crate) fn from_primordial(
+        slots: *mut *mut u8,
+        count: u32,
+        hash_slots: *mut *mut u8,
+        free_list: *mut u32,
+        free_top: *mut u32,
+    ) -> Self {
+        Self {
+            slots,
+            // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
+            // slots null). It only ever fills from a won `hash_contains` probe.
+            own_cache: [core::ptr::null_mut(); OWN_CACHE_SIZE],
+            count,
+            hash_slots,
+            free_list,
+            free_top,
+        }
+    }
+
+    /// Register a new segment base. Returns its assigned `segment_id` (the
+    /// index it was placed at), or `None` if the table is full (all slots are
+    /// live and count == MAX_SEGMENTS — only possible without `alloc-decommit`
+    /// or under an extreme large-allocation storm).
+    ///
+    /// **O(1) slot-recycle (task #135, Part 1 — supersedes the task #60 linear
+    /// scan):** pops a recyclable slot index off the free-list stack (O(1)) if
+    /// one is available; the new base is written there and that index is
+    /// returned (NO increment of `count` — the slot is already within the live
+    /// window). Only when the free-list is empty does `register` append past
+    /// the current high-water mark. This lifts the fixed `MAX_SEGMENTS` cap
+    /// under `alloc-decommit`: as long as some slots are recycled, `register`
+    /// never returns `None`.
+    ///
+    /// no-panic (Phase 11 GlobalAlloc face): returns `None` so the caller
+    /// returns null (graceful OOM) rather than aborting.
+    pub(crate) fn register(&mut self, base: *mut u8) -> Option<u32> {
+        // O(1): pop a recycled slot index, if the free-list has one.
+        if let Some(i) = self.free_list_pop() {
+            let slot = Self::slot_ptr(self.slots, i as usize);
+            // Defensive: the free-list invariant guarantees this slot is
+            // currently NULL (see `free_list_push`'s contract) — reuse it.
+            crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
+            // OPT-B: also insert into the hash table so `contains_base` is O(1).
+            self.hash_insert(base);
+            return Some(i);
+        }
+        // No recyclable slot — append.
+        let idx = self.count as usize;
+        if idx >= MAX_SEGMENTS {
+            return None;
+        }
+        let slot = Self::slot_ptr(self.slots, idx);
+        crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
+        self.count += 1;
+        // OPT-B: also insert into the hash table so `contains_base` is O(1).
+        self.hash_insert(base);
+        Some(idx as u32)
+    }
+
+    /// NULL the table slot for `base` WITHOUT releasing the OS reservation.
+    ///
+    /// Used by the OPT-E large-segment free-cache: when a freed large segment
+    /// is deposited into `large_cache`, we remove it from the active table so
+    /// `drop` / `find_segment_with_free` / `contains_base` do not see it as a
+    /// live registered segment. The OS reservation stays alive (the cache owns
+    /// it) and will be released either on cache re-use or in `AllocCore::drop`.
+    ///
+    /// **Contract (caller's invariant):**
+    /// - `base` MUST be currently registered as a non-NULL slot.
+    /// - The caller takes full ownership of the OS reservation for `base`;
+    ///   `drop` will NOT release it (the slot is NULL, so `bases()` skips it).
+    /// - The caller MUST ensure the reservation is eventually released (via
+    ///   `os::release_segment` in the cache or `Drop` walk).
+    ///
+    /// Un-gated from `alloc-decommit` (0.3.0, task A1): the cross-thread
+    /// large-segment reclaim path (`AllocCore::reclaim_large_segment`) needs
+    /// to free a table slot for reuse regardless of whether `alloc-decommit`
+    /// is enabled — without it, a segment freed by a remote thread could
+    /// never be unregistered, permanently pinning a `SegmentTable` slot (and,
+    /// pre-fix, the whole segment). The function body is pure safe pointer
+    /// arithmetic through the `node`/hash seams — nothing decommit-specific —
+    /// so lifting the gate is purely additive.
+    ///
+    /// **O(1) (task #135, Part 1 — supersedes the linear base-scan):** reads
+    /// `segment_id` directly out of the segment's own header (via the
+    /// field-specific `segment_id_at` accessor — a single `u32` load, disjoint
+    /// from the owner-mutated `bump` field, so this is race-free under the
+    /// same §11/§33 discipline as `magic_at`/`kind_at`) instead of scanning the
+    /// table for a matching base pointer. The header at `base` is still valid
+    /// here (this is the pre-decommit/pre-release call site — see the
+    /// contract above), so the read is safe.
+    ///
+    /// Defensive: if the slot at `segment_id` does not actually hold `base`
+    /// (a caller bug, or a stale/corrupt `segment_id`), this is a no-op — the
+    /// same defensive posture the old linear scan had for "base not found".
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    pub(crate) fn unregister(&mut self, base: *mut u8) {
+        let id = crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base);
+        if id as usize >= self.count as usize {
+            // Defensive: out-of-range id (corrupt header / caller bug). No-op.
+            return;
+        }
+        let slot = Self::slot_ptr(self.slots, id as usize);
+        let current = crate::alloc_core::node::Node::read_struct::<*mut u8>(slot);
+        if current != base {
+            // Defensive: the slot at `id` does not hold `base` — no-op rather
+            // than corrupt the table.
+            return;
+        }
+        // NULL the slot — the OS reservation is NOT released here.
+        crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+        // OPT-B: remove from hash table via backward-shift deletion (R4-8/N3:
+        // no tombstone, no rebuild — see `hash_remove`).
+        self.hash_remove(base);
+        // PERF-P2 (Э3): `base` is leaving the table — it MUST NOT remain
+        // cached. A stale cache slot surviving removal would let a future
+        // `contains_base` HIT on an unregistered/recycled/unmapped base and
+        // route a foreign or freed pointer as own-thread (UB / M2 breach).
+        // Co-located with `hash_remove` in the SAME function so invalidation
+        // is structurally complete.
+        self.own_cache_clear(base);
+        // Task #135: push the just-vacated index onto the free-list so a
+        // future `register` can reuse it in O(1). Guarded by `current != base`
+        // above (only a slot that WAS non-NULL and held `base` reaches here),
+        // so this can never push the same index twice for a single logical
+        // unregister/recycle (the free-list-duplicate invariant).
+        self.free_list_push(id);
+    }
+
+    /// Mark the slot for `base` as recyclable (NULL) and release the segment's
+    /// OS reservation. Called from `decommit_empty_segment` AFTER the segment's
+    /// payload has been decommitted and its metadata reset.
+    ///
+    /// **Contract (caller's invariant):**
+    /// - The segment at `base` MUST be a live, empty, non-primordial `Small`
+    ///   segment whose `live_count == 0`.
+    /// - The segment's OS reservation MUST NOT have been released yet. This
+    ///   function releases it internally (reads `(reservation, reservation_len)`
+    ///   from the header, calls `os::release_segment`, then NULLs the slot).
+    ///   After this call the virtual address `base` is invalid — the caller
+    ///   MUST NOT dereference it.
+    /// - Must be called on the owner thread only (serialized by the
+    ///   single-threaded `AllocCore` discipline).
+    ///
+    /// **Why OS release happens here (not in the caller):** if we released the
+    /// OS segment and then NULLed the slot in two separate steps, a crash
+    /// between them would leave the slot non-NULL with an invalid virtual
+    /// address; `drop` would then read a released mapping. By doing both
+    /// atomically in one function (on the owner thread) we guarantee the slot
+    /// is NULLed before anything else can observe the OS release.
+    ///
+    /// If `base` is not found in the table (shouldn't happen under the correct
+    /// invariant) this is a no-op — a defensive guard, not a panic.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn recycle(&mut self, base: *mut u8) {
+        // Read the reservation info from the segment BEFORE releasing. The
+        // metadata pages (which host the header at offset 0) are NEVER
+        // decommitted — only the payload is — so the header is still readable.
+        let hdr = crate::alloc_core::segment_header::SegmentHeader::read_at(base);
+        let reservation = hdr.reservation;
+        let reservation_len = hdr.reservation_len;
+        // Task #135 (Part 1): `segment_id` was already read as part of the
+        // full-struct header read above (the header is still fully valid at
+        // this point — only the PAYLOAD is decommitted by the caller before
+        // `recycle` runs, never the metadata page hosting the header), so no
+        // extra read is needed. O(1) slot lookup replaces the old O(count)
+        // linear scan.
+        let id = hdr.segment_id;
+        if (id as usize) < self.count as usize {
+            let slot = Self::slot_ptr(self.slots, id as usize);
+            let current = crate::alloc_core::node::Node::read_struct::<*mut u8>(slot);
+            if current == base {
+                // OPT-B: remove the hash entry (backward-shift deletion)
+                // BEFORE releasing the OS reservation. After `release_segment`
+                // the pointer value `base` remains valid as a key (we compare
+                // values, not dereference), but doing the hash update first is
+                // cleaner.
+                self.hash_remove(base);
+                // PERF-P2 (Э3): evict `base` from the direct-mapped cache
+                // BEFORE releasing the OS reservation. After `release_segment`
+                // the virtual address `base` is unmapped; a stale cache slot
+                // still holding it would let a later free of a pointer whose
+                // computed base equals this recycled base HIT the cache and be
+                // (catastrophically) routed as own-thread → write to unmapped /
+                // recycled memory (UB / M2 breach). Co-located with
+                // `hash_remove` in the SAME function → structural invalidation.
+                self.own_cache_clear(base);
+                // Release the OS reservation. After this, `base` is invalid
+                // (unmapped). We do NOT dereference `base` after this point.
+                crate::alloc_core::os::release_segment(reservation, reservation_len);
+                // NULL the slot so `register` can reuse it and `drop` skips it.
+                crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+                // Push the vacated index onto the free-list (O(1) reuse by a
+                // future `register`). Guarded by `current == base` above, so
+                // this index is pushed at most once per logical recycle.
+                self.free_list_push(id);
+                return;
+            }
+        }
+        // Defensive: `base` was not found at its stamped `segment_id` slot
+        // (corrupt header / double-recycle / never-registered). This
+        // indicates a bug in the caller — or a corrupted `segment_id` (the
+        // same threat model `unregister`'s sibling guard defends against).
+        //
+        // L-3 (UBFIX-11): the ORIGINAL defensive tail released the OS
+        // reservation here WITHOUT first evicting `base` from the hash table
+        // / own-cache, unlike the main (non-defensive) path just above. If
+        // `base` happens to still be a genuinely LIVE entry in the hash table
+        // (reachable via `hash_index(base)`, which is keyed by the pointer
+        // VALUE, not by the corrupt `segment_id`) or the direct-mapped
+        // own-cache, that stale entry would survive this release: a later
+        // `contains_base(base)` on the now-UNMAPPED address would return
+        // `true` (cache hit or hash hit), routing a subsequent free as
+        // own-thread and reading/writing unmapped memory.
+        //
+        // `hash_remove`/`own_cache_clear` key on `base`'s VALUE (via
+        // `hash_index`/`cache_index`), never on `id` — so calling them here
+        // is safe and correct regardless of what is wrong with the stamped
+        // `segment_id`: if `base` is genuinely present in the hash/cache
+        // (under its natural probe position, independent of any slot index),
+        // it is evicted; if it is not present (e.g. truly never registered),
+        // both are already documented no-ops (`hash_remove`'s empty-slot
+        // return; `own_cache_clear`'s slot-mismatch skip). This mirrors the
+        // main path's exact call order (hash/cache eviction BEFORE the OS
+        // release), just without the (untrustworthy, in this branch) slot
+        // NULL + free-list push — the `slots[]` array itself is intentionally
+        // left untouched here, since we do not know which (if any) index
+        // legitimately maps to `base` under the corruption.
+        self.hash_remove(base);
+        self.own_cache_clear(base);
+        // Release the OS reservation anyway to avoid a leak, but don't
+        // corrupt the `slots[]` array — we do not know which slot (if any)
+        // legitimately corresponds to `base` under this corruption, so
+        // NULLing an unrelated slot / pushing a bogus free-list index would
+        // be worse than a defensive no-op there.
+        crate::alloc_core::os::release_segment(reservation, reservation_len);
+    }
+
+    /// The high-water mark: the number of slots ever written (including
+    /// currently-NULL recyclable slots). The number of LIVE (non-NULL)
+    /// segments is `self.bases().count()`.
+    #[allow(dead_code)] // Substrate introspection; tests / Phase 9 use it.
+    pub(crate) fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// Whether `base` is one of our registered, LIVE (non-NULL) segment bases.
+    /// Used by the defensive foreign-pointer check in `dealloc`: a pointer
+    /// whose computed segment base is NOT in this set is foreign (not one of
+    /// our allocations) and is treated as a no-op.
+    ///
+    /// OPT-B: now O(1) average via the open-addressing hash table. The only
+    /// time a result is `false` is when the probe chain reaches an empty slot
+    /// (`null_mut()`), meaning `base` was never inserted here (backward-shift
+    /// deletion — R4-8/N3 — leaves clean empty slots, never tombstones, so an
+    /// empty slot unambiguously terminates the probe).
+    ///
+    /// Recycled (NULL) slots are NOT considered as matching any base, so a
+    /// use-after-recycle pointer is correctly treated as foreign.
+    ///
+    /// PERF-P2 (Э3): checks the tiny direct-mapped own-segment cache FIRST. A
+    /// cache HIT (`own_cache[cache_index(base)] == base`, non-null) returns
+    /// `true` immediately — the cache holds ONLY bases proven present (filled
+    /// from a won probe) and is evicted in lockstep with every hash removal
+    /// (`unregister`/`recycle`), so a hit carries the exact `hash_contains ==
+    /// true` guarantee (registered + live + mapped). A MISS falls through to
+    /// the full `hash_contains`; on a probe hit we FILL the cache slot
+    /// (remember-proven) and return `true`; on a probe miss we return `false`
+    /// WITHOUT filling (the cache never holds an absent base). Requires `&mut
+    /// self` for the fill; all hot free-path callers (`dealloc`,
+    /// `dealloc_routing`, `realloc`) already hold `&mut`.
+    #[inline(always)]
+    pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
+        let idx = Self::cache_index(base);
+        // Fast path: proven-present cache hit.
+        if self.own_cache[idx] == base && !base.is_null() {
+            // R32-10 (task #501, F2): path-activation oracle — Tier-1 hit.
+            // `bench-internals`-gated (see `CONTAINS_BASE_TIER1_HITS`'s own
+            // doc in `alloc_core.rs`); compiled out entirely otherwise, so
+            // this cannot add overhead to a real production build.
+            #[cfg(feature = "bench-internals")]
+            crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return true;
+        }
+        // Miss → full O(1) hash probe. Fill the cache only on a won probe.
+        // R32-10: this call fell through to Tier-2 — count the routing
+        // decision BEFORE running the probe (a Tier-2 fallback occurred
+        // regardless of whether the probe itself then finds `base`).
+        #[cfg(feature = "bench-internals")]
+        crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if self.hash_contains(base) {
+            self.own_cache[idx] = base;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
+    /// (no fill), for `&self` contexts (test-only `dbg_*` accessors, census).
+    /// Same result as `contains_base` — it just skips the remember-proven
+    /// fill. Kept separate so the read-only surface does not require `&mut`.
+    #[inline(always)]
+    pub(crate) fn contains_base_ro(&self, base: *mut u8) -> bool {
+        self.canonical_base_of(base).is_some()
+    }
+
+    /// R2-05 (independent src review round 2, task #2007): like
+    /// [`contains_base_ro`](Self::contains_base_ro), but returns the STORED,
+    /// canonical segment-base pointer — the exact `*mut u8` THIS table
+    /// registered (carrying the allocator's own provenance over the
+    /// segment) — instead of a bool.
+    ///
+    /// # Why this exists
+    ///
+    /// `base` is used only as a lookup KEY here: its ADDRESS is compared
+    /// against every stored entry, never dereferenced by this method itself.
+    /// A caller that derives `base` from an arbitrary/caller-supplied
+    /// pointer (e.g. a `dbg_*` diagnostic accessor's `ptr` argument) and then
+    /// confirms `contains_base_ro(base)` has only proven that SOME live
+    /// segment happens to share `base`'s ADDRESS — not that `base` itself
+    /// has valid provenance over that segment's memory. Under Rust's
+    /// strict-provenance model, matching an address does not grant
+    /// provenance: safe code can construct a pointer with the same address
+    /// as a live allocation but zero provenance over it (e.g. via
+    /// `ptr::without_provenance_mut`, or arithmetic on an unrelated
+    /// allocation that happens to land on the same address), and
+    /// dereferencing such a pointer is undefined behavior even though the
+    /// address is "correct". Reading allocator metadata through `base`
+    /// itself after only an address-membership check is exactly that hazard.
+    ///
+    /// The fix is to read allocator metadata through the pointer THIS
+    /// method returns (the table's own stored entry, which was written by
+    /// [`register`](Self::register) from a pointer the allocator itself
+    /// derived and therefore genuinely has provenance over the segment) —
+    /// never through the caller-supplied `base` that was only used as the
+    /// lookup key. `own_cache`'s stored values carry the same guarantee:
+    /// every write to it (`contains_base`'s Tier-1 fill) only ever stores a
+    /// `base` that a PRODUCTION call site passed — `contains_base_ro`
+    /// (used by every diagnostic accessor with an untrusted caller pointer)
+    /// is documented never to write the cache, so a diagnostic call can
+    /// never poison it with a provenance-less pointer.
+    #[inline(always)]
+    pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
+        let idx = Self::cache_index(base);
+        let cached = self.own_cache[idx];
+        if cached == base && !base.is_null() {
+            return Some(cached);
+        }
+        self.hash_find(base)
+    }
+
+    /// MEASUREMENT-ONLY (R23-3, task #372): call the Tier-2 open-addressing
+    /// probe DIRECTLY, unconditionally skipping the Tier-1 `own_cache` check
+    /// that `contains_base`/`contains_base_ro` always try first. This exists
+    /// solely so `benches/perf_gate_iai.rs` can isolate Tier-2's own
+    /// instruction cost, which `contains_base`'s existing Tier-1-hit-shaped
+    /// benches (R22-17/R23-1) cannot show: this crate's benched workloads
+    /// stay within `OWN_CACHE_SIZE` concurrently-hot segments, so every
+    /// `contains_base` call after the first is a Tier-1 hit and Tier-2 never
+    /// runs. `cache_index(base) = (base >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)`
+    /// depends only on the segment's OS-assigned virtual address
+    /// (`mmap`/`VirtualAlloc` decide it, not this allocator), so a benchmark
+    /// cannot portably force a Tier-2 hit just by touching more than
+    /// `OWN_CACHE_SIZE` distinct segments — the OS
+    /// might still lay them out so all their cache indices collide or spread
+    /// favourably. Calling `hash_contains` directly sidesteps that
+    /// non-determinism entirely: it measures Tier-2's real, unconditional
+    /// cost on the exact same data the production probe would (a genuinely
+    /// registered base), regardless of address layout.
+    ///
+    /// This is the SAME `hash_contains` production routine `contains_base`
+    /// falls through to on a Tier-1 miss — not an alternate/reimplemented
+    /// probe — just invoked without the Tier-1 guard in front of it. It
+    /// takes `&self` (no cache fill), matching `contains_base_ro`'s
+    /// resource-cheap surface — a bench does not need `&mut` to measure this.
+    /// Unconditional (no feature gate), mirroring `contains_base`/
+    /// `contains_base_ro` immediately above, which are themselves ungated.
+    #[doc(hidden)]
+    #[inline(always)]
+    pub(crate) fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
+        self.hash_contains(base)
+    }
+
+    /// PERF-P2 (Э3): direct-mapped cache index for `base`. Segments are
+    /// SEGMENT-aligned so the low `SEGMENT_SHIFT` bits are zero; shift them out
+    /// first to get a dense per-segment key, then mask to `OWN_CACHE_SIZE`.
+    #[inline(always)]
+    fn cache_index(base: *mut u8) -> usize {
+        (base as usize >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+    }
+
+    /// PERF-P2 (Э3): evict `base` from the direct-mapped cache if (and only if)
+    /// the slot for `base`'s index currently holds exactly `base`. Called from
+    /// `unregister`/`recycle` in lockstep with `hash_remove`. A slot holding a
+    /// DIFFERENT base (a collision) is left untouched — that other base is
+    /// still live, and evicting it would only cost a future miss, never
+    /// correctness; but we specifically do NOT clear it because doing so is
+    /// unnecessary.
+    ///
+    /// ## Register-reuse reasoning (why `register` does NOT touch the cache)
+    ///
+    /// The cache invariant is "a non-null cache slot holds a base currently
+    /// present in the hash". A newly-registered base `b` at index `i` finds
+    /// `own_cache[i]` either EMPTY (`null` — fine, no stale entry) or holding
+    /// some OTHER base `b' != b`. In the latter case `b'` can only be a base
+    /// that is ITSELF still live in the hash (every eviction path clears the
+    /// slot when its base leaves, so a surviving non-null slot is a live base):
+    /// `b'` is not `b`, so a lookup of `b` MISSES the cache and falls to the
+    /// hash (correct), and a lookup of `b'` still HITS correctly (b' is
+    /// genuinely live). Registering `b` neither creates nor removes a hash
+    /// entry for `b'`, so the invariant holds for both.
+    ///
+    /// It is IMPOSSIBLE for `own_cache[i]` to hold `b` itself at register time:
+    /// the cache only fills from a won probe, and `b` could only have won a
+    /// probe while previously registered; but between that registration and
+    /// this one `b` MUST have been removed via `unregister`/`recycle`, which
+    /// clears the slot for `b`. Hence no stale `b` can survive to this
+    /// `register`. Therefore `register` needs no cache write — the ONLY hazard
+    /// (a stale slot surviving removal) is fully handled by the eviction in
+    /// `unregister`/`recycle`. Verified: see the counterfactual regression test
+    /// `regression_own_segment_cache_invalidation`.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    #[inline]
+    fn own_cache_clear(&mut self, base: *mut u8) {
+        let idx = Self::cache_index(base);
+        if self.own_cache[idx] == base {
+            self.own_cache[idx] = core::ptr::null_mut();
+        }
+    }
+
+    /// Iterate over all **live** (non-NULL) registered segment bases
+    /// (read-only). Skips NULL slots that were recycled by a prior
+    /// [`recycle`](Self::recycle) call. Used by:
+    /// - `AllocCore::drop` to collect every live segment's OS reservation for
+    ///   release. NULL slots are already released — skipping them prevents
+    ///   double-free.
+    /// - `find_segment_with_free` to scan segments for a free block.
+    /// - `contains_base` (defensive dealloc check).
+    ///
+    /// R2-01 (task #2003): `+ '_` binds the returned iterator to `&self`'s
+    /// lifetime, closing a real UAF — see `base_at`'s doc comment (below)
+    /// for why an interleaved-mutation caller must use `base_at` instead of
+    /// holding this iterator across a `recycle(...)` call regardless.
+    pub(crate) fn bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
+        let slots = self.slots;
+        let n = self.count as usize;
+        (0..n)
+            .map(move |i| {
+                let slot = Self::slot_ptr(slots, i) as *const *mut u8;
+                crate::alloc_core::node::Node::read_struct::<*mut u8>(slot)
+            })
+            .filter(|&p| !p.is_null())
+    }
+
+    /// Read the slot at index `i` directly, without going through the
+    /// `bases()` iterator. Returns `null_mut()` for a recycled (NULL) slot or
+    /// an out-of-range index — the caller distinguishes "recycled" from
+    /// "out of range" via `count()` if needed.
+    ///
+    /// **Why this exists (task #126; corrected by R2-01/task #2003):**
+    /// `bases()`'s returned `impl Iterator` now (post-`+ '_'`, task #2003)
+    /// captures `&self`'s lifetime, which conflicts with an interleaved
+    /// `&mut self.table.recycle(...)` call (needed by `find_segment_with_free`
+    /// to recycle segments that empty out mid-scan) — holding a live
+    /// `bases()` iterator across such a call is correctly a borrow-check
+    /// error. (Before task #2003's fix, `bases()`'s return type did NOT
+    /// actually capture that lifetime under edition 2021's RPIT elision
+    /// rules — the closure only closes over `Copy` data, so nothing forced
+    /// the capture — making this comment's premise inaccurate at the time it
+    /// was written; the conclusion below was always the right engineering
+    /// call regardless.) `base_at` sidesteps needing `bases()` here at all:
+    /// each call is a self-contained pointer read with no returned borrow,
+    /// so the caller can freely interleave `base_at(i)` reads with
+    /// `recycle(...)` calls in the same index-driven loop — no pre-collect
+    /// buffer needed, and no bound on how many segments can be recycled in
+    /// one scan.
+    #[inline(always)]
+    pub(crate) fn base_at(&self, i: usize) -> *mut u8 {
+        if i >= self.count as usize {
+            return core::ptr::null_mut();
+        }
+        let slot = Self::slot_ptr(self.slots, i) as *const *mut u8;
+        crate::alloc_core::node::Node::read_struct::<*mut u8>(slot)
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    /// Address of slot `i` within the registry array. Pure pointer arithmetic
+    /// through the `node` seam.
+    #[inline]
+    fn slot_ptr(slots: *mut *mut u8, i: usize) -> *mut *mut u8 {
+        crate::alloc_core::node::Node::offset(slots as *mut u8, i * core::mem::size_of::<*mut u8>())
+            as *mut *mut u8
+    }
+
+    // -------------------------------------------------------------------
+    // Task #135 (Part 1) — O(1) free-list of recycled slot indices.
+    //
+    // A plain stack (LIFO) of `u32` slot indices, carved in the primordial
+    // segment right after the hash table. Invariant: an index is on the
+    // free-list IF AND ONLY IF the corresponding `slots[index]` is currently
+    // NULL. `unregister`/`recycle` push (after NULLing the slot); `register`
+    // pops (before writing the new base into the slot). Both call sites are
+    // guarded so an index is pushed at most once per NULL transition (see
+    // their `current == base` / `current != base` checks), so the free-list
+    // never holds a duplicate entry and never holds an index whose slot is
+    // actually live.
+    // -------------------------------------------------------------------
+
+    /// Address of free-list entry `i`. Pure pointer arithmetic through the
+    /// `node` seam.
+    #[inline(always)]
+    fn free_list_slot_ptr(&self, i: usize) -> *mut u32 {
+        crate::alloc_core::node::Node::offset(
+            self.free_list as *mut u8,
+            i * core::mem::size_of::<u32>(),
+        ) as *mut u32
+    }
+
+    /// Push `idx` onto the free-list stack. Caller's invariant: `idx`'s slot
+    /// was just NULLed (transitioned live → recyclable) and is not already on
+    /// the free-list — see the guarded call sites in `unregister`/`recycle`.
+    #[inline]
+    fn free_list_push(&mut self, idx: u32) {
+        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
+        debug_assert!(
+            (top as usize) < FREE_LIST_CAPACITY,
+            "free-list overflow — more recycled slots than MAX_SEGMENTS"
+        );
+        let slot = self.free_list_slot_ptr(top as usize);
+        crate::alloc_core::node::Node::write_u32(slot, idx);
+        crate::alloc_core::node::Node::write_u32(self.free_top, top + 1);
+    }
+
+    /// Pop the most-recently-recycled index off the free-list, or `None` if
+    /// it is empty. O(1).
+    #[inline]
+    fn free_list_pop(&mut self) -> Option<u32> {
+        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
+        if top == 0 {
+            return None;
+        }
+        let new_top = top - 1;
+        let slot = self.free_list_slot_ptr(new_top as usize);
+        let idx = crate::alloc_core::node::Node::read_u32(slot);
+        crate::alloc_core::node::Node::write_u32(self.free_top, new_top);
+        Some(idx)
+    }
+}
