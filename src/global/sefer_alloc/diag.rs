@@ -119,6 +119,16 @@ impl SeferAlloc {
             config_conflicts: crate::registry::config_conflicts_total(),
             #[cfg(not(feature = "alloc-decommit"))]
             config_conflicts: 0,
+
+            // R2-09 (independent src review round 2, task #2011): the exact,
+            // final "this cross-thread free is now permanently lost" counter
+            // — see AllocStats::cross_thread_frees_lost's doc comment for why
+            // this is distinct from (and a stronger signal than) ring_overflows.
+            #[cfg(feature = "alloc-xthread")]
+            cross_thread_frees_lost: crate::registry::DBG_RING_PUSH_RETRY_EXHAUSTED
+                .load(core::sync::atomic::Ordering::Relaxed),
+            #[cfg(not(feature = "alloc-xthread"))]
+            cross_thread_frees_lost: 0,
         }
     }
 

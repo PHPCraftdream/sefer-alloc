@@ -138,6 +138,7 @@ use sefer_alloc::registry::{
 };
 
 use sefer_alloc::alloc_core::remote_free_ring::DBG_RING_OVERFLOW;
+use sefer_alloc::SeferAlloc;
 
 // Serialise all tests in this file: the registry and the diagnostic counters
 // are process-global statics; concurrent test-fn execution under `cargo
@@ -483,6 +484,172 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
         "owner reclaimed {reclaimed} of {N} blocks after the starved burst — \
          RAD-4b promises every block is recoverable once the owner resumes \
          alloc() calls, not merely 'exhausted_delta == 0' bookkeeping."
+    );
+
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
+/// ── Harness 2.1: R2-09 exact drop counter — the documented residual,
+/// witnessed for real, and proven correctly exposed ────────────────────────
+///
+/// R2-09 (independent src review round 2, task #2011): harness 2 above
+/// deliberately picks `N = 1_000` (< `HEAP_OVERFLOW_CAP = 2048`), so
+/// `exhausted_delta` stays exactly `0` there — RAD-4b's second-chance ring
+/// fully absorbs that burst. This harness does the opposite: it picks `N`
+/// LARGER than the COMBINED capacity of the per-segment `RemoteFreeRing`
+/// (256) and the heap-level `HeapOverflow` ring (`HEAP_OVERFLOW_CAP = 2048`
+/// native) — 2,304 total — under the SAME fully-owner-starved shape, so a
+/// non-zero, genuinely-lost residual is unavoidable BY DESIGN (this is the
+/// documented, honest limit `heap_overflow.rs`'s own "Capacity — an honest
+/// bound, not an unbounded proof" module-doc section describes, not a bug).
+///
+/// **What this proves that harness 2 cannot:** not "zero loss" (impossible
+/// here, by construction) but that a genuine, non-zero loss (a) actually
+/// gets counted (`exhausted_delta > 0` — the terminal branch really fires
+/// under this saturating workload, it is not silently skipped) and (b) is
+/// correctly exposed on the PUBLIC `SeferAlloc::stats()` surface, not just a
+/// crate-internal test hook. This is the review's own explicitly-sanctioned
+/// interim fallback ("until a lossless protocol exists, export an exact
+/// drop counter, don't promise a general bound") — see
+/// `docs/correctness-open-items/ACTIVE.md` item 148 for why a genuinely
+/// lossless redesign was scoped OUT of this task as too large/risky for a
+/// single cycle, and `AllocStats::cross_thread_frees_lost`
+/// (`src/global/alloc_stats.rs`) for the newly-exposed public counter.
+///
+/// **Deliberately NOT asserted: `reclaimed + exhausted_delta == N`.** An
+/// earlier version of this test asserted exactly that and was WRONG — this
+/// allocator is capacity-elastic (it can always reserve more OS address
+/// space), so the owner's post-burst `alloc()` loop keeps succeeding
+/// (`reclaimed == N`) regardless of how many of the ORIGINAL N blocks were
+/// permanently dropped: a dropped block's bytes stay mapped and unused, but
+/// the owner's NEXT allocation is happily served from fresh/other memory
+/// instead of specifically recovering that exact block. `reclaimed` and
+/// `exhausted_delta` are therefore NOT complementary quantities over N —
+/// comparing them this way is a category error, not a soundness property.
+/// (Confirmed empirically before this fix: a real run measured
+/// `reclaimed=3000, exhausted_delta=952` for `N=3000` — both numbers
+/// correct in isolation, their sum meaningless.) `reclaimed == N` is instead
+/// asserted on its own below, as a plain allocator-health check (the burst
+/// does not leave the heap stuck/degraded), independent of the loss count.
+///
+/// **Native-only** (`#[cfg(not(miri))]`) — same rationale as harness 2
+/// (this burst size is impractically slow under miri's interpreter; the
+/// `HEAP_OVERFLOW_CAP` constant itself is miri-shrunk to 64, so the
+/// combined-capacity arithmetic below would need a different N anyway).
+#[cfg(not(miri))]
+#[test]
+fn remote_fanin_owner_starved_residual_is_exactly_accounted() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    // Comfortably exceeds RING_CAP(256) + HEAP_OVERFLOW_CAP(2048) = 2304 —
+    // guarantees a genuine, non-zero exhausted_delta below (unlike harness
+    // 2's N=1_000, which fits entirely inside the combined capacity and so
+    // asserts exhausted_delta == 0 instead).
+    const N: usize = 3_000;
+    const PRODUCERS: usize = 8;
+    let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null());
+
+    let exhausted_before = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed);
+    let overflow_before = DBG_RING_OVERFLOW.load(Ordering::Relaxed);
+
+    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
+    for _ in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null());
+        ptrs.push(p);
+    }
+    let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    let chunk = N.div_ceil(PRODUCERS);
+    let mut handles = Vec::with_capacity(PRODUCERS);
+    for slice in addrs.chunks(chunk) {
+        let slice = slice.to_vec();
+        handles.push(thread::spawn(move || {
+            let _ = bootstrap::ensure();
+            let remote_heap = HeapRegistry::claim();
+            assert!(!remote_heap.is_null());
+            for addr in slice {
+                unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+            }
+            unsafe { HeapRegistry::recycle(remote_heap) };
+        }));
+    }
+    // The owner does NOTHING during the whole producer burst — identical
+    // pathological shape to harness 2, just with a burst deliberately sized
+    // to exceed the combined ring+overflow capacity.
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    let overflow_delta = DBG_RING_OVERFLOW.load(Ordering::Relaxed) - overflow_before;
+    assert!(
+        overflow_delta > 0,
+        "remote_fanin_owner_starved_residual_is_exactly_accounted did not force \
+         any per-segment ring overflow (DBG_RING_OVERFLOW delta == 0) — this run \
+         is a VACUOUS counterfactual, not a valid proof. Increase N / PRODUCERS."
+    );
+
+    // Owner resumes normal alloc() calls after the starved burst — reclaims
+    // everything the ring/overflow mechanisms managed to hold onto.
+    let mut reclaimed = 0usize;
+    for _ in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        if p.is_null() {
+            break;
+        }
+        reclaimed += 1;
+        unsafe { (*heap).dealloc(p, layout) };
+    }
+
+    let exhausted_delta = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed) - exhausted_before;
+
+    eprintln!(
+        "remote_fanin_owner_starved_residual_is_exactly_accounted: \
+         overflow_attempts_delta={overflow_delta} exhausted_delta={exhausted_delta} \
+         reclaimed_after={reclaimed} (N={N}, PRODUCERS={PRODUCERS})"
+    );
+
+    // Non-vacuity: this test exists specifically to witness the DOCUMENTED
+    // residual for real (unlike harness 2, which stays at exactly 0 for its
+    // smaller N). A zero delta here would mean this burst failed to exceed
+    // the combined capacity as intended, making the public-stats check below
+    // trivially uninteresting rather than a real exactness proof.
+    assert!(
+        exhausted_delta > 0,
+        "expected a genuine non-zero exhausted_delta (N={N} exceeds the combined \
+         RING_CAP+HEAP_OVERFLOW_CAP capacity) — got 0, meaning this burst did not \
+         actually exceed combined capacity as intended. Increase N."
+    );
+
+    // Allocator health check (NOT a loss-accounting claim — see the doc
+    // comment above for why `reclaimed + exhausted_delta == N` is invalid):
+    // the burst must not leave the heap stuck or degraded. This allocator is
+    // capacity-elastic, so a healthy heap keeps satisfying every subsequent
+    // alloc() regardless of how many of the ORIGINAL N blocks were dropped.
+    assert_eq!(
+        reclaimed, N,
+        "the heap only served {reclaimed}/{N} allocations after the starved \
+         burst — the burst left it stuck or degraded, independent of the \
+         (separately asserted) exhausted-block count."
+    );
+
+    // Confirm the PUBLIC AllocStats surface actually reflects this counter
+    // (not just the raw crate-internal static this test measured directly
+    // above) — the whole point of R2-09's fix is that a downstream consumer
+    // can see this via `SeferAlloc::stats()`, not just via test-only crate
+    // internals. No concurrent activity can intervene here: SerialGuard
+    // holds this whole test's execution exclusive within this binary.
+    let public_exhausted_total = SeferAlloc::new().stats().cross_thread_frees_lost;
+    assert_eq!(
+        public_exhausted_total,
+        exhausted_before + exhausted_delta,
+        "AllocStats::cross_thread_frees_lost ({public_exhausted_total}) does not \
+         match the raw DBG_RING_PUSH_RETRY_EXHAUSTED delta \
+         (before={exhausted_before} + delta={exhausted_delta}) — the public stats() \
+         surface is not correctly wired to the underlying counter."
     );
 
     unsafe { HeapRegistry::recycle(heap) };
