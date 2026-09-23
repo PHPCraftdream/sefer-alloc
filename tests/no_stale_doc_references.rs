@@ -2287,3 +2287,71 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
          against ITSELF, which is where task #1206 found the gap."
     );
 }
+
+/// R2-22 (independent src review round 2): guard against the
+/// `AllocStats::ring_overflows` leak-overclaim regression and against losing
+/// the `decommit_calls` logical-vs-syscall distinction.
+///
+/// Pre-R2-22, `ring_overflows`'s doc asserted "On overflow the freed block
+/// is **discarded**" and that a sustained high rate "means blocks are
+/// actually being leaked" — false: the field reads `DBG_RING_OVERFLOW`,
+/// which ticks on the FAILED FIRST ring push, after which the `HeapOverflow`
+/// second-chance ring or the bounded retry usually saves the free. The real
+/// terminal-loss counter is `cross_thread_frees_lost` (R2-09). Similarly,
+/// `decommit_calls` counts ENTRIES into the decommit helper including
+/// `release_follows` early-returns that never reach a decommit syscall —
+/// the doc must keep saying so. This test fails if the overclaiming prose
+/// reappears or the clarifying pointers are dropped.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn no_ring_overflow_leak_overclaim_in_alloc_stats_docs() {
+    let path = src_dir().join("global").join("alloc_stats.rs");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+
+    // The pre-R2-22 overclaiming phrases must never come back.
+    for stale in &[
+        "the freed block is **discarded**",
+        "means blocks are actually being leaked",
+        "OS\" invocations since process start",
+    ] {
+        assert!(
+            !text.contains(stale),
+            "stale AllocStats doc phrase reintroduced: {stale:?} — \
+             ring_overflows is a first-tier-miss counter \
+             (cross_thread_frees_lost is the loss counter) and decommit_calls \
+             counts logical helper entries, not OS decommit syscalls"
+        );
+    }
+
+    // The clarifying R2-22 wording must stay.
+    for required in &[
+        "first-tier miss",
+        "This is NOT a leak counter",
+        "NOT an OS decommit-syscall count",
+        "release_follows",
+    ] {
+        assert!(
+            text.contains(required),
+            "required AllocStats doc phrase missing: {required:?} — the R2-22 \
+             clarification (ring_overflows is not a leak counter; \
+             decommit_calls counts logical entries) was dropped"
+        );
+    }
+
+    // `ring_overflows`'s own doc block must point at the real terminal-loss
+    // counter by name.
+    let doc_start = text
+        .find("Number of cross-thread frees whose FIRST push attempt")
+        .expect("ring_overflows' R2-22 doc block not found");
+    let doc_end = text[doc_start..]
+        .find("pub ring_overflows")
+        .expect("ring_overflows field not found");
+    let doc_block = &text[doc_start..doc_start + doc_end];
+    assert!(
+        doc_block.contains("cross_thread_frees_lost"),
+        "ring_overflows' doc block must cross-reference \
+         `cross_thread_frees_lost` as the field to check for an actual loss"
+    );
+}

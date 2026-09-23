@@ -68,9 +68,20 @@ pub struct AllocStats {
     /// feature set) to get the real count.
     pub large_cache_hits: u64,
 
-    /// Number of M6 "decommit an emptied segment's payload pages back to the
-    /// OS" invocations since process start. Requires the `alloc-decommit`
-    /// feature; `0` otherwise.
+    /// Number of logical entries into the small-segment decommit helper (the
+    /// M6 "decommit an emptied segment" decision point) since process start,
+    /// across both decommit variants. Requires the `alloc-decommit` feature;
+    /// `0` otherwise.
+    ///
+    /// **This is NOT an OS decommit-syscall count.** Callers whose segment is
+    /// immediately recycled take the `release_follows` fast path: the whole
+    /// reservation goes back to the OS via the release call
+    /// (`MEM_RELEASE` / `munmap`) instead, so the helper returns after only a
+    /// bump-cursor reset and never issues a payload `decommit_pages` syscall
+    /// at all. Those entries are still counted here (deliberately — see the
+    /// counting note in `src/alloc_core/small/alloc_core_small_pool/decommit.rs`),
+    /// so this field is an upper bound on real page-decommit syscalls, not an
+    /// equality.
     pub decommit_calls: u64,
 
     /// Number of large allocations reclaimed from another thread's heap via
@@ -92,16 +103,32 @@ pub struct AllocStats {
     /// `--features "production alloc-stats"` to get the real count.
     pub tcache_hits: u64,
 
-    /// Number of times a cross-thread free could not be pushed onto a
-    /// segment's remote-free ring because the ring was full. On overflow the
-    /// freed block is **discarded** (it stays mapped and unused — a bounded
-    /// leak; see "Overflow semantics" in
+    /// Number of cross-thread frees whose FIRST push attempt onto a segment's
+    /// remote-free ring found it full (a first-tier miss). Requires the
+    /// `alloc-xthread` feature; `0` otherwise.
+    ///
+    /// **This is NOT a leak counter.** The underlying counter
+    /// (`DBG_RING_OVERFLOW`) ticks once per logical free that saw a full
+    /// segment ring — the moment that free enters its recovery chain — and
+    /// most such frees are saved by the next tier: the owning heap's
+    /// second-chance `HeapOverflow` ring (tried immediately, before any
+    /// spinning) and, if that is also momentarily full, the bounded
+    /// spin-retry against both tiers. An elevated or sustained rate here is
+    /// expected under multi-producer fan-in and means "handled
+    /// ring-capacity pressure", not loss.
+    ///
+    /// **The field to check (and alert on) for an actually-discarded
+    /// cross-thread free is [`cross_thread_frees_lost`](Self::cross_thread_frees_lost)**:
+    /// it increments only when EVERY tier of that chain failed and the freed
+    /// block was genuinely discarded (it stays mapped and unused — a bounded,
+    /// sound, non-UB leak; see "Overflow semantics" in
     /// [`remote_free_ring`](crate::alloc_core::remote_free_ring)'s module
-    /// docs). This is sound (no UAF, no corruption) but is NOT free — a
-    /// sustained high rate here means blocks are actually being leaked and
-    /// indicates ring-capacity pressure worth tuning (e.g. a larger ring, or
-    /// more frequent owner-side drains). Requires the `alloc-xthread`
-    /// feature; `0` otherwise.
+    /// docs for the bare-ring contract that chain is built on). Reading
+    /// `ring_overflows` in isolation cannot distinguish a rescued free from a
+    /// lost one: `tests/r2_22_ring_overflows_doc_semantics.rs` pins the
+    /// rescued and retry-recovered cases, and `tests/remote_fanin.rs`'s
+    /// `remote_fanin_owner_starved_residual_is_exactly_accounted` pins the
+    /// terminal case.
     pub ring_overflows: u64,
 
     /// Cumulative count of successful OS segment reservations since process
