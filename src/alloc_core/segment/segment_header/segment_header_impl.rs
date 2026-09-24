@@ -490,11 +490,12 @@ pub(crate) struct SegmentHeader {
     /// `with_exposed_provenance_mut` (the crate's sanctioned exposed-provenance
     /// pairing — see `deferred_large::push`/`drain`).
     ///
-    /// Two sentinels: [`ABANDONED_TAIL`] (`u64::MAX`, "not linked into any
+    /// Three sentinels: [`ABANDONED_TAIL`] (`u64::MAX`, "not linked into any
     /// stack" — every fresh/reclaimed segment starts here, and the
     /// double-push guard claims the link word FROM this value) and
     /// `DEFERRED_LARGE_TAIL` (`u64::MAX - 1`, "on this stack, no next" — the
-    /// bottom-of-stack marker). Accessed atomically through
+    /// bottom-of-stack marker), and `DEFERRED_LARGE_PUBLISHING`
+    /// (`u64::MAX - 2`, claimed/swapped but link not yet ready). Accessed atomically through
     /// [`deferred_next_atomic`](SegmentMeta::deferred_next_atomic).
     ///
     /// Historically this field was the link for the abandoned-segments stack of
