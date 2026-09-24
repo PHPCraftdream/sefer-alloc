@@ -59,7 +59,7 @@ use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT};
 /// lives here in the test (which is a separate crate, not under the deny).
 ///
 /// SAFETY: the underlying buffer is shared and accessed only through atomic
-/// `&AtomicU32` refs from the node seam; there is no mutable shared state and
+/// atomic refs from the node seam; there is no mutable shared state and
 /// no data race. The buffer outlives the view (held by the main thread's
 /// `Arc`, dropped only after all threads join).
 struct SendRing(RemoteFreeRing);
@@ -122,14 +122,11 @@ impl Drop for WatchdogHandle {
 /// allocator (this test does NOT install sefer as global), so there is no
 /// reentrancy concern.
 fn ring_buffer() -> Box<[u8]> {
-    // The ring slot/cursor accesses are 4-byte aligned (each field is a u32).
-    // A `Vec<u8>` allocation is at least `align_of::<u32>()`-aligned for sizes
-    // >= 4 (the System allocator aligns to at least word size); verify it to
-    // be safe.
+    // u64 cursors require 8-byte alignment; verify the allocation.
     let mut buf: Vec<u8> = vec![0u8; FOOTPRINT];
     assert!(
-        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u32>()),
-        "ring buffer must be 4-byte aligned"
+        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u64>()),
+        "ring buffer must be 8-byte aligned"
     );
     buf.into_boxed_slice()
 }
@@ -152,10 +149,10 @@ fn ring_isolated_mpsc_no_loss_no_dup() {
 
     let buf = Arc::new(ring_buffer());
     // SAFETY: `buf` lives for the whole test (held in `Arc` by both threads);
-    // its base points to FOOTPRINT writable, 4-byte-aligned bytes. The ring
+    // its base points to FOOTPRINT writable, 8-byte-aligned bytes. The ring
     // only touches bytes within `[base, base+FOOTPRINT)`.
     let base = buf.as_ptr() as *mut u8;
-    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, owned buffer.
+    // SAFETY: `base` is a FOOTPRINT-sized, 8-byte-aligned, owned buffer.
     unsafe { RemoteFreeRing::init_test_buffer(base) };
     // One shared view, wrapped `Send`+`Sync` so it can be shared across threads
     // via `Arc`. All field access is race-free atomics via the node seam.
@@ -222,7 +219,7 @@ fn ring_isolated_mpsc_no_loss_no_dup() {
         let succeeded = Arc::clone(&succeeded);
         // SAFETY: the shared `SendRing` view is accessed concurrently by the
         // producers and the consumer, but every access is through a
-        // `&AtomicU32` from `Node::atomic_u32_at` (the node seam), so the
+        // atomic refs from the node seam, so the
         // accesses are race-free atomics. The buffer outlives all producers
         // (held by the main thread's `Arc`).
         let ring_p = Arc::clone(&ring);

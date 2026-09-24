@@ -6,7 +6,8 @@
 //! a downstream safe caller could pass a null or misaligned base and the ring
 //! would construct a view (and, for `init_test_buffer`, write the cursor/slot
 //! bytes) over it. The R2-3 release-surviving `assert!` on null +
-//! 4-byte-alignment was the first layer; task #101 added the `unsafe fn`
+//! 4-byte-alignment was the first layer; R2-10 requires 8-byte alignment
+//! for the widened cursors. Task #101 added the `unsafe fn`
 //! boundary so the unverifiable validity/size/lifetime contract lives in the
 //! signature, not in prose.
 //!
@@ -75,9 +76,9 @@ fn init_test_buffer_rejects_null_base() {
     );
 }
 
-/// Non-regression: a VALID `FOOTPRINT`-sized, 4-byte-aligned buffer is accepted
+/// Non-regression: a VALID `FOOTPRINT`-sized, 8-byte-aligned buffer is accepted
 /// by both surfaces. This mirrors `tests/remote_ring_unit.rs`'s `ring_buffer()`
-/// setup, which already asserts the ring's own 4-byte-alignment invariant
+/// setup, which already asserts the ring's own 8-byte-alignment invariant
 /// externally — the new in-function `assert!` is the release-surviving twin of
 /// that external check, so a documented-use buffer must still pass.
 #[test]
@@ -85,12 +86,12 @@ fn valid_aligned_buffer_is_accepted() {
     let mut buf = vec![0u8; FOOTPRINT].into_boxed_slice();
     let base = buf.as_mut_ptr();
     // The System allocator aligns this to >= word size, satisfying the ring's
-    // 4-byte requirement (the exact invariant `ring_buffer()` asserts).
+    // 8-byte requirement (the exact invariant `ring_buffer()` asserts).
     assert!(
-        (base as usize).is_multiple_of(4),
-        "test buffer must be 4-byte aligned"
+        (base as usize).is_multiple_of(8),
+        "test buffer must be 8-byte aligned"
     );
-    // SAFETY: `base` points to `FOOTPRINT` writable, 4-byte-aligned, exclusively-
+    // SAFETY: `base` points to `FOOTPRINT` writable, 8-byte-aligned, exclusively-
     // owned bytes that live for the ring's use (the boxed `buf`).
     unsafe {
         RemoteFreeRing::init_test_buffer(base);
@@ -98,4 +99,19 @@ fn valid_aligned_buffer_is_accepted() {
     }
     // No assertion beyond not panicking: both calls accepted the valid buffer.
     let _ = &mut buf; // keep `buf` alive past the view construction
+}
+
+#[test]
+fn four_byte_aligned_buffer_is_rejected_for_u64_cursors() {
+    let mut buf = vec![0u8; FOOTPRINT + 8];
+    let base = buf.as_mut_ptr();
+    assert!((base as usize).is_multiple_of(8));
+    let misaligned = base.wrapping_add(4);
+    assert!((misaligned as usize).is_multiple_of(4));
+    assert!(!(misaligned as usize).is_multiple_of(8));
+    let result = std::panic::catch_unwind(|| {
+        // SAFETY: the release guard rejects this address before any access.
+        unsafe { RemoteFreeRing::init_test_buffer(misaligned) }
+    });
+    assert!(result.is_err());
 }

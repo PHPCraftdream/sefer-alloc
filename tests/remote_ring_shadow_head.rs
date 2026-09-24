@@ -3,9 +3,8 @@
 //!
 //! The pre-existing `tests/remote_ring_unit.rs` and
 //! `tests/regression_ring_cursor_wrap.rs` already exercise the ring's core
-//! MPSC identity (`reclaimed + overflowed == pushed`) and the `u32::MAX -> 0`
-//! wrap, and per that file's own doc comment "a stale-shadow bug would break
-//! [those invariants]" — so they are non-vacuous counterfactuals for F10 by
+//! MPSC identity (`reclaimed + overflowed == pushed`) and the non-wrapping
+//! `u32::MAX` crossing/exhaustion contract — non-vacuous counterfactuals by
 //! construction, and this file does NOT duplicate them.
 //!
 //! This file adds coverage specific to the shadow mechanism itself:
@@ -17,7 +16,7 @@
 //!    ring with headroom take the FAST path; a ring held at/near capacity
 //!    takes the SLOW path.
 //! 2. `shadow_survives_dbg_set_cursors_reset` — `dbg_set_cursors` (used by
-//!    the wrap regression suite) resets `cached_head` alongside `head`/`tail`
+//!    the cursor regression suite) resets `cached_head` alongside `head`/`tail`
 //!    (this task's own fix to that seam — see its doc comment), so a preset
 //!    ring's FIRST push after the preset can take the shadow FAST path
 //!    immediately when there is genuine headroom, instead of unconditionally
@@ -80,8 +79,8 @@ const CAS_RETRY_SLACK: u64 = 8;
 fn ring_buffer() -> Box<[u8]> {
     let mut buf: Vec<u8> = vec![0u8; FOOTPRINT];
     assert!(
-        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u32>()),
-        "ring buffer must be 4-byte aligned"
+        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u64>()),
+        "ring buffer must be 8-byte aligned"
     );
     buf.into_boxed_slice()
 }
@@ -108,7 +107,7 @@ fn shadow_stale_low_never_causes_spurious_admit() {
 
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
-    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, exclusively-owned
+    // SAFETY: `base` is a FOOTPRINT-sized, 8-byte-aligned, exclusively-owned
     // buffer (see `ring_buffer()`), live for the whole test.
     let ring = unsafe {
         RemoteFreeRing::init_test_buffer(base);
@@ -117,7 +116,7 @@ fn shadow_stale_low_never_causes_spurious_admit() {
 
     // Fill the ring to RING_CAP — the last push's full_check necessarily
     // refreshes cached_head (either it was already stale-full-looking, or
-    // this exact push is the one that makes tail.wrapping_sub(cached_head)
+    // this exact push is the one that makes tail - cached_head
     // hit RING_CAP for the FIRST time and forces the slow-path refresh).
     for i in 0..RING_CAP as u32 {
         let off = (i + 1) * 16;
@@ -145,9 +144,9 @@ fn shadow_stale_low_never_causes_spurious_admit() {
     // cached_head is STALE-LOW (still holds the pre-drain "full" head value,
     // i.e. 0). The critical assertion: a push right now must SUCCEED. Under
     // the real (correct) full_check, cached_head=0 makes
-    // tail.wrapping_sub(0) = RING_CAP >= RING_CAP -> shadow suggests full ->
+    // tail - 0 = RING_CAP >= RING_CAP -> shadow suggests full ->
     // falls to the slow path -> real head.load(Acquire) sees RING_CAP (post
-    // drain) -> tail.wrapping_sub(RING_CAP) = 0 < RING_CAP -> admits.
+    // drain) -> tail - RING_CAP = 0 < RING_CAP -> admits.
     assert!(
         ring.push(4242).is_ok(),
         "STALE-LOW shadow must never cause a spurious overflow: the slow \
@@ -184,15 +183,15 @@ fn shadow_survives_dbg_set_cursors_reset() {
         RemoteFreeRing::over_test_buffer(base)
     };
 
-    // Preset far from the wrap, well inside capacity headroom.
-    let start = 1_000_000u32;
+    // Preset inside capacity headroom.
+    let start = 1_000_000u64;
     ring.dbg_set_cursors(start, start);
     assert_eq!(ring.dbg_cursors(), (start, start));
 
     let fast_before = DBG_RING_PUSH_SHADOW_FAST.load(Ordering::Relaxed);
 
     // The first push after a CONSISTENT preset (cached_head == head == tail)
-    // must take the FAST path: tail.wrapping_sub(cached_head) == 0 < CAP.
+    // must take the FAST path: tail - cached_head == 0 < CAP.
     assert!(
         ring.push(16).is_ok(),
         "push after consistent preset must succeed"
@@ -284,7 +283,7 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
         // percentage that the test setup structurally guarantees: at most a
         // handful of slow-path calls are expected (the very first push, before
         // cached_head is ever refreshed from 0, plus any periodic refresh due
-        // to modulus/occupancy wrapping), so >= 99% fast path is realistic.
+        // to occupancy reaching capacity), so >= 99% fast path is realistic.
         let fast_pct = (fast_delta as f64 / total as f64) * 100.0;
         assert!(
             fast_pct >= 99.0,
@@ -319,14 +318,14 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
         // the drain-via-dbg_set_cursors, which does NOT touch cached_head
         // here — using `head().store` directly, not the seam, precisely so
         // the shadow stays untouched between pushes) — i.e.
-        // `t.wrapping_sub(cached_head) == RING_CAP`, which is NOT `<
+        // `t - cached_head == RING_CAP`, which is NOT `<
         // RING_CAP`, forcing the slow path on EVERY push in this loop.
         for i in 0..RING_CAP as u32 {
             assert!(ring.push((i + 1) * 16).is_ok());
         }
         assert_eq!(
-            ring.dbg_cursors().1.wrapping_sub(ring.dbg_cursors().0),
-            RING_CAP as u32,
+            ring.dbg_cursors().1 - ring.dbg_cursors().0,
+            RING_CAP as u64,
             "ring must be exactly full before the adversarial loop"
         );
 
@@ -342,7 +341,7 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
             // relative to the now-advanced head, forcing every subsequent
             // push's full_check onto the slow path.
             let (h, _t) = ring.dbg_cursors();
-            ring.dbg_advance_head_only(h.wrapping_add(1));
+            ring.dbg_advance_head_only(h + 1);
             // Refill by exactly 1 (occupancy back to RING_CAP).
             assert!(
                 ring.push((i + 1) * 16).is_ok(),

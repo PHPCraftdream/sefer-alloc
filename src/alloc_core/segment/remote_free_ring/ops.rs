@@ -41,7 +41,7 @@ impl Drop for DrainHeadPublish {
 impl RemoteFreeRing {
     /// Construct the view over ring metadata at `base + off`. The caller (the
     /// bootstrap / `SegmentMeta::remote_ring`) guarantees the byte range
-    /// `[base + off, base + off + FOOTPRINT)` is carved, 4-byte-aligned, and
+    /// `[base + off, base + off + FOOTPRINT)` is carved, 8-byte-aligned, and
     /// inside a live segment.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn at(base: *mut u8, off: usize) -> Self {
@@ -59,14 +59,14 @@ impl RemoteFreeRing {
     /// Production code MUST use [`at`](Self::at) with a segment-relative offset
     /// from [`Layout::remote_ring_off`](crate::alloc_core::segment_header::Layout::remote_ring_off).
     ///
-    /// R2-3: the null + 4-byte-alignment preconditions are checked by a
+    /// Null and 8-byte-alignment preconditions are checked by a
     /// RELEASE-surviving `assert!` (not `debug_assert!`), so a null/misaligned
     /// base panics in every build.
     ///
     /// # Safety
     ///
     /// The caller MUST guarantee that `base` points to at least `FOOTPRINT`
-    /// writable, 4-byte-aligned bytes that are exclusively owned by the caller
+    /// writable, 8-byte-aligned bytes that are exclusively owned by the caller
     /// and live for the ring's use (e.g. an `alloc::vec![0u8; FOOTPRINT]` boxed
     /// slice). The `FOOTPRINT`-writability / liveness / exclusivity half of the
     /// contract cannot be checked at runtime — the only documented use is an
@@ -80,8 +80,8 @@ impl RemoteFreeRing {
                           // signature, not in prose. The body is safe (delegates to `Self::at`).
     pub unsafe fn over_test_buffer(base: *mut u8) -> Self {
         assert!(
-            !base.is_null() && (base as usize).is_multiple_of(4),
-            "over_test_buffer: base must be non-null and 4-byte-aligned (R2-3 release guard)"
+            !base.is_null() && (base as usize).is_multiple_of(8),
+            "over_test_buffer: base must be non-null and 8-byte-aligned (R2-10 release guard)"
         );
         Self::at(base, 0)
     }
@@ -90,13 +90,13 @@ impl RemoteFreeRing {
     /// [`init_in_place`](Self::init_in_place) but for a standalone buffer (no
     /// segment-relative offset). See [`over_test_buffer`](Self::over_test_buffer).
     ///
-    /// R2-3: carries the same release-surviving null + 4-byte-alignment `assert!`
+    /// Carries the same release-surviving null + 8-byte-alignment `assert!`
     /// as [`over_test_buffer`](Self::over_test_buffer).
     ///
     /// # Safety
     ///
     /// Same contract as [`over_test_buffer`](Self::over_test_buffer#safety):
-    /// `base` MUST point to at least `FOOTPRINT` writable, 4-byte-aligned,
+    /// `base` MUST point to at least `FOOTPRINT` writable, 8-byte-aligned,
     /// exclusively-owned bytes that are live for the ring's use. The callee
     /// writes cursors and all slots starting at `base`, so a too-short, dangling
     /// or shared buffer is undefined behaviour.
@@ -105,8 +105,8 @@ impl RemoteFreeRing {
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn init_test_buffer(base: *mut u8) {
         assert!(
-            !base.is_null() && (base as usize).is_multiple_of(4),
-            "init_test_buffer: base must be non-null and 4-byte-aligned (R2-3 release guard)"
+            !base.is_null() && (base as usize).is_multiple_of(8),
+            "init_test_buffer: base must be non-null and 8-byte-aligned (R2-10 release guard)"
         );
         Self::init_in_place(base, 0)
     }
@@ -119,67 +119,42 @@ impl RemoteFreeRing {
         self.overflow().load(Ordering::Acquire)
     }
 
-    /// **Test surface** (task: long-run u32 wrap): preset the `head` and `tail`
-    /// cursors directly so a test can drive the ring across the `u32::MAX → 0`
-    /// boundary without first pushing 2^32 entries. Writes the atomics with
-    /// `Release` (mirrors the production drain's `head` publish / push's `tail`
-    /// reservation visibility) so a subsequently spawned producer/consumer sees
-    /// the preset. MUST be called on a quiescent ring (no concurrent push/drain)
-    /// and MUST leave `tail.wrapping_sub(head) <= RING_CAP` (the ring's full
-    /// invariant) — the caller is responsible for a consistent preset.
-    ///
-    /// F10 (task #502): also resets `cached_head` to the new `head` value.
-    /// Without this, a preset that MOVES `head` (e.g. from its `init_in_place`
-    /// zero to a wrap-boundary value) would leave a STALE `cached_head` behind
-    /// — harmless by the shadow's own soundness argument (a stale-low shadow
-    /// only ever forces the conservative slow path, never an unsound fast-path
-    /// accept — see the module doc), but needlessly forces every subsequent
-    /// push in the test to pay the slow path, which is not representative of
-    /// what a real preset-then-drive scenario should measure. Resetting here
-    /// keeps `dbg_set_cursors` an honest "quiescent ring, consistent state"
-    /// preset rather than relying on the shadow's stale-low safety margin to
-    /// paper over an inconsistency this seam itself introduced.
+    /// Test-only quiescent preset of non-wrapping u64 cursors and shadow.
+    /// Requires `head <= tail` and occupancy at most RING_CAP.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
-    pub fn dbg_set_cursors(&self, head: u32, tail: u32) {
+    pub fn dbg_set_cursors(&self, head: u64, tail: u64) {
+        assert!(head <= tail && tail - head <= RING_CAP as u64);
         self.head().store(head, Ordering::Release);
         self.tail().store(tail, Ordering::Release);
         self.cached_head().store(head, Ordering::Relaxed);
     }
 
-    /// F10 (task #502) **test surface**: advance ONLY the real `head` cursor
-    /// (`Release`, mirroring the production drain's own store), deliberately
-    /// NOT touching `cached_head` — the inverse of `dbg_set_cursors`'s
-    /// consistency-preserving reset. Lets a test simulate "the owner drained
-    /// but no producer has refreshed its shadow yet", i.e. deliberately
-    /// STALE the shadow relative to the real head, to drive the shadow's
-    /// slow path on demand and prove it still re-derives correctly (see
-    /// `tests/remote_ring_shadow_head.rs`'s adversarial-regime path-
-    /// activation coverage). MUST be called on a quiescent ring (no
-    /// concurrent push/drain), same precondition as `dbg_set_cursors`,
-    /// and MUST NOT regress `head` below its current value — storing a
-    /// value lower than the current `head` would leave `cached_head`
-    /// above the regressed `head` (a STALE-HIGH shadow), which the module
-    /// doc's F10 monotonicity argument declares impossible and which
-    /// could let the fast path admit a push into a full ring. The hook's
-    /// only real caller (`tests/remote_ring_shadow_head.rs`) uses
-    /// `wrapping_add(1)` — an advance, never a regression.
+    /// Test-only head advance without refreshing the producer shadow.
+    /// Requires a quiescent ring and no head regression.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
-    pub fn dbg_advance_head_only(&self, head: u32) {
+    pub fn dbg_advance_head_only(&self, head: u64) {
+        assert!(head >= self.head().load(Ordering::Relaxed));
+        assert!(head <= self.tail().load(Ordering::Relaxed));
         self.head().store(head, Ordering::Release);
     }
 
-    /// **Test surface** (task: long-run u32 wrap): read the current `(head,
-    /// tail)` cursor pair. Lets a test assert occupancy (`tail.wrapping_sub(
-    /// head)`) across the wrap. `Acquire` loads (uniform with the drain/push).
+    /// Test-only full-width cursor snapshot.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
-    pub fn dbg_cursors(&self) -> (u32, u32) {
+    pub fn dbg_cursors(&self) -> (u64, u64) {
         (
             self.head().load(Ordering::Acquire),
             self.tail().load(Ordering::Acquire),
         )
+    }
+
+    /// Test-only view of the owner-cache comparison token.
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_tail_guard_token(&self) -> u32 {
+        self.tail_relaxed()
     }
 
     /// Initialise a fresh ring at `base + off`: zero the cursors and mark every
@@ -192,13 +167,13 @@ impl RemoteFreeRing {
     pub(crate) fn init_in_place(base: *mut u8, off: usize) {
         let ring = Self::at(base, off);
         // Cursors: zero (empty ring). Plain writes — bootstrap is single-writer.
-        Node::write_u32(Node::offset(ring.base, HEAD_OFF) as *mut u32, 0);
-        Node::write_u32(Node::offset(ring.base, TAIL_OFF) as *mut u32, 0);
+        ring.head().store(0, Ordering::Relaxed);
+        ring.tail().store(0, Ordering::Relaxed);
         Node::write_u32(Node::offset(ring.base, OVERFLOW_OFF) as *mut u32, 0);
         // F10: cached_head starts at 0, matching the real head's initial value
         // (the shadow's own invariant — it only ever holds a value that was
         // once really `head` — holds trivially at init since both start at 0).
-        Node::write_u32(Node::offset(ring.base, CACHED_HEAD_OFF) as *mut u32, 0);
+        ring.cached_head().store(0, Ordering::Relaxed);
         // Every slot empty.
         for i in 0..RING_CAP {
             let slot =
@@ -207,15 +182,15 @@ impl RemoteFreeRing {
         }
     }
 
-    /// The `&AtomicU32` head cursor (consumer drain position).
+    /// The `&AtomicU64` head cursor (consumer drain position).
     #[cfg(feature = "alloc-xthread")]
-    fn head(&self) -> &'static core::sync::atomic::AtomicU32 {
-        Node::atomic_u32_at(self.base, HEAD_OFF)
+    fn head(&self) -> &'static core::sync::atomic::AtomicU64 {
+        Node::atomic_u64_at(self.base, HEAD_OFF)
     }
-    /// The `&AtomicU32` tail cursor (producer reserve position).
+    /// The `&AtomicU64` tail cursor (producer reserve position).
     #[cfg(feature = "alloc-xthread")]
-    fn tail(&self) -> &'static core::sync::atomic::AtomicU32 {
-        Node::atomic_u32_at(self.base, TAIL_OFF)
+    fn tail(&self) -> &'static core::sync::atomic::AtomicU64 {
+        Node::atomic_u64_at(self.base, TAIL_OFF)
     }
     /// The `&AtomicU32` overflow counter (diagnostic; number of discarded
     /// pushes due to a full ring).
@@ -223,61 +198,36 @@ impl RemoteFreeRing {
     fn overflow(&self) -> &'static core::sync::atomic::AtomicU32 {
         Node::atomic_u32_at(self.base, OVERFLOW_OFF)
     }
-    /// F10 (task #502): the `&AtomicU32` producer-line shadow replica of
+    /// F10 (task #502): the `&AtomicU64` producer-line shadow replica of
     /// `head`. Same cache line as `tail`/`overflow` — reading it costs no
     /// cross-core coherence traffic beyond what `push`'s own `tail` load
     /// already pays. See the module doc's "F10 — shadow/cached head" section
     /// for the full soundness argument for why a stale value here is always
     /// safe.
     #[cfg(feature = "alloc-xthread")]
-    fn cached_head(&self) -> &'static core::sync::atomic::AtomicU32 {
-        Node::atomic_u32_at(self.base, CACHED_HEAD_OFF)
+    fn cached_head(&self) -> &'static core::sync::atomic::AtomicU64 {
+        Node::atomic_u64_at(self.base, CACHED_HEAD_OFF)
     }
     /// The `&AtomicU32` slot at reservation index `i` (`i % RING_CAP`).
     #[cfg(feature = "alloc-xthread")]
-    fn slot(&self, i: usize) -> &'static core::sync::atomic::AtomicU32 {
-        let idx = i % RING_CAP;
+    fn slot(&self, i: u64) -> &'static core::sync::atomic::AtomicU32 {
+        let idx = (i % RING_CAP as u64) as usize;
         Node::atomic_u32_at(self.base, SLOTS_OFF + idx * core::mem::size_of::<u32>())
     }
 
-    /// F10 (task #502): the shared full-check used by both [`push`](Self::push)
-    /// and [`try_push_uncounted`](Self::try_push_uncounted). Returns `Ok(())`
-    /// if reservation `t` is provably within capacity; `Err(())` if the ring
-    /// is (really, `Acquire`-confirmed) full.
-    ///
-    /// **Fast path (shadow):** `ch = cached_head.load(Acquire)` — same
-    /// producer cache line as `tail`, no cross-core traffic. If
-    /// `t.wrapping_sub(ch) < RING_CAP`, the ring provably has room (the
-    /// module doc's "F10" soundness section proves `cached_head <= head`
-    /// always, so this can only UNDER-estimate available room, never
-    /// over-estimate it) — return `Ok(())` immediately without touching the
-    /// consumer's `head` line at all. The `Acquire` (R34-6, task #525,
-    /// finding F-1) restores the happens-before edge the pre-F10
-    /// `head.load(Acquire)` supplied: a producer whose slow path refreshed
-    /// `cached_head` with a `Release` store (below) carries the consumer's
-    /// `slot.store(EMPTY)` in its history, and THIS `Acquire` load
-    /// synchronizes-with that store — so a later producer that wins the
-    /// tail CAS into a recycled slot is guaranteed to observe the clear
-    /// before it publishes. On x86-TSO this `Acquire` load compiles to the
-    /// SAME `mov` as the old `Relaxed` (all x86 loads are acquire); the
-    /// cost is fence *strength*, not a fence instruction.
-    ///
-    /// **Slow path (real check + shadow refresh):** only reached when the
-    /// shadow suggests the ring MIGHT be full. Performs the exact pre-F10
-    /// `head.load(Acquire)`, refreshes `cached_head` from it (`Release` —
-    /// the refresh now carries the synchronisation edge that the fast
-    /// path's `Acquire` load pairs with; see the ordering note above),
-    /// and re-checks against the REAL value before returning `Err(())`.
+    /// Check room for snapshot `t`. The shadow can only be stale-low;
+    /// an ahead-of-`t` shadow forces an Acquire real-head check. Release
+    /// refresh preserves the recycled-slot clear/publish ordering edge.
     #[cfg(feature = "alloc-xthread")]
     #[inline(always)]
-    fn full_check(&self, t: u32) -> Result<(), ()> {
+    fn full_check(&self, t: u64) -> Result<(), ()> {
         // R34-6 (task #525, finding F-1): Acquire — restores the happens-
         // before edge that the pre-F10 `head.load(Acquire)` supplied (see
         // the module doc's F10 ordering supplement). On x86-TSO this is a
         // plain `mov` (identical to the old `Relaxed`); on aarch64 it is
         // one `ldapr` instead of `ldr`.
         let ch = self.cached_head().load(Ordering::Acquire);
-        if t.wrapping_sub(ch) < RING_CAP as u32 {
+        if t >= ch && t - ch < RING_CAP as u64 {
             // Shadow proves room exists (stale-low cached_head only makes
             // this branch LESS likely to fire, never falsely fire — see the
             // module doc soundness section). Skip the real Acquire load.
@@ -297,7 +247,7 @@ impl RemoteFreeRing {
         // its happens-before past. On x86-TSO this is a plain `mov`
         // (identical to the old `Relaxed`); on aarch64 it is one `stlr`.
         self.cached_head().store(h, Ordering::Release);
-        if t.wrapping_sub(h) >= RING_CAP as u32 {
+        if t < h || t - h >= RING_CAP as u64 {
             return Err(());
         }
         Ok(())
@@ -317,8 +267,8 @@ impl RemoteFreeRing {
             // F10: shadow-checked full-check (see `full_check`'s doc for the
             // fast/slow path split and the module doc for the soundness
             // argument). Semantically identical to the pre-F10
-            // `t.wrapping_sub(head.load(Acquire)) >= RING_CAP` check.
-            if self.full_check(t).is_err() {
+            // `t - head.load(Acquire) >= RING_CAP` check (when t >= head).
+            if t == u64::MAX || self.full_check(t).is_err() {
                 // Ring full: bounded leak. Count it (diagnostic, both the
                 // per-segment cursor-block counter AND the process-wide D2
                 // counter) and bail.
@@ -330,16 +280,14 @@ impl RemoteFreeRing {
             // reservation is the linearization point; Acquire pairs with a
             // prior producer's Release publish (harmless here, but uniform with
             // the drain's view). Relaxed on failure: retry, no side-effect.
-            match self.tail().compare_exchange_weak(
-                t,
-                t.wrapping_add(1),
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
+            match self
+                .tail()
+                .compare_exchange_weak(t, t + 1, Ordering::AcqRel, Ordering::Relaxed)
+            {
                 Ok(_) => {
                     // Publish: write the offset into the reserved slot. Release
                     // so the consumer's Acquire slot load sees this write.
-                    self.slot(t as usize).store(offset, Ordering::Release);
+                    self.slot(t).store(offset, Ordering::Release);
                     return Ok(());
                 }
                 Err(_) => continue, // Another producer reserved `t`; retry.
@@ -376,20 +324,18 @@ impl RemoteFreeRing {
             let t = self.tail().load(Ordering::Relaxed);
             // F10: identical shadow-checked full-check as `push` (see
             // `full_check`'s doc + the module doc's soundness section).
-            if self.full_check(t).is_err() {
+            if t == u64::MAX || self.full_check(t).is_err() {
                 // Ring full: bounded leak, SAME as `push` — but deliberately
                 // uncounted (see doc comment above for why).
                 return Err(PushOverflow);
             }
             // Reserve slot `t`: identical CAS/publish protocol to `push`.
-            match self.tail().compare_exchange_weak(
-                t,
-                t.wrapping_add(1),
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
+            match self
+                .tail()
+                .compare_exchange_weak(t, t + 1, Ordering::AcqRel, Ordering::Relaxed)
+            {
                 Ok(_) => {
-                    self.slot(t as usize).store(offset, Ordering::Release);
+                    self.slot(t).store(offset, Ordering::Release);
                     return Ok(());
                 }
                 Err(_) => continue, // Another producer reserved `t`; retry.
@@ -406,8 +352,9 @@ impl RemoteFreeRing {
     /// reservation CAS but hasn't stored the offset yet) — order is preserved by
     /// the cursors, so a later drain picks it up.
     ///
-    /// Returns the final `head` value written (i.e. the drain cursor after
-    /// this call). PERF-PASS-4 (G9/C2, task #52): callers that maintain an
+    /// Returns the owner-cache comparison token. It equals the final head
+    /// below u32::MAX and is 0 afterward, disabling the narrow cache's
+    /// equality shortcut. PERF-PASS-4 (G9/C2, task #52): callers that maintain an
     /// owner-private cached copy of `head` (to skip future empty drains — see
     /// [`RemoteFreeRing::is_likely_empty`]) use this to refresh their cache
     /// without a second atomic load; callers that don't care simply ignore it
@@ -454,20 +401,10 @@ impl RemoteFreeRing {
             head: self.head(),
             h,
         };
-        // Wrap-correct drain: both cursors are monotonic wrapping counters
-        // (incremented by `wrapping_add(1)`), so the undrained count is
-        // `t.wrapping_sub(h)` — NOT `t - h`, which overflows on cursor wrap.
-        // `while h < t` would silently stop draining once `tail` wraps past
-        // `u32::MAX` while `head` has not, leaking every subsequent offset
-        // (and, worse, a later drain could re-process a slot whose offset was
-        // already reclaimed before the wrap if `head` were ever advanced past
-        // `tail` — impossible while `head <= tail` by the full-check, but the
-        // `<` comparison is still wrong and must be `!=`). The full-check in
-        // `push` guarantees `t.wrapping_sub(h) < RING_CAP` at all times, so
-        // `h == t` is exactly the empty condition and `h != t` the non-empty
-        // one — order is preserved by the cursors, never by the comparison.
+        // Non-wrapping cursors preserve h <= t. A reserved but unpublished
+        // slot can stop this pass; a later drain will retry it.
         while h != t {
-            let slot = self.slot(h as usize);
+            let slot = self.slot(h);
             let off = slot.load(Ordering::Acquire);
             if off == RING_SLOT_EMPTY {
                 // Reserved but not yet published. Cannot skip (cursor order);
@@ -483,98 +420,42 @@ impl RemoteFreeRing {
             // touch this slot will Release-store its offset; our drain reads
             // Acquire. No cross-thread dependency on this clear's ordering.
             slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
-            h = h.wrapping_add(1);
+            h += 1;
             publish.h = h;
         }
         // The guard's `Drop` publishes `h` with Release — the sole head store,
         // covering both the happy path (scope-end drop) and the unwind path
         // (drop during unwind). No explicit store is needed here.
-        h
+        // The owner-private SegmentHeader cache is u32. Once the 64-bit
+        // cursor reaches this boundary, disable its equality shortcut:
+        // tail_relaxed returns MAX, whereas drain never returns MAX.
+        if h >= u32::MAX as u64 {
+            0
+        } else {
+            h as u32
+        }
     }
 
-    /// PERF-PASS-4 (G9/C2, task #52) — pre-drain empty-guard primitive: a
-    /// cheap Relaxed load of `tail` ONLY (no `head` load at all — the caller
-    /// already holds its own owner-private cached copy of `head`, refreshed
-    /// from [`drain`](Self::drain)'s return value).
-    ///
-    /// **Why `Relaxed` is sound here (extends the existing single-consumer
-    /// argument at [`drain`](Self::drain)'s doc comment):** the sole purpose
-    /// of this load is to decide "has ANY producer reserved a slot since we
-    /// last drained". A push's `tail` CAS is `AcqRel`; a Relaxed load here may
-    /// observe an OLDER value of `tail` than the most recent CAS (no
-    /// synchronizes-with edge), but it can NEVER observe a value that skips a
-    /// real advance: `tail` is monotonic (only ever `wrapping_add(1)`-ed by a
-    /// winning CAS), so ANY Relaxed load of it returns either the cached
-    /// value or a LATER one — never a value that hides a genuine push. Three
-    /// outcomes:
-    ///   - `tail_relaxed() == cached_head` → the ring is PROVABLY unchanged
-    ///     since the cache was taken (no push can have landed without moving
-    ///     `tail` off `cached_head`, and `cached_head` was itself set FROM a
-    ///     real `head` value that only advances up to a real `tail`) — safe
-    ///     to skip the drain entirely.
-    ///   - `tail_relaxed() != cached_head` but a push landed AFTER this load
-    ///     returns → exactly the same as today's drain missing a push that
-    ///     lands after `drain`'s own `tail.load(Acquire)` returns: the
-    ///     "later drain picks it up" contract (module docs) already covers
-    ///     this window, unconditionally, regardless of whether THIS call
-    ///     skipped or ran a real drain.
-    ///   - A push landed and is visible: `tail_relaxed() != cached_head`, the
-    ///     caller falls through to a real `drain()`, which re-establishes
-    ///     ordering via its own `Acquire` tail load — this Relaxed load is
-    ///     ONLY a pre-filter, never the operation that reads the pushed data.
-    ///
-    /// The slot re-claim boundary (a segment's ring surviving a `HeapSlot`
-    /// recycle→claim, per the whole-slot-reuse discipline — see
-    /// `crate::registry::heap_registry`'s module doc and
-    /// `AbandonGuard::drop`'s "Phase 12.5 (architectural turn)" note) needs NO
-    /// extra fence
-    /// here: the cache lives in the segment's OWN header
-    /// (`SegmentHeader::ring_drain_head`), which is reset to `0` only when a
-    /// segment is freshly reserved (`SegmentHeader::small`), exactly mirroring
-    /// the ring's own `head`/`tail` reset in `RemoteFreeRing::init_in_place`
-    /// at the SAME call site (`reserve_small_segment`). A recycled `HeapSlot`
-    /// re-claimed by a new owner thread reuses the SAME `HeapCore` (and hence
-    /// the SAME live segments/rings) whole — there is no "new owner, old
-    /// ring" combination in this codebase's shard-reuse model, so there is no
-    /// window where a stale cached head from a different logical owner could
-    /// leak across a re-claim.
+    /// Owner-cache comparison token. Exact below u32::MAX; permanently
+    /// returns MAX afterward, while `drain` returns 0, disabling the
+    /// narrower SegmentHeader cache's equality shortcut after this point.
     #[cfg(feature = "alloc-xthread")]
     #[inline(always)]
     pub(crate) fn tail_relaxed(&self) -> u32 {
-        self.tail().load(Ordering::Relaxed)
+        let t = self.tail().load(Ordering::Relaxed);
+        if t >= u32::MAX as u64 {
+            u32::MAX
+        } else {
+            t as u32
+        }
     }
 
-    /// R6-REGRESSION-2 (progress-detection stop condition in
-    /// `HeapCore::push_with_overflow_retry`): the ring's current DRAIN cursor
-    /// (`head`) as a single `Relaxed` load — the production (non-`dbg_*`)
-    /// sibling of the test-only [`dbg_cursors`](Self::dbg_cursors) hook,
-    /// exposing ONLY the consumer-advanced half of the cursor pair.
-    ///
-    /// **Purpose.** A producer stuck in the bounded retry loop needs to
-    /// distinguish "the owner is draining, however slowly" (keep waiting)
-    /// from "the owner is making zero drain progress" (concede to the
-    /// documented bounded leak). `head` is advanced ONLY by the owner's
-    /// [`drain`](Self::drain) — producers never write it — so observing it
-    /// move between probe rounds is an exact "the owner drained something"
-    /// signal, and observing it NOT move is an exact "the owner drained
-    /// nothing in that window" signal.
-    ///
-    /// **Why `Relaxed` is sound (same monotonicity argument as
-    /// [`tail_relaxed`](Self::tail_relaxed), applied to `head`):** `head` is
-    /// monotonic (only ever advanced by the single consumer's `Release`
-    /// store), so a `Relaxed` load returns either the latest value or an
-    /// older one — never a fabricated future value. The caller compares two
-    /// such loads taken hundreds of microseconds apart purely to detect
-    /// MOVEMENT: a stale read can only UNDER-report progress (delaying the
-    /// "progressed" verdict to the next probe round — one extra cheap round,
-    /// never a correctness hazard), and can never fabricate progress that did
-    /// not happen. No payload is read through this value, so no
-    /// Acquire-ordered visibility is needed here — the retry loop's own
-    /// `try_push_uncounted` re-establishes ordering via its `Acquire` head
-    /// load when it actually attempts the push.
+    /// Truncated progress token for the existing overflow retry ledger.
+    /// It is not used for admission or slot reuse; the ring's actual
+    /// reservation identity and capacity arithmetic remain full-width.
     #[cfg(feature = "alloc-xthread")]
     #[inline(always)]
     pub(crate) fn head_relaxed(&self) -> u32 {
-        self.head().load(Ordering::Relaxed)
+        self.head().load(Ordering::Relaxed) as u32
     }
 }

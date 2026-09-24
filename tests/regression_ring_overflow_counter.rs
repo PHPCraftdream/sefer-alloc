@@ -39,7 +39,8 @@ fn ring_overflow_increments_process_wide_counter() {
     // Fresh isolated buffer — no segment, no allocator.
     let mut buf = vec![0u8; FOOTPRINT].into_boxed_slice();
     let base = buf.as_mut_ptr();
-    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, owned buffer.
+    assert!((base as usize).is_multiple_of(8));
+    // SAFETY: `base` is a FOOTPRINT-sized, 8-byte-aligned, owned buffer.
     let ring = unsafe {
         RemoteFreeRing::init_test_buffer(base);
         RemoteFreeRing::over_test_buffer(base)

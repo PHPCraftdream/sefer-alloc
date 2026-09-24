@@ -454,7 +454,7 @@ impl Node {
     #[inline(always)]
     pub(crate) fn atomic_u8_at(base: *mut u8, off: usize) -> &'static core::sync::atomic::AtomicU8 {
         let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU8;
-        // SAFETY: caller guarantees `base` is a live segment base and `off` is
+        // SAFETY: caller guarantees `base` is a live segment or test buffer and `off` is
         // the offset of a byte within a metadata region at `base`, with
         // `off + 1` in-bounds. LIFETIME (see the `'static` note on
         // [`atomic_u64_at`] for the full argument): the `'static` here is NOT
@@ -523,16 +523,14 @@ impl Node {
     ///
     /// # Caller's contract
     ///
-    /// - `base` MUST be a live segment base owned by this allocator, and the
-    ///   caller MUST hold a liveness argument that it STAYS live (registered in
-    ///   its owning heap's segment table) for the duration of the access — see
-    ///   the LIFETIME note below.
-    /// - `off` MUST be the offset of an 8-byte-aligned `u64`/`AtomicU64`
-    ///   field within a `#[repr(C)]` header at `base`, and `off + 8` MUST be
-    ///   within the segment. The caller (the segment-header module) derives
-    ///   `off` via `core::mem::offset_of!` on the `#[repr(C)]` header, which
-    ///   yields a properly-aligned in-layout offset — so alignment and bounds
-    ///   hold by construction.
+    /// - `base` MUST be a live allocator segment base, or the ring's
+    ///   exclusively-owned test buffer. The caller MUST keep it live for
+    ///   the duration of the access — see the LIFETIME note below.
+    /// - `base + off` MUST address an initialized, 8-byte-aligned atomic
+    ///   word within the live segment or exclusively-owned ring test buffer.
+    ///   Header callers derive this with `offset_of!`; `RemoteFreeRing` uses
+    ///   its fixed 8-byte-aligned cursor offsets in a 64-byte-aligned carve.
+    ///   `off + 8` MUST remain within the allocation.
     ///
     /// ## LIFETIME — why `'static`, and what actually backs it
     ///
@@ -572,10 +570,10 @@ impl Node {
     ) -> &'static core::sync::atomic::AtomicU64 {
         let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
         // SAFETY: caller guarantees `base` is a live segment base and `off` is
-        // the offset of a properly-aligned `AtomicU64` field within a
-        // `#[repr(C)]` header at `base`, with `off + 8` in-bounds. The `'static`
-        // is sound only WHILE `base`'s segment is registered in its owning
-        // heap's table; the caller carries the per-path liveness argument (see
+        // the offset of a properly-aligned, initialized atomic word within
+        // a header or ring carve at `base`, with `off + 8` in-bounds. The `'static`
+        // is sound only WHILE the segment remains registered or the test
+        // buffer stays owned and live; the caller carries the liveness argument (see
         // the LIFETIME note in this fn's doc — segments ARE released mid-process,
         // so this is not a whole-process mapping guarantee). `AtomicU64` is
         // `Sync`, so shared atomic access from any thread is race-free.

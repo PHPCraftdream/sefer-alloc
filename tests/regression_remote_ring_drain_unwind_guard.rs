@@ -56,12 +56,12 @@ use std::sync::{Arc, Mutex};
 
 use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT};
 
-/// Allocate a FOOTPRINT-sized, 4-byte-aligned buffer for an isolated ring.
+/// Allocate a FOOTPRINT-sized, 8-byte-aligned buffer for an isolated ring.
 fn ring_buffer() -> Box<[u8]> {
     let mut buf: Vec<u8> = vec![0u8; FOOTPRINT];
     assert!(
-        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u32>()),
-        "ring buffer must be 4-byte aligned"
+        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u64>()),
+        "ring buffer must be 8-byte aligned"
     );
     buf.into_boxed_slice()
 }
@@ -74,7 +74,7 @@ fn ring_buffer() -> Box<[u8]> {
 fn drain_panicking_closure_publishes_partial_head() {
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
-    // SAFETY: `buf` is a FOOTPRINT-sized, 4-byte-aligned, exclusively-owned
+    // SAFETY: `buf` is a FOOTPRINT-sized, 8-byte-aligned, exclusively-owned
     // buffer live for the whole test.
     unsafe { RemoteFreeRing::init_test_buffer(base) };
     // SAFETY: same buffer, still live.
@@ -187,7 +187,11 @@ fn drain_normal_path_publishes_head_once() {
 
     // The returned head must equal the persisted head (guard published once).
     let (head, tail) = ring.dbg_cursors();
-    assert_eq!(returned_head, head, "drain return value == published head");
+    assert_eq!(
+        u64::from(returned_head),
+        head,
+        "drain return value == published head"
+    );
     assert_eq!(head, tail, "ring fully drained: head == tail");
     assert_eq!(head, 3);
 }

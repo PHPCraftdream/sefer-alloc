@@ -221,76 +221,47 @@ mod pack_proofs {
     }
 }
 
-// R15 (gap-audit item 18, task #611/K16): bounded proof of `RemoteFreeRing`'s
-// `u32` cursor wrap-safety — that `t.wrapping_sub(h)` correctly reports the
-// number of pushes separating `head` from `tail` for EVERY possible `head`
-// (not just the handful of hand-picked near-`u32::MAX` values
-// `tests/regression_ring_cursor_wrap.rs`'s native tests already pin), across
-// the `u32::MAX -> 0` boundary. Pure `u32` arithmetic, no pointers, no
-// concurrency, no caller contract beyond "tail was produced from head by
-// `n <= RING_CAP` `wrapping_add(1)` steps" (the ring's own invariant,
-// `RemoteFreeRing::push`'s doc comment) — an ideal Kani target. This module
-// does NOT touch `RemoteFreeRing` itself (Kani cannot model the atomics the
-// real type's `push`/`drain` use); it proves the underlying modular-
-// arithmetic identity those methods rely on, generalised to every `head` and
-// every occupancy in `0..=RING_CAP`, which the existing native tests check
-// only pointwise.
-//
-// R2-10 (task #2012) honesty note: the two proofs below are exhaustive over
-// `head`/advance-count for a SINGLE `head.wrapping_add(n)` step
-// (`kani::assume(n <= RING_CAP)`) — they say NOTHING about whether a
-// capacity-check snapshot taken before a full `u32` wrap can still validate
-// a CAS taken long after it (a temporal, multi-step, multi-threaded
-// property no per-call Kani proof can express). That hazard is real,
-// reproduced at a reduced scale in `tests/loom_remote_ring_tail_aba.rs`, and
-// tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 149 — see
-// `src/alloc_core/segment/remote_free_ring/mod.rs`'s module doc, "R2-10 — the
-// tail-CAS ABA hazard" section, for the full writeup. Do not read the two
-// proofs below as covering that class of bug; they do not.
+// R2-10: pure arithmetic proof for non-wrapping u64 ring cursors.
+// The paused-producer temporal case is covered by reduced-width loom.
 #[cfg(all(kani, feature = "alloc-core"))]
 mod ring_wrap_proofs {
     use crate::alloc_core::remote_free_ring::RING_CAP;
 
-    // ── 1. wrapping_sub recovers the exact advance count, for ANY head ────
-    //
-    // For any `head` (including values within `RING_CAP` of `u32::MAX`, so
-    // the wrap is exercised) and any advance count `n` in `0..=RING_CAP`,
-    // `tail = head.wrapping_add(n)` followed by `tail.wrapping_sub(head)`
-    // recovers `n` exactly — the occupancy count survives the wrap.
+    // Non-wrapping occupancy, including the terminal u64 boundary.
     #[kani::proof]
-    fn wrapping_sub_recovers_advance_count() {
-        let head: u32 = kani::any();
-        let n: u32 = kani::any();
-        kani::assume(n <= RING_CAP as u32);
-
-        let tail = head.wrapping_add(n);
-        assert_eq!(tail.wrapping_sub(head), n);
+    fn subtraction_recovers_advance_count() {
+        let head: u64 = kani::any();
+        let n: u64 = kani::any();
+        kani::assume(n <= RING_CAP as u64);
+        kani::assume(head <= u64::MAX - n);
+        let tail = head + n;
+        assert_eq!(tail - head, n);
+        assert!(head <= tail);
     }
 
     // ── 2. the `< RING_CAP` / `>= RING_CAP` full-ring check is exact ──────
     //
-    // The production "is the ring full" check (`remote_free_ring.rs`,
-    // `push`'s admission test) is `t.wrapping_sub(h) >= RING_CAP` — proves
+    // The production admission test is `t - h >= RING_CAP` when t >= h — proves
     // that check agrees EXACTLY with the real occupancy `n` at both sides of
-    // the boundary: not-full (`n < RING_CAP`) reads `< RING_CAP`, and
+    // exhaustion boundary: not-full (`n < RING_CAP`) reads `< RING_CAP`, and
     // exactly-full (`n == RING_CAP`) reads `>= RING_CAP`, for every `head`.
     #[kani::proof]
     fn full_check_matches_true_occupancy_at_the_boundary() {
-        let head: u32 = kani::any();
-        let n: u32 = kani::any();
-        kani::assume(n <= RING_CAP as u32);
-
-        let tail = head.wrapping_add(n);
-        let occupancy = tail.wrapping_sub(head);
-        if n < RING_CAP as u32 {
+        let head: u64 = kani::any();
+        let n: u64 = kani::any();
+        kani::assume(n <= RING_CAP as u64);
+        kani::assume(head <= u64::MAX - n);
+        let tail = head + n;
+        let occupancy = tail - head;
+        if n < RING_CAP as u64 {
             assert!(
-                occupancy < RING_CAP as u32,
+                occupancy < RING_CAP as u64,
                 "under-full must read < RING_CAP"
             );
         } else {
             // n == RING_CAP here (the only value `assume` still allows).
             assert!(
-                occupancy >= RING_CAP as u32,
+                occupancy >= RING_CAP as u64,
                 "exactly-full must read >= RING_CAP"
             );
         }

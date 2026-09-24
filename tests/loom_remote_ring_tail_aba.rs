@@ -1,81 +1,10 @@
-//! loom model-check of the **R2-10 ABA hazard** on `RemoteFreeRing`'s `u32`
-//! tail CAS (task #2012, R2-10 P2,
-//! `docs/reviews/2026-09-22-120730-src-review-xa-round-2.md`).
-//!
-//! # The hazard, in one paragraph
-//!
-//! `RemoteFreeRing::push` (`src/alloc_core/segment/remote_free_ring/ops.rs`) reads
-//! `t = tail.load(Relaxed)`, then checks capacity via `full_check(t)` (which
-//! reads `head` at THAT instant), and only THEN attempts
-//! `tail.compare_exchange_weak(t, t+1, ...)`. If a producer is preempted
-//! AFTER its capacity check succeeds but BEFORE its CAS runs, and enough
-//! OTHER producers + the consumer complete a full `u32` incarnation cycle
-//! (net `2^32` pushes) while it is stalled, `tail`'s CURRENT value can
-//! coincidentally equal the stalled producer's long-stale snapshot again —
-//! its CAS then succeeds by numeric coincidence, NOT because the capacity
-//! check it already performed is still valid. The result: an over-capacity
-//! reservation that overwrites a live, undrained entry (a torn/lost update)
-//! and/or violates the ring's own `tail.wrapping_sub(head) <= RING_CAP`
-//! invariant. See `src/alloc_core/segment/remote_free_ring/mod.rs`'s module doc,
-//! new "R2-10 — the tail-CAS ABA hazard" section, for the full writeup and
-//! this hazard's relationship to the ALREADY-covered Kani proofs (which
-//! prove the single-call modular arithmetic is exact, but say nothing about
-//! a STALE snapshot surviving a full wrap — a temporal, multi-step property
-//! Kani's per-call proofs cannot express).
-//!
-//! # Scope — a REDUCED-WIDTH stand-in, not the real `u32`/`u64` type
-//!
-//! Like `loom_remote_ring.rs`, this models the protocol in isolation using
-//! `loom::sync::atomic` — NOT the real `RemoteFreeRing`. loom cannot
-//! practically explore `2^32` real states, so the model's cursor arithmetic
-//! is TRUNCATED to a tiny modulus (`MOD = 4`, via `wrapping_add`/masking on
-//! a `u32` atomic — a real narrow integer type is not required; the mask
-//! reproduces the exact same wrap SHAPE at a width loom can exhaustively
-//! reason about) with `CAP = 2`. A full "incarnation cycle" at this scale is
-//! 4 successful pushes — reproducible with a handful of real operations, per
-//! this task's own acceptance criterion ("no billions of real operations are
-//! needed for this").
-//!
-//! The "stalled producer" gap (long preemption between a producer's capacity
-//! check and its CAS) is SCRIPTED, not discovered by loom's own interleaving
-//! search — loom cannot wait for `2^32` other events either. This mirrors
-//! the task's own suggested approach: "an explicit thread ordering that lets
-//! other threads run many operations first, and only then attempts its CAS."
-//! `NARROW`'s tests 1-2 reproduce the hazard against the CURRENT (buggy)
-//! protocol shape; `WIDE`'s test 3 re-runs the IDENTICAL finite script
-//! against a cursor wide enough that it cannot coincidentally wrap back to
-//! the stale snapshot — modelling why the real fix (widen `RemoteFreeRing`'s
-//! `head`/`tail`/`cached_head` from `u32` to `u64`) closes the hole: a `u64`
-//! cursor would need the same "centuries under any realistic throughput"
-//! amount of activity to wrap that the review itself names, so ANY
-//! realistic finite amount of interleaved activity during a stall (of which
-//! this test's tiny script is a representative instance, not a special
-//! case) cannot produce the coincidence.
-//!
-//! # Status of the real fix (honesty note)
-//!
-//! This file provides the reproduction + closure evidence the task asked
-//! for. It does NOT land the `u32` → `u64` widening in
-//! `src/alloc_core/segment/remote_free_ring/` itself — that change's blast radius
-//! (layout constants, ~10 test files purpose-built around the `u32`
-//! wrap boundary, e.g. `tests/regression_ring_cursor_wrap.rs`, several
-//! `dbg_*` test-hook signatures, `src/kani_proofs.rs`'s `ring_wrap_proofs`
-//! module) was judged too large to complete and fully zero-trust-verify in
-//! one task cycle, and this hazard requires ~`2^32` operations during ONE
-//! producer's stall to trigger — the same order of magnitude of rarity this
-//! same module's own "F10 wrap argument precondition" section already
-//! accepts elsewhere ("No code change is warranted for a hazard this
-//! remote"). Tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 149 (see
-//! `docs/correctness-open-items/ACTIVE.md`), mirroring how R2-09 (item 148,
-//! same review round) scoped an equally-large redesign out of its own task
-//! cycle in favor of an honest interim record.
-//!
-//! # How to run
-//!
-//! ```sh
-//! RUSTFLAGS="--cfg loom" cargo test --release --features alloc-core,alloc-xthread --test loom_remote_ring_tail_aba
-//! ```
-
+//! loom model-check of the R2-10 cursor-incarnation fix and its counterfactual.
+//! The fixed reduced-width model has a finite, NON-WRAPPING 3-bit cursor
+//! space (0..=7), the same checked-exhaustion rule as the production u64 ring.
+//! A paused producer's old capacity check cannot validate a later CAS because
+//! no reservation value is ever used twice, even after terminal exhaustion.
+//! The old wrapping model is retained only as a negative control.
+// RUSTFLAGS="--cfg loom" cargo test --features alloc-core,alloc-xthread --test loom_remote_ring_tail_aba
 #![cfg(loom)]
 
 use loom::sync::atomic::{AtomicU32, Ordering};
@@ -92,7 +21,7 @@ const MASK: u32 = 3;
 /// The reduced capacity: 2 live slots.
 const CAP: u32 = 2;
 
-/// The NARROW (current, buggy-shape) model: `head`/`tail` cursors wrap at
+/// The NARROW (former, buggy-shape) model: `head`/`tail` cursors wrap at
 /// `MOD = 4` via explicit masking — the truncated-width stand-in for the
 /// real `u32` cursor's `2^32` wrap. Mirrors `RemoteFreeRing::push`'s exact
 /// shape: a separate capacity check (`full_check`) BEFORE the CAS, with no
@@ -188,30 +117,33 @@ impl NarrowRing {
     }
 }
 
-/// The WIDE (fixed-shape) model: byte-identical protocol, but the cursor
-/// arithmetic is NOT masked — real, unbounded `u32` `wrapping_add`/
-/// `wrapping_sub`. Relative to the tiny finite script both models run in
-/// this file, a `u32` space (let alone the real fix's `u64`) is
-/// "wide enough" that the same script cannot wrap it back to the stale
-/// snapshot — modelling why widening the real cursor closes the hole.
-struct WideRing {
+/// Fixed reduced-width protocol: non-wrapping cursor 0..=7 with terminal
+/// exhaustion, including the producer shadow-head optimization.
+struct FixedRing {
     head: AtomicU32,
     tail: AtomicU32,
+    cached_head: AtomicU32,
     slots: [AtomicU32; CAP as usize],
 }
 
-impl WideRing {
+impl FixedRing {
     fn new() -> Arc<Self> {
-        Arc::new(WideRing {
+        Arc::new(FixedRing {
             head: AtomicU32::new(0),
             tail: AtomicU32::new(0),
+            cached_head: AtomicU32::new(0),
             slots: std::array::from_fn(|_| AtomicU32::new(EMPTY)),
         })
     }
 
     fn full_check(&self, t: u32) -> Result<(), ()> {
+        let ch = self.cached_head.load(Ordering::Acquire);
+        if t >= ch && t - ch < CAP {
+            return Ok(());
+        }
         let h = self.head.load(Ordering::Acquire);
-        if t.wrapping_sub(h) < CAP {
+        self.cached_head.store(h, Ordering::Release);
+        if t >= h && t - h < CAP {
             Ok(())
         } else {
             Err(())
@@ -221,13 +153,14 @@ impl WideRing {
     fn push(&self, offset: u32) -> Result<(), ()> {
         loop {
             let t = self.tail.load(Ordering::Relaxed);
+            if t == 7 {
+                return Err(());
+            }
             self.full_check(t)?;
-            match self.tail.compare_exchange_weak(
-                t,
-                t.wrapping_add(1),
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
+            match self
+                .tail
+                .compare_exchange_weak(t, t + 1, Ordering::AcqRel, Ordering::Relaxed)
+            {
                 Ok(_) => {
                     self.slots[(t as usize) % CAP as usize].store(offset, Ordering::Release);
                     return Ok(());
@@ -248,18 +181,19 @@ impl WideRing {
             }
             reclaim(off);
             slot.store(EMPTY, Ordering::Relaxed);
-            h = h.wrapping_add(1);
+            h += 1;
         }
         self.head.store(h, Ordering::Release);
     }
 
     fn late_cas_publish(&self, stale_t: u32, offset: u32) -> bool {
-        match self.tail.compare_exchange(
-            stale_t,
-            stale_t.wrapping_add(1),
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ) {
+        if stale_t == 7 {
+            return false;
+        }
+        match self
+            .tail
+            .compare_exchange(stale_t, stale_t + 1, Ordering::AcqRel, Ordering::Relaxed)
+        {
             Ok(_) => {
                 self.slots[(stale_t as usize) % CAP as usize].store(offset, Ordering::Release);
                 true
@@ -270,7 +204,7 @@ impl WideRing {
 }
 
 // =========================================================================
-// Counterfactual 1 — the narrow (current-shape) ring's capacity invariant
+// Counterfactual 1 — the narrow (former-shape) ring's capacity invariant
 // (`tail.wrapping_sub(head) <= CAP`) is VIOLATED once a stale-snapshot CAS
 // survives a full wraparound.
 // =========================================================================
@@ -283,7 +217,7 @@ impl WideRing {
 /// consumer completing a full incarnation cycle" — advances `tail` through
 /// exactly one full lap of the `MOD = 4` space, landing back on `t0` with
 /// the ring genuinely FULL again (two NEW live, undrained entries). Thread
-/// A then resumes and CASes against its stale `t0` — on the current
+/// A then resumes and CASes against its stale `t0` — on the former
 /// protocol shape this SUCCEEDS by numeric coincidence, violating the
 /// ring's own documented capacity invariant.
 #[test]
@@ -398,7 +332,7 @@ fn counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry() {
             succeeded,
             "setup invariant: this reproduction assumes the ABA CAS succeeds \
              (see the sibling occupancy-invariant test for the direct proof \
-             that it does on the current protocol shape)"
+             that it does on the former protocol shape)"
         );
 
         // Drain whatever is left. A correct protocol never loses a
@@ -417,26 +351,17 @@ fn counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry() {
 }
 
 // =========================================================================
-// Test 3 — the fix's shape: a wide-enough cursor closes the hole.
+// Test 3 — the fixed non-wrapping protocol rejects the stale CAS.
 // =========================================================================
 
-/// Regular (non-panicking) test. Re-runs the IDENTICAL finite script
-/// against `WideRing` (unmasked, real `u32` wraparound) — the reduced-scale
-/// stand-in for the real fix (widen `head`/`tail`/`cached_head` from `u32`
-/// to `u64`). With a cursor space this much larger than the script's
-/// operation count, the same stalled-producer gap cannot produce the
-/// coincidental wrap-back: `tail` only advances to 4, nowhere near
-/// colliding with A's stale snapshot (0). A's late CAS therefore correctly
-/// FAILS (a plain compare-mismatch — the same outcome ordinary CAS
-/// contention already produces), forcing exactly the safe fallback the real
-/// protocol already has for a lost CAS race: retry with a fresh
-/// `tail.load`/`full_check`.
+/// The identical finite script cannot reincarnate a cursor in the fixed
+/// protocol; the stale CAS fails and a retry would recheck capacity.
 #[test]
-fn correct_wide_tail_stale_cas_rejects_after_same_finite_script() {
+fn fixed_tail_stale_cas_rejects_after_same_finite_script() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
-        let ring = WideRing::new();
+        let ring = FixedRing::new();
         let t0 = ring.tail.load(Ordering::Relaxed);
         assert_eq!(t0, 0);
 
@@ -453,7 +378,7 @@ fn correct_wide_tail_stale_cas_rejects_after_same_finite_script() {
         let t_before = ring.tail.load(Ordering::Acquire);
         assert_ne!(
             t_before, t0,
-            "sanity: a wide-enough cursor must NOT wrap back to the stale \
+            "sanity: a non-wrapping cursor must NOT wrap back to the stale \
              snapshot after this same finite amount of activity (real tail: {t_before})"
         );
 
@@ -461,9 +386,7 @@ fn correct_wide_tail_stale_cas_rejects_after_same_finite_script() {
         let succeeded = ring.late_cas_publish(t0, 999);
         assert!(
             !succeeded,
-            "the fix: a wide cursor's stale CAS must fail (compare-mismatch), \
-             not coincidentally succeed, once the counter space is larger than \
-             any realistic amount of interleaved activity during a stall"
+            "the fix: a non-wrapping cursor's stale CAS must fail by compare-mismatch"
         );
 
         // No corruption: both live entries still drain cleanly, in order.
@@ -472,8 +395,47 @@ fn correct_wide_tail_stale_cas_rejects_after_same_finite_script() {
         assert_eq!(
             got,
             vec![557, 558],
-            "wide-cursor ring must still drain cleanly after the correctly-rejected stale CAS"
+            "fixed ring must still drain cleanly after the correctly-rejected stale CAS"
         );
+    });
+}
+
+/// A paused producer spans the entire supported reduced-width lifetime.
+/// Even at exhaustion the old compare value is never reincarnated.
+#[test]
+fn fixed_protocol_paused_producer_cannot_reserve_after_exhaustion() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = FixedRing::new();
+        let (ready_tx, ready_rx) = loom::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = loom::sync::mpsc::channel();
+        let stalled = Arc::clone(&ring);
+        let producer = thread::spawn(move || {
+            let t0 = stalled.tail.load(Ordering::Relaxed);
+            assert!(stalled.full_check(t0).is_ok());
+            ready_tx.send(t0).unwrap();
+            resume_rx.recv().unwrap();
+            stalled.late_cas_publish(t0, 999)
+        });
+        let t0 = ready_rx.recv().unwrap();
+        assert_eq!(t0, 0);
+        let mut ledger = Vec::new();
+        for off in 1..=7 {
+            assert!(ring.push(off).is_ok());
+            ring.drain(|entry| ledger.push(entry));
+        }
+        assert_eq!(ledger, vec![1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(ring.tail.load(Ordering::Acquire), 7);
+        assert_eq!(ring.head.load(Ordering::Acquire), 7);
+        assert!(ring.push(8).is_err());
+        resume_tx.send(()).unwrap();
+        assert!(!producer.join().unwrap());
+        assert!(
+            ring.push(8).is_err(),
+            "draining cannot rebase an exhausted cursor"
+        );
+        assert_eq!(ring.tail.load(Ordering::Acquire), 7);
     });
 }
 

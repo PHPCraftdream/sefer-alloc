@@ -24,8 +24,8 @@
 //! ## What this module IS and is NOT
 //!
 //! - IS: pure safe data + arithmetic over the `node` (`crate::alloc_core::node`) seam. Every
-//!   atomic access goes through `Node::atomic_u32_at` (a confined-`unsafe`
-//!   primitive identical in spirit to `atomic_u64_at`). There is NO `unsafe`
+//!   atomic access goes through `Node::atomic_u32_at` / `atomic_u64_at`.
+//!   There is NO `unsafe`
 //!   here — the crate's structural promise ("`unsafe` lives ONLY in `os` +
 //!   `node`") is upheld by the compiler.
 //! - IS: an MPSC bounded queue. **Many producers** (cross-thread freers) push
@@ -42,15 +42,15 @@
 //!   ┌──────────────────────────────────────────────────────────┐
 //!   │ RemoteFreeRing                                           │
 //!   │  offset 0..64  (own cache line — consumer-only writes):  │
-//!   │  • head: AtomicU32  (4 B) — drain cursor (consumer)      │
-//!   │  • [60 B reserved padding]                                │
+//!   │  • head: AtomicU64  (8 B) — drain cursor (consumer)      │
+//!   │  • [56 B reserved padding]                                │
 //!   │  offset 64..128 (own cache line — producer-touched):     │
-//!   │  • tail: AtomicU32  (4 B) — push reserve cursor (producers)
+//!   │  • tail: AtomicU64  (8 B) — push reserve cursor (producers)
 //!   │  • overflow: AtomicU32 (4 B) — count of discarded pushes  │
 //!   │    (ring-full → bounded leak; sound, never corrupts)      │
-//!   │  • cached_head: AtomicU32 (4 B) — F10 shadow-head hint,   │
+//!   │  • cached_head: AtomicU64 (8 B) — F10 shadow-head hint,   │
 //!   │    same line as tail/overflow (producer-only touched)     │
-//!   │  • [52 B reserved padding]                                │
+//!   │  • [40 B reserved padding]                                │
 //!   │  offset 128.. (data, starts on its own cache line):       │
 //!   │  • slots: [AtomicU32; RING_CAP]  (RING_CAP × 4 B)         │
 //!   │    each slot holds a block offset or RING_SLOT_EMPTY      │
@@ -67,286 +67,58 @@
 //! 256` that is 1152 bytes per segment (was 1040) — still under one page,
 //! negligible vs. the 4 MiB segment.
 //!
-//! ## MPSC protocol (Vyukov-style bounded, CAS-reserved)
+//! ## MPSC reservation protocol
 //!
-//! Two monotonic cursors: `tail` (producers reserve push slots) and `head`
-//! (the consumer advances past drained slots). `slots[i % CAP]` holds the
-//! offset for the reservation `i`, or `RING_SLOT_EMPTY` if not-yet-written /
-//! already-drained.
+//! Cursors are non-wrapping u64 values. The ring supports at most
+//! `u64::MAX` successful reservations over its entire lifetime. At
+//! `tail == u64::MAX`, both push variants return `PushOverflow` permanently;
+//! draining does not rebase the cursors. This is an enforced exhaustion
+//! contract, not an assumption about throughput or scheduler delay. A
+//! producer paused between its capacity check and tail CAS can never see
+//! the same tail value again after any other reservation has succeeded.
 //!
-//! **Push (multi-producer) — F10 shadow-head fast path.** The full check
-//! needs to know whether the ring MIGHT be full; it does not need the
-//! EXACT current `head` value unless it might be. `cached_head` is a
-//! producer-line-resident replica of the last real `head` value any producer
-//! observed. See "F10 — shadow/cached head" below for the full soundness
-//! argument; summary of the steps:
-//! 1. `t = tail.load(Relaxed)`, `ch = cached_head.load(Acquire)` — both same
-//!    line, no cross-core traffic in the common case. The `Acquire` on
-//!    `cached_head` (R34-6, finding F-1) restores the happens-before edge
-//!    the pre-F10 `head.load(Acquire)` supplied — see the "F10 ordering
-//!    supplement" below.
-//! 2. If `t.wrapping_sub(ch) < CAP`, the shadow already proves the ring has
-//!    room — skip straight to the CAS (step 4). This is the fast path.
-//! 3. Otherwise (shadow suggests full, or never yet refreshed): fall through
-//!    to the REAL check — `h = head.load(Acquire)`; refresh
-//!    `cached_head.store(h, Release)` (R34-6: pairs with the fast path's
-//!    `Acquire` load); if `t.wrapping_sub(h) >= CAP`, genuinely
-//!    full → `Err(Overflow)` (the caller discards the block: bounded leak,
-//!    sound). The `Acquire` here is exactly the one the module doc's original
-//!    protocol required — sees the consumer's `Release` head advance, so a
-//!    slot freed by the drain becomes observable before the overflow verdict
-//!    is taken.
-//! 4. CAS `tail: t → t+1` with `AcqRel` on success (the reservation is the
-//!    linearization point — exactly one producer wins each `t`). `Relaxed` on
-//!    failure (retry; no side-effect).
-//! 5. Store `slots[t % CAP] = offset` with `Release` (publishes the offset to
-//!    the consumer's `Acquire` slot read). Return `Ok(())`.
+//! A producer loads `tail`, checks room against `cached_head` (Acquire),
+//! then, if the cache is insufficient, loads the real `head` (Acquire)
+//! and refreshes `cached_head` (Release). The cache can be stale-low,
+//! including when an older refresh store races a newer one. Since neither
+//! cursor wraps, stale-low can only force a slow check, not admit an
+//! over-capacity reservation. An observed cache value ahead of a stale
+//! tail snapshot also forces the slow check. The Acquire/Release cache
+//! handoff carries the consumer's prior slot-clear before recycled-slot
+//! publication. The successful tail CAS (AcqRel) reserves one index;
+//! a failed CAS retries the entire check. A producer Release-stores the
+//! offset into its reserved slot.
 //!
-//! ## F10 (task #502) — shadow/cached head: soundness argument
+//! The single consumer Acquire-loads tail and each slot. It stops at the
+//! first reserved-but-unpublished slot. After reclaiming an entry it clears
+//! that slot, increments head, and a Drop guard Release-publishes head,
+//! including during unwind. Slot identity is `cursor % RING_CAP`, and
+//! `head <= tail` with `tail - head <= RING_CAP` is maintained. The
+//! power-of-two capacity pin is retained for the established layout and
+//! indexing contract; cursor arithmetic no longer wraps.
+//! The four head write sites are the drain guard's Release store,
+//! exclusive bootstrap's zero store, and the two quiescent test hooks
+//! (`dbg_set_cursors`, `dbg_advance_head_only`). Only the drain guard
+//! writes head during production operation.
 //!
-//! **Claim: `head` is monotonic (only ever advances, never regresses) under
-//! every REAL (non-test) call path.** Verified by enumerating every write
-//! site to `head` — there are FOUR (pinned by a drift-detection test,
-//! `tests/remote_free_ring_head_write_sites.rs`, so this list cannot silently
-//! fall out of sync with the code):
+//! The owner-private `SegmentHeader::ring_drain_head` cache is still u32.
+//! To avoid a false empty verdict after its representable range, the
+//! ring's guard-facing `tail_relaxed` returns `u32::MAX` whenever the
+//! real tail reaches that value, while `drain` returns 0 once head
+//! reaches it. Before the boundary, both report exact u32 cursors.
+//! Thus the guard's equality shortcut is disabled forever after the
+//! boundary without changing the header layout; a real drain still uses
+//! the full u64 cursors. This loses only the empty-guard optimization.
 //!
-//! 1. [`drain`](RemoteFreeRing::drain)'s `head.store(h, Release)` — the
-//!    ONLY production write. Since R34-17/task #536 (finding F-7) this store
-//!    lives inside the `DrainHeadPublish` RAII guard's `Drop` (so a `reclaim`
-//!    closure that unwinds mid-drain still publishes partial progress), but it
-//!    is still the single logical write of the drain path: `h` is derived ONLY
-//!    by `h = h.wrapping_add(1)` starting from the PREVIOUS stored `head`
-//!    value (`self.head().load(Relaxed)` at the top of `drain`), so each
-//!    drain call's stored `head` is `>=` the value it read (wrapping
-//!    arithmetic is monotonic over one lap). This is the advance the
-//!    monotonicity claim is about.
-//! 2. [`init_in_place`](RemoteFreeRing::init_in_place)'s raw write of `0`
-//!    to `HEAD_OFF` — zeroes BOTH `head` AND `cached_head` together at
-//!    bootstrap (single-writer, exclusively-owned segment, before any
-//!    `push`/`drain` can observe the ring). Benign: it cannot leave the
-//!    two cursors inconsistent and is not reachable after init.
-//! 3. [`dbg_set_cursors`](RemoteFreeRing::dbg_set_cursors) —
-//!    `#[doc(hidden)]` test-only, `alloc-xthread`-gated. Documents a
-//!    quiescent-ring precondition AND `tail.wrapping_sub(head) <=
-//!    RING_CAP`; also resets `cached_head` to match. Reachable from
-//!    neither `push` nor any production call path.
-//! 4. [`dbg_advance_head_only`](RemoteFreeRing::dbg_advance_head_only) —
-//!    `#[doc(hidden)]` test-only, `alloc-xthread`-gated. Stores an
-//!    arbitrary `u32` into `head` and deliberately does NOT touch
-//!    `cached_head`. Documents a quiescent-ring precondition AND a
-//!    "must never regress `head`" precondition (storing a value BELOW
-//!    the current `head` would leave `cached_head` above the regressed
-//!    `head` — a STALE-HIGH shadow — which this argument declares
-//!    impossible). Reachable from neither `push` nor any production
-//!    call path; its only real caller advances by `wrapping_add(1)`.
-//!
-//! Only site (1) is reachable from a production call path; sites (2)–(4)
-//! are bootstrap- or test-only with their own documented preconditions.
-//! There is a SINGLE consumer per ring (the module's own MPSC contract),
-//! so there is no cross-consumer race that could interleave two `drain`
-//! calls' stores out of order.
-//!
-//! **Claim: `cached_head` can only be STALE-LOW relative to the true `head`,
-//! never stale-high.** `cached_head` is written in exactly one place: the
-//! refresh step above, `cached_head.store(h, Relaxed)` where `h` was JUST
-//! read from the real `head` via `Acquire`. Because `head` only advances, any
-//! value `cached_head` ever holds was a real, once-true value of `head` — and
-//! by the time a LATER producer reads `cached_head`, the real `head` has only
-//! moved forward (or stayed put) since that store. So at every read,
-//! `cached_head <= head` (mod wrap — both are the same class of monotonic
-//! `u32` wrapping counter as `tail`, so the ring's existing
-//! `wrapping_sub`-based comparisons apply unchanged; see the wrap note below).
-//!
-//! **Consequence for each of the three failure modes named in the survey:**
-//! - **Missed overflow (accepting a push the ring cannot hold):** cannot
-//!   happen. The shadow's fast path (`t.wrapping_sub(ch) < CAP`) only ever
-//!   makes the ring look MORE full than the real state (`ch <= head`, so
-//!   `t.wrapping_sub(ch) >= t.wrapping_sub(head)`) — never less full. A push
-//!   that the fast path accepts would ALSO be accepted by the real check
-//!   (since the real occupancy is `<=` what the shadow computed). The
-//!   converse — the fast path rejecting a push the real check would have
-//!   accepted — is possible (a stale-low `ch` inflates apparent occupancy)
-//!   but is exactly the case that falls through to step 3, which performs
-//!   the REAL `Acquire` check before ever returning `Err`. So the fast path
-//!   never itself decides "full" — it only ever decides "definitely NOT
-//!   full, skip the real check", and that decision is proven safe by the
-//!   inequality above. `Err(Overflow)` is returned ONLY from the code path
-//!   that already re-derives `h` from a fresh `Acquire` load — byte-identical
-//!   to the pre-F10 protocol on that branch.
-//! - **Lost entry:** the push protocol's entry-publishing steps (CAS-reserve
-//!   `tail`, `Release`-store the slot) are completely unmodified — F10 only
-//!   changes HOW the full-check decides whether to attempt them, never what
-//!   happens once a reservation is won. A push that reaches the CAS follows
-//!   the exact same reserve/publish sequence as before; nothing about entry
-//!   delivery changed.
-//! - **Premature slot reuse before drain:** slot reuse is gated by the SAME
-//!   invariant the pre-F10 code enforced — `tail.wrapping_sub(head) < CAP`
-//!   before a NEW reservation of a slot index is allowed. F10 does not change
-//!   what value gates the CAS attempt (the CAS itself, and its bound
-//!   `t + 1`, are unmodified); it only changes which LOAD supplies the
-//!   comparand on the common path, and that comparand is proven `<=` the
-//!   real `head` above — so F10 can only be MORE conservative about
-//!   permitting a reservation, never less.
-//!
-//! **Wrap correctness.** `cached_head` is refreshed only FROM a real `head`
-//! value, so it inherits the exact same `u32` wrapping-counter semantics as
-//! `head`/`tail` (see the compile-time `RING_CAP.is_power_of_two()` pin
-//! above, which this shadow does not disturb — it adds no new modulus
-//! arithmetic, only a `wrapping_sub` comparison identical in shape to the
-//! ones `push`/`drain` already use). The fast-path comparison uses
-//! `t.wrapping_sub(ch)`, exactly mirroring the real check's
-//! `t.wrapping_sub(h)` — a naive `<`/`>` comparison would break at the
-//! `u32::MAX → 0` wrap (the same hazard the module's existing wrap-note
-//! documents for `head`/`tail`); this shadow reuses the SAME wrapping-safe
-//! idiom, not a new one.
-//!
-//! **Wrap argument precondition — the staleness bound (ASSUMPTION, not a
-//! theorem — see below).** The inequality `cached_head <= head` holds only
-//! MODULO `2^32`, and only while the shadow's staleness lag stays strictly
-//! below `2^32` REAL head-advances. Unlike the pre-F10 check — which
-//! compared `t` against a `head` value read microseconds earlier (lag bounded
-//! by cache-coherence latency) — the shadow's lag is bounded only by the
-//! preemption window between the refresh's `Acquire` load of `head`
-//! (`full_check`'s step 3) and its immediately-following `Relaxed` store of
-//! that same value: two adjacent instructions. Were the true `head` to
-//! advance by exactly `2^32 − k` during that window, the stored value would
-//! be modularly `k` AHEAD of the true `head`, and `t.wrapping_sub(ch)` would
-//! under-report occupancy by `k` — at `k = 1` with a genuinely full ring,
-//! the fast path would admit a push it must not (premature slot reuse). This
-//! requires a producer descheduled between those two adjacent instructions
-//! while ~4.29 × 10⁹ drains complete on that one segment's ring — judged not
-//! practically reachable, consistent with how this module treats its other
-//! genuinely-reachable-but-astronomically-rare wrap hazard (the power-of-two
-//! `RING_CAP` compile-time pin, which exists for exactly the "2^32
-//! cross-thread frees on a single hot, long-lived segment" case this same
-//! window would need). This is an **ASSUMPTION** about the scheduler /
-//! preemption behaviour of the host, not a theorem of the abstract memory
-//! model — stated explicitly as such per the second-independent-review
-//! request (`docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md`,
-//! `RemoteFreeRing::cached_head` section). No code change is warranted for
-//! a hazard this remote.
-//!
-//! **In one sentence, for anyone citing this module's proof status:** the
-//! F10 shadow-head design's soundness rests on the Rust memory model
-//! (§"F10 ordering supplement" above, closed by R34-6's Acquire/Release
-//! promotion) **PLUS** this one bounded-staleness scheduler/time
-//! assumption — it is NOT a proof that holds under the abstract memory
-//! model alone, and any claim that this design is "formally verified"
-//! without naming this residual assumption is incomplete. (Round-32/33
-//! independent review, finding F7, and the Sol release readonly review,
-//! finding F7, both raised exactly this precision point — see
-//! `docs/perf/R32_11_REMOTE_RING_SHADOW_HEAD_GATE.md` §11 for the closure
-//! trail across both reviews.)
-//!
-//! **Worst case cost of a stale shadow:** at most ONE extra real
-//! `head.load(Acquire)` per push that the shadow's fast path declines to
-//! shortcut — never a correctness cost, only a fallback to the exact
-//! pre-F10 behaviour on that call.
-//!
-//! **F10 ordering supplement (R34-6, task #525, finding F-1).** The
-//! value-domain argument above (`cached_head <= head`) proves the fast
-//! path cannot over-estimate room. It does NOT by itself prove the
-//! *ordering* invariant that the pre-F10 `head.load(Acquire)` used to
-//! supply: that when a producer publishes an offset into a recycled slot,
-//! the consumer's `slot.store(EMPTY)` for that slot's previous occupant
-//! is guaranteed to precede the producer's `slot.store(offset)` in that
-//! slot's modification order. Pre-F10, every push's `head.load(Acquire)`
-//! created a synchronizes-with edge with the consumer's
-//! `head.store(h', Release)` — hence a happens-before chain through to
-//! the consumer's clear — that supplied this guarantee. The F10 fast
-//! path removed that load, and under the abstract memory model a
-//! second producer P that reads only `cached_head` (never `head`)
-//! carries no such chain: its `slot.store(offset)` and the consumer's
-//! `slot.store(EMPTY)` are unordered by happens-before. (This is NOT a
-//! data race — both are atomic on the same `AtomicU32`; it is a
-//! potential lost-update/liveness defect. The gap was identified by the
-//! release-stabilization audit (finding F-1) but confirmed NOT
-//! realisable on any hardware Rust targets — x86-TSO, ARMv8, RISC-V
-//! RVWMO, and POWER cumulativity all make the clear globally visible
-//! before P's store is issued — so it is a *proof* gap, not a *bug*.)
-//!
-//! **Resolution: promote `cached_head`'s two accesses from `Relaxed` to
-//! `Acquire`/`Release`** (R34-6). The fast path's load is now
-//! `cached_head.load(Acquire)`, and the slow path's refresh store is
-//! `cached_head.store(h, Release)`. This restores the exact edge the
-//! removed `head.load(Acquire)` supplied, on the SAME producer-owned
-//! cache line (no new cross-core traffic): a producer X whose slow path
-//! refreshes the shadow does `head.load(Acquire)` (sees the consumer's
-//! `head.store(Release)` → synchronizes-with → X's history now includes
-//! the consumer's `slot.store(EMPTY)`), then `cached_head.store(Release)`
-//! — and a later producer P that reads `cached_head.load(Acquire)`
-//! synchronizes-with X's `Release` store, inheriting the edge. The cost
-//! is fence *strength*, not a fence *instruction*: on x86-TSO both
-//! `Acquire` loads and `Release` stores compile to the SAME `mov` as
-//! `Relaxed` (verified byte-for-byte identical via disassembly — all x86
-//! loads are acquire, all non-`SeqCst` stores are release); on aarch64
-//! they are one `ldapr`/`stlr` instead of `ldr`/`str` (measured cost:
-//! noise-level, see `benches/r34_6_remote_ring_cached_head_ordering_gate.rs`).
-//!
-//! **Drain (single consumer):**
-//! 1. `t = tail.load(Acquire)` (sees every producer's `Release` reservation).
-//! 2. While `h != t` (wrap-correct — both cursors are monotonic wrapping
-//!    counters, so the undrained count is `t.wrapping_sub(h)`, NOT `t - h`):
-//!    load `slots[h % CAP]` with `Acquire`. If `RING_SLOT_EMPTY`
-//!    → the reservation was won but the publish store hasn't happened yet
-//!    (producer is between steps 2 and 3); **stop draining** (we cannot skip
-//!    it — order is preserved by the cursors; a later drain picks it up).
-//!    Otherwise reclaim the offset, store `slots[h % CAP] = RING_SLOT_EMPTY`
-//!    (`Relaxed` — only this consumer writes a non-empty value... no: producers
-//!    also write here on their reserved slot; but a producer only writes to
-//!    `slots[p % CAP]` for a `p` it reserved, and reservations are unique, so
-//!    by the time we drain slot `h`, no producer will write it again until
-//!    `tail` wraps past `h + CAP` — which the full-check prevents. `Relaxed` is
-//!    safe because the next producer to touch this slot will `Release`-store
-//!    its offset, and our drain reads with `Acquire`.), `h = h.wrapping_add(1)`.
-//! 3. `head.store(h, Release)` (publishes the drain progress to producers'
-//!    full-check `Acquire` head load).
-//!
-//! **Ordering summary (each justified above):**
-//! - producer reservation CAS: `AcqRel` (success) / `Relaxed` (failure).
-//! - producer publish store: `Release`.
-//! - consumer tail load: `Acquire`.
-//! - consumer slot load: `Acquire`.
-//! - consumer slot clear: `Relaxed`.
-//! - consumer head store: `Release`.
-//! - producer full-check head load (slow path): `Acquire`.
-//! - producer full-check cached_head load (fast path): `Acquire` (R34-6,
-//!   finding F-1 — restores the happens-before edge the pre-F10
-//!   `head.load(Acquire)` supplied; byte-identical `mov` to `Relaxed`
-//!   on x86-TSO, one `ldapr` on aarch64).
-//! - producer full-check cached_head refresh store (slow path): `Release`
-//!   (R34-6, finding F-1 — pairs with the fast path's `Acquire` load).
-//!
-//! ## P4 — visibility contract change (R7-A4, dirty routing)
-//!
-//! With the A4 dirty-routing mechanism (`alloc-segment-directory` +
-//! `alloc-xthread`), a cross-thread freer sets a per-slot dirty bit AFTER
-//! a successful ring publish. A producer stalled between `push`/
-//! `try_push_uncounted` (the ring entry is visible in the ring) and
-//! `fetch_or` on the dirty bitmap (the owning slot's dirty word) is
-//! INVISIBLE to the owner's dirty-routing drain until the bit lands.
-//! This is bounded deferral of the same class as the existing "later
-//! drain picks it up" contract (above): the entry is in the ring and
-//! will be found by:
-//!   (a) the next dirty-routing drain pass, once the producer's
-//!       `fetch_or` completes and a subsequent owner `swap(0, Acquire)`
-//!       observes it;
-//!   (b) the guarded linear-scan fallback, which still drains every
-//!       ring unconditionally (the scan body is unchanged and always
-//!       reachable as the directory-miss path);
-//!   (c) any drain triggered by a DIFFERENT cross-thread free to the
-//!       SAME segment that DID complete its `fetch_or` — that drain
-//!       reads the ring up to the current `tail`, which includes the
-//!       stalled producer's entry.
-//! A producer that crashes between `push` and `fetch_or` (e.g. a
-//! process-level abort after the CAS but before the fetch_or) leaves
-//! the ring entry orphaned from the dirty bitmap, but the linear-scan
-//! fallback (path (b)) eventually finds it. No ring entry is ever lost
-//! — only its discoverability via the fast dirty path is deferred.
-//!
+//! Reduced-width loom tests exercise a producer paused before CAS through
+//! an entire finite cursor lifetime and terminal exhaustion; the old
+//! wrapping protocol is retained there as a counterfactual. Kani checks
+//! non-wrapping occupancy arithmetic; it does not prove the concurrent
+//! interleaving protocol.
 //! ## Overflow semantics (the honest remainder)
 //!
-//! When the ring is full (`tail - head == CAP`), a push returns
+//! When the ring is full (`tail - head == CAP`) or the lifetime cursor is
+//! exhausted (`tail == u64::MAX`), a push returns
 //! `Err(PushOverflow)` and the caller **discards** the block (it stays mapped,
 //! unused — a bounded leak). This is SOUND (no UAF, no corruption) but costs
 //! RSS: at most `(CAP - drained_count)` blocks per segment can be in flight,
@@ -358,86 +130,16 @@
 //! recycle) and, crucially, it is a *correctness-preserving* fallback, not a
 //! correctness violation — the race is gone.
 //!
-//! ## R2-10 (task #2012) — the tail-CAS ABA hazard (honest, open residual)
+//! ## R2-10 — tail-CAS ABA closed by non-reuse
 //!
-//! **The hazard.** `push`/`try_push_uncounted` read `t = tail.load(Relaxed)`,
-//! check capacity via `full_check(t)` (which reads `head` at THAT instant),
-//! and only THEN attempt `tail.compare_exchange_weak(t, t+1, ...)`. Nothing
-//! binds the CAS's compare value to the SPECIFIC incarnation of the ring
-//! state the capacity check reasoned about — only to the numeric value `t`.
-//! If a producer is preempted AFTER its capacity check succeeds but BEFORE
-//! its CAS runs, and enough OTHER producers + the consumer complete a full
-//! `u32` wrap (net `2^32` pushes) while it is stalled, `tail`'s CURRENT
-//! value can coincidentally equal the stalled producer's stale snapshot
-//! again. Its CAS then succeeds — not because the capacity check it already
-//! performed is still valid, but by numeric coincidence across two different
-//! "incarnations" of the same `u32` value. The result: an over-capacity
-//! reservation that overwrites a live, undrained entry in the recycled slot
-//! (a torn/lost update) and/or violates the ring's own
-//! `tail.wrapping_sub(head) <= RING_CAP` occupancy invariant.
-//!
-//! **Why the existing Kani proofs (`src/kani_proofs.rs`'s `ring_wrap_proofs`
-//! module, `wrapping_sub_recovers_advance_count` /
-//! `full_check_matches_true_occupancy_at_the_boundary`) do NOT cover this.**
-//! Both proofs are exhaustive over `head`/advance-count for a SINGLE
-//! `head.wrapping_add(n)` step (`kani::assume(n <= RING_CAP)`) — they prove
-//! the modular-arithmetic occupancy check is exact GIVEN that single-step
-//! assumption, which is a genuinely different property from "can a snapshot
-//! taken before a full wrap still validate a CAS taken after it." Kani
-//! proves properties of ONE call in isolation; this hazard is a TEMPORAL,
-//! multi-step, multi-threaded property (a value read long before an
-//! arbitrary number of intervening operations, compared against a value
-//! read long after) that Kani's per-call proof model cannot express at all
-//! — not a gap in how exhaustively those two proofs cover their own claim,
-//! a difference in what claim they make.
-//!
-//! **Reduced-width loom evidence.** `tests/loom_remote_ring_tail_aba.rs`
-//! reproduces the exact mechanism above at a tractable scale (cursors wrap
-//! at `MOD = 4` instead of `2^32`, so a full incarnation cycle is 4 pushes,
-//! not billions):
-//! `counterfactual_narrow_tail_stale_cas_violates_capacity_invariant` and
-//! `counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry`
-//! are `#[should_panic]` counterfactuals proving the hazard is real on the
-//! CURRENT protocol shape (occupancy violation and, separately, an actual
-//! lost live entry). `correct_wide_tail_stale_cas_rejects_after_same_finite_script`
-//! re-runs the IDENTICAL finite reproduction script against a cursor wide
-//! enough (relative to that script) that the same coincidence cannot occur
-//! — the reduced-scale stand-in for the real fix (widen `head`/`tail`/
-//! `cached_head` from `u32` to `u64`; a `u64` wraparound "would take
-//! centuries under any realistic throughput" per the originating review).
-//!
-//! **Status: NOT fixed in this round.** The minimal correct fix (widen the
-//! cursors to `u64`) is layout-preserving in principle (`CURSOR_BLOCK`'s
-//! existing 128-byte padding has room for two 8-byte cursors + the
-//! `overflow` counter on the producer line without changing `FOOTPRINT`),
-//! but its full blast radius touches this module's `HEAD_OFF`/`TAIL_OFF`/
-//! `CACHED_HEAD_OFF` layout constants, every `dbg_*` test hook with a `u32`
-//! head/tail signature (`dbg_cursors`, `dbg_set_cursors`,
-//! `dbg_advance_head_only`, `head_relaxed`, `tail_relaxed`, `drain`'s return
-//! type), `src/kani_proofs.rs`'s `ring_wrap_proofs` module, and — most
-//! substantially — test files built specifically AROUND the `u32` wrap
-//! boundary as the ring's "one genuinely reachable" hazard
-//! (`tests/regression_ring_cursor_wrap.rs`, `tests/remote_ring_shadow_head.rs`
-//! — both explicitly construct scenarios crossing `u32::MAX -> 0`), whose
-//! entire premise would need a conceptual (not just mechanical) rewrite once
-//! the wrap boundary moves to `u64::MAX` (a THIRD file,
-//! `tests/remote_free_ring_head_write_sites.rs`, uses these same `dbg_*`
-//! hooks but only structurally counts write-site occurrences in the source
-//! text — it is type-agnostic and would need no conceptual change, only a
-//! recompile check). This is judged too large to complete and fully
-//! zero-trust-verify in one task cycle, for a hazard requiring
-//! ~`2^32` operations during ONE producer's stall — the same order of
-//! magnitude of rarity this file's own "F10 wrap argument precondition"
-//! section above already accepts for a related hazard ("No code change is
-//! warranted for a hazard this remote"). Tracked as
-//! `docs/CORRECTNESS_OPEN_ITEMS.md` item 149
-//! (`docs/correctness-open-items/ACTIVE.md`), which records the concrete
-//! fix design (u64 widening, layout-preserving) so a future round can
-//! implement it without re-deriving the analysis — mirroring how item 148
-//! (R2-09, the same review round) scoped an equally large redesign out of
-//! its own task cycle with an honest interim record rather than a rushed
-//! partial fix.
-
+//! The former u32 wrapping tail could revisit a stalled producer's
+//! capacity-checked compare value after a full incarnation. The u64 tail
+//! now has a checked terminal value and never wraps or rebases. Therefore,
+//! if another producer has reserved even one slot since the stalled
+//! producer's snapshot, its CAS compare value can never match again.
+//! The same rule holds at u64 exhaustion: no successor is attempted.
+//! See `tests/loom_remote_ring_tail_aba.rs` for the reduced-width
+//! full-lifetime pause/resume model and the old protocol's negative control.
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 mod ops;
@@ -502,21 +204,11 @@ pub const RING_SLOT_EMPTY: u32 = u32::MAX;
 #[doc(hidden)]
 pub const RING_CAP: usize = 256;
 
-// The ring's u32 `head`/`tail` cursors are monotonic WRAPPING counters:
-// occupancy is `tail.wrapping_sub(head)` and the slot index is `i % RING_CAP`.
-// For the slot sequence to stay CONTINUOUS across the `u32::MAX → 0` wrap, the
-// index must not jump at the boundary: `(2^32 - 1) % CAP` must be followed by
-// `0 % CAP`, i.e. `2^32 % CAP == 0`. That holds iff `CAP` is a power of two.
-// A non-power-of-two CAP would jump the slot index at the wrap (…, (2^32-1) mod
-// CAP, 0 mod CAP …) and corrupt the FIFO on the ONE genuinely reachable wrap
-// hazard (2^32 cross-thread frees on a single hot, long-lived segment). This is
-// an otherwise UNSTATED dependency; pin it at compile time.
+// The ring's u64 cursors never wrap. Keep the power-of-two layout pin so
+// slot indexing stays consistent with the established layout contract.
 const _: () = assert!(
     RING_CAP.is_power_of_two(),
-    "RING_CAP must be a power of two so 2^32 % RING_CAP == 0 — the ring's u32 \
-     head/tail cursors wrap continuously across u32::MAX only then; a \
-     non-power-of-two CAP would jump the slot index at the wrap and corrupt the \
-     FIFO"
+    "RING_CAP must remain power-of-two for the established ring layout"
 );
 
 /// The byte footprint of a `RemoteFreeRing` in segment metadata. Fixed so the
@@ -875,13 +567,13 @@ const HEAD_OFF: usize = 0;
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const TAIL_OFF: usize = 64;
 /// Offset of the `overflow` counter within the ring metadata. PERF-PASS-4:
-/// moved from 8 to 68 — shares `tail`'s line (both are producer-touched;
+/// moved from 8 to 68, then to 72 for the u64 tail — shares `tail`'s line;
 /// `overflow` is only written on the rare full-ring path, so co-locating it
 /// with `tail` costs nothing on the common push path and avoids spending a
 /// THIRD cache line on one counter).
-const OVERFLOW_OFF: usize = 68;
+const OVERFLOW_OFF: usize = 72;
 /// F10 (task #502): offset of the `cached_head` shadow within the ring
-/// metadata — 72, immediately after `overflow` (68) on the SAME producer
+/// metadata — 80, immediately after `overflow` (72) on the SAME producer
 /// line as `tail`/`overflow`. Was unused reserved padding (bytes 72..128 of
 /// the cursor block were entirely unclaimed before this task — confirmed by
 /// grepping every other `_OFF` constant in this file: none references any
@@ -892,7 +584,7 @@ const OVERFLOW_OFF: usize = 68;
 /// `FOOTPRINT`/`SLOTS_OFF` and every downstream segment-metadata offset are
 /// byte-identical to before this task.
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
-const CACHED_HEAD_OFF: usize = 72;
+const CACHED_HEAD_OFF: usize = 80;
 /// Offset of the first slot within the ring metadata. PERF-PASS-4: moved
 /// from 16 to 128 (`CURSOR_BLOCK`) — the data slots now start on a line past
 /// BOTH cursor lines, so neither producer's `tail` CAS nor the consumer's
@@ -906,10 +598,15 @@ const SLOTS_OFF: usize = CURSOR_BLOCK;
 // layout hazard the module's other compile-time pins exist to catch) would
 // fail HERE instead of corrupting ring data at runtime.
 const _: () = assert!(
-    CACHED_HEAD_OFF + core::mem::size_of::<u32>() <= CURSOR_BLOCK,
-    "F10's cached_head field (CACHED_HEAD_OFF..+4) must fit inside CURSOR_BLOCK, \
+    CACHED_HEAD_OFF + core::mem::size_of::<u64>() <= CURSOR_BLOCK,
+    "F10's cached_head field (CACHED_HEAD_OFF..+8) must fit inside CURSOR_BLOCK, \
      strictly before SLOTS_OFF"
 );
+const _: () = assert!(
+    HEAD_OFF.is_multiple_of(8) && TAIL_OFF.is_multiple_of(8) && CACHED_HEAD_OFF.is_multiple_of(8)
+);
+const _: () = assert!(HEAD_OFF + 8 <= 64 && TAIL_OFF + 8 <= OVERFLOW_OFF);
+const _: () = assert!(OVERFLOW_OFF + 4 <= CACHED_HEAD_OFF);
 
 /// The per-segment non-intrusive cross-thread-free MPSC ring.
 ///
@@ -985,6 +682,6 @@ pub struct PushOverflow;
 /// usage. Tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 22 (task #575/H5).
 #[cfg(feature = "alloc-xthread")]
 struct DrainHeadPublish {
-    head: &'static core::sync::atomic::AtomicU32,
-    h: u32,
+    head: &'static core::sync::atomic::AtomicU64,
+    h: u64,
 }
