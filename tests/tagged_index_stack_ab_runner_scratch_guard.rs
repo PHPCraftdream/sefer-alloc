@@ -60,7 +60,7 @@ fn exclusive_dir_under(base: &Path, label: &str) -> DirGuard {
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
         let dir = base.join(format!(
-            "tis_runner_guard_{}_{}_{}_{}",
+            "tis_guard_{}_{}_{}_{}",
             std::process::id(),
             subsec_nanos,
             next_uid(),

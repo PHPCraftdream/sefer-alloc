@@ -112,7 +112,9 @@ fn commit_path_fault_hook_call_site_is_cfg_gated() {
          merely disarmed — when the feature is absent (R2-19)"
     );
 
-    let lib = fs::read_to_string(vmem_src.join("lib.rs")).expect("read lib.rs");
+    let lib = fs::read_to_string(vmem_src.join("lib.rs"))
+        .expect("read lib.rs")
+        .replace("\r\n", "\n");
     const MODULE: &str = "\
 #[cfg(feature = \"fault-injection\")]
 #[cfg_attr(docsrs, doc(cfg(feature = \"fault-injection\")))]
