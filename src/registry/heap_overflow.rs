@@ -1,11 +1,7 @@
-//! [`HeapOverflow`] — RAD-4b (task #72, UBFIX-13's sibling registry task): a
-//! bounded, slot-resident, per-HEAP MPSC overflow queue that absorbs a
-//! cross-thread free once its target segment's [`RemoteFreeRing`] AND
-//! `HeapCore::push_with_overflow_retry`'s retry budget have BOTH been
-//! exhausted — the "owner fully starved" residual RAD-4 (`8b91b85`)
-//! explicitly measured and left open (744/1000 blocks lost under
-//! `tests/remote_fanin.rs::remote_fanin_owner_starved_residual_is_bounded`'s
-//! pathological shape).
+//! [`HeapOverflow`] — a per-heap MPSC second-chance ring plus R2-09's
+//! intrusive spill for legal frees that outlive both bounded rings.
+//! The historical RAD-4 owner-starvation case lost 744/1000 blocks in its
+//! measured burst; the spill now retains frees beyond the ring capacities.
 //!
 //! [`RemoteFreeRing`]: crate::alloc_core::remote_free_ring::RemoteFreeRing
 //! [`HeapCore`]: super::heap_core::HeapCore
@@ -21,7 +17,9 @@
 //! nothing for the retry to wait on, and the original design's only recourse
 //! was the documented-sound bounded leak (drop the block; `HeapCore`'s own
 //! module doc walks the three rejected full-durability designs: writing into
-//! the block's own bytes reopens the H1-class UAF the ring exists to close;
+//! writing into the block's own bytes was previously rejected without an
+//! ownership/publication proof (the H1-class UAF risk); R2-09 supplies that
+//! proof for exclusively transferred, still-live spill blocks;
 //! `Box::new` reopens the `#[global_allocator]` reentrancy hazard; reusing
 //! `deferred_next` widens the M-7 dormant reactivation hazard).
 //!
@@ -31,7 +29,7 @@
 //! blocking `dealloc`, a slot-resident buffer keyed by segment pointer +
 //! provenance-exposed header stamp, and properly tagging `deferred_next`).
 //! It keeps option 2's SHAPE (slot-resident, pre-reserved at claim time, no
-//! `Box`, no block-byte writes) but resolves the "how does a remote producer
+//! `Box`, no block-byte writes in the ring tiers) but resolves the "how does a remote producer
 //! find the owning `HeapSlot`" question WITHOUT any new `SegmentHeader`
 //! field or provenance-exposed pointer: every segment ALREADY carries its
 //! owner's heap-slot **index** in `owner_state` (`unpack_owner_id`, stamped
@@ -857,7 +855,7 @@ impl HeapOverflow {
     /// races concurrently with this check is caught by the NEXT
     /// opportunistic drain call, the same "later drain picks it up" liveness
     /// contract every lazy-drain path in this allocator already relies on.
-    /// A spill CAS races this guard in the same way: an older observed null
+    /// A spill swap races this guard in the same way: an older observed null
     /// can defer the note once, never permanently hide it after a joined
     /// producer or a subsequent owner acquire.
     #[inline(always)]

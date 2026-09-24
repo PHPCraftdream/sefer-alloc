@@ -46,8 +46,8 @@
 //!   │  • [56 B reserved padding]                                │
 //!   │  offset 64..128 (own cache line — producer-touched):     │
 //!   │  • tail: AtomicU64  (8 B) — push reserve cursor (producers)
-//!   │  • overflow: AtomicU32 (4 B) — count of discarded pushes  │
-//!   │    (ring-full → bounded leak; sound, never corrupts)      │
+//!   │  • overflow: AtomicU32 (4 B) — count of full-ring pushes  │
+//!   │    (the caller routes legal frees to another tier)       │
 //!   │  • cached_head: AtomicU64 (8 B) — F10 shadow-head hint,   │
 //!   │    same line as tail/overflow (producer-only touched)     │
 //!   │  • [40 B reserved padding]                                │
@@ -115,20 +115,15 @@
 //! wrapping protocol is retained there as a counterfactual. Kani checks
 //! non-wrapping occupancy arithmetic; it does not prove the concurrent
 //! interleaving protocol.
-//! ## Overflow semantics (the honest remainder)
+//! ## Overflow semantics
 //!
 //! When the ring is full (`tail - head == CAP`) or the lifetime cursor is
 //! exhausted (`tail == u64::MAX`), a push returns
-//! `Err(PushOverflow)` and the caller **discards** the block (it stays mapped,
-//! unused — a bounded leak). This is SOUND (no UAF, no corruption) but costs
-//! RSS: at most `(CAP - drained_count)` blocks per segment can be in flight,
-//! and a sustained burst faster than the owner drains leaks one block per
-//! overflow. In practice the owner drains on every alloc, so the ring rarely
-//! fills under normal churn; the leak bound is the in-flight cross-thread-free
-//! footprint per segment between drains. This is strictly better than the
-//! Phase 12.5 discard (which leaked the ENTIRE cross-thread-free chain per slot
-//! recycle) and, crucially, it is a *correctness-preserving* fallback, not a
-//! correctness violation — the race is gone.
+//! `Err(PushOverflow)`. The production caller first tries the heap-level
+//! overflow ring, then bounded retries, then R2-09's allocation-free
+//! intrusive spill in the freed block. A full segment ring is therefore a
+//! routing event, not a lost free. Direct users of this primitive must
+//! provide their own overflow policy; the ring itself stores no failed push.
 //!
 //! ## R2-10 — tail-CAS ABA closed by non-reuse
 //!
@@ -146,8 +141,8 @@ mod ops;
 
 /// TEST/DIAGNOSTIC-ONLY (task D2): process-wide count of ring-push overflows
 /// (a cross-thread free that found its target segment's ring full and
-/// discarded the block — a sound but observable bounded leak; see "Overflow
-/// semantics" above). Bumped in [`RemoteFreeRing::push`] alongside the
+/// continued to another tier; see "Overflow semantics" above). Bumped in
+/// [`RemoteFreeRing::push`] alongside the
 /// existing per-segment `overflow` cursor-block counter. The per-segment
 /// counter ([`RemoteFreeRing::overflow_count`]) is exact for one segment but
 /// requires the caller to already hold a `RemoteFreeRing` handle (i.e. know
@@ -198,7 +193,7 @@ pub const RING_SLOT_EMPTY: u32 = u32::MAX;
 /// (≈ 256 K at `MIN_BLOCK = 16`). The ring need only absorb the *burst* of
 /// cross-thread frees that arrive between the owner's drains (the owner drains
 /// on every alloc and on the `find_segment_with_free` scan). 256 covers a
-/// typical burst with headroom; overflow degrades to a bounded leak (sound).
+/// typical burst with headroom; overflow uses the heap ring or spill.
 /// Larger caps trade segment metadata footprint for rarer overflow; 256 is the
 /// mimalloc-class default for per-page deferred-free queues.
 #[doc(hidden)]
@@ -624,8 +619,8 @@ pub struct RemoteFreeRing {
     base: *mut u8,
 }
 
-/// A push failed because the ring is full. The caller MUST discard the block
-/// (bounded leak) — see "Overflow semantics" in the module docs.
+/// A push failed because the ring is full or its lifetime cursor exhausted.
+/// The caller must route the free elsewhere; see "Overflow semantics".
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 #[doc(hidden)]
 pub struct PushOverflow;

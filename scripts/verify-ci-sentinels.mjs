@@ -1104,7 +1104,7 @@ function verifyCiSentinels() {
 // re-derivation this bump pairs with, in the same commit.
 // Current tree update: the tagged-index-stack repository-cfg release and
 // extracted-package rows add six live test sentinels.
-const MIN_SENTINEL_COUNT = 88;
+const MIN_SENTINEL_COUNT = 97;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

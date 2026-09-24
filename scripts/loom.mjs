@@ -46,6 +46,7 @@ const FEATURES = {
   // R2-10 (task #2012): the tail-CAS ABA hazard reduced-width reproduction
   // (narrow-model counterfactuals) + the wide-model closure demonstration.
   loom_remote_ring_tail_aba: 'alloc-core,alloc-xthread',
+  loom_overflow_spill: 'alloc-core,alloc-xthread',
   // #141: the A1 deferred-large push/drain model (found the #143 push leak).
   loom_deferred_large: 'alloc-core,alloc-xthread',
   // R2 (#154) + #164: magazine↔RemoteFreeRing composition shadow model.

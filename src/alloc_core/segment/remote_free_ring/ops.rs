@@ -255,8 +255,8 @@ impl RemoteFreeRing {
 
     /// Push a freed block's segment-relative `offset` into the ring. Called by
     /// a NON-OWNER thread (a cross-thread freer). Returns `Err(PushOverflow)`
-    /// if the ring is full — the caller MUST then discard the block (bounded
-    /// leak, sound).
+    /// if the ring is full or its lifetime cursor is exhausted. The caller
+    /// must use another delivery tier for a legal free.
     ///
     /// `offset` MUST be `< SEGMENT` (a real block offset, not the sentinel).
     #[cfg(feature = "alloc-xthread")]
@@ -269,7 +269,7 @@ impl RemoteFreeRing {
             // argument). Semantically identical to the pre-F10
             // `t - head.load(Acquire) >= RING_CAP` check (when t >= head).
             if t == u64::MAX || self.full_check(t).is_err() {
-                // Ring full: bounded leak. Count it (diagnostic, both the
+                // Ring unavailable: count the routing event (both the
                 // per-segment cursor-block counter AND the process-wide D2
                 // counter) and bail.
                 let _ = self.overflow().fetch_add(1, Ordering::Relaxed);
@@ -325,7 +325,7 @@ impl RemoteFreeRing {
             // F10: identical shadow-checked full-check as `push` (see
             // `full_check`'s doc + the module doc's soundness section).
             if t == u64::MAX || self.full_check(t).is_err() {
-                // Ring full: bounded leak, SAME as `push` — but deliberately
+                // Ring unavailable, SAME as `push` — but deliberately
                 // uncounted (see doc comment above for why).
                 return Err(PushOverflow);
             }

@@ -221,38 +221,13 @@ pub struct AllocStats {
     /// otherwise.
     pub config_conflicts: u64,
 
-    /// Number of cross-thread frees permanently, unrecoverably lost since
-    /// process start: `HeapCore::push_with_overflow_retry` concedes only
-    /// after BOTH the target segment's `RemoteFreeRing` (256 slots) AND the
-    /// owning heap's second-chance `HeapOverflow` ring (2048 slots, 8x the
-    /// segment ring — see [`ring_overflows`](Self::ring_overflows)'s sibling
-    /// mechanism) are saturated with a genuinely non-draining owner (paused
-    /// or exited) for the whole retry window. The freed block stays mapped
-    /// and unused (a bounded, documented, non-UB leak — see
-    /// `HeapOverflow`'s module doc "Capacity — an honest bound, not an
-    /// unbounded proof" section for the full design rationale and why no
-    /// FIXED-capacity, non-blocking mechanism can give a stronger guarantee).
-    ///
-    /// **Distinct from [`ring_overflows`](Self::ring_overflows): this field
-    /// is the FINAL, unrecoverable case, not a first-tier retry signal.**
-    /// `ring_overflows` increments on every segment-ring-full event — the
-    /// overwhelming majority of which the second-chance `HeapOverflow` ring
-    /// (or the bounded spin-retry against both tiers) DOES recover. This
-    /// field increments exactly once per free that survived NEITHER
-    /// mechanism — the review-flagged R2-09 (task #2011) residual. A
-    /// sustained non-zero rate here means cross-thread frees are actually
-    /// being permanently leaked under the documented capacity bound (see
-    /// `docs/correctness-open-items/ACTIVE.md` item 148 for the tracked
-    /// follow-up toward a genuinely lossless protocol) — worth alerting on
-    /// in production, unlike a merely elevated `ring_overflows` rate (which
-    /// is expected under any sustained multi-producer fan-in and does not by
-    /// itself indicate loss).
-    ///
-    /// Requires the `alloc-xthread` feature (where cross-thread routing —
-    /// and therefore this exhaustion path — exists at all); `0` otherwise.
-    /// Not gated behind `alloc-stats`: this is the cold, already-conceding
-    /// terminal branch of the retry loop (at most one increment per fully-
-    /// exhausted free), not a hot-path counter, so there is no perf reason
-    /// to make it opt-in.
+    /// Historical terminal-loss counter retained for diagnostics. R2-09
+    /// replaced that terminal drop with an intrusive spill: legal small-block
+    /// remote frees now remain reachable when both bounded rings are full,
+    /// without depending on an active owner or allocating new metadata.
+    /// This counter therefore stays at zero for legal frees in the current
+    /// protocol. [`ring_overflows`](Self::ring_overflows) still counts the
+    /// first-tier ring-full event, including frees recovered by the heap ring
+    /// or spill. The field is `0` when `alloc-xthread` is disabled.
     pub cross_thread_frees_lost: u64,
 }

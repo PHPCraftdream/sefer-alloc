@@ -176,12 +176,12 @@ impl Node {
         // properly aligned, and exclusively owned. `T: Copy` means the write
         // is a plain bit copy (no destructor surprise). The write does not
         // alias any other live reference under the single-writer invariant: a
-        // metadata field is written only by its owning thread, and a remote free
-        // never writes segment/block bodies (it enqueues `(offset, class)` into
-        // the per-segment ring; see `registry::heap_core::dealloc_routing`,
-        // "block bytes untouched"). Fields read cross-thread are either
-        // owner-only (written once, then read-only) or atomic — see the
-        // field-specific accessors below.
+        // metadata field is written only by its owning thread. R2-09's
+        // intrusive overflow spill is a separate case: after a legal remote
+        // free transfers its block exclusively, that producer writes a node
+        // into the freed block before publishing it to the owner. The owner
+        // cannot touch that block until publication completes. Metadata
+        // fields read cross-thread remain owner-only or atomic.
         unsafe { dst.write(value) };
     }
 
@@ -261,7 +261,10 @@ impl Node {
     /// crate reads this way — the crate never packs a `u64` field at a
     /// sub-8-byte alignment).
     #[inline]
-    pub(crate) fn read_struct_with_atomic_word<T: Copy>(src: *const T, atomic_word_off: usize) -> T {
+    pub(crate) fn read_struct_with_atomic_word<T: Copy>(
+        src: *const T,
+        atomic_word_off: usize,
+    ) -> T {
         use core::mem::MaybeUninit;
 
         let total = size_of::<T>();
