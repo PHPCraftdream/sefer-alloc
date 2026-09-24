@@ -59,10 +59,9 @@ pub(super) const SIDECAR_SIZE: usize = {
 /// (which had NO existing "try again later" contract at its call site and
 /// had to fall back to `abort()`), `HeapOverflow::push` ALREADY has a
 /// clean, pre-existing failure contract: it returns `bool`, and every
-/// caller already treats `false` as "the ring is momentarily full,
-/// concede to the documented-sound bounded leak" (see
-/// `push_with_overflow_retry`'s existing handling in
-/// `heap_core_xthread`). So this function's OOM branch simply rolls
+/// caller treats `false` as "the ring cannot take this note now": after
+/// its bounded retry, `push_with_overflow_retry` publishes the note to the
+/// allocation-free intrusive spill. So this function's OOM branch rolls
 /// the sentinel back (the SAME anti-livelock argument the chunk path's
 /// own rollback rests on, narrowed to one sidecar pointer)
 /// and returns `false` — strictly SIMPLER than the chunk path's OOM

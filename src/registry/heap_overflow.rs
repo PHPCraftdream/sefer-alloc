@@ -63,38 +63,60 @@
 //!   packed `(offset, class)` word `RemoteFreeRing` already produces at its
 //!   call sites (`HeapCore::dealloc_foreign_slow` computes `packed` before
 //!   ever touching the ring — this queue reuses that SAME value verbatim).
-//! - IS NOT unbounded. `HEAP_OVERFLOW_CAP` is a genuinely fixed capacity —
-//!   see the module-level "Capacity — an honest bound, not an unbounded
-//!   proof" section below for what "closes the gap" means with a bounded
-//!   structure and why that is the correct, honestly-documented scope for
-//!   this fix.
-//! - IS NOT a way to read or write a freed block's payload — only the
-//!   `(base, packed)` PAIR (a pointer's segment and its packed offset/class)
-//!   crosses the queue, mirroring `RemoteFreeRing`'s own "no block-byte
-//!   writes" discipline exactly.
+//! - IS bounded as a ring. R2-09 adds an intrusive third tier when both
+//!   rings saturate; the number of pending notes is bounded by the number
+//!   of still-live small blocks, not by `HEAP_OVERFLOW_CAP`.
+//! - The two rings never write freed-block bytes. Only the third tier does:
+//!   its note occupies the first 16 bytes of the exclusively transferred
+//!   block until the owner reclaims it.
 //!
-//! ## Capacity — an honest bound, not an unbounded proof
+//! ## R2-09: lossless intrusive spill beyond both fixed rings
 //!
-//! No FIXED-size structure can give a mathematically absolute guarantee
-//! against a producer population that pushes faster than any bounded buffer,
-//! for an unbounded time, with zero consumer activity ever again — that is
-//! true of this queue exactly as it was true of `RemoteFreeRing` itself (a
-//! bigger `RING_CAP` is not "unbounded", it is "a bigger bound"). The three
-//! designs this task's investigation rejected (blocking `dealloc`, `Box`
-//! nodes, reusing `deferred_next`) do not change this fact — the blocking
-//! design "solves" it only by converting the residual into an unrecoverable
-//! deadlock instead of a bounded leak the moment the owner thread is
-//! genuinely gone, which is a worse failure mode for a general-purpose
-//! allocator, not a better one (see the design-comparison doc for the full
-//! argument). What THIS queue delivers is the strongest guarantee a bounded,
-//! non-blocking, `Box`-free mechanism CAN give: `HEAP_OVERFLOW_CAP` (see its
-//! own doc comment) is sized to comfortably exceed any realistic sustained
-//! cross-thread-free burst a single heap can accumulate while genuinely
-//! starved, closing the loss to zero for every workload whose in-flight
-//! burst fits the configured capacity — which is the literal, honestly-
-//! measured judge this task's mandate specifies
-//! (`remote_fanin_owner_starved_residual_is_bounded`'s `exhausted_delta == 0`
-//! assertion over its N=1000/8-producer pathological shape).
+//! A legal small-block free transfers exclusive use of that block to the
+//! allocator. When both fixed rings are full, the producer writes a
+//! `SpillNode { next, packed }` into the block itself, then Release-CASes the
+//! block address onto this heap slot's `spill_head`. The successful CAS is
+//! publication and linearization. Failed CAS attempts only rewrite this
+//! producer's private block. The producer never dereferences a sampled head,
+//! so a popped/reused address cannot induce a producer UAF; if an ABA makes
+//! its CAS succeed, `next` names the current equal-address head. The single
+//! token-holding consumer Acquire-loads the head, reads its immutable node,
+//! and CAS-pops before reclaiming. No other consumer can pop/recycle that
+//! head between the load and CAS. The callback receives `(base, packed)`
+//! from a local copy and no node bytes are accessed after reclaim.
+//!
+//! Each pending note keeps its block logically live in the segment's
+//! owner-only `live_count`. A segment therefore cannot decommit/release while
+//! *any* of its blocks are still pending in either ring or the spill, or
+//! while a producer is preparing an unpublished note. Once the last note is
+//! consumed, `drain_heap_overflow` defers empty-segment finalization until
+//! the entire drain pass returns. Recycle only hands the whole `HeapCore`
+//! and its stable slot-resident `HeapOverflow` to the next claimant; it does
+//! not destroy either or reset `spill_head`. Paused and exited owners have
+//! the same lossless publication path.
+//! The spill block is never in an owner free list or magazine while a
+//! producer writes it; only after the pop/reclaim does the owner write its
+//! normal free-list link. Thus this exception to the older "remote frees
+//! never write block bodies" description does not race those owner writes.
+//!
+//! The spill allocates no metadata: a pending node consumes bytes already
+//! owned by its freed block. Its memory use is at most one node per
+//! outstanding legal small allocation, with no OS call, `GlobalAlloc`
+//! recursion, OOM branch, or producer backpressure. The fixed ring sidecar
+//! may still fail to materialize on OS OOM, but that simply selects spill
+//! earlier; it can no longer discard the free. The owner drains at most
+//! `HEAP_OVERFLOW_CAP` spill nodes per pass so continuous producers cannot
+//! make one drain call unbounded; remaining notes retrigger the next drain.
+//! Production reclaim callbacks must not unwind after a spill pop: a node
+//! may be decommitted during reclaim and cannot be requeued on panic.
+//! A panic through `GlobalAlloc` is outside its contract.
+//!
+//! The historical bounded-capacity argument below describes the *ring*,
+//! not the complete post-R2-09 delivery protocol.
+//!
+//! A fixed ring alone could only promise no loss for bursts fitting its
+//! capacity. Its former terminal leak is now replaced by the intrusive
+//! spill above; no larger fixed constant is being treated as a proof.
 //!
 //! ## R6-OPT-P0-2 (round 2) — two-tier storage: inline emergency + lazy sidecar
 //!
@@ -170,9 +192,8 @@
 //! unreachable sidecar makes it permanent: `drain` would wedge at index `i`
 //! forever, and EVERY subsequent entry (`i+1, i+2, ...`) — even ones from
 //! producers whose own sidecar materialisation attempts SUCCEED — becomes
-//! unreachable. This is strictly worse than the existing bounded leak (which
-//! loses one entry, boundedly): it would silently and permanently disable the
-//! entire ring the first time the sidecar ever failed to materialise.
+//! unreachable. It would silently and permanently disable the ring; the
+//! third-tier spill does not excuse a stranded ring reservation.
 //!
 //! **The fix:** never let a producer WIN the tail-CAS reservation for an
 //! index it cannot honour. [`push`](Self::push)/[`push_uncounted`](
@@ -180,8 +201,8 @@
 //! currently-observed `t`, whether `t >= INLINE_CAP`; if so they call
 //! `ensure_sidecar` FIRST. If that fails (OOM), the push returns `false`
 //! immediately — WITHOUT ever attempting the CAS — exactly the same outcome
-//! as "the ring is full right now", which every caller (`push_with_overflow_
-//! retry`) already treats as the documented-sound bounded leak. `tail` never
+//! as "the ring is full right now". The caller retries, then publishes to
+//! the intrusive spill if necessary. `tail` never
 //! advances past an index whose backing store does not exist, so no wedge is
 //! possible. See `push`'s doc comment for the exact ordering.
 
@@ -199,6 +220,21 @@
 // `#![allow(unsafe_code)]` in this file.
 
 use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
+
+use crate::alloc_core::{node::Node, os};
+
+// One pending free owns its block until the consumer reclaims it. The node
+// fits even the smallest class and needs no allocator/OS allocation.
+#[derive(Clone, Copy)]
+struct SpillNode {
+    next: *mut u8,
+    packed: u32,
+}
+
+const _: () =
+    assert!(core::mem::size_of::<SpillNode>() <= crate::alloc_core::size_classes::MIN_BLOCK);
+const _: () =
+    assert!(core::mem::align_of::<SpillNode>() <= crate::alloc_core::size_classes::MIN_BLOCK);
 
 /// Number of entries in one heap's overflow ring (spanning BOTH tiers — see
 /// the module doc's "R6-OPT-P0-2 (round 2)" section for the inline/sidecar
@@ -221,8 +257,8 @@ use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 /// the remainder (paid only by a slot that genuinely overflows past
 /// `INLINE_CAP`; see [`INLINE_CAP`]'s own doc comment for that split's
 /// sizing). Chosen deliberately smaller than an arbitrarily huge cap: this is
-/// a FIXED bound (see the module doc's "Capacity — an honest bound" section
-/// for why no fixed bound is a mathematically absolute guarantee), and a
+/// a FIXED bound for the ring, not for lossless delivery (see the module
+/// doc's R2-09 spill section), and a
 /// bound that is merely "large" without a stated relationship to a concrete
 /// judge is not more honest than one sized to a stated multiple of the judge
 /// it must pass — see that section for the full argument.
@@ -403,8 +439,16 @@ pub struct HeapOverflow {
     /// past the inline tier. See the module doc's "two-tier storage" and
     /// "wedge hazard" sections.
     sidecar: AtomicPtr<HeapOverflowSidecar>,
+    /// Intrusive third tier. A node is the first bytes of a remotely-freed
+    /// small block, which remains live until this note is consumed.
+    spill_head: AtomicPtr<u8>,
+    #[cfg(feature = "internals")]
+    spill_pushed: AtomicUsize,
+    #[cfg(feature = "internals")]
+    spill_popped: AtomicUsize,
     /// Diagnostic: count of pushes that found the overflow ring itself full
-    /// (the genuinely-unrecovered residual of THIS mechanism). Distinct from
+    /// (a ring-full event, now recovered by the intrusive spill if retry
+    /// cannot find room). Distinct from
     /// `RemoteFreeRing`'s own `DBG_RING_OVERFLOW` / `HeapCore`'s
     /// `DBG_RING_PUSH_RETRY_EXHAUSTED` — this counts the case where even the
     /// second-chance queue could not absorb the block.
@@ -493,6 +537,11 @@ impl HeapOverflow {
             bases: [Self::ENTRY_BASE_ZERO; INLINE_CAP],
             packed: [Self::ENTRY_PACKED_ZERO; INLINE_CAP],
             sidecar: AtomicPtr::new(core::ptr::null_mut()),
+            spill_head: AtomicPtr::new(core::ptr::null_mut()),
+            #[cfg(feature = "internals")]
+            spill_pushed: AtomicUsize::new(0),
+            #[cfg(feature = "internals")]
+            spill_popped: AtomicUsize::new(0),
             overflow_count: AtomicU32::new(0),
         }
     }
@@ -622,19 +671,14 @@ impl HeapOverflow {
 
     /// Push `(base, packed)` — a cross-thread-freed block's segment base and
     /// its already-packed `(offset, class)` word — onto this heap's
-    /// second-chance overflow ring. Called ONLY after
-    /// `HeapCore::push_with_overflow_retry` has exhausted its
-    /// `RING_PUSH_RETRY_SPINS` budget against the segment's own
-    /// `RemoteFreeRing` (i.e. this is the last-resort path, not the common
-    /// case). Returns `false` if this ring is ALSO full (the genuinely-
-    /// unrecovered residual — bumps the internal `overflow_count` diagnostic
-    /// and the caller falls back to the original documented-sound bounded
-    /// leak, exactly as it does today when `RemoteFreeRing` itself is full) —
+    /// second-chance overflow ring. Called after a segment-ring failure,
+    /// before and during the bounded retry window. Returns `false` if this
+    /// ring is full (bumping its `overflow_count` diagnostic) —
     /// OR if the reserved index falls in the sidecar range and the sidecar
     /// cannot be materialised (OOM). Both failure causes are
-    /// indistinguishable to the caller BY DESIGN: both are "the ring could
-    /// not accept this entry right now", the same contract `push` has always
-    /// had.
+    /// indistinguishable to the caller: both mean "the ring could not accept
+    /// this entry right now". If retries also fail, the caller uses the
+    /// lossless intrusive spill.
     ///
     /// **R6-OPT-P0-2 (round 2) — the wedge-hazard fix, in the exact ordering
     /// that matters.** `tail`'s CAS reservation is an IRREVERSIBLE ratchet
@@ -769,8 +813,9 @@ impl HeapOverflow {
         }
     }
 
-    /// PERF-PASS-4 (G9/C2)-style pre-drain empty-guard: a single `Relaxed`
-    /// load of `tail` ONLY, compared against a CALLER-cached `usize` (see
+    /// PERF-PASS-4 (G9/C2)-style pre-drain empty-guard: a `Relaxed`
+    /// load of `tail`, compared against a CALLER-cached `usize`, plus a
+    /// `Relaxed` check of the intrusive spill head (see
     /// [`HeapCore::overflow_tail_cache`](super::heap_core::HeapCore) — the
     /// analogue of `RemoteFreeRing::is_likely_empty`'s documented "caller
     /// already holds its own owner-private cached copy of `head`" shape,
@@ -778,7 +823,8 @@ impl HeapOverflow {
     /// `RemoteFreeRing::drain`) is the sole writer of `head` — so the OWNER
     /// is also the only party who can usefully cache `head`'s progress, while
     /// `tail` is the field a REMOTE push moves and the one whose value
-    /// changing is the ONLY thing that can make a full drain necessary).
+    /// changing makes a ring drain necessary; a non-null spill head also
+    /// requires a drain pass).
     ///
     /// **Why `Relaxed` is sound (mirrors `RemoteFreeRing::is_likely_empty`'s
     /// own argument, restated for `tail` here):** `tail` is monotonic (only
@@ -791,9 +837,117 @@ impl HeapOverflow {
     /// races concurrently with this check is caught by the NEXT
     /// opportunistic drain call, the same "later drain picks it up" liveness
     /// contract every lazy-drain path in this allocator already relies on.
+    /// A spill CAS races this guard in the same way: an older observed null
+    /// can defer the note once, never permanently hide it after a joined
+    /// producer or a subsequent owner acquire.
     #[inline(always)]
     pub(crate) fn is_likely_empty(&self, cached_tail: usize) -> bool {
         self.tail.load(Ordering::Relaxed) == cached_tail
+            && self.spill_head.load(Ordering::Relaxed).is_null()
+    }
+
+    /// Last-resort lossless publication. `block` is a valid small allocation
+    /// being freed exactly once, with at least `MIN_BLOCK` writable bytes; it
+    /// stays mapped until its note is reclaimed. No allocation or blocking is
+    /// required, even when the owner has exited or the OS is out of memory.
+    ///
+    /// The successful Release CAS is the linearization point. The producer
+    /// must not access `block` after it: a concurrent owner may reclaim and
+    /// release its segment immediately. Failed CAS attempts only rewrite this
+    /// producer's still-private block. The old head is never dereferenced by
+    /// a producer, so a detached/recycled old head causes no producer UAF;
+    /// even an address-ABA success links to the *current* equal-address head.
+    pub(crate) fn spill_push(&self, block: *mut u8, packed: u32) {
+        let mut head = self.spill_head.load(Ordering::Acquire);
+        loop {
+            // Node's raw write membrane requires this block to be exclusively
+            // owned and large/aligned enough. A legal remote free transfers
+            // ownership to this call; no owner path can reclaim it before
+            // publication, and the const assertions above pin its footprint.
+            Node::write_struct(block.cast::<SpillNode>(), SpillNode { next: head, packed });
+            match self.spill_head.compare_exchange_weak(
+                head,
+                block,
+                Ordering::Release,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    #[cfg(feature = "internals")]
+                    self.spill_pushed.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+                Err(observed) => head = observed,
+            }
+        }
+    }
+
+    #[cfg(feature = "internals")]
+    pub(crate) fn spill_pending_for_test(&self) -> bool {
+        !self.spill_head.load(Ordering::Acquire).is_null()
+    }
+
+    #[cfg(feature = "internals")]
+    pub(crate) fn spill_ledger_for_test(&self) -> (usize, usize) {
+        (
+            self.spill_pushed.load(Ordering::Relaxed),
+            self.spill_popped.load(Ordering::Relaxed),
+        )
+    }
+
+    #[cfg(feature = "internals")]
+    pub(crate) fn cursors_for_test(&self) -> (usize, usize) {
+        (
+            self.head.load(Ordering::Acquire),
+            self.tail.load(Ordering::Acquire),
+        )
+    }
+
+    /// Consume at most `budget` intrusive notes under the same exclusive
+    /// token as the ring drain. A failed/reentrant token acquisition leaves
+    /// every note pending. The consumer alone removes heads, so its Acquire
+    /// load and node read remain valid until its own successful pop CAS;
+    /// producers only prepend. Each successful pop transfers one note to the
+    /// callback, and the node is never touched after that callback, which may
+    /// recycle the segment. The callback must not unwind: unlike ring slots,
+    /// an intrusive node may be unmapped during reclaim and cannot be safely
+    /// requeued after a panic. Production reclaim obeys this on legal inputs;
+    /// a panic through `GlobalAlloc::dealloc` is outside its contract.
+    pub(crate) fn try_drain_spill<F: FnMut(*mut u8, u32)>(
+        &self,
+        budget: usize,
+        mut reclaim: F,
+    ) -> Option<()> {
+        let mut guard = self.begin_drain()?;
+        // `begin_drain` seeds `h = 0`; preserve the ring cursor here so this
+        // guard's Drop cannot roll a prior ring drain back to zero.
+        guard.h = self.head.load(Ordering::Relaxed);
+        for _ in 0..budget {
+            let mut head = self.spill_head.load(Ordering::Acquire);
+            loop {
+                if head.is_null() {
+                    return Some(());
+                }
+                // Only this token-holder pops. A producer may prepend, but
+                // cannot mutate or reclaim the current head node.
+                let node = Node::read_struct(head.cast::<SpillNode>());
+                match self.spill_head.compare_exchange_weak(
+                    head,
+                    node.next,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => {
+                        #[cfg(feature = "internals")]
+                        self.spill_popped.fetch_add(1, Ordering::Relaxed);
+                        let base = os::segment_base_of_ptr(head);
+                        reclaim(base, node.packed);
+                        break;
+                    }
+                    Err(observed) => head = observed,
+                }
+            }
+        }
+        Some(())
     }
 
     /// R6-REGRESSION-2 (progress-detection stop condition in

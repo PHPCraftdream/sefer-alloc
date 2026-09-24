@@ -33,9 +33,7 @@ use crate::registry::heap_core::HeapCore;
 // match or `alloc-global`-without-`alloc-xthread` fails with E0432 (no such
 // item exists to import under that feature set).
 #[cfg(feature = "alloc-xthread")]
-use crate::registry::heap_core::{
-    DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED, RING_PUSH_RETRY_SPINS,
-};
+use crate::registry::heap_core::{DBG_RING_PUSH_RETRIED, RING_PUSH_RETRY_SPINS};
 // Reorg step 4c: the stall-concession memo cluster moved VERBATIM to the
 // sibling `stall.rs` for the repo's 1000-line file-size cap. Cfg-gated to
 // match those items (they do not exist without `alloc-xthread`).
@@ -72,8 +70,7 @@ const RETRY_ROUND_SPINS: u32 = RING_PUSH_RETRY_SPINS;
 /// R6-REGRESSION-2 (progress-detection stop condition — the follow-up
 /// completing the R6-REGRESSION round/sleep reshaping): number of
 /// CONSECUTIVE zero-drain-progress probe rounds after which
-/// `push_with_overflow_retry`'s spin-retry tier concedes to the documented
-/// bounded leak.
+/// `push_with_overflow_retry`'s spin-retry tier selects the intrusive spill.
 ///
 /// **Why progress detection, not a fixed round count.** The R6-REGRESSION
 /// commit (`ba34fd5`) capped the retry at a FLAT 8 rounds. That fixed the
@@ -447,8 +444,7 @@ impl HeapCore {
     /// R6-OPT-P0-4: push `packed` (the block's segment-relative `(offset,
     /// class)` word, already packed by the caller) onto `ring`, falling back
     /// through a three-tier chain — segment ring → heap-level overflow ring →
-    /// bounded spin-retry against both — before conceding to the original
-    /// documented-sound bounded leak.
+    /// bounded spin-retry against both — then the lossless intrusive spill.
     ///
     /// **R6-OPT-P0-4 — overflow-first policy (current).** The PRE-R6-OPT-P0-4
     /// policy exhausted the WHOLE [`RING_PUSH_RETRY_SPINS`] (8,192) spin
@@ -512,10 +508,8 @@ impl HeapCore {
     ///    ONE more `push_to_heap_overflow` attempt still runs (that ring is
     ///    drained by whichever thread next claims the slot, not necessarily
     ///    "this owner"). Only once every avenue above is exhausted does this
-    ///    concede to the bounded leak and bump [`DBG_RING_PUSH_RETRY_EXHAUSTED`]
-    ///    — which now means "truly nothing worked: initial ring attempt
-    ///    failed, immediate overflow attempt failed, AND the bounded retry
-    ///    against both never recovered".
+    ///    publish an intrusive note in the freed block. Legal frees no longer
+    ///    reach the old `DBG_RING_PUSH_RETRY_EXHAUSTED` drop counter.
     ///
     /// Net effect: the overwhelmingly common case (ring full, overflow has
     /// room) now costs 2 checks total (1 counted ring push + 1 overflow push)
@@ -543,10 +537,11 @@ impl HeapCore {
     /// 1 miri) CONSECUTIVE rounds in which NEITHER cursor advanced — the
     /// owner made zero drain progress across the whole observed window,
     /// i.e. it is genuinely stalled/paused — does the push concede to the
-    /// documented bounded leak. An absolute [`RETRY_ROUND_SAFETY_CAP`] (4096
+    /// intrusive spill. An absolute [`RETRY_ROUND_SAFETY_CAP`] (4096
     /// native / 1 miri) on total rounds backstops the pathological
     /// "owner keeps draining but this producer never wins a slot" shape so
-    /// a single push stays hard-bounded in wall-clock regardless. And so
+    /// a single push has a bounded probe-round budget; scheduler and OS-call
+    /// latency are not bounded by that count. And so
     /// that a SUSTAINED stall (the paused-owner burst shape, where every
     /// push past capacity must eventually concede) does not re-pay the full
     /// first-concession patience on every subsequent push, each concession
@@ -617,7 +612,7 @@ impl HeapCore {
     /// never succeed (`owner=paused`'s defining property — once the fixed
     /// combined ring+overflow capacity, 256 + 2048 = 2304, is exhausted, no
     /// number of "another chance" rounds can succeed; the 2,097,152-iteration
-    /// budget was only ever delaying the concession to the bounded leak, at
+    /// budget was only ever delaying the lossless spill, at
     /// real CPU cost, not buying additional chances). The fix that actually
     /// resolves the pathology needed BOTH a real OS-level block (`sleep`,
     /// not `yield_now`) AND a way to stop waiting quickly when nothing is
@@ -655,6 +650,7 @@ impl HeapCore {
     #[cfg(feature = "alloc-xthread")]
     pub(super) fn push_with_overflow_retry(
         ring: &crate::alloc_core::remote_free_ring::RemoteFreeRing,
+        block: *mut u8,
         base: *mut u8,
         packed: u32,
     ) {
@@ -911,15 +907,22 @@ impl HeapCore {
             // overflow attempt below when it already just tried and failed).
             return;
         }
-        // Every tier exhausted (the owner was live but made zero drain
+        // Both rings exhausted (the owner was live but made zero drain
         // progress for `RETRY_STALLED_ROUNDS_GIVE_UP` consecutive probe
         // rounds — or kept trickling progress this producer never converted
         // into a push for `RETRY_ROUND_SAFETY_CAP` rounds — or the owner was
         // not live and the single not-live-path attempt above also failed):
-        // the genuinely-unrecovered case. The segment ring's
-        // own `DBG_RING_OVERFLOW` / per-segment `overflow_count` ticked ONCE
-        // (step 1's single counted attempt, not on every retry poll); this
-        // counter marks ONLY this fully-unrecovered case.
-        DBG_RING_PUSH_RETRY_EXHAUSTED.fetch_add(1, Ordering::Relaxed);
+        // the third-tier case. The segment ring's `DBG_RING_OVERFLOW`
+        // ticked once at the first full-ring attempt, not on each retry.
+        // Both bounded rings are saturated. `block` still owns its storage:
+        // no reclaim can release the segment before this note is published.
+        // The slot-resident intrusive tier consumes no allocator/OS memory,
+        // and persists across owner exit/recycle. A legal segment always has
+        // a stamped, in-range owner slot; absence is an invariant failure,
+        // not an OOM/full result that may silently discard this free.
+        let Some(overflow) = Self::resolve_heap_overflow(base) else {
+            std::process::abort();
+        };
+        overflow.spill_push(block, packed);
     }
 }

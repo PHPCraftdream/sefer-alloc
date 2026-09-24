@@ -22,24 +22,11 @@
 //! again for the whole retry window, and harness 2 below honestly measured
 //! that residual (up to 744/1000 blocks lost in its pathological shape).
 //!
-//! **RAD-4b (task #72) closes that residual.** `HeapCore::
-//! push_to_heap_overflow` / `HeapOverflow` (`src/registry/heap_overflow.rs`)
-//! add a slot-resident, bounded (`HEAP_OVERFLOW_CAP = 2048`) second-chance
-//! MPSC ring, tried BEFORE `push_with_overflow_retry` concedes to the
-//! original bounded leak. It needs neither writing into the block's own
-//! bytes (reopening the H1-class UAF the ring exists to close) nor `Box`
-//! node storage (reopening the `#[global_allocator]` reentrancy hazard) —
-//! see that module's doc comment for the full design comparison
-//! (real-backpressure/blocking `dealloc`, a provenance-exposed
-//! `SegmentHeader` field, and properly tagging `deferred_next` were all
-//! considered and are documented there, alongside the one HONEST caveat this
-//! fix still carries: `HEAP_OVERFLOW_CAP` is a fixed bound, not an infinite
-//! one — no bounded, non-blocking, `Box`-free mechanism can give a
-//! mathematically absolute guarantee against a producer population with
-//! unbounded throughput and an owner that never drains again for the rest of
-//! the process's life. What it DOES give: zero loss for any burst that fits
-//! the configured capacity — which is exactly what harness 2 below now
-//! proves for its own (deliberately pathological) burst size).
+//! RAD-4b added a fixed-capacity heap-level second-chance ring. R2-09 adds
+//! an intrusive third tier for bursts exceeding both rings: the pending
+//! free owns its own note storage, so publication does not allocate or wait
+//! for the owner. `tests/remote_spill_ledger.rs` checks each original block's
+//! final free state for both paused and exited owners.
 //!
 //! **R6-OPT-P0-4 (2026-07) reordered, but did not remove, this fallback
 //! chain.** The paragraphs above describe RAD-4/RAD-4b's original ordering:
@@ -54,14 +41,9 @@
 //! See `HeapCore::push_with_overflow_retry`'s doc comment
 //! (`src/registry/heap_core_xthread/overflow.rs`) for the full current policy. This
 //! reordering changes WHEN and HOW OFTEN `DBG_RING_OVERFLOW` /
-//! `DBG_RING_PUSH_RETRIED` / `DBG_RING_PUSH_RETRY_EXHAUSTED` tick (each now
-//! fires at most once per logical free that ever saw a full segment ring,
-//! rather than once per failed spin-poll), but does NOT change the
-//! qualitative fallback chain (ring → overflow → bounded spin against both →
-//! documented-sound bounded leak) this file's three harnesses judge — every
-//! assertion below is either `> 0` (an event happened at all) or `== 0` (the
-//! fully-unrecovered tier was never reached), both still the correct oracle
-//! under the new ordering.
+//! `DBG_RING_PUSH_RETRIED` tick. The terminal
+//! `DBG_RING_PUSH_RETRY_EXHAUSTED` drop counter now remains unchanged for
+//! legal frees; its former terminal branch publishes to the spill instead.
 //!
 //! This file has three harnesses:
 //!
@@ -262,8 +244,8 @@ fn remote_fanin_concurrent_overflow_is_recovered() {
     // presumes an owner "alive and cycling the whole time" the producers
     // run — under heavy host CPU load the starved producers can outlive a
     // fixed window, and every push conceding AFTER the owner's last drain
-    // is the (documented-sound) paused-owner bounded leak, not the
-    // live-owner budget property this harness asserts. The owner now runs
+    // was the historical paused-owner leak, not the live-owner budget
+    // property this harness asserts. The owner now runs
     // at least `N * 2` allocs AND until every producer has finished.
     const OWNER_BATCH: usize = 4_096;
     let producers_done = std::sync::Arc::new(AtomicBool::new(false));
@@ -369,12 +351,8 @@ fn remote_fanin_concurrent_overflow_is_recovered() {
 /// `HeapOverflow` (`src/registry/heap_overflow.rs`): once a push exhausts its
 /// per-segment retry budget, it now falls back to the owning heap's
 /// SLOT-RESIDENT second-chance overflow ring (sized `HEAP_OVERFLOW_CAP =
-/// 2048`, 2× this harness's own N=1000 burst) BEFORE conceding to the
-/// original bounded leak — see that module's doc comment for the full design
-/// (including the honest "no FIXED bound is a mathematically absolute
-/// guarantee against infinite producers" caveat: this closes the gap for
-/// every workload whose burst fits the configured capacity, which is the
-/// literal judge this test IS).
+/// 2048`, 2× this harness's own N=1000 burst). R2-09's intrusive tier now
+/// also covers bursts beyond that capacity; harness 2.1 exercises it.
 ///
 /// **Native-only** (`#[cfg(not(miri))]`) — see the identical rationale on
 /// [`remote_fanin_concurrent_overflow_is_recovered`] above.
@@ -489,48 +467,13 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
     unsafe { HeapRegistry::recycle(heap) };
 }
 
-/// ── Harness 2.1: R2-09 exact drop counter — the documented residual,
-/// witnessed for real, and proven correctly exposed ────────────────────────
+/// ── Harness 2.1: burst beyond both fixed rings ────────────────────────────
 ///
-/// R2-09 (independent src review round 2, task #2011): harness 2 above
-/// deliberately picks `N = 1_000` (< `HEAP_OVERFLOW_CAP = 2048`), so
-/// `exhausted_delta` stays exactly `0` there — RAD-4b's second-chance ring
-/// fully absorbs that burst. This harness does the opposite: it picks `N`
-/// LARGER than the COMBINED capacity of the per-segment `RemoteFreeRing`
-/// (256) and the heap-level `HeapOverflow` ring (`HEAP_OVERFLOW_CAP = 2048`
-/// native) — 2,304 total — under the SAME fully-owner-starved shape, so a
-/// non-zero, genuinely-lost residual is unavoidable BY DESIGN (this is the
-/// documented, honest limit `heap_overflow.rs`'s own "Capacity — an honest
-/// bound, not an unbounded proof" module-doc section describes, not a bug).
-///
-/// **What this proves that harness 2 cannot:** not "zero loss" (impossible
-/// here, by construction) but that a genuine, non-zero loss (a) actually
-/// gets counted (`exhausted_delta > 0` — the terminal branch really fires
-/// under this saturating workload, it is not silently skipped) and (b) is
-/// correctly exposed on the PUBLIC `SeferAlloc::stats()` surface, not just a
-/// crate-internal test hook. This is the review's own explicitly-sanctioned
-/// interim fallback ("until a lossless protocol exists, export an exact
-/// drop counter, don't promise a general bound") — see
-/// `docs/correctness-open-items/ACTIVE.md` item 148 for why a genuinely
-/// lossless redesign was scoped OUT of this task as too large/risky for a
-/// single cycle, and `AllocStats::cross_thread_frees_lost`
-/// (`src/global/alloc_stats.rs`) for the newly-exposed public counter.
-///
-/// **Deliberately NOT asserted: `reclaimed + exhausted_delta == N`.** An
-/// earlier version of this test asserted exactly that and was WRONG — this
-/// allocator is capacity-elastic (it can always reserve more OS address
-/// space), so the owner's post-burst `alloc()` loop keeps succeeding
-/// (`reclaimed == N`) regardless of how many of the ORIGINAL N blocks were
-/// permanently dropped: a dropped block's bytes stay mapped and unused, but
-/// the owner's NEXT allocation is happily served from fresh/other memory
-/// instead of specifically recovering that exact block. `reclaimed` and
-/// `exhausted_delta` are therefore NOT complementary quantities over N —
-/// comparing them this way is a category error, not a soundness property.
-/// (Confirmed empirically before this fix: a real run measured
-/// `reclaimed=3000, exhausted_delta=952` for `N=3000` — both numbers
-/// correct in isolation, their sum meaningless.) `reclaimed == N` is instead
-/// asserted on its own below, as a plain allocator-health check (the burst
-/// does not leave the heap stuck/degraded), independent of the loss count.
+/// N=3,000 exceeds the combined 2,304 ring slots while the owner is paused.
+/// The old terminal path advanced the public loss counter; the R2-09 path
+/// publishes those excess notes into the intrusive spill. This test keeps
+/// the public counter wired and zero-loss; `remote_spill_ledger` separately
+/// checks the final state of every original block.
 ///
 /// **Native-only** (`#[cfg(not(miri))]`) — same rationale as harness 2
 /// (this burst size is impractically slow under miri's interpreter; the
@@ -538,14 +481,12 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
 /// combined-capacity arithmetic below would need a different N anyway).
 #[cfg(not(miri))]
 #[test]
-fn remote_fanin_owner_starved_residual_is_exactly_accounted() {
+fn remote_fanin_owner_starved_beyond_both_rings_is_lossless() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
     // Comfortably exceeds RING_CAP(256) + HEAP_OVERFLOW_CAP(2048) = 2304 —
-    // guarantees a genuine, non-zero exhausted_delta below (unlike harness
-    // 2's N=1_000, which fits entirely inside the combined capacity and so
-    // asserts exhausted_delta == 0 instead).
+    // forces the intrusive spill (unlike harness 2's N=1_000).
     const N: usize = 3_000;
     const PRODUCERS: usize = 8;
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
@@ -592,8 +533,7 @@ fn remote_fanin_owner_starved_residual_is_exactly_accounted() {
          is a VACUOUS counterfactual, not a valid proof. Increase N / PRODUCERS."
     );
 
-    // Owner resumes normal alloc() calls after the starved burst — reclaims
-    // everything the ring/overflow mechanisms managed to hold onto.
+    // Owner resumes normal alloc() calls after the starved burst.
     let mut reclaimed = 0usize;
     for _ in 0..N {
         let p = unsafe { (*heap).alloc(layout) };
@@ -612,36 +552,20 @@ fn remote_fanin_owner_starved_residual_is_exactly_accounted() {
          reclaimed_after={reclaimed} (N={N}, PRODUCERS={PRODUCERS})"
     );
 
-    // Non-vacuity: this test exists specifically to witness the DOCUMENTED
-    // residual for real (unlike harness 2, which stays at exactly 0 for its
-    // smaller N). A zero delta here would mean this burst failed to exceed
-    // the combined capacity as intended, making the public-stats check below
-    // trivially uninteresting rather than a real exactness proof.
-    assert!(
-        exhausted_delta > 0,
-        "expected a genuine non-zero exhausted_delta (N={N} exceeds the combined \
-         RING_CAP+HEAP_OVERFLOW_CAP capacity) — got 0, meaning this burst did not \
-         actually exceed combined capacity as intended. Increase N."
-    );
+    assert_eq!(exhausted_delta, 0, "a legal remote free was discarded");
 
-    // Allocator health check (NOT a loss-accounting claim — see the doc
-    // comment above for why `reclaimed + exhausted_delta == N` is invalid):
-    // the burst must not leave the heap stuck or degraded. This allocator is
-    // capacity-elastic, so a healthy heap keeps satisfying every subsequent
-    // alloc() regardless of how many of the ORIGINAL N blocks were dropped.
+    // Allocator health only. Capacity elasticity means successful new
+    // allocations are not proof the original N blocks were reclaimed;
+    // the per-block ledger test supplies that oracle.
     assert_eq!(
         reclaimed, N,
         "the heap only served {reclaimed}/{N} allocations after the starved \
-         burst — the burst left it stuck or degraded, independent of the \
-         (separately asserted) exhausted-block count."
+         burst — the burst left it stuck or degraded."
     );
 
     // Confirm the PUBLIC AllocStats surface actually reflects this counter
-    // (not just the raw crate-internal static this test measured directly
-    // above) — the whole point of R2-09's fix is that a downstream consumer
-    // can see this via `SeferAlloc::stats()`, not just via test-only crate
-    // internals. No concurrent activity can intervene here: SerialGuard
-    // holds this whole test's execution exclusive within this binary.
+    // (not just the raw crate-internal static). No concurrent test in this
+    // binary can intervene while SerialGuard is held.
     let public_exhausted_total = SeferAlloc::new().stats().cross_thread_frees_lost;
     assert_eq!(
         public_exhausted_total,
@@ -721,8 +645,8 @@ fn remote_fanin_high_contention_budget_is_sufficient() {
     // (16-thread deliberate CPU hog) showed every failing run's concessions
     // occurring strictly AFTER the owner's alloc loop had already completed
     // (exhausted_so_far == 0 at owner-loop-end, hundreds after), at which
-    // point NO retry policy can avoid the documented bounded leak — nothing
-    // will ever drain again. That is the "paused owner" shape (covered by
+    // point NO retry policy can find room in either ring, though R2-09's
+    // spill now retains the note. That is the "paused owner" shape (covered by
     // `tests/regression_paused_owner_wallclock.rs`), not the live-owner
     // budget property THIS judge asserts. Fix: the owner keeps allocating
     // (and therefore draining) until every producer has finished — at least
@@ -843,7 +767,7 @@ fn remote_fanin_miri_minimal_retry_ub_check() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    const N: usize = 260; // just over RING_CAP = 256
+    const N: usize = 321; // exceeds miri's 256 + 64 ring capacity
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
     let heap = HeapRegistry::claim();
@@ -881,6 +805,19 @@ fn remote_fanin_miri_minimal_retry_ub_check() {
         unsafe { HeapRegistry::recycle(remote_heap) };
     });
     remote.join().expect("remote thread must not panic");
+
+    #[cfg(miri)]
+    {
+        // SAFETY: this thread still owns the claimed heap after join.
+        assert!(unsafe { (*heap).dbg_spill_pending_for_test() });
+        // SAFETY: no other thread drains this claimed heap.
+        unsafe {
+            (*heap).dbg_drain_all_rings();
+            (*heap).dbg_drain_heap_overflow_for_test();
+        }
+        // SAFETY: this thread still owns the claimed heap.
+        assert!(!unsafe { (*heap).dbg_spill_pending_for_test() });
+    }
 
     // Owner reclaims whatever the ring (+ retry) actually delivered — no
     // strict oracle here (this harness's job is UB-detection, not a loss

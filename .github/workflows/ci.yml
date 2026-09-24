@@ -3140,6 +3140,7 @@ jobs:
           cargo test --release --features "alloc-core alloc-xthread" \
             --test loom_xthread_protocol \
             --test loom_remote_ring \
+            --test loom_overflow_spill \
             --test loom_deferred_large \
             --test loom_remote_ring_drain_guard \
             --test loom_remote_ring_tail_aba \
@@ -3148,6 +3149,8 @@ jobs:
             --test loom_class_aware_dirty 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test protocol_single_owner_never_resurrects ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test correct_ring_never_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test concurrent_prepend_and_pop_are_lossless ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_unconditional_clear_loses_a_prepend - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_no_guard_double_extracts_or_corrupts - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_stale_cache_not_reset_across_segment_reuse - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_narrow_tail_stale_cas_violates_capacity_invariant - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"

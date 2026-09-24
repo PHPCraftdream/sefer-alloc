@@ -273,13 +273,13 @@ impl HeapCore {
             let packed =
                 crate::alloc_core::remote_free_ring::pack_entry_hardened(gen, class_idx, off);
             let ring = SegmentMeta::new(base).remote_ring();
-            Self::push_with_overflow_retry(&ring, base, packed);
+            Self::push_with_overflow_retry(&ring, ptr, base, packed);
         }
         #[cfg(not(feature = "hardened"))]
         {
             let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
             let ring = SegmentMeta::new(base).remote_ring();
-            Self::push_with_overflow_retry(&ring, base, packed);
+            Self::push_with_overflow_retry(&ring, ptr, base, packed);
         }
     }
 }

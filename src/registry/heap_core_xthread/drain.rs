@@ -21,6 +21,33 @@ use crate::alloc_core::{node::Node, AllocCore};
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_drain_heap_overflow_for_test(&mut self) {
+        self.drain_heap_overflow();
+    }
+
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_spill_pending_for_test(&self) -> bool {
+        self.overflow
+            .is_some_and(|overflow| overflow.spill_pending_for_test())
+    }
+
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_spill_ledger_for_test(&self) -> (usize, usize) {
+        self.overflow
+            .map_or((0, 0), |overflow| overflow.spill_ledger_for_test())
+    }
+
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_overflow_cursors_for_test(&self) -> (usize, usize) {
+        self.overflow
+            .map_or((0, 0), |overflow| overflow.cursors_for_test())
+    }
+
     /// 0.3.0 (task A1); extracted for #132: push a Large/huge segment `base`
     /// onto the OWNING heap's deferred-free stack, given `head` — the
     /// owner's `thread_free_head()` (a `*const AtomicPtr<u8>`, obtained by a
@@ -291,7 +318,7 @@ impl HeapCore {
             // refill) — this drain reclaims entries of ANY class, so the
             // predicate unconditionally checks the magazine-residency bitmap,
             // mirroring `dbg_drain_all_rings_impl`'s general-purpose pattern.
-            if let Some(stop) = overflow.try_drain(|base, packed| {
+            let mut reclaim = |base, packed| {
                 if AllocCore::reclaim_offset_checked(base, packed, &|ptr, _k| {
                     let pbase = os::segment_base_of_ptr(ptr);
                     let poff = (ptr as usize - pbase as usize) as u32;
@@ -301,19 +328,29 @@ impl HeapCore {
                 }) {
                     on_reclaimed(base, packed);
                 }
-            }) {
+            };
+            if let Some(stop) = overflow.try_drain(&mut reclaim) {
                 self.overflow_tail_cache = stop;
             }
+            let _ = overflow.try_drain_spill(
+                crate::registry::heap_overflow::HEAP_OVERFLOW_CAP,
+                &mut reclaim,
+            );
         }
         #[cfg(not(feature = "fastbin"))]
         {
-            if let Some(stop) = overflow.try_drain(|base, packed| {
+            let mut reclaim = |base, packed| {
                 if AllocCore::reclaim_offset(base, packed) {
                     on_reclaimed(base, packed);
                 }
-            }) {
+            };
+            if let Some(stop) = overflow.try_drain(&mut reclaim) {
                 self.overflow_tail_cache = stop;
             }
+            let _ = overflow.try_drain_spill(
+                crate::registry::heap_overflow::HEAP_OVERFLOW_CAP,
+                &mut reclaim,
+            );
         }
 
         // R11-2 (Bug 2): finalize each emptied base now that the drain has
