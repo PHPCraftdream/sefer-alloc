@@ -359,18 +359,21 @@ where
 impl HeapCore {
     /// Test-only access through the production fallback lock. The closure
     /// cannot return a borrow of the heap beyond the lock's lifetime.
+    #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
     pub fn dbg_with_fallback_for_test<R>(f: impl for<'a> FnOnce(&'a mut Self) -> R) -> Option<R> {
         with_heap(f)
     }
 
     /// Test-only primordial-OOM injection, effective before `STATE_READY`.
+    #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
     pub fn dbg_inject_fallback_oom_for_test(on: bool) {
         DBG_INJECT_FALLBACK_OOM.store(on, Ordering::Relaxed);
     }
 
     #[cfg(feature = "alloc-segment-directory")]
+    #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
     pub fn dbg_has_dirty_bitmap_for_test(&self) -> bool {
         self.core.dirty_segments.is_some()

@@ -119,13 +119,12 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 // another block, permanently, and `live_count` never returns to zero, which
 // blocks `alloc-decommit` from ever releasing the segment.
 //
-// The ring's own push/drain/cursor protocol is NOT touched by this fix (out
-// of scope per the RAD-4 task boundary, and the ring itself is fully sound —
-// see `docs/RACE_DRAIN_RECLAIM.md`). Closing the leak at the SMALLEST
-// protocol delta instead means changing what the CALLER does with
-// `Err(PushOverflow)`: retry, rather than drop.
+// The ring's own push/drain/cursor protocol was not touched by RAD-4 (see
+// `docs/RACE_DRAIN_RECLAIM.md`). RAD-4 changed the caller to retry on
+// `Err(PushOverflow)`; R2-09 subsequently added the lossless intrusive spill
+// after both ring tiers and the bounded retry are exhausted.
 //
-// ## Why retry (not a new Treiber stack of block-payload nodes)
+// ## Historical retry-only rationale (superseded by R2-09 spill)
 //
 // The plan's own precedent for a heap-level MPSC fallback is the A1
 // deferred-large-free stack (`HeapCore::thread_free`, reused as a
@@ -136,12 +135,10 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 // segment's own pre-reserved header bytes.
 //
 // This case is different: the lost item is one FREED BLOCK's `(offset,
-// class)` pair, not a segment. Durably queuing that payload elsewhere would
-// need one of:
-//   - writing into the block's own bytes — reopens EXACTLY the H1-class UAF
-//     this ring was built to close (see the module doc on
-//     `RemoteFreeRing`: "a cross-thread freer never touches the block's
-//     bytes" is the ring's core soundness argument);
+// class)` pair, not a segment. The old design considered:
+//   - writing into the block's own bytes — unsafe without exclusive-transfer
+//     and publication proofs. R2-09 supplies those proofs for the spill;
+//     `RemoteFreeRing` itself still leaves block bytes untouched;
 //   - a new slot-resident (`HeapSlot`) head field, wired through
 //     `HeapRegistry::claim`'s `bind_slot_counters` — out of this task's file
 //     scope (`heap_registry.rs` is owned by a parallel task in this
@@ -163,13 +160,10 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 //     consumer of the same link field widens that hazard's blast radius
 //     instead of leaving `deferred_next` with its single current owner.
 //
-// Retrying the push needs none of that: it adds no new struct, no new
-// header field, no new slot wiring, and never touches block bytes or the
-// ring's own cursor arithmetic. It is sound-by-construction (the ring stays
-// exactly as correct as it already is) and closes the leak as long as the
-// owner keeps draining — which it does on every `alloc()` call via
-// `find_segment_with_free`'s lazy per-segment ring drain, the SAME liveness
-// assumption every lazy-drain path in this allocator already relies on.
+// Retrying the ring push itself adds no block-body write or new ring cursor
+// arithmetic. It is not the complete current delivery protocol: a legal
+// free that exhausts both rings goes to the intrusive spill. The owner
+// drains lazily through `find_segment_with_free` and heap-overflow drains.
 //
 // ## Bound, not infinite spin
 //
@@ -212,13 +206,12 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 // for the full four-step policy and the `owner_slot_is_live` gate this
 // reordering does NOT change. If the owner is not live (nothing to spin for
 // on the ring), a single further `push_to_heap_overflow` attempt still runs
-// (that ring is drained by whichever thread next claims the slot); only if
-// every avenue fails does the push fall through to the original documented-
-// sound bounded leak — `DBG_RING_PUSH_RETRY_EXHAUSTED` (below) counts ONLY
-// this genuinely-unrecovered case, distinct from `DBG_RING_OVERFLOW` (which
-// now ticks exactly ONCE per logical free that ever saw a full segment ring —
-// the single counted attempt in step 1 — not on every retry poll, since the
-// spin loop's ring polls are uncounted).
+// (that ring is drained by whichever thread next claims the slot). If both
+// rings still fail, the producer spills into the exclusively transferred
+// freed block; it does not discard a legal free. The legacy
+// `DBG_RING_PUSH_RETRY_EXHAUSTED` drop counter is no longer incremented.
+// `DBG_RING_OVERFLOW` still ticks once per logical free that saw a full
+// segment ring, not on every uncounted retry poll.
 //
 // ## Calibrated budget (task #99 / round4 finding R2)
 //
@@ -284,29 +277,12 @@ pub(crate) const RING_PUSH_RETRY_SPINS: u32 = 64;
 pub static DBG_RING_PUSH_RETRIED: ::core::sync::atomic::AtomicU64 =
     ::core::sync::atomic::AtomicU64::new(0);
 
-/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4; retry
-/// shape reworked by R6-REGRESSION/R6-REGRESSION-2): process-wide count of
-/// small-block ring pushes for which EVERY tier of the fallback chain failed
-/// — the initial counted `RemoteFreeRing::push`, the immediate
-/// `push_to_heap_overflow` attempt, and then EITHER (live owner) the bounded
-/// probe-round spin-retry — which re-polls BOTH the segment ring and the
-/// heap-level overflow ring on every uncounted poll, and concedes only after
-/// `RETRY_STALLED_ROUNDS_GIVE_UP` consecutive zero-drain-progress rounds (or
-/// the absolute `RETRY_ROUND_SAFETY_CAP`) — OR (owner not live, so nothing
-/// can drain the segment ring: the retry loop is skipped) one further
-/// one-shot `push_to_heap_overflow` attempt. (There is NO separate post-loop
-/// overflow retry on the live-owner path: the in-loop every-poll overflow
-/// retry subsumed it — see `HeapCore::push_with_overflow_retry`,
-/// `heap_core_xthread`, for the exact control flow.) This counter marks
-/// the genuinely-unrecovered residual of the original bounded-leak
-/// behaviour. Distinct from
-/// [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`], which (as of
-/// R6-OPT-P0-4) ticks exactly ONCE per logical free that ever saw a full
-/// segment ring (the single counted attempt in step 1 of
-/// `push_with_overflow_retry`), not on every retry poll — a `remote_fanin`-
-/// style harness asserts this stays at (or very near) zero to demonstrate the
-/// fix; a non-zero value here — not just a non-zero `DBG_RING_OVERFLOW` — is
-/// the honest signal of an actual lost block under this fix.
+/// Legacy RAD-4 diagnostic for discarded frees after bounded retry. R2-09
+/// replaced that terminal drop with intrusive spill, so legal frees no
+/// longer increment this counter. It remains exported for older diagnostic
+/// callers; use the spill ledger under `internals` to observe third-tier
+/// publication. [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`]
+/// still counts the initial full segment-ring attempt, not a lost free.
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
 pub static DBG_RING_PUSH_RETRY_EXHAUSTED: ::core::sync::atomic::AtomicU64 =

@@ -147,11 +147,11 @@ impl HeapCore {
         //       fault.
         // We cannot O(1)-distinguish (a) from (b) without a global registry
         // (out of scope here); this is the same limitation every allocator
-        // has for a double-free-after-full-release. A double-free of a
-        // released, unmapped segment is fundamentally UB (as with any
-        // allocator) and is NOT fixed by this change — only guarded for the
-        // live/mapped case, which is what M2 promises. See the module-level
-        // note referenced from task #135's report for the full argument.
+        // has for a double-free-after-full-release. Any double-free violates
+        // the caller contract, including one into a live/mapped segment;
+        // M2 catches only some such misuse. A released, unmapped base can
+        // fault before even those checks. See the module-level note
+        // referenced from task #135's report for the full argument.
         //
         // 0.3.0 (task #138): for the Large branch below, a further
         // POST-reuse mitigation (layout-vs-header size consistency check,
@@ -238,8 +238,10 @@ impl HeapCore {
             }
             return;
         }
-        // Variant-2: push (offset, class) to the per-segment ring (block bytes
-        // untouched). The freer HAS the `Layout`, so it derives the size class
+        // Variant-2 first tries the per-segment ring with (offset, class);
+        // that ring and the per-heap sidecar do not touch block bytes. If both
+        // fill, the final spill tier writes into the exclusively transferred
+        // freed block. The freer HAS the `Layout`, so it derives the size class
         // here and carries it in the ring entry — the owner's `page_map` is
         // unreliable for the mixed-class pages a shared bump cursor produces, so
         // `reclaim_offset` must NOT derive the class itself (RACE_DRAIN_RECLAIM

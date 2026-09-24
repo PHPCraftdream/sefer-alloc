@@ -81,13 +81,12 @@ impl Node {
         // and writing one word is in-bounds: the block is `>= NODE_SIZE` bytes,
         // and we write exactly `size_of::<*mut u8>()` bytes at offset 0. The
         // write does not alias any other live reference under the SINGLE-WRITER
-        // invariant: a free-list node is touched only by the segment's OWNER
-        // thread (owner-only free-list discipline), and a cross-thread ("remote")
-        // free NEVER writes the body of a block — it enqueues `(offset, class)`
-        // into the per-segment ring, leaving the block bytes untouched (see
-        // `registry::heap_core::dealloc_routing`, "block bytes untouched" /
-        // Variant-2 ring). So while `block` is in this thread's free list, no
-        // remote path writes these bytes and `block` is exclusively the owner's.
+        // invariant: a free-list node is touched only by the segment's owner.
+        // A legal remote free transfers a still-issued block to the allocator:
+        // the two ring tiers leave its body untouched; an overflow spill may
+        // write a node there, but the owner pops it before reclaiming this
+        // block into the free list. While `block` is in that list, no legal
+        // remote path can write it, so this write is exclusively the owner's.
         unsafe { ptr.write_unaligned(next) };
     }
 
@@ -140,10 +139,10 @@ impl Node {
         // SAFETY: caller guarantees `[ptr, ptr+len)` is a valid writable range
         // (a freshly-reserved or free block). `write_bytes(0)` fills it with
         // zeroes; the range does not overlap any other live reference under the
-        // single-writer invariant — the block is owned by this (owner) thread at
-        // this point and a remote free never writes a block's body (it enqueues
-        // `(offset, class)` into the per-segment ring; see
-        // `registry::heap_core::dealloc_routing`, "block bytes untouched").
+        // single-writer invariant: this freshly allocated block has not yet
+        // been handed to the caller, so no legal free has transferred it to a
+        // remote producer. After handoff a remote spill may write its first
+        // 16 bytes, but not concurrently with this pre-handoff zeroing.
         unsafe { core::ptr::write_bytes(ptr, 0, len) };
     }
 

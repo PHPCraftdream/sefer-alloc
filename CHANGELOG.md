@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator review round 3 (2026-09-24)
+
+- **R3-1:** Fallback-owned remote frees now use a process-lifetime heap overflow ring; saturation proceeds to the intrusive spill rather than aborting. Regression tests cover the 257th free, spill, bounded multipass drain, exited owner, owner routing, and bootstrap retry.
+- **R3-2:** Deferred Large publication links the actual predecessor returned by the atomic swap and marks an unpublished link, avoiding stale-provenance publication after address reuse. Added reduced-width, native, and Loom regressions.
+- **R3-3/R3-4:** Clarified that duplicate `dealloc` is outside the unsafe caller contract even while mapped; documented the block-body write by the intrusive spill after exclusive transfer, while the two ring tiers remain non-intrusive. Added a documentation-contract tripwire.
+- Updated the Loom CI sentinel after a test rename and explicitly gated fallback test hooks for the safety tripwire. No version or feature composition change.
+
 ### Root allocator R2-09/R2-10 completion (2026-09-24)
 
 - **R2-09:** Legal cross-thread frees no longer disappear when the segment ring and heap overflow ring are both saturated. A third, intrusive tier stores each pending note in its own still-live block. The producer publishes with an atomic swap, links the actual predecessor pointer returned by that swap, then publishes readiness; the exclusive owner drains ready notes before reclaiming them. This also covers a stopped or exited owner and sidecar allocation failure. Commits `6afd09d7` and `f6f3231b`.

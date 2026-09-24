@@ -3119,7 +3119,7 @@ jobs:
       #
       # Task #1146: four of these seven sentinels name `#[should_panic]`
       # counterfactual tests (loom_deferred_large's
-      # counterfactual_no_guard_double_extracts_or_corrupts,
+      # counterfactual_no_ready_check_reads_publishing_marker,
       # loom_remote_ring_drain_guard's
       # counterfactual_stale_cache_not_reset_across_segment_reuse,
       # loom_dirty_publish's counterfactual_non_atomic_push_loses_entry,
@@ -3154,7 +3154,7 @@ jobs:
           grep -F "test swap_return_keeps_reused_address_provenance ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_address_aba_publishes_old_provenance - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_unconditional_clear_loses_a_prepend - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_no_guard_double_extracts_or_corrupts - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_no_ready_check_reads_publishing_marker - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_stale_cache_not_reset_across_segment_reuse - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_narrow_tail_stale_cas_violates_capacity_invariant - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"

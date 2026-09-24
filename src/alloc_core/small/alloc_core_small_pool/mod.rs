@@ -193,24 +193,19 @@ impl AllocCore {
     /// The original plan (§2.5) reached for `crossbeam-epoch` because the OLD
     /// intrusive cross-thread-free model wrote the free-list `next` pointer INSIDE
     /// the block — a late cross-thread freer could write into a page we had just
-    /// decommitted (UAF / write-to-unmapped). Variant-2 (Phase 12.6) dissolved
-    /// that: the cross-thread freer NEVER dereferences the block — it pushes
-    /// `(offset|class)` into the `RemoteFreeRing`, which lives in the segment's
-    /// METADATA (the metadata pages are NEVER decommitted — we decommit only
-    /// `[small_meta_end, SEGMENT)`). The decommit is therefore safe without epoch:
+    /// decommitted (UAF / write-to-unmapped). Variant-2 (Phase 12.6) moved the
+    /// common remote path to a metadata-resident `RemoteFreeRing`; the per-heap
+    /// sidecar ring also leaves block bytes untouched. R2-09 added an intrusive
+    /// spill after both rings saturate, but only after a legal free transfers
+    /// exclusive use of a still-live block. No epoch is needed for legal frees:
     ///
-    ///   1. We decommit the payload ONLY at `live_count == 0` → there is not one
-    ///      live block in the decommitted range; nothing to UAF.
-    ///   2. A late VALID cross-thread free at `live_count == 0` is impossible:
-    ///      every block is already free, so a further free of one is a double-free
-    ///      (the bitmap `is_free` guard below makes it a no-op before any write).
-    ///   3. `reclaim_offset` on a stale ring entry computes the block address via
-    ///      `Node::deref` (pure arithmetic — NO memory access) and then reads
-    ///      `magic` / `kind` / **bitmap `is_free`** — ALL in the never-decommitted
-    ///      metadata — and for a free block (and at `live==0` ALL are free) does a
-    ///      no-op BEFORE touching the block. The decommitted page is never read or
-    ///      written.
-    ///   4. `reclaim` (drain) and `decommit` both run owner-side, so they are
+    ///   1. We decommit the payload ONLY at `live_count == 0`. Every legal
+    ///      pending ring, sidecar, or spill note still counts as live until
+    ///      owner reclaim; an unpublished legal spill has not decremented it.
+    ///   2. A late valid remote free at `live_count == 0` is impossible: it
+    ///      would be a duplicate free, outside the caller contract. The bitmap
+    ///      rejects some such misuse, but cannot make all duplicates safe.
+    ///   3. `reclaim` (drain) and `decommit` both run owner-side, so they are
     ///      serialized on the owning thread — there is no reclaim-vs-decommit race
     ///      on one segment.
     ///

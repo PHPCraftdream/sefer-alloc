@@ -15,9 +15,9 @@
 //! the producer's entire retry window — the deliberately pathological shape
 //! `remote_fanin_owner_starved_residual_is_bounded` exercises — there is
 //! nothing for the retry to wait on, and the original design's only recourse
-//! was the documented-sound bounded leak (drop the block; `HeapCore`'s own
-//! module doc walks the three rejected full-durability designs: writing into
-//! writing into the block's own bytes was previously rejected without an
+//! was the bounded leak (drop the block; `HeapCore`'s historical module doc
+//! walks the rejected full-durability designs: writing into the block's
+//! own bytes was previously rejected without an
 //! ownership/publication proof (the H1-class UAF risk); R2-09 supplies that
 //! proof for exclusively transferred, still-live spill blocks;
 //! `Box::new` reopens the `#[global_allocator]` reentrancy hazard; reusing
@@ -71,7 +71,12 @@
 //! ## R2-09: lossless intrusive spill beyond both fixed rings
 //!
 //! A legal small-block free transfers exclusive use of that block to the
-//! allocator. When both fixed rings are full, the producer writes a
+//! allocator exactly once. A duplicate free is outside the unsafe caller's
+//! contract even if the segment remains mapped: there is no atomic per-block
+//! pending claim. Concurrent duplicate spill writes can race, and a later
+//! duplicate publication of the same block can self-link the stack. The
+//! magazine/bitmap oracles and `hardened` generation check do not make that
+//! misuse safe. When both fixed rings are full, the producer writes a
 //! `SpillNode { next: null, packed, ready: 0 }` into the block itself, then
 //! atomically swaps its address into this heap slot's `spill_head`. The swap
 //! returns the *actual* preceding head pointer with its current provenance;
@@ -866,8 +871,10 @@ impl HeapOverflow {
 
     /// Last-resort lossless publication. `block` is a valid small allocation
     /// being freed exactly once, with at least `MIN_BLOCK` writable bytes; it
-    /// stays mapped until its note is reclaimed. No allocation or blocking is
-    /// required, even when the owner has exited or the OS is out of memory.
+    /// stays mapped until its note is reclaimed. A second publication of the
+    /// same block violates this precondition; mappedness alone cannot make it
+    /// safe. No allocation or blocking is required, even when the owner has
+    /// exited or the OS is out of memory.
     ///
     /// `swap` returns the actual old pointer, including its provenance. The
     /// consumer cannot pop this node until its ready word is Release-stored,

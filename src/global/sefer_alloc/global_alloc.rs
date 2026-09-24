@@ -138,18 +138,18 @@ unsafe impl GlobalAlloc for SeferAlloc {
                     // `HeapCore::dealloc`.
                     let _ = fallback::with_heap(|h| unsafe { h.dealloc(ptr, layout) });
                 }
-                // SAFETY: as above. For a LIVE/MAPPED pointer this routes
-                // correctly regardless of which thread allocated it
-                // (own-thread only, without `alloc-xthread`), and the M2
-                // double-free guard makes a repeated free of a still-mapped
-                // block a no-op. This is NOT a blanket "safe on any
-                // foreign/dangling pointer" claim: a dangling pointer into an
-                // already-RELEASED, unmapped segment is fundamentally UB —
+                // SAFETY: as above. For a valid live allocation on this
+                // thread, this routes to its owning heap. Without
+                // `alloc-xthread`, remote frees are not supported. M2 guards may
+                // reject some duplicate frees, but the caller must still
+                // free each live allocation exactly once. This is NOT a
+                // blanket "safe on any foreign/dangling pointer" claim: a
+                // dangling pointer into an already-RELEASED, unmapped segment
+                // is fundamentally UB —
                 // not calling `dealloc` on an already-freed pointer is the
                 // caller's baseline `GlobalAlloc` obligation (a basic trait
-                // contract, not something M2 relaxes); M2 hardens the
-                // live-block case, it does not extend the contract to
-                // released memory.
+                // contract, not something M2 relaxes); M2 catches some
+                // own-thread duplicates, but cannot extend that contract.
                 CurrentHeap::Own(heap) => unsafe { (*heap).dealloc(ptr, layout) },
             }
         }
