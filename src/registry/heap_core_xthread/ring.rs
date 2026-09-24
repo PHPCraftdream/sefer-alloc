@@ -12,13 +12,21 @@ use crate::alloc_core::segment_header::SegmentMeta;
 
 use crate::registry::heap_core::HeapCore;
 
+/// The fallback heap is outside the registry slot range, so its second tier
+/// needs independent process-lifetime storage. All fields are atomics.
+#[cfg(feature = "alloc-xthread")]
+static FALLBACK_OVERFLOW: crate::registry::heap_overflow::HeapOverflow =
+    crate::registry::heap_overflow::HeapOverflow::new_uninit();
+
 impl HeapCore {
-    /// RAD-4b (task #72): resolve `base`'s owning [`HeapSlot`](crate::registry::heap_slot::HeapSlot)
-    /// from its `owner_state` header stamp and push `(base, packed)` onto
-    /// that slot's [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow) ring.
-    /// Returns `false` if the owner id is out of range (defensive — should
-    /// be unreachable for a live, correctly-stamped segment) or the
-    /// second-chance ring is itself saturated.
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn fallback_overflow() -> &'static crate::registry::heap_overflow::HeapOverflow {
+        &FALLBACK_OVERFLOW
+    }
+
+    /// Resolve `base`'s owning overflow from its `owner_state` stamp. A
+    /// registry id selects its slot; `OWNER_ID_FALLBACK` selects the static
+    /// fallback ring. Returns `false` for an invalid stamp or saturation.
     ///
     /// `owner_state` is read Relaxed: this is the SAME diagnostic-strength
     /// read `dbg_owner_id_for` already performs cross-thread (the id is
@@ -71,9 +79,9 @@ impl HeapCore {
     /// still resolves to either the SAME heap (harmless) or a DIFFERENT live
     /// heap's slot (the pushed entry sits in the wrong heap's overflow ring,
     /// drained on ITS next opportunistic pass — not a correctness hazard, see
-    /// that doc comment for the full argument). Returns `None` if the owner
-    /// id is out of range (defensive — should be unreachable for a live,
-    /// correctly-stamped segment).
+    /// that doc comment for the full argument). The dedicated fallback id
+    /// resolves directly to process-lifetime storage before any registry
+    /// lookup. Only other out-of-range ids return `None`.
     #[cfg(feature = "alloc-xthread")]
     #[inline]
     pub(super) fn resolve_heap_overflow(
@@ -82,11 +90,14 @@ impl HeapCore {
         use crate::alloc_core::segment_header::unpack_owner_id;
         let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
         let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed));
-        let reg = crate::registry::bootstrap::ensure();
+        if owner_id == crate::alloc_core::segment_header::OWNER_ID_FALLBACK {
+            return Some(&FALLBACK_OVERFLOW);
+        }
         let idx = owner_id as usize;
         if idx >= crate::registry::bootstrap::MAX_HEAPS {
             return None; // Defensive: unstamped/garbled owner id.
         }
+        let reg = crate::registry::bootstrap::ensure();
         // R6-OPT-P0-2: `idx < MAX_HEAPS` just checked; `slot_or_none` resolves
         // it through the chunked slot array (materialising the owning chunk if
         // needed — sound here because this index was read off a LIVE segment's
@@ -124,18 +135,21 @@ impl HeapCore {
     ///   drains on its own schedule — the same destination those entries had
     ///   anyway. No block is lost that the spin would have saved.
     ///
-    /// An out-of-range id (`OWNER_ID_NONE` — an unstamped early segment, or
-    /// the process-global fallback heap, whose `id = u32::MAX` masks to
-    /// `OWNER_ID_NONE` under `pack_owner`'s 31-bit id field) has no slot to
-    /// consult; report "live" to preserve RAD-4's original unconditional spin
-    /// there (the fallback heap is process-lived and drains on its own
-    /// allocs, so waiting for it is meaningful).
+    /// The fallback id has no registry-slot liveness state. Skip the spin
+    /// window for it: an active fallback owner can drain on a later alloc,
+    /// while a paused or exited owner cannot be made to drain by waiting.
+    /// Both cases retain the free in its process-lifetime overflow/spill.
+    /// Other out-of-range ids preserve the historical defensive spin.
     #[cfg(feature = "alloc-xthread")]
     #[inline]
     pub(super) fn owner_slot_is_live(base: *mut u8) -> bool {
         use crate::alloc_core::segment_header::unpack_owner_id;
         let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
-        let idx = unpack_owner_id(owner_atomic.load(Ordering::Relaxed)) as usize;
+        let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed));
+        if owner_id == crate::alloc_core::segment_header::OWNER_ID_FALLBACK {
+            return false;
+        }
+        let idx = owner_id as usize;
         if idx >= crate::registry::bootstrap::MAX_HEAPS {
             return true;
         }

@@ -38,9 +38,10 @@ impl HeapCore {
 
     /// RAD-4b (task #72): plant the stable `&'static` handle to THIS heap's
     /// slot-resident [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow)
-    /// ring. Same discipline as [`bind_thread_free`](Self::bind_thread_free) /
-    /// [`bind_tcache_hits`](Self::bind_tcache_hits) — called once, right
-    /// after the slot binds, from `bind_slot_counters`.
+    /// ring (or the process-static fallback ring). Same discipline as
+    /// [`bind_thread_free`](Self::bind_thread_free) /
+    /// [`bind_tcache_hits`](Self::bind_tcache_hits): called from
+    /// `bind_slot_counters` at claim, or during fallback init before READY.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn bind_overflow(
         &mut self,

@@ -49,8 +49,10 @@
 //! atomic (the fallback's analogue of a registry slot's `thread_free` word),
 //! whose stable address is bound into the fallback `HeapCore` via
 //! [`HeapCore::bind_thread_free`] once, at init under the bootstrap race,
-//! BEFORE the `READY` publish. So cross-thread-free routing is wired purely
-//! from that already-bound `'static` word — no allocation on any fallback
+//! BEFORE the `READY` publish. The same initialization binds the independent
+//! process-static fallback `HeapOverflow`; the sentinel owner id resolves to
+//! it without indexing the registry. Cross-thread-free routing uses these
+//! already-bound `'static` objects — no allocation on any fallback
 //! path, M5-clean and M10-preserving. (A `Box`-via-`std::alloc` here would
 //! self-deadlock — the first fallback alloc runs under the fallback spinlock,
 //! and re-entering the global allocator to grow a `Box` would recurse back
@@ -122,6 +124,13 @@ static mut FALLBACK: MaybeUninit<HeapCore> = MaybeUninit::uninit();
 
 /// The bootstrap state-machine word: `UNINIT → INITIALIZING → READY`.
 static INIT_STATE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
+
+#[cfg(all(
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
+static DBG_INJECT_FALLBACK_OOM: AtomicBool = AtomicBool::new(false);
 
 /// R6-OPT-P0-1: process-wide count of [`LOCK`] acquisitions (i.e. of
 /// [`with_heap`] calls that got past the null check and entered the guarded
@@ -219,7 +228,24 @@ pub fn heap_ptr() -> *mut HeapCore {
             // out-of-range for every owner-id→slot resolution. `u32::MAX`
             // remains reserved for "not yet bound to a slot" on freshly-init'd
             // registry slots.
-            match HeapCore::new(crate::alloc_core::segment_header::OWNER_ID_FALLBACK) {
+            #[cfg(all(
+                feature = "alloc-xthread",
+                feature = "internals",
+                feature = "bench-internals"
+            ))]
+            let forced_oom = DBG_INJECT_FALLBACK_OOM.load(Ordering::Relaxed);
+            #[cfg(not(all(
+                feature = "alloc-xthread",
+                feature = "internals",
+                feature = "bench-internals"
+            )))]
+            let forced_oom = false;
+            let new_heap = if forced_oom {
+                None
+            } else {
+                HeapCore::new(crate::alloc_core::segment_header::OWNER_ID_FALLBACK)
+            };
+            match new_heap {
                 Some(hc) => {
                     // SAFETY: we won the init race (STATE_INITIALIZING); no
                     // other thread can read `FALLBACK` until we publish
@@ -246,12 +272,16 @@ pub fn heap_ptr() -> *mut HeapCore {
                         // just `write`(hc) into `FALLBACK`; we are its sole
                         // writer and no other thread can reference it until we
                         // publish READY. This exclusive `&mut` lives only for
-                        // the `bind_thread_free` call. `FALLBACK_TFS` is a
-                        // process-`'static` atomic, so `&FALLBACK_TFS` is a
-                        // sound `&'static`.
+                        // both binding calls. `FALLBACK_TFS` and the overflow
+                        // ring are process-`'static` atomics outside the
+                        // `&mut HeapCore` range.
                         let heap_ref: &mut HeapCore =
                             unsafe { &mut *(addr_of_mut!(FALLBACK) as *mut HeapCore) };
                         heap_ref.bind_thread_free(&FALLBACK_TFS);
+                        heap_ref.bind_overflow(HeapCore::fallback_overflow());
+                        // No registry slot exists for this owner, hence no
+                        // slot dirty bitmap to bind. Its slow paths drain
+                        // overflow/spill and scan segment rings directly.
                     }
                     INIT_STATE.store(STATE_READY, Ordering::Release);
                     // Happy path: READY just published — disarm the guard so
@@ -319,6 +349,32 @@ where
     // exclusive `&mut` access — no other thread can be inside `with_heap`. The
     // `HeapCore` is valid for the process lifetime (never dropped).
     Some(f(unsafe { &mut *heap }))
+}
+
+#[cfg(all(
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
+impl HeapCore {
+    /// Test-only access through the production fallback lock. The closure
+    /// cannot return a borrow of the heap beyond the lock's lifetime.
+    #[doc(hidden)]
+    pub fn dbg_with_fallback_for_test<R>(f: impl for<'a> FnOnce(&'a mut Self) -> R) -> Option<R> {
+        with_heap(f)
+    }
+
+    /// Test-only primordial-OOM injection, effective before `STATE_READY`.
+    #[doc(hidden)]
+    pub fn dbg_inject_fallback_oom_for_test(on: bool) {
+        DBG_INJECT_FALLBACK_OOM.store(on, Ordering::Relaxed);
+    }
+
+    #[cfg(feature = "alloc-segment-directory")]
+    #[doc(hidden)]
+    pub fn dbg_has_dirty_bitmap_for_test(&self) -> bool {
+        self.core.dirty_segments.is_some()
+    }
 }
 
 /// RAII guard over the fallback [`LOCK`] spinlock (task L4). Acquiring it spins

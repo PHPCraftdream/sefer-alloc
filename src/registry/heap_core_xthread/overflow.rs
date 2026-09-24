@@ -243,10 +243,13 @@ fn resolve_dirty_bit_target(
     let segment_id = SegmentHeader::segment_id_at(base) as usize;
     let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
     let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed)) as usize;
-    let reg = crate::registry::bootstrap::ensure();
     if owner_id >= crate::registry::bootstrap::MAX_HEAPS {
-        return None; // Defensive: unstamped/garbled owner id.
+        // Fallback has no registry slot or dirty bitmap; its overflow/spill
+        // drains on the owner's alloc path and segment rings on full scans.
+        // Check before `ensure` so a fallback free never bootstraps a slot.
+        return None;
     }
+    let reg = crate::registry::bootstrap::ensure();
     // R34-15/task #534: free-path slot resolution. `slot_or_none` returns
     // `None` on chunk-materialisation OOM instead of aborting, folding into
     // the same defensive bail as the garbled-id check above. F-3 context:
@@ -898,13 +901,9 @@ impl HeapCore {
                 c.set((slots, cursor));
             });
         } else if Self::push_to_heap_overflow(base, packed) {
-            // Owner not live: no point spinning on the segment ring (nothing
-            // will drain it), but the heap-level overflow ring is drained by
-            // whichever thread next CLAIMS this slot, not by "this specific
-            // owner" — so one attempt here still has a chance (mirrors the
-            // pre-loop immediate attempt; kept as a distinct branch so the
-            // not-live path does not fall through to ANOTHER redundant
-            // overflow attempt below when it already just tried and failed).
+            // No live registry claimant, or a fallback owner with no slot
+            // liveness signal: skip spinning. The persistent overflow is
+            // drained by the next claimant or fallback allocation.
             return;
         }
         // Both rings exhausted (the owner was live but made zero drain
@@ -916,10 +915,11 @@ impl HeapCore {
         // ticked once at the first full-ring attempt, not on each retry.
         // Both bounded rings are saturated. `block` still owns its storage:
         // no reclaim can release the segment before this note is published.
-        // The slot-resident intrusive tier consumes no allocator/OS memory,
-        // and persists across owner exit/recycle. A legal segment always has
-        // a stamped, in-range owner slot; absence is an invariant failure,
-        // not an OOM/full result that may silently discard this free.
+        // The intrusive tier consumes no allocator/OS memory and survives
+        // registry owner exit/recycle; the fallback's static ring survives
+        // process-wide. Every legal segment has either a registry owner id
+        // or OWNER_ID_FALLBACK, both resolved above. Absence is an invariant
+        // failure, not an OOM/full result that may discard this free.
         let Some(overflow) = Self::resolve_heap_overflow(base) else {
             std::process::abort();
         };
