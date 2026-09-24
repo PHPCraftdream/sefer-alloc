@@ -245,6 +245,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/small/alloc_core_small_pool/mod.rs::dbg_pool_cap",
     "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
     "src/alloc_core/segment/remote_free_ring/ops.rs::dbg_cursors",
+    "src/alloc_core/segment/remote_free_ring/ops.rs::dbg_tail_guard_token",
     "src/global/fallback.rs::dbg_fallback_lock_acquisitions",
     "src/global/fallback.rs::dbg_init_state",
     "src/registry/bootstrap/registry.rs::dbg_slot_state",
@@ -269,6 +270,9 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/registry/heap_core/diag/queries.rs::dbg_last_stamped_segment",
     "src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
     "src/registry/heap_core/diag/queries.rs::dbg_table_count",
+    "src/registry/heap_core_xthread/drain.rs::dbg_overflow_cursors_for_test",
+    "src/registry/heap_core_xthread/drain.rs::dbg_spill_ledger_for_test",
+    "src/registry/heap_core_xthread/drain.rs::dbg_spill_pending_for_test",
     "src/registry/bootstrap/ensure.rs::dbg_slot_or_none",
 ];
 
@@ -284,6 +288,10 @@ const PURE_OBSERVERS: &[&str] = &[
 /// caller, but flagged explicitly so a future reviewer does not have to
 /// re-derive that distinction from scratch.
 const SAFE_MUTATORS: &[(&str, &str)] = &[
+    (
+        "src/registry/heap_core_xthread/drain.rs::dbg_drain_heap_overflow_for_test",
+        "requires exclusive &mut HeapCore and delegates to the same overflow drain/reclaim path used by production; it does not forge entries or bypass publication",
+    ),
     (
         "crates/once-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
         "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered",
