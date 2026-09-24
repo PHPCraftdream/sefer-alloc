@@ -15,7 +15,7 @@ use sefer_alloc::SeferAlloc;
 use std::sync::atomic::Ordering;
 
 const N: usize = 5_000;
-const BLOCK: usize = 64;
+const BLOCK: usize = 16;
 const SEGMENT: usize = 4 * 1024 * 1024;
 
 fn ledger(owner_exited: bool) {
@@ -30,6 +30,7 @@ fn ledger(owner_exited: bool) {
         // SAFETY: the same claim remains exclusively owned here.
         let p = unsafe { (*heap).alloc(layout) };
         assert!(!p.is_null());
+        assert_eq!(p.addr() % BLOCK, 0, "smallest-class block alignment");
         assert_eq!(p.addr() & !(SEGMENT - 1), anchor.addr() & !(SEGMENT - 1));
         blocks.push(p);
     }

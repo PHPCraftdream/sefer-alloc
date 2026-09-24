@@ -115,11 +115,12 @@ use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use sefer_alloc::registry::{
-    bootstrap, HeapRegistry, DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED,
-};
-
+#[cfg(not(miri))]
 use sefer_alloc::alloc_core::remote_free_ring::DBG_RING_OVERFLOW;
+use sefer_alloc::registry::{bootstrap, HeapRegistry};
+#[cfg(not(miri))]
+use sefer_alloc::registry::{DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED};
+#[cfg(not(miri))]
 use sefer_alloc::SeferAlloc;
 
 // Serialise all tests in this file: the registry and the diagnostic counters
@@ -149,6 +150,7 @@ impl Drop for SerialGuard {
 
 /// A small-class size well under `SMALL_MAX`, so every block is routed
 /// through the ring (never the Large/A1 path).
+#[cfg(not(miri))]
 const BLOCK_SIZE: usize = 64;
 
 /// ── Harness 1: realistic concurrent fan-in ─────────────────────────────
@@ -741,34 +743,22 @@ fn remote_fanin_high_contention_budget_is_sufficient() {
 /// project's convention ("miri: run on specific invariant tests... not the
 /// full suite"), this harness exists SPECIFICALLY for miri: it does the
 /// SMALLEST amount of work that still deterministically drives
-/// `push_with_overflow_retry` through BOTH of its non-trivial branches —
-/// retry-then-succeed (a push that failed at least once but eventually
-/// landed) and retry-then-exhaust (a push that never lands within the
-/// retry budget) — with a TWO-PHASE (not concurrently-racing) shape so
-/// miri's thread/data-race tracking has as little interleaving to model as
-/// possible. miri's job here is UB-detection (no data race, no invalid
-/// memory access, no provenance violation) on the retry code path itself;
-/// the STATISTICAL loss-rate properties (does retry recover realistic
-/// fan-in, is the residual bounded under starvation) are already covered by
-/// the native runs of the two harnesses above and by
-/// `tests/loom_remote_ring.rs`'s `overflow_retry_concurrent_drain_never_loses_or_duplicates`.
+/// `push_with_overflow_retry` through ring saturation and the intrusive
+/// spill at the smallest block class. It uses a TWO-PHASE (not concurrently
+/// racing) shape so Miri can check the real raw-node accesses and atomic
+/// publication without thousands of interpreted operations. Loom separately
+/// explores the abstract interleavings.
 ///
-/// Deliberately just over `RING_CAP = 256` blocks (260) so a handful of
-/// pushes overflow (forcing the retry loop to actually run its non-trivial
-/// branch) without needing thousands of ops. A SINGLE remote thread frees
-/// all 260 blocks in a tight loop while the owner does nothing until the
-/// join (two-phase — the owner-starved shape, so `RING_PUSH_RETRY_SPINS`
-/// (already `#[cfg(miri)]`-scaled to 64) is exercised to exhaustion on at
-/// least a few of the ~4 overflowing pushes — hitting BOTH the
-/// `DBG_RING_PUSH_RETRIED` and `DBG_RING_PUSH_RETRY_EXHAUSTED` increment
-/// sites at least once).
+/// N=321 exceeds Miri's 256+64 ring capacity by one. The owner does no work
+/// until the producer joins, making the one spill note deterministic.
 #[test]
 fn remote_fanin_miri_minimal_retry_ub_check() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
     const N: usize = 321; // exceeds miri's 256 + 64 ring capacity
-    let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
+    const MIRI_BLOCK: usize = 16; // the smallest class fits the ready word
+    let layout = Layout::from_size_align(MIRI_BLOCK, 8).unwrap();
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null());
@@ -829,7 +819,7 @@ fn remote_fanin_miri_minimal_retry_ub_check() {
             break;
         }
         unsafe {
-            std::ptr::write_bytes(p, 0xAB, BLOCK_SIZE);
+            std::ptr::write_bytes(p, 0xAB, MIRI_BLOCK);
             assert_eq!(p.read(), 0xAB);
             (*heap).dealloc(p, layout);
         }
