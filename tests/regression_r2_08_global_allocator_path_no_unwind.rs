@@ -97,7 +97,22 @@ fn global_allocator_bind_on_config_conflict_does_not_panic() {
     }
 
     let exe = std::env::current_exe().expect("current_exe");
-    let out = Command::new(exe)
+    // Cargo applies its target runner to this test binary, but not to a
+    // subprocess it starts. Cross's aarch64 image supplies this runner.
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    let mut child =
+        if let Ok(runner) = std::env::var("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER") {
+            let mut words = runner.split_ascii_whitespace();
+            let program = words.next().expect("nonempty aarch64 target runner");
+            let mut command = Command::new(program);
+            command.args(words).arg(&exe);
+            command
+        } else {
+            Command::new(&exe)
+        };
+    #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+    let mut child = Command::new(&exe);
+    let out = child
         .args(["--exact", TEST_NAME, "--nocapture", "--test-threads=1"])
         .env(CHILD_ENV, "1")
         .output()
