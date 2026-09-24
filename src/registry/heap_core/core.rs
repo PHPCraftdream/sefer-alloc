@@ -407,10 +407,11 @@ pub struct HeapCore {
     pub(crate) thread_free: Option<&'static AtomicPtr<u8>>,
 
     /// RAD-4b (task #72): stable `&'static` handle to THIS heap's
-    /// slot-resident [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow)
-    /// second-chance ring. Planted by
+    /// [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow)
+    /// second-chance ring, slot-resident or fallback-static. Planted by
     /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
-    /// (via `bind_slot_counters` → [`bind_overflow`](Self::bind_overflow)),
+    /// (via `bind_slot_counters` → [`bind_overflow`](Self::bind_overflow))
+    /// or by fallback initialization before `STATE_READY`,
     /// mirroring [`thread_free`](Self::thread_free) /
     /// [`tcache_hits`](Self::tcache_hits) exactly — same rationale: resolving
     /// `&reg.slot(idx).overflow` fresh on every
@@ -421,14 +422,13 @@ pub struct HeapCore {
     /// the measured churn-gate cost this hoist recovers. `None` only in the
     /// transient pre-bind window (never observed on any alloc/free path —
     /// `drain_heap_overflow`/`push_to_heap_overflow` are the only readers,
-    /// and both run only on/after a claimed heap).
+    /// and both run only on/after a bound heap).
     ///
     /// `push_to_heap_overflow` is a free function called from a REMOTE
     /// thread targeting `base`'s OWNER — a different heap than `self` — so it
     /// cannot use this field (which is `self`'s OWN handle); it still
-    /// resolves the owner's slot via `bootstrap::ensure().slot(owner_id)`
-    /// (unavoidable — the whole point is finding a heap this thread does not
-    /// own). This hoist applies ONLY to the OWNER's own opportunistic drain,
+    /// resolves the owner's registry slot (or the fallback static ring)
+    /// from the stamped id. This hoist applies ONLY to the OWNER's own drain,
     /// the hot(ter) path the churn benches actually measure.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) overflow: Option<&'static crate::registry::heap_overflow::HeapOverflow>,

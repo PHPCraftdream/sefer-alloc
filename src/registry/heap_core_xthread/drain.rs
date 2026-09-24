@@ -21,6 +21,22 @@ use crate::alloc_core::{node::Node, AllocCore};
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    #[doc(hidden)]
+    pub fn dbg_segment_ring_cursors_for_test(&self, ptr: *mut u8) -> Option<(u64, u64)> {
+        let candidate = crate::alloc_core::os::segment_base_of_ptr(ptr);
+        let base = self.core.segment_bases().find(|&b| b == candidate)?;
+        Some(
+            crate::alloc_core::segment_header::SegmentMeta::new(base)
+                .remote_ring()
+                .dbg_cursors(),
+        )
+    }
+
     #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
     #[doc(hidden)]
     pub fn dbg_drain_heap_overflow_for_test(&mut self) {
@@ -102,7 +118,7 @@ impl HeapCore {
         }
     }
 
-    /// RAD-4b (task #72): drain THIS heap's slot-resident
+    /// RAD-4b (task #72): drain THIS heap's bound
     /// [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow) ring — the
     /// second-chance queue [`push_to_heap_overflow`](Self::push_to_heap_overflow)
     /// falls back to once a segment's own `RemoteFreeRing` AND its bounded
@@ -127,11 +143,11 @@ impl HeapCore {
     #[inline(always)]
     pub(crate) fn drain_heap_overflow(&mut self) {
         // RAD-4b: resolve through the pre-planted `&'static` handle (planted
-        // by `bind_overflow` at claim time), NOT a fresh `bootstrap::ensure()`
-        // + array index on every call — see the `overflow` field's doc
+        // by `bind_overflow` at claim or fallback init), NOT a fresh
+        // `bootstrap::ensure()` + array index on every call — see the field's doc
         // comment for the churn-gate cost this hoist recovers. `None` only in
         // the transient pre-bind window (never observed on any alloc/free
-        // path — this drain runs only after a claimed heap's `alloc()`).
+        // path — this drain runs only after a bound heap's `alloc()`).
         let Some(overflow) = self.overflow else {
             return;
         };
