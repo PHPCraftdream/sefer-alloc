@@ -211,12 +211,11 @@ fn concurrent_drain_from_second_thread_is_rejected_while_token_held() {
         // entry. On any (buggy) success, record it and stop early so the
         // test fails loudly instead of hanging.
         for _ in 0..256 {
-            let busy =
-                ring_for_thread
-                    .try_drain(|_base, _packed| {
-                        saw_only_busy_for_thread.store(false, Ordering::Release);
-                    })
-                    .is_none();
+            let busy = ring_for_thread
+                .try_drain(|_base, _packed| {
+                    saw_only_busy_for_thread.store(false, Ordering::Release);
+                })
+                .is_none();
             if !busy {
                 break;
             }

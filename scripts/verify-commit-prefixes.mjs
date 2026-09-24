@@ -585,6 +585,17 @@ const GRANDFATHERED = new Map([
       'docs/correctness-open-items/TRACKED_process_record.md item 78, ' +
       'sub-card 16.',
   ],
+  [
+    '495ede8',
+    'NOT a shipping-code change: the pushed R2 remote-free contract commit ' +
+      'changed comments and one rustfmt-only function-signature wrap in ' +
+      'src/alloc_core/platform/node.rs. Every other changed src/ line is ' +
+      'a comment; git show 495ede8 was checked file by file. The line-based ' +
+      'heuristic cannot distinguish formatting from behavior without a Rust ' +
+      'parser, so docs: remains the honest prefix. History is not rewritten. ' +
+      'Durable record: docs/correctness-open-items/' +
+      'TRACKED_process_record.md item 78, sub-card 17.',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back

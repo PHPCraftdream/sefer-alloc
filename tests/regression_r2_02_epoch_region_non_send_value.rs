@@ -38,11 +38,12 @@ fn epoch_region_insert_of_non_send_value_must_not_compile() {
         manifest.display()
     );
 
-    let child_target =
-        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("r2_02_fixture");
+    let child_target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("r2_02_fixture");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    // The detached fixture has its own lockfile. Its exact dependencies may
+    // not be cached by the parent build on a fresh CI runner.
     let output = Command::new(&cargo)
-        .args(["build", "--offline", "--manifest-path"])
+        .args(["build", "--locked", "--manifest-path"])
         .arg(&manifest)
         .env("CARGO_TARGET_DIR", &child_target)
         .env_remove("RUSTFLAGS")

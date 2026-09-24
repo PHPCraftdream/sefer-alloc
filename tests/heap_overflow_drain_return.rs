@@ -46,10 +46,11 @@ fn drain_fully_drained_returns_stop_position_equal_to_tail() {
     assert!(ring.push(synthetic_base(1), 222));
 
     let mut reclaimed = 0u32;
-    let ret = ring.try_drain(|_base, _packed| {
-        reclaimed += 1;
-    })
-    .expect("drain must not be busy on this single-threaded test ring");
+    let ret = ring
+        .try_drain(|_base, _packed| {
+            reclaimed += 1;
+        })
+        .expect("drain must not be busy on this single-threaded test ring");
 
     assert_eq!(reclaimed, 2, "both published entries must be reclaimed");
     assert_eq!(
@@ -79,10 +80,11 @@ fn drain_stopping_at_unpublished_slot_returns_stop_position_not_tail() {
     ring.dbg_reserve_unpublished_for_test();
 
     let mut reclaimed = 0u32;
-    let ret = ring.try_drain(|_base, _packed| {
-        reclaimed += 1;
-    })
-    .expect("drain must not be busy on this single-threaded test ring");
+    let ret = ring
+        .try_drain(|_base, _packed| {
+            reclaimed += 1;
+        })
+        .expect("drain must not be busy on this single-threaded test ring");
 
     assert_eq!(
         reclaimed, 1,
@@ -111,19 +113,21 @@ fn second_drain_after_early_stop_parks_at_the_gap() {
     ring.dbg_reserve_unpublished_for_test();
 
     let mut first = 0u32;
-    let ret1 = ring.try_drain(|_, _| {
-        first += 1;
-    })
-    .expect("drain must not be busy on this single-threaded test ring");
+    let ret1 = ring
+        .try_drain(|_, _| {
+            first += 1;
+        })
+        .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!((first, ret1), (1, 1));
 
     // The reserved slot 1 is STILL unpublished, so a second drain must again
     // stop at h = 1 and reclaim nothing new.
     let mut second = 0u32;
-    let ret2 = ring.try_drain(|_, _| {
-        second += 1;
-    })
-    .expect("drain must not be busy on this single-threaded test ring");
+    let ret2 = ring
+        .try_drain(|_, _| {
+            second += 1;
+        })
+        .expect("drain must not be busy on this single-threaded test ring");
     assert_eq!(
         (second, ret2),
         (0, 1),

@@ -11,6 +11,8 @@
 //! SAME answer as the real, provenance-carrying pointer) functionally,
 //! under native `cargo test`, for the remaining accessors.
 
+#![cfg(feature = "internals")]
+
 #[cfg(all(feature = "alloc-core", feature = "numa-aware", feature = "internals"))]
 #[test]
 fn dbg_node_id_for_sound_under_provenance_less_input() {

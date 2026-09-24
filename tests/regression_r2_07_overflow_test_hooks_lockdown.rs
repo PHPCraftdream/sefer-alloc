@@ -68,7 +68,10 @@ use sefer_alloc::registry::heap_overflow::HeapOverflow;
 fn dbg_reserve_unpublished_for_test_rejects_sidecar_range_in_every_profile() {
     let mut ring = HeapOverflow::new_boxed_for_test();
     let inline_cap = ring.dbg_fill_and_drain_inline_tier_for_test();
-    assert!(inline_cap > 0, "INLINE_CAP must be positive for this test to be meaningful");
+    assert!(
+        inline_cap > 0,
+        "INLINE_CAP must be positive for this test to be meaningful"
+    );
 
     // tail == INLINE_CAP now: the first sidecar-range index. Pre-fix, this
     // call would silently succeed in a release build (debug_assert! compiled
@@ -88,6 +91,13 @@ fn dbg_reserve_unpublished_for_test_still_works_within_inline_tier() {
 
     let mut reclaimed = 0u32;
     let stop = ring.try_drain(|_, _| reclaimed += 1);
-    assert_eq!(reclaimed, 0, "the reserved-but-unpublished slot must not be reclaimed");
-    assert_eq!(stop, Some(0), "drain must stop at the unpublished slot (index 0)");
+    assert_eq!(
+        reclaimed, 0,
+        "the reserved-but-unpublished slot must not be reclaimed"
+    );
+    assert_eq!(
+        stop,
+        Some(0),
+        "drain must stop at the unpublished slot (index 0)"
+    );
 }

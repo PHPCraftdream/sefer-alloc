@@ -66,7 +66,10 @@ fn alloc_one_and_derive_provenance_less() -> (AllocCore, *mut u8, *mut u8) {
 #[test]
 fn dbg_kind_byte_of_sound_under_provenance_less_input() {
     let (core, real_ptr, stale) = alloc_one_and_derive_provenance_less();
-    assert_eq!(core.dbg_kind_byte_of(real_ptr), core.dbg_kind_byte_of(stale));
+    assert_eq!(
+        core.dbg_kind_byte_of(real_ptr),
+        core.dbg_kind_byte_of(stale)
+    );
 }
 
 #[test]

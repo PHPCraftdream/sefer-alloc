@@ -2777,7 +2777,12 @@ fn no_owned_sidecar_references_anywhere() {
         .join("platform")
         .join("sidecar.rs");
     let flat = doc_prose(&path);
-    for name in &["[`reserve`]", "[`reserve_zeroed_with`]", "[`deref`]", "[`deref_mut`]"] {
+    for name in &[
+        "[`reserve`]",
+        "[`reserve_zeroed_with`]",
+        "[`deref`]",
+        "[`deref_mut`]",
+    ] {
         assert!(
             flat.contains(name),
             "src/alloc_core/platform/sidecar.rs: the module doc must name the \

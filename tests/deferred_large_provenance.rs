@@ -1,5 +1,7 @@
 //! Reduced-width provenance oracle plus real deferred Large release coverage.
 
+#![cfg(feature = "internals")]
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Reservation {
     address: u8,

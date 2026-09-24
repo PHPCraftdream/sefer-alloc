@@ -155,8 +155,10 @@ pub(crate) struct LargeCacheExtension {
 /// state), so there is no all-zero-valid subset for a `reserve_zeroed_with`
 /// fixup to leave untouched.
 #[must_use]
-pub(crate) fn reserve_large_cache_extension(
-) -> Option<(*mut LargeCacheExtension, crate::alloc_core::sidecar::AccountedSidecar)> {
+pub(crate) fn reserve_large_cache_extension() -> Option<(
+    *mut LargeCacheExtension,
+    crate::alloc_core::sidecar::AccountedSidecar,
+)> {
     crate::alloc_core::sidecar::reserve(
         crate::alloc_core::sidecar::SidecarKind::LargeCacheExtension,
         LargeCacheExtension {

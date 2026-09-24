@@ -62,7 +62,11 @@ fn epoch_cross_instance_vacant_target_is_rejected_without_state_change() {
 
     assert_eq!(region_b.get_with(handle_a, |v| *v), None);
     assert!(!region_b.remove(handle_a));
-    assert_eq!(region_b.len(), 0, "len() must be untouched by a rejected cross-instance op");
+    assert_eq!(
+        region_b.len(),
+        0,
+        "len() must be untouched by a rejected cross-instance op"
+    );
 }
 
 #[test]

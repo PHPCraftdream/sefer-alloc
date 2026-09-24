@@ -60,7 +60,11 @@
 //!    `slot`/`ensure_chunk` — see `Registry::slot_or_none`'s doc comment)
 //!    and confirms THAT chunk transitions to materialised.
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-stats", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-stats",
+    feature = "internals"
+))]
 
 use sefer_alloc::registry::bootstrap::{self, Registry};
 use sefer_alloc::registry::heap_registry::dbg_bump_count_without_materialising;
@@ -83,7 +87,8 @@ fn mint_index_with_unmaterialised_chunk(
 ) -> (usize, usize) {
     for _ in 0..2 * bootstrap::MAX_HEAPS {
         let idx = dbg_bump_count_without_materialising()
-            .expect("registry exhausted — suite claimed close to MAX_HEAPS slots") as usize;
+            .expect("registry exhausted — suite claimed close to MAX_HEAPS slots")
+            as usize;
         let chunk_idx = idx / chunk_slots;
         if !reg.dbg_chunk_is_materialised(chunk_idx) && Some(chunk_idx) != avoid_chunk {
             return (idx, chunk_idx);
