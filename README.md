@@ -363,9 +363,9 @@ this project (see `crates/sefer-region/README.md` "## Safety").
 `SeferAlloc` (the `#[global_allocator]` below) is a separate, OS-backed
 segment allocator: SEGMENT-aligned (4 MiB) OS-backed spans, self-hosted
 metadata (no `Vec` / `HashSet` / `std::alloc` on any alloc path),
-per-thread heaps, non-intrusive cross-thread free through a
-per-segment MPSC ring. `Region<T>` above does not use any of this — it
-is backed entirely by `slotmap`'s own storage. See
+per-thread heaps, non-intrusive per-segment and per-heap remote-free rings,
+and an intrusive spill when both rings are full. `Region<T>` above does not
+use any of this — it is backed entirely by `slotmap`'s own storage. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the 30-minute tour.
 
 Under `production`, the crate becomes `#![deny(unsafe_code)]` and every
@@ -839,10 +839,13 @@ seam. No lock, no atomic on the common case. Slow path: refill `REFILL_BATCH
 = 31` blocks from the current segment (the constant is **measured** — see
 commit `81fec54`, bigger refills hurt locality).
 
-Cross-thread free (opt-in `alloc-xthread`) does **not** dereference the
-block: the freer pushes `(offset | class)` into the segment's
-`RemoteFreeRing` (whose memory lives in metadata pages that are never
-decommitted), and the owner reclaims lazily on its alloc-slow-path. The
+Cross-thread free (opt-in `alloc-xthread`) first queues `(offset | class)`
+in the segment's `RemoteFreeRing`, then in a per-heap sidecar ring if needed;
+neither ring reads nor writes the block body. If both rings remain full,
+the intrusive spill writes a 16-byte note into the first bytes of the
+already-freed block. A legal free has transferred exclusive use of that block
+to the allocator before this write; the owner cannot reuse it until reclaim.
+The owner reclaims queued blocks lazily on its alloc-slow-path. The
 freer stamps the class because the `page_map` is unreliable for mixed-class
 pages produced by a shared bump cursor — the §13 race investigation
 ([`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md)) traced this
@@ -1129,8 +1132,10 @@ real cost was a stale per-heap key stamped into the freed block's **body**
 the key survived the free and forced a slow-path scan plus a cold/conflict cache
 line touch at the 256 B stride. **Э6 removed the key entirely**: the two exact
 oracles (in-magazine scan + the `BinTable` `is_free` bitmap, both hot metadata)
-now run unconditionally and **the free path never touches the block body**. On
-the realistic writing pattern sefer-alloc now **leads at every size** (256 B
+now run unconditionally and **the own-thread magazine free path does not
+touch the block body**. The later-added remote spill is an exception after
+both non-intrusive rings saturate. On the realistic writing pattern
+sefer-alloc now **leads at every size** (256 B
 1.64× faster, 2026-07-10); the artificial non-writing pattern leads too
 (256 B 2.12× faster). This is
 not a trade for safety — M2 was **strengthened**: the pre-Э6
@@ -1335,11 +1340,21 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     magazine's design worst case (every free overflows, every alloc empties
     and refills). Documented trade-off; not a real-world pattern.
 
-Every loss above is the price of a safety guarantee `mimalloc` does not
-provide (double-free of LIVE/MAPPED memory = no-op, never UB, protected
-by the pre-reuse `off >= bump` stale-free guard (#138); foreign pointer =
-safe no-op; forbid(unsafe) by default at the top level with named
-audited seams under `production`). One documented residual: the
+These losses include the cost of defensive checks and the crate's confined
+unsafe seams under `production`. `GlobalAlloc::dealloc` still requires a
+currently live allocation, the matching `Layout`, and exactly one free;
+double-free is outside its unsafe-caller contract even while the segment
+remains mapped. Own-thread magazine/bitmap and stale-offset checks reject
+some invalid frees as no-ops, but this is defence-in-depth, **not** a
+"double-free of LIVE/MAPPED memory = no-op, never UB" guarantee. In
+particular, two frees of the same block while its remote note is pending
+are not guaranteed safe: the ring and sidecar have no per-block claim, and
+the spill may write the same block twice (a concurrent duplicate can race;
+a sequential duplicate can self-link the intrusive stack). `hardened`'s
+generation check does not make such duplicate spill publication safe.
+Mapped foreign-pointer rejection is likewise best-effort, not a promise
+for arbitrary dangling or unmapped addresses. A further documented
+residual is the
 **ring↔magazine cross-thread double-free residual limit of M2** — a block whose
 cross-thread free is still in-flight in a segment's `RemoteFreeRing` (not yet
 drained) sets neither own-thread oracle (magazine `slots` scan nor BinTable
@@ -1369,7 +1384,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **280 integration test files** ship
+a test file, and a reproducible command. **283 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **17 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1377,7 +1392,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (280 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (283 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

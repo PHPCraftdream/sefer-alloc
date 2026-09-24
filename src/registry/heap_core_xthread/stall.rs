@@ -118,7 +118,8 @@ std::thread_local! {
     /// mismatch (the overwhelmingly common case for unrelated later traffic)
     /// falls back to full patience; a false match requires the same segment
     /// base AND both monotonic cursors at the recorded values, and its worst
-    /// case is one cheap concession to the already-documented bounded leak.
+    /// case is one cheap concession to the lossless intrusive spill rather
+    /// than another futile retry round; it does not discard a legal free.
     pub(super) static LAST_STALL_CONCESSIONS: core::cell::Cell<StallConcessionCache> =
         const { core::cell::Cell::new(([None; STALL_CONCESSION_WAYS], 0)) };
 }

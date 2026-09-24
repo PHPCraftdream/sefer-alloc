@@ -292,9 +292,10 @@ impl HeapCore {
         // lazy slow-path drain handles the identical workload correctly
         // (verified: `global_alloc_installed` + `race_repro` ×5). Reclaim
         // completeness is preserved — the owner drains a segment's ring the
-        // moment it needs a free block from it; until then cross-thread frees
-        // sit in the bounded ring (overflow → bounded leak, the original 7b
-        // discipline).
+        // moment it needs a free block from it. Until then legal cross-thread
+        // frees sit in the segment ring, the per-heap sidecar ring, or (when
+        // both are full) the intrusive spill; saturation no longer discards
+        // them as the original 7b policy did.
 
         // ── Magazine fast path (P2+P4, fastbin) ─────────────────────────
         // Small-class allocations are served from the per-thread magazine.
