@@ -239,10 +239,10 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_commit_count",
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_chunk",
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_lazy_first_chunk",
-    "src/alloc_core/small/alloc_core_small_pool/mod.rs::dbg_decommit_count",
-    "src/alloc_core/small/alloc_core_small_pool/mod.rs::dbg_live_count_for",
-    "src/alloc_core/small/alloc_core_small_pool/mod.rs::dbg_pooled_count",
-    "src/alloc_core/small/alloc_core_small_pool/mod.rs::dbg_pool_cap",
+    "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count",
+    "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_live_count_for",
+    "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pooled_count",
+    "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
     "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
     "src/alloc_core/segment/remote_free_ring/ops.rs::dbg_cursors",
     "src/alloc_core/segment/remote_free_ring/ops.rs::dbg_tail_guard_token",
@@ -365,7 +365,7 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "arms the Nth-call fault injector; same justification as dbg_arm_commit_fail",
     ),
     (
-        "src/alloc_core/small/alloc_core_small_pool/mod.rs::dbg_drain_small_pool",
+        "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_drain_small_pool",
         "calls the real production drain_small_pool teardown-trim primitive directly (also called from trim_for_recycle)",
     ),
     (

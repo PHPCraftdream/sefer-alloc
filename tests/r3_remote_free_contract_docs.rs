@@ -3,7 +3,8 @@
 const README: &str = include_str!("../README.md");
 const OVERFLOW: &str = include_str!("../src/registry/heap_overflow.rs");
 const NODE: &str = include_str!("../src/alloc_core/platform/node.rs");
-const POOL: &str = include_str!("../src/alloc_core/small/alloc_core_small_pool/mod.rs");
+const POOL: &str =
+    include_str!("../src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs");
 const CORE: &str = include_str!("../src/registry/heap_core/core.rs");
 const HOT: &str = include_str!("../src/registry/heap_core/alloc/hot.rs");
 

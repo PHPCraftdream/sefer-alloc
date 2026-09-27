@@ -73,7 +73,7 @@ const ALLOWLIST = new Map([
   // own first exhaustive run against `alloc_core/small/alloc_core_small_pool/mod.rs` —
   // `SeferAlloc::stats()`'s `decommit_calls` field
   // (src/global/sefer_alloc.rs) reads this directly.
-  ['small/alloc_core_small_pool/mod.rs::dbg_decommit_count', 'backs AllocStats::stats() (task #572)'],
+  ['small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count', 'backs AllocStats::stats() (task #572)'],
 ]);
 
 /** Walk backward from line index `i` (exclusive) through the contiguous
