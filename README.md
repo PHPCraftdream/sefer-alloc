@@ -702,7 +702,7 @@ item-scoped regions.
 
 | File | Sites | What they cover |
 |---|---|---|
-| [`src/alloc_core/alloc_core/mem.rs`](src/alloc_core/alloc_core/mem.rs) | 2 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract) |
+| [`src/alloc_core/alloc_core/mem/mem_impl.rs`](src/alloc_core/alloc_core/mem/mem_impl.rs) | 2 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract) |
 | [`src/alloc_core/alloc_core/lifecycle.rs`](src/alloc_core/alloc_core/lifecycle.rs) | 1 | `Drop::drop` — internal call-site block into `deref_large_cache_extension_mut` (R14-1, task #286) |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs) | 3 | `dbg_stamp_segment_id` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |

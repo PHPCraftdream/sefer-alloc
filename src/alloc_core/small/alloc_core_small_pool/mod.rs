@@ -1001,7 +1001,7 @@ impl AllocCore {
                     let res_len = hdr.reservation_len as u64;
                     // R2-14: every registered Large slot is ACTIVE. A
                     // large-cache deposit unregisters the segment BEFORE
-                    // zeroing its magic (`alloc_core/mem/mod.rs` deposit
+                    // zeroing its magic (`alloc_core/mem/mem_impl.rs` deposit
                     // path; `alloc_core/large.rs` remote reclaim path), so a
                     // cached entry is never visible to this walk — cached
                     // segments are enumerated from the per-heap cache array
@@ -1021,7 +1021,7 @@ impl AllocCore {
         // R2-14 — second enumeration: the OCCUPIED slots of the per-heap
         // combined large-cache array (base + extension). Deposits keep the
         // pages COMMITTED (no decommit on deposit — see the deposit-site
-        // comment in `alloc_core/mem/mod.rs`), so `usable_size` (the
+        // comment in `alloc_core/mem/mem_impl.rs`), so `usable_size` (the
         // carried-forward committed span) is the commit charge, and
         // `reservation_len` is the real OS reservation descriptor for
         // reserved bytes (the R12-4 `reserved_capacity` VA span is

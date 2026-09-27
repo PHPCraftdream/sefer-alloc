@@ -11,7 +11,7 @@
 //!
 //! 1. **`large_cached` was structurally dead.** Cached Large segments were
 //!    classified from TABLE slots via `hdr.magic == 0`. But a large-cache
-//!    deposit UNREGISTERS its segment first (`alloc_core/mem/mod.rs`'s
+//!    deposit UNREGISTERS its segment first (`alloc_core/mem/mem_impl.rs`'s
 //!    own-thread dealloc branch; `alloc_core/large/alloc_core_large.rs`'s
 //!    remote-reclaim branch both call `table.unregister(base)` BEFORE zeroing
 //!    the magic), so a cached entry is NEVER in the table and
