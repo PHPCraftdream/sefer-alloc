@@ -185,7 +185,7 @@ directly, which still works and needs no table at all).
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (19
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (22
   cards) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
@@ -421,6 +421,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 148 | `RESOLVED.md` |
 | 149 | `RESOLVED.md` |
 | 150 | `TRACKED_test_flakiness.md` |
+| 151 | `TRACKED_ci_gate_coverage.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains

@@ -29,7 +29,10 @@
 // live array, not incremented by hand guesswork, per this file's own
 // standing numbering-drift caution above:
 //   0. node scripts/argv-roundtrip-test.mjs   (shell:false argv regression; R27-9)
-//   1. cargo fmt --all -- --check           (rustfmt gate)
+//   1. node scripts/fmt-check.mjs            (rustfmt gate — cargo fmt --all
+//      -- --check passthrough on non-Windows; on Windows, an argv-budgeted
+//      direct rustfmt invocation working around os-error-206 — see that
+//      script's own header)
 //   2-7. the 6 `clippy` rows from scripts/check-matrix.mjs's PER_PR_ROWS
 //      (R30-5: GENERATED, not hand-written — default / experimental /
 //      --all-features / hardened medium-classes internals / production /
@@ -357,9 +360,23 @@ const steps = [
     args: ['scripts/argv-roundtrip-test.mjs'],
   },
   {
+    // scripts/fmt-check.mjs: on non-Windows this is a thin passthrough to
+    // plain `cargo fmt --all -- --check` (unchanged). On Windows, `cargo
+    // fmt --all -- --check` reliably fails with "The filename or extension
+    // is too long. (os error 206)" on this repo — cargo-fmt collects one
+    // entry-point file per Cargo target (496 of them across this
+    // workspace's 11 members) into ONE rustfmt argv, whose absolute paths
+    // alone sum to ~42 KB, over Windows' ~32,767-char CreateProcess argv
+    // limit; reproduced even for the root package ALONE (`cargo fmt -p
+    // sefer-alloc -- --check`), so per-package looping is not a sufficient
+    // fix. The script instead enumerates targets via `cargo metadata` and
+    // invokes `rustfmt --check` directly in argv-budgeted chunks — same
+    // coverage (every member, every target kind), same rustfmt.toml
+    // discovery, just split across multiple process invocations. See that
+    // script's own header for the full root-cause writeup.
     name: 'rustfmt',
-    cmd: 'cargo',
-    args: ['fmt', '--all', '--', '--check'],
+    cmd: 'node',
+    args: ['scripts/fmt-check.mjs'],
   },
   // R30-5: the 6 PER_PR_ROWS clippy rows (default / experimental /
   // --all-features / hardened medium-classes internals / production /

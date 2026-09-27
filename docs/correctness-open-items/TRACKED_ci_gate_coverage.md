@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 20.
+**Card count:** 22.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -296,3 +296,5 @@ split the same day.)
     - **Current-number-or-verdict:** `.github/workflows/release.yml` SHA-pins `actions/checkout` (the security-sensitive publish path); `.github/workflows/ci.yml`'s ordinary rows do not — `actions/checkout@v5` (mutable tag) and `dtolnay/rust-toolchain@stable`/`@1.88` (mutable channel refs) are used throughout; the cargo-deny install step uses a tag-pinned action, not a SHA pin. Not re-enumerated exhaustively here — re-derive via `grep -n "uses:" .github/workflows/ci.yml` before acting.
     - **Next trigger:** a future workspace-wide CI-hardening task that SHA-pins `actions/checkout`/`dtolnay/rust-toolchain`/the cargo-deny installer across `ci.yml`'s rows (mirroring what `release.yml` already does for `checkout`), and records the toolchain version actually resolved in job output for traceability. Not tied to any specific crate's publish date.
     - **Evidence:** `docs/reviews/2026-08-27-201821-size-classes-round-3-prepublish-MS.md` §P3-6.
+
+151. **[T, CLOSED] `cargo fmt --all -- --check` (the local `npm run check` gate's rustfmt step) fails deterministically on Windows with "The filename or extension is too long. (os error 206)".** — CLOSED 2026-09-27. cargo-fmt collects one entry-point file per Cargo target (496 across this workspace's 11 members) into a single rustfmt invocation; the absolute paths alone sum to ~42 KB, over Windows' ~32,767-char CreateProcess argv limit — reproduced even for `cargo fmt -p sefer-alloc -- --check` (root package alone), so per-package looping is not a sufficient fix. Fixed by `scripts/fmt-check.mjs`, which on win32 enumerates targets via `cargo metadata` and invokes `rustfmt --check` directly in argv-budgeted chunks (equivalent coverage: every member, every target kind); non-Windows behavior unchanged (thin passthrough to plain `cargo fmt --all -- --check`). Full closure evidence: `RESOLVED.md` item 151 and `ARCHIVE.md` item 151.
