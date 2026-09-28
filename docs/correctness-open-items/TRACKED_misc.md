@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card lands here only if it does not share the defining criterion of any category above. Each card here is a genuine one-off: item 45 is a numa-shim RefCell-vs-Cell defensive-coding/panic-safety nit (not an OS-contract question, not a hook, not flakiness); item 49 is an aligned-vmem edition-2021-vs-2024 explicit-unsafe{}-block hygiene item (about FFI call-site annotation style, not about a dbg_* hook, a platform contract, or CI wiring).
 
-**Card count:** 2.
+**Card count:** 3.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -52,3 +52,10 @@ split the same day.)
 45. **CLOSED** by task #1342 (twentieth review F3, `docs/reviews/2026-08-25-021741-numa-shim-publication-audit-run-17-Sol-codex.md`; fired the item's own "fold into any future edit that touches the `mock` module's thread-locals" trigger). See 'Recently resolved' in RESOLVED.md for the full closure narrative.
 
 49. **CLOSED** by task #997 (P3-8 pass 2). See 'Recently resolved' in RESOLVED.md for the full closure narrative.
+
+154. **[T] Task-history prose in `src/` doc comments outweighs the code.** (Filed 2026-09-28, src review round 1 finding R1-11, residual part.)
+
+    - **Status:** OPEN — deferred. The mechanical parts of R1-11 are done: `heap_overflow` split under the cap and the shared `HeapRegistry::claim_impl` (commit `2630b090`), plus the `tests/src_file_size_cap.rs` tripwire that enforces the 1000-line cap.
+    - **Current-number-or-verdict:** the review measured about 20,000 `///`/`//!` lines against about 15,600 code lines in `src/`. Much of the prose is task history (`R6-OPT-P0-4`, `task #136`, ...) duplicated across files; the earlier R2-23 and R3-4 findings were stale prose of exactly this kind.
+    - **Next trigger:** a dedicated docs round that moves history into `docs/` (ADR-style) and leaves invariants and SAFETY reasoning in the code, one module per commit. Pure doc diffs, but several tests `include_str!` source files and pin phrases, so rerun the doc tripwires after each module.
+    - **Evidence:** review §R1-11.

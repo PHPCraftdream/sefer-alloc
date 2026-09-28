@@ -2894,6 +2894,34 @@ for completeness.
       artifact commit `e4ad8523f310b488c1f91b23a8129e577b28ea66`; and historical ODB/HS commits `c00087f`,
       `393f81e`, `b01580f`, `133d842`.
 
+64. **[A] R1-01 free-side magazine budget (`FREE_PARK_CAP`) shipped in `production` without a measured gate.**
+
+    - **Status:** OPEN — correctness/RSS fix shipped as `perf(runtime)` in commit `d61d6d21`; no speed or RSS number measured.
+    - **Current-number-or-verdict:** none measured. Own-thread `dealloc` now parks a small block in the magazine only while `count < FREE_PARK_CAP[class]` (the same byte budget as D3 refill, `refill_n_for_class`); past that, the block goes straight to `flush_class`. Classes up to 4 KiB keep the full 16-slot magazine; larger classes now reach the substrate sooner on free. The review's own measurement (before the fix) was 16 parked blocks of class 47, `parked_bytes = 3,311,872`, and up to about 17.6 MiB parked per thread across the ten classes above 32 KiB.
+    - **Next trigger:** the next round that touches the small free path, or any `small_churn` regression. Review hypothesis H2: iai `small_churn_*` on 64 KiB–253 KiB classes plus RSS after "burst then idle", A/B against `d61d6d21^`, with a path-activation oracle (`dbg_tcache_count` at or below the cap, `flush_class` calls counted).
+    - **Evidence:** `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md` §R1-01 and §5 H2; `tests/regression_r1_01_magazine_free_budget.rs`.
+
+65. **[D] R1-03 / H1 — reuse pooled empty small segments as carve targets on `reserve`.**
+
+    - **Status:** OPEN — design only. Commit `2b27b794` corrected the docs (the pool is a same-class free-list reserve, not a carve reserve) and made a segment pooled during the scan's own ring drain reusable in the same call. Carving a pooled segment for another class was not implemented.
+    - **Current-number-or-verdict:** not measured. The review observed a fresh 4 MiB reservation (`r1=3 → r2=4`) while a committed empty segment sat in the pool (`pooled_after=1`) after a 16 B → 48 B class switch. The cost is up to `pool_cap × 4 MiB` of committed but unusable RSS plus extra reserve syscalls and page faults on class-switching workloads.
+    - **Next trigger:** a class-switching workload (phases 16 B → 48 B → 200 B, producer→consumer pipelines) that shows extra `segments_reserved_total` or RSS. Gate: `segments_reserved_total`, commit/RSS (`proc-memstat`), p99 alloc, with a "pool-pop-as-carve" counter as the path-activation oracle. Re-init cost is about two 32 KiB bitmap memsets plus bump/BinTable reset (`payload_virgin=false`).
+    - **Evidence:** review §R1-03 and §5 H1; `tests/r1_03_pool_docs_contract.rs`.
+
+66. **[L] R1-06 — the fallback `LockGuard` backoff threshold (`LOCK_TIGHT_SPINS = 64`) is uncalibrated.**
+
+    - **Status:** OPEN — low priority; cold path (fallback heap only: TLS teardown or registry exhaustion).
+    - **Current-number-or-verdict:** chosen by reasoning, not measurement: 64 tight `compare_exchange` + `spin_loop` attempts, then `std::thread::yield_now()` per attempt (a plain spin under `no_std`). Shipped in commit `f0715594` together with the fix that stops the stall-retry loop from running under the lock.
+    - **Next trigger:** a workload that shows fallback lock contention (many threads in TLS teardown at once). Measure lock-wait time and CPU across a threshold sweep before changing the constant.
+    - **Evidence:** review §R1-06; `src/global/fallback.rs` `LOCK_TIGHT_SPINS`; `tests/r1_06_fallback_skips_stall_retry_under_lock.rs`.
+
+67. **[L] R1-11 / H8 — `#[inline(always)]` on large cold bodies.**
+
+    - **Status:** OPEN — not measured.
+    - **Current-number-or-verdict:** the review names `drain_heap_overflow` (with its closures) and `dealloc_own_thread_with_base` as large bodies forced inline into cold paths, growing code size. No `cargo bloat` or iai numbers exist.
+    - **Next trigger:** a code-size or i-cache investigation. Gate: `cargo bloat` plus iai `Ir` before and after dropping the attribute from each named function, one function per A/B.
+    - **Evidence:** review §R1-11 and §5 H8.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

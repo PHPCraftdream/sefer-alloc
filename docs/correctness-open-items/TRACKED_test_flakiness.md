@@ -12,8 +12,8 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
-**Card count:** 10 (items 12, 14, 63, 69, 96, 143, 145, 146, 147, 150).
-**145, 146 and 147** are OPEN; 12, 14, 63, 69, 96, 143 and 150 are CLOSED
+**Card count:** 11 (items 12, 14, 63, 69, 96, 143, 145, 146, 147, 150, 153).
+**145, 146, 147 and 153** are OPEN; 12, 14, 63, 69, 96, 143 and 150 are CLOSED
 pointers whose closure narratives live in RESOLVED.md / ARCHIVE.md. Verify,
 never hand-count:
 
@@ -338,3 +338,10 @@ resolved" in RESOLVED.md.)_
       observation exists, on Linux CI, and this box is Windows.
 
 150. **[T, CLOSED] `tagged_index_stack_ab_runner_scratch_guard::build_check_success_leaves_no_scratch_root`** — CLOSED 2026-09-23. Captured LNK1104 named an input `.rlib` at 281 UTF-16 units; relocating the Windows fixture below a short, unique sibling of the system temp root and enforcing a <260-unit representative link path fixed the targeted test. Full closure evidence: `RESOLVED.md` item 150 and `ARCHIVE.md` item 150.
+
+153. **[T] Local Windows builds through `sccache`: `rustc` or `link.exe` intermittently exits 1 with no diagnostic.** (Filed 2026-09-28, observed during the src review round 1 remediation.)
+
+    - **Status:** OPEN — environmental, not attributed to repository code; a workaround is known.
+    - **Current-number-or-verdict:** seen several times on 2026-09-28 in local `npm run check` test steps and `node scripts/run-check-matrix.mjs` rows: one compile or link step exits 1 without any error text, on a different crate/file each time. The same command rerun alone, or with `RUSTC_WRAPPER=` (bypassing `sccache`), passes; the full `npm run check` rerun was ALL GREEN. The failing unit never reaches test execution, so no test logic is involved. CI does not use `sccache` and has not shown it.
+    - **Next trigger:** the next occurrence. Capture `sccache --show-stats` and a `SCCACHE_LOG=debug` log around the failing invocation to attribute it (cache server crash, concurrent writers, antivirus lock). If `sccache` is confirmed, document `RUSTC_WRAPPER=` for the local gates or pin a known-good `sccache` version.
+    - **Evidence:** session observations only; no log was committed.

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether code behaves correctly on a specific OS or architecture (HugeTLB, Darwin madvise, Windows large pages, BSD/Android/tvOS/watchOS/MIPS, page-size constants, numa-shim syscalls), or whether that OS-specific behavior has been empirically verified on real hardware versus only reasoned-from-spec.
 
-**Card count:** 13.
+**Card count:** 14.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -309,3 +309,10 @@ split the same day.)
     - **Current-number-or-verdict (re-verified off `.github/workflows/ci.yml` at task #1060, 2026-08-17):** unchanged — all 39 jobs in `ci.yml` run on standard `ubuntu-latest` (34), `windows-latest` (2), or `macos-latest` (3) images; the only target matrix (`multi-arch`) covers just `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`; no BSD, Android, iOS, tvOS, or watchOS job or target exists anywhere in the workflow. These branches remain reasoned-from-spec.
     - **Next trigger:** when a FreeBSD/NetBSD/OpenBSD/DragonFly CI runner becomes available (self-hosted or via a service like Cirrus CI), add a `test-bsd` job. Similarly, if iOS/tvOS/watchOS or Android CI runners become available, add corresponding jobs. Until then, these platforms remain spec-verified only.
     - **Evidence:** item 43 (BSD `_SC_PAGESIZE` values, partially open); item 48 (Darwin `MADV_DONTNEED` behavior, partially open); `.github/workflows/ci.yml` (no BSD/iOS/tvOS/watchOS/Android jobs); `crates/aligned-vmem/src/os/unix.rs` platform-specific constants (FreeBSD/NetBSD/OpenBSD/DragonFly `_SC_PAGESIZE` values, Android-specific handling, Darwin-family `decommit_lazy` behavior — i.e. the per-OS `_SC_PAGESIZE` cfg-match plus `madv_free_advice`'s Darwin arms, at this path since the task #1055 split; the `decommit_lazy` API wrapper itself is `crates/aligned-vmem/src/api/decommit_lazy.rs`).
+
+152. **[T] `SeferAlloc` registers no `pthread_atfork` handlers: after `fork()` from a multi-threaded process the child can spin forever or strand memory.** (Filed 2026-09-28, src review round 1 finding R1-02, `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`.)
+
+    - **Status:** OPEN — the contract is documented, the handling is not implemented. README "Fork safety", the `SeferAlloc` rustdoc `# Fork safety` section and the tripwire `tests/r1_02_fork_safety_contract_docs.rs` landed in commit `de61afa1`.
+    - **Current-number-or-verdict:** documented contract only. `fork()` from a single-threaded process is fine; in the child of a multi-threaded process only async-signal-safe work is allowed until `exec`. The confirmed hazard sites are listed in README "Fork safety": the fallback spinlock, the overflow-sidecar and registry-chunk materialisation sentinels, spill-stack nodes left at `ready == 0`, a deferred-Large head left at `PUBLISHING`, and `owner_slot_is_live` stall rounds for heaps whose owner threads do not exist in the child.
+    - **Next trigger:** a user need to allocate in the child of a multi-threaded `fork()`, or a Unix host/CI job that can run a fork subprocess test. Review sketch: `prepare` takes the fallback lock and waits for in-flight materialisations; `child` resets the lock, `INIT_STATE` and the sentinels, marks every slot except the caller's as abandoned, and flags unfinished spill/deferred nodes for recovery. Counterfactual: thread A blocks inside `dbg_with_fallback_for_test`, the main thread forks, the child allocates under `alarm(5)`; today the child is killed by the signal, after the fix it exits 0.
+    - **Evidence:** review §R1-02; commit `de61afa1`.

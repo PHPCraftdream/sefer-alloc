@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 1 (oxx, 2026-09-28)
+
+Findings from `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md` (0 P0–P2, 4 P3, 7 P4). `production`'s feature composition is unchanged. Two commits change shipping hot-path behavior (`perf(runtime)`: R1-01, R1-03), but no speedup is claimed or measured; the missing gates are filed as `docs/perf/OPEN_ITEMS.md` items 64 and 65.
+
+- **R1-01** (`d61d6d21`): own-thread frees park a small block in the magazine only within the D3 byte budget (`FREE_PARK_CAP`, the same budget as refill); past it the block goes straight to the substrate, so classes above 4 KiB no longer keep up to 16 blocks (up to ~17.6 MiB per thread) live.
+- **R1-02** (`de61afa1`): documented the `fork()` contract (README "Fork safety", `SeferAlloc` rustdoc) with a docs tripwire. Real `pthread_atfork` handling is open: `docs/CORRECTNESS_OPEN_ITEMS.md` item 152.
+- **R1-03** (`2b27b794`): corrected the pool docs (a same-class free-list reserve, not a carve reserve) and reuse a segment pooled during the scan's own ring drain in the same call. Carve reuse of pooled segments is perf item 65.
+- **R1-04** (`7a6d1fa4`): `Drop for AllocCore` no longer puts a 64 KiB buffer on the stack; it frees non-primordial segments during the walk and the primordial one last. **R1-09** needed no change: the combined large-cache mask-width assert already existed (R32-12).
+- **R1-05** (`a7f1ec67`): a stale `tail` snapshot (`t < head`) in `RemoteFreeRing` and `HeapOverflow` means retry, not "ring full", so it no longer counts a false `ring_overflows` or escalates a tier. Covered by a regression test and a Loom model.
+- **R1-06, R1-10** (`f0715594`): a free under the fallback lock skips the sleeping stall-retry and goes to the spill tier; `LockGuard` yields after 64 tight spins (uncalibrated, perf item 66); fallback-heap magazine and large-cache hits are now counted in `stats()`.
+- **R1-07** (`618e1f90`): no `mod.rs` carries `#![allow(unsafe_code)]`; `bootstrap::loom_shim` holds its own inventoried seam; a tripwire enforces both rules.
+- **R1-08** (`feb1a713`): items are gated on the features that use them, and a new check row builds `alloc-core alloc-decommit internals` with `RUSTFLAGS=-D warnings`.
+- **R1-11** (`2630b090` and this entry's commit): `heap_overflow.rs` (1367 lines) is split into `src/registry/heap_overflow/` as a pure move; `claim`/`claim_with_config` share one `claim_impl`; the 1000-line cap on root `src/` files is enforced by `tests/src_file_size_cap.rs` (which caught `alloc_core_large_cache.rs` at 1002 lines after R1-08). The prose/history migration is `docs/CORRECTNESS_OPEN_ITEMS.md` item 154; `#[inline(always)]` tuning is perf item 67.
+- Also filed: item 153 (local Windows `sccache` builds sometimes exit 1 with no diagnostic; environmental, workaround `RUSTC_WRAPPER=`).
+
 ### Root allocator review round 3 (2026-09-24)
 
 - **R3-1:** Fallback-owned remote frees now use a process-lifetime heap overflow ring; saturation proceeds to the intrusive spill rather than aborting. Regression tests cover the 257th free, spill, bounded multipass drain, exited owner, owner routing, and bootstrap retry.
