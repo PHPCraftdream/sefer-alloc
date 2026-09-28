@@ -574,7 +574,13 @@ pub struct HeapCore {
 // This is the ONLY unbounded-growth stack-pressure surface in the tree (F-6
 // audit): there is no unbounded/data-dependent recursion, no recursive drop
 // glue, and no other stack buffer larger than `emptied_bases: [*mut u8; 64]`
-// (512 B, cold path) — so this single pin guards the entire category.
+// (512 B, cold path) — so this single pin guards the entire category. (R1-04:
+// this claim was briefly false — `AllocCore::drop`'s segment-release walk
+// used a `[(*mut u8, usize); MAX_SEGMENTS]` stack array, 65 536 B, which
+// overflowed a 64 KiB-stack thread on a plain `AllocCore::new()` + `drop`.
+// Fixed by freeing each non-primordial segment inline during the walk instead
+// of buffering reservations first — see `Drop for AllocCore` in
+// `src/alloc_core/alloc_core/lifecycle.rs`.)
 const _: () = assert!(size_of::<HeapCore>() <= 9216);
 
 impl HeapCore {

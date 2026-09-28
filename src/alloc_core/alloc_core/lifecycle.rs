@@ -423,40 +423,48 @@ impl Drop for AllocCore {
             }
         }
 
-        // Collect every live segment's `(reservation, reservation_len)` into a
-        // fixed-size stack array FIRST, then free them all. We must NOT free
-        // the primordial segment while still reading the registry — the
-        // registry lives IN the primordial's payload, so freeing it would
-        // unmap the array we're iterating over. Collecting up front (into a
-        // stack array, no global-allocator involvement) breaks that aliasing.
+        // Free each live segment's OS reservation AS we walk the registry,
+        // instead of buffering every `(reservation, reservation_len)` pair
+        // into a fixed-size stack array first (R1-04: the old buffer was
+        // `[(*mut u8, usize); MAX_SEGMENTS]`, 65 536 B — enough on its own to
+        // overflow a thread with a small stack, e.g. 64 KiB, across
+        // `AllocCore::new()` + `drop`).
+        //
+        // We must NOT free the primordial segment mid-walk: the registry
+        // (`self.table`'s `slots`/`hash_slots`/`free_list`/`free_top` arrays)
+        // lives IN the primordial segment's payload, and `bases()` keeps
+        // reading `slots[i]` for every remaining `i` as the loop continues —
+        // freeing that segment early would make those later reads
+        // use-after-free. Every OTHER segment's memory is read only by
+        // `SegmentHeader::read_at(base)` right here, before it is released,
+        // so freeing it immediately (rather than after the whole walk) is
+        // safe: nothing later in this loop depends on that segment (as
+        // opposed to the primordial segment, which hosts the registry
+        // itself) staying mapped.
         //
         // `self.table.bases()` already filters NULL (recycled) slots — those
-        // segments were released by `recycle()` during their decommit cycle and
-        // must NOT be freed again. Only non-NULL (live) segments are collected
-        // and freed here.
-        //
-        // The array is bounded by MAX_SEGMENTS (4096 × 16 B = 64 KiB stack —
-        // fine; a deeply-nested drop chain would be the only concern, and
-        // AllocCore is a top-level owner).
-        let mut to_free: [(*mut u8, usize); crate::alloc_core::segment_table::MAX_SEGMENTS] =
-            [(core::ptr::null_mut(), 0usize); crate::alloc_core::segment_table::MAX_SEGMENTS];
-        let mut n = 0usize;
-        for base in self.table.bases() {
-            if n >= crate::alloc_core::segment_table::MAX_SEGMENTS {
-                break;
-            }
-            let hdr = SegmentHeader::read_at(base);
+        // segments were released by `recycle()` during their decommit cycle
+        // and must NOT be freed again. Slot 0 is always the primordial base
+        // and is never recycled (see `SegmentTable`'s `count` field doc
+        // comment), so it is always the FIRST base this iterator yields —
+        // `enumerate()`'s index 0 reliably identifies it without needing a
+        // separately stored primordial-base pointer.
+        let mut primordial_reservation: Option<(*mut u8, usize)> = None;
+        for (i, base) in self.table.bases().enumerate() {
             // Every registered segment has a valid reservation recorded (set
             // at register-time). We free them all — including large segments
             // whose magic was zeroed by `dealloc` (they are still mapped and
             // still carry the reservation info in their header).
-            to_free[n] = (hdr.reservation, hdr.reservation_len);
-            n += 1;
+            let hdr = SegmentHeader::read_at(base);
+            if i == 0 {
+                primordial_reservation = Some((hdr.reservation, hdr.reservation_len));
+                continue;
+            }
+            os::release_segment(hdr.reservation, hdr.reservation_len);
         }
-        // Now free every collected reservation. The primordial (whose payload
-        // hosts the registry) is freed here alongside the rest — safe, because
-        // we no longer read the registry.
-        for &(reservation, reservation_len) in &to_free[..n] {
+        // Free the primordial segment LAST — only after the walk (and every
+        // read of the registry it hosts) has finished.
+        if let Some((reservation, reservation_len)) = primordial_reservation {
             os::release_segment(reservation, reservation_len);
         }
     }
