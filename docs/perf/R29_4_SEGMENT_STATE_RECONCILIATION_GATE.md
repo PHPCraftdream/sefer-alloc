@@ -217,6 +217,28 @@ emptying in one call). In this single-threaded, moderate-churn workload,
 that edge case does not fire. The measurement confirms: **`small_empty_orphan`
 count = 0** at every measurement point, for both arms.
 
+> **Correction (oxx R2-01, task/commit finalizing `finalize_old_cursor_if_orphaned`).**
+> The claim above — "a segment at `live_count == 0` that is NOT `small_cur`
+> is ALWAYS either pooled or recycled" — was true, but the converse the
+> section's title implies ("`small_empty_orphan` is structurally empty") was
+> NOT: a segment that reaches `live_count == 0` WHILE it IS `small_cur`
+> (`dec_live_and_maybe_decommit`'s `base == small_cur` guard correctly skips
+> finalizing it at that instant) was left permanently unfinalized once
+> `reserve_small_segment` later replaced it as cursor for a class it could
+> not serve locally — a second, previously-undocumented mechanism this
+> report's own measurement setup never drove (this workload never phase-
+> switches size classes against an already-empty cursor). See
+> `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` R2-01 for the
+> full trace and `tests/oxx_r2_01_orphaned_cursor_finalized.rs` for the
+> counterfactual reproduction. Fixed in `reserve_small_segment`
+> (`src/alloc_core/small/alloc_core_small/reserve.rs`): the outgoing cursor
+> is now checked with the same eligibility test
+> `finalize_orphaned_empty_segments` uses and finalized (pooled or released)
+> at the cursor-switch point, closing this second path to
+> `small_empty_orphan`. This workload's own `small_empty_orphan = 0` finding
+> stays correct (the class-switch-on-empty-cursor trigger never occurs
+> here) — only the general "structurally empty" claim is corrected.
+
 ---
 
 ## 4. The residual's mechanism — magazine residency

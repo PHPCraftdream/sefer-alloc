@@ -392,6 +392,55 @@ impl AllocCore {
         }
     }
 
+    /// oxx R2-01 fix — called by `reserve_small_segment`
+    /// (`alloc_core_small/reserve.rs`) right after `small_cur` is switched to
+    /// a freshly reserved segment,
+    /// with the segment that was `small_cur` BEFORE the switch. A small
+    /// segment that emptied while it was still the bump-carve cursor is
+    /// skipped by `dec_live_and_maybe_decommit`'s `base == small_cur` guard
+    /// (correctly, at that instant — it is about to be carved into). Once a
+    /// new segment becomes the cursor, that guard's reason no longer
+    /// applies, and without this call the old segment would never receive a
+    /// pool/release decision at all: `find_segment_with_free` already
+    /// exhausted every segment's free lists before `reserve_small_segment`
+    /// was reached, so nothing else revisits it (see
+    /// `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` R2-01 for
+    /// the full trace).
+    ///
+    /// Uses the exact same eligibility test as
+    /// [`finalize_orphaned_empty_segments`](Self::finalize_orphaned_empty_segments)
+    /// / [`dec_live_and_maybe_decommit`](Self::dec_live_and_maybe_decommit):
+    /// `kind == Small` (excludes `Primordial` — `old_cur` is the primordial
+    /// base on the very first call, before any ordinary small segment has
+    /// ever been the cursor, and primordial must never be pooled/released),
+    /// `live_count == 0`, not already decommitted, and not already a pool
+    /// member. `live_count == 0` is the same D1 argument
+    /// `dec_live_and_maybe_decommit`'s doc gives: it excludes any block still
+    /// held in a magazine/tcache or awaiting a remote free note — those all
+    /// count as live until owner reclaim, so a segment cannot reach
+    /// `live_count == 0` while one is outstanding.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(in crate::alloc_core) fn finalize_old_cursor_if_orphaned(&mut self, old_cur: *mut u8) {
+        let meta = SegmentMeta::new(old_cur);
+        if meta.live_count_of() != 0 || meta.is_decommitted() {
+            return;
+        }
+        if !matches!(SegmentHeader::kind_at(old_cur), SegmentKind::Small) {
+            return;
+        }
+        // Same pool-membership disjunction `finalize_orphaned_empty_segments`
+        // / `release_or_pool_empty_segment`'s own `debug_assert!` use. In
+        // practice a segment can never be BOTH pooled and the cursor at the
+        // same time (pool admission itself excludes `base == small_cur`), so
+        // this is defence-in-depth, not a reachable case.
+        let is_pooled = self.pool_head == old_cur || !meta.pool_prev_of().is_null();
+        if is_pooled {
+            return;
+        }
+        let _ = self.release_or_pool_empty_segment(old_cur);
+    }
+
     /// RAD-3 (E2, task #56) — push `base` onto the FRONT (head) of the
     /// intrusive pool list: `base` becomes the new warmest entry.
     /// Self-less (`&mut *mut u8` / `&mut usize` params rather than `&mut

@@ -34,7 +34,23 @@ impl AllocCore {
     #[inline]
     pub(in crate::alloc_core) fn reserve_small_segment(&mut self) -> Option<*mut u8> {
         let base = self.reserve_small_segment_impl()?;
+        #[cfg(feature = "alloc-decommit")]
+        let old_cur = self.small_cur;
         self.small_cur = base;
+        // oxx R2-01: the segment we are replacing as bump-carve cursor may
+        // have gone fully empty WHILE it was still current —
+        // `dec_live_and_maybe_decommit` unconditionally skips `base ==
+        // small_cur`, so such a segment never gets a pool/release decision
+        // at the moment it empties. Once it stops being the cursor, that
+        // transition is over and it never gets another chance on its own
+        // (only reuse via `find_segment_with_free` would raise `live_count`
+        // again). Finalize it here, right at the point the cursor moves on,
+        // with the same eligibility test `finalize_orphaned_empty_segments`
+        // uses, instead of leaving it a permanent orphan outside
+        // `pool_segments` and unreachable by trim. `alloc-decommit`-gated:
+        // without it there is no `live_count`/pool tracking to reconcile.
+        #[cfg(feature = "alloc-decommit")]
+        self.finalize_old_cursor_if_orphaned(old_cur);
         Some(base)
     }
 
