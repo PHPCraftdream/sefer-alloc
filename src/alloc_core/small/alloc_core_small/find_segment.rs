@@ -133,6 +133,50 @@ impl AllocCore {
         )
     }
 
+    /// TEST-ONLY (fxx R2-03): direct forwarder to [`find_segment_with_free`]
+    /// (Self::find_segment_with_free), so a test can deterministically drive
+    /// the real linear-scan/`drain_segment_ring` path instead of depending on
+    /// incidental refill-batch timing inside `alloc()` to reach it. No raw
+    /// pointer parameter and no production caller — `internals` +
+    /// `bench-internals`-gated per this repo's dbg-hook convention.
+    #[cfg(all(feature = "alloc-xthread", feature = "bench-internals"))]
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_find_segment_with_free_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
+        self.find_segment_with_free(class_idx)
+    }
+
+    /// TEST-ONLY (fxx R2-03): `(cached_head, real_head)` for `ptr`'s
+    /// segment — `cached_head` is the owner-private `ring_drain_head` cache
+    /// stamped in the header, `real_head` is the ring's own live cursor
+    /// (`RemoteFreeRing::dbg_cursors().0`). `None` if `ptr` is foreign / not
+    /// small/primordial. Lets a test assert the cache tracks the ring's real
+    /// head after a `Decommitted { pooled: true }` outcome — the fxx R2-03
+    /// regression this file's fix addresses (before the fix, `cached_head`
+    /// stays at its pre-drain value on that outcome; after, it equals
+    /// `real_head`). Read-only: no raw pointer is dereferenced for anything
+    /// but a header/ring-cursor field read. `internals` + `bench-internals`-gated
+    /// per this repo's dbg-hook convention.
+    #[cfg(all(feature = "alloc-xthread", feature = "bench-internals"))]
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_ring_drain_head_for_test(&self, ptr: *mut u8) -> Option<(u32, u64)> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return None;
+        }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return None;
+        }
+        let meta = SegmentMeta::new(base);
+        let cached_head = meta.ring_drain_head_of();
+        let (real_head, _tail) = meta.remote_ring().dbg_cursors();
+        Some((cached_head, real_head))
+    }
+
     /// Task #164: variant with magazine predicate, called from
     /// `refill_class_bump` when the magazine is accessible.
     #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
@@ -276,6 +320,19 @@ impl AllocCore {
             let slot_idx = SegmentHeader::segment_id_at(base) as usize;
             self.sync_directory_for_segment_classes(base, slot_idx, changed_classes);
         }
+        // Refresh the cache with the drain's actual final head — NOT
+        // `ring.tail_relaxed()`'s pre-drain snapshot, so a producer that
+        // reserved (but had not yet published) a slot at drain time is
+        // correctly NOT counted as "seen" (see the module doc's "later
+        // drain picks it up" contract). fxx R2-03: done BEFORE the
+        // pool/release branch below, while the header is still guaranteed
+        // mapped — `Decommitted { pooled: true }` leaves the header live, so
+        // a stale cache would survive to the segment's next visit and cost
+        // one redundant full `ring.drain`; `pooled: false` unmaps the
+        // header right after, but a fresh reservation always rewrites
+        // `ring_drain_head: 0` from scratch (`SegmentHeader::small`), so the
+        // write here is moot, not unsound, on that path.
+        meta_for_ring.set_ring_drain_head(new_head);
         // Mechanism 2 (task #51): now that the drain is complete, an
         // emptied segment is routed through the pool/release decision. R1-03
         // (src review round 1): the caller may still read `base`'s BinTable
@@ -286,12 +343,6 @@ impl AllocCore {
             let pooled = self.release_or_pool_empty_segment(base);
             return RingDrainOutcome::Decommitted { pooled };
         }
-        // Refresh the cache with the drain's actual final head — NOT
-        // `ring.tail_relaxed()`'s pre-drain snapshot, so a producer that
-        // reserved (but had not yet published) a slot at drain time is
-        // correctly NOT counted as "seen" (see the module doc's "later
-        // drain picks it up" contract).
-        meta_for_ring.set_ring_drain_head(new_head);
         RingDrainOutcome::Drained { changed_classes }
     }
 
