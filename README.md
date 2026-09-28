@@ -8,7 +8,7 @@
 [![Crates.io](https://img.shields.io/crates/v/sefer-alloc.svg)](https://crates.io/crates/sefer-alloc)
 [![Documentation](https://docs.rs/sefer-alloc/badge.svg)](https://docs.rs/sefer-alloc)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![MSRV: 1.88](https://img.shields.io/badge/MSRV-1.88-blue.svg)](https://www.rust-lang.org/)
+[![MSRV: 1.93](https://img.shields.io/badge/MSRV-1.93-blue.svg)](https://www.rust-lang.org/)
 [![100% Rust](https://img.shields.io/badge/100%25%20Rust-no%20C%2FC%2B%2B%20deps-orange.svg)](#why-bother)
 [![unsafe: confined](https://img.shields.io/badge/unsafe-confined%20to%20named%20seams-yellow.svg)](#where-unsafe-lives-the-complete-list)
 
@@ -1411,7 +1411,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 Every CI job is wired (`.github/workflows/ci.yml`) and runs on every push:
 test matrix on x86_64 + aarch64 (9 feature combinations), a `windows-latest`
 `production` run, the workspace member crates' own suites, miri with
-strict-provenance, ThreadSanitizer, an MSRV (1.88) check, clippy, rustfmt.
+strict-provenance, ThreadSanitizer, an MSRV (1.93) check, clippy, rustfmt.
 (libFuzzer has its own nightly/manual cadence — see `fuzz/README.md` — not a
 per-push job.)
 
@@ -1742,14 +1742,16 @@ abandoned in the child — tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`.
 
 ## MSRV
 
-**1.88.** The single-threaded core is plain safe Rust and will build on
-much older toolchains; we pin a known-good floor from day one. MSRV bumps
-are minor releases. CI's `msrv` job (`ubuntu-latest`) compiles the crate on
-the pinned toolchain; a separate `msrv-runtime-windows` job additionally
-*executes* `tests/global_alloc_installed.rs` on the pinned toolchain on
-`windows-latest`, since std's TLS-destructor registration path (and thus
-`#[global_allocator]` behavior) differs by libc and is invisible to a
-glibc-only, compile-only check.
+**1.93.** Raised from 1.88 (2026-09-28): on rustc <= 1.92 std keeps its
+thread-local destructor list on the global allocator. On targets without
+`__cxa_thread_atexit_impl` (Windows, Apple, ...) an unnamed thread's first
+allocation lands inside that list's registration, `SeferAlloc`'s thread bind
+registers its own TLS guard there, and std aborts with `the global allocator
+may not use TLS with destructors`. std 1.93 moved the list to `System`. MSRV
+bumps are minor releases. CI's `msrv` job compiles the crate on 1.93 on
+`ubuntu-latest`; `msrv-runtime-windows` runs `tests/global_alloc_installed.rs`
+and `tests/global_alloc_mt.rs` on 1.93 on `windows-latest`, because glibc and
+a compile-only check never exercise this path.
 
 ---
 

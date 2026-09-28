@@ -2,9 +2,10 @@
 name = "sefer-alloc"
 version = "0.3.0"
 edition = "2021"
-# Matches the resocks5 ecosystem floor; the core is plain safe Rust and will
-# build on much older toolchains, but we pin a known-good MSRV from day one.
-rust-version = "1.88"
+# std <= 1.92 keeps its TLS-destructor list on the global allocator, which
+# aborts `#[global_allocator] SeferAlloc` on non-glibc targets (fxx R2-01);
+# 1.93 is the first std with that list on `System`.
+rust-version = "1.93"
 license = "MIT OR Apache-2.0"
 description = "A safe-by-construction, 100% Rust memory toolkit (no C/C++ libraries — no libnuma/mimalloc/jemalloc/snmalloc/tcmalloc): a single-threaded handle store (Region<T>, independent, over slotmap) and a separate drop-in #[global_allocator] (SeferAlloc, its own OS-backed segment substrate). The base crate is #![forbid(unsafe_code)]; the allocator features flip the crate root to #![deny(unsafe_code)] with unsafe confined to a small, audited seam set (see the README unsafe-boundary section)."
 readme = "README.md"

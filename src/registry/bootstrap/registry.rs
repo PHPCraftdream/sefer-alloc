@@ -114,7 +114,7 @@ impl Registry {
     ///
     /// Uses the `[const { .. }; N]` inline-const-in-array-repeat-expression
     /// syntax (stable since Rust 1.79, well under this crate's MSRV floor of
-    /// 1.88 per `Cargo.toml`) to const-construct an array of `AtomicPtr` —
+    /// 1.93 per `Cargo.toml`) to const-construct an array of `AtomicPtr` —
     /// `AtomicPtr` is `Copy`-free but IS const-constructible
     /// (`AtomicPtr::new` is a `const fn`), and `[const { EXPR }; N]`
     /// evaluates `EXPR` fresh for each element instead of requiring `EXPR: Copy`
