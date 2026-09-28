@@ -470,8 +470,11 @@ pub struct AllocCore {
     /// the aggregator). `None` for a standalone `AllocCore` → both fall back to
     /// the owned [`large_cache_hits`](Self::large_cache_hits) field above.
     ///
-    /// Stored as a SAFE `Option<&'static _>` (this module is
-    /// `#![forbid(unsafe_code)]` — a raw pointer would be unusable).
+    /// Stored as a SAFE `Option<&'static _>` (this module carries no
+    /// `#![allow(unsafe_code)]` of its own, so a raw pointer here would be a
+    /// hard `deny(unsafe_code)` error — the crate's `forbid(unsafe_code)`
+    /// attribute only applies WITHOUT `experimental`/`alloc-core`, and this
+    /// file only exists when `alloc-core` is on; see `src/lib.rs`, oxx R2-07).
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) large_cache_hits_sink: Option<&'static LargeCacheHitCounter>,
 
@@ -669,10 +672,12 @@ pub struct AllocCore {
     /// `AllocCore` could otherwise be handed to a DIFFERENT `AllocCore`'s
     /// `dbg_decomp_release`, corrupting the wrong heap's pool/table state).
     ///
-    /// **Deliberately NOT the `&self` address.** An `AllocCore` is `Send` and
-    /// lives inline inside a registry `HeapSlot` / can be moved by ordinary
-    /// Rust value semantics (e.g. returned by value from `AllocCore::new()`),
-    /// so two DIFFERENT logical `AllocCore`s can transiently or permanently
+    /// **Deliberately NOT the `&self` address.** An `AllocCore` lives inline
+    /// inside a registry `HeapSlot` and can be moved by ordinary Rust value
+    /// semantics (e.g. returned by value from `AllocCore::new()`) — no
+    /// `Send`/`Sync` bound is needed for this (`AllocCore` has neither, oxx
+    /// R2-07; see this module's own doc comment), a plain by-value move stays
+    /// on the same thread — so two DIFFERENT logical `AllocCore`s can transiently or permanently
     /// occupy the same address over a process's lifetime (a moved-from slot's
     /// old address, or a recycled/reused stack slot in a test loop) — an
     /// address-based check would falsely accept a stale handle against a new

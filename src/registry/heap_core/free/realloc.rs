@@ -282,8 +282,11 @@ impl HeapCore {
                 //
                 //       R2-1 (soundness): bound the move leg's read by the
                 //       block's actual committed span, not the caller-supplied
-                //       `old_layout.size()`. This is a SAFE `pub fn`; a bogus
-                //       layout (e.g. 8 MiB for a 16-byte block) must not drive
+                //       `old_layout.size()`. This is an `unsafe fn` (its
+                //       `# Safety` contract requires an accurate `old_layout`),
+                //       but the bound is defence-in-depth (oxx R2-07): a
+                //       caller that violates the contract with a bogus layout
+                //       (e.g. 8 MiB for a 16-byte block) must still not drive
                 //       an OOB read. `base` was proven live above by
                 //       `contains_base`. The write side is always safe (`copy
                 //       <= new_size`); the read is bounded here.
@@ -369,8 +372,11 @@ impl HeapCore {
         }
         // Foreign pointer (not one of our segments). Before copying from it,
         // the pointer MUST resolve to a live sefer segment of sufficient
-        // committed span; otherwise a safe caller passing a bogus/foreign
-        // pointer triggers an out-of-bounds read (R2-1, gap 1).
+        // committed span; otherwise a caller violating this `unsafe fn`'s
+        // contract with a bogus/foreign pointer triggers an out-of-bounds
+        // read (R2-1, gap 1; oxx R2-07 — this guard is defence-in-depth
+        // against a contract violation, not a safety requirement of a safe
+        // caller).
         //
         // Under `alloc-xthread` this leg is the deliberately-designed
         // cross-heap path (a pointer from ANOTHER live heap is legitimate,
@@ -384,10 +390,11 @@ impl HeapCore {
         //
         // Without `alloc-xthread` there is no cross-thread routing and thus
         // no legitimate owner for a pointer this heap does not recognise:
-        // copying from it would read arbitrary caller-supplied memory under
-        // a safe fn. Return null, `ptr` untouched — symmetric with
-        // `AllocCore::realloc`'s foreign-pointer null and `dealloc`'s foreign
-        // no-op.
+        // without this guard, copying from it would read arbitrary
+        // caller-supplied memory on a contract violation (this is an
+        // `unsafe fn`, not a safe fn — oxx R2-07). Return null, `ptr`
+        // untouched — symmetric with `AllocCore::realloc`'s foreign-pointer
+        // null and `dealloc`'s foreign no-op.
         #[cfg(feature = "alloc-xthread")]
         {
             let base = os::segment_base_of_ptr(ptr);

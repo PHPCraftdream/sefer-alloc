@@ -213,9 +213,12 @@ impl AllocCore {
         let candidate = os::segment_base_of_ptr(ptr);
         // R2-3: release-surviving membership guard (replaces a debug-only
         // debug_assert! that compiled out in release, leaving the raw header
-        // read unguarded). This module is #![forbid(unsafe_code)], so the
-        // heap_registry-style `unsafe fn` discipline does not apply — a real
-        // runtime guard is the soundness fix here.
+        // read unguarded). This module carries no #![allow(unsafe_code)] of
+        // its own (deny(unsafe_code)-clean; the crate's forbid(unsafe_code)
+        // does not apply here since this file only exists under `alloc-core`
+        // — see src/lib.rs, oxx R2-07), so the heap_registry-style
+        // `unsafe fn` discipline does not apply — a real runtime guard is
+        // the soundness fix here.
         let base = self
             .table
             .canonical_base_of(candidate)

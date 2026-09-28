@@ -8,13 +8,18 @@
 //! back at itself. After this, the safe Cartographer can mutate metadata
 //! through normal `node`-seam writes with no further bootstrap-time writes.
 //!
-//! ## This file is PURE SAFE COMPOSITION
+//! ## This file is PURE SAFE COMPOSITION (with one named `hardened` exception)
 //!
 //! Every raw memory touch goes through the [`os`](super::super::os) seam (segment
 //! reservation) and the [`node`](super::super::node) seam (typed writes). The
 //! bootstrap composes those already-proven `unsafe` primitives in safe code —
-//! there is NO `unsafe` block in this file. So the crate's structural promise
-//! ("`unsafe` lives ONLY in `os` + `node`") is upheld by the compiler.
+//! there is NO `unsafe` block in this file without `hardened`. Under
+//! `hardened`, `primordial()` carries one item-scoped, individually
+//! documented tier-2 `#[allow(unsafe_code)] unsafe { .. }` call to
+//! `init_gen_table_in_place` (zeroing the per-segment generation table — see
+//! that call site's own `// SAFETY:` comment); this is the sanctioned
+//! tier-2 exception to this file's otherwise-pure-safe-composition posture,
+//! not a violation of it (oxx R2-07).
 
 use super::super::os::Segment;
 use super::super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};

@@ -24,10 +24,17 @@
 //! ## What this module IS and is NOT
 //!
 //! - IS: pure safe data + arithmetic over the `node` (`crate::alloc_core::node`) seam. Every
-//!   atomic access goes through `Node::atomic_u32_at` / `atomic_u64_at`.
-//!   There is NO `unsafe`
-//!   here — the crate's structural promise ("`unsafe` lives ONLY in `os` +
-//!   `node`") is upheld by the compiler.
+//!   atomic access on the production push/drain protocol goes through
+//!   `Node::atomic_u32_at` / `atomic_u64_at` — there is NO `unsafe` in that
+//!   protocol itself. This module (`remote_free_ring_impl.rs`, re-exported
+//!   here) DOES carry two item-scoped, `#[doc(hidden)]` tier-2 `unsafe fn`s
+//!   in its `ops.rs` child (`over_test_buffer` / `init_test_buffer`, each
+//!   with its own `#[allow(unsafe_code)]` and `# Safety` contract) for
+//!   constructing a `RemoteFreeRing` view over a caller-owned buffer outside
+//!   a real segment — the established doc-hidden test-only-export pattern
+//!   (reachable only via `sefer_alloc::alloc_core::remote_free_ring` under
+//!   `internals`, per `src/lib.rs`'s module doc); no production code path
+//!   calls either (oxx R2-07).
 //! - IS: an MPSC bounded queue. **Many producers** (cross-thread freers) push
 //!   via `fetch_add`-free CAS-reserve; **one consumer** (the owning thread)
 //!   drains. The single-consumer invariant is the slot's single-writer rule

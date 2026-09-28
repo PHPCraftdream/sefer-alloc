@@ -56,10 +56,21 @@
 //! intentionally NOT `Send` (nor `Sync`)" comment above its `Drop` impl in
 //! `alloc_core.rs`) — the safety of a plain, non-atomic `*mut
 //! LargeCacheExtension` here does not come from a `Send`/`Sync` marker at
-//! all, it comes from the stronger owner-only single-thread discipline: an
-//! `AllocCore` value never crosses a thread boundary in the first place
-//! (Phase 8 is single-threaded by construction), so there is no concurrent
-//! producer to race even in principle. A plain `*mut LargeCacheExtension`,
+//! all, it comes from the stronger owner-only single-thread discipline:
+//! at any given instant an `AllocCore` value has AT MOST ONE live owning
+//! thread accessing it (oxx R2-07 — corrected from an earlier, stronger
+//! "never crosses a thread boundary" claim: in `production` an `AllocCore`
+//! embedded in a registry `HeapSlot`'s `HeapCore` DOES change owning thread
+//! over the process lifetime, when the slot is recycled by its old owner and
+//! re-claimed by a new one — `HeapRegistry::recycle`/`claim_impl`,
+//! `registry/heap_registry/claim.rs`). What rules out a concurrent producer
+//! is the ordered hand-off between those owners, not an absence of movement:
+//! `recycle`'s LIVE→FREE CAS is Release (publishing every write the outgoing
+//! owner made), `claim`'s FREE→LIVE CAS is AcqRel (observing that publish
+//! before the new owner touches anything), and the process-lifetime fallback
+//! heap is instead guarded by `fallback::with_heap`'s spinlock
+//! (`LockGuard::acquire`) — either way exactly one thread at a time may
+//! dereference this pointer. A plain `*mut LargeCacheExtension`,
 //! materialised lazily and dereferenced through the shared owner-only
 //! `alloc_core::sidecar` primitive (R14-9, task #294; originally established
 //! by `os::deref_directory_sidecar[_mut]`, generalised into `sidecar::deref[_mut]`

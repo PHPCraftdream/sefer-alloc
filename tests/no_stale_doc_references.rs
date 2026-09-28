@@ -2814,3 +2814,281 @@ fn no_owned_sidecar_references_anywhere() {
         );
     }
 }
+
+// ── oxx R2-07 (independent src review round 2, oxx series) — doc/safety-
+// argument drift guards ───────────────────────────────────────────────────
+//
+// Seven doc-comment sites made claims about `Send`/`unsafe`/safety that did
+// not match the code: `AllocCore` "is `Send`" (it is neither `Send` nor
+// `Sync`); `large_cache_extended.rs` argued its plain `*mut` sidecar was
+// sound because "an `AllocCore` value never crosses a thread boundary"
+// (false in `production` — a registry slot's `AllocCore` DOES change owning
+// thread when the slot is recycled and re-claimed; soundness actually comes
+// from the ordered CAS hand-off / fallback spinlock, not absence of
+// movement); a module claimed `#![forbid(unsafe_code)]` where the crate is
+// only `#![deny(unsafe_code)]` whenever `alloc-core` is on; `bootstrap.rs`
+// claimed no file has an `unsafe` block, missing the `hardened`-only one;
+// `alloc_core/mod.rs` claimed `os`/`node` are the ONLY confined-`unsafe`
+// seams under `alloc_core/`, missing `large_cache_extended` and
+// `platform::{dirty_by_class,sidecar}`; `remote_free_ring/mod.rs` claimed
+// "there is NO `unsafe` here" while its `ops.rs` child carries two
+// `unsafe fn`s; `heap_core/free/realloc.rs` called an `unsafe fn` a "SAFE
+// `pub fn`" / referred to "a safe caller" / "a safe fn" three times; and
+// `overflow_sidecar.rs` described a real, release-active `assert!` as a
+// "Panics (debug only)" `debug_assert`. Each guard below pins the stale
+// phrase gone and the corrected phrase present. Counterfactual: reverting
+// any one of the "required" checks' target phrase back to its pre-fix
+// wording turns that check red; the "stale" checks are red on the pre-fix
+// text and green on the fixed text (verified manually against `git show
+// HEAD:<path>` for each file below, not committed as a separate step).
+//
+// Doc-only guards: they read source text, never link the crate, so they run
+// in every feature configuration.
+
+#[test]
+fn oxx_r2_07_alloc_core_is_not_send_in_doc() {
+    for rel in &[
+        ["alloc_core", "alloc_core", "mod.rs"],
+        ["alloc_core", "alloc_core", "alloc_core_impl.rs"],
+    ] {
+        let path = src_dir().join(rel[0]).join(rel[1]).join(rel[2]);
+        let flat = doc_prose(&path);
+        assert!(
+            !flat.contains("`AllocCore` is `Send`") && !flat.contains("An `AllocCore` is `Send`"),
+            "{}: stale oxx R2-07 claim reintroduced — `AllocCore` is neither \
+             `Send` nor `Sync` (raw pointers, no `unsafe impl`); a future \
+             `unsafe impl Send for AllocCore` would be a soundness \
+             regression, not a doc fix (see tests/oxx_r2_07_alloc_core_not_send.rs)",
+            path.display(),
+        );
+    }
+
+    let mod_path = src_dir()
+        .join("alloc_core")
+        .join("alloc_core")
+        .join("mod.rs");
+    let mod_flat = doc_prose(&mod_path);
+    assert!(
+        mod_flat.contains("deliberately NEITHER `Send` NOR `Sync`"),
+        "src/alloc_core/alloc_core/mod.rs must state `AllocCore` is neither \
+         `Send` nor `Sync` (oxx R2-07)",
+    );
+
+    let impl_path = src_dir()
+        .join("alloc_core")
+        .join("alloc_core")
+        .join("alloc_core_impl.rs");
+    let impl_flat = doc_prose(&impl_path);
+    assert!(
+        impl_flat.contains("`AllocCore` has neither, oxx R2-07"),
+        "src/alloc_core/alloc_core/alloc_core_impl.rs's `dbg_reservation_owner_id` \
+         doc must not lean on a `Send` claim for its address-instability \
+         argument (oxx R2-07)",
+    );
+}
+
+#[test]
+fn oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate() {
+    let path = src_dir()
+        .join("alloc_core")
+        .join("large")
+        .join("large_cache_extended.rs");
+    let flat = doc_prose(&path);
+    assert!(
+        !flat.contains("an `AllocCore` value never crosses a thread boundary in the first place"),
+        "src/alloc_core/large/large_cache_extended.rs: stale oxx R2-07 claim \
+         reintroduced — in `production` an `AllocCore` embedded in a \
+         registry `HeapSlot` DOES change owning thread when the slot is \
+         recycled and re-claimed (`HeapRegistry::recycle`/`claim_impl`); the \
+         soundness argument must rest on the ordered CAS hand-off / fallback \
+         spinlock, not on the value never moving",
+    );
+    assert!(
+        flat.contains("ordered hand-off between those owners")
+            && flat.contains("claim_impl")
+            && flat.contains("LockGuard"),
+        "src/alloc_core/large/large_cache_extended.rs must ground its \
+         plain-`*mut`-sidecar soundness argument in the actual mechanism — \
+         the slot's ordered CAS hand-off (recycle Release / claim AcqRel) \
+         and the fallback heap's spinlock — not an absence-of-movement claim \
+         (oxx R2-07)",
+    );
+}
+
+#[test]
+fn oxx_r2_07_forbid_unsafe_code_claims_are_accurate() {
+    // Every one of these sites is compiled only when `alloc-core` is on, so
+    // the crate is `deny(unsafe_code)`-clean there, never `forbid`-clean
+    // (`src/lib.rs`'s `forbid` only applies `not(any(experimental,
+    // alloc-core))`). A bare `#![forbid(unsafe_code)]` claim in one of these
+    // files' doc/comment prose is therefore always stale.
+    for rel in &[
+        ["alloc_core", "alloc_core", "alloc_core_impl.rs"],
+        ["alloc_core", "alloc_core", "counters.rs"],
+        [
+            "alloc_core",
+            "alloc_core",
+            "alloc_core_core_diag/table_diag.rs",
+        ],
+    ] {
+        let mut path = src_dir();
+        for part in rel {
+            for comp in part.split('/') {
+                path = path.join(comp);
+            }
+        }
+        let flat = doc_prose(&path);
+        assert!(
+            !flat.contains("this module is `#![forbid(unsafe_code)]`")
+                && !flat.contains("This module is #![forbid(unsafe_code)]"),
+            "{}: stale oxx R2-07 claim reintroduced — this file only exists \
+             under `alloc-core`, where the crate is `deny(unsafe_code)`, \
+             never `forbid(unsafe_code)` (see src/lib.rs)",
+            path.display(),
+        );
+        assert!(
+            flat.contains("oxx R2-07"),
+            "{}: expected the oxx R2-07 corrected forbid/deny wording to name \
+             the finding",
+            path.display(),
+        );
+    }
+}
+
+#[test]
+fn oxx_r2_07_bootstrap_unsafe_block_claim_is_accurate() {
+    let path = src_dir()
+        .join("alloc_core")
+        .join("alloc_core")
+        .join("bootstrap.rs");
+    let flat = doc_prose(&path);
+    assert!(
+        !flat.contains("there is NO `unsafe` block in this file. So"),
+        "src/alloc_core/alloc_core/bootstrap.rs: stale oxx R2-07 claim \
+         reintroduced — under `hardened`, `primordial()` carries one \
+         `#[allow(unsafe_code)] unsafe {{ .. }}` call to \
+         `init_gen_table_in_place`",
+    );
+    assert!(
+        flat.contains("hardened") && flat.contains("init_gen_table_in_place"),
+        "src/alloc_core/alloc_core/bootstrap.rs must name the `hardened`-only \
+         `unsafe` block as the sanctioned exception to its otherwise-pure- \
+         safe-composition posture (oxx R2-07)",
+    );
+}
+
+#[test]
+fn oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate() {
+    let path = src_dir().join("alloc_core").join("mod.rs");
+    let flat = doc_prose(&path);
+    assert!(
+        !flat.contains("The confined-`unsafe` seams are `os` and `node`; every other file is pure"),
+        "src/alloc_core/mod.rs: stale oxx R2-07 claim reintroduced — `os` and \
+         `node` are not the complete tier-1 seam inventory under \
+         `src/alloc_core/` (also: `large_cache_extended`, \
+         `platform::dirty_by_class`, `platform::sidecar`), and several \
+         otherwise-safe files carry individually-documented tier-2 \
+         `#[allow(unsafe_code)]` items",
+    );
+    assert!(
+        flat.contains("grep -rnE") && flat.contains("oxx R2-07"),
+        "src/alloc_core/mod.rs must point at the CLAUDE.md self-verifying \
+         `grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' ...` command \
+         instead of hand-listing (or hand-counting) the unsafe seams (oxx \
+         R2-07)",
+    );
+}
+
+#[test]
+fn oxx_r2_07_remote_free_ring_mod_unsafe_claim_is_accurate() {
+    let path = src_dir()
+        .join("alloc_core")
+        .join("segment")
+        .join("remote_free_ring")
+        .join("mod.rs");
+    let flat = doc_prose(&path);
+    assert!(
+        !flat.contains("There is NO `unsafe` here"),
+        "src/alloc_core/segment/remote_free_ring/mod.rs: stale oxx R2-07 \
+         claim reintroduced — its `ops.rs` child carries two `unsafe fn`s \
+         (`over_test_buffer` / `init_test_buffer`), each with its own \
+         `#[allow(unsafe_code)]` and `# Safety` contract",
+    );
+    assert!(
+        flat.contains("over_test_buffer") && flat.contains("init_test_buffer"),
+        "src/alloc_core/segment/remote_free_ring/mod.rs must name the two \
+         `ops.rs` test-only `unsafe fn`s instead of claiming zero `unsafe` \
+         in the module (oxx R2-07)",
+    );
+
+    let ops_path = src_dir()
+        .join("alloc_core")
+        .join("segment")
+        .join("remote_free_ring")
+        .join("ops.rs");
+    let ops_flat = doc_prose(&ops_path);
+    assert!(
+        !ops_flat.contains("`DBG_RING_PUSH_RETRY_EXHAUSTED` (single bump, if the whole budget is"),
+        "src/alloc_core/segment/remote_free_ring/ops.rs: stale oxx R2-07 \
+         claim reintroduced — `DBG_RING_PUSH_RETRY_EXHAUSTED` has had no \
+         writer anywhere in `src/` since R2-09's intrusive spill replaced \
+         the terminal drop (oxx R2-04/R2-07)",
+    );
+    assert!(
+        ops_flat.contains("legacy pre-R2-09 counter with no writer left anywhere in `src/`"),
+        "src/alloc_core/segment/remote_free_ring/ops.rs must describe \
+         `DBG_RING_PUSH_RETRY_EXHAUSTED` as the legacy, no-longer-incremented \
+         counter it is (oxx R2-07)",
+    );
+}
+
+#[test]
+fn oxx_r2_07_realloc_unsafe_fn_claims_are_accurate() {
+    let path = src_dir()
+        .join("registry")
+        .join("heap_core")
+        .join("free")
+        .join("realloc.rs");
+    let flat = doc_prose(&path);
+    for stale in &[
+        "This is a SAFE `pub fn`; a bogus",
+        "otherwise a safe caller passing a bogus/foreign",
+        "copying from it would read arbitrary caller-supplied memory under a safe fn",
+    ] {
+        assert!(
+            !flat.contains(stale),
+            "src/registry/heap_core/free/realloc.rs: stale oxx R2-07 phrase \
+             reintroduced ({stale:?}) — `realloc` is a `pub unsafe fn`, not a \
+             safe fn; the span/membership bounds in its body are defence-in- \
+             depth against a caller CONTRACT VIOLATION, not a safety \
+             requirement of a safe caller",
+        );
+    }
+    assert!(
+        flat.matches("oxx R2-07").count() >= 3,
+        "src/registry/heap_core/free/realloc.rs must name oxx R2-07 at each \
+         of the three corrected safe-fn/safe-caller sites",
+    );
+}
+
+#[test]
+fn oxx_r2_07_overflow_sidecar_panics_doc_is_accurate() {
+    let path = src_dir()
+        .join("registry")
+        .join("bootstrap")
+        .join("overflow_sidecar.rs");
+    let flat = doc_prose(&path);
+    assert!(
+        !flat.contains("# Panics (debug only)")
+            && !flat.contains("already `debug_assert`s `p` is non-null"),
+        "src/registry/bootstrap/overflow_sidecar.rs: stale oxx R2-07 claim \
+         reintroduced — `HeapOverflow::slot` guards `p` with a real \
+         `assert!` (active in release), not a `debug_assert!`",
+    );
+    assert!(
+        flat.contains("an `assert!`, not a `debug_assert!`, so it stays active in release too"),
+        "src/registry/bootstrap/overflow_sidecar.rs's `deref_overflow_sidecar` \
+         doc must honestly describe the caller's release-active `assert!` \
+         and state the invariant holds constructively (oxx R2-07)",
+    );
+}

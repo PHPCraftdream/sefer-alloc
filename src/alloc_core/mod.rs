@@ -2,10 +2,21 @@
 //! Inversion), behind the `alloc-core` feature.
 //!
 //! Re-exports only — no logic lives here (per the one-export-per-file rule).
-//! The confined-`unsafe` seams are `os` and `node`; every other file is pure
-//! safe code that composes them. (`numa` was a third, feature-gated seam
-//! until task #1306 removed its test-only `bind_segment` unsafe fn — it is
-//! now pure safe delegation to `numa-shim`.)
+//! `os` and `node` are two of this tree's named tier-1 `unsafe` seams, but
+//! not the complete inventory (oxx R2-07): `large_cache_extended` and
+//! `platform::{dirty_by_class,sidecar}` are also tier-1
+//! `#![allow(unsafe_code)]` modules, and several otherwise-safe files carry
+//! individually-documented tier-2 `#[allow(unsafe_code)]` items (e.g.
+//! `bootstrap.rs`'s `hardened`-only gen-table init,
+//! `small::alloc_core_small_reclaim`'s `dbg_push_to_ring`,
+//! `segment::remote_free_ring`'s `ops.rs` test-buffer helpers). Do not
+//! hand-count these — per `CLAUDE.md`'s "Active rules" unsafe-inventory
+//! convention, the self-verifying, comment-proof command
+//! `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/alloc_core` enumerates
+//! every tier-1 (`#!...`) and tier-2 (`#...`) site under this tree; that
+//! command's output, not a number quoted here, is the source of truth.
+//! (`numa` was a third tier-1 seam until task #1306 removed its test-only
+//! `bind_segment` unsafe fn — it is now pure safe delegation to `numa-shim`.)
 
 // The file `alloc_core.rs` carries the same name as this module per the
 // crate's one-export-per-file convention; silence clippy's module_inception.

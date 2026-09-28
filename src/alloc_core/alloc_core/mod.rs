@@ -34,7 +34,14 @@
 //!
 //! Phase 8 is single-threaded (correctness before concurrency — §5 P8).
 //! Per-thread heaps + lock-free cross-thread free are Phase 9/10. `AllocCore`
-//! is `Send` (it owns its segments, which are `Send`) but NOT `Sync`.
+//! is deliberately NEITHER `Send` NOR `Sync` (raw pointers, no `unsafe impl`
+//! of either — see [`lifecycle`](super::lifecycle)'s and
+//! [`large_cache_extended`](super::super::large_cache_extended)'s own notes
+//! on this, oxx R2-07). In `production` the `AllocCore` inside a registry
+//! slot stays in place, but its owning thread changes when the slot is
+//! recycled and re-claimed (`HeapRegistry::recycle`/`claim_impl`); soundness
+//! comes from the slot's ordered CAS handoff (Release on `recycle`, AcqRel on
+//! `claim`) or the fallback `LockGuard`, not from a `Send` bound.
 
 #[path = "alloc_core_core_diag/mod.rs"]
 mod alloc_core_core_diag;

@@ -408,7 +408,11 @@ pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
 // `Relaxed` on both sides is sound for a diagnostic counter with no
 // ordering requirement (the same pattern as `DBG_LARGE_XTHREAD_RECLAIMED`
 // and the new `HeapCore::tcache_hits`), and needs no `unsafe` — safe-Rust
-// atomics all the way, consistent with `#![forbid(unsafe_code)]`.
+// atomics all the way, consistent with this module carrying no
+// `#![allow(unsafe_code)]` of its own (the crate's `forbid(unsafe_code)`
+// applies only without `experimental`/`alloc-core`; this file only exists
+// under `alloc-core`, so it is `deny(unsafe_code)`-clean here, not
+// `forbid`-clean — see `src/lib.rs`, oxx R2-07).
 //
 // TASK W3 (0.3.0) — the counter STORAGE moved out of `AllocCore` and into the
 // owning `HeapSlot` (`HeapSlot::large_cache_hits`), closing a formal aliasing
@@ -418,7 +422,10 @@ pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
 // a protected `&mut` into — a foreign-read of a protected `Unique`, UB under
 // Stacked Borrows. The counter now lives in the `Sync` slot; the owner reaches
 // it through a SAFE `Option<&'static AtomicU64>` handle (a raw pointer would
-// be a hard error — this module is `#![forbid(unsafe_code)]`), planted by
+// be a hard `deny(unsafe_code)` error — this module carries no
+// `#![allow(unsafe_code)]`; the crate's `forbid(unsafe_code)` does not apply
+// here, since this file only exists under `alloc-core` — see `src/lib.rs`,
+// oxx R2-07), planted by
 // `HeapRegistry::claim` at bind time. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) type LargeCacheHitCounter = core::sync::atomic::AtomicU64;

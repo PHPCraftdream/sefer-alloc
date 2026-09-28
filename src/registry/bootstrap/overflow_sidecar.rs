@@ -272,11 +272,17 @@ pub(crate) fn dbg_rollback_overflow_sidecar_sentinel_reenterable(
 /// of its own (see its module doc), so its `HeapOverflow::slot` resolver
 /// calls this safe membrane function instead of dereferencing `p` itself.
 ///
-/// # Panics (debug only)
+/// # Panics
 ///
-/// The caller (`HeapOverflow::slot`) already `debug_assert`s `p` is non-null
-/// and non-sentinel before calling this; this function trusts that contract
-/// (a `debug_assert` here would be redundant with the caller's).
+/// The caller (`HeapOverflow::slot`) already `assert!`s `p` is non-null and
+/// non-sentinel before calling this — an `assert!`, not a `debug_assert!`,
+/// so it stays active in release too (oxx R2-07). By the time
+/// `HeapOverflow::push_impl`'s wedge-hazard-safe ordering runs, the sidecar
+/// is materialised before `p` can be observed non-null, so the invariant
+/// holds constructively and the caller's assert (and this function's
+/// dereference) is unreachable in practice, not merely debug-checked; this
+/// function itself adds no redundant check of its own on top of the
+/// caller's.
 #[cfg(feature = "alloc-xthread")]
 pub(crate) fn deref_overflow_sidecar(p: *mut HeapOverflowSidecar) -> &'static HeapOverflowSidecar {
     // SAFETY: `p` is a non-null, non-sentinel pointer the caller obtained

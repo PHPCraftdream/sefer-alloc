@@ -383,10 +383,13 @@ impl RemoteFreeRing {
     /// counters with a locked RMW per poll for no informational gain: the ONE
     /// counted [`push`](Self::push) attempt the caller already made is the
     /// signal "this ring overflowed at all"; the retry loop's OWN outcome is
-    /// separately, meaningfully counted by the caller via
-    /// `DBG_RING_PUSH_RETRIED` (single bump, on eventual success) and
-    /// `DBG_RING_PUSH_RETRY_EXHAUSTED` (single bump, if the whole budget is
-    /// exhausted) — see that caller's doc comment for the full accounting.
+    /// separately counted by the caller via `DBG_RING_PUSH_RETRIED` (single
+    /// bump, on eventual success). `DBG_RING_PUSH_RETRY_EXHAUSTED` is a
+    /// legacy pre-R2-09 counter with no writer left anywhere in `src/` (R2-09
+    /// replaced its terminal drop with an intrusive spill, oxx R2-04/R2-07) —
+    /// see that static's own doc comment (`heap_core/core.rs`) and
+    /// `AllocStats::ring_overflows`'s doc for the current, non-lossy retry
+    /// accounting.
     ///
     /// `offset` MUST be `< SEGMENT` (a real block offset, not the sentinel) —
     /// same contract as [`push`](Self::push).
