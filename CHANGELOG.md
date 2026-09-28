@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 2 (oxx, 2026-09-28)
+
+Findings from `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` (`b8e34fbf`; 0 P0–P2, 1 P3, 6 P4). Its IDs are cited as "oxx R2-NN" to avoid clashing with the earlier xa round 2. `production`'s feature composition is unchanged, and no commit claims or measures a speedup. RSS and latency gates are filed as `docs/perf/OPEN_ITEMS.md` items 68–71.
+
+- **R2-01** (`969933b9`): a small segment that empties while it is still `small_cur` is now pooled or released as soon as `reserve_small_segment` replaces it. Before, it stayed committed (up to 4 MiB each), outside `pool_segments` and out of reach of trim. R29-4 §3 got an append-only correction.
+- **R2-02** (`9f151ec6`, `72b423ed`): the `realloc` read-span guard bounds own-segment Small/Primordial reads by the lazy-commit frontier. A bogus `old_layout` past the frontier now gets null instead of an access violation. The cross-heap foreign leg keeps the `SEGMENT` bound and says so.
+- **R2-03** (`6a30583d`): `SeferAlloc::dealloc_batch` resolves the heap through `current_for_dealloc`, like scalar `dealloc`. A thread that only frees no longer claims a registry slot or takes the fallback lock (`batch-api` only).
+- **R2-04** (`c4c86584`): the `AllocStats::ring_overflows` doc no longer tells operators to alert on `cross_thread_frees_lost`, which is always `0` since the R2-09 spill. The stale test names are fixed and the tripwire pins the new wording. The missing public spill counter is `docs/CORRECTNESS_OPEN_ITEMS.md` item 157.
+- **R2-05** (`543a02b7`): small-segment lazy reservations go through the new accounting seam `os::Segment::reserve_small_lazy`, so OS refusals count in `SEGMENTS_RESERVE_FAILED_TOTAL`. A source tripwire covers every raw `reserve_aligned{,_lazy}` call.
+- **R2-06** (`e98538b9`): `SegmentTable::recycle` checks hash membership before reading the header. A non-member is leaked (counter plus `debug_assert!`), never released. A member whose `segment_id` is stale is found by value and goes through the full normal path, so no slot is left dangling. The regression test no longer needs `mem::forget`.
+- **R2-07** (`23e1d9f8`): doc and safety-argument drift fixed: `AllocCore` is neither `Send` nor `Sync` (now a compile-time test), the ownership handoff argument, the forbid-vs-deny wording, the "no unsafe" claims, `realloc` as `unsafe fn`, and the release-mode `assert!` in `overflow_sidecar`. Doc text only; phrase tripwires added.
+- **Open items** (`296dfeca`): item 145 is closed as not reproducible. The first remote claim is now hard-asserted, and the unproven TLS thread-exit condition is recorded. Item 146 got the code reading. New item 156: no gate builds root-crate rustdoc with `-D warnings`, and `--all-features` has many broken links. This was already the case before this round.
+
 ### Root allocator `src/` review round 1 (oxx, 2026-09-28)
 
 Findings from `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md` (0 P0–P2, 4 P3, 7 P4). `production`'s feature composition is unchanged. Two commits change shipping hot-path behavior (`perf(runtime)`: R1-01, R1-03), but no speedup is claimed or measured; the missing gates are filed as `docs/perf/OPEN_ITEMS.md` items 64 and 65.

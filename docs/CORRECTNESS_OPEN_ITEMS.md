@@ -185,7 +185,7 @@ directly, which still works and needs no table at all).
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (22
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (23
   cards) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
@@ -198,13 +198,13 @@ directly, which still works and needs no table at all).
   50/51/54/55/64/65/70/72/73/74/76/88/92 are each "a real test exists, but
   no gate runs it, or runs it under the wrong profile/feature set"; 19/25
   are the same shape for MSRV and a compile-fail harness specifically.
-- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (4
+- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (3
   open cards; resolved cards remain as closure pointers) — flaky /
   order-dependent / scheduler-sensitive tests. Criterion:
   a test that fails intermittently because of timing, thread ordering, or
   shared process-wide state — an ACTUALLY-OBSERVED nondeterministic
   failure, not a coverage gap (no test exists) or a platform gap (no
-  runner exists). Open items 145–147 document allocator-test observations and
+  runner exists). Open items 146–147 document allocator-test observations and
   item 153 local build processes killed by a stale-PID
   `taskkill` from host tooling;
   resolved entries remain as pointers, including item 150's captured
@@ -251,7 +251,7 @@ directly, which still works and needs no table at all).
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (3 cards) --
+- **`docs/correctness-open-items/TRACKED_misc.md`** (4 cards) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -428,6 +428,8 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 153 | `TRACKED_test_flakiness.md` |
 | 154 | `TRACKED_misc.md` |
 | 155 | `TRACKED_correctness_residuals.md` |
+| 156 | `TRACKED_ci_gate_coverage.md` |
+| 157 | `TRACKED_misc.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains

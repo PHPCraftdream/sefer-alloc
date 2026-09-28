@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 22.
+**Card count:** 23.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -298,3 +298,10 @@ split the same day.)
     - **Evidence:** `docs/reviews/2026-08-27-201821-size-classes-round-3-prepublish-MS.md` §P3-6.
 
 151. **[T, CLOSED] `cargo fmt --all -- --check` (the local `npm run check` gate's rustfmt step) fails deterministically on Windows with "The filename or extension is too long. (os error 206)".** — CLOSED 2026-09-27. cargo-fmt collects one entry-point file per Cargo target (496 across this workspace's 11 members) into a single rustfmt invocation; the absolute paths alone sum to ~42 KB, over Windows' ~32,767-char CreateProcess argv limit — reproduced even for `cargo fmt -p sefer-alloc -- --check` (root package alone), so per-package looping is not a sufficient fix. Fixed by `scripts/fmt-check.mjs`, which on win32 enumerates targets via `cargo metadata` and invokes `rustfmt --check` directly in argv-budgeted chunks (equivalent coverage: every member, every target kind); non-Windows behavior unchanged (thin passthrough to plain `cargo fmt --all -- --check`). Full closure evidence: `RESOLVED.md` item 151 and `ARCHIVE.md` item 151.
+
+156. **[T] No gate builds the root crate's rustdoc with `-D warnings`; `--all-features` has many broken intra-doc links.** (Filed 2026-09-28, found while verifying oxx R2-07.)
+
+    - **Status:** OPEN — pre-existing; not caused by the oxx round-2 fixes.
+    - **Current-number-or-verdict:** `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` on the root crate fails with dozens of errors: unresolved links (`super::LockFreeRegion`, `Profile`, `SmallPoolPolicy`, `LargeCachePolicy`, `LargeCacheConfig`, `SmallSegmentPoolConfig`, ...) and public docs linking private items (`src/concurrent/epoch/epoch_region.rs`, `src/concurrent/sharded/sharded_region.rs`, and others). `--features production` passes. `ci.yml` runs `-D warnings` rustdoc only for member crates (`-p sefer-region`, `-p aligned-vmem`, `-p size-classes`, ...), not for the root crate under `--all-features`.
+    - **Next trigger:** a docs round, or before publishing the root crate. Fix the links (or de-link to plain backticks), then add a root-crate `-D warnings` rustdoc row for `--all-features`, plus one for the docs.rs feature set if one is declared.
+    - **Evidence:** the command above at `23e1d9f8`.

@@ -2922,6 +2922,34 @@ for completeness.
     - **Next trigger:** a code-size or i-cache investigation. Gate: `cargo bloat` plus iai `Ir` before and after dropping the attribute from each named function, one function per A/B.
     - **Evidence:** review §R1-11 and §5 H8.
 
+68. **[A] oxx R2-01 — finalizing an emptied `small_cur` at cursor switch shipped without an RSS/commit gate.**
+
+    - **Status:** OPEN — correctness/RSS fix shipped as `fix` in commit `969933b9`; nothing measured.
+    - **Current-number-or-verdict:** functional evidence only. Before the fix, each size-class phase switch could leave one orphaned segment committed (4,194,304 B each; three after seven class switches), outside `pool_segments` and out of reach of trim. After it, `small_empty_orphan.count == 0` on both the standalone `AllocCore` and `HeapCore` paths (`tests/oxx_r2_01_orphaned_cursor_finalized.rs`). The cost is one extra O(1) check per `reserve_small_segment`, a cold path.
+    - **Next trigger:** the next RSS/commit round, or a phase-switching workload report. Review hypothesis H1: phases that switch size class, measuring commit/RSS through `proc-memstat`, with `small_empty_orphan.count` and `segments_released_total` as the path-activation oracle, A/B against `969933b9^`.
+    - **Evidence:** `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` §R2-01 and §5 H1.
+
+69. **[D] oxx R2 H2 — let `trim_current_thread()` release an empty `small_cur` too.**
+
+    - **Status:** OPEN — design only.
+    - **Current-number-or-verdict:** not measured. After R2-01 an empty cursor is finalized once it stops being the cursor, but trim still leaves the current cursor committed even when empty. The cost is a cold reservation on the next alloc.
+    - **Next trigger:** a trim/RSS round. Measure in the `R31_10_TRIM_CURRENT_THREAD_RSS_GATE` setup: RSS after trim against first-alloc latency after trim.
+    - **Evidence:** review §5 H2.
+
+70. **[D] oxx R2 H3 — the coarse `dirty_segments` bitmap is write-only in steady state under `class-aware-dirty`.**
+
+    - **Status:** OPEN — design only; not measured.
+    - **Current-number-or-verdict:** producers do a contended `fetch_or` on every remote note (`heap_core_xthread/overflow.rs`), but the consumer reads the coarse map only before the per-class sidecar exists or after the OOM latch (`alloc_core_small/directory.rs`). Stale bits pile up until the latch fires, then cause a one-off scan spike. The write cannot simply be dropped: a failed concurrent `get_or_try_init` can set the latch after the sidecar is live, so a full per-class pass on the latch transition would be needed.
+    - **Next trigger:** a cross-thread fan-in performance round. Gate: fan-in bench, HITM (`perf c2c` on Linux), iai `Ir`.
+    - **Evidence:** review §5 H3.
+
+71. **[L] oxx R2-03 / H4 — `dealloc_batch` no longer binds a heap; the latency and RSS effect is unmeasured.**
+
+    - **Status:** OPEN — low priority; `batch-api` is opt-in (`experimental`). Fixed in commit `6a30583d`.
+    - **Current-number-or-verdict:** functional evidence only. A never-bound worker's `dealloc_batch` no longer claims a registry slot (`heaps_claimed_high_water` unchanged; it was +1 before the fix). No p99 or RSS numbers.
+    - **Next trigger:** a `batch-api` performance round. Measure p99 of the first `dealloc_batch` and RSS for N consumer threads, A/B against `6a30583d^`.
+    - **Evidence:** review §R2-03 and §5 H4; `tests/oxx_r2_03_dealloc_batch_current_for_dealloc.rs`.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

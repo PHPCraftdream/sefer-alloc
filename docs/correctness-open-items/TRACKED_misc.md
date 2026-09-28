@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card lands here only if it does not share the defining criterion of any category above. Each card here is a genuine one-off: item 45 is a numa-shim RefCell-vs-Cell defensive-coding/panic-safety nit (not an OS-contract question, not a hook, not flakiness); item 49 is an aligned-vmem edition-2021-vs-2024 explicit-unsafe{}-block hygiene item (about FFI call-site annotation style, not about a dbg_* hook, a platform contract, or CI wiring).
 
-**Card count:** 3.
+**Card count:** 4.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -59,3 +59,10 @@ split the same day.)
     - **Current-number-or-verdict:** the review measured about 20,000 `///`/`//!` lines against about 15,600 code lines in `src/`. Much of the prose is task history (`R6-OPT-P0-4`, `task #136`, ...) duplicated across files; the earlier R2-23 and R3-4 findings were stale prose of exactly this kind.
     - **Next trigger:** a dedicated docs round that moves history into `docs/` (ADR-style) and leaves invariants and SAFETY reasoning in the code, one module per commit. Pure doc diffs, but several tests `include_str!` source files and pin phrases, so rerun the doc tripwires after each module.
     - **Evidence:** review §R1-11.
+
+157. **[T] `AllocStats` has no public counter for third-tier (intrusive spill) cross-thread free pressure.** (Filed 2026-09-28, oxx R2-04 follow-up.)
+
+    - **Status:** OPEN — deferred; would add public API.
+    - **Current-number-or-verdict:** after R2-09, `cross_thread_frees_lost` is legacy and always `0`, and `ring_overflows` counts only first-tier misses. It cannot tell a free rescued by `HeapOverflow`/retry from one that went to the spill. Only the `internals`/`bench-internals`-gated `HeapCore::dbg_spill_ledger_for_test` sees spill traffic. The `ring_overflows` doc now says so (commit `c4c86584`).
+    - **Next trigger:** an operator or benchmark that needs to see spill pressure in production builds. `AllocStats` is `#[non_exhaustive]`, so a new field is additive; deprecating `cross_thread_frees_lost` belongs in the same semver window.
+    - **Evidence:** `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` §R2-04; `src/global/alloc_stats.rs`.
