@@ -89,8 +89,11 @@
 //!   a second `remove(h)` is a no-op `false` (the CAS returns `Stale`).
 //! - **I3 — no ABA:** `remove`/`remote_evict` bumps the slot's generation via
 //!   `AtomicSlot::try_evict_at`.
-//! - **I4 — accounting:** [`len`](Self::len) sums the live counts (now
-//!   `AtomicUsize` per shard, correct under concurrent remote removal).
+//! - **I4 — accounting:** [`len`](Self::len)/[`is_empty`](Self::is_empty)
+//!   sum/scan the per-shard `AtomicUsize` counts. Exact only when no
+//!   concurrent mutation is in flight; under concurrent insert/remove the
+//!   result is an approximate, non-linearizable observation (see the method
+//!   docs) — not a drain-complete/shutdown signal.
 //! - **Multi-shard locality:** a handle minted in shard A carries
 //!   `shard == A` and is routed *only* to shard A.
 //!
@@ -257,15 +260,25 @@ impl<T> ShardedRegion<T> {
 
     /// Total live entries across all shards (I4).
     ///
-    /// Sums each shard's [`EpochRegion::len`] (an `AtomicUsize` per shard —
-    /// correct under concurrent remote removal). Under concurrency this is a
-    /// momentary observation.
+    /// Exact only when no concurrent mutation is in flight. Under concurrent
+    /// insert/remove this is an approximate, non-linearizable observation:
+    /// the per-shard sum is not a snapshot, so it can report a count that
+    /// never held at any single instant. Do not use as a drain-complete or
+    /// shutdown signal.
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.shards.iter().map(EpochRegion::len).sum()
     }
 
     /// Whether the region holds no live values across any shard (I4).
+    ///
+    /// Exact only when no concurrent mutation is in flight. Under concurrent
+    /// insert/remove this is an approximate, non-linearizable observation:
+    /// the per-shard scan is not a snapshot, so it can report `true` even
+    /// though at least one entry was live at every instant — e.g. a
+    /// cross-shard move (insert into shard A, then remove from shard B) can
+    /// make each shard appear empty in sequence. Do not use as a
+    /// drain-complete or shutdown signal.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.shards.iter().all(EpochRegion::is_empty)
