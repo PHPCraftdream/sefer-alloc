@@ -20,7 +20,7 @@ Findings from `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md` (0 P0â€
 - **R1-07** (`618e1f90`): no `mod.rs` carries `#![allow(unsafe_code)]`; `bootstrap::loom_shim` holds its own inventoried seam; a tripwire enforces both rules.
 - **R1-08** (`feb1a713`): items are gated on the features that use them, and a new check row builds `alloc-core alloc-decommit internals` with `RUSTFLAGS=-D warnings`.
 - **R1-11** (`2630b090` and this entry's commit): `heap_overflow.rs` (1367 lines) is split into `src/registry/heap_overflow/` as a pure move; `claim`/`claim_with_config` share one `claim_impl`; the 1000-line cap on root `src/` files is enforced by `tests/src_file_size_cap.rs` (which caught `alloc_core_large_cache.rs` at 1002 lines after R1-08). The prose/history migration is `docs/CORRECTNESS_OPEN_ITEMS.md` item 154; `#[inline(always)]` tuning is perf item 67.
-- Also filed: item 153 (local Windows `sccache` builds sometimes exit 1 with no diagnostic; environmental, workaround `RUSTC_WRAPPER=`).
+- Also filed: item 153 (local Windows `rustc`/`link.exe` sometimes exits 1 with no diagnostic; not the repo's code and not `sccache`, cause open, rerun passes).
 
 ### Root allocator review round 3 (2026-09-24)
 

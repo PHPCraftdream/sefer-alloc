@@ -205,7 +205,7 @@ directly, which still works and needs no table at all).
   shared process-wide state — an ACTUALLY-OBSERVED nondeterministic
   failure, not a coverage gap (no test exists) or a platform gap (no
   runner exists). Open items 145–147 document allocator-test observations and
-  item 153 a local `sccache` build nondeterminism;
+  item 153 an unattributed local build nondeterminism;
   resolved entries remain as pointers, including item 150's captured
   Windows linker-path failure and verified short-path fix. This separates
   test execution nondeterminism from "nothing runs this test" (category 4).
