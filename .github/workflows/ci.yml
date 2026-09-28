@@ -2757,6 +2757,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85
       - run: cargo check -p globalalloc-model --all-features
 
+  msrv-runtime-windows:
+    # fxx R2-01 (docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md):
+    # on rustc 1.88..1.92, std registers TLS destructors through its own
+    # `Vec`-backed `DTORS` list on targets without `__cxa_thread_atexit_impl`
+    # (Windows, Apple, ...) -- `SeferAlloc`'s TLS-guard registration
+    # re-enters the global allocator from inside that registration and
+    # aborts (`rtabort!("the global allocator may not use TLS with
+    # destructors")`) on the FIRST allocation of every thread. glibc Linux
+    # never hits this (its own `__cxa_thread_atexit_impl` path), so the
+    # `msrv` job above -- `ubuntu-latest`, compile-only -- cannot observe
+    # this class by construction on EITHER axis (wrong libc, and it never
+    # executes tests). This job actually RUNS `#[global_allocator]` on the
+    # pinned MSRV toolchain on a real Windows kernel, so a regression here
+    # goes red instead of shipping a first-allocation abort at the declared
+    # floor.
+    name: MSRV 1.88 runtime (global_alloc_installed, windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.88
+      - run: cargo test --features production --test global_alloc_installed
+
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
     # alloc. A build check is sufficient evidence; there is no std in the core

@@ -1744,7 +1744,12 @@ abandoned in the child — tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`.
 
 **1.88.** The single-threaded core is plain safe Rust and will build on
 much older toolchains; we pin a known-good floor from day one. MSRV bumps
-are minor releases.
+are minor releases. CI's `msrv` job (`ubuntu-latest`) compiles the crate on
+the pinned toolchain; a separate `msrv-runtime-windows` job additionally
+*executes* `tests/global_alloc_installed.rs` on the pinned toolchain on
+`windows-latest`, since std's TLS-destructor registration path (and thus
+`#[global_allocator]` behavior) differs by libc and is invisible to a
+glibc-only, compile-only check.
 
 ---
 
