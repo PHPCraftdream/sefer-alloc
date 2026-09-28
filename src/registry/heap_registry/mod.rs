@@ -65,6 +65,10 @@ mod counters;
 mod stack;
 
 pub use claim::HeapRegistry;
+// R1-10 (src review round 1): the fallback heap's own process-static
+// magazine/large-cache hit counters, bound by `global::fallback` at init
+// (there is no registry slot to bind for it) — see `counters::
+// FALLBACK_TCACHE_HITS`'s doc comment.
 #[cfg(feature = "alloc-decommit")]
 pub use counters::large_cache_hits_total;
 #[cfg(all(
@@ -75,6 +79,10 @@ pub use counters::large_cache_hits_total;
 pub use counters::tcache_and_large_cache_hits_total;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub use counters::tcache_hits_total;
+#[cfg(feature = "alloc-decommit")]
+pub(crate) use counters::FALLBACK_LARGE_CACHE_HITS;
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) use counters::FALLBACK_TCACHE_HITS;
 pub use counters::{config_conflicts_total, heaps_claimed_high_water};
 pub use counters::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
 // R2-11 (task #2013): test-only hook to deterministically reproduce the

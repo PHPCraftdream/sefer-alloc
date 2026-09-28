@@ -705,7 +705,25 @@ impl HeapCore {
         // the test's 30 s watchdog (`process::abort` → 0xC0000409). A LIVE
         // owner keeps the designed behaviour (`tests/remote_fanin.rs` remains
         // the judge for that shape).
-        if Self::owner_slot_is_live(base) {
+        //
+        // R1-06 (src review round 1): ALSO skip the spin-retry tier — treating
+        // a genuinely live owner as if it were not-live for retry purposes —
+        // when the CURRENT thread holds the fallback heap's process-wide
+        // spinlock (`crate::registry::xthread_fallback_gate`). That spinlock
+        // has exactly one holder at a time across the whole process; a
+        // foreign free routed through it (`fallback` heap's `realloc`/
+        // `dealloc_batch` freeing an old/foreign block) that happened to land
+        // on a saturated-but-live segment would otherwise sleep-retry for up
+        // to `RETRY_STALLED_ROUNDS_GIVE_UP` (128, ~0.3-2s) rounds WHILE
+        // holding that lock, starving every other thread that needs the
+        // fallback (TLS teardown, registry exhaustion, pre-TLS init) for the
+        // same window — a liveness/CPU-burn hazard, not a correctness one
+        // (spill below is always sound). No other caller sets this flag, so
+        // this changes behaviour ONLY for a free executed from inside
+        // `global::fallback::with_heap`.
+        if Self::owner_slot_is_live(base)
+            && !crate::registry::xthread_fallback_gate::held_by_current_thread()
+        {
             // R6-OPT-P0-4: resolve the target `HeapOverflow` ONCE before the
             // loop (not on every poll — see `resolve_heap_overflow`'s doc
             // comment for the measured cost of re-resolving thousands of

@@ -256,32 +256,66 @@ pub fn heap_ptr() -> *mut HeapCore {
                     // `static_mut_refs`); we cast to `*mut HeapCore` for the
                     // `write`.
                     unsafe { (addr_of_mut!(FALLBACK) as *mut HeapCore).write(hc) };
-                    // task H1: plant the fallback heap's stable handle to its
-                    // out-of-struct free-stack head (`FALLBACK_TFS`), the
-                    // fallback analogue of `bind_slot_counters` binding a
-                    // registry heap to its slot's `thread_free`. Done here,
-                    // under the init race (we are the sole initialiser; no
-                    // other thread can read `FALLBACK` until we publish READY),
-                    // BEFORE the Release store — so the first `with_heap`
-                    // alloc/free already sees a bound handle. Skipped when
-                    // `alloc-xthread` is off (the fallback is single-threaded
-                    // in that config and has no cross-thread head).
-                    #[cfg(feature = "alloc-xthread")]
+                    // task H1 / R1-10: plant every stable handle this fallback
+                    // heap can bind at init — the fallback analogue of
+                    // `bind_slot_counters` binding a registry heap to its
+                    // slot's `thread_free`/hit counters. Done here, under the
+                    // init race (we are the sole initialiser; no other thread
+                    // can read `FALLBACK` until we publish READY), BEFORE the
+                    // Release store — so the first `with_heap` alloc/free
+                    // already sees every bound handle. `heap_ref` goes unused
+                    // when NONE of the gated binds below are compiled in (e.g.
+                    // plain `alloc-global` without `fastbin`/`alloc-decommit`/
+                    // `alloc-xthread`) — `#[cfg_attr]` mirrors
+                    // `bind_slot_counters`'s own guard for the identical
+                    // reason.
+                    #[cfg_attr(
+                        not(any(
+                            all(feature = "alloc-global", feature = "fastbin"),
+                            feature = "alloc-decommit",
+                            feature = "alloc-xthread"
+                        )),
+                        allow(unused_variables)
+                    )]
                     {
                         // SAFETY: we won the init race (STATE_INITIALIZING) and
                         // just `write`(hc) into `FALLBACK`; we are its sole
                         // writer and no other thread can reference it until we
                         // publish READY. This exclusive `&mut` lives only for
-                        // both binding calls. `FALLBACK_TFS` and the overflow
-                        // ring are process-`'static` atomics outside the
+                        // the binding calls below. `FALLBACK_TFS`, the fallback
+                        // overflow ring, and the R1-10 fallback hit counters
+                        // are all process-`'static` statics outside the
                         // `&mut HeapCore` range.
                         let heap_ref: &mut HeapCore =
                             unsafe { &mut *(addr_of_mut!(FALLBACK) as *mut HeapCore) };
-                        heap_ref.bind_thread_free(&FALLBACK_TFS);
-                        heap_ref.bind_overflow(HeapCore::fallback_overflow());
-                        // No registry slot exists for this owner, hence no
-                        // slot dirty bitmap to bind. Its slow paths drain
-                        // overflow/spill and scan segment rings directly.
+                        // Skipped when `alloc-xthread` is off (the fallback is
+                        // single-threaded in that config and has no
+                        // cross-thread head/overflow ring to bind). No
+                        // registry slot exists for this owner, hence no slot
+                        // dirty bitmap to bind either way — its slow paths
+                        // drain overflow/spill and scan segment rings
+                        // directly.
+                        #[cfg(feature = "alloc-xthread")]
+                        {
+                            heap_ref.bind_thread_free(&FALLBACK_TFS);
+                            heap_ref.bind_overflow(HeapCore::fallback_overflow());
+                        }
+                        // R1-10 (src review round 1): plant the fallback's own
+                        // process-static magazine/large-cache hit counters —
+                        // the fallback has no registry slot to host
+                        // `HeapSlot::tcache_hits`/`large_cache_hits` (see
+                        // `registry::heap_registry::FALLBACK_TCACHE_HITS`'s
+                        // doc comment) — so a fallback-served hit is folded
+                        // into `AllocStats`/`stats()`'s process-wide totals
+                        // instead of being silently dropped.
+                        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+                        heap_ref.bind_tcache_hits(
+                            &crate::registry::heap_registry::FALLBACK_TCACHE_HITS,
+                        );
+                        #[cfg(feature = "alloc-decommit")]
+                        heap_ref.bind_large_cache_hits(
+                            &crate::registry::heap_registry::FALLBACK_LARGE_CACHE_HITS,
+                        );
                     }
                     INIT_STATE.store(STATE_READY, Ordering::Release);
                     // Happy path: READY just published — disarm the guard so
@@ -388,28 +422,70 @@ impl HeapCore {
 /// all later pre-TLS / teardown allocations forever.
 struct LockGuard;
 
+/// R1-06 (src review round 1): number of tight `core::hint::spin_loop()`
+/// iterations `LockGuard::acquire` spends before backing off to a real
+/// scheduler yield. Contention on the fallback lock is still "essentially
+/// impossible" per this module's doc comment — this budget exists purely so
+/// a genuinely-contended waiter (however rare) does not spin CPU-only for the
+/// whole wait; it is not calibrated against any measured workload. Kept
+/// small and a plain constant (not configurable) — this lock is not a hot
+/// path.
+const LOCK_TIGHT_SPINS: u32 = 64;
+
 impl LockGuard {
     /// Acquire the fallback spinlock, returning the guard that will release it.
+    ///
+    /// R1-06: past [`LOCK_TIGHT_SPINS`] failed attempts, back off to
+    /// `std::thread::yield_now()` (a real scheduler yield) instead of
+    /// continuing to spin on `core::hint::spin_loop()` alone — that hint is a
+    /// CPU-level pause (e.g. `PAUSE`), not an OS-level yield, so it never
+    /// gives the scheduler a chance to run whichever thread currently holds
+    /// the lock. `#[cfg(not(feature = "std"))]` keeps this fn buildable
+    /// without `std` (this module's rest is already `std`-free); without
+    /// `std` there is no better primitive than the tight spin, so it
+    /// continues unconditionally in that configuration.
     fn acquire() -> Self {
+        let mut spins: u32 = 0;
         while LOCK
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            // Spin with a PAUSE/YIELD hint. Contention on the fallback is
-            // essentially impossible (the windows that route here are rare and
-            // typically single-threaded), so the spin is academic.
-            core::hint::spin_loop();
+            spins += 1;
+            if spins <= LOCK_TIGHT_SPINS {
+                core::hint::spin_loop();
+            } else {
+                #[cfg(feature = "std")]
+                std::thread::yield_now();
+                #[cfg(not(feature = "std"))]
+                core::hint::spin_loop();
+            }
         }
         // R6-OPT-P0-1: diagnostic-only, `Relaxed` — see `LOCK_ACQUISITIONS`'s
         // doc comment. Bumped once per successful acquisition (this point is
         // reached only after the CAS loop above wins).
         LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
+        // R1-06: record that THIS thread now holds the fallback lock, so
+        // `push_with_overflow_retry` (`heap_core_xthread/overflow.rs`) can
+        // skip its bounded sleep-retry tier for the duration — see
+        // `registry::xthread_fallback_gate`'s module doc for the full
+        // rationale. Only meaningful under `alloc-xthread` (the retry tier it
+        // gates does not exist otherwise).
+        #[cfg(feature = "alloc-xthread")]
+        crate::registry::set_fallback_lock_held(true);
         LockGuard
     }
 }
 
 impl Drop for LockGuard {
     fn drop(&mut self) {
+        // R1-06: clear BEFORE releasing `LOCK` — this is thread-local state
+        // (no cross-thread visibility to order against the lock release), so
+        // the relative order versus the `LOCK.store` below has no
+        // correctness consequence; clearing first simply keeps the "flag
+        // implies lock held" invariant true for the whole time `LOCK` is
+        // actually held by this thread.
+        #[cfg(feature = "alloc-xthread")]
+        crate::registry::set_fallback_lock_held(false);
         LOCK.store(false, Ordering::Release);
     }
 }

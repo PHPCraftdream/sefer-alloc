@@ -27,6 +27,33 @@ use crate::registry::heap_slot::{STATE_FREE, STATE_LIVE};
 /// Relaxed ordering — diagnostic only, no synchronization obligation.
 pub(super) static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 
+/// R1-10 (src review round 1): the fallback heap's own magazine (tcache) hit
+/// counter — the fallback-heap analogue of `HeapSlot::tcache_hits`. The
+/// fallback (`global::fallback`) has no registry slot to host a
+/// `HeapSlot`-resident counter, so it needs its own process-static one;
+/// without it, a fallback-served magazine hit was silently dropped from
+/// every aggregator below (`tcache_hits`/`tcache_and_large_cache_hits`
+/// stayed unaware the fallback ever served an allocation at all). Bound into
+/// the fallback `HeapCore` once, at fallback init
+/// (`global::fallback::heap_ptr`'s init-race winner), via
+/// [`HeapCore::bind_tcache_hits`](crate::registry::HeapCore::bind_tcache_hits)
+/// — the SAME binder `HeapRegistry::claim` uses for a real slot's counter —
+/// then folded into [`tcache_hits_total`] and
+/// [`tcache_and_large_cache_hits_total`] alongside every registry slot's
+/// contribution. `pub(crate)` (not `pub(super)`): `global::fallback` binds it
+/// directly, re-exported at `heap_registry`/`registry` level — see
+/// `registry::mod`'s re-export.
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) static FALLBACK_TCACHE_HITS: AtomicU64 = AtomicU64::new(0);
+
+/// R1-10: the fallback heap's own large-segment cache hit counter — the
+/// fallback-heap analogue of `HeapSlot::large_cache_hits`. Same binding /
+/// aggregation discipline as [`FALLBACK_TCACHE_HITS`] (see its doc comment);
+/// folded into [`large_cache_hits_total`] and
+/// [`tcache_and_large_cache_hits_total`].
+#[cfg(feature = "alloc-decommit")]
+pub(crate) static FALLBACK_LARGE_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+
 /// DIAGNOSTIC (task E1): the high-water mark of minted registry slots — the
 /// number of distinct heap slots ever claimed (via `bump_count`) since
 /// process start. This is a **high-water mark, not a live count**: a slot
@@ -158,6 +185,12 @@ pub fn tcache_hits_total() -> u64 {
             // monotonic single-writer increments.
             total = total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
         });
+        // R1-10: the fallback heap has no registry slot for the walk above to
+        // visit — fold in its own process-static counter (bound at fallback
+        // init) so a fallback-served magazine hit is not silently dropped
+        // from the process-wide total. Same `alloc-stats` gate as the
+        // increment site (`HeapCore::alloc`'s magazine-hit fast path).
+        total = total.saturating_add(FALLBACK_TCACHE_HITS.load(Ordering::Relaxed));
         total
     }
     #[cfg(not(feature = "alloc-stats"))]
@@ -218,6 +251,9 @@ pub fn large_cache_hits_total() -> u64 {
             // load of a shared `Sync` atomic — sound from any thread.
             total = total.saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
         });
+        // R1-10: same fold-in as `tcache_hits_total` above — the fallback has
+        // no registry slot for the walk to visit.
+        total = total.saturating_add(FALLBACK_LARGE_CACHE_HITS.load(Ordering::Relaxed));
         total
     }
     #[cfg(not(feature = "alloc-stats"))]
@@ -262,6 +298,10 @@ pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
             large_cache_total = large_cache_total
                 .saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
         });
+        // R1-10: same fold-in as the two standalone accessors above.
+        tcache_total = tcache_total.saturating_add(FALLBACK_TCACHE_HITS.load(Ordering::Relaxed));
+        large_cache_total =
+            large_cache_total.saturating_add(FALLBACK_LARGE_CACHE_HITS.load(Ordering::Relaxed));
         (tcache_total, large_cache_total)
     }
     #[cfg(not(feature = "alloc-stats"))]

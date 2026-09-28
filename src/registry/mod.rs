@@ -61,6 +61,15 @@ pub mod heap_overflow;
 pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
+// R1-06 (src review round 1): the fallback-lock-held TLS flag consulted by
+// `heap_core_xthread::overflow`'s `push_with_overflow_retry` and set by
+// `global::fallback::LockGuard` — see that file's module doc for why it
+// lives on the `registry` side of the (one-directional) `global` ->
+// `registry` dependency.
+#[cfg(feature = "alloc-xthread")]
+mod xthread_fallback_gate;
+#[cfg(feature = "alloc-xthread")]
+pub(crate) use xthread_fallback_gate::set_held as set_fallback_lock_held;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;
