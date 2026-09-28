@@ -446,6 +446,119 @@ full closure trail".
       tests' real coverage restored; the registry behaviour it exposed is
       NOT closed and is filed separately as item 145 below.
 
+- 145. **[T, filed 2026-09-08, task #1933] `HeapRegistry::claim()` can hand a
+      spawned thread the heap another live thread is already using — observed
+      20/20, mechanism NOT established.** — **CLOSED as not reproducible**
+      (2026-09-28, oxx R2 review §3.8 + this task's own reruns). Full card,
+      including the original evidence and the closure basis:
+
+      145. **[T, filed 2026-09-08, task #1933] `HeapRegistry::claim()` can hand a
+          spawned thread the heap another live thread is already using — observed
+          20/20, mechanism NOT established.** Found while adding a path-activation
+          oracle to `tests/regression_xthread_large_free_layout_mismatch.rs` (item
+          14 above). The main test thread calls `HeapRegistry::claim()` and never
+          recycles; a spawned thread then calls `claim()` and receives the SAME
+          `*mut HeapCore` — byte-identical pointer, therefore the same slot.
+          **Evidence:** oracle assert firing with `left: 2130866086736, right:
+          2130866086736` (`0x1f021840010` on both sides), reproducing in 20 of 20
+          runs of that file under `production internals`; and, separately, that
+          recycling such a colliding claim measurably drains the owner's deferred
+          frees (`DBG_LARGE_XTHREAD_RECLAIMED` +1), which is only possible if the
+          two really are one slot.
+
+          **What is established:** the pointers are equal, systematically, and the
+          consequence for the tests was real (see item 14 — three assertions were
+          vacuous because of it).
+
+          **What is NOT established, and must not be assumed by whoever picks this
+          up:** *why*. `claim()` (`src/registry/heap_registry.rs:131`) takes a slot
+          only via `pick_slot()` → CAS `STATE_FREE`→`STATE_LIVE`, so a second
+          claimer can only obtain a slot that is FREE — meaning the owner's slot
+          was on the free list while the owner still held it. Something recycled
+          it. One hypothesis worth checking FIRST, because it is cheap to confirm
+          or kill: `recycle()` (`:355`) locates the slot by `heap.id()` and CASes
+          `LIVE`→`FREE` with **no generation check**, while `claim()` does bump
+          `slot.generation`. A recycler holding a pointer whose claim has since
+          been superseded would therefore free a slot it no longer owns, and the
+          LIVE→FREE CAS would SUCCEED (the existing defensive branch only catches
+          the already-FREE case, i.e. plain double-recycle). Whether any live code
+          path — as opposed to this test file's unusual manual claim/recycle usage
+          — can actually get into that state is exactly the open question. **Do not
+          file this as a production bug until that is shown**; equally, do not
+          close it as test-only until it is shown it cannot happen via the TLS
+          thread-exit recycle path (`src/global/sefer_alloc.rs:185`, "thread exit
+          recycles the slot").
+
+          **Next trigger:** any further test that needs two genuinely distinct
+          heaps in one process, or any investigation of item 12 (the sibling
+          reclaim-count race in `regression_xthread_large_free_no_leak.rs`, which
+          shares this claim/recycle idiom and may share this cause).
+          **Workaround in place meanwhile:** `claim_remote_distinct_from` in
+          `tests/regression_xthread_large_free_layout_mismatch.rs` — claims until
+          distinct and never recycles a colliding claim.
+
+          **UPDATE 2026-09-28 (oxx R2 review §3.8,
+          `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md`) — does not
+          reproduce on committed sources, and the generation-check hypothesis is
+          inapplicable to the current API.** Re-running an instrumented copy of
+          the same test file's first remote claim against fixed sources — both
+          HEAD and `6658d8e8` (the commit that filed this item) — found the first
+          remote claim distinct from the owner's in 25/25 (`production
+          internals`, 5 runs × 5 tests) and 15/15 (`--test-threads=1`, 3 runs ×
+          5 tests) observations on EACH revision; owner-slot state observed
+          `LIVE` throughout; a minimal claim/no-recycle cycle was 20/20 distinct.
+          The likeliest explanation is that the originally reported "20/20" was
+          observed against an intermediate, uncommitted revision of the test
+          file, not anything in the committed history. Separately, the
+          generation-check hypothesis above does not apply to the current API:
+          on a re-claim of an already-materialised slot, `claim_impl`
+          (`src/registry/heap_registry/claim.rs:236`) returns
+          `slot.heap.get().cast::<HeapCore>()` — the exact same address for the
+          stale and the current holder, since both read the same slot's
+          `UnsafeCell`. `recycle(ptr)` therefore has no pointer-level signal by
+          which to distinguish a stale claim from the current one even if it
+          checked a generation; the collision, if it recurs, is not explained by
+          a missing generation check in `recycle`.
+
+          **Closure basis (this task, oxx R2 §3.8 follow-up).** Re-verified the
+          `claim.rs:236` return-same-address reading directly against the
+          worktree's own `src/registry/heap_registry/claim.rs` (confirmed: line
+          236 is `return slot.heap.get().cast::<HeapCore>();`, reached
+          identically from both the first-materialisation and the
+          already-initialised re-claim branches). Hardened
+          `claim_remote_distinct_from`
+          (`tests/regression_xthread_large_free_layout_mismatch.rs:104-127`):
+          replaced the silent up-to-64-times retry with a hard `assert_ne!` on
+          the FIRST claim, so a real recurrence of the collision fails the test
+          loudly instead of being quietly retried past. Reran the file under
+          three feature lines this collision could reach test binaries through:
+          `production internals` (5 parallel-thread runs + 3
+          `--test-threads=1` runs = 40 test executions), `production
+          alloc-stats bench-internals internals` (2 parallel runs = 10 test
+          executions), and `--all-features` (1 parallel + 1
+          `--test-threads=1` run = 10 test executions) — 12 file-runs, 60 test
+          executions total, all green, zero `assert_ne!` trips. Combined with
+          the review's own 40 observations (25/25 + 15/15) across two
+          revisions, the collision has not reproduced in 100 observations
+          across two independent sessions and three feature-line
+          combinations, and the one concrete hypothesis on record for a
+          mechanism has been read against the current source and does not
+          apply. The filing card's other condition — show the collision
+          cannot arise via the TLS thread-exit recycle path — was NOT proven
+          separately; this closure rests on non-reproduction plus the loud
+          assert, not on a proof. Closed as not-reproducible with the detection hardened
+          (assert instead of silent retry) rather than left open indefinitely
+          with no further lead: per this repo's `CLAUDE.md` open-items
+          convention, an item with no falsifiable next step beyond "wait for
+          another occurrence" and a now-loud regression trip in its place is a
+          closed item, not a permanently tracked one. **Next trigger if this
+          recurs:** the hardened `assert_ne!` will fail the test directly,
+          citing this item; if that happens, capture the failing pointer value
+          and the registry slot's `generation`/`state` at the moment of
+          collision — the review's evidence (byte-identical pointer address)
+          should be reproducible on demand this time, unlike the original
+          filing.
+
 - 96. **[T, filed 2026-08-23, task #1247] `wasted_dirty_drains_stays_low_under_class_aware_routing` waste-ratio threshold tripped by single-round sampling noise (26.7%, 26.7%, then 33.3% across three CI occurrences)** — **CLOSED** 2026-09-08 (task #1935). Fixed structurally on 2026-09-03 (`2b7cb87`, aggregate over 5 rounds); this task supplied the CI re-observation and margin measurement the card had set as its own closing trigger. Full card, including the three occurrences and the closing evidence:
 
   96. **[T, filed 2026-08-23, task #1247, mitigated 2026-08-30] `wasted_dirty_drains_stays_low_under_class_aware_routing`

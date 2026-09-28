@@ -90,33 +90,32 @@ impl Drop for SerialGuard {
 /// path trivially satisfies "delta == 0" no matter what the
 /// `large_layout_consistent` mitigation does.
 ///
-/// A claim that came back EQUAL to the owner's heap is deliberately NEVER
-/// recycled — it is left LIVE for the rest of the process. That is not
-/// tidiness lost, it is the correct action: the registry only handed this
-/// thread the owner's slot because the slot was on the free list while the
-/// owner was still using it, so re-claiming it takes it back OUT of that list
-/// and stops it being handed to anyone else. Recycling it would put the
-/// owner's live heap back into circulation — which, measured during this
-/// task, drains the owner's deferred frees and inflates
-/// `DBG_LARGE_XTHREAD_RECLAIMED` by one, making
-/// `xthread_large_free_mismatched_layout_is_dropped` fail with `delta 1 != 0`
-/// for a reason that has nothing to do with the mitigation under test.
+/// **Hardened per oxx R2 review §3.8 (`docs/CORRECTNESS_OPEN_ITEMS.md` item
+/// 145).** The original version (task #1933) silently retried past a claim
+/// that came back equal to the owner's heap, up to 64 times, treating a
+/// collision as routine. Re-measuring on fixed sources (HEAD and the commit
+/// that filed item 145) never reproduced the originally reported 20/20
+/// collision rate at all: the first remote claim was distinct from the
+/// owner's in 25/25 (`production internals`, 5 runs x 5 tests) and 15/15
+/// (`--test-threads=1`, 3 runs x 5 tests) observations on each revision — see
+/// item 145's card for the full numbers. With the mechanism unexplained and
+/// the collision not reproducing, a silent retry loop is the wrong shape:
+/// it would swallow a real registry regression (the registry handing out a
+/// live heap twice) as a quietly-green test. This now asserts on the FIRST
+/// claim instead — if the registry ever again hands the spawned thread the
+/// owner's own heap, the test fails loudly rather than working around it.
 fn claim_remote_distinct_from(owner_addr: usize) -> *mut HeapCore {
-    let mut collisions = 0usize;
-    loop {
-        let h = HeapRegistry::claim();
-        assert!(!h.is_null(), "remote HeapRegistry::claim failed");
-        if h as usize != owner_addr {
-            return h;
-        }
-        collisions += 1;
-        assert!(
-            collisions < 64,
-            "registry kept handing out the OWNER's heap ({owner_addr:#x}) across \
-             {collisions} distinct claims — cannot establish the cross-thread \
-             precondition these tests require (docs/CORRECTNESS_OPEN_ITEMS.md item 14)"
-        );
-    }
+    let h = HeapRegistry::claim();
+    assert!(!h.is_null(), "remote HeapRegistry::claim failed");
+    assert_ne!(
+        h as usize, owner_addr,
+        "HeapRegistry::claim() handed the spawned thread the OWNER's heap \
+         ({owner_addr:#x}) on the FIRST claim — this is the item 145 collision \
+         (docs/correctness-open-items/TRACKED_test_flakiness.md item 145); it no \
+         longer reproduces on fixed sources, so a real occurrence here is a \
+         genuine regression, not routine"
+    );
+    h
 }
 
 /// A cross-thread free whose `Layout` size does NOT match the segment's

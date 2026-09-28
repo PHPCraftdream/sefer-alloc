@@ -13,7 +13,7 @@ the tier.
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
 **Card count:** 11 (items 12, 14, 63, 69, 96, 143, 145, 146, 147, 150, 153).
-**145, 146, 147 and 153** are OPEN; 12, 14, 63, 69, 96, 143 and 150 are CLOSED
+**146, 147 and 153** are OPEN; 12, 14, 63, 69, 96, 143, 145 and 150 are CLOSED
 pointers whose closure narratives live in RESOLVED.md / ARCHIVE.md. Verify,
 never hand-count:
 
@@ -124,50 +124,21 @@ resolved" in RESOLVED.md.)_
     file's two full-ceiling fills. See "Recently resolved" in RESOLVED.md for
     the full investigation and closure narrative.
 
-145. **[T, filed 2026-09-08, task #1933] `HeapRegistry::claim()` can hand a
-    spawned thread the heap another live thread is already using — observed
-    20/20, mechanism NOT established.** Found while adding a path-activation
-    oracle to `tests/regression_xthread_large_free_layout_mismatch.rs` (item
-    14 above). The main test thread calls `HeapRegistry::claim()` and never
-    recycles; a spawned thread then calls `claim()` and receives the SAME
-    `*mut HeapCore` — byte-identical pointer, therefore the same slot.
-    **Evidence:** oracle assert firing with `left: 2130866086736, right:
-    2130866086736` (`0x1f021840010` on both sides), reproducing in 20 of 20
-    runs of that file under `production internals`; and, separately, that
-    recycling such a colliding claim measurably drains the owner's deferred
-    frees (`DBG_LARGE_XTHREAD_RECLAIMED` +1), which is only possible if the
-    two really are one slot.
-
-    **What is established:** the pointers are equal, systematically, and the
-    consequence for the tests was real (see item 14 — three assertions were
-    vacuous because of it).
-
-    **What is NOT established, and must not be assumed by whoever picks this
-    up:** *why*. `claim()` (`src/registry/heap_registry.rs:131`) takes a slot
-    only via `pick_slot()` → CAS `STATE_FREE`→`STATE_LIVE`, so a second
-    claimer can only obtain a slot that is FREE — meaning the owner's slot
-    was on the free list while the owner still held it. Something recycled
-    it. One hypothesis worth checking FIRST, because it is cheap to confirm
-    or kill: `recycle()` (`:355`) locates the slot by `heap.id()` and CASes
-    `LIVE`→`FREE` with **no generation check**, while `claim()` does bump
-    `slot.generation`. A recycler holding a pointer whose claim has since
-    been superseded would therefore free a slot it no longer owns, and the
-    LIVE→FREE CAS would SUCCEED (the existing defensive branch only catches
-    the already-FREE case, i.e. plain double-recycle). Whether any live code
-    path — as opposed to this test file's unusual manual claim/recycle usage
-    — can actually get into that state is exactly the open question. **Do not
-    file this as a production bug until that is shown**; equally, do not
-    close it as test-only until it is shown it cannot happen via the TLS
-    thread-exit recycle path (`src/global/sefer_alloc.rs:185`, "thread exit
-    recycles the slot").
-
-    **Next trigger:** any further test that needs two genuinely distinct
-    heaps in one process, or any investigation of item 12 (the sibling
-    reclaim-count race in `regression_xthread_large_free_no_leak.rs`, which
-    shares this claim/recycle idiom and may share this cause).
-    **Workaround in place meanwhile:** `claim_remote_distinct_from` in
-    `tests/regression_xthread_large_free_layout_mismatch.rs` — claims until
-    distinct and never recycles a colliding claim.
+145. **CLOSED as not reproducible** by this task (2026-09-28, oxx R2 review
+    §3.8 follow-up) — `HeapRegistry::claim()` was reported to hand a spawned
+    thread the OWNER's heap 20/20 in the original filing (task #1933), but
+    re-running an instrumented copy of the same first-claim check against
+    committed sources (both HEAD and the filing commit) found the collision
+    distinct 25/25 and 15/15 on each revision, and the "generation check in
+    `recycle`" hypothesis the card proposed does not apply to the current API
+    (`claim_impl` returns the identical address on a re-claim regardless of
+    generation — `claim.rs:236`). Hardened `claim_remote_distinct_from`
+    (`tests/regression_xthread_large_free_layout_mismatch.rs:104-127`) to a
+    hard `assert_ne!` on the first claim instead of a silent retry, then
+    reran 12 file-runs (60 test executions) across `production internals`,
+    `production alloc-stats bench-internals internals`, and `--all-features`,
+    all green. See "Recently resolved" in RESOLVED.md for the full original
+    card and closure narrative.
 
 146. **[T, filed 2026-09-08, task #1936] `best_fit_picks_tightest_slot_across_base_extension_boundary`
     (`tests/large_cache_extended_mixed_size_best_fit_fifo.rs`) intermittently
@@ -283,6 +254,47 @@ resolved" in RESOLVED.md.)_
     stated reason (no shared `tests/common/` helper yet) — the next one to
     fail should get the identical treatment, and whoever eventually builds
     the shared helper should fold all now-four patched copies into it.
+
+    **UPDATE 2026-09-28 (oxx R2 review §3.8,
+    `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md`) — read the
+    non-OS null branches of `alloc_large`; none explains the standalone-
+    `AllocCore` case, so the card's next step is unchanged.** Independently
+    re-verified against the worktree's own
+    `src/alloc_core/large/alloc_core_large.rs` and
+    `src/alloc_core/platform/numa.rs` (line numbers below re-checked, not
+    copied from the review blind): with `--all-features` (which turns on
+    `numa-aware`), Large reservation runs through
+    `numa::reserve_aligned_on_node`, and every one of ITS failure exits bumps
+    `SEGMENTS_RESERVE_FAILED_TOTAL` before returning `None`
+    (`numa.rs:82-85` — the `NO_NODE` unbound-reservation failure; `numa.rs:102-105`
+    — the `reserve_preferred_on_node` error/fallback failure). The non-OS
+    null branches inside `AllocCore::alloc_large`/`alloc_large_slow` that do
+    NOT go through either of those counted paths are: `align >= SEGMENT`
+    (`alloc_core_large.rs:141-143`); the `hdr_aligned.checked_add(...)`
+    overflow (`:160-163`); `self.table.register(base)` returning `None` on
+    the cache-hit reuse path (`:459-464`, which on failure releases the
+    reservation and falls through to `alloc_large_slow` rather than
+    returning null directly) and again on the fresh-reservation path
+    (`:623-629`); and, inside `numa::reserve_aligned_on_node` itself, the two
+    `NonNull::new(..)?` calls (`numa.rs:126-127`) that would only fire if the
+    underlying reservation call returned a null pointer without itself
+    reporting failure — guarded by the function's own comment as
+    "guaranteed non-null in practice." For the standalone-`AllocCore` test
+    (`large_cache_extended_mixed_size_best_fit_fifo.rs`, a few dozen segments
+    against `MAX_SEGMENTS = 4096`, 8-byte align on the failing filler): align
+    is never `>= SEGMENT`, the size involved (~316 MiB) is nowhere near
+    overflowing `checked_add`, and the segment table is nowhere near its
+    4096-entry ceiling — none of the four non-OS branches can fire here.
+    R2-05 (a separate finding this same review round, about
+    `small-segment-lazy-commit` without `numa-aware` under-counting SMALL
+    segment reservation refusals) does not apply either: it is scoped to the
+    small path, and this card's failure is on the Large path under
+    `--all-features`, which is not R2-05's affected configuration. **Net
+    result: at HEAD, no branch of `alloc_large` explains the zero-refusal
+    observation.** The card's own remaining next step — snapshot
+    `dbg_table_count()` and the reserved/released counters at the moment of
+    the null — stands unchanged; this update only rules out the candidate
+    branches a code-reading pass could name without running anything.
 
 147. **[T, filed 2026-09-08, task #1911] `class_a_refill_reclaims_class_b_entries_in_the_same_pass`
     (`tests/class_aware_dirty_routing.rs:456`) failed once in CI with a TOTAL
