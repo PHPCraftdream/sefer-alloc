@@ -125,6 +125,19 @@ impl AllocCore {
         crate::alloc_core::segment_table::reset_hash_remove_max_scan_steps();
     }
 
+    /// oxx R2-06 (independent src review round 2): relaxed snapshot of
+    /// [`SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL`](crate::alloc_core::segment_table::SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL)
+    /// — see that static's doc comment for the full rationale. Always
+    /// compiled; stays at 0 unless `SegmentTable::recycle`'s not-a-member
+    /// branch is ever actually taken (caller corruption / double-recycle,
+    /// never a normal decommit → recycle call).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_recycle_unverified_base_total() -> u64 {
+        crate::alloc_core::segment_table::SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
     /// `SegmentTable::dbg_hash_contains_only` — see that method's doc comment
     /// for why this exists (isolating Tier-2's cost deterministically,

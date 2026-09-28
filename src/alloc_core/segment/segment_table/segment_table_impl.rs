@@ -46,6 +46,20 @@ pub fn reset_hash_remove_max_scan_steps() {
     HASH_REMOVE_MAX_SCAN_STEPS.store(0, core::sync::atomic::Ordering::Relaxed);
 }
 
+/// oxx R2-06 (independent src review round 2): process-wide count of
+/// [`SegmentTable::recycle`] calls whose `base` argument was NOT found as a
+/// live member of the hash table at all. In that case `recycle` releases
+/// nothing (see its doc comment) — a leak, never a double-free/UB — because
+/// the segment's header at an unverified `base` must not be trusted (it may
+/// be unmapped, foreign, or garbage). Reachable only via caller corruption
+/// (a stale/garbage `base`) or a genuine double-recycle bug; never through a
+/// normal decommit → recycle call. Always compiled (not feature-gated) so
+/// the diagnostic accessor has a stable definition; stays at 0 unless this
+/// branch is ever actually taken. Relaxed ordering — a diagnostic count, not
+/// a synchronization primitive.
+pub(crate) static SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// Maximum number of simultaneously live segments the registry can hold WITHOUT
 /// recycling. Each live large/huge allocation consumes one segment slot; each
 /// small segment can serve thousands of small allocations. Under `alloc-decommit`
@@ -372,91 +386,141 @@ impl SegmentTable {
     /// atomically in one function (on the owner thread) we guarantee the slot
     /// is NULLed before anything else can observe the OS release.
     ///
-    /// If `base` is not found in the table (shouldn't happen under the correct
-    /// invariant) this is a no-op — a defensive guard, not a panic.
+    /// If `base` is a genuinely registered segment whose stamped
+    /// `segment_id` no longer resolves to its own slot (a corrupted/stale
+    /// `id` — a caller bug, or genuine memory corruption), the slot is
+    /// located by a bounded linear scan over `slots[0..count)` and the main
+    /// path still runs (`base` is unique, so at most one slot can hold it).
+    /// If `base` is not a member of the table AT ALL (never registered, or
+    /// already recycled — a double-recycle), NOTHING is released: see
+    /// oxx R2-06 below for why.
+    ///
+    /// ## oxx R2-06 (independent src review round 2): membership is checked
+    /// BEFORE the header is read, and NEVER through `slots[segment_id]` alone
+    /// (previously: `unregister`'s sibling guard, this being its `recycle`
+    /// analogue).
+    ///
+    /// The prior version of this function read `SegmentHeader::read_at(base)`
+    /// UNCONDITIONALLY, before any membership check, then treated
+    /// `slots[segment_id] != base` as the ONLY defended-against anomaly. Two
+    /// problems: (a) a double-recycle target is already unmapped — reading
+    /// its header there is itself a fault, not a graceful defensive path;
+    /// (b) even when the header read happened to succeed (e.g. a corrupted
+    /// `segment_id` on an otherwise-live, still-mapped segment), the old
+    /// defensive tail released the OS reservation from the UNVERIFIED header
+    /// bytes it just read and left `slots[]` untouched — leaving that
+    /// segment's real slot dangling (still non-NULL, pointing at now-unmapped
+    /// memory), which `AllocCore::drop`/scan paths would later walk into a
+    /// use-after-unmap or a second `release_segment` of the same reservation.
+    ///
+    /// The fix reorders the checks: [`hash_find`](Self::hash_find) is a pure
+    /// address-VALUE lookup — it never dereferences `base`'s memory — so it
+    /// can safely answer "is `base` a live member of this table" even when
+    /// `base` is unmapped or was never ours. Only once that membership is
+    /// confirmed do we read the header (now known-safe: a hash member is, by
+    /// the table's own invariant, a segment we mapped and have not yet
+    /// released). The real slot is then found — O(1) via `segment_id` in the
+    /// common case, or by the bounded linear scan above when `segment_id` is
+    /// wrong but `base` is still a genuine member — and the FULL normal path
+    /// runs against it (hash/cache eviction, OS release, slot NULL,
+    /// free-list push), so no slot is ever left dangling. If `hash_find`
+    /// reports NO membership at all, the header is never read and the
+    /// reservation is never released: we would be releasing bytes read from
+    /// an unverified/unmapped address, exactly the hazard this fix closes.
+    /// The cost is a leak (the OS reservation is never returned), not
+    /// UB/a double-free — recorded via
+    /// [`SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL`] and flagged loudly with
+    /// `debug_assert!` (this branch is reachable only via caller corruption
+    /// or a genuine double-recycle bug — never through a normal
+    /// decommit → recycle call — so no test in this crate is expected to
+    /// drive it; a corrupted-but-still-registered `segment_id` instead
+    /// drives the linear-scan-found path above, which is exercised by
+    /// `tests/segment_table_recycle.rs::recycle_defensive_tail_evicts_hash_and_cache`).
+    /// The linear scan itself only ever runs in this anomalous branch — the
+    /// common `segment_id`-resolves-directly case above stays O(1).
     #[cfg(feature = "alloc-decommit")]
     pub(crate) fn recycle(&mut self, base: *mut u8) {
-        // Read the reservation info from the segment BEFORE releasing. The
-        // metadata pages (which host the header at offset 0) are NEVER
-        // decommitted — only the payload is — so the header is still readable.
+        // oxx R2-06: membership FIRST, keyed on `base`'s ADDRESS only — no
+        // dereference of `base` happens here, so this is safe even if `base`
+        // is already unmapped (double-recycle) or was never registered.
+        if self.hash_find(base).is_none() {
+            // `base` is not a live member of this table. We deliberately do
+            // NOT read its header (it may be unmapped, foreign, or garbage)
+            // and therefore do NOT release anything — releasing an
+            // unverified (reservation, reservation_len) pair read from
+            // untrusted memory is exactly the hazard this fix closes. This
+            // is a leak, never UB.
+            SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            debug_assert!(
+                false,
+                "SegmentTable::recycle: base is not a live registered segment \
+                 -- refusing to read its header or release anything (leak, \
+                 not UB); indicates caller corruption or a double-recycle"
+            );
+            return;
+        }
+        // `base` is confirmed live in the hash table, so (by the table's own
+        // invariant — the ONLY way to leave the hash is `hash_remove`, always
+        // paired with a real release) its metadata pages are still mapped.
+        // Safe to read the header now. The metadata pages (which host the
+        // header at offset 0) are NEVER decommitted — only the payload is.
         let hdr = crate::alloc_core::segment_header::SegmentHeader::read_at(base);
         let reservation = hdr.reservation;
         let reservation_len = hdr.reservation_len;
-        // Task #135 (Part 1): `segment_id` was already read as part of the
-        // full-struct header read above (the header is still fully valid at
-        // this point — only the PAYLOAD is decommitted by the caller before
-        // `recycle` runs, never the metadata page hosting the header), so no
-        // extra read is needed. O(1) slot lookup replaces the old O(count)
-        // linear scan.
-        let id = hdr.segment_id;
-        if (id as usize) < self.count as usize {
-            let slot = Self::slot_ptr(self.slots, id as usize);
-            let current = crate::alloc_core::node::Node::read_struct::<*mut u8>(slot);
-            if current == base {
-                // OPT-B: remove the hash entry (backward-shift deletion)
-                // BEFORE releasing the OS reservation. After `release_segment`
-                // the pointer value `base` remains valid as a key (we compare
-                // values, not dereference), but doing the hash update first is
-                // cleaner.
-                self.hash_remove(base);
-                // PERF-P2 (Э3): evict `base` from the direct-mapped cache
-                // BEFORE releasing the OS reservation. After `release_segment`
-                // the virtual address `base` is unmapped; a stale cache slot
-                // still holding it would let a later free of a pointer whose
-                // computed base equals this recycled base HIT the cache and be
-                // (catastrophically) routed as own-thread → write to unmapped /
-                // recycled memory (UB / M2 breach). Co-located with
-                // `hash_remove` in the SAME function → structural invalidation.
-                self.own_cache_clear(base);
-                // Release the OS reservation. After this, `base` is invalid
-                // (unmapped). We do NOT dereference `base` after this point.
-                crate::alloc_core::os::release_segment(reservation, reservation_len);
-                // NULL the slot so `register` can reuse it and `drop` skips it.
-                crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
-                // Push the vacated index onto the free-list (O(1) reuse by a
-                // future `register`). Guarded by `current == base` above, so
-                // this index is pushed at most once per logical recycle.
-                self.free_list_push(id);
-                return;
-            }
-        }
-        // Defensive: `base` was not found at its stamped `segment_id` slot
-        // (corrupt header / double-recycle / never-registered). This
-        // indicates a bug in the caller — or a corrupted `segment_id` (the
-        // same threat model `unregister`'s sibling guard defends against).
-        //
-        // L-3 (UBFIX-11): the ORIGINAL defensive tail released the OS
-        // reservation here WITHOUT first evicting `base` from the hash table
-        // / own-cache, unlike the main (non-defensive) path just above. If
-        // `base` happens to still be a genuinely LIVE entry in the hash table
-        // (reachable via `hash_index(base)`, which is keyed by the pointer
-        // VALUE, not by the corrupt `segment_id`) or the direct-mapped
-        // own-cache, that stale entry would survive this release: a later
-        // `contains_base(base)` on the now-UNMAPPED address would return
-        // `true` (cache hit or hash hit), routing a subsequent free as
-        // own-thread and reading/writing unmapped memory.
-        //
-        // `hash_remove`/`own_cache_clear` key on `base`'s VALUE (via
-        // `hash_index`/`cache_index`), never on `id` — so calling them here
-        // is safe and correct regardless of what is wrong with the stamped
-        // `segment_id`: if `base` is genuinely present in the hash/cache
-        // (under its natural probe position, independent of any slot index),
-        // it is evicted; if it is not present (e.g. truly never registered),
-        // both are already documented no-ops (`hash_remove`'s empty-slot
-        // return; `own_cache_clear`'s slot-mismatch skip). This mirrors the
-        // main path's exact call order (hash/cache eviction BEFORE the OS
-        // release), just without the (untrustworthy, in this branch) slot
-        // NULL + free-list push — the `slots[]` array itself is intentionally
-        // left untouched here, since we do not know which (if any) index
-        // legitimately maps to `base` under the corruption.
+        let id = hdr.segment_id as usize;
+        // Fast path: the stamped `segment_id` resolves directly to `base`'s
+        // slot (O(1); `base_at` bounds-checks `id` and returns null on
+        // out-of-range, which never equals a real segment base).
+        let slot_id = if self.base_at(id) == base {
+            Some(id)
+        } else {
+            // Anomalous: `base` IS a live hash member (checked above) but its
+            // stamped `segment_id` does not resolve to its own slot — a
+            // corrupted/stale `id` (caller bug, or memory corruption; the
+            // same threat model `unregister`'s sibling guard defends
+            // against). `base` is unique, so a bounded linear scan over
+            // `slots[0..count)` finds its real slot. Only this anomalous
+            // branch pays the O(count) cost — the fast path above is
+            // unaffected.
+            (0..self.count as usize).find(|&i| self.base_at(i) == base)
+        };
+        let Some(slot_id) = slot_id else {
+            // Hash member with no `slots[]` entry: the hash/slots invariant
+            // is broken. Leak rather than panic on the free path; the
+            // segment stays mapped, so its hash entry cannot route to
+            // unmapped memory.
+            SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            debug_assert!(
+                false,
+                "SegmentTable::recycle: base is a live hash-table member but \
+                 no slots[] entry holds it -- hash/slots invariant broken"
+            );
+            return;
+        };
+        let slot = Self::slot_ptr(self.slots, slot_id);
+        // OPT-B: remove the hash entry (backward-shift deletion) BEFORE
+        // releasing the OS reservation.
         self.hash_remove(base);
+        // PERF-P2 (Э3): evict `base` from the direct-mapped cache BEFORE
+        // releasing the OS reservation. After `release_segment` the virtual
+        // address `base` is unmapped; a stale cache slot still holding it
+        // would let a later free of a pointer whose computed base equals
+        // this recycled base HIT the cache and be (catastrophically) routed
+        // as own-thread → write to unmapped/recycled memory (UB / M2
+        // breach). Co-located with `hash_remove` in the SAME function →
+        // structural invalidation.
         self.own_cache_clear(base);
-        // Release the OS reservation anyway to avoid a leak, but don't
-        // corrupt the `slots[]` array — we do not know which slot (if any)
-        // legitimately corresponds to `base` under this corruption, so
-        // NULLing an unrelated slot / pushing a bogus free-list index would
-        // be worse than a defensive no-op there.
+        // Release the OS reservation. After this, `base` is invalid
+        // (unmapped). We do NOT dereference `base` after this point.
         crate::alloc_core::os::release_segment(reservation, reservation_len);
+        // NULL the slot so `register` can reuse it and `drop` skips it.
+        crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+        // Push the vacated index onto the free-list (O(1) reuse by a future
+        // `register`). This index is pushed at most once per logical
+        // recycle (the slot held exactly one live base, now evicted above).
+        self.free_list_push(slot_id as u32);
     }
 
     /// The high-water mark: the number of slots ever written (including

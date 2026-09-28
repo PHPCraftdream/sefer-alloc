@@ -175,6 +175,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_table_count",
     "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_contains_base",
     "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_hash_remove_max_scan_steps",
+    "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle_unverified_base_total",
     "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_hash_contains_only",
     "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_segment_id_of",
     "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_kind_byte_of",

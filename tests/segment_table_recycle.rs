@@ -30,6 +30,16 @@
 //! primordial, free all (triggering decommit + recycle of the emptied segment),
 //! then alloc again; the allocator must succeed (recycled slot reused) and
 //! allocations must be valid and writable.
+//!
+//! ### `recycle_defensive_tail_evicts_hash_and_cache` (alloc-core, alloc-decommit)
+//!
+//! oxx R2-06 (independent src review round 2): proves `SegmentTable::recycle`'s
+//! anomalous-but-found branch (a corrupted `segment_id`, but the base is still
+//! a genuine hash-table member) routes through the FULL normal path — release,
+//! slot NULL, free-list push — instead of the pre-fix defensive tail that
+//! released the OS reservation but left the segment's own slot dangling
+//! (non-NULL, pointing at now-unmapped memory). See its own doc comment for
+//! the counterfactual detail.
 
 #![cfg(feature = "internals")]
 // R34-3 (task #522, finding B1): every test below reaches
@@ -39,6 +49,21 @@
 // required — `internals` alone does not expose `alloc_core` (see
 // `internals`'s doc comment in `Cargo.toml`: it is additive over
 // `alloc-core`).
+
+// oxx R2-06: `AllocCore::dbg_segments_released_total()` is a PROCESS-WIDE
+// static atomic shared across every `AllocCore` in the process (see its own
+// doc comment). `cargo test` runs this file's tests in parallel by default,
+// and three of the four tests below (`slot_recycle_lifts_cap`,
+// `without_decommit_cap_is_hard`, `recycled_slot_is_reused`) themselves
+// release many segments — a sibling test's release traffic mid-sequence
+// would pollute `recycle_defensive_tail_evicts_hash_and_cache`'s exact-delta
+// assertions. Serialized with the SAME established `static TEST_LOCK:
+// Mutex<()>` + guard pattern already used in
+// `tests/segment_table_contains_base_tier1_counters.rs`,
+// `tests/directory_authoritative_miss.rs`,
+// `tests/alloc_zeroed_fresh_large_skip.rs`, and others for tests reading
+// process-wide diagnostic counters.
+static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ============================================================
 // Test 1 — slot recycle lifts the 1024-segment cap
@@ -63,6 +88,9 @@ fn slot_recycle_lifts_cap() {
     use core::alloc::Layout;
     use sefer_alloc::alloc_core::AllocCore;
     use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
+
+    // oxx R2-06: see the module-level `TEST_LOCK` doc comment.
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     // Mechanism 2 (task #51): DISABLE the empty-small-segment pool. This is a
     // task-#60 SLOT-RECYCLE test — it must exercise the decommit→release→recycle
@@ -150,6 +178,9 @@ fn without_decommit_cap_is_hard() {
     use core::alloc::Layout;
     use sefer_alloc::{alloc_core::AllocCore, SegmentLayout};
 
+    // oxx R2-06: see the module-level `TEST_LOCK` doc comment.
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let mut ac = AllocCore::new().expect("primordial");
 
     // Reserve large allocations (each gets its own segment). Keep them live.
@@ -218,6 +249,9 @@ fn recycled_slot_is_reused() {
 
     use sefer_alloc::alloc_core::AllocCore;
     use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
+
+    // oxx R2-06: see the module-level `TEST_LOCK` doc comment.
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     // Mechanism 2 (task #51): DISABLE the pool so this task-#60 slot-recycle unit
     // test deterministically exercises decommit → slot recycle → reuse (with the
@@ -293,51 +327,61 @@ fn recycled_slot_is_reused() {
 }
 
 // ============================================================
-// Test 4 (L-3, UBFIX-11) — recycle's defensive-mismatch tail must evict the
-// hash table / own-cache entry before releasing the OS reservation.
+// Test 4 (L-3/UBFIX-11, extended by oxx R2-06) — recycle's anomalous
+// segment_id-mismatch branch must evict the hash table / own-cache entry
+// AND reuse the segment's real slot (not just release its OS reservation).
 // ============================================================
 
 /// `SegmentTable::recycle`'s O(1) path trusts the segment's own stamped
 /// `segment_id` field to locate its slot (mirroring `unregister`'s O(1)
 /// path). If that field is corrupted (a caller bug, or genuine memory
-/// corruption — exactly the threat model the defensive branch exists for),
-/// the fallback tail releases the OS reservation anyway (to avoid a leak)
-/// but must NOT leave `base` reachable via `contains_base` afterwards: a
-/// later `contains_base(base)` hit on that now-UNMAPPED address would route
-/// a subsequent free as own-thread and read/write unmapped memory.
+/// corruption — exactly the threat model the anomalous branch exists for),
+/// `base` is still a genuine, live hash-table member — so `recycle`'s
+/// anomalous branch must locate its REAL slot (a bounded linear scan by
+/// VALUE — `base` is unique) and route it through the exact same normal
+/// path as a clean recycle: hash/cache eviction, OS release, slot NULL,
+/// free-list push. It must NOT leave `base` reachable via `contains_base`
+/// afterwards, and it must NOT leave the slot dangling for `Drop` to
+/// double-release.
 ///
-/// This is the counterfactual for L-3: before the fix, the defensive tail
-/// released the OS reservation WITHOUT first calling `hash_remove`/
-/// `own_cache_clear`, so a genuinely-still-present hash/cache entry for
-/// `base` survived the release. This test proves the fix by driving `base`
-/// through the OWN-CACHE fast path first (a won `contains_base` probe fills
-/// it — PERF-P2/Э3), THEN corrupting its `segment_id` and recycling via the
-/// defensive tail, THEN asserting `contains_base` is `false` afterwards.
-/// Without the fix this assertion goes RED (the stale cache entry still HITS).
+/// ## oxx R2-06 counterfactual
 ///
-/// ## Why this test does not exercise `AllocCore::drop`
+/// Before the fix, `recycle`'s defensive tail released the OS reservation
+/// (reading its `(reservation, reservation_len)` from an UNVERIFIED header
+/// read that happened before any membership check) but left `slots[]`
+/// completely untouched — `a`'s own original slot kept holding the
+/// (now-dangling) pointer value forever, never pushed to the free-list.
+/// This test proves the fix two ways:
 ///
-/// The defensive tail intentionally does NOT NULL `slots[]` (see this task's
-/// summary: we do not know which slot, if any, legitimately corresponds to
-/// `base` under a corrupted `segment_id`, so touching an unrelated slot would
-/// be worse than leaving it alone). This means `a`'s original slot still
-/// holds the (now-dangling) pointer value after this test's defensive
-/// recycle — an ORTHOGONAL, pre-existing property of the defensive branch's
-/// contract (not something this task's fix changes or could safely change
-/// without risking a wrong-slot NULL). If `AllocCore::drop` ran normally at
-/// the end of this test, it would walk that still-non-NULL slot and attempt
-/// to release `a`'s (already-released) OS reservation a second time — a real
-/// double-free of an OS resource, not a controlled counterfactual. This test
-/// therefore `mem::forget`s `ac` after making its assertion, deliberately
-/// leaking the `AllocCore` (and, transitively, `b`'s still-live OS
-/// reservation) for the lifetime of the test process — the standard,
-/// well-understood way to sidestep an orthogonal Drop hazard while still
-/// proving the specific hash/cache-eviction fix this test targets.
+/// 1. **Hash/cache eviction** (L-3/UBFIX-11, pre-existing, reverified here):
+///    drive `a` through the own-cache fast path first (a won `contains_base`
+///    probe fills it — PERF-P2/Э3), corrupt its `segment_id`, recycle, then
+///    assert `contains_base(a) == false`.
+/// 2. **Slot reuse — the oxx R2-06 counterfactual proper**: the free-list is
+///    LIFO, and `a`'s slot is the only one just vacated, so the VERY NEXT
+///    `register()` call (triggered by allocating `c` below) must reuse
+///    EXACTLY `a`'s original slot index. Pre-fix, `a`'s slot was never
+///    pushed to the free-list, so `c` would instead get a brand-new
+///    APPENDED slot — this assertion goes RED without the fix (verified by
+///    temporarily reverting `SegmentTable::recycle` to its pre-fix form and
+///    re-running this test in isolation: `c`'s id came back as a fresh
+///    append, not `a`'s original id, and a subsequent normal `Drop` of `ac`
+///    then released `a`'s already-released reservation a second time).
+///
+/// With the fix, `a`'s slot is provably NOT dangling (it now holds `c`), so
+/// — unlike the pre-fix version of this test — `ac` is allowed to `Drop`
+/// normally at the end (no `mem::forget`); the exact `dbg_segments_released_total`
+/// deltas confirm no release is missed or doubled.
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 #[test]
 fn recycle_defensive_tail_evicts_hash_and_cache() {
     use core::alloc::Layout;
     use sefer_alloc::{alloc_core::AllocCore, SegmentLayout};
+
+    // oxx R2-06: see the module-level `TEST_LOCK` doc comment — this test's
+    // `dbg_segments_released_total` deltas below need this file's other
+    // tests' release traffic serialized out.
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     let mut ac = AllocCore::new().expect("primordial");
     let large_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
@@ -366,56 +410,98 @@ fn recycle_defensive_tail_evicts_hash_and_cache() {
     let b_id = ac.dbg_segment_id_of(b);
     assert_ne!(a_id, b_id, "precondition: distinct segment ids");
 
+    let released_before = AllocCore::dbg_segments_released_total();
+
     // Corrupt `a`'s stamped segment_id to `b`'s id, exactly as
     // `unregister_defends_against_mismatched_segment_id` does for
-    // `unregister`. `recycle`'s O(1) lookup will read `slots[b_id]`, find
-    // `b` there (not `a`), and fall into the defensive tail.
+    // `unregister`. `recycle`'s O(1) fast path reads `slots[b_id]`, finds
+    // `b` there (not `a`), and falls into the anomalous branch — which must
+    // then find `a`'s REAL slot by linear scan (since `a` is still a live
+    // hash member) rather than treat this as "not found".
     // SAFETY (R6-CQ-2): `a` is a live allocation owned by `ac`. The corrupted
-    // `b_id` is consumed ONLY by `dbg_recycle(a)` below — a test-only teardown
-    // whose `slots[id] == base` defensive guard reads `slots[b_id]`, finds `b`
-    // (not `a`), and takes the defensive tail (releasing `a`'s OS reservation)
-    // WITHOUT routing on the stamped id being correct. `ac` is then
-    // `mem::forget`-ed, so no safe `alloc`/`dealloc`/`Drop` ever routes on the
-    // corrupted value. Teardown-via-test-seam per the `# Safety` contract.
+    // `b_id` is consumed ONLY by `dbg_recycle(a)` below — a test-only
+    // teardown whose anomalous-branch linear scan resolves `a`'s true slot
+    // independent of the corrupted stamped id and does NOT route on it being
+    // correct. `a_id` (captured above) is never used to route any further
+    // operation on `a` — `a` is fully retired by `dbg_recycle` below, and the
+    // rest of this test only re-derives ids for `b`/`c`. Teardown-via-test-seam
+    // per the `# Safety` contract.
     unsafe { ac.dbg_stamp_segment_id(a, b_id) };
 
-    // Drive `a` through `recycle`'s defensive-mismatch tail. This releases
-    // `a`'s OS reservation (to avoid a leak) but — under the fix — must ALSO
-    // evict `a` from the hash table and the own-cache before doing so.
+    // Drive `a` through `recycle`'s anomalous branch. Under the fix this
+    // releases `a`'s OS reservation AND evicts it from the hash table/cache
+    // AND nulls + free-lists its real slot — the full normal path.
     // SAFETY: `a` is a live allocation owned by `ac`.
     unsafe { ac.dbg_recycle(a) };
 
-    // The counterfactual assertion: `a` must no longer be considered a live,
-    // routable segment. Pre-fix, the own-cache slot for `a` (filled above)
-    // and/or the hash entry would still report a HIT here — on an address
-    // whose OS reservation was JUST released (unmapped/reusable by the OS).
+    // Counterfactual 1 (L-3/UBFIX-11, reverified): `a` must no longer be
+    // considered a live, routable segment. Pre-fix, the own-cache slot for
+    // `a` (filled above) and/or the hash entry would still report a HIT here
+    // — on an address whose OS reservation was JUST released (unmapped/
+    // reusable by the OS).
     assert!(
         !ac.dbg_contains_base(a),
         "L-3 REGRESSION: `a` is still `contains_base`-reachable after \
-         `recycle`'s defensive tail released its OS reservation — a stale \
+         `recycle`'s anomalous branch released its OS reservation — a stale \
          hash/own-cache entry survived the release, so a later free routed \
          through `a`'s (unmapped) base would read/write freed memory"
     );
 
-    // `b` must be completely unaffected by `a`'s defensive recycle: still
-    // registered, still writable.
+    // `b` must be completely unaffected by `a`'s recycle: still registered,
+    // still writable.
     assert!(
         ac.dbg_contains_base(b),
-        "b's registration was corrupted by a's defensive recycle"
+        "b's registration was corrupted by a's recycle"
     );
     unsafe {
         b.write(0xAB);
-        assert_eq!(
-            b.read(),
-            0xAB,
-            "b became unwritable after a's defensive recycle"
-        );
+        assert_eq!(b.read(), 0xAB, "b became unwritable after a's recycle");
     }
 
-    // See the doc comment above: `a`'s slot in `slots[]` was deliberately
-    // left untouched by the defensive tail (orthogonal to this fix), so a
-    // normal `Drop` would attempt to release `a`'s reservation a second
-    // time. Leak `ac` instead of dropping it — this test's assertions are
-    // already complete at this point.
-    core::mem::forget(ac);
+    // Exactly `a`'s reservation was released so far — no double-release, no
+    // missed release.
+    assert_eq!(
+        AllocCore::dbg_segments_released_total() - released_before,
+        1,
+        "recycle's anomalous branch must release exactly `a`'s reservation"
+    );
+
+    // Counterfactual 2 (oxx R2-06, the load-bearing assertion of this test):
+    // the free-list is LIFO and `a`'s slot is the only one just vacated, so
+    // the VERY NEXT `register()` call must reuse EXACTLY `a`'s original slot
+    // index. Pre-fix, `a`'s slot was never pushed to the free-list (the
+    // defensive tail left `slots[]` untouched), so this next alloc would
+    // instead get a brand-new APPENDED slot — this assertion goes RED
+    // without the fix.
+    let c = ac.alloc(layout);
+    assert!(!c.is_null(), "c: large alloc failed");
+    let c_id = ac.dbg_segment_id_of(c);
+    assert_eq!(
+        c_id, a_id,
+        "R2-06 REGRESSION: `a`'s original slot (id={a_id}) was not recycled \
+         by `recycle`'s anomalous branch — the next register() appended a \
+         new slot (id={c_id}) instead of reusing it, meaning `a`'s slot is \
+         still dangling (non-NULL, pointing at unmapped memory) and would be \
+         double-released when `ac` drops"
+    );
+    unsafe {
+        c.write(0xCD);
+        assert_eq!(c.read(), 0xCD, "c is not writable after slot reuse");
+    }
+
+    // oxx R2-06: with the fix there is no dangling slot left for `Drop` to
+    // walk into a double-release, so — unlike the pre-fix version of this
+    // test, which had to `mem::forget(ac)` to sidestep exactly that hazard —
+    // `ac` is allowed to drop NORMALLY here. Live segments at this point:
+    // the primordial, `b`, and `c` (`a` was already retired above) — `Drop`
+    // must release exactly those three, no more, no fewer.
+    let released_before_drop = AllocCore::dbg_segments_released_total();
+    drop(ac);
+    assert_eq!(
+        AllocCore::dbg_segments_released_total() - released_before_drop,
+        3,
+        "R2-06 REGRESSION: Drop released a different count than exactly \
+         {{primordial, b, c}} — either a leak or a double-release slipped \
+         through"
+    );
 }
