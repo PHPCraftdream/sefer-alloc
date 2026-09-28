@@ -43,7 +43,8 @@ impl HeapOverflow {
     ///
     /// `base` MUST be a real, non-null segment base (never
     /// [`ENTRY_EMPTY_BASE`] — see that constant's doc comment for why a real
-    /// segment base is never `0`).
+    /// segment base is never `0`). A null `base` returns `false` in every
+    /// build, without reserving a cursor or bumping `overflow_count`.
     ///
     /// `pub` (doc-hidden, not stable API) ONLY so
     /// `tests/miri_heap_overflow_unit.rs` can drive the protocol directly —
@@ -76,8 +77,9 @@ impl HeapOverflow {
     /// of those two one-shot call sites, only inside the bounded retry loop.
     ///
     /// `base` MUST be a real, non-null segment base — same contract as
-    /// [`push`](Self::push). Same wedge-hazard-safe sidecar-materialisation
-    /// ordering as `push` — see that method's doc comment.
+    /// [`push`](Self::push), including the null-`base` rejection. Same
+    /// wedge-hazard-safe sidecar-materialisation ordering as `push` — see
+    /// that method's doc comment.
     ///
     /// `pub` (doc-hidden, not stable API) for the same reason as
     /// [`push`](Self::push) — kept `pub` for test-surface symmetry even
@@ -152,7 +154,11 @@ impl HeapOverflow {
     /// source of drift risk between the two methods.
     #[inline]
     fn push_impl(&self, base: *mut u8, packed: u32, counted: bool) -> bool {
-        debug_assert_ne!(base, ENTRY_EMPTY_BASE, "segment base must not be null");
+        // Every build: a published null slot would wedge `try_drain`. Reject
+        // before touching `tail`; not counted as overflow.
+        if base == ENTRY_EMPTY_BASE {
+            return false;
+        }
         loop {
             let t = self.tail.load(Ordering::Relaxed);
             let h = self.head.load(Ordering::Acquire);

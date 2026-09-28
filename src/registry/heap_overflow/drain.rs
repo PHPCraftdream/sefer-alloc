@@ -83,8 +83,12 @@ impl HeapOverflow {
             && self.spill_head.load(Ordering::Relaxed).is_null()
     }
 
+    /// **Test surface**: raw `(head, tail)` cursor snapshot (read-only), for
+    /// asserting a rejected `push` left a standalone
+    /// [`new_boxed_for_test`](Self::new_boxed_for_test) ring untouched.
     #[cfg(feature = "internals")]
-    pub(crate) fn cursors_for_test(&self) -> (usize, usize) {
+    #[doc(hidden)]
+    pub fn cursors_for_test(&self) -> (usize, usize) {
         (
             self.head.load(Ordering::Acquire),
             self.tail.load(Ordering::Acquire),
