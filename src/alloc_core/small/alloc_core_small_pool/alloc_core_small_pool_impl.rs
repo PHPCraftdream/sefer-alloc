@@ -241,12 +241,25 @@ impl AllocCore {
     /// here since the payload is never even decommitted while pooled). Once the
     /// segment is un-pooled (reused via `find_segment_with_free`) and allocation
     /// resumes, its `live_count` rises and it behaves as an ordinary registered
-    /// segment. Every empty-observing site `continue`s / returns after this
-    /// call, so it yields `()`: the caller does not need to distinguish pooled
-    /// from released.
+    /// segment. Most empty-observing sites `continue`/return unconditionally
+    /// after this call and ignore the return value; the one exception is the
+    /// ring-drain in `find_segment_with_free_impl` (its `RingDrainOutcome::
+    /// Decommitted { pooled }` variant), which needs to know whether `base`
+    /// is still a live, registered,
+    /// fully-committed segment (pooled — `true`) or gone/unmapped (released —
+    /// `false`) to decide whether it is safe to keep inspecting `base`'s
+    /// `BinTable` for the class this scan is looking for (R1-03, src review
+    /// round 1: a segment that empties DURING the very drain that is
+    /// searching for a free block must not be skipped just because it also
+    /// happened to cross the pool-admission threshold in the same call).
+    ///
+    /// Returns `true` if `base` was admitted to the pool (still valid,
+    /// registered, committed — its `BinTable` may be inspected), `false` if it
+    /// was released (caller must treat `base` as gone/unmapped).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    pub(crate) fn release_or_pool_empty_segment(&mut self, base: *mut u8) {
+    #[must_use]
+    pub(crate) fn release_or_pool_empty_segment(&mut self, base: *mut u8) -> bool {
         // Defence-in-depth against a double-entry: a segment that is already
         // pooled must never be pushed again (a duplicate base → later
         // double-recycle / a corrupt list). By construction this cannot
@@ -282,7 +295,7 @@ impl AllocCore {
                 &mut self.pooled_count,
                 base,
             );
-            return; // pooled — base still valid/registered
+            return true; // pooled — base still valid/registered
         }
         // Pool disabled or full: release immediately (pre-Mechanism-2 path).
         // R7-A2: clear directory bits BEFORE the slot is recycled (the segment
@@ -295,6 +308,7 @@ impl AllocCore {
         }
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
         self.table.recycle(base);
+        false // released — base is gone/unmapped
     }
 
     /// R12-6 (P1) — rare post-drain fallback for
@@ -374,7 +388,7 @@ impl AllocCore {
             if self.pool_head == base || !meta.pool_prev_of().is_null() {
                 continue;
             }
-            self.release_or_pool_empty_segment(base);
+            let _ = self.release_or_pool_empty_segment(base);
         }
     }
 

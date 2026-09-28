@@ -697,7 +697,7 @@ impl AllocCore {
             if Self::dec_live_batch_and_maybe_decommit(base, accepted_count as u32, small_cur) {
                 // Mechanism 2 (task #51): pool-or-release instead of the former
                 // unconditional recycle.
-                self.release_or_pool_empty_segment(base);
+                let _ = self.release_or_pool_empty_segment(base);
                 // L-4 (UBFIX-11): report the recycle to `flush_class` so it can
                 // skip any later same-`base` run within this call.
                 return true;

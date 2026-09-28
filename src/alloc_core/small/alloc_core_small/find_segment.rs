@@ -16,13 +16,22 @@ pub(super) enum RingDrainOutcome {
     /// work was done (ring untouched, `ring_drain_head` NOT refreshed).
     Skipped,
     /// The ring was drained and, as a side effect, the segment was fully
-    /// emptied and released/pooled by `release_or_pool_empty_segment`. The
-    /// caller MUST treat `base` as gone/unmapped for the rest of this pass
-    /// — do not read its BinTable or any other metadata. Only constructed
-    /// under `alloc-decommit` (the only feature under which a drain can
-    /// trigger a decommit at all).
+    /// emptied and released/pooled by `release_or_pool_empty_segment`. Only
+    /// constructed under `alloc-decommit` (the only feature under which a
+    /// drain can trigger a decommit at all).
+    ///
+    /// `pooled` distinguishes the two dispositions (R1-03, src review round
+    /// 1): `false` means `base` was RELEASED — gone/unmapped, the caller
+    /// MUST NOT read its BinTable or any other metadata. `true` means `base`
+    /// was POOLED — still a live, registered, fully-committed segment whose
+    /// `BinTable` may legitimately have free blocks for the class this scan
+    /// is looking for (every block was just freed), so a caller performing a
+    /// free-block search must keep considering `base` exactly like a
+    /// `Drained` segment instead of skipping it — the pool is a same-class
+    /// free-list reserve, and a segment that empties DURING this very scan
+    /// is reusable in this same pass, not only on a later call.
     #[cfg(feature = "alloc-decommit")]
-    Decommitted,
+    Decommitted { pooled: bool },
     /// The ring was drained; the segment is still live and
     /// `ring_drain_head` has been refreshed. `changed_classes` is the R8-1
     /// accumulator (bitmask of classes the drain touched) — already used to
@@ -268,12 +277,14 @@ impl AllocCore {
             self.sync_directory_for_segment_classes(base, slot_idx, changed_classes);
         }
         // Mechanism 2 (task #51): now that the drain is complete, an
-        // emptied segment is routed through the pool/release decision —
-        // caller must skip any further metadata read of `base` this pass.
+        // emptied segment is routed through the pool/release decision. R1-03
+        // (src review round 1): the caller may still read `base`'s BinTable
+        // this pass iff it was POOLED (still live/registered/committed) —
+        // see `RingDrainOutcome::Decommitted`'s doc.
         #[cfg(feature = "alloc-decommit")]
         if decommit_happened {
-            self.release_or_pool_empty_segment(base);
-            return RingDrainOutcome::Decommitted;
+            let pooled = self.release_or_pool_empty_segment(base);
+            return RingDrainOutcome::Decommitted { pooled };
         }
         // Refresh the cache with the drain's actual final head — NOT
         // `ring.tail_relaxed()`'s pre-drain snapshot, so a producer that
@@ -683,11 +694,18 @@ impl AllocCore {
                 #[cfg(feature = "fastbin")]
                 is_in_magazine,
             ) {
-                // Decommitted: `base` is unmapped or pooled — skip the
-                // BinTable check for it in THIS scan (see the doc comment on
-                // `drain_segment_ring` for the released-vs-pooled rationale).
+                // Decommitted+released: `base` is unmapped — skip the
+                // BinTable check for it in THIS scan. Decommitted+pooled:
+                // `base` is still live/registered/committed (R1-03, src
+                // review round 1) — fall through to the SAME BinTable check
+                // every other live segment gets below, so a segment that just
+                // emptied (and therefore has every one of its blocks free)
+                // can be reused as a hit in this very scan, not only on a
+                // later call (see `RingDrainOutcome::Decommitted`'s doc).
                 #[cfg(feature = "alloc-decommit")]
-                RingDrainOutcome::Decommitted => continue,
+                RingDrainOutcome::Decommitted { pooled: false } => continue,
+                #[cfg(feature = "alloc-decommit")]
+                RingDrainOutcome::Decommitted { pooled: true } => {}
                 RingDrainOutcome::Skipped | RingDrainOutcome::Drained { .. } => {}
             }
             let meta = SegmentMeta::new(base);
@@ -857,10 +875,16 @@ impl AllocCore {
             #[cfg(feature = "fastbin")]
             is_in_magazine,
         ) {
-            // P1-b: decommit/pool hysteresis — a decommitted segment must be
-            // skipped; try the next candidate.
+            // P1-b: decommit/pool hysteresis — a RELEASED segment must be
+            // skipped (try the next candidate); a POOLED segment (R1-03, src
+            // review round 1) is still live/registered/committed, so fall
+            // through to the SAME validation step 3 below every other live
+            // candidate gets, letting a segment that emptied DURING this
+            // drain be recognised as a hit in this very call.
             #[cfg(feature = "alloc-decommit")]
-            RingDrainOutcome::Decommitted => return None,
+            RingDrainOutcome::Decommitted { pooled: false } => return None,
+            #[cfg(feature = "alloc-decommit")]
+            RingDrainOutcome::Decommitted { pooled: true } => {}
             RingDrainOutcome::Skipped | RingDrainOutcome::Drained { .. } => {}
         }
 

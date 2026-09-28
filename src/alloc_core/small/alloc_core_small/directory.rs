@@ -463,9 +463,15 @@ impl AllocCore {
                 ) {
                     super::find_segment::RingDrainOutcome::Skipped => {}
                     #[cfg(feature = "alloc-decommit")]
-                    super::find_segment::RingDrainOutcome::Decommitted => {
+                    super::find_segment::RingDrainOutcome::Decommitted { .. } => {
                         // The segment is now released/pooled; skip the head
-                        // refresh (the segment may be unmapped).
+                        // refresh (the segment may be unmapped). This sweep
+                        // only maintains directory bits (already synced
+                        // inside `drain_segment_ring` regardless of the
+                        // pool/release disposition) — it is not a free-block
+                        // search, so it does not need the R1-03 pooled/
+                        // released distinction `find_segment_with_free_impl`
+                        // and `validate_directory_candidate` use.
                         // R7-A0: count this dirty segment as drained.
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRTY_SEGMENTS_DRAINED

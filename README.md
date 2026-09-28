@@ -1383,7 +1383,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **288 integration test files** ship
+a test file, and a reproducible command. **289 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **17 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1391,7 +1391,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (288 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (289 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1498,14 +1498,29 @@ want a hard RSS ceiling (containers, mobile), add
 The `alloc-decommit` feature also carries the **empty-small-segment
 hysteresis pool** (Mechanism 2): when a small segment empties, the
 allocator MAY retain it — still registered in the segment table, pages
-still committed, per-class free lists still populated — so the next
-allocation that would otherwise reserve a fresh segment pops a pooled
-one with no OS syscall, no metadata re-init, and no page fault. Its
-default (`SmallSegmentPoolConfig::DEFAULT` = `pool_segments=4,
+still committed, per-class free lists still populated. **The pool is a
+same-class free-list reserve, not a carve reserve:** reuse happens when a
+later allocation of a class the segment already held free blocks for scans
+registered segments (`find_segment_with_free`) and finds them there —
+no OS syscall, no metadata re-init, no page fault for that reuse.
+`reserve_small_segment` (the path taken when no registered segment —
+pooled included — has a free block of the requested class) always performs
+a genuine fresh OS reservation; a pooled segment is never popped as a
+carve target for a class it has no free blocks for. A workload that
+switches size classes right after a segment empties therefore gets no
+benefit from that pooled segment: it sits fully committed, contributing to
+RSS, until a same-class allocation reuses it, the hysteresis decay drains
+it, or an explicit drain releases it. Its default
+(`SmallSegmentPoolConfig::DEFAULT` = `pool_segments=4,
 pool_byte_cap=16 MiB`) is deliberately **RSS-conservative** — it caps
 both how many empty segments are retained (4) and how much committed
 RSS the pool holds (16 MiB). Setting either knob to `0` disables the
 pool entirely (immediate release of every empty small segment).
+Raising these knobs therefore only helps a **same-class** working-set
+that churns allocations across a segment boundary (allocate N, free N,
+reallocate N, ...); it does not accelerate a class-switching or
+producer→consumer handoff workload — carving a pooled segment as a fresh
+target for a different class is not implemented.
 
 For latency-sensitive workloads that churn allocations across a segment
 boundary, raise BOTH knobs together via `SmallSegmentPoolConfig`,

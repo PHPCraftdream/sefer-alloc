@@ -52,7 +52,7 @@ impl AllocCore {
     pub fn dbg_decomp_full_cycle(&mut self) -> bool {
         match self.reserve_small_segment_impl() {
             Some(base) => {
-                self.release_or_pool_empty_segment(base);
+                let _ = self.release_or_pool_empty_segment(base);
                 true
             }
             None => false,
@@ -317,7 +317,7 @@ impl AllocCore {
             base != self.small_cur,
             "dbg_decomp_release: base is the live small_cur cursor — release would dangle it"
         );
-        self.release_or_pool_empty_segment(base);
+        let _ = self.release_or_pool_empty_segment(base);
     }
 
     /// R29-3: decommit (`MADV_DONTNEED`) the payload pages of a live segment,

@@ -136,7 +136,7 @@ impl AllocCore {
         // reservation can be released right away.
         #[cfg(feature = "alloc-decommit")]
         if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
-            self.release_or_pool_empty_segment(base);
+            let _ = self.release_or_pool_empty_segment(base);
         }
     }
 }

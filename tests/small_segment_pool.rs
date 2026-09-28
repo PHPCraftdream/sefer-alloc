@@ -535,3 +535,164 @@ fn reuse_invariant_under_pool_churn() {
          path was not exercised (test would be vacuous)"
     );
 }
+
+// ── 8. A segment emptied MID-SCAN is reused in the SAME call (R1-03) ────────
+
+/// Allocate `layout` in strict order, grouping the returned pointers by the
+/// (freshly reserved, small) segment they land in, in FIRST-SEEN segment
+/// order. Stops once at least `target_segments` distinct segments have been
+/// seen. `segments[0]` may be the primordial segment (shares the small path);
+/// every later entry is a genuinely fresh `Small` segment reserved via
+/// `reserve_small_segment`, and every entry except the LAST is fully carved
+/// (a later segment only exists because its predecessor ran out of bump room).
+fn fill_ordered_segments(
+    ac: &mut AllocCore,
+    layout: Layout,
+    target_segments: usize,
+) -> Vec<(usize, Vec<*mut u8>)> {
+    const ROUND_BLOCKS: usize = 18_000; // > one fresh segment's ~16K capacity
+    let mut order: Vec<usize> = Vec::new();
+    let mut per_segment: std::collections::HashMap<usize, Vec<*mut u8>> =
+        std::collections::HashMap::new();
+    let mut round = 0usize;
+    while order.len() < target_segments && round < target_segments * 3 {
+        for _ in 0..ROUND_BLOCKS {
+            let p = ac.alloc(layout);
+            assert!(!p.is_null(), "alloc null in round={round}");
+            let seg_base = (p as usize) & !(SEGMENT - 1);
+            per_segment.entry(seg_base).or_default().push(p);
+            if !order.contains(&seg_base) {
+                order.push(seg_base);
+            }
+        }
+        round += 1;
+    }
+    assert!(
+        order.len() >= target_segments,
+        "failed to reach {target_segments} distinct segments (only {})",
+        order.len()
+    );
+    order
+        .into_iter()
+        .map(|b| (b, per_segment.remove(&b).unwrap()))
+        .collect()
+}
+
+/// R1-03 (src review round 1): a segment that reaches `live_count == 0`
+/// DURING the very ring-drain a `find_segment_with_free` scan performs while
+/// searching for `class_idx` must be recognised as a hit IN THAT SAME CALL —
+/// not skipped just because it also happened to cross the pool-admission
+/// threshold in the same call. Setup: segment X is fully carved, then every
+/// block but the last is freed OWN-THREAD (populating X's free list for
+/// `class_idx`, `live_count == 1`), and the last block is pushed to X's
+/// remote-free ring WITHOUT draining — so X's `BinTable` still shows nothing
+/// free for `class_idx` and X is not yet pooled. The measured call is a
+/// SINGLE `ac.alloc(layout)`: its `find_segment_with_free` scan reaches X,
+/// drains its ring (which reclaims the last block, brings `live_count` to 0,
+/// and admits X to the pool — all inside this one call), and must then see
+/// X's now-fully-free `BinTable` and hand out a block from X, rather than
+/// carving/reserving from the unrelated `small_cur` segment.
+///
+/// Oracle: the returned pointer's segment base must equal X's base — this is
+/// robust regardless of whether `small_cur` (a different, untouched segment)
+/// still has bump room, unlike an oracle based solely on
+/// `dbg_segments_reserved_total` (which a still-roomy `small_cur` would leave
+/// unchanged even when the bug is present, since the miss would just fall
+/// through to an ordinary carve on `small_cur` instead of a fresh OS
+/// reservation). RED before the R1-03 fix (the returned pointer comes from
+/// `small_cur` instead), GREEN after (the returned pointer is from X, freshly
+/// un-pooled).
+#[cfg_attr(miri, ignore)] // large N; native soak, mirrors the other pool tests' sizing
+#[test]
+fn pooled_segment_emptied_mid_scan_is_reused_in_same_call() {
+    let mut ac = AllocCore::new().expect("primordial");
+    let layout = Layout::from_size_align(256, 8).unwrap();
+    let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
+
+    // 3 distinct segments: segments[0] (possibly primordial, untouched),
+    // segments[1] = X (fully carved — a 3rd segment exists, so X emptied out),
+    // segments[2] = the current `small_cur` (bump room remains, but its OWN
+    // free list must be drained to exactly empty below before the measured
+    // call — see the CYCLE comment).
+    let segments = fill_ordered_segments(&mut ac, layout, 3);
+    let (x_base, x_ptrs) = &segments[1];
+    let x_base = *x_base;
+    assert!(
+        x_ptrs.len() > 1,
+        "X must hold more than one block to leave a non-trivial free list"
+    );
+
+    // `carve_block_with_refill` (`find_segment.rs`, `REFILL_BATCH = 31`)
+    // carves 1 block (returned) + 31 MORE that it immediately frees onto the
+    // segment's own free list — so every 32 draws from a fresh segment is one
+    // exact cycle: draw 1 is a genuine carve (miss), draws 2..32 are free-list
+    // pops (hits, step 1 of `alloc_small` — `find_segment_with_free` is NEVER
+    // reached for them). `small_cur`'s draw count so far may sit mid-cycle
+    // (from `fill_ordered_segments` stopping arbitrarily); top it up to the
+    // next exact multiple of `CYCLE` so its free list is precisely EMPTY
+    // before X is primed and the measured call is made below — otherwise the
+    // measured call could be served by leftover surplus at step 1, never
+    // reaching the `find_segment_with_free` scan this test is about.
+    const CYCLE: usize = 32; // 1 genuine carve + REFILL_BATCH (31) free-list pops
+    let (cur_base, cur_ptrs) = &segments[2];
+    let cur_base = *cur_base;
+    let top_up = (CYCLE - (cur_ptrs.len() % CYCLE)) % CYCLE;
+    for _ in 0..top_up {
+        let p = ac.alloc(layout);
+        assert!(!p.is_null(), "top-up alloc must not fail");
+        assert_eq!(
+            (p as usize) & !(SEGMENT - 1),
+            cur_base,
+            "top-up alloc must stay on small_cur (free-list pop, no scan/carve)"
+        );
+    }
+
+    // Free every block of X except the last one, own-thread — populates X's
+    // free list for `class_idx` and brings `live_count` down to 1. X is NOT
+    // pooled yet (live_count != 0).
+    let (last, rest) = x_ptrs.split_last().expect("X has at least one block");
+    for &p in rest {
+        // SAFETY (R6-MS-1/2): `p` was returned by a prior matching alloc on
+        // this `ac` and is live; freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
+    }
+    assert_eq!(
+        ac.dbg_live_count_for(x_base as *mut u8),
+        Some(1),
+        "X must have exactly one live (not-yet-freed) block before the ring push"
+    );
+
+    // Push X's LAST block into its own remote-free ring — do NOT drain yet.
+    // X's BinTable still shows nothing free for `class_idx` at this point.
+    assert!(
+        // SAFETY (R6-MS-4): `*last` is owned by `ac`, is live (the one block
+        // not yet freed above), and this is its single logical remote free —
+        // no re-issue before the measured `alloc` call below drains it.
+        unsafe { ac.dbg_push_to_ring(*last, class_idx) },
+        "push into X's ring must succeed"
+    );
+
+    let reserved_before = AllocCore::dbg_segments_reserved_total();
+
+    // The measured call: X's ring is still dirty, so this scan will drain it,
+    // observe X go empty, admit it to the pool, and (fixed) recognise X's now
+    // fully-free BinTable as a hit in this SAME call.
+    let p = ac.alloc(layout);
+    assert!(!p.is_null(), "measured alloc must not fail");
+    let p_base = (p as usize) & !(SEGMENT - 1);
+
+    assert_eq!(
+        p_base, x_base,
+        "measured alloc must be served from X (freshly un-pooled), not from \
+         small_cur or a freshly reserved segment"
+    );
+    assert_eq!(
+        AllocCore::dbg_segments_reserved_total(),
+        reserved_before,
+        "reusing X must not perform a fresh OS segment reservation"
+    );
+
+    // Cleanup: X now holds one live block (`p`); free it.
+    // SAFETY (R6-MS-1/2): `p` was just returned by a matching alloc on `ac`.
+    unsafe { ac.dealloc(p, layout) };
+}

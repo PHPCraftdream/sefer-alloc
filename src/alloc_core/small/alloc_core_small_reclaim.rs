@@ -504,7 +504,7 @@ impl AllocCore {
                 // Mechanism 2 (task #51): same pool-or-release routing as the
                 // production `find_segment_with_free_impl` drain site, so this
                 // test seam exercises the identical decision path.
-                self.release_or_pool_empty_segment(base);
+                let _ = self.release_or_pool_empty_segment(base);
             }
         }
     }

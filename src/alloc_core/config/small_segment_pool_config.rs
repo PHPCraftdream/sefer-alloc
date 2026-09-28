@@ -17,10 +17,20 @@
 //! segment empties, instead of releasing it, the allocator MAY retain it —
 //! still registered in the `SegmentTable`, its pages still COMMITTED, its
 //! per-class free lists still populated with the blocks that were just freed.
-//! The very next allocation that would otherwise reserve a fresh segment
-//! (`reserve_small_segment`) pops a pooled segment first: no OS syscall, no
-//! metadata re-init, no page fault — the blocks are already on the free list,
-//! so `pop_free` / `find_segment_with_free` serve straight out of it.
+//!
+//! **The pool is a same-class free-list reserve, not a carve reserve.**
+//! `reserve_small_segment` (the path taken when no registered segment —
+//! pooled included — has a free block of the requested class) ALWAYS
+//! performs a genuine fresh OS reservation; it never pops a pooled segment
+//! as a carve target, for its own class or any other. Reuse instead happens
+//! through the ordinary free-list path: the next allocation of a class the
+//! pooled segment already holds free blocks for finds them via
+//! `find_segment_with_free` and pops straight out of the segment's own
+//! `BinTable` — no OS syscall, no metadata re-init, no page fault for that
+//! reuse. A pooled segment therefore only benefits an allocation of a class
+//! it already has free blocks for; an allocation of a DIFFERENT class still
+//! takes a fresh OS segment while the pooled one sits committed and idle
+//! until it is drawn from, decayed, or drained.
 //!
 //! Pages stay committed the ENTIRE time a segment is pooled — there is NO
 //! `os::decommit_pages` / `os::recommit_pages` round-trip for a pooled segment
@@ -37,9 +47,11 @@
 //! its cap at any instant, mid-scan or otherwise. This bounded retention is
 //! what keeps the `regression_c3_unbounded_recycle` guarantee ("no unbounded /
 //! permanent pinning of table slots") intact: at most `pool_segments` slots are
-//! ever retained, and every retained slot is reusable (popped on the next
-//! reserve) or drainable (evicted + recycled). See that test for the explicit
-//! bounded-retention + eventual-drain proof.
+//! ever retained, and every retained slot is reusable (its free-list blocks
+//! are popped by a later same-class `find_segment_with_free` hit — never by
+//! `reserve_small_segment`, which always reserves fresh) or drainable
+//! (evicted + recycled). See that test for the explicit bounded-retention +
+//! eventual-drain proof.
 //!
 //! ## Default values
 //!

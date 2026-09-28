@@ -375,7 +375,7 @@ impl HeapCore {
         // with an in-flight reclaim.
         #[cfg(feature = "alloc-decommit")]
         for &base in emptied_bases.iter().take(emptied_count) {
-            self.core.release_or_pool_empty_segment(base);
+            let _ = self.core.release_or_pool_empty_segment(base);
         }
 
         // R12-6: the dedup buffer overflowed (more than `EMPTIED_BASES_CAP`
