@@ -186,8 +186,11 @@ impl HeapCore {
     /// [`AllocCore::dealloc`](crate::alloc_core::AllocCore::dealloc) (which applies the M2 double-free guard).
     /// Under `alloc-xthread`: if the segment is stamped with another heap's
     /// head, route cross-thread via the TFS (the §2.2 protocol re-based on
-    /// the registry). Foreign pointers (not a sefer segment) are a safe
-    /// no-op.
+    /// the registry). Only a **null** `ptr` is always a safe no-op; a
+    /// foreign, unmapped, or already-released `ptr` violates the `# Safety`
+    /// contract below (UB-adjacent) — the magic/M2 checks are best-effort
+    /// defence-in-depth, not a validity check, and reading an unmapped
+    /// address to run them can itself fault.
     ///
     /// This is an **`unsafe fn`** (R6-MS-1/2): it forwards the
     /// [`AllocCore::dealloc`](crate::alloc_core::AllocCore::dealloc) caller-pointer contract. The crate's former
