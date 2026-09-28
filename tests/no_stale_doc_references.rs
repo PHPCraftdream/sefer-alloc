@@ -2340,8 +2340,13 @@ fn no_ring_overflow_leak_overclaim_in_alloc_stats_docs() {
         );
     }
 
-    // `ring_overflows`'s own doc block must point at the real terminal-loss
-    // counter by name.
+    // `ring_overflows`'s own doc block must not recommend alerting on the
+    // legacy, permanently-zero `cross_thread_frees_lost` counter (oxx R2-04:
+    // R2-09's intrusive spill left that counter with no writer, so the
+    // R2-22 wording "the field to check (and alert on) for an
+    // actually-discarded cross-thread free" became a false, permanently-
+    // green alerting signal — `DBG_RING_PUSH_RETRY_EXHAUSTED` has no
+    // writer anywhere in `src/`).
     let doc_start = text
         .find("Number of cross-thread frees whose FIRST push attempt")
         .expect("ring_overflows' R2-22 doc block not found");
@@ -2350,9 +2355,26 @@ fn no_ring_overflow_leak_overclaim_in_alloc_stats_docs() {
         .expect("ring_overflows field not found");
     let doc_block = &text[doc_start..doc_start + doc_end];
     assert!(
-        doc_block.contains("cross_thread_frees_lost"),
-        "ring_overflows' doc block must cross-reference \
-         `cross_thread_frees_lost` as the field to check for an actual loss"
+        !doc_block.contains("the field to check (and alert on)"),
+        "ring_overflows' doc block reintroduced the stale R2-22 wording \
+         recommending alerting on `cross_thread_frees_lost` for an actual \
+         loss — that counter has had no writer since R2-09's intrusive \
+         spill replaced the terminal drop, so it is permanently 0 and this \
+         wording is a false always-green alerting signal (oxx R2-04)"
+    );
+    assert!(
+        doc_block.contains("cross_thread_frees_lost") && doc_block.contains("legacy"),
+        "ring_overflows' doc block must still name `cross_thread_frees_lost` \
+         by name and describe it as a legacy counter that never fires for a \
+         legal free, not as a signal worth alerting on (oxx R2-04)"
+    );
+    assert!(
+        doc_block.contains("no terminal-loss path") && doc_block.contains("intrusive spill"),
+        "ring_overflows' doc block must describe the current chain (segment \
+         ring / HeapOverflow second-chance ring / R2-09's intrusive spill) \
+         under which a legal cross-thread free has no terminal-loss path \
+         left — replacing the pre-R2-09 'genuine terminal drop' framing \
+         (oxx R2-04)"
     );
 }
 

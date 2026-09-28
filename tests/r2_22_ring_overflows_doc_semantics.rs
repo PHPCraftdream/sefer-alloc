@@ -8,12 +8,20 @@
 //! finds it full. That is a first-tier MISS, not a loss: after the tick, the
 //! free is still saved by the next tiers — the owning heap's second-chance
 //! `HeapOverflow` ring (tried immediately) and the bounded spin-retry against
-//! both tiers. Only when EVERY tier fails does `DBG_RING_PUSH_RETRY_EXHAUSTED`
-//! (exposed as `AllocStats::cross_thread_frees_lost`, R2-09) tick — that is
-//! the actual "block permanently discarded" counter. The pre-R2-22 rustdoc
-//! asserted the block "is **discarded**" on overflow and that a high rate
-//! means "actually being leaked" — a false-leak-diagnosis hazard this task's
-//! doc fix (in `src/global/alloc_stats.rs`) removes.
+//! both tiers. If even that fails, R2-09's intrusive spill takes the free:
+//! the block stays reachable without depending on an active owner or new
+//! allocation, so a legal free has no terminal-loss path left at all.
+//! `DBG_RING_PUSH_RETRY_EXHAUSTED` (exposed as
+//! `AllocStats::cross_thread_frees_lost`) is the legacy PRE-R2-09
+//! terminal-drop counter that chain used to increment on total exhaustion;
+//! R2-09 left it with no writer, so it now stays `0` for every legal free.
+//! The pre-R2-22 rustdoc asserted the block "is **discarded**" on overflow
+//! and that a high rate means "actually being leaked" — a
+//! false-leak-diagnosis hazard this task's doc fix (in
+//! `src/global/alloc_stats.rs`) removes; oxx R2-04 later found that fix's
+//! own pointer to `cross_thread_frees_lost` as "the field to check for an
+//! actual loss" had itself gone stale once R2-09 zeroed that counter out,
+//! and corrected it to describe the spill tier instead.
 //!
 //! ## The three review acceptance cases and where each is pinned
 //!
@@ -25,12 +33,14 @@
 //!    [`double_saturation_retry_success_is_not_a_loss`]: segment ring AND
 //!    `HeapOverflow` both full, the bounded spin-retry recovers the free,
 //!    `DBG_RING_PUSH_RETRIED` ticks exactly once, zero loss.
-//! 3. **genuine terminal drop** — already pinned by
-//!    `tests/remote_fanin.rs::remote_fanin_owner_starved_residual_is_exactly_accounted`
-//!    (N=3000 burst exceeds RING_CAP+HEAP_OVERFLOW_CAP; asserts
-//!    `exhausted_delta > 0` and the public `stats().cross_thread_frees_lost`
-//!    wiring). Deliberately NOT duplicated here — duplicating that calibrated
-//!    burst would only slow the suite.
+//! 3. **third-tier spill (the ex-"genuine terminal drop" case)** — already
+//!    pinned by
+//!    `tests/remote_fanin.rs::remote_fanin_owner_starved_beyond_both_rings_is_lossless`
+//!    (N=3000 burst exceeds RING_CAP+HEAP_OVERFLOW_CAP, forcing R2-09's
+//!    intrusive spill; asserts `exhausted_delta == 0` — the legacy counter
+//!    never ticks — and that the public `stats().cross_thread_frees_lost`
+//!    wiring reads `0` too). Deliberately NOT duplicated here — duplicating
+//!    that calibrated burst would only slow the suite.
 //!
 //! Together with the guard test in `tests/no_stale_doc_references.rs`
 //! (`no_ring_overflow_leak_overclaim_in_alloc_stats_docs`), this makes the

@@ -117,18 +117,37 @@ pub struct AllocStats {
     /// expected under multi-producer fan-in and means "handled
     /// ring-capacity pressure", not loss.
     ///
-    /// **The field to check (and alert on) for an actually-discarded
-    /// cross-thread free is [`cross_thread_frees_lost`](Self::cross_thread_frees_lost)**:
-    /// it increments only when EVERY tier of that chain failed and the freed
-    /// block was genuinely discarded (it stays mapped and unused — a bounded,
-    /// sound, non-UB leak; see "Overflow semantics" in
-    /// `remote_free_ring`'s module
-    /// docs for the bare-ring contract that chain is built on). Reading
-    /// `ring_overflows` in isolation cannot distinguish a rescued free from a
-    /// lost one: `tests/r2_22_ring_overflows_doc_semantics.rs` pins the
-    /// rescued and retry-recovered cases, and `tests/remote_fanin.rs`'s
-    /// `remote_fanin_owner_starved_residual_is_exactly_accounted` pins the
-    /// terminal case.
+    /// **A legal cross-thread free has no terminal-loss path in the current
+    /// protocol — do not alert on [`cross_thread_frees_lost`](Self::cross_thread_frees_lost)
+    /// for that purpose.** [`cross_thread_frees_lost`](Self::cross_thread_frees_lost)
+    /// is a legacy pre-R2-09 counter: it used to increment when every tier of
+    /// this chain failed and the freed block was discarded, but R2-09
+    /// replaced that terminal drop with an intrusive spill (the third tier,
+    /// below) and left the counter with no writer — it reads `0` for every
+    /// legal free, always, and is not a useful signal (see its own doc for
+    /// detail; it is retained only for older diagnostic callers).
+    ///
+    /// The chain a cross-thread free actually goes through today: (1) the
+    /// segment's `RemoteFreeRing` (what this field, `ring_overflows`,
+    /// counts a miss on), (2) the owning heap's second-chance `HeapOverflow`
+    /// ring (tried immediately), (3) a bounded spin-retry against both
+    /// rings, and, only if all three miss, (4) an **intrusive spill**: the
+    /// pending free publishes itself without depending on an active owner
+    /// or allocating new metadata, so it remains reachable and is reclaimed
+    /// whenever the owner (or, once it recycles, the next owner) next
+    /// drains. Reading `ring_overflows` in isolation cannot distinguish a
+    /// rescued free from a spilled one, but neither case is a loss:
+    /// `tests/r2_22_ring_overflows_doc_semantics.rs` pins the rescued and
+    /// retry-recovered cases, and `tests/remote_fanin.rs`'s
+    /// `remote_fanin_owner_starved_residual_is_bounded` and
+    /// `remote_fanin_owner_starved_beyond_both_rings_is_lossless` pin the
+    /// spill case (both assert `cross_thread_frees_lost` stays `0` across a
+    /// burst that forces it). There is currently no public `AllocStats`
+    /// counter for third-tier spill pressure specifically — only the
+    /// `internals`/`bench-internals`-gated diagnostic ledger
+    /// (`HeapCore::dbg_spill_ledger_for_test`) observes it; a public spill
+    /// counter is a possible future addition (`AllocStats` is
+    /// `#[non_exhaustive]`), not implemented here.
     pub ring_overflows: u64,
 
     /// Cumulative count of successful OS segment reservations since process

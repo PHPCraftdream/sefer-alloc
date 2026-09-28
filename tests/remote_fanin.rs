@@ -530,7 +530,7 @@ fn remote_fanin_owner_starved_beyond_both_rings_is_lossless() {
     let overflow_delta = DBG_RING_OVERFLOW.load(Ordering::Relaxed) - overflow_before;
     assert!(
         overflow_delta > 0,
-        "remote_fanin_owner_starved_residual_is_exactly_accounted did not force \
+        "remote_fanin_owner_starved_beyond_both_rings_is_lossless did not force \
          any per-segment ring overflow (DBG_RING_OVERFLOW delta == 0) — this run \
          is a VACUOUS counterfactual, not a valid proof. Increase N / PRODUCERS."
     );
@@ -549,7 +549,7 @@ fn remote_fanin_owner_starved_beyond_both_rings_is_lossless() {
     let exhausted_delta = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed) - exhausted_before;
 
     eprintln!(
-        "remote_fanin_owner_starved_residual_is_exactly_accounted: \
+        "remote_fanin_owner_starved_beyond_both_rings_is_lossless: \
          overflow_attempts_delta={overflow_delta} exhausted_delta={exhausted_delta} \
          reclaimed_after={reclaimed} (N={N}, PRODUCERS={PRODUCERS})"
     );
