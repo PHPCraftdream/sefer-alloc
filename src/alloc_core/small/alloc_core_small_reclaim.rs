@@ -30,13 +30,23 @@
 //!    delegate to these; `HeapCore` itself is unreachable outside this crate
 //!    without `internals`, since it is not crate-root re-exported).
 
+// R1-08: every use of these imports lives inside code gated (directly, or
+// via its enclosing `impl AllocCore` block) on `alloc-xthread` — without
+// that feature this whole file has no callers of them, so the imports
+// themselves must carry the same gate or a build like `alloc-core
+// alloc-decommit internals` (no `alloc-xthread`) warns `unused_imports`.
+#[cfg(feature = "alloc-xthread")]
 use core::ptr::NonNull;
 
+#[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::node::Node;
+#[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::os;
+#[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
+#[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;

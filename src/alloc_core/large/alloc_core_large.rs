@@ -16,7 +16,14 @@ use crate::alloc_core::segment_header::{align_up, SegmentHeader};
 
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
-use crate::alloc_core::alloc_core::{CachedLarge, LARGE_CACHE_SIZE_FACTOR};
+use crate::alloc_core::alloc_core::LARGE_CACHE_SIZE_FACTOR;
+// R1-08: `CachedLarge` is constructed only inside `reclaim_large_segment`,
+// which is itself `#[cfg(feature = "alloc-xthread")]` — narrower than the
+// `alloc-decommit` gate `LARGE_CACHE_SIZE_FACTOR` above needs, so it must
+// carry its own, tighter `cfg` or a build with `alloc-decommit` but no
+// `alloc-xthread` warns `unused_imports`.
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+use crate::alloc_core::alloc_core::CachedLarge;
 
 /// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): the upper bound
 /// on how large a Large segment's `reserved_capacity` may grow relative to

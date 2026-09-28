@@ -336,7 +336,17 @@ impl AllocCore {
     /// event: it requires more than 64 DISTINCT segments to go fully empty
     /// via the second-chance overflow ring alone, in a single opportunistic
     /// drain call). The common case (buffer never overflows) pays nothing.
-    #[cfg(feature = "alloc-decommit")]
+    ///
+    /// R1-08: this method's only caller (`HeapCore::drain_heap_overflow`)
+    /// lives in `registry::heap_core_xthread`, reachable only under
+    /// `alloc-global` (for `registry` to compile at all) AND `alloc-xthread`
+    /// (the enclosing fn's own gate) — add both alongside `alloc-decommit`
+    /// so a build missing either does not warn this dead.
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "alloc-global",
+        feature = "alloc-xthread"
+    ))]
     #[inline]
     pub(crate) fn finalize_orphaned_empty_segments(&mut self, small_cur: *mut u8) {
         let n = self.table.count() as usize;

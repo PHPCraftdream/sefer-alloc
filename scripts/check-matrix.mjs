@@ -64,6 +64,19 @@
  *                                    to; absent = whole-crate (`--all-targets`
  *                                    for clippy, no target flag for
  *                                    check/test)
+ * @property {Object<string,string>} [env] - extra environment variables
+ *                                    (merged OVER the inherited env, never
+ *                                    replacing it) the row's cargo
+ *                                    invocation runs under — e.g.
+ *                                    `{ RUSTFLAGS: '-D warnings' }` for a
+ *                                    `check`-kind row, since plain `cargo
+ *                                    check` (unlike `cargo clippy`) has no
+ *                                    `-- -D warnings` passthrough (R1-08:
+ *                                    verified `cargo check -- -D warnings`
+ *                                    itself errors `unexpected argument
+ *                                    '-D' found`). Both `run-check-matrix.mjs`
+ *                                    and `check-all.mjs` merge this onto
+ *                                    `process.env` before spawning.
  * @property {string} note         - one-line rationale (why this row exists)
  */
 
@@ -168,6 +181,26 @@ export const PER_PR_ROWS = [
       'alloc-global alloc-decommit` (NO `internals`) — the exact ' +
       'configuration the guard exists to test.',
   },
+  {
+    id: 'check-alloc-core-decommit-internals-warnings',
+    kind: 'check',
+    features: 'alloc-core alloc-decommit internals',
+    env: { RUSTFLAGS: '-D warnings' },
+    note:
+      'R1-08 (docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md): ' +
+      '`alloc-core alloc-decommit internals` (no `alloc-global`/`alloc-xthread`) ' +
+      'produced 10 unused_imports/dead_code warnings — under `internals` the ' +
+      "externally-visible `pub mod alloc_core` (src/lib.rs) carries no blanket " +
+      "`#[allow(dead_code, unused_imports)]` the way its `pub(crate)` " +
+      '(non-`internals`) sibling does, so a handful of items/imports whose only ' +
+      'real callers live in `registry` (which itself requires `alloc-global`) ' +
+      'or in `alloc-xthread`-gated code went unused here. Fixed by precise ' +
+      "cfg-gating (`alloc-global`/`alloc-xthread`/`fastbin`) instead of a " +
+      'blanket allow, so this row is `-D warnings` clean without hiding a real ' +
+      'future warning in this combination. Verified RED pre-fix (`RUSTFLAGS=' +
+      '"-D warnings" cargo check --features "alloc-core alloc-decommit ' +
+      'internals"` on the pre-fix tree: 10 errors, one per warning).',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal
@@ -234,5 +267,10 @@ export function rowLabel(row) {
         ? `--features "${row.features}"`
         : '(default features)';
   const target = row.target ? ` ${row.target.flag} ${row.target.name}` : '';
-  return `${row.kind}${target} ${feat}`;
+  const env = row.env
+    ? ` [env: ${Object.entries(row.env)
+        .map(([k, v]) => `${k}="${v}"`)
+        .join(' ')}]`
+    : '';
+  return `${row.kind}${target} ${feat}${env}`;
 }

@@ -110,13 +110,21 @@
 //      --no-fail-fast row ci.yml gained in task #1141/L2, commit `3e8c3fe`);
 //      doc (--all-features, warnings-as-errors); semver-checks (optional,
 //      skipped if cargo-semver-checks not installed).
-//   31-32. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   31-33. the 3 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
-//      independent standalone check of its own), plus the internals-boundary
+//      independent standalone check of its own); the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
-//      `internals` so the guard is non-vacuous)
+//      `internals` so the guard is non-vacuous); and `cargo check --features
+//      "alloc-core alloc-decommit internals"` under RUSTFLAGS=-D warnings
+//      (R1-08: the counterfactual enforcement row for the 10-warning
+//      unused_imports/dead_code combination that review finding R1-08
+//      caught — see check-matrix.mjs's row of the same id for the fix)
+//      (every subsequent step number below this point has NOT been
+//      incremented for this insertion — see this header's own repeated
+//      numbering-drift notes above; the numbers are a reading aid, not a
+//      mechanically-checked invariant)
 //   33. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
@@ -335,15 +343,21 @@ function docsRsFeatures() {
 // non-clippy rows — currently just the perf-gate `check` row — appended
 // near the end, since there is no pre-existing hand-written step for them
 // to slot in next to).
+// R1-08: `row.env` (e.g. `{ RUSTFLAGS: '-D warnings' }`), when present, is
+// forwarded onto the generated step object so the main loop's existing
+// `step.env` merge-over-`process.env` handling (see that loop's own comment)
+// applies to matrix rows exactly like the hand-written aligned-vmem steps.
 const clippyRows = PER_PR_ROWS.filter((r) => r.kind === 'clippy').map((row) => ({
   name: `[matrix] ${rowLabel(row)}`,
   cmd: 'cargo',
   args: rowToCargoArgs(row),
+  ...(row.env ? { env: row.env } : {}),
 }));
 const otherRows = PER_PR_ROWS.filter((r) => r.kind !== 'clippy').map((row) => ({
   name: `[matrix] ${rowLabel(row)}`,
   cmd: 'cargo',
   args: rowToCargoArgs(row),
+  ...(row.env ? { env: row.env } : {}),
 }));
 
 const steps = [
@@ -732,9 +746,12 @@ const steps = [
   // R30-5: the remaining (non-clippy) PER_PR_ROWS rows — currently
   // `check-perf-gate-iai-default` (`cargo check --bench perf_gate_iai
   // --features "production bench-internals"`, scripts/iai.mjs's own
-  // DEFAULT_FEATURES and the exact command R29-16's 4x E0433 broke), plus
+  // DEFAULT_FEATURES and the exact command R29-16's 4x E0433 broke);
   // `test-internals-boundary-no-internals` (R34 review F1: the `internals`
-  // boundary guard must run WITHOUT `internals` to be non-vacuous).
+  // boundary guard must run WITHOUT `internals` to be non-vacuous); and
+  // (R1-08) `check-alloc-core-decommit-internals-warnings` (`cargo check
+  // --features "alloc-core alloc-decommit internals"` under
+  // RUSTFLAGS=-D warnings).
   ...otherRows,
   {
     // Sol-F1 (task #563, release-readiness review finding F1): the REAL
@@ -1073,7 +1090,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x21 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 5 test (2 real-backend debug + 1 mock debug + 1 mock-release + 1 real-backend release, task #1157/F14) + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, verify-ci-sentinels [task #1150], iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x21 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 5 test (2 real-backend debug + 1 mock debug + 1 mock-release + 1 real-backend release, task #1157/F14) + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test + alloc-core-decommit-internals-warnings check [generated, R1-08], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, verify-ci-sentinels [task #1150], iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

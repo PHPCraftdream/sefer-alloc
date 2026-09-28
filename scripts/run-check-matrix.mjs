@@ -74,7 +74,15 @@ for (const row of rows) {
   console.log(`  [${row.id}] ${rowLabel(row)}`);
   console.log(`  ${row.note}`);
   console.log(`============================================================`);
-  const { code } = await run('cargo', args, { cwd: REPO_ROOT });
+  // R1-08: `row.env` (e.g. `{ RUSTFLAGS: '-D warnings' }` for a `check`-kind
+  // row that has no `-- -D warnings` passthrough of its own) is MERGED over
+  // the inherited environment, never replacing it wholesale — mirrors
+  // check-all.mjs's identical `step.env` handling and the same rationale
+  // (spawn's `env` option replaces PATH entirely if not merged).
+  const { code } = await run('cargo', args, {
+    cwd: REPO_ROOT,
+    ...(row.env ? { env: { ...process.env, ...row.env } } : {}),
+  });
   if (code !== 0) {
     console.log(`\n[check-matrix] FAIL at row: ${row.id} (exit ${code})`);
     allOk = false;

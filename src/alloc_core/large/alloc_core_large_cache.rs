@@ -679,7 +679,12 @@ impl AllocCore {
     /// entry via [`evict_one_oldest`](Self::evict_one_oldest); the loop
     /// terminates when the cache is empty (`evict_one_oldest` returns
     /// `false`). Cost: O(LARGE_CACHE_SLOTS) — thread exit is cold.
-    #[cfg(feature = "alloc-decommit")]
+    ///
+    /// R1-08: this method's only caller (`HeapCore::trim_for_recycle`) lives
+    /// in `registry`, which compiles only under `alloc-global` — add that
+    /// gate alongside `alloc-decommit` so `alloc-core alloc-decommit` (no
+    /// `alloc-global`) does not warn this dead.
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
     pub(crate) fn evict_all(&mut self) {
         while self.evict_one_oldest() {}
     }

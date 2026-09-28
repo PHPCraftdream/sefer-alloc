@@ -177,7 +177,13 @@ impl AllocCore {
     /// fields [`new_with_config`](Self::new_with_config) sets. If a future
     /// change adds a new config-derived field to `AllocCore`, add the
     /// matching comparison here.
-    #[cfg(feature = "alloc-decommit")]
+    ///
+    /// R1-08: this method's only callers (`HeapCore::live_config_matches`,
+    /// `HeapRegistry::claim_with_config`) live in `registry`, which itself
+    /// compiles only under `alloc-global` — add that gate alongside
+    /// `alloc-decommit` so `alloc-core alloc-decommit` (no `alloc-global`)
+    /// does not warn this dead.
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
     pub(crate) fn live_config_matches(
         &self,
         requested: &crate::alloc_core::large_cache_config::LargeCacheConfig,

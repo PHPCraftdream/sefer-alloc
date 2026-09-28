@@ -125,6 +125,12 @@ impl MagazineBitmap {
     /// Mark the block at segment offset `off` as magazine-resident (set its
     /// bit). Called on magazine push (own-thread free) and on refill for
     /// every block landing in the magazine (not the one immediately issued).
+    ///
+    /// R1-08: every call site (`registry::heap_core::alloc::hot`,
+    /// `free::dealloc_own_base`, `free::dealloc_batch`) lives inside code
+    /// gated `all(alloc-global, fastbin)` — `fastbin` alone implies
+    /// `alloc-global` (`Cargo.toml`), so gating on `fastbin` here matches.
+    #[cfg(feature = "fastbin")]
     #[inline(always)]
     pub(crate) fn mark_magazine(&mut self, off: u32) {
         self.0.set(off)
@@ -132,6 +138,10 @@ impl MagazineBitmap {
 
     /// Clear the block at segment offset `off`'s magazine-resident bit.
     /// Called on magazine pop (alloc hit / refill issue) and magazine flush.
+    ///
+    /// R1-08: same gating rationale as [`mark_magazine`](Self::mark_magazine)
+    /// — every call site requires `fastbin`.
+    #[cfg(feature = "fastbin")]
     #[inline(always)]
     pub(crate) fn clear_magazine(&mut self, off: u32) {
         self.0.clear(off)

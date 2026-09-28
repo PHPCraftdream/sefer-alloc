@@ -1391,14 +1391,19 @@ jobs:
     # perf_gate_iai --features "production bench-internals"` (R30-5;
     # scripts/iai.mjs's own DEFAULT_FEATURES and `npm run check`'s LAST step
     # — was never its own CI row before this task; its absence is exactly
-    # how R29-16's 4x E0433 shipped undetected for a full round), and
+    # how R29-16's 4x E0433 shipped undetected for a full round);
     # `cargo test --test r34_3_internals_boundary_api --features "alloc-core
     # alloc-global alloc-decommit"` (R34 review F1: the `internals` boundary
-    # guard must run WITHOUT `internals` to be non-vacuous). If
-    # a future round adds a non-clippy `PER_PR_ROWS` entry, it lands here
-    # automatically with no ci.yml edit needed — that is the whole point of
-    # the `--kind check --kind test` filter (see `scripts/run-check-matrix.mjs
-    # --help` / its own `--kind` handling).
+    # guard must run WITHOUT `internals` to be non-vacuous); and (R1-08)
+    # `cargo check --features "alloc-core alloc-decommit internals"` under
+    # RUSTFLAGS=-D warnings — the counterfactual enforcement row for the
+    # 10-warning unused_imports/dead_code combination review finding R1-08
+    # caught (imprecise cfg-gating under `internals`'s externally-visible
+    # `alloc_core` module; see `scripts/check-matrix.mjs`'s row of the same
+    # id for the fix). If a future round adds a non-clippy `PER_PR_ROWS`
+    # entry, it lands here automatically with no ci.yml edit needed — that
+    # is the whole point of the `--kind check --kind test` filter (see
+    # `scripts/run-check-matrix.mjs --help` / its own `--kind` handling).
     #
     # A GitHub Actions `strategy: matrix:` was considered and rejected in
     # favor of "a CI step that runs a script which reads the manifest and
