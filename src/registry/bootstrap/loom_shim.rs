@@ -1,3 +1,17 @@
+// R1-07: this file's own tier-1 `#![allow(unsafe_code)]` seam — `unsafe impl
+// Send`/`Sync` for `OncePtrCell<T>` (only a raw `*mut T` ever crosses
+// threads, mirroring the real `once_ptr_cell::OncePtrCell`) plus three
+// `NonNull::new_unchecked` call sites, each proved sound by the immediately
+// preceding `is_ready(p)` check (rules out null and the sentinel address, so
+// `p` is a real published pointer — see each site's own `// SAFETY:`
+// comment). Compiled ONLY under `--cfg loom` (`bootstrap/mod.rs`'s
+// `#[cfg(loom)] pub(crate) mod loom_shim;`), so this seam adds no unsafe
+// surface to a normal (non-loom) build; previously this file had no allow of
+// its own and compiled only because `bootstrap/mod.rs` carried one blanket
+// `#![allow(unsafe_code)]` for the whole directory, which is why this file
+// was missing from both `README.md`'s and `src/lib.rs`'s unsafe inventory —
+// fixed in the same commit as this attribute.
+#![allow(unsafe_code)]
 //! Const-capable, `core::sync::atomic`-backed stand-in for
 //! `once_ptr_cell::OncePtrCell`, used ONLY under `--cfg loom` so sefer's own
 //! (unrelated) shadow-model loom harnesses can link the crate with its const

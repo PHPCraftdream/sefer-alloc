@@ -45,10 +45,12 @@
 // This module is plain safe Rust — it has NO `unsafe` of its own (no
 // `#![allow(unsafe_code)]` needed). The `unsafe` operations that back chunk
 // materialisation (raw-pointer field init, dereferencing a published chunk
-// pointer) live in `bootstrap`'s `Registry::slot` / `ensure_chunk_slow`,
-// which already carries the crate's `#![allow(unsafe_code)]` seam. All this
-// file contributes is the chunk byte-size / slot-array layout constants,
-// computed with `core::mem::size_of`/`align_of` (safe).
+// pointer) live in `super::registry`'s `Registry::slot` and `super::ensure`'s
+// `ensure_chunk_slow`, each of which carries its OWN tier-1
+// `#![allow(unsafe_code)]` seam (R1-07: this directory's `mod.rs` no longer
+// carries a single blanket allow — every file with `unsafe` owns its seam).
+// All this file contributes is the chunk byte-size / slot-array layout
+// constants, computed with `core::mem::size_of`/`align_of` (safe).
 
 use crate::registry::heap_slot::HeapSlot;
 

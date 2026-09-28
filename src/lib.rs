@@ -229,6 +229,15 @@
 //      * `registry::bootstrap::overflow_sidecar` — lazy `HeapOverflow` sidecar
 //                             materialisation (CAS-then-spin-then-publish).
 //                             (under `alloc-global`)
+//      * `registry::bootstrap::loom_shim` — `--cfg loom`-only const-capable
+//                             `OncePtrCell`/`StackHead` stand-ins (loom's real
+//                             atomics have no const constructor, so the
+//                             `static REGISTRY` initializer needs this shim
+//                             under loom builds); `unsafe impl Send/Sync` +
+//                             `NonNull::new_unchecked`. Never on a
+//                             loom-modeled interleaving itself — see the
+//                             shim's own module doc. (under `alloc-global`,
+//                             AND only when built with `--cfg loom`)
 //      * `registry::heap_slot`     — `Sync`/`Send` impls + `UnsafeCell` hand-off.
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out

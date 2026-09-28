@@ -658,14 +658,13 @@ hard compile error in every configuration:
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse); and the `bench-internals`-gated `unsafe fn dbg_restore_local_for_test` test hook (R29-7, task #438) — covered by this module's tier-1 allow, with no separate item-level allow (so it adds no tier-2 site). | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
-| [`src/registry/bootstrap/mod.rs`](src/registry/bootstrap/mod.rs) | Bootstrap module root — the chunked process-global slot-table protocol narrative: `Registry` state materialised as lazily-published chunks under a hand-rolled atomic state machine per chunk (not `std::sync::Once`) | `alloc-global` |
 | [`src/registry/bootstrap/registry.rs`](src/registry/bootstrap/registry.rs) | The `Registry` struct: `MAX_HEAPS`, the per-chunk slot resolver (`slot`/`slot_or_none`), the sync assert, the test-only dbg accessors, and the process-global `static REGISTRY` — raw-pointer footprint carving of the metadata region + the chunk-materialisation OOM `std::process::abort()` on the alloc path | `alloc-global` |
 | [`src/registry/bootstrap/ensure.rs`](src/registry/bootstrap/ensure.rs) | The process-global `ensure()` accessor, the per-chunk materialisation slow path (`ensure_chunk_slow`), and the test-only dbg hooks (OOM injection, sentinel-rollback probe, slot introspection) | `alloc-global` |
 | [`src/registry/bootstrap/overflow_sidecar.rs`](src/registry/bootstrap/overflow_sidecar.rs) | Lazy `HeapOverflow` sidecar materialisation — the third instance of the CAS-then-spin-then-publish protocol, plus the `deref_overflow_sidecar` safe membrane | `alloc-global` |
+| [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` / the tagged free-list head (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
-| [`src/registry/heap_registry/mod.rs`](src/registry/heap_registry/mod.rs) | `HeapRegistry` module root — the global self-hosting heap slot table: claim/recycle over the process-global slot array | `alloc-global` |
-| [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE` claim (plain and config-plumbed), OOM push-back, and the config-conflict rollback guard | `alloc-global` |
-| [`src/registry/heap_registry/stack.rs`](src/registry/heap_registry/stack.rs) | The `free_slots` tagged Treiber stack: `Registry`'s `StackStorage` impls (the real `unsafe impl` and its `--cfg loom` mirror) plus the `pop_free_slot`/`push_free_slot`/`bump_count` primitives | `alloc-global` |
+| [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE` claim (plain and config-plumbed), OOM push-back, and the config-conflict rollback guard — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell` | `alloc-global` |
+| [`src/registry/heap_registry/stack.rs`](src/registry/heap_registry/stack.rs) | The `free_slots` tagged Treiber stack: `Registry`'s `StackStorage` impls (the real `unsafe impl` and its `--cfg loom` mirror, `bootstrap::loom_shim`) plus the `pop_free_slot`/`push_free_slot`/`bump_count` primitives | `alloc-global` |
 | [`src/registry/heap_registry/counters.rs`](src/registry/heap_registry/counters.rs) | Registry diagnostics: the config-conflict counter, the process-wide hit-total aggregators over slot-resident W3 counters, the minted-slot high-water mark, and the UBFIX-5 test-only introspection hooks | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
@@ -738,7 +737,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **25** tier-1 module-level seams (19 in
+That's the full list (both tiers): **24** tier-1 module-level seams (18 in
 `src/`, 6 in `crates/`) plus **102** tier-2 item-scoped allows across **35**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
@@ -1384,7 +1383,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **286 integration test files** ship
+a test file, and a reproducible command. **287 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **17 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1392,7 +1391,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (286 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (287 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

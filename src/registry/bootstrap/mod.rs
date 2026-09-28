@@ -49,28 +49,32 @@
 //!
 //! **Unsafe-seam placement decision:** the sidecar's materialisation
 //! machinery ([`ensure_overflow_sidecar`] / [`deref_overflow_sidecar`]) lives
-//! HERE, in `bootstrap`'s EXISTING `#![allow(unsafe_code)]` seam, rather
-//! than in a new seam inside `heap_overflow.rs`. Reasons: (1) it is
-//! LITERALLY the same protocol as [`ensure_chunk`]/[`ensure_chunk_slow`]
-//! (CAS-reserve a sentinel, `aligned_vmem::reserve_aligned`, in-place init,
-//! publish with Release, spin-wait losers) — a third instance of one
-//! already-audited pattern, not a new one; keeping all three instances in the
-//! same file keeps that pattern's soundness argument in one place rather than
-//! duplicated across two files; (2) `heap_overflow.rs` explicitly documents
-//! (and its module doc still asserts) that it needs NO unsafe seam of its
-//! own — round 2 preserves that property rather than breaking it, so a
-//! reader auditing "which files can materialise raw OS memory and dereference
-//! raw pointers" finds the answer unchanged (`bootstrap`, still the only
-//! one in `registry/`); (3) `heap_overflow.rs`'s `push`/`drain` need only a
+//! in [`overflow_sidecar`], a sibling tier-1 `#![allow(unsafe_code)]` seam
+//! file in THIS directory next to [`registry`] and [`ensure`], rather than in
+//! a new seam inside `heap_overflow.rs`. Reasons: (1) it is LITERALLY the
+//! same protocol as [`ensure_chunk`]/[`ensure_chunk_slow`] (CAS-reserve a
+//! sentinel, `aligned_vmem::reserve_aligned`, in-place init, publish with
+//! Release, spin-wait losers) — a third instance of one already-audited
+//! pattern, not a new one; keeping all three instances documented together in
+//! this one directory (even though R1-07 split each into its own file — see
+//! "Structural reorg step 5" below) keeps that pattern's soundness argument in
+//! one place rather than duplicated across directories; (2) `heap_overflow.rs`
+//! explicitly documents (and its module doc still asserts) that it needs NO
+//! unsafe seam of its own — round 2 preserves that property rather than
+//! breaking it, so a reader auditing "which files can materialise raw OS
+//! memory and dereference raw pointers" finds the answer unchanged
+//! (`bootstrap`'s own files, still the only ones in `registry/` besides
+//! `heap_registry`'s); (3) `heap_overflow.rs`'s `push`/`drain` need only a
 //! SAFE `&HeapOverflowSidecar` once materialised — [`deref_overflow_sidecar`]
 //! is the one safe membrane function that hands that out, exactly mirroring
 //! how [`Registry::slot`] hands out a safe `&'static HeapSlot` from chunk
-//! memory. This mirrors round 1's own choice (`registry_chunk.rs` stays
-//! unsafe-free; all raw-pointer work lives in `bootstrap`) — the SAME
-//! reasoning applied one level further down. Because `bootstrap` is
-//! ALREADY listed as a tier-1 unsafe seam in `src/lib.rs`'s inventory (see
-//! `registry::bootstrap` there), no README/`lib.rs` seam-inventory update is
-//! needed for this round — the existing entry already covers this addition.
+//! memory. This mirrors round 1's own choice (`registry_chunk.rs`/[`chunk`]
+//! stays unsafe-free; all raw-pointer work lives in `bootstrap`'s other
+//! files) — the SAME reasoning applied one level further down. `bootstrap`'s
+//! individual seam files ([`registry`], [`ensure`], [`overflow_sidecar`]) are
+//! each ALREADY listed as their own tier-1 unsafe seam in `src/lib.rs`'s
+//! inventory and README's "Where unsafe lives" table, so no additional
+//! entry is needed for this addition.
 //!
 //! ## History — why the slot array was EVER moved out of `.data`/`.bss`
 //!
@@ -169,23 +173,32 @@
 //! (`alloc_core::deferred_large`) is untouched by this round — see that
 //! module for its own provenance documentation.
 
-// This file uses `unsafe` for these operations. The CAS-reserve / sentinel /
-// Release-publish / spin-while-INITIALIZING / OOM-rollback STATE MACHINE that
-// drove the per-chunk pointer transition inline used to live here; CRATE-P3
-// extracted it into `once_ptr_cell::OncePtrCell` (aliasing its atomics to
-// `loom` so the shipped loom suite exercises the real type). What remains here:
-//  1. Casting the leaked `aligned_vmem::leak_zeroed_pages` reservation to
-//     `*mut RegistryChunk` and dereferencing the pointer the cell publishes
-//     (`p.as_ref()` in `ensure_chunk`/`ensure_chunk_slow`) after the cell
-//     observed it under `Acquire` — sound because the cell's `Release` publish
-//     establishes happens-before (OS-zeroed pages are already a valid
-//     `RegistryChunk`).
-//  2. The `alloc-xthread` overflow-sidecar path (still an inline instance of
-//     the same protocol — see the CRATE-P3 note in `ensure_chunk_slow` for why
-//     that one did NOT migrate onto `OncePtrCell`): its own CAS/reserve/publish/
-//     spin and `unsafe { &*p }` deref, each with its own `// SAFETY:` proof.
-// Every `unsafe` block carries a `// SAFETY:` proof below.
-#![allow(unsafe_code)]
+// R1-07 (src review round 1): this file is `mod.rs` — decls and
+// path-preserving re-exports only, per the "mod.rs — reexports only, no
+// code" rule — so it carries NO `#![allow(unsafe_code)]` of its own; a
+// blanket allow here used to silently widen to every descendant, including
+// `loom_shim` (a `#[cfg(loom)]`-only module that was invisible to both this
+// crate's README/`src/lib.rs` unsafe inventory and this file's own
+// seam-narrative comment, until R1-07 fixed both). Each child file that
+// actually contains `unsafe` now carries its OWN tier-1 `#![allow(unsafe_code)]`
+// with its own `// SAFETY:` proof at every block:
+//  - [`registry`] — casts the leaked `aligned_vmem::leak_zeroed_pages`
+//    reservation to `*mut RegistryChunk` and dereferences the pointer the
+//    cell publishes (`p.as_ref()`), sound because the cell's `Release`
+//    publish establishes happens-before.
+//  - [`ensure`] — the per-chunk `ensure_chunk`/`ensure_chunk_slow` CAS/
+//    reserve/publish/spin protocol that drives `registry`'s dereference
+//    above (the state-machine ITSELF is `once_ptr_cell::OncePtrCell`,
+//    CRATE-P3-extracted; this file's own `unsafe` is the pointer cast/deref
+//    around calling it).
+//  - [`overflow_sidecar`] (`alloc-xthread` only) — a third, inline instance
+//    of the same CAS/reserve/publish/spin protocol plus its own
+//    `unsafe { &*p }` deref, for the lazy `HeapOverflow` sidecar.
+//  - [`loom_shim`] (`--cfg loom` only) — `unsafe impl Send`/`Sync` for its
+//    const-capable `OncePtrCell` stand-in, plus `NonNull::new_unchecked`
+//    calls proved by the sentinel-address check immediately above each site.
+// [`chunk`] has no `unsafe` of its own and carries no allow — its layout
+// constants are computed with safe `core::mem::size_of`/`align_of`.
 
 // Structural reorg step 5: the flat `bootstrap.rs` became this directory.
 // `mod.rs` is decls + path-preserving re-exports only (per the

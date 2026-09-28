@@ -52,18 +52,14 @@
 //!
 //! [`Registry::free_slots`]: crate::registry::bootstrap::Registry::free_slots
 
-// The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
-// `src/lib.rs`); this is the documented registry seam (the pointer handoff
-// `*mut HeapCore` out of a slot's `UnsafeCell`). R6-OPT-P0-2 (round 1): the
-// former `get_unchecked` on a `'static` inline slot array is gone — every
-// slot-array access now goes through `Registry::slot(idx)`
-// (`bootstrap`), the single chunk-resolving accessor, which is safe
-// (range-checked via `debug_assert!` and array-index, not `get_unchecked`).
-// `allow` lifts the crate-level `deny` for this module only — `unsafe`
-// anywhere else in the crate is a hard error. Every remaining `unsafe` block
-// carries a `// SAFETY:` proof.
-#![allow(unsafe_code)]
-
+// R1-07 (src review round 1): this file is `mod.rs` — decls and re-exports
+// only, per the "mod.rs — reexports only, no code" rule — so it carries NO
+// `#![allow(unsafe_code)]` of its own; a module-level allow here previously
+// duplicated the allow each child below already carries independently.
+// [`claim`], [`counters`], and [`stack`] each have their OWN tier-1
+// `#![allow(unsafe_code)]` seam (`claim.rs` documents the pointer handoff
+// `*mut HeapCore` out of a slot's `UnsafeCell`; every `unsafe` block across
+// the three files carries its own `// SAFETY:` proof).
 mod claim;
 mod counters;
 mod stack;

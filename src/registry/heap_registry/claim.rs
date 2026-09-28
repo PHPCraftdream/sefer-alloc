@@ -1,5 +1,16 @@
 //! `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE`
 //! claim (plain and config-plumbed) and OOM push-back.
+
+// The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
+// `src/lib.rs`); this is the documented registry seam (the pointer handoff
+// `*mut HeapCore` out of a slot's `UnsafeCell`). R6-OPT-P0-2 (round 1): the
+// former `get_unchecked` on a `'static` inline slot array is gone — every
+// slot-array access now goes through `Registry::slot(idx)`
+// (`bootstrap::registry`), the chunk-resolving accessor, which is safe
+// (range-checked via `debug_assert!` and array-index, not `get_unchecked`).
+// `allow` lifts the crate-level `deny` for this file only — `unsafe`
+// anywhere else in the crate is a hard error. Every remaining `unsafe` block
+// carries a `// SAFETY:` proof.
 #![allow(unsafe_code)]
 
 use core::sync::atomic::Ordering;

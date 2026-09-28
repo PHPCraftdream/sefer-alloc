@@ -220,10 +220,11 @@
 // `unsafe` seam), a `HeapSlot` is an ordinary Rust struct living in the
 // process-`'static` registry array, so its fields are reachable through
 // ordinary safe references. The sidecar's OS reservation and raw-pointer
-// dereference (round 2) live in `bootstrap`'s EXISTING `#![allow(unsafe_code)]`
-// seam instead of a new one here — see `super::bootstrap::ensure_overflow_sidecar`
-// and its module doc's "unsafe-seam placement" note for why. There is no
-// `#![allow(unsafe_code)]` in this file.
+// dereference (round 2) live in `bootstrap::overflow_sidecar`'s own
+// tier-1 `#![allow(unsafe_code)]` seam instead of a new one here — see
+// `super::bootstrap::ensure_overflow_sidecar` and its module doc's
+// "unsafe-seam placement" note for why. There is no `#![allow(unsafe_code)]`
+// in this file.
 
 use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 
