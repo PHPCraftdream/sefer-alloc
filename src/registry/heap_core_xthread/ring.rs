@@ -35,15 +35,17 @@ impl HeapCore {
     /// invariant on `owner_state` that every other cross-thread reader of
     /// this field already relies on, e.g. `dealloc_foreign_slow`'s own
     /// `owner_thread_free_at` read a few lines above this call site's
-    /// caller). A transient stale read (segment recycled and re-stamped
-    /// between this load and the array index below) resolves to either the
-    /// SAME heap (harmless) or a DIFFERENT live heap's slot (the pushed
-    /// entry sits in the wrong heap's overflow ring, drained on ITS next
-    /// opportunistic pass — not a correctness hazard: `HeapOverflow::try_drain`'s
-    /// `reclaim_offset(_checked)` call independently re-validates `base`'s
-    /// `magic`/`kind`/bounds before touching anything, exactly as the
-    /// existing per-segment ring drain already does for the identical class
-    /// of stale-entry hazard).
+    /// caller). fxx R2-02: a stale read here (segment recycled and re-stamped
+    /// between this load and the push below) cannot actually happen under contract:
+    /// the block whose free is being published keeps its segment's
+    /// `live_count >= 1` until THIS record is drained (the owner-only
+    /// `live_count` is decremented only by the drain-side
+    /// `dec_live_and_maybe_decommit`, never by the freeing thread here), so
+    /// the segment cannot be released/re-stamped between the load and the
+    /// push — the scenario is reachable only via a double-free, which is
+    /// already UB. `HeapOverflow::try_drain`'s `reclaim_offset(_checked)`
+    /// re-validates `base`'s `magic`/`kind`/bounds, not ownership (no
+    /// `contains_base`), so it is not what rules this out.
     #[cfg(feature = "alloc-xthread")]
     #[inline]
     pub(super) fn push_to_heap_overflow(base: *mut u8, packed: u32) -> bool {
@@ -72,14 +74,13 @@ impl HeapCore {
     /// baseline-shaped flakes vs. 8/10 with per-iteration re-resolution,
     /// dropping back to a baseline-comparable rate once resolved once here.
     ///
-    /// Same staleness argument as [`push_to_heap_overflow`]'s own doc comment
-    /// applies UNCHANGED, just amortised across the loop instead of repeated
-    /// per iteration: a transient stale read (segment recycled and
-    /// re-stamped between this resolution and a later poll inside the loop)
-    /// still resolves to either the SAME heap (harmless) or a DIFFERENT live
-    /// heap's slot (the pushed entry sits in the wrong heap's overflow ring,
-    /// drained on ITS next opportunistic pass — not a correctness hazard, see
-    /// that doc comment for the full argument). The dedicated fallback id
+    /// fxx R2-02: same argument as [`push_to_heap_overflow`]'s own doc
+    /// comment applies UNCHANGED, just amortised across the loop instead of
+    /// repeated per iteration: the resolved `owner_state` cannot go stale mid-loop
+    /// either, for the same reason — the freed block holds `live_count >= 1`
+    /// on its segment until drained, so the segment cannot be
+    /// released/re-stamped while this resolution is still in use (see that
+    /// doc comment for the full argument). The dedicated fallback id
     /// resolves directly to process-lifetime storage before any registry
     /// lookup. Only other out-of-range ids return `None`.
     #[cfg(feature = "alloc-xthread")]

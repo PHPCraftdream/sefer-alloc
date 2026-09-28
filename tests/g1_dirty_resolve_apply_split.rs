@@ -23,10 +23,17 @@
 //!   2. `ResolvedDirtyTarget` holds a `&'static` slot reference and no raw
 //!      segment pointer (`*mut`), so the snapshot survives a post-publish
 //!      segment release by construction.
-//!   3. Inside `push_with_overflow_retry`, each of the two
-//!      `resolve_dirty_bit_target(` calls (fast path, retry path) is strictly
-//!      BEFORE its own branch's publish site (`ring.push(packed)` and
+//!   3. Inside `push_with_overflow_retry`, the SINGLE `resolve_dirty_bit_target(`
+//!      call is strictly BEFORE BOTH publish sites (`ring.push(packed)` and
 //!      `ring.try_push_uncounted(packed)`) — resolve-before-publish ordering.
+//!      (fxx round-2 review §4.2: the retry path used to call
+//!      `resolve_dirty_bit_target` a second time with identical `base`/`packed`
+//!      inputs; since `ResolvedDirtyTarget` is `Copy` and G1 already guarantees
+//!      nothing is published between the fast-path resolve and the retry
+//!      branch — reaching the retry branch requires both the fast-path push
+//!      AND the immediate `push_to_heap_overflow` attempt to have failed —
+//!      the retry path now reuses the fast path's snapshot instead of
+//!      re-resolving.)
 //!   4. The old function name `set_dirty_bit_for_segment` no longer appears
 //!      anywhere in the file (the old post-publish helper is fully removed).
 //!
@@ -131,33 +138,35 @@ fn resolve_calls_precede_both_publish_sites_in_push_with_overflow_retry() {
         .filter(|(_, l)| l.contains("resolve_dirty_bit_target("))
         .map(|(i, _)| i)
         .collect();
+    // fxx round-2 review §4.2: the retry path used to redundantly re-resolve
+    // with identical inputs; it now reuses the fast path's `Copy` snapshot
+    // (G1 guarantees nothing is published between the two sites), so exactly
+    // ONE `resolve_dirty_bit_target(` call remains, and it must precede BOTH
+    // publish sites.
     assert!(
-        resolve_lines.len() == 2,
-        "G1: `push_with_overflow_retry` must contain exactly two \
-         `resolve_dirty_bit_target` calls (fast path + retry path); found {}",
+        resolve_lines.len() == 1,
+        "G1/§4.2: `push_with_overflow_retry` must contain exactly one \
+         `resolve_dirty_bit_target` call, reused via the `Copy` \
+         `ResolvedDirtyTarget` for both the fast and retry publish sites; \
+         found {}",
         resolve_lines.len()
     );
 
-    // Each resolve site must precede ITS OWN branch's publish — i.e. the
-    // fast-path resolve before the fast-path push, the retry-path resolve
-    // before the first in-loop publish. (The retry-path resolve is
-    // necessarily textually after the fast-path push line; the ordering
-    // contract is resolve-before-publish per publish site.)
     assert!(
         resolve_lines[0] < first_fast_push,
-        "G1: fast-path `resolve_dirty_bit_target` (body line {}) must run \
-             BEFORE the fast-path publish (`ring.push(packed)` at body line \
-             {}) — after the publish the segment may already be released, so \
-             no segment memory may be read",
+        "G1: `resolve_dirty_bit_target` (body line {}) must run BEFORE the \
+             fast-path publish (`ring.push(packed)` at body line {}) — after \
+             the publish the segment may already be released, so no segment \
+             memory may be read",
         resolve_lines[0],
         first_fast_push
     );
     assert!(
-        resolve_lines[1] < first_retry_push,
-        "G1: retry-path `resolve_dirty_bit_target` (body line {}) must run \
-             BEFORE the retry-path publish (`ring.try_push_uncounted(packed)` \
-             at body line {})",
-        resolve_lines[1],
+        resolve_lines[0] < first_retry_push,
+        "G1: `resolve_dirty_bit_target` (body line {}) must also run BEFORE \
+             the retry-path publish (`ring.try_push_uncounted(packed)` at \
+             body line {}) — it is the SAME snapshot reused, per §4.2",
+        resolve_lines[0],
         first_retry_push
     );
 }

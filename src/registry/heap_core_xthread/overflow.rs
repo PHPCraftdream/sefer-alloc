@@ -734,15 +734,19 @@ impl HeapCore {
             // that case, matching `push_to_heap_overflow`'s own "returns
             // false" defensive behaviour.
             let overflow = Self::resolve_heap_overflow(base);
-            // G1: resolve ONCE before the loop — same rationale as the
-            // fast path, same once-not-per-poll discipline as
-            // `resolve_heap_overflow` above. This block's free record is
-            // not published until a push inside the loop succeeds, so the
-            // segment cannot be released across the retry window, and the
-            // resolved target ('static slot + immutable segment_id
-            // arithmetic) stays valid regardless.
-            #[cfg(feature = "alloc-segment-directory")]
-            let dirty_target = resolve_dirty_bit_target(base, packed);
+            // §4.2 (fxx R2 round-2 review, item 2): reuse the fast-path
+            // `dirty_target` resolved above (before `ring.push`) instead of
+            // resolving again here — `ResolvedDirtyTarget` is `Copy`, `base`
+            // and `packed` are unchanged, and G1 (see the fast-path resolve's
+            // own comment) guarantees nothing was published between that
+            // resolve and this point: reaching this branch requires BOTH the
+            // fast-path `ring.push` AND the immediate `push_to_heap_overflow`
+            // attempt above to have failed (either success returns early), so
+            // this block's free record is still unpublished. The earlier
+            // snapshot is therefore exactly what a fresh resolve would
+            // produce, at the cost of one `segment_id_at` + `owner_state`
+            // load + `slot_or_none` saved on this (cold, double-saturation)
+            // path.
             // R6-REGRESSION-2: probe rounds of `RETRY_ROUND_SPINS` tight-spin
             // polls each, with a real `std::thread::sleep(RETRY_ROUND_SLEEP)`
             // OS-level block between rounds (from round 2 onward — the sleep

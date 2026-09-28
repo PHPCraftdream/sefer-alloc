@@ -3092,3 +3092,65 @@ fn oxx_r2_07_overflow_sidecar_panics_doc_is_accurate() {
          and state the invariant holds constructively (oxx R2-07)",
     );
 }
+
+/// Regression-guard for fxx R2-02 (`docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md`):
+/// `HeapCore::push_to_heap_overflow` / `resolve_heap_overflow`'s doc comments
+/// in `src/registry/heap_core_xthread/ring.rs` used to claim a stale
+/// `owner_state` read (segment recycled/re-stamped between the load and the
+/// push) is "not a correctness hazard" because `HeapOverflow::try_drain`'s
+/// `reclaim_offset(_checked)` "independently re-validates" `base`'s
+/// magic/kind/bounds — but that re-validation checks no ownership (no
+/// `contains_base`/`contains_base_ro`), so it does not actually rule out a
+/// wrong-heap drain writing another heap's `BinTable`/`live_count` from a
+/// foreign thread. The real reason the scenario cannot occur under contract:
+/// the block whose free is being published keeps its segment's
+/// `live_count >= 1` until drained, so the segment cannot be released and
+/// re-stamped between the `owner_state` load and the push — the stale
+/// scenario is reachable only via a double-free, already UB. This test pins
+/// the corrected wording and bans the old wrong safety argument from
+/// reappearing.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn fxx_r2_02_overflow_ring_wrong_heap_doc_is_accurate() {
+    let path = src_dir()
+        .join("registry")
+        .join("heap_core_xthread")
+        .join("ring.rs");
+    let flat = doc_prose(&path);
+
+    assert!(
+        !flat.contains("not a correctness hazard"),
+        "src/registry/heap_core_xthread/ring.rs: stale fxx R2-02 claim \
+         reintroduced — `reclaim_offset(_checked)`'s magic/kind/bounds \
+         re-validation checks no ownership (no `contains_base`), so it does \
+         NOT make a wrong-heap ring push a non-hazard; the real invariant is \
+         `live_count >= 1` on the live block (see the corrected doc comment)",
+    );
+    assert!(
+        !flat.contains("the pushed entry sits in the wrong heap's overflow ring"),
+        "src/registry/heap_core_xthread/ring.rs: stale fxx R2-02 phrasing \
+         reintroduced — a stale `owner_state` read cannot resolve to a \
+         DIFFERENT live heap's slot under contract (live_count >= 1 blocks \
+         release/re-stamp until drain), so this framing (implying it can, \
+         merely 'harmlessly') is inaccurate",
+    );
+    assert!(
+        flat.matches("live_count >= 1").count() >= 2,
+        "src/registry/heap_core_xthread/ring.rs must state the real \
+         `live_count >= 1` invariant in BOTH `push_to_heap_overflow`'s and \
+         `resolve_heap_overflow`'s doc comments (fxx R2-02)",
+    );
+    assert!(
+        flat.matches("fxx R2-02").count() >= 2,
+        "src/registry/heap_core_xthread/ring.rs must name fxx R2-02 at both \
+         corrected doc-comment sites",
+    );
+    assert!(
+        flat.contains("reachable only via a double-free, which is") && flat.contains("already UB"),
+        "src/registry/heap_core_xthread/ring.rs's `push_to_heap_overflow` doc \
+         must state that the stale-read scenario is reachable only via a \
+         double-free (already UB), not via a legal live-block race (fxx R2-02)",
+    );
+}
