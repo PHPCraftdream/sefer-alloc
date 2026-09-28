@@ -5,7 +5,10 @@
 
 #[cfg(feature = "numa-aware")]
 use crate::alloc_core::numa;
-#[cfg(not(any(feature = "numa-aware", feature = "small-segment-lazy-commit")))]
+// oxx R2-05: needed under `small-segment-lazy-commit` too now — that arm
+// calls the accounting seam `Segment::reserve_small_lazy` instead of a raw
+// `aligned_vmem::reserve_aligned_lazy(...)`.
+#[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
 use crate::alloc_core::segment_header::{
@@ -195,9 +198,13 @@ impl AllocCore {
                 // MAX_REALISTIC_PAGE_SIZE (64 KiB) — the const-assert at the
                 // top of this file pins the sum PLUS that slack within SEGMENT.
                 debug_assert!(initial_commit <= SEGMENT);
-                aligned_vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit).inspect(|_| {
-                    os::SEGMENTS_RESERVED_TOTAL.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                })
+                // oxx R2-05: `Segment::reserve_small_lazy` is the accounting
+                // seam (mirrors primordial's `Segment::reserve_lazy`) — it
+                // counts BOTH the success (`SEGMENTS_RESERVED_TOTAL`) and
+                // the OS-refusal (`SEGMENTS_RESERVE_FAILED_TOTAL`) arm; a
+                // raw `aligned_vmem::reserve_aligned_lazy(...).inspect(..)`
+                // call here counted only the success arm.
+                Segment::reserve_small_lazy(initial_commit)
             };
             // `mut` is needed under `alloc-decommit` (the pool-drain-and-retry
             // arm below reassigns `seg`). Silence the unused-mut warning when
@@ -215,46 +222,25 @@ impl AllocCore {
                     let meta_end = SegLayout::small_meta_end();
                     let initial_commit =
                         SegLayout::lazy_initial_commit(meta_end, aligned_vmem::page_size());
-                    seg = aligned_vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)
-                        .inspect(|_| {
-                            os::SEGMENTS_RESERVED_TOTAL
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        });
+                    seg = Segment::reserve_small_lazy(initial_commit);
                 }
                 #[cfg(not(feature = "small-segment-lazy-commit"))]
                 {
                     seg = Segment::reserve(SEGMENT);
                 }
             }
-            #[cfg(feature = "small-segment-lazy-commit")]
-            {
-                // `into_reservation()`: aligned-vmem's lazy constructors now hand
-                // back a `LazyReservation`, which tracks the commit watermark for
-                // callers that want the crate to do that bookkeeping. THIS caller
-                // does not: the allocator keeps its own frontier
-                // (`committed_payload_end`) INSIDE the mapped segment header,
-                // because the hot allocation path reaches it by masking a bare
-                // pointer and has no handle in scope. So take the explicit door
-                // out and own the commit state from here on.
-                let reservation = seg?.into_reservation();
-                let b = reservation.as_ptr();
-                // `reservation_ptr()` is always non-null per the
-                // aligned_vmem::Reservation contract (checked at construction).
-                // Use `new` + `?` to propagate as OOM rather than panic.
-                let r = core::ptr::NonNull::new(reservation.reservation_ptr())?;
-                let rl = reservation.reservation_len();
-                core::mem::forget(reservation);
-                (b, r, rl)
-            }
-            #[cfg(not(feature = "small-segment-lazy-commit"))]
-            {
-                let segment = seg?;
-                let b = segment.as_ptr();
-                let r = segment.reservation();
-                let rl = segment.reservation_len();
-                core::mem::forget(segment);
-                (b, r, rl)
-            }
+            // oxx R2-05: both the lazy (`small-segment-lazy-commit`) and
+            // eager arms above now produce an `Option<Segment>` — the lazy
+            // arm used to hand back a raw `LazyReservation` and extract its
+            // fields inline here; now that `Segment::reserve_small_lazy`
+            // does that `into_reservation()` step itself (mirroring
+            // `reserve_lazy`/`reserve`), one extraction serves both arms.
+            let segment = seg?;
+            let b = segment.as_ptr();
+            let r = segment.reservation();
+            let rl = segment.reservation_len();
+            core::mem::forget(segment);
+            (b, r, rl)
         };
 
         // no-panic: register returns None if the segment table is full. We

@@ -354,6 +354,59 @@ impl Segment {
         Some(Segment(reservation))
     }
 
+    /// Reserve a SEGMENT-aligned, exactly-`SEGMENT`-sized span from the OS
+    /// for an ORDINARY (non-primordial) small segment, committing only the
+    /// first `initial_commit` bytes — the rest stays reserved-but-
+    /// uncommitted (Windows lazy-commit path; falls back to the eager,
+    /// fully-committed path on Unix/miri, matching
+    /// `aligned_vmem::reserve_aligned_lazy`'s own fallback).
+    ///
+    /// oxx R2-05: byte-for-byte the same body as
+    /// [`reserve_lazy`](Self::reserve_lazy) (which serves the primordial
+    /// segment) — this is its `small-segment-lazy-commit` sibling, factored
+    /// out as its own accounting seam so `reserve_small_segment_impl`
+    /// (`alloc_core_small/reserve.rs`) no longer calls
+    /// `aligned_vmem::reserve_aligned_lazy` directly. The inline call it
+    /// used to make only incremented [`SEGMENTS_RESERVED_TOTAL`] via
+    /// `.inspect(..)` on the `Some` arm; the `None` arm returned straight
+    /// through `?`/`seg?` without ever touching
+    /// [`SEGMENTS_RESERVE_FAILED_TOTAL`], so an OS reservation refusal for
+    /// an ordinary small segment under `small-segment-lazy-commit` (without
+    /// `numa-aware`, which routes through the already-counted `numa.rs`
+    /// path instead) went unrecorded — breaking the "zero `_FAILED_TOTAL`
+    /// growth ⇒ blame the allocator, not the machine" oracle documented on
+    /// that counter. This constructor counts both outcomes, exactly like
+    /// every other `Segment` constructor in this file.
+    ///
+    /// `initial_commit` must be a non-zero multiple of the RUNTIME page size
+    /// (`aligned_vmem::page_size()`) and `<= SEGMENT`; the caller
+    /// (`reserve_small_segment_impl`) upholds this via
+    /// `Layout::lazy_initial_commit` plus a `debug_assert!`. Returns `None`
+    /// on OOM or a contract violation.
+    ///
+    /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy)'s own
+    /// gating — the sole caller only takes this branch when `numa-aware` is
+    /// off; the numa-aware arm reserves via `numa::reserve_aligned_on_node`
+    /// instead (P2 gate: NUMA reservations must not be disturbed by the
+    /// lazy path). Gating the definition here too keeps `--all-features`
+    /// free of a dead-code warning.
+    #[must_use]
+    #[cfg(all(feature = "small-segment-lazy-commit", not(feature = "numa-aware")))]
+    pub(crate) fn reserve_small_lazy(initial_commit: usize) -> Option<Self> {
+        // `into_reservation()`: see the note at `reserve_lazy`'s identical
+        // body — the allocator's commit frontier lives in the segment
+        // header, reachable from a bare pointer on the hot path, so it does
+        // NOT use `LazyReservation`'s tracking and takes the explicit door
+        // out.
+        let Some(lazy) = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit) else {
+            SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let reservation = lazy.into_reservation();
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
     /// task #504 (F11 step 2) MEASUREMENT-ONLY: identical mechanism to
     /// [`reserve_lazy`](Self::reserve_lazy) (reserve a whole `SEGMENT`,
     /// commit only `initial_commit` bytes up front via the same
