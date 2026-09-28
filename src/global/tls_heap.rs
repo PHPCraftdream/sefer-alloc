@@ -554,42 +554,35 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 /// (`claim`/`claim_with_config`'s first-claim AND re-claim legs) to the
 /// planting call before any return.
 ///
-/// ## UBFIX-10 (L-6): guard-arm-before-claim-is-observable, with rollback
+/// ## Order: publish `LOCAL`, then arm `GUARD` (fxx R2-01; was UBFIX-10's guard-first)
 ///
-/// Before this fix, both `LOCAL.try_with` and `GUARD.try_with` below silently
-/// discarded their `Err`. The dangerous case is `GUARD.try_with` failing (TLS
-/// initialisation of the `AbandonGuard` slot can fail if this thread is
-/// already tearing down — e.g. `finish_bind` is reached from a resolver
-/// called out of some OTHER thread-local's `Drop`, after `std` has started
-/// rejecting new TLS-slot initialisation on this thread): the slot returned
-/// by `HeapRegistry::claim`/`claim_with_config` above is ALREADY `STATE_LIVE`
-/// (the CAS that claims it already ran, inside `claim`, before `finish_bind`
-/// was ever called) — but with no armed guard, NOTHING will ever call
-/// `HeapRegistry::recycle` on it. The slot is claimed but unguarded: LIVE
-/// forever, unreachable by any future `claim` (the free-pool never sees it
-/// again) — a permanent availability/resource leak (never UB — this thread
-/// never actually gets a usable heap in this branch), one slot per occurrence
-/// (out of `MAX_HEAPS`), silent (no error surfaces to the allocation caller,
-/// which routes to Fallback exactly as if this were a normal registry
-/// exhaustion).
+/// On std <= 1.92 arming `GUARD` (a `Drop` `thread_local!`) registers its
+/// destructor by pushing onto std's `DTORS` `Vec` on the GLOBAL allocator, so
+/// the push can re-enter this allocator on the same thread. With `LOCAL`
+/// still null that re-entry bound a second slot and armed `GUARD` again
+/// under std's live `RefMut` -> `rtabort!("the global allocator may not use
+/// TLS with destructors")`. Publishing `LOCAL` first makes the re-entry
+/// resolve to `Own(heap)`. On std >= 1.93 (`DTORS` on `System`, the crate's
+/// MSRV) there is no re-entry and the order is inert; it stays as defence.
+/// No `&mut HeapCore` is live here (`heap` is only a raw pointer), so a
+/// nested alloc through `heap` does not alias the caller's later borrow.
 ///
-/// The fix: arm `GUARD` FIRST (before publishing into `LOCAL`, before
-/// returning `Own` to the caller). If arming fails, this claimed slot has no
-/// living owner and must not be handed out — recycle it immediately (the
-/// exact same `HeapRegistry::recycle` the guard itself would otherwise have
-/// called on thread exit) and return `Fallback`, exactly as the
-/// registry-exhaustion / primordial-OOM branch above does. `LOCAL` is
-/// published only AFTER the guard is confirmed armed, so a partially-bound
-/// state (guard armed, `LOCAL` not yet set) can only ever be the LESS severe
-/// case: `current_for_alloc()` would just re-enter `bind_slow_tagged`
-/// next call (a re-claim, cheap — `claim` reuses the same slot when
-/// `new_gen != 1`) rather than reading a claimed-but-unguarded slot.
+/// ## Rollback (UBFIX-10 / L-6: never hand out a slot without a live guard)
+///
+/// - `LOCAL.try_with` fails (os-keyed TLS only; native `LOCAL` is a
+///   `Drop`-less `const` `Cell`): nothing published or armed -> recycle,
+///   `Fallback`.
+/// - `GUARD.try_with` fails: reset `LOCAL` to null, then recycle, `Fallback`.
+///   The next call on this thread re-attempts a bind, as before this order
+///   change. Blocks carved through `heap` meanwhile stay valid: `recycle`
+///   returns the slot, not its segments, and a later free from this thread
+///   sees null `LOCAL` and routes as foreign.
 ///
 /// SAFETY: `heap` was just returned by `claim`/`claim_with_config` and has
 /// not been recycled yet (this is the only code path that could recycle it
 /// between claim and here) — the single-caller contract `HeapRegistry::recycle`
 /// documents ("pointer previously returned by `claim`, not yet recycled") is
-/// satisfied.
+/// satisfied in both rollback legs.
 #[cold]
 fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
     let heap = if heap.is_null() {
@@ -599,24 +592,23 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
         heap
     };
 
-    // UBFIX-10 (L-6): arm the guard FIRST. If this fails, the claimed slot
-    // has no living owner to ever recycle it — roll back by recycling it
-    // here instead of handing out a claimed-but-unguarded slot.
-    if GUARD.try_with(|g| g.heap.set(heap)).is_err() {
-        // SAFETY: `heap` was returned by `claim`/`claim_with_config` above
-        // and has not yet been recycled (this is the first and only chance —
-        // no guard was armed to do it later).
+    // fxx R2-01: publish LOCAL first so a std <= 1.92 re-entry from GUARD's
+    // destructor registration resolves to this slot, not a second bind.
+    if LOCAL.try_with(|c| c.set(heap)).is_err() {
+        // SAFETY: `heap` came from `claim`/`claim_with_config` above and is
+        // not yet recycled; no guard was armed to recycle it later.
         unsafe { HeapRegistry::recycle(heap) };
         return CurrentHeap::Fallback;
     }
 
-    // Guard is armed. Publish into LOCAL (so subsequent `current_for_alloc()`
-    // calls hit the fast path). If THIS fails (rarer still, and less severe —
-    // the guard is already armed and will recycle correctly on thread exit),
-    // every call on this thread simply re-enters `bind_slow_tagged` and
-    // re-claims (cheap re-claim of the same slot), never reading a
-    // stale/unset LOCAL.
-    let _ = LOCAL.try_with(|c| c.set(heap));
+    // UBFIX-10 (L-6): no guard -> un-publish LOCAL and recycle the slot.
+    if GUARD.try_with(|g| g.heap.set(heap)).is_err() {
+        let _ = LOCAL.try_with(|c| c.set(core::ptr::null_mut()));
+        // SAFETY: as above; this is the only chance to recycle `heap`.
+        unsafe { HeapRegistry::recycle(heap) };
+        return CurrentHeap::Fallback;
+    }
+
     CurrentHeap::Own(heap)
 }
 
