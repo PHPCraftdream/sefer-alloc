@@ -554,8 +554,12 @@ impl AllocCore {
         // write side is always safe (`copy <= new_size <= the fresh
         // allocation`); the unsound half this guards is the READ.
         // Reject (return null, `ptr` untouched) when the claimed old size
-        // exceeds the segment's actual committed span.
-        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+        // exceeds the segment's actual committed span. `own_segment = true`:
+        // `contains_base(base)` just proved `base` is one of THIS
+        // (single-threaded, `!Send`) `AllocCore`'s own segments, so this is
+        // always a same-thread read of the owner-only commit frontier
+        // (R2-02) — see `safe_payload_read_span`'s doc.
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, true) {
             return core::ptr::null_mut();
         }
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {

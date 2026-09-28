@@ -287,7 +287,13 @@ impl HeapCore {
                 //       an OOB read. `base` was proven live above by
                 //       `contains_base`. The write side is always safe (`copy
                 //       <= new_size`); the read is bounded here.
-                if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+                //
+                //       `own_segment = true`: `self.core.contains_base(base)`
+                //       above proved `base` is one of THIS heap's own
+                //       segments, so this is a same-thread read of the
+                //       owner-only commit frontier (R2-02) — see
+                //       `safe_payload_read_span`'s doc.
+                if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, true) {
                     return core::ptr::null_mut();
                 }
                 let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
@@ -402,7 +408,15 @@ impl HeapCore {
             if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
                 return core::ptr::null_mut();
             }
-            if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+            // `own_segment = false`: `base` belongs to ANOTHER heap's owning
+            // thread (this is the cross-heap foreign leg) — reading its
+            // owner-only commit frontier here would race that thread's plain
+            // (non-atomic) writes to the same field. `safe_payload_read_span`
+            // falls back to the coarse, always-sound `SEGMENT`-wide bound for
+            // `own_segment == false` (see its doc, R2-02): still correct, not
+            // commit-precise for a lazily-committed foreign segment — this
+            // leg continues to rely on the `old_layout` contract for that.
+            if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, false) {
                 return core::ptr::null_mut();
             }
             let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
@@ -548,8 +562,9 @@ impl HeapCore {
         // block's actual committed span, not the caller-supplied
         // `old_layout.size()` — a bogus layout must not drive an OOB read.
         // `base` was already proven live by the caller's `contains_base`
-        // check.
-        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+        // check, which is also an ownership proof (`own_segment = true`,
+        // R2-02) — see `safe_payload_read_span`'s doc.
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, true) {
             return None;
         }
         // Pad target = `new_size` (no artificial padding beyond the caller's
