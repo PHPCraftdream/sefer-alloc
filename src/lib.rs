@@ -125,7 +125,7 @@
 // their internal call-site `unsafe {}` blocks (tier 2, task #101 / R4-9).
 // Both are comment-proof: `^\s*#!?\[` requires the line to begin with the
 // attribute, not a `//` prefix (the unanchored form has false positives here
-// and in `src/registry/heap_overflow.rs`).
+// and in `src/registry/heap_overflow/mod.rs` and `heap_overflow_impl.rs`).
 //
 // EXTERNAL publishable crates (each independently auditable):
 //

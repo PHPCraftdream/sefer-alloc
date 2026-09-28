@@ -256,7 +256,7 @@ const FILL_CLASS: usize = 0;
 /// ── Case 2: double saturation resolved by a SUCCESSFUL retry ─────────────
 ///
 /// Native-only (`#[cfg(not(miri))]`): hardcodes the native
-/// `HEAP_OVERFLOW_CAP = 2048` (`src/registry/heap_overflow.rs` — under miri
+/// `HEAP_OVERFLOW_CAP = 2048` (`src/registry/heap_overflow/` — under miri
 /// it is shrunk to 64) and leans on real scheduler sleeps inside the retry
 /// loop; the retry path's miri UB coverage already lives in
 /// `tests/remote_fanin.rs::remote_fanin_miri_minimal_retry_ub_check`.

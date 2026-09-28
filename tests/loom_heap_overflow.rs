@@ -3,7 +3,7 @@
 //!
 //! # Scope — what this adds beyond `loom_remote_ring.rs`
 //!
-//! `HeapOverflow` (`src/registry/heap_overflow.rs`) reuses the SAME
+//! `HeapOverflow` (`src/registry/heap_overflow/`) reuses the SAME
 //! Vyukov-style push/drain CAS-reserve protocol `loom_remote_ring.rs` already
 //! model-checks for `RemoteFreeRing` — same cursor arithmetic, same
 //! break-on-unpublished-slot / clear-on-drain discipline. This file does NOT

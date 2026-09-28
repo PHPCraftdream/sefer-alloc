@@ -6,7 +6,7 @@
 //! `bootstrap.rs` (structural reorg step 5 — the file IS the module now, and
 //! the `bootstrap::overflow_sidecar` path is preserved); the module-level
 //! history and soundness narrative lives in [`super`]'s doc and
-//! `heap_overflow.rs`'s module doc for the two-tier design and the
+//! `heap_overflow/`'s module doc for the two-tier design and the
 //! wedge-hazard correctness argument this module is the linchpin of.
 
 use crate::registry::heap_overflow::{
@@ -69,7 +69,7 @@ pub(super) const SIDECAR_SIZE: usize = {
 /// already has the right shape.
 pub(crate) fn ensure_overflow_sidecar(sidecar_ptr: &AtomicPtr<HeapOverflowSidecar>) -> bool {
     // `SIDECAR_CAP == 0` only under miri (`INLINE_CAP == HEAP_OVERFLOW_CAP`
-    // there — see `heap_overflow.rs`'s `INLINE_CAP` doc comment). No
+    // there — see `heap_overflow/`'s `INLINE_CAP` doc comment). No
     // caller can ever observe `t >= INLINE_CAP` in that configuration (the
     // ring's own full-check already rejects any `t >=
     // HEAP_OVERFLOW_CAP == INLINE_CAP` before this function would be
@@ -268,7 +268,7 @@ pub(crate) fn dbg_rollback_overflow_sidecar_sentinel_reenterable(
 
 /// Dereference a materialised sidecar pointer as `&'static HeapOverflowSidecar`.
 /// The ONE place in the crate allowed to do so (mirrors [`Registry::slot`]'s
-/// equivalent role for chunk memory) — `heap_overflow.rs` has no unsafe seam
+/// equivalent role for chunk memory) — `heap_overflow/` has no unsafe seam
 /// of its own (see its module doc), so its `HeapOverflow::slot` resolver
 /// calls this safe membrane function instead of dereferencing `p` itself.
 ///

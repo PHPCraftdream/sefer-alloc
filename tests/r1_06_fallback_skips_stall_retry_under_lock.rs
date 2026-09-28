@@ -84,7 +84,7 @@ const BLOCK_SIZE: usize = 64;
 
 /// `RING_CAP (256, `alloc_core::remote_free_ring::RING_CAP`) +
 /// HEAP_OVERFLOW_CAP (2048, native `not(miri)` value — not itself exported
-/// from the crate, see `src/registry/heap_overflow.rs`) = 2304`: exactly the
+/// from the crate, see `src/registry/heap_overflow/`) = 2304`: exactly the
 /// combined capacity of a segment's remote-free ring and its owning heap's
 /// second-chance overflow ring. Pre-saturating exactly this many blocks fills
 /// BOTH tiers without any of the 2304 pushes needing a retry (each succeeds

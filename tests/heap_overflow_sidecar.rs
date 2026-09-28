@@ -15,7 +15,7 @@
 //!    ring's `tail` cursor untouched and the sidecar pointer restored to
 //!    `null`, so a LATER push can still succeed — i.e. a failed
 //!    materialisation attempt is recoverable, not a permanent wedge. This is
-//!    the structural half of the wedge-hazard proof (`heap_overflow.rs`'s
+//!    the structural half of the wedge-hazard proof (`heap_overflow/`'s
 //!    `push_impl` — the code-inspection half — is: the CAS-reserve of `tail`
 //!    is placed AFTER the `ensure_overflow_sidecar` check, so `tail` is
 //!    provably never advanced past an index whose sidecar could not be
@@ -53,7 +53,7 @@ fn synthetic_base(tag: usize) -> *mut u8 {
 /// code.
 ///
 /// **Miri note:** under miri, `HEAP_OVERFLOW_CAP == 64 == INLINE_CAP` (see
-/// `heap_overflow.rs`'s `INLINE_CAP` doc comment), so `SIDECAR_CAP == 0` and
+/// `heap_overflow/`'s `INLINE_CAP` doc comment), so `SIDECAR_CAP == 0` and
 /// the sidecar range is structurally empty — the `(INLINE_CAP + 1)`-th push
 /// simply fails (the ring is genuinely full, not "needs a sidecar it cannot
 /// get"), and `dbg_sidecar_is_materialised()` can never become `true`. Steps
@@ -151,7 +151,7 @@ fn sidecar_stays_null_until_inline_tier_exhausted_then_materialises() {
 ///
 /// This drives `dbg_rollback_sidecar_sentinel_for_test` — the exact rollback
 /// code path `bootstrap::ensure_overflow_sidecar_slow`'s OOM branch runs
-/// (see `heap_overflow.rs`'s module doc "wedge hazard" section) — on a ring
+/// (see `heap_overflow/`'s module doc "wedge hazard" section) — on a ring
 /// whose `tail` has ALREADY been advanced past `INLINE_CAP` (so the rollback
 /// runs in the exact state a real OOM would find it in: sidecar range
 /// reachable, sentinel about to be installed), then proves two things: (a)

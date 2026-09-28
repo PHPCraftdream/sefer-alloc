@@ -67,68 +67,9 @@ impl HeapRegistry {
     /// eases.
     #[must_use]
     pub fn claim() -> *mut HeapCore {
-        loop {
-            let idx = match Self::pick_slot() {
-                Some(i) => i,
-                None => return core::ptr::null_mut(),
-            };
-            let reg = ensure();
-            // R6-OPT-P0-2: `slot()` resolves the index through the chunked
-            // slot array, lazily materialising the owning chunk if needed.
-            let slot = reg.slot(idx);
-
-            if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
-                == Err(STATE_LIVE)
-            {
-                continue; // lost the slot race — retry
-            }
-            slot.generation.fetch_add(1, Ordering::Release);
-            if !slot.initialised.load(Ordering::Acquire) {
-                let heap_ptr = slot.heap.get();
-                match HeapCore::new(idx as u32) {
-                    // SAFETY: sole writer, uninitialised slot, first claim.
-                    Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
-                    None => {
-                        // OOM on materialisation: push the slot back to FREE
-                        // so it is not leaked (M-5) — same shape as `recycle`.
-                        push_back_after_oom(reg, slot, idx as u32);
-                        return core::ptr::null_mut();
-                    }
-                }
-                // W3: plant this heap's stable handles to its slot-resident
-                // diagnostic hit counters, now that the `HeapCore` is materialised
-                // in the slot. See `bind_slot_counters`.
-                // SAFETY: we just `write`(hc) into this slot's `UnsafeCell` and are
-                // its sole writer (the FREE→LIVE CAS winner); no other thread holds
-                // a reference to it yet (`initialised` not yet published).
-                unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
-                // Publish readiness: Release-store `initialised = true` ONLY
-                // now that `heap_ptr.write(hc)` has fully completed (task #133
-                // hardening — see `HeapSlot::initialised`'s doc comment for the
-                // UB window this closes: `count`/`generation` alone are bumped
-                // BEFORE `HeapCore::new()` runs and are NOT safe gates for a
-                // cross-thread reader to dereference `heap`). This Release
-                // store is the publish half of the HB pair; diagnostic
-                // aggregation readers (`tcache_hits_total`,
-                // `large_cache_hits_total`) pair it with an Acquire load.
-                slot.initialised.store(true, Ordering::Release);
-            }
-            // R11-5: invalidate the per-AllocCore cached NUMA node before
-            // handing the slot out, so the new owner's first
-            // `current_node_cached()` re-queries rather than inheriting the
-            // previous owner's stale value. A no-op on first materialisation
-            // (the field starts at `None`); load-bearing on re-claim of a
-            // recycled slot. SAFETY: we are the sole writer (FREE→LIVE CAS
-            // winner) and the slot is LIVE + initialised at this point, so
-            // forming the `&mut HeapCore` for the invalidator is the same
-            // shape as the `return ... .cast::<HeapCore>()` below.
-            #[cfg(feature = "numa-aware")]
-            unsafe {
-                (*slot.heap.get().cast::<HeapCore>()).invalidate_numa_node_cache();
-            }
-            // SAFETY: slot is LIVE and initialised; we are sole writer.
-            return slot.heap.get().cast::<HeapCore>();
-        }
+        // No re-claim-time check: a plain `claim` carries no config to
+        // conflict with, so the "already initialised" hook is a no-op.
+        Self::claim_impl(HeapCore::new, |_heap_ptr| {})
     }
 
     /// Like [`claim`](Self::claim) but plumbs `config` into the newly
@@ -159,6 +100,70 @@ impl HeapRegistry {
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub fn claim_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
+        Self::claim_impl(
+            // First materialisation: use the caller's config.
+            |idx| HeapCore::new_with_config(idx, config),
+            |heap_ptr| {
+                // N2 (task #95): re-claim of an already-materialised slot.
+                // The slot's existing config (set at first materialisation)
+                // silently wins. Compare the requested config against the
+                // slot's live policy; on mismatch, count + signal.
+                //
+                // SAFETY: `claim_impl` only calls this hook when the slot is
+                // LIVE and initialised, with the caller being the sole
+                // writer (just won the FREE→LIVE CAS). The comparison is a
+                // read-only `&self` method on `HeapCore` — no mutation, no
+                // hazard.
+                let matches = unsafe { (*heap_ptr).live_config_matches(&config) };
+                if !matches {
+                    // The counter is the ONLY signal, in every build profile
+                    // (always compiled in — one increment per mismatched
+                    // bind on this cold path, not a hot-path RMW worth gating
+                    // behind `alloc-stats`). R2-08 (task #2010): this branch
+                    // is the cold bind behind every `GlobalAlloc` method and
+                    // is reachable by a legitimate multi-instance config
+                    // collision, so it must not panic — a former
+                    // `debug_assert!` here unwound out of `GlobalAlloc::alloc`
+                    // in debug builds (UB per the trait's contract). The slot
+                    // stays LIVE and is returned below: first-wins.
+                    CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+        )
+    }
+
+    /// Shared CAS/materialise/bind protocol behind [`claim`](Self::claim) and
+    /// [`claim_with_config`](Self::claim_with_config) — factored out because
+    /// the two were near-verbatim copies of the reservation/materialisation/
+    /// NUMA-invalidation sequence (R1-11, src review round 1).
+    ///
+    /// `materialise(idx)` is called exactly once, only on the FIRST claim of
+    /// a given slot (`!initialised`), to produce the `HeapCore` to write into
+    /// it — `HeapCore::new` for [`claim`](Self::claim),
+    /// `HeapCore::new_with_config` for
+    /// [`claim_with_config`](Self::claim_with_config). Returning `None`
+    /// (OOM) pushes the slot back to `FREE` (see
+    /// [`push_back_after_oom`]) and this function returns `null`.
+    ///
+    /// `on_already_initialised(heap_ptr)` is called exactly once, only on a
+    /// RE-claim of an already-materialised slot (the `else` of the same
+    /// branch) — [`claim`](Self::claim) passes a no-op (a plain claim has no
+    /// config to conflict with), [`claim_with_config`](Self::claim_with_config)
+    /// passes the N2 config-conflict comparison. `heap_ptr` is the slot's
+    /// live `*mut HeapCore`; the hook is responsible for any `unsafe`
+    /// dereference it needs, under the same sole-writer/LIVE/initialised
+    /// contract documented at each call site below.
+    ///
+    /// Every other step — slot picking, the `FREE → LIVE` CAS and its retry
+    /// on a lost race, the `generation` bump, `bind_slot_counters`, the
+    /// `initialised` publish, and the R11-5 NUMA-cache invalidation — is
+    /// identical between the two callers and lives here, run exactly once
+    /// per returned pointer regardless of which hook ran.
+    fn claim_impl<M, R>(materialise: M, on_already_initialised: R) -> *mut HeapCore
+    where
+        M: FnOnce(u32) -> Option<HeapCore>,
+        R: FnOnce(*mut HeapCore),
+    {
         loop {
             let idx = match Self::pick_slot() {
                 Some(i) => i,
@@ -177,8 +182,7 @@ impl HeapRegistry {
             slot.generation.fetch_add(1, Ordering::Release);
             if !slot.initialised.load(Ordering::Acquire) {
                 let heap_ptr = slot.heap.get();
-                // First materialisation: use the caller's config.
-                match HeapCore::new_with_config(idx as u32, config) {
+                match materialise(idx as u32) {
                     // SAFETY: sole writer, uninitialised slot, first claim.
                     Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
                     None => {
@@ -188,46 +192,42 @@ impl HeapRegistry {
                         return core::ptr::null_mut();
                     }
                 }
-                // W3: plant slot-counter handles — see `claim` above and
-                // `bind_slot_counters`.
-                // SAFETY: identical to `claim` — sole writer, just materialised,
-                // not yet published.
+                // W3: plant this heap's stable handles to its slot-resident
+                // diagnostic hit counters, now that the `HeapCore` is materialised
+                // in the slot. See `bind_slot_counters`.
+                // SAFETY: we just `write`(hc) into this slot's `UnsafeCell` and are
+                // its sole writer (the FREE→LIVE CAS winner); no other thread holds
+                // a reference to it yet (`initialised` not yet published).
                 unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
-                // Publish readiness — see the identical store in `claim` above
-                // for the full rationale (task #133 hardening).
+                // Publish readiness: Release-store `initialised = true` ONLY
+                // now that `heap_ptr.write(hc)` has fully completed (task #133
+                // hardening — see `HeapSlot::initialised`'s doc comment for the
+                // UB window this closes: `count`/`generation` alone are bumped
+                // BEFORE `HeapCore::new()` runs and are NOT safe gates for a
+                // cross-thread reader to dereference `heap`). This Release
+                // store is the publish half of the HB pair; diagnostic
+                // aggregation readers (`tcache_hits_total`,
+                // `large_cache_hits_total`) pair it with an Acquire load.
                 slot.initialised.store(true, Ordering::Release);
             } else {
-                // N2 (task #95): re-claim of an already-materialised slot.
-                // The slot's existing config (set at first materialisation)
-                // silently wins. Compare the requested config against the
-                // slot's live policy; on mismatch, count + signal.
-                //
-                // SAFETY: slot is LIVE and initialised; we are the sole
-                // writer (just won the FREE→LIVE CAS). The comparison is a
-                // read-only `&self` method on `HeapCore` — no mutation, no
-                // hazard.
-                let heap_ptr = slot.heap.get().cast::<HeapCore>();
-                let matches = unsafe { (*heap_ptr).live_config_matches(&config) };
-                if !matches {
-                    // The counter is the ONLY signal, in every build profile
-                    // (always compiled in — one increment per mismatched
-                    // bind on this cold path, not a hot-path RMW worth gating
-                    // behind `alloc-stats`). R2-08 (task #2010): this branch
-                    // is the cold bind behind every `GlobalAlloc` method and
-                    // is reachable by a legitimate multi-instance config
-                    // collision, so it must not panic — a former
-                    // `debug_assert!` here unwound out of `GlobalAlloc::alloc`
-                    // in debug builds (UB per the trait's contract). The slot
-                    // stays LIVE and is returned below: first-wins.
-                    CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
-                }
+                // Re-claim of an already-materialised slot. SAFETY: slot is
+                // LIVE and initialised; we are the sole writer (just won the
+                // FREE→LIVE CAS) — `on_already_initialised` may soundly form
+                // a shared `&HeapCore` over this pointer under that contract.
+                on_already_initialised(slot.heap.get().cast::<HeapCore>());
             }
-            // R11-5: same NUMA-cache invalidation as `claim` — runs in BOTH
-            // the first-materialisation branch above AND the re-claim branch
-            // just navigated, uniformly, so the invalidation is the single
-            // source of truth on (re-)claim. (On first materialisation the
-            // field is already `None`, making this a no-op there.) SAFETY:
-            // sole writer (FREE→LIVE CAS winner), slot LIVE + initialised.
+            // R11-5: invalidate the per-AllocCore cached NUMA node before
+            // handing the slot out, so the new owner's first
+            // `current_node_cached()` re-queries rather than inheriting the
+            // previous owner's stale value. A no-op on first materialisation
+            // (the field starts at `None`); load-bearing on re-claim of a
+            // recycled slot. Runs in BOTH the first-materialisation branch
+            // above and the re-claim branch just navigated, uniformly, so
+            // the invalidation is the single source of truth on (re-)claim.
+            // SAFETY: we are the sole writer (FREE→LIVE CAS winner) and the
+            // slot is LIVE + initialised at this point, so forming the
+            // `&mut HeapCore` for the invalidator is the same shape as the
+            // `return ... .cast::<HeapCore>()` below.
             #[cfg(feature = "numa-aware")]
             unsafe {
                 (*slot.heap.get().cast::<HeapCore>()).invalidate_numa_node_cache();

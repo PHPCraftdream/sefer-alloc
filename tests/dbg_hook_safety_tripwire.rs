@@ -252,11 +252,11 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/registry/bootstrap/registry.rs::dbg_slot_generation",
     "src/registry/bootstrap/registry.rs::dbg_chunk_is_materialised",
     "src/registry/heap_registry/counters.rs::dbg_slot_initialised",
-    "src/registry/heap_overflow.rs::dbg_sidecar_is_materialised",
+    "src/registry/heap_overflow/heap_overflow_impl.rs::dbg_sidecar_is_materialised",
     // R1-05: pure function of its two `usize` arguments — no `&self`, no
     // allocator/ring state touched at all, no side effect. See
     // `HeapOverflow::room_check`'s doc comment.
-    "src/registry/heap_overflow.rs::dbg_room_check_code",
+    "src/registry/heap_overflow/push.rs::dbg_room_check_code",
     "src/registry/heap_core/core.rs::dbg_cached_numa_node",
     "src/registry/heap_core/diag/queries.rs::dbg_owner_id_for",
     "src/registry/heap_core/diag/queries.rs::dbg_class_for",
@@ -425,15 +425,15 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "calls the real production flush_all_tcache path used by ordinary teardown",
     ),
     (
-        "src/registry/heap_overflow.rs::dbg_rollback_sidecar_sentinel_for_test",
+        "src/registry/heap_overflow/heap_overflow_impl.rs::dbg_rollback_sidecar_sentinel_for_test",
         "R2-07 (task #2009): &mut self, only reachable via new_boxed_for_test's exclusively-owned standalone ring, never a shared production HeapOverflow; panics if the sidecar pointer is not already null on entry (self-checked precondition); drives only the real rollback sequence",
     ),
     (
-        "src/registry/heap_overflow.rs::dbg_reserve_unpublished_for_test",
+        "src/registry/heap_overflow/drain.rs::dbg_reserve_unpublished_for_test",
         "R2-07 (task #2009): &mut self, only reachable via new_boxed_for_test's exclusively-owned standalone ring; advances a REAL HeapOverflow ring's tail without publishing, but the inline-tier bound is now a real assert! in every profile (release-surviving), not a debug_assert -- misuse can no longer advance tail into the sidecar range without a backing store",
     ),
     (
-        "src/registry/heap_overflow.rs::dbg_fill_and_drain_inline_tier_for_test",
+        "src/registry/heap_overflow/drain.rs::dbg_fill_and_drain_inline_tier_for_test",
         "pushes/drains via the real production push()/drain() functions only; push validates internally",
     ),
     (

@@ -35,7 +35,7 @@ fn readme_cites_the_confirmed_hazard_sites() {
         "src/registry/bootstrap/overflow_sidecar.rs`",
         "`HeapOverflow::push_impl`",
         "src/registry/bootstrap/registry.rs`,\n  `ensure_chunk`/`try_ensure_chunk`",
-        "src/registry/heap_overflow.rs`",
+        "src/registry/heap_overflow/spill.rs`",
         "src/alloc_core/large/deferred_large/drain.rs`",
         "src/registry/heap_core_xthread/ring.rs`,\n  `owner_slot_is_live`",
         "src/registry/heap_core_xthread/overflow.rs`",

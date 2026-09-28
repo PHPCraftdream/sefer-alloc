@@ -350,7 +350,7 @@ fn remote_fanin_concurrent_overflow_is_recovered() {
 /// retry has nothing to wait on once BOTH the per-segment `RemoteFreeRing`
 /// AND the retry budget are exhausted with the owner doing zero work. RAD-4b
 /// closes that residual with `HeapCore::push_to_heap_overflow` /
-/// `HeapOverflow` (`src/registry/heap_overflow.rs`): once a push exhausts its
+/// `HeapOverflow` (`src/registry/heap_overflow/`): once a push exhausts its
 /// per-segment retry budget, it now falls back to the owning heap's
 /// SLOT-RESIDENT second-chance overflow ring (sized `HEAP_OVERFLOW_CAP =
 /// 2048`, 2× this harness's own N=1000 burst). R2-09's intrusive tier now
@@ -448,7 +448,7 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
     // 744/1000). The slot-resident `HeapOverflow` second-chance ring closes
     // this to EXACTLY ZERO for any burst that fits `HEAP_OVERFLOW_CAP`
     // (2048 — 2x this harness's N=1000) — see this test's doc comment and
-    // `src/registry/heap_overflow.rs`'s module doc for the full design and
+    // `src/registry/heap_overflow/`'s module doc for the full design and
     // its honest scope (a fixed-capacity, not infinite-capacity, guarantee).
     assert_eq!(
         exhausted_delta, 0,

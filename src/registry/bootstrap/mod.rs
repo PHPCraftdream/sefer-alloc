@@ -39,32 +39,32 @@
 //! ## R6-OPT-P0-2 (round 2) — lazy `HeapOverflow` sidecar
 //!
 //! Round 1 left one dominant cost per materialised chunk: `HeapOverflow`
-//! (`heap_overflow.rs`), a `[AtomicPtr<u8>; HEAP_OVERFLOW_CAP] +
+//! (`heap_overflow/`), a `[AtomicPtr<u8>; HEAP_OVERFLOW_CAP] +
 //! [AtomicU32; HEAP_OVERFLOW_CAP]` pair inline in EVERY `HeapSlot`
 //! (`HEAP_OVERFLOW_CAP = 2048` native), 24 KiB/slot. Round 2 shrinks this by
 //! splitting `HeapOverflow`'s storage into a small always-inline "emergency"
 //! tier (`INLINE_CAP` entries) plus a lazily-materialised sidecar for the
-//! rest — see `heap_overflow.rs`'s module doc for the full two-tier design
+//! rest — see `heap_overflow/`'s module doc for the full two-tier design
 //! and the wedge-hazard correctness argument.
 //!
 //! **Unsafe-seam placement decision:** the sidecar's materialisation
 //! machinery ([`ensure_overflow_sidecar`] / [`deref_overflow_sidecar`]) lives
 //! in [`overflow_sidecar`], a sibling tier-1 `#![allow(unsafe_code)]` seam
 //! file in THIS directory next to [`registry`] and [`ensure`], rather than in
-//! a new seam inside `heap_overflow.rs`. Reasons: (1) it is LITERALLY the
+//! a new seam inside `heap_overflow/`. Reasons: (1) it is LITERALLY the
 //! same protocol as [`ensure_chunk`]/[`ensure_chunk_slow`] (CAS-reserve a
 //! sentinel, `aligned_vmem::reserve_aligned`, in-place init, publish with
 //! Release, spin-wait losers) — a third instance of one already-audited
 //! pattern, not a new one; keeping all three instances documented together in
 //! this one directory (even though R1-07 split each into its own file — see
 //! "Structural reorg step 5" below) keeps that pattern's soundness argument in
-//! one place rather than duplicated across directories; (2) `heap_overflow.rs`
+//! one place rather than duplicated across directories; (2) `heap_overflow/`
 //! explicitly documents (and its module doc still asserts) that it needs NO
 //! unsafe seam of its own — round 2 preserves that property rather than
 //! breaking it, so a reader auditing "which files can materialise raw OS
 //! memory and dereference raw pointers" finds the answer unchanged
 //! (`bootstrap`'s own files, still the only ones in `registry/` besides
-//! `heap_registry`'s); (3) `heap_overflow.rs`'s `push`/`drain` need only a
+//! `heap_registry`'s); (3) `heap_overflow/`'s `push`/`drain` need only a
 //! SAFE `&HeapOverflowSidecar` once materialised — [`deref_overflow_sidecar`]
 //! is the one safe membrane function that hands that out, exactly mirroring
 //! how [`Registry::slot`] hands out a safe `&'static HeapSlot` from chunk

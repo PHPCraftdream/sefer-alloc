@@ -1,7 +1,7 @@
 //! Contract tripwire for legal remote frees and unsafe-caller misuse.
 
 const README: &str = include_str!("../README.md");
-const OVERFLOW: &str = include_str!("../src/registry/heap_overflow.rs");
+const OVERFLOW: &str = include_str!("../src/registry/heap_overflow/mod.rs");
 const NODE: &str = include_str!("../src/alloc_core/platform/node.rs");
 const POOL: &str =
     include_str!("../src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs");

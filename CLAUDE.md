@@ -555,7 +555,7 @@ Core instructions, mandatory for all code in this repository. They
   line to begin with optional whitespace then the attribute, so `//` comments
   that merely mention the attribute do not match (the unanchored
   `grep -rln 'allow(unsafe_code)' ...` form has false positives, e.g. in
-  `src/lib.rs` and `src/registry/heap_overflow.rs`). Any formal audit
+  `src/lib.rs` and `src/registry/heap_overflow/`). Any formal audit
   compares against this command's output, and an `unsafe` token not covered by
   a tier-1 module or a tier-2 item-level allow is a hard compile error in every
   feature configuration. The sanctioned exception categories (doc-hidden

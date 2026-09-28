@@ -1717,7 +1717,7 @@ mutating at the instant of `fork()` can wedge the child, sometimes on the
   shape, reached from claiming a new heap slot in the child.
 - **Permanently undrained memory.** A spill-stack node left with
   `ready == 0` by a producer thread that vanished mid-publish
-  (`src/registry/heap_overflow.rs`) stops that intrusive stack's drain at
+  (`src/registry/heap_overflow/spill.rs`) stops that intrusive stack's drain at
   that node forever — every entry behind it (further towards the tail) is
   never reclaimed. A deferred-Large stack head left at the `PUBLISHING`
   sentinel by a vanished producer (`src/alloc_core/large/deferred_large/drain.rs`)

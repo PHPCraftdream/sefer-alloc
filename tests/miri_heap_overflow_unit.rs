@@ -3,7 +3,7 @@
 //!
 //! ## Why this file exists, separate from `remote_fanin.rs`
 //!
-//! `HeapOverflow` (`src/registry/heap_overflow.rs`) is exercised end-to-end
+//! `HeapOverflow` (`src/registry/heap_overflow/`) is exercised end-to-end
 //! by `tests/remote_fanin.rs::remote_fanin_miri_minimal_retry_ub_check` (the
 //! existing RAD-4 miri harness, which routes cross-thread frees through the
 //! FULL `bootstrap::ensure()` + `HeapRegistry::claim` + `MAX_HEAPS`-slot
@@ -26,7 +26,7 @@
 //! genuinely new detail this task's design adds beyond the already
 //! miri-covered `RemoteFreeRing`/`push_with_overflow_retry` protocol: the
 //! two-atomic (`base`, `packed`) entry and its publish-order requirement
-//! (`packed` before `base`) — see `heap_overflow.rs`'s module doc and
+//! (`packed` before `base`) — see `heap_overflow/`'s module doc and
 //! `tests/loom_heap_overflow.rs` (which loom-proves the SAME publish-order
 //! requirement exhaustively across interleavings; this file's job is
 //! UB-detection — no data race, no invalid memory access, no provenance

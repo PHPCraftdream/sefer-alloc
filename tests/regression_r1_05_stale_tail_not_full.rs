@@ -7,7 +7,7 @@
 //!
 //! `RemoteFreeRing::full_check` (`src/alloc_core/segment/remote_free_ring/ops.rs`)
 //! and `HeapOverflow::push_impl`'s inline room check
-//! (`src/registry/heap_overflow.rs`) each read a producer's `tail` snapshot
+//! (`src/registry/heap_overflow/`) each read a producer's `tail` snapshot
 //! `t` before comparing it against the consumer's `head` cursor `h`. Because
 //! `t` and `h` are read as two SEPARATE (non-atomic) steps, a producer
 //! preempted in between can have its `t` overtaken: other producers push
