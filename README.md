@@ -1384,7 +1384,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **283 integration test files** ship
+a test file, and a reproducible command. **284 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **17 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1392,7 +1392,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (283 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (284 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1662,6 +1662,67 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   for the follow-on design (an expandable/chained table, evaluated jointly
   against the cold-carve gap) if a workload still needs more than 4095
   simultaneously-live Large objects.
+
+---
+
+## Fork safety
+
+**There is no `pthread_atfork` handling anywhere in this crate.** Unlike
+glibc/jemalloc/mimalloc, `SeferAlloc` does not register `prepare`/`parent`/
+`child` hooks around `fork()`.
+
+**The contract:** `fork()` from a single-threaded process is fine — the
+child is a byte-for-byte copy of a single-threaded, therefore internally
+consistent, allocator state. `fork()` from a **multi-threaded** process
+followed immediately by `exec()` (e.g. `std::process::Command`, or any
+`fork`+`execve` pattern) is also fine — POSIX already requires the child of
+a multithreaded `fork()` to call only async-signal-safe functions until a
+successful `exec()`, and `exec()` replaces the address space before this
+allocator's copied state is ever touched again.
+
+**What is unsafe: allocating or freeing through `SeferAlloc` in the child of
+a multi-threaded `fork()`, before `exec()`.** The child inherits every other
+thread's in-flight allocator state as a frozen snapshot, but only the
+forking thread survives to run it — so any state another thread was
+mutating at the instant of `fork()` can wedge the child, sometimes on the
+`GlobalAlloc::dealloc` path, not just `alloc`:
+
+- **Unbounded spin, including on free.** The fallback spinlock
+  (`src/global/fallback.rs`, `LockGuard::acquire`) spins until a `bool` flips
+  — if another thread held it (TLS teardown / pre-TLS window) at fork time,
+  the child spins forever, since that thread does not exist in the child to
+  release it. The same file's primordial-init loser loop (spinning while
+  `INIT_STATE == INITIALIZING`) has the identical shape. The
+  `alloc-xthread` overflow-sidecar's materialisation loser wait
+  (`src/registry/bootstrap/overflow_sidecar.rs`) is reached from the
+  **dealloc** path (`HeapOverflow::push_impl`) and spins unboundedly if the
+  winning thread vanished mid-materialisation. The registry chunk
+  materialisation loser loop (`src/registry/bootstrap/registry.rs`,
+  `ensure_chunk`/`try_ensure_chunk`, via the shared once-cell in
+  `crates/once-ptr-cell`) has the same unbounded-spin-on-vanished-winner
+  shape, reached from claiming a new heap slot in the child.
+- **Permanently undrained memory.** A spill-stack node left with
+  `ready == 0` by a producer thread that vanished mid-publish
+  (`src/registry/heap_overflow.rs`) stops that intrusive stack's drain at
+  that node forever — every entry behind it (further towards the tail) is
+  never reclaimed. A deferred-Large stack head left at the `PUBLISHING`
+  sentinel by a vanished producer (`src/alloc_core/large/deferred_large/drain.rs`)
+  stops that thread's entire deferred-Large drain forever, leaking the
+  segments behind it.
+- **Bounded but real stall.** A remote free that targets a block owned by a
+  heap slot still marked `STATE_LIVE` in the child, even though that
+  slot's owning thread vanished at fork (`src/registry/heap_core_xthread/ring.rs`,
+  `owner_slot_is_live`), pays up to `RETRY_STALLED_ROUNDS_GIVE_UP` (128)
+  stalled probe rounds — roughly 0.3–2 s on this project's measured
+  scheduler granularity (`src/registry/heap_core_xthread/overflow.rs`) —
+  before conceding to spill. This one is bounded, not a hang.
+
+**`fork`+`exec` is safe** because none of the above windows are ever
+observed by the child: the child never calls back into `SeferAlloc` before
+the address space is replaced. Deliberately out of scope here (minimum-fix
+docs only, no runtime code change): a full `pthread_atfork` handler that
+resets the fallback lock/`INIT_STATE`/sentinels and marks orphaned slots
+abandoned in the child — tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`.
 
 ---
 

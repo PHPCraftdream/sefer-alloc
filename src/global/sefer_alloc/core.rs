@@ -90,6 +90,30 @@ use crate::global::tls_heap::CurrentHeap;
 /// It cannot be used in a `no_std` build. The `Region<T>` / `Handle<T>` core
 /// (this crate's other face) is `no_std` + `alloc`-only and unaffected by
 /// this restriction — see the crate-level docs.
+///
+/// # Fork safety
+///
+/// There is no `pthread_atfork` handling in this crate (unlike glibc /
+/// jemalloc / mimalloc). Single-threaded `fork()` is fine. `fork()` of a
+/// multi-threaded process followed immediately by `exec()` is also fine
+/// (the POSIX async-signal-safe-only rule for the child). What is **not**
+/// safe: allocating or freeing through `SeferAlloc` in the child of a
+/// multi-threaded `fork()` before `exec()` — inherited allocator state
+/// another thread was mutating at fork time can wedge the child, including
+/// on `dealloc`, via an unbounded spin (a held fallback spinlock, an
+/// in-progress overflow-sidecar/registry-chunk materialisation), or leave
+/// spill/deferred-Large segments permanently undrained, or add a bounded
+/// (~0.3–2 s) stall probing a vanished thread's heap slot before conceding
+/// to spill. See README.md's "Fork safety" section for the full contract
+/// and the exact code sites; tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`.
+///
+/// ```text
+/// // Safe: fork + exec, no allocator use in the child before exec.
+/// std::process::Command::new("some-binary").spawn()?;
+///
+/// // Unsafe: allocating/freeing through SeferAlloc in the child before exec,
+/// // from a multi-threaded parent — do not do this.
+/// ```
 pub struct SeferAlloc {
     /// Large-cache configuration stored at static-init time. Plumbed into
     /// each per-thread `AllocCore` on the first TLS bind for that thread.
