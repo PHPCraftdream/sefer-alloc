@@ -2950,6 +2950,13 @@ for completeness.
     - **Next trigger:** a `batch-api` performance round. Measure p99 of the first `dealloc_batch` and RSS for N consumer threads, A/B against `6a30583d^`.
     - **Evidence:** review §R2-03 and §5 H4; `tests/oxx_r2_03_dealloc_batch_current_for_dealloc.rs`.
 
+72. **[D] fxx R2 §4.1 — `finish_magazine_refill` walks the refilled blocks twice.**
+
+    - **Status:** OPEN — design only; not measured.
+    - **Current-number-or-verdict:** `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computes `segment_base_of_ptr(p)` for the stamp dedupe in one loop, then again for `mark_magazine` in a second loop. One pass would save `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expects a sub-percent effect.
+    - **Next trigger:** the next magazine refill / miss-path round. Gate: `npm run iai` churn benches A/B; merge only on a measured `Ir` drop. Do not extend this to the overflow-flush base recomputation (R24-3/R24-4 NO-GO).
+    - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

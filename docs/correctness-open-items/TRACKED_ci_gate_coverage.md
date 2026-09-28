@@ -79,6 +79,17 @@ split the same day.)
     would still slip through. The release-notes caveat above remains
     accurate as stated and is not being reworded.
 
+    **Update (2026-09-28, fxx R2-01):** that runtime gap was real. On
+    rustc 1.88–1.92 `#[global_allocator] SeferAlloc` aborted on Windows
+    (`the global allocator may not use TLS with destructors`): it compiled
+    fine, failed only when run, and never on the glibc runner
+    (`docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §fxx R2-01).
+    The root crate's MSRV is now 1.93 (commit `d57033da`), and the new
+    `msrv-runtime-windows` job (commit `fdf96f2a`) executes
+    `tests/global_alloc_installed.rs` and `tests/global_alloc_mt.rs` on the
+    pinned toolchain on `windows-latest`. The rest of the suite is still
+    compiled, not run, on MSRV.
+
 25. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 1] `TaggedIndex<INDEX_BITS>` rejecting `INDEX_BITS > 32` at compile time (F1, task #638) has no automated compile-fail test — CI coverage gap, honestly recorded but unfiled until now.** (Headline kept verbatim per the history-is-not-rewritten convention — the `>32` figure was accurate at filing time; the cap narrowed to `1..=16` in round 2, see the closure note below.) — **CLOSED** (2026-08-31, tagged-index-stack round-4 independent review, finding P3-8, `docs/reviews/2026-08-31-025356-tagged-index-stack-review-round4-oh.md`). See "Recently resolved" in RESOLVED.md.
 
 50. **`aligned-vmem` — `page_size()`'s OWN end-to-end wiring is untestable in-process (the extracted pure guard IS tested).** (Filed round 8, task #903, finding U11 of `docs/reviews/2026-08-13-aligned-vmem-round8-review.md`. The U10 half — Windows `bench-internals` reserve-path counters — was closed per task #917: see "Recently resolved" §50-U10 in RESOLVED.md.)
