@@ -159,7 +159,7 @@ impl AllocCore {
             // Neither lazy-commit feature is compiled: the whole segment is
             // always committed on reserve (eager path), so `SEGMENT` is
             // exact regardless of `own_segment`.
-            let _ = own_segment;
+            let _ = (base, own_segment);
         }
         os::SEGMENT
     }
