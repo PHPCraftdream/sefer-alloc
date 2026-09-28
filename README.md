@@ -726,7 +726,7 @@ item-scoped regions.
 | [`src/registry/heap_core/diag/queries.rs`](src/registry/heap_core/diag/queries.rs) | 2 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) |
 | [`src/registry/heap_core/diag/diag_probes.rs`](src/registry/heap_core/diag/diag_probes.rs) | 8 | `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) / `dbg_clear_magazine_on_hit` (R29-10, task #441, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) — plus the R29-3 `dbg_decomp_decommit_payload`/`dbg_decomp_recommit_payload` (R31-6, task #469) delegations (gated `bench-internals`); see the R24-6/R25-1 note below the table. (`dbg_decomp_release`'s delegation is `unsafe fn` again as of R31-15/task #486 — forwards the identical `# Safety` contract; see the `alloc_core_small_pool/decomp_hooks.rs` row above for why.) Plus two task #504 (F11 step 2) delegations, `dbg_decomp_win_commit_only`/`dbg_decomp_win_release_only` (gated `bench-internals`), forwarding their identical `# Safety` contracts from the `alloc_core_small_pool/decomp_hooks.rs` originals. |
 | [`src/registry/heap_core/free/dealloc.rs`](src/registry/heap_core/free/dealloc.rs) | 2 | `dealloc` — `unsafe fn` boundary (caller-pointer contract) + internal call-site block into `AllocCore::dealloc` |
-| [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 3 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) |
+| [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 4 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) + R1-01's free-side byte-budget-cap call into `AllocCore::flush_class` (a single-block batch, once a class's magazine reaches its D3 refill-byte-budget cap) |
 | [`src/registry/heap_core/free/realloc.rs`](src/registry/heap_core/free/realloc.rs) | 1 | `realloc` — `unsafe fn` boundary (caller-pointer contract); its move leg was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary |
 | [`src/registry/heap_core/state/tcache_flush.rs`](src/registry/heap_core/state/tcache_flush.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
@@ -738,7 +738,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **24** tier-1 module-level seams (18 in
-`src/`, 6 in `crates/`) plus **102** tier-2 item-scoped allows across **35**
+`src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **35**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1383,7 +1383,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **287 integration test files** ship
+a test file, and a reproducible command. **288 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **17 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1391,7 +1391,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (287 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (288 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

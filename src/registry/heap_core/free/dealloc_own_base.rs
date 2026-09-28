@@ -321,7 +321,7 @@ impl HeapCore {
     ) {
         {
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
-            use crate::registry::heap_core::state::tcache::{FLUSH_N, TCACHE_CAP};
+            use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
             // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
@@ -365,7 +365,12 @@ impl HeapCore {
                         }
                     };
 
-                    if cnt < TCACHE_CAP {
+                    // R1-01: free-side byte budget. `cap` is `TCACHE_CAP` for
+                    // small classes (unchanged behaviour) and smaller for
+                    // large small-classes, mirroring D3's refill-side budget
+                    // — see `FREE_PARK_CAP`'s doc comment.
+                    let cap = FREE_PARK_CAP[c] as usize;
+                    if cnt < cap {
                         // Legit free → push. NO key stamp, NO block-body write.
                         //
                         // RAD-5 (E4) GO/NO-GO EXPERIMENT: mark this block
@@ -394,6 +399,29 @@ impl HeapCore {
                         #[cfg(feature = "virgin-zero-skip")]
                         {
                             self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+                        }
+                        return;
+                    }
+                    // ── R1-01: free-side byte-budget cap reached ───────
+                    // `cnt == cap < TCACHE_CAP`: this class's per-refill byte
+                    // budget (`FREE_PARK_CAP`) is exhausted, but the physical
+                    // magazine array is not — do NOT grow past `cap` (that
+                    // would re-open the D3 gap: parking more bytes on the
+                    // free side than a refill ever would). Hand the block
+                    // straight to the substrate instead of parking it. The
+                    // M2 oracles (`small_free_guard`) already ran above; the
+                    // block never entered the magazine, so no bitmap/slot
+                    // bookkeeping to undo.
+                    if cap < TCACHE_CAP {
+                        // SAFETY (R6-MS-3): `ptr` is a valid, currently-live
+                        // small-class-`c` allocation owned by this heap — the
+                        // same guarantee `small_free_guard`'s `Accept` arm
+                        // already established for the ordinary push path
+                        // above; freed exactly once here via a one-element
+                        // batch.
+                        #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+                        unsafe {
+                            self.core.flush_class(c, core::slice::from_ref(&ptr));
                         }
                         return;
                     }

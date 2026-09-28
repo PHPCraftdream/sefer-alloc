@@ -18,7 +18,7 @@ use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
 
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
-use crate::registry::heap_core::state::tcache::TCACHE_CAP;
+use crate::registry::heap_core::state::tcache::FREE_PARK_CAP;
 use crate::registry::heap_core::HeapCore;
 // Task #2002: the shared F7/H1/M2 guard chain, extracted to
 // `free/dealloc_own_base.rs` — see `small_free_guard`'s own doc comment for
@@ -90,8 +90,10 @@ impl HeapCore {
     ///
     /// Accepted blocks are pushed into the magazine array DIRECTLY (batched
     /// slot writes instead of the scalar path's one-push-then-maybe-flush
-    /// per block) up to `TCACHE_CAP`; any further accepted blocks — the
-    /// batch's overflow past magazine capacity — are routed straight to
+    /// per block) up to `TCACHE_CAP` (R1-01: or this class's smaller
+    /// [`FREE_PARK_CAP`] free-side byte-budget cap, for large small-classes);
+    /// any further accepted blocks — the batch's overflow past magazine
+    /// capacity — are routed straight to
     /// [`AllocCore::flush_class`] in ONE call (which internally groups them
     /// into same-segment runs and does the batched bitmap/BinTable RMW — see
     /// that method's doc comment), instead of the scalar path's dribble of
@@ -307,10 +309,16 @@ impl HeapCore {
                 }
             };
 
-            // Accepted. Magazine-first: fill up to `TCACHE_CAP` directly
-            // (batched slot writes — no per-block flush check).
+            // Accepted. Magazine-first: fill up to this class's free-side
+            // cap directly (batched slot writes — no per-block flush check).
+            // R1-01: `cap` is `TCACHE_CAP` for small classes (unchanged
+            // behaviour) and smaller for large small-classes — see
+            // `FREE_PARK_CAP`'s doc comment; once reached, blocks route to
+            // the same `flush_class` staging below as an ordinary magazine
+            // overflow.
             let cnt = self.tcache.classes[c].count as usize;
-            if cnt < TCACHE_CAP {
+            let cap = FREE_PARK_CAP[c] as usize;
+            if cnt < cap {
                 meta.magazine_bitmap().mark_magazine(off);
                 self.tcache.classes[c].slots[cnt] = p;
                 self.tcache.classes[c].count = (cnt + 1) as u8;

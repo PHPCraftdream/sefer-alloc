@@ -161,32 +161,45 @@ fn rejected_ring_entry_does_not_set_changed_classes_bit() {
     let _keep_alive = materialise_directory(heap);
 
     // Phase 1: pre-allocate FILL_BLOCKS blocks of TARGET_CLASS. These span
-    // 2+ segments; blocks[0] is in the FIRST segment (S1), and `small_cur`
-    // ends up pointing at the LAST segment (≠ S1).
+    // 2+ segments; blocks[0]/blocks[1] are in the FIRST segment (S1), and
+    // `small_cur` ends up pointing at the LAST segment (≠ S1).
     let blocks = alloc_batch(heap, TARGET_CLASS, FILL_BLOCKS);
     let bs = AllocCore::dbg_block_size(TARGET_CLASS);
     let layout = Layout::from_size_align(bs, 8).expect("TARGET_CLASS layout");
 
-    // Phase 2: free ALL blocks via own-thread. blocks[0] is freed FIRST so it
-    // ends up deep in the LIFO freelist (popped LAST by subsequent refills).
-    // Under fastbin, the first magazine overflow flushes blocks[0] to the
-    // BinTable with `mark_free` — so `is_free(blocks[0])` is `true` at drain
-    // time, regardless of the magazine predicate.
+    // Phase 2: free ALL blocks via own-thread.
+    //
+    // R1-01 (`docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`):
+    // TARGET_CLASS's block_size (~43 KB) is a "large small-class" whose D3
+    // refill byte budget (and, since R1-01, its free-side park cap) clamps to
+    // exactly 1 block — `REFILL_BYTE_BUDGET (64 KiB) / bs < 2`. So of this
+    // loop's FILL_BLOCKS own-thread frees, only the FIRST (`blocks[0]`) ends
+    // up magazine-resident; every subsequent free (`blocks[1..]`) exceeds the
+    // free-side park cap and is routed straight to the substrate
+    // (`AllocCore::flush_class`'s `mark_free`) — so `is_free(blocks[1])` is
+    // `true` at drain time, regardless of the magazine predicate. (Before
+    // R1-01, the free-side cap did not exist and this class's magazine filled
+    // to the full `TCACHE_CAP`; the first half-flush overflow — triggered
+    // once 16 blocks had been pushed — flushed `blocks[0..7]` to the
+    // BinTable, so `blocks[0]` was the block this test picked back then. That
+    // mechanism is gone for a cap-1 class under the R1-01 fix; `blocks[1]` is
+    // the reliable choice under both the pre- and post-R1-01 code, since it
+    // is never the sole magazine-resident survivor either way.)
     for &p in &blocks {
         // SAFETY: `p` is a live allocation owned by `heap`; this dealloc is its
         // single logical free (the cross-thread free in Phase 4 deliberately
-        // double-frees blocks[0] to exercise the drain's rejection guard — a
+        // double-frees blocks[1] to exercise the drain's rejection guard — a
         // contract-stress of the defensive path, same pattern as
         // `tests/regression_xthread_double_free_residual.rs`).
         unsafe { (*heap).dealloc(p, layout) };
     }
 
-    // Phase 3: cross-thread free blocks[0] (a DELIBERATE double-free — the
+    // Phase 3: cross-thread free blocks[1] (a DELIBERATE double-free — the
     // block was freed in Phase 2). The producer's `dealloc_foreign_slow`
-    // pushes blocks[0]'s offset into S1's ring AND calls
+    // pushes blocks[1]'s offset into S1's ring AND calls
     // `set_dirty_bit_for_segment(S1)`. The ring entry will be REJECTED at
-    // drain time because `is_free(blocks[0])` is `true`.
-    let x_addr = blocks[0] as usize;
+    // drain time because `is_free(blocks[1])` is `true`.
+    let x_addr = blocks[1] as usize;
     let producer = thread::spawn(move || {
         let _ = bootstrap::ensure();
         let remote = HeapRegistry::claim();
@@ -211,7 +224,7 @@ fn rejected_ring_entry_does_not_set_changed_classes_bit() {
     // self-free) to exhaust the magazine + BinTable and trigger
     // `find_segment_with_free_checked(TARGET_CLASS)` → `drain_dirty_segments`.
     // The drain runs at the TOP of `find_segment_with_free_impl`, BEFORE the
-    // directory scan pops any BinTable blocks — so blocks[0] is still
+    // directory scan pops any BinTable blocks — so blocks[1] is still
     // `is_free` when the drain processes S1's ring.
     let mut alloced = alloc_batch(heap, TARGET_CLASS, FILL_BLOCKS + 50);
 

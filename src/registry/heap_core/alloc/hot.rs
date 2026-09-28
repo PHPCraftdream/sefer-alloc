@@ -461,7 +461,13 @@ impl HeapCore {
                     // `TCACHE_CAP` (unchanged behaviour); large small-classes
                     // (block_size approaching SMALL_MAX) get fewer blocks per
                     // refill, so one magazine miss cannot park megabytes in a
-                    // single idle thread's cache.
+                    // single idle thread's cache. R1-01: the free side is
+                    // bound by the SAME budget (`FREE_PARK_CAP`,
+                    // `state/tcache.rs`) — a class's magazine can no longer
+                    // accumulate more bytes than one refill would have parked
+                    // by way of repeated frees either, closing the gap where
+                    // this promise held only for a single refill event, not
+                    // for the free path.
                     // Magazine miss: refill via the outlined slow path.
                     // `#[cold] #[inline(never)]` keeps the closure/split-borrow
                     // complexity out of `alloc`'s frame (task #164 Ir shaping).

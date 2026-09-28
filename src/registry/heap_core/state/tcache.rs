@@ -22,7 +22,7 @@
 //! Owner-private: only the owning thread touches it. No atomics, no locks.
 //! Cross-thread frees never touch it (they go to the per-segment ring).
 
-use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
 // P7 bulk-mode bypass — RETIRED in P3 (task #147). The former
 // `BULK_THRESHOLD` / `BULK_LOW_THRESHOLD` / `alloc_streak` machinery skipped
@@ -100,6 +100,11 @@ const _: () = assert!(
 /// carve/refill machinery) is never asked to refill more blocks than it can
 /// hold. Verified by the `refill_n_for_medium_classes_is_bounded_by_budget`
 /// test (`medium_classes` feature).
+///
+/// **R1-01:** this budget was, until then, a REFILL-side-only bound — a free
+/// could still push blocks into the magazine past what a refill would ever
+/// have parked there, up to the full `TCACHE_CAP`. [`FREE_PARK_CAP`] now
+/// applies this same budget to the free side too, via [`refill_n_for_class`].
 pub(crate) const REFILL_BYTE_BUDGET: usize = 64 * 1024;
 
 /// Compute the refill amount (number of blocks) for a class with the given
@@ -136,6 +141,48 @@ pub(crate) const fn refill_n_for_class(block_size: usize) -> usize {
 /// `CAP - FLUSH_N` entries in the magazine after a flush, avoiding
 /// flush/refill thrash when the working set hovers near CAP.
 pub(crate) const FLUSH_N: usize = TCACHE_CAP / 2; // 8
+
+/// Free-side park cap per class (R1-01, `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`):
+/// the magazine depth own-thread `dealloc`/`dealloc_batch` may PUSH to for
+/// size class `c`, before routing further frees straight to the substrate
+/// instead of parking them.
+///
+/// **Problem this closes:** before R1-01, own-thread free pushed into the
+/// magazine while `count < TCACHE_CAP` (16) regardless of `block_size` — D3's
+/// [`REFILL_BYTE_BUDGET`] only bounded how many blocks a REFILL parks, not
+/// how many a FREE parks, so a thread that happened to free 16 blocks of a
+/// large small-class (e.g. ~253 KiB) could park ~4 MiB in its own idle
+/// magazine for that one class, and — because a magazine-resident block
+/// COUNTS AS LIVE (`HeapCore`'s D1 invariant) — its segment could never empty
+/// out to trigger pool/decommit/release.
+///
+/// **Fix:** reuse the SAME byte budget [`refill_n_for_class`] already
+/// applies to refill, so free-side depth and refill depth are symmetric —
+/// `FREE_PARK_CAP[c] == refill_n_for_class(block_size(c))`. A class's
+/// magazine can therefore never hold, on either side, more than one refill's
+/// worth of bytes. Small classes (`block_size` small relative to
+/// `REFILL_BYTE_BUDGET`) get the full `TCACHE_CAP` — unchanged behaviour —
+/// only large small-classes (block_size approaching `SMALL_MAX`) get a
+/// smaller cap.
+///
+/// **Why a precomputed table, not a per-call division:** the free path
+/// (`dealloc_own_thread_with_base`, `dealloc_batch_small`) runs far more
+/// often than a magazine refill, so recomputing `refill_n_for_class`'s
+/// `REFILL_BYTE_BUDGET / block_size` division on every free would add a
+/// division to the hottest allocator path. This table pays that division
+/// exactly once per class, at compile time; the free path reads one `u8`
+/// out of a small array instead.
+pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
+    let mut table = [0u8; SMALL_CLASS_COUNT];
+    let mut c = 0;
+    while c < SMALL_CLASS_COUNT {
+        // `refill_n_for_class` is clamped to `1..=TCACHE_CAP` (16), so the
+        // `as u8` cast is lossless.
+        table[c] = refill_n_for_class(SizeClasses::block_size(c)) as u8;
+        c += 1;
+    }
+    table
+};
 
 /// PERF-PASS-5 (G7/FP2, task #53): one size class's magazine — `count` and
 /// `slots` bundled together so a magazine push/pop touches ONE cache line
