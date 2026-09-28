@@ -10,26 +10,34 @@
 const README: &str = include_str!("../README.md");
 const SEFER_ALLOC_CORE: &str = include_str!("../src/global/sefer_alloc/core.rs");
 
+/// Windows CI checks these files out with CRLF line endings; the needles use
+/// `\n`, so compare against an LF-normalized copy.
+fn lf(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
 #[test]
 fn readme_states_the_fork_contract() {
-    assert!(README.contains("## Fork safety"));
-    assert!(README.contains("no `pthread_atfork` handling anywhere in this crate"));
-    assert!(README.contains("`fork()` from a single-threaded process is fine"));
+    let readme = lf(README);
+    assert!(readme.contains("## Fork safety"));
+    assert!(readme.contains("no `pthread_atfork` handling anywhere in this crate"));
+    assert!(readme.contains("`fork()` from a single-threaded process is fine"));
     assert!(
-        README.contains("followed immediately by `exec()` (e.g. `std::process::Command`, or any")
+        readme.contains("followed immediately by `exec()` (e.g. `std::process::Command`, or any")
     );
-    assert!(README.contains(
+    assert!(readme.contains(
         "allocating or freeing through `SeferAlloc` in the child of\na multi-threaded `fork()`, before `exec()`"
     ));
-    assert!(README.contains("Unbounded spin, including on free."));
-    assert!(README.contains("Permanently undrained memory."));
-    assert!(README.contains("Bounded but real stall."));
-    assert!(README.contains("`fork`+`exec` is safe"));
-    assert!(README.contains("tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`"));
+    assert!(readme.contains("Unbounded spin, including on free."));
+    assert!(readme.contains("Permanently undrained memory."));
+    assert!(readme.contains("Bounded but real stall."));
+    assert!(readme.contains("`fork`+`exec` is safe"));
+    assert!(readme.contains("tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`"));
 }
 
 #[test]
 fn readme_cites_the_confirmed_hazard_sites() {
+    let readme = lf(README);
     for needle in [
         "src/global/fallback.rs`, `LockGuard::acquire`",
         "src/registry/bootstrap/overflow_sidecar.rs`",
@@ -41,7 +49,7 @@ fn readme_cites_the_confirmed_hazard_sites() {
         "src/registry/heap_core_xthread/overflow.rs`",
     ] {
         assert!(
-            README.contains(needle),
+            readme.contains(needle),
             "README missing hazard site: {needle:?}"
         );
     }
@@ -49,17 +57,18 @@ fn readme_cites_the_confirmed_hazard_sites() {
 
 #[test]
 fn sefer_alloc_rustdoc_states_the_fork_contract() {
-    assert!(SEFER_ALLOC_CORE.contains("# Fork safety"));
-    assert!(SEFER_ALLOC_CORE.contains("no `pthread_atfork` handling in this crate"));
-    assert!(SEFER_ALLOC_CORE.contains("Single-threaded `fork()` is fine"));
-    assert!(SEFER_ALLOC_CORE
+    let sefer_alloc_core = lf(SEFER_ALLOC_CORE);
+    assert!(sefer_alloc_core.contains("# Fork safety"));
+    assert!(sefer_alloc_core.contains("no `pthread_atfork` handling in this crate"));
+    assert!(sefer_alloc_core.contains("Single-threaded `fork()` is fine"));
+    assert!(sefer_alloc_core
         .contains("multi-threaded process followed immediately by `exec()` is also fine"));
-    assert!(SEFER_ALLOC_CORE.contains(
+    assert!(sefer_alloc_core.contains(
         "allocating or freeing through `SeferAlloc` in the child of a\n/// multi-threaded `fork()` before `exec()`"
     ));
-    assert!(SEFER_ALLOC_CORE.contains("README.md's \"Fork safety\" section"));
-    assert!(SEFER_ALLOC_CORE.contains("tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`"));
+    assert!(sefer_alloc_core.contains("README.md's \"Fork safety\" section"));
+    assert!(sefer_alloc_core.contains("tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`"));
     // No doctests allowed in src/**/*.rs (project convention) — the example
     // fence must stay non-executed.
-    assert!(SEFER_ALLOC_CORE.contains("```text\n/// // Safe: fork + exec"));
+    assert!(sefer_alloc_core.contains("```text\n/// // Safe: fork + exec"));
 }

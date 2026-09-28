@@ -37,7 +37,24 @@ const CASE_ENV: &str = "SEFER_R1_04_CHILD_CASE";
 const SMALL_STACK_BYTES: usize = 64 * 1024;
 
 fn run_child(case: &str) -> std::process::Output {
-    Command::new(std::env::current_exe().expect("test executable"))
+    let exe = std::env::current_exe().expect("test executable");
+    // Cargo applies its target runner to this test binary, but not to a
+    // subprocess it starts. Cross's aarch64 image supplies this runner (same
+    // pattern as `tests/regression_r2_08_global_allocator_path_no_unwind.rs`).
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    let mut command =
+        if let Ok(runner) = std::env::var("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER") {
+            let mut words = runner.split_ascii_whitespace();
+            let program = words.next().expect("nonempty aarch64 target runner");
+            let mut command = Command::new(program);
+            command.args(words).arg(&exe);
+            command
+        } else {
+            Command::new(&exe)
+        };
+    #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+    let mut command = Command::new(&exe);
+    command
         .arg("--exact")
         .arg("r1_04_drop_stack_child")
         .arg("--ignored")
@@ -75,6 +92,12 @@ fn r1_04_drop_stack_child() {
     let Ok(case) = std::env::var(CASE_ENV) else {
         return;
     };
+    // Warm process-wide one-time state on this (full-size) stack first: under
+    // `numa-aware`, the first `AllocCore::new()` builds numa-shim's topology
+    // index inside `OnceLock::get_or_init`, which alone overflows a 64 KiB
+    // stack in an unoptimized Linux build (`docs/CORRECTNESS_OPEN_ITEMS.md`
+    // item 155). This test is about `Drop`'s stack use, not that initializer.
+    drop(sefer_alloc::AllocCore::new().expect("warm-up reservation"));
     let handle = std::thread::Builder::new()
         .stack_size(SMALL_STACK_BYTES)
         .spawn(move || build_and_drop(&case))

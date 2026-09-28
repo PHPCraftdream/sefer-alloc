@@ -211,7 +211,7 @@ directly, which still works and needs no table at all).
   Windows linker-path failure and verified short-path fix. This separates
   test execution nondeterminism from "nothing runs this test" (category 4).
 - **`docs/correctness-open-items/TRACKED_correctness_residuals.md`**
-  (4 cards) — documented-but-unproven panic-/unwind-safety residuals in
+  (5 cards) — documented-but-unproven panic-/unwind-safety residuals in
   shipping code. Criterion: a known, honestly-recorded gap in a
   panic-safety or unwind-safety guarantee of shipping (non-hook,
   non-platform-specific) code — a residual the code's OWN doc comments
@@ -427,6 +427,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 152 | `TRACKED_platform_contracts.md` |
 | 153 | `TRACKED_test_flakiness.md` |
 | 154 | `TRACKED_misc.md` |
+| 155 | `TRACKED_correctness_residuals.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
