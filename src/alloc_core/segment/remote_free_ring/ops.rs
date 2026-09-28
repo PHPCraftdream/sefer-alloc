@@ -38,6 +38,35 @@ impl Drop for DrainHeadPublish {
     }
 }
 
+/// Outcome of [`RemoteFreeRing::full_check`]. Module-private — only
+/// `full_check`'s own callers in this file (`push`, `try_push_uncounted`)
+/// and the [`RemoteFreeRing::dbg_full_check_code`] test hook need it.
+///
+/// R1-05 (`docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`,
+/// finding R1-05): the pre-fix `full_check` collapsed `Stale` and `Full`
+/// into one `Err`, so a producer whose `t` snapshot went stale (see
+/// `Stale`'s doc) was misreported as "ring full" — a spurious
+/// `DBG_RING_OVERFLOW` tick and unnecessary second-tier routing even
+/// though no free was ever lost (the CAS would have failed and retried
+/// regardless; see `push`'s `Stale` arm).
+#[cfg(feature = "alloc-xthread")]
+enum RoomCheck {
+    /// Confirmed room for reservation attempt `t`.
+    Room,
+    /// `t`'s snapshot predates the just-reloaded real `head` — a stale
+    /// snapshot, not a full ring. `head` never exceeds a COHERENT tail
+    /// (the module doc's `head <= tail` invariant — `drain`'s own
+    /// `while h != t` bound never advances `head` past whatever `tail`
+    /// value it observed at entry). So `t < h` here can only mean this
+    /// producer was preempted between reading `t` and this check, while
+    /// OTHER producers pushed further and the owner fully drained past
+    /// `t`'s position — the real, current tail is therefore `>= h > t`.
+    /// The caller must reload `tail` and retry.
+    Stale,
+    /// Ring genuinely full for a coherent `(t, head)` pair.
+    Full,
+}
+
 impl RemoteFreeRing {
     /// Construct the view over ring metadata at `base + off`. The caller (the
     /// bootstrap / `SegmentMeta::remote_ring`) guarantees the byte range
@@ -220,7 +249,7 @@ impl RemoteFreeRing {
     /// refresh preserves the recycled-slot clear/publish ordering edge.
     #[cfg(feature = "alloc-xthread")]
     #[inline(always)]
-    fn full_check(&self, t: u64) -> Result<(), ()> {
+    fn full_check(&self, t: u64) -> RoomCheck {
         // R34-6 (task #525, finding F-1): Acquire — restores the happens-
         // before edge that the pre-F10 `head.load(Acquire)` supplied (see
         // the module doc's F10 ordering supplement). On x86-TSO this is a
@@ -233,7 +262,7 @@ impl RemoteFreeRing {
             // module doc soundness section). Skip the real Acquire load.
             #[cfg(feature = "bench-internals")]
             DBG_RING_PUSH_SHADOW_FAST.fetch_add(1, Ordering::Relaxed);
-            return Ok(());
+            return RoomCheck::Room;
         }
         // Shadow suggests full (or has never been refreshed since init, both
         // starting at 0): fall through to the real, Acquire-ordered check —
@@ -247,10 +276,38 @@ impl RemoteFreeRing {
         // its happens-before past. On x86-TSO this is a plain `mov`
         // (identical to the old `Relaxed`); on aarch64 it is one `stlr`.
         self.cached_head().store(h, Ordering::Release);
-        if t < h || t - h >= RING_CAP as u64 {
-            return Err(());
+        // R1-05: distinguish "t stale" from "ring full" — see `RoomCheck`'s
+        // doc. Only a stale `t` (below the coherent real head) is
+        // misreadable as full; a coherent pair can only ever be
+        // under-capacity or at-or-over it.
+        if t < h {
+            return RoomCheck::Stale;
         }
-        Ok(())
+        if t - h >= RING_CAP as u64 {
+            return RoomCheck::Full;
+        }
+        RoomCheck::Room
+    }
+
+    /// **Test surface**: exposes [`full_check`](Self::full_check)'s
+    /// Room/Stale/Full classification for a caller-supplied tail snapshot
+    /// `t` (R1-05). Lets a deterministic (non-loom) regression test
+    /// reproduce the stale-tail scenario without real thread preemption:
+    /// drive the ring to a quiescent state via ordinary `push`/`drain` +
+    /// [`dbg_set_cursors`](Self::dbg_set_cursors), capture an earlier tail
+    /// value as `t`, and confirm `full_check` classifies it as `Stale`
+    /// (`1`), not `Full` (`2`), now that the real head has moved past it.
+    /// Delegates to the exact production `full_check` — not a bypass, the
+    /// real decision `push`/`try_push_uncounted` already make. Returns `0`
+    /// = Room, `1` = Stale, `2` = Full.
+    #[cfg(feature = "alloc-xthread")]
+    #[doc(hidden)]
+    pub fn dbg_full_check_code(&self, t: u64) -> u8 {
+        match self.full_check(t) {
+            RoomCheck::Room => 0,
+            RoomCheck::Stale => 1,
+            RoomCheck::Full => 2,
+        }
     }
 
     /// Push a freed block's segment-relative `offset` into the ring. Called by
@@ -264,17 +321,33 @@ impl RemoteFreeRing {
         debug_assert_ne!(offset, RING_SLOT_EMPTY, "offset must not be the sentinel");
         loop {
             let t = self.tail().load(Ordering::Relaxed);
+            if t == u64::MAX {
+                // Lifetime cursor exhausted: permanent, not retriable.
+                let _ = self.overflow().fetch_add(1, Ordering::Relaxed);
+                DBG_RING_OVERFLOW.fetch_add(1, Ordering::Relaxed);
+                return Err(PushOverflow);
+            }
             // F10: shadow-checked full-check (see `full_check`'s doc for the
             // fast/slow path split and the module doc for the soundness
             // argument). Semantically identical to the pre-F10
             // `t - head.load(Acquire) >= RING_CAP` check (when t >= head).
-            if t == u64::MAX || self.full_check(t).is_err() {
-                // Ring unavailable: count the routing event (both the
-                // per-segment cursor-block counter AND the process-wide D2
-                // counter) and bail.
-                let _ = self.overflow().fetch_add(1, Ordering::Relaxed);
-                DBG_RING_OVERFLOW.fetch_add(1, Ordering::Relaxed);
-                return Err(PushOverflow);
+            match self.full_check(t) {
+                RoomCheck::Room => {}
+                // R1-05: `t` was a stale snapshot, not a full ring (see
+                // `RoomCheck::Stale`'s doc) — reload `tail` at the top of
+                // this loop and retry. No counter bump: nothing overflowed,
+                // and a CAS against this stale `t` could never have
+                // succeeded anyway (see the livelock argument in the doc
+                // comment above `full_check`'s `Stale` arm).
+                RoomCheck::Stale => continue,
+                RoomCheck::Full => {
+                    // Ring unavailable: count the routing event (both the
+                    // per-segment cursor-block counter AND the process-wide D2
+                    // counter) and bail.
+                    let _ = self.overflow().fetch_add(1, Ordering::Relaxed);
+                    DBG_RING_OVERFLOW.fetch_add(1, Ordering::Relaxed);
+                    return Err(PushOverflow);
+                }
             }
             // Reserve slot `t`: CAS tail t → t+1. AcqRel on success — the
             // reservation is the linearization point; Acquire pairs with a
@@ -324,10 +397,20 @@ impl RemoteFreeRing {
             let t = self.tail().load(Ordering::Relaxed);
             // F10: identical shadow-checked full-check as `push` (see
             // `full_check`'s doc + the module doc's soundness section).
-            if t == u64::MAX || self.full_check(t).is_err() {
-                // Ring unavailable, SAME as `push` — but deliberately
-                // uncounted (see doc comment above for why).
+            if t == u64::MAX {
                 return Err(PushOverflow);
+            }
+            match self.full_check(t) {
+                RoomCheck::Room => {}
+                // R1-05: stale snapshot, not a full ring — retry (same
+                // reasoning as `push`'s `Stale` arm; still uncounted either
+                // way, so no counter distinction needed here).
+                RoomCheck::Stale => continue,
+                RoomCheck::Full => {
+                    // Ring unavailable, SAME as `push` — but deliberately
+                    // uncounted (see doc comment above for why).
+                    return Err(PushOverflow);
+                }
             }
             // Reserve slot `t`: identical CAS/publish protocol to `push`.
             match self

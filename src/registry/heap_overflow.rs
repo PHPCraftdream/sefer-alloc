@@ -536,6 +536,18 @@ impl Drop for DrainGuard<'_> {
     }
 }
 
+/// Outcome of [`HeapOverflow::room_check`]. See that function's doc for the
+/// R1-05 stale-vs-full distinction this exists to make.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum RoomCheck {
+    /// Confirmed room for reservation attempt `t`.
+    Room,
+    /// `t`'s snapshot predates `h` — stale, not full. Retry.
+    Stale,
+    /// Genuinely full for a coherent `(t, h)` pair.
+    Full,
+}
+
 impl HeapOverflow {
     /// Construct the ring in its bootstrap state: cursors zero, drain token
     /// free, every inline entry `ENTRY_EMPTY_BASE`, sidecar pointer null. Used by
@@ -764,6 +776,61 @@ impl HeapOverflow {
         self.push_impl(base, packed, false)
     }
 
+    /// Classify a `(t, h)` cursor pair read together at the top of
+    /// [`push_impl`](Self::push_impl)'s loop, distinguishing a genuinely
+    /// full ring from a STALE `t` snapshot (R1-05,
+    /// `docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md`).
+    ///
+    /// `t`/`h` are `usize` cursors that wrap via `wrapping_add` (never a
+    /// terminal sentinel like `RemoteFreeRing`'s non-wrapping `u64` pair —
+    /// see `ops.rs`'s `full_check` for that ring's analogous fix). `head`
+    /// never exceeds a COHERENT tail (`try_drain`'s own `while h != t` bound
+    /// never advances `head` past the `tail` value it observed at entry), so
+    /// for any pair read at the SAME real instant, `t.wrapping_sub(h)` is a
+    /// small value in `[0, HEAP_OVERFLOW_CAP]`. But `t` and `h` here are read
+    /// in TWO SEPARATE, non-atomic loads (`push_impl`'s `let t = ...; let h =
+    /// ...;`) — a producer preempted between them can have its `t` overtaken:
+    /// other producers push further (advancing the REAL tail past `t`) and
+    /// the owner fully drains (advancing `h` past `t` too), so the freshly
+    /// re-read `h` ends up `> t`. In that case `t.wrapping_sub(h)` computes
+    /// as `2^BITS - (h - t)` (unsigned wraparound), a value near `usize::MAX`
+    /// — reinterpreting it as `isize` recovers the true SIGNED distance:
+    /// negative means `t` is logically behind `h` (stale), which can only
+    /// happen from this preemption, never from real occupancy exceeding
+    /// `HEAP_OVERFLOW_CAP` (occupancy is always `< 2^63`, far short of where
+    /// a genuine wrap of `t`/`h` themselves could plausibly occur — the same
+    /// "never really wraps in practice" assumption `wrapping_sub` already
+    /// relied on before this fix, just now also used to disambiguate its
+    /// sign). A real full ring instead yields a small POSITIVE diff `>=
+    /// HEAP_OVERFLOW_CAP`, which this correctly reports as `Full`.
+    #[inline(always)]
+    fn room_check(t: usize, h: usize) -> RoomCheck {
+        let diff = t.wrapping_sub(h);
+        if (diff as isize) < 0 {
+            RoomCheck::Stale
+        } else if diff >= HEAP_OVERFLOW_CAP {
+            RoomCheck::Full
+        } else {
+            RoomCheck::Room
+        }
+    }
+
+    /// **Test surface**: exposes [`room_check`](Self::room_check)'s
+    /// Room/Stale/Full classification for caller-supplied `(t, h)` values
+    /// (R1-05). A pure function of its two arguments — no allocator state,
+    /// no side effect — so it is safe to call in any build; not gated behind
+    /// `bench-internals` (it is a pure observer per the `dbg_*` hook
+    /// classification in `tests/dbg_hook_safety_tripwire.rs`). Returns `0` =
+    /// Room, `1` = Stale, `2` = Full.
+    #[doc(hidden)]
+    pub fn dbg_room_check_code(t: usize, h: usize) -> u8 {
+        match Self::room_check(t, h) {
+            RoomCheck::Room => 0,
+            RoomCheck::Stale => 1,
+            RoomCheck::Full => 2,
+        }
+    }
+
     /// Shared implementation of [`push`](Self::push) /
     /// [`push_uncounted`](Self::push_uncounted); `counted` selects whether
     /// the "ring full" branch bumps `overflow_count` (see each public
@@ -778,11 +845,20 @@ impl HeapOverflow {
         loop {
             let t = self.tail.load(Ordering::Relaxed);
             let h = self.head.load(Ordering::Acquire);
-            if t.wrapping_sub(h) >= HEAP_OVERFLOW_CAP {
-                if counted {
-                    self.overflow_count.fetch_add(1, Ordering::Relaxed);
+            match Self::room_check(t, h) {
+                RoomCheck::Room => {}
+                // R1-05: `t` is a stale snapshot, not a full ring — reload
+                // both cursors (top of loop) and retry. No counter bump:
+                // nothing overflowed. Bounded by the same system-wide
+                // forward-progress argument as `RemoteFreeRing::push`'s
+                // `Stale` arm — see `ops.rs`'s doc comment on that arm.
+                RoomCheck::Stale => continue,
+                RoomCheck::Full => {
+                    if counted {
+                        self.overflow_count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    return false;
                 }
-                return false;
             }
             // R6-OPT-P0-2 (round 2) — the wedge-hazard fix: if this
             // reservation attempt targets the sidecar range, ensure the

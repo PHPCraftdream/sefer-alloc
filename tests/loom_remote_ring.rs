@@ -1284,3 +1284,293 @@ fn shadow_fast_path_recycled_slot_concurrent_drain_never_loses_or_duplicates() {
         }
     });
 }
+
+// =========================================================================
+// R1-05 (docs/reviews/2026-09-28-005939-src-review-oxx-round-1.md) -
+// stale-tail-snapshot-vs-full-ring model.
+//
+// `RemoteFreeRing::full_check`'s pre-fix slow path collapsed TWO distinct
+// outcomes into one `Err`: a genuinely full ring, and a producer's `t`
+// snapshot going STALE (captured before other producers pushed further and
+// the owner fully drained past it - the real current tail is `>= head >
+// t`, so a CAS against the stale `t` could never have succeeded anyway).
+// This section models both the FIXED three-way classification
+// (`RoomCheckModel::{Room, Stale, Full}`, mirroring the real, module-private
+// `RoomCheck` in `ops.rs`) and the pre-fix BUGGY two-way classification, and
+// reproduces the exact interleaving the finding describes: a producer P
+// captures `tail` early ("P reads tail"), another producer Q pushes further
+// ("Q pushes k"), the owner fully drains ("owner drains all"), and - the one
+// detail the finding's one-line summary elides but the real shadow-head
+// design requires to actually FORCE the slow path - a third producer R's OWN
+// push refreshes the SHARED `cached_head` shadow past P's stale value before
+// P "continues". Only then does P's (delayed) full-check run, comparing its
+// stale `t` against a real `head` that has moved past it.
+// =========================================================================
+
+/// Result of the model's Room/Stale/Full classification - mirrors the real
+/// `RoomCheck` (module-private in `ops.rs`).
+#[derive(Debug, PartialEq, Eq)]
+enum RoomCheckModel {
+    Room,
+    Stale,
+    Full,
+}
+
+/// `CAP = 2` shadow-head ring, same shape as `RingModelShadow2` above, plus
+/// a model-local `overflow` counter (mirrors `RemoteFreeRing::overflow` /
+/// `DBG_RING_OVERFLOW`) so both tests below can assert it stayed untouched.
+struct RingModelR105 {
+    head: AtomicU32,
+    tail: AtomicU32,
+    cached_head: AtomicU32,
+    slots: [AtomicU32; 2],
+    overflow: AtomicUsize,
+}
+
+impl RingModelR105 {
+    const CAP: u32 = 2;
+
+    fn new() -> Arc<Self> {
+        Arc::new(RingModelR105 {
+            head: AtomicU32::new(0),
+            tail: AtomicU32::new(0),
+            cached_head: AtomicU32::new(0),
+            slots: std::array::from_fn(|_| AtomicU32::new(RING_SLOT_EMPTY)),
+            overflow: AtomicUsize::new(0),
+        })
+    }
+
+    /// FIXED classification - mirrors the post-R1-05 real `full_check`
+    /// exactly (shadow fast path, real-Acquire-load slow path, `Stale` vs
+    /// `Full` distinguished by `t < h`).
+    fn full_check_fixed(&self, t: u32) -> RoomCheckModel {
+        let ch = self.cached_head.load(Ordering::Acquire);
+        if t.wrapping_sub(ch) < Self::CAP {
+            return RoomCheckModel::Room;
+        }
+        let h = self.head.load(Ordering::Acquire);
+        self.cached_head.store(h, Ordering::Release);
+        if t < h {
+            return RoomCheckModel::Stale;
+        }
+        if t.wrapping_sub(h) >= Self::CAP {
+            return RoomCheckModel::Full;
+        }
+        RoomCheckModel::Room
+    }
+
+    /// BUGGY (pre-R1-05) classification - the real `full_check`'s ORIGINAL
+    /// shape: `t < h` merged into the SAME `Err` as a genuinely full ring.
+    /// Negative control for the counterfactual test below.
+    fn full_check_buggy(&self, t: u32) -> Result<(), ()> {
+        let ch = self.cached_head.load(Ordering::Acquire);
+        if t.wrapping_sub(ch) < Self::CAP {
+            return Ok(());
+        }
+        let h = self.head.load(Ordering::Acquire);
+        self.cached_head.store(h, Ordering::Release);
+        if t < h || t.wrapping_sub(h) >= Self::CAP {
+            return Err(());
+        }
+        Ok(())
+    }
+
+    /// FIXED push: retries on `Stale` (no counter bump), bumps `overflow`
+    /// only on genuine `Full`. `first_t`, when `Some`, seeds the FIRST loop
+    /// iteration with a caller-supplied (possibly stale) tail snapshot -
+    /// modelling a producer that captured `t` earlier and is only now
+    /// resuming; every RETRY still rereads `tail` fresh, exactly like the
+    /// real `push`.
+    fn push_fixed(&self, first_t: Option<u32>, offset: u32) -> Result<(), ()> {
+        let mut seed = first_t;
+        loop {
+            let t = seed
+                .take()
+                .unwrap_or_else(|| self.tail.load(Ordering::Relaxed));
+            match self.full_check_fixed(t) {
+                RoomCheckModel::Room => {}
+                RoomCheckModel::Stale => continue,
+                RoomCheckModel::Full => {
+                    self.overflow.fetch_add(1, Ordering::Relaxed);
+                    return Err(());
+                }
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slots[(t as usize) % 2].store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// BUGGY push: mirrors the pre-R1-05 real `push` - treats `Err` from
+    /// `full_check_buggy` as a genuine (countable) overflow, no retry-on-
+    /// stale distinction. Same `first_t` seeding as `push_fixed`.
+    fn push_buggy(&self, first_t: Option<u32>, offset: u32) -> Result<(), ()> {
+        let mut seed = first_t;
+        loop {
+            let t = seed
+                .take()
+                .unwrap_or_else(|| self.tail.load(Ordering::Relaxed));
+            if self.full_check_buggy(t).is_err() {
+                self.overflow.fetch_add(1, Ordering::Relaxed);
+                return Err(());
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slots[(t as usize) % 2].store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Identical drain to the other models.
+    fn drain<F: FnMut(u32)>(&self, mut reclaim: F) {
+        let t = self.tail.load(Ordering::Acquire);
+        let mut h = self.head.load(Ordering::Relaxed);
+        while h != t {
+            let slot = &self.slots[(h as usize) % 2];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            reclaim(off);
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.head.store(h, Ordering::Release);
+    }
+}
+
+/// P captures `tail` (`0`) BEFORE any other activity. Q pushes 2 offsets
+/// (fast path both times - `cached_head` stays `0`). The owner drains fully
+/// (`head` advances `0 -> 2`; `cached_head` untouched by drain - drain never
+/// writes it). R (a third producer) then pushes a further offset; R's OWN
+/// full-check is forced onto the slow path and refreshes the SHARED
+/// `cached_head` to `2`. Only THEN does P "continue": its captured `t = 0`
+/// is now stale relative to both the refreshed `cached_head` (`2`) and the
+/// real `head` (`2`), even though the ring holds only ONE live entry (R's)
+/// out of `CAP = 2` - genuinely not full.
+///
+/// FIXED protocol: `full_check_fixed(0)` classifies this as `Stale` (not
+/// `Full`); `push_fixed`'s `Stale` arm retries with a FRESH `tail` read and
+/// succeeds. No spurious overflow.
+#[test]
+fn stale_tail_snapshot_retried_not_reported_full() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModelR105::new();
+
+        // P captures its (soon-to-be-stale) tail snapshot immediately.
+        let stale_t = ring.tail.load(Ordering::Relaxed);
+        assert_eq!(
+            stale_t, 0,
+            "captured before any push - must be the initial tail"
+        );
+
+        // Q: two ordinary pushes (fast path both - cached_head stays 0).
+        let ring_q = Arc::clone(&ring);
+        let tq = thread::spawn(move || {
+            assert!(ring_q.push_fixed(None, 10).is_ok());
+            assert!(ring_q.push_fixed(None, 20).is_ok());
+        });
+        tq.join().unwrap();
+
+        // Owner: full drain (head 0 -> 2; cached_head untouched at 0).
+        let ring_o = Arc::clone(&ring);
+        let to = thread::spawn(move || {
+            let mut got = 0;
+            ring_o.drain(|_| got += 1);
+            assert_eq!(got, 2, "owner must drain both of Q's pushes");
+        });
+        to.join().unwrap();
+
+        // R: a further push forces R's OWN slow path, refreshing the SHARED
+        // cached_head to the real head (2).
+        let ring_r = Arc::clone(&ring);
+        let tr = thread::spawn(move || {
+            assert!(ring_r.push_fixed(None, 30).is_ok());
+        });
+        tr.join().unwrap();
+        assert_eq!(
+            ring.cached_head.load(Ordering::Acquire),
+            2,
+            "R's push must have refreshed the shared cached_head via its own slow path"
+        );
+
+        let overflow_before = ring.overflow.load(Ordering::Relaxed);
+
+        // P "continues": pushes using its STALE captured `t = 0`.
+        let result = ring.push_fixed(Some(stale_t), 999);
+
+        assert!(
+            result.is_ok(),
+            "push with a stale tail snapshot must still succeed (R1-05 fix)"
+        );
+        assert_eq!(
+            ring.overflow.load(Ordering::Relaxed),
+            overflow_before,
+            "a stale tail snapshot must not tick the overflow counter (R1-05 fix)"
+        );
+    });
+}
+
+/// Non-vacuity counterfactual: the EXACT same sequence, but using the
+/// PRE-R1-05 `push_buggy`/`full_check_buggy` (which merges `Stale` into
+/// `Err`). `#[should_panic]` because the buggy protocol spuriously reports
+/// overflow for a ring that is NOT full (occupancy 1 of `CAP = 2` at the
+/// point P "continues").
+#[test]
+#[should_panic(expected = "spuriously")]
+fn counterfactual_buggy_full_check_spuriously_overflows_stale_tail() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModelR105::new();
+        let stale_t = ring.tail.load(Ordering::Relaxed);
+
+        let ring_q = Arc::clone(&ring);
+        let tq = thread::spawn(move || {
+            assert!(ring_q.push_buggy(None, 10).is_ok());
+            assert!(ring_q.push_buggy(None, 20).is_ok());
+        });
+        tq.join().unwrap();
+
+        let ring_o = Arc::clone(&ring);
+        let to = thread::spawn(move || {
+            ring_o.drain(|_| {});
+        });
+        to.join().unwrap();
+
+        let ring_r = Arc::clone(&ring);
+        let tr = thread::spawn(move || {
+            assert!(ring_r.push_buggy(None, 30).is_ok());
+        });
+        tr.join().unwrap();
+
+        let overflow_before = ring.overflow.load(Ordering::Relaxed);
+        let result = ring.push_buggy(Some(stale_t), 999);
+
+        assert!(
+            result.is_ok() && ring.overflow.load(Ordering::Relaxed) == overflow_before,
+            "spuriously overflowed: the buggy full_check rejected a stale-but-\
+             retriable tail snapshot as if the ring (occupancy 1 of CAP=2) were \
+             full, ticking the overflow counter"
+        );
+    });
+}

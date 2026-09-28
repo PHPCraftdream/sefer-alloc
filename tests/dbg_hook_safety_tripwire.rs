@@ -253,6 +253,10 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/registry/bootstrap/registry.rs::dbg_chunk_is_materialised",
     "src/registry/heap_registry/counters.rs::dbg_slot_initialised",
     "src/registry/heap_overflow.rs::dbg_sidecar_is_materialised",
+    // R1-05: pure function of its two `usize` arguments — no `&self`, no
+    // allocator/ring state touched at all, no side effect. See
+    // `HeapOverflow::room_check`'s doc comment.
+    "src/registry/heap_overflow.rs::dbg_room_check_code",
     "src/registry/heap_core/core.rs::dbg_cached_numa_node",
     "src/registry/heap_core/diag/queries.rs::dbg_owner_id_for",
     "src/registry/heap_core/diag/queries.rs::dbg_class_for",
@@ -303,6 +307,10 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
     (
         "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_reset_hash_remove_max_scan_steps",
         "resets a diagnostic high-water counter only; no allocator metadata, no soundness relevance",
+    ),
+    (
+        "src/alloc_core/segment/remote_free_ring/ops.rs::dbg_full_check_code",
+        "R1-05: delegates to the exact real full_check the production push/try_push_uncounted already call for a caller-supplied t; the only mutation on its slow path is the pre-existing cached_head shadow refresh (Release store of a value derived from a real Acquire head load) -- byte-identical to what an ordinary push already does, no allocator metadata or pointer involved",
     ),
     (
         "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_find_segment_with_free",
