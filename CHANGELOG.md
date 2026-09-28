@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 3 (xs, 2026-09-28)
+
+Findings from `docs/reviews/2026-09-28-232143-src-review-xs-sol-round-3.md` (`a87019e5`; 0 P0–P2, 2 P3, 1 P4). Its IDs are cited as "xs R3-NN". `production`'s feature composition is unchanged, and no commit claims or measures a speedup. The review ran no Loom, Miri or weak-memory model, so it certifies none of the ring protocols; those keep their existing Loom/Miri CI coverage.
+
+- **P3-2** (`c7d2b26c`, `fix`): `HeapOverflow::push` and `push_uncounted` guarded a null base only with `debug_assert_ne!`. In release, `push(null, ..)` won the tail CAS and published the `ENTRY_EMPTY_BASE` sentinel, so `try_drain` stopped at that slot and never reached later entries. Null is now rejected before `tail` is touched, in every build (no cursor reserved, `overflow_count` unchanged). Production callers pass real segment bases, so their behavior is unchanged. `cursors_for_test` is now a doc-hidden `pub` read-only observer under `internals`. The regression test fails on the old code in debug and `--release`.
+- **P3-1** (`a242a311`, `docs:`): `ShardedRegion::len` and `is_empty` scan the per-shard counters one after another. A cross-shard move can make `is_empty()` return `true` although an entry was live at every instant. Only the docs change (`experimental`, already deprecated): exact only without concurrent mutation, otherwise approximate and non-linearizable, and not a drain or shutdown signal. Tripwire test added.
+- **P4-1** (`4d39791d`, `docs:`): the `HeapCore::dealloc` summary called foreign pointers a safe no-op, against its own `# Safety` section. Only null is an always-safe no-op; a foreign or unmapped pointer violates the contract, and the magic read can fault. Tripwire test added.
+- **Open items:** the review's optimization ideas (`LockFreeRegion` write-path copies, an O(1) `ShardedRegion` length, fallback-lock serialization) are `docs/perf/OPEN_ITEMS.md` item 73 (the fallback lock is also item 66). None was measured. The integration test-file count in `README.md` and `docs/ARCHITECTURE.md` is 301 (`c684dc8c`).
+
 ### Root allocator `src/` review round 2 (fxx, 2026-09-28)
 
 Findings from `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` (`34cb6157`; 0 P0, 1 P1, 3 P4). Its IDs are cited as "fxx R2-NN". `production`'s feature composition is unchanged, and no commit claims or measures a speedup. **The root crate's MSRV rises from 1.88 to 1.93.**

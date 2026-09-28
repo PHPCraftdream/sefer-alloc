@@ -2957,6 +2957,13 @@ for completeness.
     - **Next trigger:** the next magazine refill / miss-path round. Gate: `npm run iai` churn benches A/B; merge only on a measured `Ir` drop. Do not extend this to the overflow-flush base recomputation (R24-3/R24-4 NO-GO).
     - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1.
 
+73. **[L] xs R3 "optimization ideas" — region write-path copies and `ShardedRegion` length query.**
+
+    - **Status:** OPEN — hypotheses only; nothing measured, no speedup claimed.
+    - **Current-number-or-verdict:** the review names three candidates. (a) `LockFreeRegion` clones the snapshot page table and a full slot page on each successful write (`src/concurrent/lock_free/lock_free_region.rs`); a more granular persistent structure would copy less but cost read time and complexity. (b) `ShardedRegion::len`/`is_empty` visit every shard; a shared count would make `len` O(1) but adds an RMW contention point and does not give snapshot semantics (see P3-1). (c) Fallback-heap lock serialization under registry exhaustion is item 66's subject, not a new one. Both regions are outside the `production` allocator path.
+    - **Next trigger:** a write-heavy or query-heavy region benchmark showing the cost. Gate: A/B of write throughput and query latency in the same workload regime; merge only on a measured win.
+    - **Evidence:** `docs/reviews/2026-09-28-232143-src-review-xs-sol-round-3.md` "Optimization ideas".
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
