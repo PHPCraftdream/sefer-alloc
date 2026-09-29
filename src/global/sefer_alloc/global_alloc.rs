@@ -7,9 +7,11 @@
 
 use core::alloc::{GlobalAlloc, Layout};
 
+use crate::alloc_core::segment_header::{SegmentHeader, OWNER_ID_FALLBACK};
 use crate::global::fallback;
-use crate::global::tls_heap::CurrentHeap;
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
+
+use crate::global::tls_heap::CurrentHeap;
 
 use super::SeferAlloc;
 
@@ -50,14 +52,6 @@ unsafe impl GlobalAlloc for SeferAlloc {
         if ptr.is_null() {
             return;
         }
-        // R6-OPT-P0-1: resolve via the DEALLOC-ONLY `current_for_dealloc` —
-        // NOT `self.current_heap()` — so a thread whose TLS is null (never
-        // allocated anything itself) or `TORN` (already exited) does not pay
-        // to claim a registry slot or take the fallback spinlock just to
-        // free one foreign pointer. See `tls_heap::current_for_dealloc`'s doc
-        // comment for the full rationale, and the "TORN + fallback-owned"
-        // trade-off note below. `alloc-global` implies `alloc-xthread`
-        // (R5-01), so this is the only dealloc routing.
         match current_for_dealloc() {
             CurrentHeapForDealloc::Own(heap) => {
                 // SAFETY: `heap` is non-null and points to a live `HeapCore`
@@ -66,37 +60,25 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 unsafe { (*heap).dealloc(ptr, layout) };
             }
             CurrentHeapForDealloc::ForeignNoBind => {
-                // This thread never bound a heap, or its heap's slot was
-                // already recycled (TORN), or its TLS is torn down. Every
-                // valid pointer reaching `dealloc` here is foreign BY
-                // CONSTRUCTION (see `current_for_dealloc`'s doc comment):
-                // route it directly through the heap-instance-independent
-                // cross-thread routing tail, WITHOUT claiming a registry
-                // slot and WITHOUT constructing or dereferencing any
-                // `*mut HeapCore` at all.
-                //
-                // Deliberate, documented trade-off (verified sound — see
-                // `HeapCore::dealloc_foreign_routing`'s doc comment and
-                // the R6-OPT-P0-1 task report): for the TORN case
-                // specifically, the OLD code routed through
-                // `fallback::with_heap`, which checked the FALLBACK
-                // heap's OWN `contains_base` FIRST — so a pointer that
-                // genuinely belongs to the fallback's own segments took
-                // the direct free path under the lock. This shortcut has
-                // no fallback `HeapCore` instance to consult, so it
-                // ALWAYS treats a TORN thread's dealloc as foreign-by-
-                // header, pushing onto whatever ring the header says
-                // owns it — for a fallback-owned pointer, that means the
-                // fallback's OWN ring instead of a direct free. This is
-                // NOT a correctness bug: pushing to a ring is safe for
-                // ANY live segment regardless of caller identity (see
-                // `dealloc_foreign_routing`'s doc comment), and the
-                // fallback drains its own ring lazily on its next
-                // `with_heap` call exactly like any other segment's
-                // owner — it is a narrow efficiency trade-off in an
-                // already-rare corner case (TORN AND fallback-owned),
-                // traded for removing the claim/lock cost in the
-                // overwhelmingly common case this task targets.
+                // This thread has no live own heap; inspect ownership without
+                // relying on TLS teardown state.
+                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
+                // Caller contract guarantees this live segment remains
+                // mapped; the accessor validates magic and reads only its
+                // atomic owner field, not the full header racing with `bump`.
+                let fallback_owned = SegmentHeader::owner_id_at(base) == Some(OWNER_ID_FALLBACK);
+                if fallback_owned {
+                    // Lock order: atomic owner stamp, then fallback LOCK.
+                    // This try-lock never waits, including on recursive entry;
+                    // on failure no fallback guard is held for remote routing.
+                    // SAFETY: `ptr`/`layout` are the caller's live allocation
+                    // pair, and `try_with_heap` grants exclusive fallback access.
+                    if fallback::try_with_heap(|h| unsafe { h.dealloc(ptr, layout) }).is_some() {
+                        return;
+                    }
+                    // A busy lock falls through to the existing valid remote
+                    // route, which does not reacquire the fallback lock.
+                }
                 //
                 // SAFETY: `ptr`/`layout` are the caller-bound
                 // `GlobalAlloc::dealloc` contract pair (this whole fn is
@@ -111,7 +93,6 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 // read, and excluding that case is the caller's baseline
                 // `GlobalAlloc` obligation, not something these guards
                 // relax.
-                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
                 crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
             }
         }
@@ -160,5 +141,23 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // the old allocation intact on OOM.
             CurrentHeap::Own(heap) => unsafe { (*heap).realloc(ptr, old_layout, new_size) },
         }
+    }
+}
+
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+impl SeferAlloc {
+    /// Exercise the production dealloc path while this thread already holds
+    /// the fallback lock.
+    ///
+    /// # Safety
+    /// `ptr` must be a live allocation produced by this allocator with
+    /// `layout`, and must not be freed again.
+    #[doc(hidden)]
+    pub unsafe fn dbg_dealloc_while_fallback_lock_held(ptr: *mut u8, layout: Layout) {
+        let allocator = Self::new();
+        let _ = fallback::with_heap(|_| {
+            // SAFETY: upheld by this hook's caller contract above.
+            unsafe { allocator.dealloc(ptr, layout) };
+        });
     }
 }

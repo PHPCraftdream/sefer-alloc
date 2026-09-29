@@ -93,6 +93,28 @@ impl SegmentHeader {
         Node::atomic_u32_at(base, off).load(core::sync::atomic::Ordering::Acquire)
     }
 
+    /// Read the packed owner id after validating a live segment header.
+    /// Every segment kind stores `owner_state` at this fixed header offset;
+    /// reading only this atomic field avoids racing the mutable `bump` field.
+    ///
+    /// Caller contract: `base` must be a mapped segment base with a valid
+    /// header for the duration of the call. A valid live `GlobalAlloc::dealloc`
+    /// pointer provides that guarantee; the magic check is not a guard for
+    /// arbitrary or already-unmapped pointers.
+    #[cfg(feature = "alloc-xthread")]
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn owner_id_at(base: *mut u8) -> Option<u32> {
+        if base.is_null()
+            || Self::magic_at(base) != crate::alloc_core::segment_header::SEGMENT_MAGIC
+        {
+            return None;
+        }
+        let off = core::mem::offset_of!(SegmentHeader, owner_state);
+        let word = Node::atomic_u64_at(base, off).load(core::sync::atomic::Ordering::Acquire);
+        Some(crate::alloc_core::segment_header::unpack_owner_id(word))
+    }
+
     /// Read the header's `owner_thread_free` field only (field-specific pointer
     /// load). Used by the cross-thread dealloc-routing path to find the owning
     /// heap's TFS head without reading the whole mutable header. The field is

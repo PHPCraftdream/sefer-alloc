@@ -359,32 +359,23 @@ pub fn current_for_alloc() -> CurrentHeap {
     }
 }
 
-/// R6-OPT-P0-1: which heap [`current_for_dealloc`] resolved to, for the
-/// **dealloc-only** entry point. Distinct from [`CurrentHeap`] because the
-/// bind-less case here is NOT the fallback heap — it is "definitely a
-/// foreign pointer, route it WITHOUT ever materialising (binding OR
-/// fallback-locking) a `HeapCore` at all". See [`current_for_dealloc`]'s doc
-/// comment for the full rationale.
+/// Which route the dealloc-only resolver selected without binding a heap.
 #[cfg(feature = "alloc-xthread")]
 #[must_use]
 pub enum CurrentHeapForDealloc {
     /// A registry slot owned by this thread (identical fast path to
     /// [`CurrentHeap::Own`] — the thread has a real, bound heap).
     Own(*mut HeapCore),
-    /// This thread never bound a heap (TLS still null), or its heap's slot
-    /// was already recycled (`TORN`), or its TLS is torn down (`Err`). Any
-    /// pointer reaching `dealloc` on such a thread is foreign BY
-    /// CONSTRUCTION (see module-level rationale in `current_for_dealloc`) —
-    /// route it directly through the heap-instance-independent
-    /// [`HeapCore::dealloc_foreign_routing`] with `our_head = None`, WITHOUT
-    /// claiming a registry slot and WITHOUT taking the fallback spinlock.
+    /// This thread never bound a heap, its slot was recycled, or its TLS is
+    /// torn down. For pointers not identified as fallback-owned, route through
+    /// [`HeapCore::dealloc_foreign_routing`] without claiming a slot or taking
+    /// the fallback lock.
     ForeignNoBind,
 }
 
-/// R6-OPT-P0-1: a **dealloc-only** resolver — reads `LOCAL` exactly like
-/// [`current_for_alloc`], but the bind-less case (`null` / `TORN` / `Err`)
-/// does **not** bind a heap or resolve the fallback pointer at all. This is
-/// the fix for the diagnosed defect: `SeferAlloc::dealloc` used to call
+/// R6-OPT-P0-1: a **dealloc-only** resolver — it does not bind a heap. A
+/// bind-less pointer follows the allocation-independent remote route.
+/// `SeferAlloc::dealloc` used to call
 /// `current_heap()` (== `current_for_alloc`) unconditionally, which for a
 /// thread whose TLS is `null` (never allocated anything itself — e.g. a
 /// worker thread that only ever receives a pointer via a channel from a
@@ -396,32 +387,14 @@ pub enum CurrentHeapForDealloc {
 /// overwhelming majority of cases — a foreign pointer that does not even
 /// belong to the fallback heap.
 ///
-/// **Passive, read-only.** This resolver reads `LOCAL` and nothing else — it
-/// never writes `LOCAL`, never calls `HeapRegistry::claim`, and never calls
-/// `fallback::with_heap`. Gated on `alloc-xthread`, which `alloc-global`
-/// implies (R5-01), so it is always present wherever `SeferAlloc::dealloc` is.
+/// **Passive, read-only.** This resolver reads `LOCAL`; it never writes it,
+/// never calls `HeapRegistry::claim`, and never acquires the fallback lock.
+/// Gated on `alloc-xthread`, which `alloc-global` implies.
 ///
 /// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
 ///   identical fast path to [`current_for_alloc`]'s `Own` arm, unchanged.
-/// - `null` (never bound) → [`CurrentHeapForDealloc::ForeignNoBind`]. Does
-///   **not** call `bind_slow_tagged` — that is the entire point
-///   of this task: a thread whose TLS is null has never allocated anything
-///   of its own under this allocator instance (`SeferAlloc::alloc` always
-///   binds on first use), so any pointer reaching `dealloc` here must have
-///   arrived from elsewhere (e.g. a channel) — it is foreign by
-///   construction, and the caller routes it via
-///   `HeapCore::dealloc_foreign_routing(ptr, base, layout, None)` without
-///   ever touching the registry.
-/// - `TORN` (this thread's `AbandonGuard` already recycled its slot) →
-///   ALSO [`CurrentHeapForDealloc::ForeignNoBind`] — see the module doc's
-///   "TLS teardown and the TORN sentinel" section for why the cached
-///   pointer must not be dereferenced. Unlike [`current_for_alloc`], this
-///   does NOT route through `fallback::with_heap` (no fallback spinlock is
-///   taken) — see this function's own module-level trade-off note in
-///   `sefer_alloc.rs`'s `dealloc` for the deliberate, documented narrowing
-///   this causes for the rare "TORN AND the pointer happens to be
-///   fallback-owned" case.
-/// - `Err` (TLS destroyed) → same `ForeignNoBind` treatment as `TORN`.
+/// - `null` / `TORN` / `Err` → [`CurrentHeapForDealloc::ForeignNoBind`]; the
+///   stale pointer is never dereferenced.
 #[cfg(feature = "alloc-xthread")]
 #[inline(always)]
 pub fn current_for_dealloc() -> CurrentHeapForDealloc {
