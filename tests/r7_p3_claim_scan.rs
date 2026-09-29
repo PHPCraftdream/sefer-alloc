@@ -146,3 +146,62 @@ fn consumed_reuse_hint_does_not_repeat_full_scan_after_resaturation() {
     }
     assert_eq!(scans.load(Ordering::Relaxed), 2);
 }
+
+#[test]
+fn version_exhaustion_disables_hint_and_keeps_scan_backstop() {
+    let hint = AtomicU32::new(CAP as u32);
+    let count = AtomicU32::new(CAP as u32);
+    let saturation = SaturationHint::dbg_with_word_for_test(u64::MAX - 5);
+    let states = [const { AtomicU8::new(BUSY) }; CAP];
+    let scans = AtomicU32::new(0);
+
+    saturation.publish_claimable();
+    assert_eq!(saturation.snapshot(), u64::MAX - 3);
+    assert_eq!(pick(&hint, &count, &saturation, &states, &scans), None);
+    assert_eq!(saturation.snapshot(), u64::MAX - 2);
+    assert!(saturation.is_saturated());
+
+    saturation.publish_claimable();
+    assert_eq!(saturation.snapshot(), u64::MAX);
+    assert!(!saturation.is_saturated());
+    saturation.publish_claimable();
+    saturation.try_mark_saturated(u64::MAX);
+    saturation.try_mark_saturated(u64::MAX - 3);
+    assert_eq!(saturation.snapshot(), u64::MAX);
+
+    for expected_scans in 2..=4 {
+        assert_eq!(pick(&hint, &count, &saturation, &states, &scans), None);
+        assert_eq!(scans.load(Ordering::Relaxed), expected_scans);
+    }
+    states[4].store(FREE, Ordering::Release);
+    assert_eq!(pick(&hint, &count, &saturation, &states, &scans), Some(4));
+    assert_eq!(scans.load(Ordering::Relaxed), 5);
+}
+
+#[test]
+fn near_max_publication_during_scan_cannot_restore_saturation() {
+    let hint = AtomicU32::new(CAP as u32);
+    let count = AtomicU32::new(CAP as u32);
+    let saturation = SaturationHint::dbg_with_word_for_test(u64::MAX - 3);
+    let states = [const { AtomicU8::new(BUSY) }; CAP];
+    let scans = AtomicU32::new(0);
+
+    let first = pick_with_saturation(
+        &hint,
+        &count,
+        &saturation,
+        CAP,
+        || {
+            scans.fetch_add(1, Ordering::Relaxed);
+            states[5].store(FREE, Ordering::Release);
+            saturation.publish_claimable();
+            None
+        },
+        || None,
+    );
+    assert_eq!(first, None, "the overlapping claimant may fall back once");
+    assert_eq!(saturation.snapshot(), u64::MAX);
+    assert!(!saturation.is_saturated());
+    assert_eq!(pick(&hint, &count, &saturation, &states, &scans), Some(5));
+    assert_eq!(scans.load(Ordering::Relaxed), 2);
+}
