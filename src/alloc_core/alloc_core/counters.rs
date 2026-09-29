@@ -355,34 +355,25 @@ pub(crate) const fn promotion_byte_bucket(bytes: usize) -> usize {
     }
 }
 
-/// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls that
-/// hit the foreign-or-unroutable no-op branch — a `ptr` whose segment base is
-/// NOT one of this heap's registered segments, so `dealloc` silently drops it
-/// (see [`AllocCore::dealloc`]).
+/// Process-wide count of `dealloc` calls that DROPPED a free because it
+/// violates the `GlobalAlloc` contract: a foreign pointer, a double free
+/// against an already-released segment, or (under `alloc-xthread`) a
+/// cross-thread free whose `Layout` does not match the live segment's
+/// occupant. Best-effort: a pointer into unmapped memory faults on the header
+/// read before reaching these checks. Surfaced as
+/// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
+/// via [`AllocCore::dbg_foreign_or_unroutable_frees`].
 ///
-/// **Why this counter exists — the `alloc-global`-without-`alloc-xthread`
-/// footgun.** In a build WITHOUT `alloc-xthread` there is no cross-thread
-/// routing path: a block allocated on thread A and freed on thread B resolves
-/// to a base that is not in B's heap's segment table, falls into this no-op,
-/// and is **leaked permanently** (see `SeferAlloc`'s "Multi-thread safety"
-/// docs). That configuration is a legitimate single-threaded trade-off — so
-/// there is no `compile_error!` — but a multi-threaded program built that way
-/// by mistake would leak monotonically with NO observable metric. This counter
-/// is that metric: a non-zero, growing value under `alloc-global` alone is the
-/// signature of a misconfiguration (or a genuine foreign-pointer free).
+/// Two disjoint increment sites feed it (no double counting):
+/// - [`AllocCore::dealloc`]'s foreign branch, gated on `alloc-stats` (a
+///   standalone `AllocCore` pays nothing by default); unreachable under
+///   `alloc-global`, since `HeapCore::dealloc_routing` already proved
+///   `contains_base`.
+/// - the cold drop branches of `HeapCore::dealloc_foreign_routing`,
+///   unconditional, reached through the `crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES`
+///   re-export (`alloc-xthread`).
 ///
-/// Surfaced as [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
-/// via [`AllocCore::dbg_foreign_or_unroutable_frees`]. Diagnostic only
-/// (Relaxed, like `DECOMMIT_CALLS` / `DBG_RING_OVERFLOW`).
-///
-/// The per-event increment is gated behind `alloc-stats` (default OFF, not in
-/// `production`), matching the other per-event stat counters (`tcache_hits`,
-/// `large_cache_hits`): the free hot path carries no bookkeeping unless
-/// `alloc-stats` is compiled in. The static itself is always present (gated on
-/// `alloc-core` — the feature that first defines `AllocCore::dealloc` and its
-/// foreign-pointer no-op) so the accessor has a stable definition regardless of
-/// the rest of the feature set. `alloc-stats` depends on `alloc-core`, so
-/// whenever the increment is compiled in the static is guaranteed to exist.
+/// A healthy program keeps this at `0`. Relaxed: diagnostic only.
 #[cfg(feature = "alloc-core")]
 pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);

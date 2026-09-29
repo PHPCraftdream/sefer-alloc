@@ -14,14 +14,11 @@ use crate::alloc_core::alloc_core::counters::FOREIGN_OR_UNROUTABLE_FREES;
 /// which calls them unconditionally under plain `--features production`.
 /// See this file's module doc for the full rationale.
 impl AllocCore {
-    /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls
-    /// that hit the foreign-or-unroutable no-op branch (a `ptr` not in any of
-    /// this heap's registered segments — silently dropped). Backs
-    /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees).
-    /// See [`FOREIGN_OR_UNROUTABLE_FREES`] for the full rationale (the
-    /// `alloc-global`-without-`alloc-xthread` cross-thread-free leak footgun).
-    /// A plain relaxed atomic load — diagnostic only, no ordering obligation.
-    /// Reads `0` unless the per-event increment was compiled in (`alloc-stats`).
+    /// DIAGNOSTIC: process-wide count of `dealloc` calls that dropped a free
+    /// (foreign pointer, already-released segment, layout mismatch). Backs
+    /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees);
+    /// see [`FOREIGN_OR_UNROUTABLE_FREES`]. A relaxed load. Reads `0` under a
+    /// bare `alloc-core` build unless `alloc-stats` is on.
     #[doc(hidden)]
     #[cfg(feature = "alloc-core")]
     pub fn dbg_foreign_or_unroutable_frees() -> u64 {

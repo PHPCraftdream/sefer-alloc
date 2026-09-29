@@ -39,10 +39,9 @@
 //! hit rates, cross-thread reclaim/overflow counts, and cumulative
 //! segment/heap totals (`segments_reserved_total - segments_released_total`
 //! is the live segment count — the field to alert on for a segment leak;
-//! `foreign_or_unroutable_frees` is a legacy diagnostic field, requiring the
-//! `alloc-stats` feature to be populated — R5-01 made `alloc-global` always
-//! imply `alloc-xthread`, so the misconfiguration it used to signal can no
-//! longer be built).
+//! `foreign_or_unroutable_frees` counts frees dropped for violating the
+//! `GlobalAlloc` contract — foreign pointer, already-released segment,
+//! layout mismatch — and is always populated, no `alloc-stats` needed).
 //! `stats()` is lock-free and allocation-free, but its cost is
 //! feature-dependent: without `alloc-stats` it is a handful of relaxed atomic
 //! loads (O(1)); with `alloc-stats` on, the two hit counters are summed by an

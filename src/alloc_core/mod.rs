@@ -154,6 +154,12 @@ pub use large::deferred_large;
 pub(crate) use large::large_cache_extended;
 
 pub use alloc_core::AllocCore;
+/// The dropped-free counter, re-exported crate-wide so
+/// `HeapCore::dealloc_foreign_routing` can bump it (like
+/// [`LARGE_ZERO_PASS_CALLS`]). Not public API; read via
+/// `AllocCore::dbg_foreign_or_unroutable_frees`.
+#[cfg(feature = "alloc-xthread")]
+pub(crate) use alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
 /// R9-1 test seam (task #221 follow-up): the process-wide Large-path explicit
 /// zero-pass counter, re-exported crate-wide so `HeapCore::alloc_zeroed`
 /// (registry) can bump the SAME counter `AllocCore::alloc_zeroed` bumps. Read

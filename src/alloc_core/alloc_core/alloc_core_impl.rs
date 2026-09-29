@@ -15,6 +15,10 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 // re-export would not resolve).
 #[cfg(feature = "alloc-stats")]
 pub(crate) use counters::LARGE_ZERO_PASS_CALLS;
+// `HeapCore::dealloc_foreign_routing` bumps this counter too (see
+// `alloc_core/mod.rs`); same re-export shape as `LARGE_ZERO_PASS_CALLS`.
+#[cfg(feature = "alloc-xthread")]
+pub(crate) use counters::FOREIGN_OR_UNROUTABLE_FREES;
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use counters::SMALL_ZERO_PASS_CALLS;
 #[cfg(all(

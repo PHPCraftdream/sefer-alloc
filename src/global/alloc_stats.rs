@@ -182,49 +182,21 @@ pub struct AllocStats {
     /// see `SeferAlloc::stats()`).
     pub heaps_claimed_high_water: u64,
 
-    /// Number of `dealloc` calls that resolved to a segment base **not owned by
-    /// the freeing thread's heap** and were therefore silently dropped
-    /// (foreign or unroutable pointer). Cumulative since process start,
-    /// process-wide.
+    /// Cumulative, process-wide count of `dealloc` calls that DROPPED a free
+    /// because it violates the `GlobalAlloc` contract instead of applying it:
+    /// a foreign pointer, a double free against an already-released segment,
+    /// or a cross-thread free whose `Layout` does not match the live
+    /// segment's current occupant (a stale/fabricated free). Best-effort: a
+    /// pointer into unmapped memory faults on the header read before it can
+    /// reach any of these checks, so this is a lower bound, not an exhaustive
+    /// audit.
     ///
-    /// **R5-01 correction:** this field's original doc described alerting on
-    /// an `alloc-global`-without-`alloc-xthread` misconfiguration; that
-    /// configuration is no longer buildable at all (`src/lib.rs` now carries
-    /// a `compile_error!` — `alloc-global` unconditionally implies
-    /// `alloc-xthread`), so the scenario below is historical, not a live
-    /// build this crate produces. Under `alloc-xthread` (always the case now)
-    /// a genuine foreign-pointer free is still dropped here, but the
-    /// `!alloc-xthread` leak signature this field was designed to surface can
-    /// no longer occur. Full re-evaluation of this field's semantics/docs is
-    /// tracked as a follow-up, not done in this change.
-    ///
-    /// (Historical, pre-R5-01 text:) In a build WITHOUT `alloc-xthread` there
-    /// is no cross-thread routing: a block allocated on thread A and freed on
-    /// thread B has nowhere sound to go, so `dealloc` drops it and the block
-    /// is **leaked permanently**. A non-zero and growing value here was the
-    /// signature of that misconfiguration (or of a genuine foreign-pointer
-    /// free). Under `production` (which includes `alloc-xthread`) legitimate
-    /// cross-thread frees are routed, not dropped, so this should stay at (or
-    /// near) `0`.
-    ///
-    /// **Scope: this counter is `!alloc-xthread`-specific, not a general
-    /// "any foreign free" signal.** Under `alloc-xthread`, a foreign/unroutable
-    /// pointer never reaches [`AllocCore::dealloc`](crate::AllocCore::dealloc)
-    /// (where this counter increments) — `HeapCore::dealloc_routing` branches
-    /// earlier and has its own silent no-op drops (a `magic` mismatch, a
-    /// defensive not-ours return, an inconsistent Large layout), none of which
-    /// bump this field. A `0` reading under `alloc-xthread` therefore does
-    /// **not** mean no drops occurred — only that the specific
-    /// `!alloc-xthread` leak signature this field targets did not fire.
-    ///
-    /// **Requires the `alloc-stats` feature (default OFF, not in
-    /// `production`).** The per-event increment is gated behind `alloc-stats`
-    /// so the free hot path carries no bookkeeping by default — identical
-    /// discipline to [`tcache_hits`](Self::tcache_hits) /
-    /// [`large_cache_hits`](Self::large_cache_hits). Without `alloc-stats` this
-    /// field reads `0` even when drops are occurring; build with
-    /// `--features "…​ alloc-stats"` to get the real count. Also `0` in a build
-    /// without `alloc-global` (no `dealloc` face at all).
+    /// **Always available — no `alloc-stats` required.** `alloc-global`
+    /// always implies `alloc-xthread` (R5-01), and the cross-thread routing
+    /// drop branches (`HeapCore::dealloc_foreign_routing`) increment this
+    /// counter unconditionally, not gated behind `alloc-stats`. A healthy
+    /// program keeps this at `0`; a non-zero, growing value means something
+    /// is calling `dealloc` outside its documented contract.
     pub foreign_or_unroutable_frees: u64,
 
     /// Number of times `claim_with_config` found an already-materialised

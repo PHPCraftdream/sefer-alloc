@@ -10,8 +10,16 @@ use core::sync::atomic::AtomicPtr;
 use crate::alloc_core::os;
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SEGMENT_MAGIC};
+use crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
 
 use crate::registry::heap_core::HeapCore;
+
+/// Unconditional Relaxed increment for a free dropped by a cold branch here;
+/// see `FOREIGN_OR_UNROUTABLE_FREES`.
+#[inline(always)]
+fn record_dropped_free() {
+    FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
 
 impl HeapCore {
     // -----------------------------------------------------------------------
@@ -178,9 +186,11 @@ impl HeapCore {
         // close, the cross-heap staleness window noted above (case (a) vs (b)):
         // a base that masks to null cannot be a real segment by construction.
         if base.is_null() {
+            record_dropped_free();
             return;
         }
         if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
+            record_dropped_free();
             return;
         }
         let owner_tf = SegmentHeader::owner_thread_free_at(base);
@@ -208,6 +218,7 @@ impl HeapCore {
             // Defensive no-op: do NOT route to ourselves via a table state we
             // just proved does not list this segment (or, for the bind-less
             // caller, do not touch an unstamped segment at all).
+            record_dropped_free();
             return;
         }
         if SegmentHeader::kind_at(base) == SegmentKind::Large {
@@ -235,6 +246,9 @@ impl HeapCore {
             // comment for the full rationale and residual limit.
             if crate::alloc_core::deferred_large::large_layout_consistent(base, layout) {
                 Self::push_large_deferred_free(owner_tf, base);
+            } else {
+                // Layout/align mismatch (stale-double-free mitigation): dropped.
+                record_dropped_free();
             }
             return;
         }
@@ -254,7 +268,11 @@ impl HeapCore {
         let class_idx =
             match crate::alloc_core::size_classes::SizeClasses::class_for(size, layout.align()) {
                 Some(c) => c as u32,
-                None => return, // Large layout on a small segment: contract violation; drop.
+                None => {
+                    // Large layout on a small segment: contract violation; drop.
+                    record_dropped_free();
+                    return;
+                }
             };
         // X7 Ф3 (task #191) touch (b): under `hardened`, stamp the block's
         // CURRENT generation (as observed by THIS freeing thread, Relaxed) into

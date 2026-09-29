@@ -190,13 +190,10 @@ impl AllocCore {
         // registered segments, this pointer is not one of ours — no-op (do not
         // touch foreign memory, do not even read a header that may be unmapped).
         if !self.table.contains_base(base) {
-            // Review finding 2.3: make the drop OBSERVABLE. Without
-            // `alloc-xthread` this branch is the sole guard, and a cross-thread
-            // free lands here as a PERMANENT leak — the misconfiguration
-            // signature this counter exists to expose (see
-            // `FOREIGN_OR_UNROUTABLE_FREES`). Gated behind `alloc-stats` so the
-            // free hot path pays nothing by default, matching the crate's other
-            // per-event stat counters. Relaxed: diagnostic only.
+            // Make the drop observable (`FOREIGN_OR_UNROUTABLE_FREES`); gated on
+            // `alloc-stats` so a standalone `AllocCore` pays nothing by default.
+            // Unreachable under `alloc-global`: `HeapCore::dealloc_routing`
+            // already proved `contains_base` and counts its own drops.
             #[cfg(feature = "alloc-stats")]
             FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return;

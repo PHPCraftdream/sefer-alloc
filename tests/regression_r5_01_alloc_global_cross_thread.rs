@@ -154,9 +154,7 @@ fn cross_thread_small_free_bounds_segment_growth() {
     );
 }
 
-/// Per-event check: no cross-thread small free may hit the foreign-or-
-/// unroutable drop branch (its counter needs `alloc-stats`).
-#[cfg(feature = "alloc-stats")]
+/// Per-event check: no cross-thread small free may hit a drop branch.
 #[test]
 fn cross_thread_small_free_does_not_hit_foreign_or_unroutable_frees() {
     let _guard = SerialGuard::acquire();

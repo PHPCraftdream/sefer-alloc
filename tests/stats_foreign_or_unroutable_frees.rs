@@ -1,114 +1,119 @@
-//! Review finding 2.3 — `SeferAlloc::stats().foreign_or_unroutable_frees`
-//! makes the "foreign / unroutable free was silently dropped" no-op OBSERVABLE.
+//! `AllocStats::foreign_or_unroutable_frees` (xxs R5-01): a live, always-on
+//! counter of frees dropped for violating the `GlobalAlloc` contract,
+//! incremented by `HeapCore::dealloc_foreign_routing`'s cold drop branches
+//! (no `alloc-stats` needed).
 //!
-//! ## The footgun this covers
-//!
-//! In a build WITHOUT `alloc-xthread` there is no cross-thread free routing: a
-//! block freed on a heap that does not own its segment resolves to a base that
-//! is not in that heap's segment table, falls into `AllocCore::dealloc`'s
-//! foreign-pointer no-op, and is **leaked permanently**. `alloc-global` without
-//! `alloc-xthread` is a legitimate single-threaded trade-off (so there is no
-//! `compile_error!`), but a program built that way by mistake would leak with
-//! no other observable signal. This counter is that signal.
-//!
-//! ## How the scenario is constructed (non-vacuous)
-//!
-//! We drive `SeferAlloc` directly via the `GlobalAlloc` trait (NOT installed as
-//! this binary's `#[global_allocator]`, matching `tests/stats_reflects_activity.rs`
-//! / `tests/global_alloc.rs`), snapshot `stats()`, then `dealloc` a pointer that
-//! is GUARANTEED not to belong to any of this allocator's segments — a pointer
-//! into a stack array. Its computed segment base is never registered in the
-//! heap's `SegmentTable`, so `dealloc` takes the foreign/unroutable no-op branch
-//! and bumps the counter. We assert the delta is strictly positive.
-//!
-//! A stub that never incremented (the pre-fix behaviour — a silent drop) would
-//! leave the delta at 0 and fail this assertion: that is the counterfactual that
-//! makes the test meaningful, not just "it doesn't panic".
-//!
-//! The per-event increment is gated behind `alloc-stats` (default OFF, not in
-//! `production`), so the delta assertion itself is `alloc-stats`-gated — under a
-//! build without `alloc-stats` the field reads 0 by design. The
-//! **no-panic / safe-no-op** behaviour of freeing a foreign pointer is asserted
-//! unconditionally.
+//! Probe: a real Large block freed cross-thread with a WRONG `Layout` size is
+//! rejected by the layout-consistency check. That branch is a pure no-op (a
+//! read-only header comparison), so the block stays live and the correct-layout
+//! free that follows is its one real free. A synthetic non-sefer pointer would
+//! be unsound here: the routing reads the candidate segment header and can fault
+//! on unmapped memory. The healthy-run counterpart (delta 0) lives in
+//! `regression_r5_01_alloc_global_cross_thread.rs`.
 
-// Scoped to the `alloc-global`-WITHOUT-`alloc-xthread` configuration — the
-// exact footgun this counter observes. Under `alloc-xthread`, `dealloc` routes
-// through `HeapCore::dealloc_routing`, whose foreign-pointer handling reads the
-// candidate segment's header (`magic_at(base)`) to decide routing; passing a
-// pointer into a stack array (whose "segment base" is arbitrary, possibly
-// unmapped memory) would fault there — so a synthetic foreign-pointer free is
-// only a SOUND probe in the `!alloc-xthread` build, where `AllocCore::dealloc`'s
-// table-only `contains_base` guard rejects the pointer without dereferencing it.
-// That `!alloc-xthread` build is also precisely the one where a foreign free is
-// a permanent leak, i.e. the configuration the counter exists for.
-#![cfg(all(feature = "alloc-global", not(feature = "alloc-xthread")))]
+#![cfg(feature = "alloc-global")]
 
 use std::alloc::{GlobalAlloc, Layout};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
+use std::thread;
 
 use sefer_alloc::SeferAlloc;
 
-/// Free a pointer that provably does not belong to any `SeferAlloc` segment
-/// (a pointer into a stack array). This exercises the foreign/unroutable
-/// no-op branch of `dealloc`. It must be a safe no-op in every feature
-/// configuration — never a panic, never a write to the foreign memory.
+#[global_allocator]
+static GLOBAL: SeferAlloc = SeferAlloc::new();
+
+// `AllocStats` counters are process-wide — serialise against the other test
+// in this binary (same discipline as `tests/regression_r5_01_alloc_global_cross_thread.rs`).
+static SERIAL: AtomicBool = AtomicBool::new(false);
+
+struct SerialGuard;
+impl SerialGuard {
+    fn acquire() -> Self {
+        while SERIAL
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            std::hint::spin_loop();
+        }
+        SerialGuard
+    }
+}
+impl Drop for SerialGuard {
+    fn drop(&mut self) {
+        SERIAL.store(false, Ordering::Release);
+    }
+}
+
+/// A Large block allocated on thread A, freed cross-thread on thread B with a
+/// WRONG `Layout` size, must be DROPPED (not queued/reclaimed) and counted in
+/// `foreign_or_unroutable_frees`; freeing it again afterward with the CORRECT
+/// layout must succeed cleanly (nothing leaked, heap stays usable).
 #[test]
-fn foreign_pointer_free_is_a_safe_no_op_and_is_counted() {
-    let a = SeferAlloc::new();
+fn wrong_layout_cross_thread_free_is_dropped_and_counted() {
+    let _guard = SerialGuard::acquire();
 
-    // A real allocation first, so the allocator is warm and has at least one
-    // registered segment — this makes the "foreign base is NOT in the table"
-    // distinction meaningful (an empty table would trivially reject anything).
-    let live_layout = Layout::from_size_align(64, 8).unwrap();
-    // SAFETY: valid non-zero layout.
-    let live = unsafe { a.alloc(live_layout) };
-    assert!(!live.is_null());
+    // 2 MiB — comfortably above SMALL_MAX in every feature combination
+    // (even `medium-classes`), unambiguously routed to Large.
+    const SIZE: usize = 2 * 1024 * 1024;
+    let real_layout = Layout::from_size_align(SIZE, 8).unwrap();
+    // A deliberately wrong size for the same pointer, mirroring
+    // `tests/regression_xthread_large_free_layout_mismatch.rs`'s `wrong_layout`.
+    let wrong_layout = Layout::from_size_align(SIZE / 4, 8).unwrap();
 
-    // A pointer that is provably NOT one of our segments: the address of a
-    // stack local. Its segment base can never be in the heap's SegmentTable.
-    let mut foreign_buf = [0u8; 64];
-    let foreign_ptr: *mut u8 = foreign_buf.as_mut_ptr();
+    let (tx, rx) = sync_channel::<usize>(0);
+    let producer = thread::spawn(move || {
+        // SAFETY: `real_layout` is a valid non-zero `Layout`.
+        let p = unsafe { GLOBAL.alloc(real_layout) };
+        assert!(!p.is_null(), "producer allocation failed");
+        // SAFETY: `p` is a fresh live `SIZE`-byte allocation.
+        unsafe { std::ptr::write_bytes(p, 0xCC, SIZE) };
+        tx.send(p as usize).expect("consumer channel closed early");
+    });
+    let addr = rx.recv().expect("producer did not send a pointer");
+    producer.join().expect("producer thread panicked");
+    let p = addr as *mut u8;
 
-    let before = a.stats().foreign_or_unroutable_frees;
+    let before = GLOBAL.stats().foreign_or_unroutable_frees;
 
-    // Free the foreign pointer. This must NOT panic and must NOT touch the
-    // foreign memory — it is a safe no-op (and, under `alloc-stats`, counted).
-    // SAFETY: `foreign_ptr` is a valid, aligned, non-null pointer to 64 bytes;
-    // `dealloc`'s foreign-pointer guard rejects it before touching it. This is
-    // the exact "block freed on a heap that does not own it" shape the counter
-    // exists to observe; the guard makes it sound to pass here.
-    unsafe { a.dealloc(foreign_ptr, live_layout) };
+    // Cross-thread free with the WRONG layout size. Per this file's module
+    // doc, this is a documented `GlobalAlloc::dealloc` contract violation
+    // that is sound here because the mismatched-layout branch is a pure
+    // no-op (read-only header check, no write, no state mutation) — `p`
+    // stays live and un-freed.
+    // SAFETY: `p` is a live pointer returned by the `alloc` above, not yet
+    // freed (this call is provably a no-op); the mismatched `wrong_layout`
+    // is the exact probe this test exists to exercise.
+    unsafe { GLOBAL.dealloc(p, wrong_layout) };
 
-    // Prove we did not corrupt the foreign buffer (the no-op really is a no-op).
-    assert_eq!(
-        foreign_buf, [0u8; 64],
-        "foreign free must not write the block"
-    );
+    // The segment must be untouched by the dropped free.
+    // SAFETY: `p` is still the live, un-freed allocation from above.
+    let intact = unsafe { std::slice::from_raw_parts(p, SIZE) }
+        .iter()
+        .all(|&b| b == 0xCC);
+    assert!(intact, "segment corrupted by a dropped free");
 
-    let after = a.stats().foreign_or_unroutable_frees;
-
-    // The per-event increment is `alloc-stats`-gated (default OFF, not in
-    // `production`) — matching `tcache_hits` / `large_cache_hits`. Under
-    // `alloc-stats` the counter must advance by at least the one foreign free
-    // we provably performed on this thread; other tests in this binary racing
-    // on the process-wide counter can only INCREASE the delta, never decrease
-    // it, so `>` is the race-robust oracle.
-    #[cfg(feature = "alloc-stats")]
+    let after = GLOBAL.stats().foreign_or_unroutable_frees;
     assert!(
         after > before,
-        "foreign_or_unroutable_frees did not increase across a foreign free: \
+        "wrong-layout cross-thread free was not counted as dropped: \
          before={before}, after={after}"
     );
 
-    // Without `alloc-stats` the field is a compiled-out no-op counter: it must
-    // read a stable 0-delta (never garbage), the "stable shape across feature
-    // combinations" guarantee.
-    #[cfg(not(feature = "alloc-stats"))]
-    assert_eq!(
-        after, before,
-        "without alloc-stats the counter must not move (increment compiled out)"
-    );
+    // The block was never actually freed above (the wrong-layout call was a
+    // no-op), so this is the ONE real free — not a double-free.
+    // SAFETY: `p` is the live allocation from `real_layout`'s `alloc` above,
+    // freed here exactly once with its matching layout.
+    unsafe { GLOBAL.dealloc(p, real_layout) };
 
-    // Clean up the real allocation.
-    // SAFETY: `live` was allocated above with `live_layout` and is still live.
-    unsafe { a.dealloc(live, live_layout) };
+    // Heap stays fully usable afterward — nothing leaked into an unusable
+    // state.
+    // SAFETY: `real_layout` is a valid non-zero `Layout`.
+    let p2 = unsafe { GLOBAL.alloc(real_layout) };
+    assert!(
+        !p2.is_null(),
+        "heap unusable after the dropped mismatched free"
+    );
+    // SAFETY: `p2` is the live allocation just returned, freed once here.
+    unsafe { GLOBAL.dealloc(p2, real_layout) };
 }
