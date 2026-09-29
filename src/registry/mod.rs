@@ -61,6 +61,11 @@ pub mod heap_overflow;
 pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
+// Unconnected Stage 3 substrate; exposed only through the existing
+// doc-hidden `internals` test surface.
+#[doc(hidden)]
+#[allow(dead_code)]
+pub mod segment_route;
 // R1-06 (src review round 1): the fallback-lock-held TLS flag consulted by
 // `heap_core_xthread::overflow`'s `push_with_overflow_retry` and set by
 // `global::fallback::LockGuard` — see that file's module doc for why it
