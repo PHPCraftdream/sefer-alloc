@@ -45,6 +45,18 @@ impl AllocCore {
         Some((snapshot.remote_head, snapshot.large_state))
     }
 
+    /// Test-only snapshot through the table's canonical Primordial base.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn terminal_primordial_snapshot_for_test(&self) -> Option<(u32, u64)> {
+        let base = self.table.base_at(0);
+        if base.is_null() {
+            return None;
+        }
+        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        Some((snapshot.remote_head, snapshot.large_state))
+    }
+
     /// Test-only boundary oracle for the no-wrap cache-generation policy.
     #[cfg(feature = "bench-internals")]
     #[doc(hidden)]

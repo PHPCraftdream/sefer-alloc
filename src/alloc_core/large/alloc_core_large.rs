@@ -10,6 +10,11 @@ use crate::alloc_core::numa;
 #[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
+#[cfg(any(
+    feature = "numa-aware",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread"
+))]
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{align_up, SegmentHeader};
 

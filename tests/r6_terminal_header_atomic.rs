@@ -24,9 +24,8 @@ fn terminal_words_are_outside_the_copy_header_and_before_the_page_map() {
 #[test]
 fn fresh_small_and_large_have_independent_atomic_snapshots() {
     let mut core = AllocCore::new().expect("primordial bootstrap");
-    let primordial = core.segment_bases().next().expect("primordial segment");
     assert_eq!(
-        core.terminal_header_snapshot_for_test(primordial),
+        core.terminal_primordial_snapshot_for_test(),
         Some((u32::MAX, 0))
     );
     let small = Layout::from_size_align(64, 8).unwrap();

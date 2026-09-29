@@ -62,9 +62,9 @@ const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
 const _: () = assert!(Layout::page_map_off() == PAGE);
 const _: () = assert!(TERMINAL_WORDS_OFF >= size_of::<SegmentHeader>());
 const _: () =
-    assert!(REMOTE_HEAD_OFF % core::mem::align_of::<core::sync::atomic::AtomicU32>() == 0);
+    assert!(REMOTE_HEAD_OFF.is_multiple_of(core::mem::align_of::<core::sync::atomic::AtomicU32>()));
 const _: () =
-    assert!(LARGE_STATE_OFF % core::mem::align_of::<core::sync::atomic::AtomicU64>() == 0);
+    assert!(LARGE_STATE_OFF.is_multiple_of(core::mem::align_of::<core::sync::atomic::AtomicU64>()));
 const _: () = assert!(REMOTE_HEAD_OFF + size_of::<u32>() <= LARGE_STATE_OFF);
 const _: () = assert!(LARGE_STATE_OFF + size_of::<u64>() <= Layout::page_map_off());
 // Phase B: `NO_NODE_RAW` (declared here, in safe code) and `numa::NO_NODE`
