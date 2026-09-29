@@ -68,6 +68,7 @@ pub(crate) mod directory_stats;
 #[doc(hidden)]
 pub mod remote_free_ring;
 /// Stage 2A: terminal-published, per-segment intrusive small inbox.
+#[allow(dead_code)] // Integrated into production routing in the next stage.
 pub(crate) mod remote_inbox;
 /// The per-segment geometry tables (`SegmentLayout`), moved unchanged.
 pub(crate) mod segment_layout;

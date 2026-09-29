@@ -109,5 +109,5 @@ impl<'a> LargeReservationState<'a> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/r6_terminal_large_state.rs"]
+#[path = "../../../tests/support/r6_terminal_large_state.rs"]
 mod tests;

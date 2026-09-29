@@ -5,7 +5,7 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::claim::{push_back_after_oom, HeapRegistry};
+use super::claim::push_back_after_oom;
 use crate::registry::bootstrap::{ensure, MAX_HEAPS};
 #[cfg(feature = "alloc-stats")]
 use crate::registry::heap_slot::HeapSlot;
