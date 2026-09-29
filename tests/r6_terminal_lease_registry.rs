@@ -1,4 +1,4 @@
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use sefer_alloc::registry::heap_registry::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
 use sefer_alloc::registry::heap_slot::{STATE_EMPTY, STATE_FREE, STATE_LIVE, STATE_MAINTENANCE};
