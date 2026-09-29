@@ -664,16 +664,16 @@ hard compile error in every configuration:
 | [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` / the tagged free-list head (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE` claim (plain and config-plumbed), OOM push-back, and the config-conflict rollback guard — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell` | `alloc-global` |
-| [`src/registry/heap_registry/stack.rs`](src/registry/heap_registry/stack.rs) | The `free_slots` tagged Treiber stack: `Registry`'s `StackStorage` impls (the real `unsafe impl` and its `--cfg loom` mirror, `bootstrap::loom_shim`) plus the `pop_free_slot`/`push_free_slot`/`bump_count` primitives | `alloc-global` |
 | [`src/registry/heap_registry/counters.rs`](src/registry/heap_registry/counters.rs) | Registry diagnostics: the config-conflict counter, the process-wide hit-total aggregators over slot-resident W3 counters, the minted-slot high-water mark, and the UBFIX-5 test-only introspection hooks | `alloc-global` |
+| [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries, typed sidecars and sorted pointer arrays; shard-lock pin acquisition prevents load/increment UAF. Unconnected substrate. | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
 + primordial-lazy-commit + class-aware-dirty`) the active internal seams are
-**ten** — `alloc_core::platform::{os, node, sidecar, dirty_by_class}` plus
+**eleven** — `alloc_core::platform::{os, node, sidecar, dirty_by_class}` plus
 `global::{sefer_alloc, tls_heap, fallback}` plus
-`registry::{bootstrap, heap_slot, heap_registry}`. `alloc_core::platform::sidecar`
+`registry::{bootstrap, heap_slot, heap_registry, segment_route}`. `alloc_core::platform::sidecar`
 (R14-9, task #294) is active because `alloc-global` pulls in `alloc-core`;
 `alloc_core::platform::dirty_by_class` is active because `production` itself enables
 `class-aware-dirty` (R13-9, task #279). `alloc-xthread`, `alloc-decommit`,
@@ -737,7 +737,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **24** tier-1 module-level seams (18 in
+That's the full list (both tiers): **25** tier-1 module-level seams (19 in
 `src/`, 6 in `crates/`) plus **105** tier-2 item-scoped allows across **35**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is

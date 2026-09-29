@@ -245,10 +245,12 @@
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
-//      * `registry::heap_registry::stack` — the `free_slots` tagged Treiber
-//                             stack (`StackStorage` impls). (under `alloc-global`)
 //      * `registry::heap_registry::counters` — registry diagnostics/aggregators
 //                             over slot-resident counters. (under `alloc-global`)
+//      * `registry::segment_route::directory` — System-backed route entry,
+//                             sidecar and sorted pointer-array allocation/
+//                             reclamation; lookup pinning under shard lock.
+//                             Unconnected substrate. (under `alloc-global`)
 //
 //    Optional `numa-aware` path: no new unsafe seams — `alloc_core::platform::numa`
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`
