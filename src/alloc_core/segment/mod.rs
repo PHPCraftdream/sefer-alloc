@@ -67,6 +67,8 @@ pub(crate) mod directory_stats;
 /// isolated ring unit test. Nothing here is stable public API.
 #[doc(hidden)]
 pub mod remote_free_ring;
+/// Stage 2A: terminal-published, per-segment intrusive small inbox.
+pub(crate) mod remote_inbox;
 /// The per-segment geometry tables (`SegmentLayout`), moved unchanged.
 pub(crate) mod segment_layout;
 /// The global registry of all live segments, self-hosted in the primordial
