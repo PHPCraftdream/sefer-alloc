@@ -70,6 +70,9 @@ pub mod remote_free_ring;
 /// Stage 2A: terminal-published, per-segment intrusive small inbox.
 #[allow(dead_code)] // Integrated into production routing in the next stage.
 pub(crate) mod remote_inbox;
+/// Experimental non-intrusive remote-free ingress; not a production route.
+#[allow(dead_code)]
+pub(crate) mod remote_bitmap;
 /// The per-segment geometry tables (`SegmentLayout`), moved unchanged.
 pub(crate) mod segment_layout;
 /// The global registry of all live segments, self-hosted in the primordial
