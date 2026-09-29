@@ -1,8 +1,35 @@
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
-use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind};
+use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, RoutePin};
 
 const SEGMENT: usize = 4 * 1024 * 1024;
+
+#[test]
+fn terminal_publication_signatures_consume_the_pin() {
+    let _: fn(RoutePin, u32) -> bool = RoutePin::publish_small;
+    let _: fn(RoutePin) -> bool = RoutePin::publish_large;
+}
+
+#[test]
+fn negative_control_cached_cannot_publish_before_owner_reset() {
+    let directory = RouteDirectory::new();
+    // Routing-only key; no reservation byte is accessed in this model.
+    let root = core::ptr::without_provenance_mut::<u8>(SEGMENT);
+    let route = directory
+        .register(root, 1, root, 1, RouteKind::Large)
+        .unwrap();
+    assert!(directory.lookup(root).unwrap().publish_large());
+    let generation = route.claim_large_pending().unwrap();
+    assert!(route.cache_large_consumed(generation));
+    let next = route.begin_large_reuse().unwrap();
+    assert!(!directory.lookup(root).unwrap().publish_large());
+    // This model checks the phase gate; production owner reset is out of scope.
+    assert!(route.finish_large_reuse_after_reset(next));
+    assert!(directory.lookup(root).unwrap().publish_large());
+    let second = route.claim_large_pending().unwrap();
+    assert!(route.cache_large_consumed(second));
+    assert!(route.release_cached_large(second));
+}
 
 #[test]
 fn all_owner_and_two_pin_release_orders_reclaim_slot() {

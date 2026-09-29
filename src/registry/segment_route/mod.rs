@@ -11,19 +11,21 @@
 mod directory;
 mod error;
 mod kind;
-mod large_publisher;
 mod large_state;
 mod pin;
 mod registration;
-mod small_publisher;
+mod route_cut;
+mod route_record;
+mod route_scan;
 mod small_sidecar;
 
 pub use directory::RouteDirectory;
 pub use error::RouteError;
 pub use kind::RouteKind;
-pub use large_publisher::LargePublisher;
 pub use large_state::LargeState;
 pub use pin::RoutePin;
 pub use registration::RouteRegistration;
-pub use small_publisher::SmallPublisher;
+pub use route_cut::RouteCut;
+pub use route_record::RouteRecord;
+pub use route_scan::RouteScan;
 pub use small_sidecar::SmallSidecar;

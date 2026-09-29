@@ -22,12 +22,17 @@ fn system_backed_route_metadata_does_not_reenter_global_allocator() {
         .unwrap();
     assert!(route.small_sidecar().unwrap().issue(0, 0));
     let pin = directory.lookup(root).unwrap();
-    assert!(pin.small_publisher().unwrap().publish(0));
-    assert_eq!(route.small_sidecar().unwrap().cut_word(0), Some(1));
+    assert_eq!(pin.owner(), 23);
+    assert!(pin.publish_small(0));
+    let mut scan = route.small_sidecar().unwrap().scan(16).unwrap();
+    let mut cut = scan.next_cut().unwrap();
+    assert_eq!(cut.pop().unwrap().offset, 0);
+    assert!(cut.pop().is_none());
+    drop(cut);
+    assert!(scan.next_cut().is_none());
+    drop(scan);
     drop(route);
     assert!(directory.lookup(root).is_none());
-    assert_eq!(pin.owner(), 23);
-    drop(pin);
     // SAFETY: route and pin are gone; no directory entry retains a usable
     // reservation reference, and this is the original System layout.
     unsafe { System.dealloc(root, layout) };

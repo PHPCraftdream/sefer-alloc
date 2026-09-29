@@ -27,24 +27,30 @@ impl RouteRegistration<'_> {
         self.entry.large_state()
     }
 
-    pub fn activate_large(&self) -> bool {
-        self.large_state().is_some_and(LargeState::activate)
+    pub fn claim_large_pending(&self) -> Option<u64> {
+        self.large_state()?.claim_pending()
     }
 
-    pub fn claim_large(&self) -> bool {
-        self.large_state().is_some_and(LargeState::claim)
+    pub fn cache_large_consumed(&self, generation: u64) -> bool {
+        self.large_state()
+            .is_some_and(|state| state.cache_consumed(generation))
     }
 
-    pub fn cache_large(&self) -> bool {
-        self.large_state().is_some_and(LargeState::cache)
+    /// Leaves the reservation INITIALIZING until owner reset completes.
+    pub fn begin_large_reuse(&self) -> Option<u64> {
+        self.large_state()?.begin_reuse()
     }
 
-    pub fn reissue_large(&self) -> bool {
-        self.large_state().is_some_and(LargeState::reissue)
+    /// Owner-only. Caller guarantees layout/table reset is complete; this
+    /// substrate changes only the sidecar phase, not reservation bytes.
+    pub fn finish_large_reuse_after_reset(&self, generation: u64) -> bool {
+        self.large_state()
+            .is_some_and(|state| state.finish_reuse(generation))
     }
 
-    pub fn retire_cached_large(&self) -> bool {
-        self.large_state().is_some_and(LargeState::retire_cached)
+    pub fn release_cached_large(&self, generation: u64) -> bool {
+        self.large_state()
+            .is_some_and(|state| state.release_cached(generation))
     }
 }
 

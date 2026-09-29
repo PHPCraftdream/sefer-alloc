@@ -3,9 +3,20 @@
 use std::sync::mpsc;
 use std::thread;
 
-use sefer_alloc::registry::segment_route::{RouteDirectory, RouteError, RouteKind};
+use sefer_alloc::registry::segment_route::{
+    RouteDirectory, RouteError, RouteKind, RouteRecord, RouteRegistration,
+};
 
 const SEGMENT: usize = 4 * 1024 * 1024;
+
+fn cut_one(route: &RouteRegistration<'_>) -> RouteRecord {
+    let mut scan = route.small_sidecar().unwrap().scan(16).unwrap();
+    let mut cut = scan.next_cut().unwrap();
+    let record = cut.pop().unwrap();
+    assert!(cut.pop().is_none());
+    assert!(scan.next_cut().is_none());
+    record
+}
 
 #[test]
 fn duplicate_key_and_same_address_reuse_preserve_old_pin_identity() {
@@ -52,6 +63,7 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
         .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
     assert!(route.small_sidecar().unwrap().issue(0, 0));
+    let old_pin = directory.lookup(root).unwrap();
     let old_sidecar_addr = core::ptr::from_ref(route.small_sidecar().unwrap()).addr();
     let old_incarnation = route.incarnation();
     let (published_tx, published_rx) = mpsc::channel();
@@ -63,13 +75,18 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
             let pin = directory_ref
                 .lookup(core::ptr::without_provenance_mut(addr))
                 .unwrap();
-            assert!(pin.small_publisher().unwrap().publish(0));
+            assert!(pin.publish_small(0));
             published_tx.send(()).unwrap();
             resume_rx.recv().unwrap();
-            drop(pin);
         });
         published_rx.recv().unwrap();
-        assert_eq!(route.small_sidecar().unwrap().cut_word(0), Some(1));
+        assert_eq!(
+            cut_one(&route),
+            RouteRecord {
+                offset: 0,
+                class: 0
+            }
+        );
         drop(route);
         let replacement = directory
             .register(root, SEGMENT, root, 2, RouteKind::Primordial)
@@ -82,6 +99,7 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
         assert_eq!(directory.lookup(root).unwrap().owner(), 2);
         drop(replacement);
         drop(reservation);
+        drop(old_pin);
         resume_tx.send(()).unwrap();
     });
 }
@@ -96,13 +114,17 @@ fn published_pin_cleanup_survives_reservation_unmap() {
         .unwrap();
     assert!(route.small_sidecar().unwrap().issue(0, 0));
     let pin = directory.lookup(root).unwrap();
-    assert_eq!(route.small_sidecar().unwrap().class_at(0), Some(0));
-    assert!(pin.small_publisher().unwrap().publish(0));
-    assert_eq!(route.small_sidecar().unwrap().cut_word(0), Some(1));
+    assert!(pin.publish_small(0));
+    assert_eq!(
+        cut_one(&route),
+        RouteRecord {
+            offset: 0,
+            class: 0
+        }
+    );
     drop(route);
     drop(reservation);
-    // After terminal publish the producer only releases the sidecar pin.
-    drop(pin);
+    // Consuming publication already released the producer pin.
 }
 
 #[test]
@@ -119,20 +141,24 @@ fn large_route_key_and_invalid_span() {
         .lookup(core::ptr::without_provenance_mut(later.addr()))
         .unwrap();
     assert_eq!(pin.kind(), RouteKind::Large);
-    assert!(route.activate_large());
     assert_eq!(route.large_state().unwrap().generation(), 1);
-    assert!(pin.large_publisher().unwrap().publish());
-    assert!(route.claim_large());
-    assert!(route.cache_large());
-    assert!(route.reissue_large());
+    assert!(pin.publish_large());
+    let first_generation = route.claim_large_pending().unwrap();
+    assert_eq!(first_generation, 1);
+    assert!(route.cache_large_consumed(first_generation));
+    let next_generation = route.begin_large_reuse().unwrap();
+    assert_eq!(next_generation, 2);
+    assert!(!directory.lookup(later).unwrap().publish_large());
+    assert!(!route.finish_large_reuse_after_reset(first_generation));
+    // Actual owner layout/table reset belongs to the later integration.
+    assert!(route.finish_large_reuse_after_reset(next_generation));
     assert_eq!(route.large_state().unwrap().generation(), 2);
-    drop(pin);
     let next = directory.lookup(later).unwrap();
-    assert!(next.large_publisher().unwrap().publish());
-    drop(next);
-    assert!(route.claim_large());
-    assert!(route.cache_large());
-    assert!(route.retire_cached_large());
+    assert!(next.publish_large());
+    let second_generation = route.claim_large_pending().unwrap();
+    assert_eq!(second_generation, 2);
+    assert!(route.cache_large_consumed(second_generation));
+    assert!(route.release_cached_large(second_generation));
     drop(route);
     assert!(matches!(
         directory.register(root, 0, root, 3, RouteKind::Small),

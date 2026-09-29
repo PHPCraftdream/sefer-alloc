@@ -1,126 +1,56 @@
+//! Owning word for the existing LargeReservationState transition protocol.
+
 use core::sync::atomic::{AtomicU64, Ordering};
 
-const PHASE_BITS: u64 = 3;
-const MAX_GENERATION: u64 = u64::MAX >> PHASE_BITS;
-const INITIALIZING: u64 = 0;
-const LIVE: u64 = 1;
-const PENDING: u64 = 2;
-const CONSUMING: u64 = 3;
-const CACHED: u64 = 4;
-const RELEASED: u64 = 5;
+use crate::alloc_core::reservation_state::LargeReservationState;
+use crate::alloc_core::segment_header::{large_generation, pack_large_state, LargePhase};
 
-/// Per-reservation Large phase/generation, separate from reservation bytes.
-/// Owner transitions: INITIALIZING -> LIVE(1), PENDING -> CONSUMING ->
-/// CACHED -> LIVE(g+1) or RELEASED. Producer: LIVE(g) -> PENDING(g).
-/// Only LIVE/PENDING/CONSUMING carry an external allocation credit; the
-/// owner ledger and cache/release ordering are not wired by this substrate.
 pub struct LargeState {
     word: AtomicU64,
 }
 
 impl LargeState {
+    /// Fresh Large reservation, before first user-visible issue.
     pub const fn new() -> Self {
         Self {
-            word: AtomicU64::new(INITIALIZING),
+            word: AtomicU64::new(pack_large_state(LargePhase::Live, 1)),
         }
     }
 
-    pub(super) fn activate(&self) -> bool {
-        self.word
-            .compare_exchange(
-                INITIALIZING,
-                Self::pack(1, LIVE),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_ok()
+    fn state(&self) -> LargeReservationState<'_> {
+        LargeReservationState::new(&self.word)
     }
 
-    /// Producer terminal CAS. No descriptor or reservation access follows.
-    pub(super) fn publish(&self) -> bool {
-        let current = self.word.load(Ordering::Acquire);
-        if Self::phase(current) != LIVE {
-            return false;
-        }
-        self.word
-            .compare_exchange(
-                current,
-                (current & !7) | PENDING,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_ok()
+    /// Producer terminal LIVE(g) -> PENDING(g) CAS.
+    pub(super) fn publish_pending(&self) -> bool {
+        let generation = self.generation();
+        self.state().publish_pending(generation)
     }
 
-    pub(super) fn claim(&self) -> bool {
-        let current = self.word.load(Ordering::Acquire);
-        Self::phase(current) == PENDING
-            && self
-                .word
-                .compare_exchange(
-                    current,
-                    (current & !7) | CONSUMING,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok()
+    pub(super) fn claim_pending(&self) -> Option<u64> {
+        self.state().claim_pending()
     }
 
-    pub(super) fn cache(&self) -> bool {
-        let current = self.word.load(Ordering::Acquire);
-        Self::phase(current) == CONSUMING
-            && self
-                .word
-                .compare_exchange(
-                    current,
-                    (current & !7) | CACHED,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok()
+    pub(super) fn cache_consumed(&self, generation: u64) -> bool {
+        self.state().cache_consumed(generation)
     }
 
-    /// Owner-only reissue. Exhaustion leaves the entry cached, never aliased.
-    pub(super) fn reissue(&self) -> bool {
-        let current = self.word.load(Ordering::Acquire);
-        let generation = current >> PHASE_BITS;
-        if Self::phase(current) != CACHED || generation == MAX_GENERATION {
-            return false;
-        }
-        self.word
-            .compare_exchange(
-                current,
-                Self::pack(generation + 1, LIVE),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_ok()
+    /// CACHED(g) -> INITIALIZING(g+1), without wrap.
+    pub(super) fn begin_reuse(&self) -> Option<u64> {
+        self.state().begin_reuse()
     }
 
-    pub(super) fn retire_cached(&self) -> bool {
-        let current = self.word.load(Ordering::Acquire);
-        Self::phase(current) == CACHED
-            && self
-                .word
-                .compare_exchange(
-                    current,
-                    (current & !7) | RELEASED,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok()
+    /// Owner must finish layout/table reset before INITIALIZING -> LIVE.
+    pub(super) fn finish_reuse(&self, generation: u64) -> bool {
+        self.state().finish_reuse(generation)
+    }
+
+    pub(super) fn release_cached(&self, generation: u64) -> bool {
+        self.state().release_cached(generation)
     }
 
     pub fn generation(&self) -> u64 {
-        self.word.load(Ordering::Acquire) >> PHASE_BITS
-    }
-
-    const fn pack(generation: u64, phase: u64) -> u64 {
-        (generation << PHASE_BITS) | phase
-    }
-
-    const fn phase(word: u64) -> u64 {
-        word & 7
+        large_generation(self.word.load(Ordering::Acquire))
     }
 }
 
@@ -129,3 +59,7 @@ impl Default for LargeState {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/r6_route_large_adapter.rs"]
+mod tests;
