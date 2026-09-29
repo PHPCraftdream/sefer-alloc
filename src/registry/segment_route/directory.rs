@@ -16,6 +16,11 @@ use super::{LargeState, RouteError, RouteKind, RoutePin, RouteRegistration, Smal
 
 const SHARDS: usize = 64;
 
+#[cfg(feature = "internals")]
+std::thread_local! {
+    static FAIL_NEXT_REGISTRATION: Cell<bool> = const { Cell::new(false) };
+}
+
 struct Entry {
     key: usize,
     end: usize,
@@ -347,6 +352,12 @@ impl RouteDirectory {
 
     #[cfg(feature = "internals")]
     #[doc(hidden)]
+    pub fn fail_next_registration_for_test() {
+        let _ = FAIL_NEXT_REGISTRATION.try_with(|flag| flag.set(true));
+    }
+
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
     pub fn with_initial_incarnation_for_test(value: u64) -> Self {
         let directory = Self::new();
         directory.next_incarnation.store(value, Ordering::Relaxed);
@@ -373,6 +384,13 @@ impl RouteDirectory {
         owner: usize,
         kind: RouteKind,
     ) -> Result<RouteRegistration<'_>, RouteError> {
+        #[cfg(feature = "internals")]
+        if FAIL_NEXT_REGISTRATION
+            .try_with(|flag| flag.replace(false))
+            .unwrap_or(false)
+        {
+            return Err(RouteError::OutOfMemory);
+        }
         let start = root.addr();
         let route_addr = route_ptr.addr();
         let end = start.checked_add(len).ok_or(RouteError::InvalidSpan)?;

@@ -14,7 +14,7 @@ use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
 #[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::segment_header::SegmentMeta;
-use crate::alloc_core::segment_header::{align_up, SegmentHeader};
+use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};
 
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
@@ -475,7 +475,10 @@ impl AllocCore {
                 // are already written above (F12's targeted writes + R34-14's
                 // owner/deferred resets), but the slot never becomes visible
                 // in that failure branch, so there is nothing to unwind.
-                let id = match self.table.register(slot.base) {
+                let id = match self
+                    .table
+                    .register(slot.base, slot.usable_size, SegmentKind::Large)
+                {
                     Some(id) => id,
                     None => {
                         if !LargeReservationState::new(terminal_meta.large_state_atomic())
@@ -645,7 +648,7 @@ impl AllocCore {
         // no-panic: register returns None if the segment table is full (too many
         // live large allocations). We release the reservation and return null
         // (graceful OOM) rather than panicking.
-        let id = match self.table.register(base) {
+        let id = match self.table.register(base, usable, SegmentKind::Large) {
             Some(id) => id,
             None => {
                 // Release the reservation we own.

@@ -1,4 +1,7 @@
+#[cfg(feature = "alloc-global")]
+use super::route_slots::RouteSlots;
 use super::*;
+use crate::alloc_core::segment_header::SegmentKind;
 use core::mem::size_of;
 
 #[doc(hidden)]
@@ -171,6 +174,8 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 /// reservation for those segments has been released. [`bases`](Self::bases)
 /// filters them out; [`register`] reuses them before appending.
 pub(crate) struct SegmentTable {
+    #[cfg(feature = "alloc-global")]
+    routes: Option<RouteSlots>,
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
@@ -240,6 +245,8 @@ impl SegmentTable {
         free_top: *mut u32,
     ) -> Self {
         Self {
+            #[cfg(feature = "alloc-global")]
+            routes: None,
             slots,
             // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
             // slots null). It only ever fills from a won `hash_contains` probe.
@@ -251,10 +258,30 @@ impl SegmentTable {
         }
     }
 
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn attach_owner(&mut self, owner: u32, primordial: *mut u8) -> Option<()> {
+        if self.routes.is_some() || self.count != 1 || self.base_at(0) != primordial {
+            return None;
+        }
+        self.routes = Some(RouteSlots::new(
+            owner,
+            primordial,
+            crate::alloc_core::os::SEGMENT,
+        )?);
+        Some(())
+    }
+
+    pub(crate) fn close_routes(&mut self) {
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &mut self.routes {
+            routes.close_all();
+        }
+    }
+
     /// Register a new segment base. Returns its assigned `segment_id` (the
-    /// index it was placed at), or `None` if the table is full (all slots are
-    /// live and count == MAX_SEGMENTS — only possible without `alloc-decommit`
-    /// or under an extreme large-allocation storm).
+    /// index it was placed at), or `None` if the table is full or routed
+    /// registration fails. In either failure case, no table slot is changed
+    /// and the caller still owns the reservation for rollback.
     ///
     /// **O(1) slot-recycle (task #135, Part 1 — supersedes the task #60 linear
     /// scan):** pops a recyclable slot index off the free-list stack (O(1)) if
@@ -267,7 +294,20 @@ impl SegmentTable {
     ///
     /// no-panic (Phase 11 GlobalAlloc face): returns `None` so the caller
     /// returns null (graceful OOM) rather than aborting.
-    pub(crate) fn register(&mut self, base: *mut u8) -> Option<u32> {
+    pub(crate) fn register(&mut self, base: *mut u8, len: usize, kind: SegmentKind) -> Option<u32> {
+        let has_free = crate::alloc_core::node::Node::read_u32(self.free_top) != 0;
+        if !has_free && self.count as usize >= MAX_SEGMENTS {
+            return None;
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = (len, kind);
+        #[cfg(feature = "alloc-global")]
+        let route = if let Some(routes) = &mut self.routes {
+            let needed = self.count as usize + usize::from(!has_free);
+            Some(routes.prepare(needed, base, len, kind)?)
+        } else {
+            None
+        };
         // O(1): pop a recycled slot index, if the free-list has one.
         if let Some(i) = self.free_list_pop() {
             let slot = Self::slot_ptr(self.slots, i as usize);
@@ -276,6 +316,13 @@ impl SegmentTable {
             crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
             // OPT-B: also insert into the hash table so `contains_base` is O(1).
             self.hash_insert(base);
+            #[cfg(feature = "alloc-global")]
+            if let Some(route) = route {
+                self.routes
+                    .as_mut()
+                    .unwrap_or_else(|| std::process::abort())
+                    .put(i as usize, route);
+            }
             return Some(i);
         }
         // No recyclable slot — append.
@@ -288,6 +335,13 @@ impl SegmentTable {
         self.count += 1;
         // OPT-B: also insert into the hash table so `contains_base` is O(1).
         self.hash_insert(base);
+        #[cfg(feature = "alloc-global")]
+        if let Some(route) = route {
+            self.routes
+                .as_mut()
+                .unwrap_or_else(|| std::process::abort())
+                .put(idx, route);
+        }
         Some(idx as u32)
     }
 
@@ -324,25 +378,38 @@ impl SegmentTable {
     /// here (this is the pre-decommit/pre-release call site — see the
     /// contract above), so the read is safe.
     ///
-    /// Defensive: if the slot at `segment_id` does not actually hold `base`
-    /// (a caller bug, or a stale/corrupt `segment_id`), this is a no-op — the
-    /// same defensive posture the old linear scan had for "base not found".
+    /// A standalone core defensively no-ops on a mismatched `segment_id`.
+    /// A routed heap scans for the actual slot instead: returning without
+    /// removing its route could let the caller unmap while it stays published.
+    /// If no slot owns the base, it aborts before the caller can release it.
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
         allow(dead_code)
     )]
     pub(crate) fn unregister(&mut self, base: *mut u8) {
         let id = crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base);
-        if id as usize >= self.count as usize {
-            // Defensive: out-of-range id (corrupt header / caller bug). No-op.
+        let slot_id = if self.base_at(id as usize) == base {
+            id as usize
+        } else {
+            // Standalone cores retain the existing defensive no-op. A routed
+            // heap must resolve the true slot before its caller can unmap.
+            #[cfg(feature = "alloc-global")]
+            {
+                if self.routes.is_some() {
+                    (0..self.count as usize)
+                        .find(|&i| self.base_at(i) == base)
+                        .unwrap_or_else(|| std::process::abort())
+                } else {
+                    return;
+                }
+            }
+            #[cfg(not(feature = "alloc-global"))]
             return;
-        }
-        let slot = Self::slot_ptr(self.slots, id as usize);
-        let current = crate::alloc_core::node::Node::read_struct::<*mut u8>(slot);
-        if current != base {
-            // Defensive: the slot at `id` does not hold `base` — no-op rather
-            // than corrupt the table.
-            return;
+        };
+        let slot = Self::slot_ptr(self.slots, slot_id);
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &mut self.routes {
+            routes.remove(slot_id);
         }
         // NULL the slot — the OS reservation is NOT released here.
         crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
@@ -357,11 +424,11 @@ impl SegmentTable {
         // is structurally complete.
         self.own_cache_clear(base);
         // Task #135: push the just-vacated index onto the free-list so a
-        // future `register` can reuse it in O(1). Guarded by `current != base`
-        // above (only a slot that WAS non-NULL and held `base` reaches here),
+        // future `register` can reuse it in O(1). Only a slot that held
+        // `base` reaches here,
         // so this can never push the same index twice for a single logical
         // unregister/recycle (the free-list-duplicate invariant).
-        self.free_list_push(id);
+        self.free_list_push(slot_id as u32);
     }
 
     /// Mark the slot for `base` as recyclable (NULL) and release the segment's
@@ -500,6 +567,10 @@ impl SegmentTable {
             return;
         };
         let slot = Self::slot_ptr(self.slots, slot_id);
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &mut self.routes {
+            routes.remove(slot_id);
+        }
         // OPT-B: remove the hash entry (backward-shift deletion) BEFORE
         // releasing the OS reservation.
         self.hash_remove(base);

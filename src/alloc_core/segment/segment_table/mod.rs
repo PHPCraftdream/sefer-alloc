@@ -54,6 +54,10 @@ mod harness;
 #[path = "hash.rs"]
 mod hash;
 
+#[cfg(feature = "alloc-global")]
+#[path = "route_slots.rs"]
+mod route_slots;
+
 #[path = "segment_table_impl.rs"]
 mod segment_table_impl;
 pub use segment_table_impl::*;
