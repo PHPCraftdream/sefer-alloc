@@ -49,3 +49,7 @@ mod layout_asserts;
 #[path = "segment_header_impl.rs"]
 mod segment_header_impl;
 pub use segment_header_impl::*;
+
+#[path = "terminal_words.rs"]
+mod terminal_words;
+pub(crate) use terminal_words::*;

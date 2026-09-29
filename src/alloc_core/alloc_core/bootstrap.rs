@@ -315,6 +315,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     hdr.kind = SegmentKind::Primordial;
     hdr.bump = meta_end;
     meta.write_header(hdr);
+    meta.init_small_terminal();
 
     // B1 (R7 Workstream B) / R7-B6 (primordial lazy commit): stamp the
     // committed-payload frontier, mirroring `reserve_small_segment`'s

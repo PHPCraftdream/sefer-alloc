@@ -7,6 +7,7 @@
 //! module is `alloc-decommit`-gated because every method here is.
 
 use crate::alloc_core::os;
+use crate::alloc_core::segment_header::SegmentMeta;
 
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
 
@@ -58,6 +59,14 @@ const DECAY_CATCHUP_MAX_STEPS: u32 = 8;
 type CombinedSlot = usize;
 
 impl AllocCore {
+    /// Test-only snapshot of the oldest cached Large reservation.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn terminal_cached_large_state_for_test(&self) -> Option<u64> {
+        let idx = self.oldest_occupied_slot()?;
+        let slot = self.large_cache_slot_get(idx)?;
+        Some(SegmentMeta::new(slot.base).terminal_snapshot().large_state)
+    }
     /// Total addressable slots in the combined base+extension index space:
     /// `LARGE_CACHE_SLOTS` (8) when the extension is not materialised (or
     /// the feature is off), `LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS`
@@ -666,6 +675,7 @@ impl AllocCore {
             // Release the OS reservation. The slot was unregistered from the
             // table on deposit (same as `try_evict_to_fit`), so we release
             // directly without touching the table.
+            SegmentMeta::new(victim.base).mark_large_released();
             os::release_segment(victim.reservation, victim.reservation_len);
             released += victim.usable_size;
         }
@@ -852,6 +862,7 @@ impl AllocCore {
         self.large_cache_used_bytes = self
             .large_cache_used_bytes
             .saturating_sub(victim.usable_size);
+        SegmentMeta::new(victim.base).mark_large_released();
         os::release_segment(victim.reservation, victim.reservation_len);
         true
     }
