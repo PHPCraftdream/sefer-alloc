@@ -1,5 +1,4 @@
-//! `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE`
-//! claim (plain and config-plumbed) and OOM push-back.
+//! Slot claim, maintenance lease, recycle, and failed-init rollback.
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented registry seam (the pointer handoff
@@ -13,14 +12,17 @@
 // carries a `// SAFETY:` proof.
 #![allow(unsafe_code)]
 
+use core::marker::PhantomData;
 use core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
-use super::stack::{bump_count, pop_free_slot, push_free_slot};
+use super::stack::{bump_count, scan_claimable_slot, scan_free_slot};
 use crate::registry::bootstrap::{ensure, Registry, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
-use crate::registry::heap_slot::{HeapSlot, STATE_FREE, STATE_LIVE};
+use crate::registry::heap_slot::{
+    HeapSlot, STATE_EMPTY, STATE_FREE, STATE_INITIALIZING, STATE_LIVE, STATE_MAINTENANCE,
+};
 
 /// The global heap slot table. All methods operate on the process-global
 /// [`Registry`] returned by [`ensure`]; the type itself carries no state (it
@@ -30,41 +32,37 @@ use crate::registry::heap_slot::{HeapSlot, STATE_FREE, STATE_LIVE};
 pub struct HeapRegistry;
 
 impl HeapRegistry {
+    /// Acquire one already-materialised FREE heap without allocating chunks.
+    /// A failed CAS, including MAINTENANCE, grants no access.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn try_maintenance() -> Option<MaintenanceLease> {
+        let (index, slot) = scan_free_slot(ensure())?;
+        if slot
+            .cas_state(
+                STATE_FREE,
+                STATE_MAINTENANCE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return None;
+        }
+        Some(MaintenanceLease {
+            index,
+            slot,
+            _not_send: PhantomData,
+        })
+    }
+
     /// Claim a free slot and return a `*mut HeapCore` into it.
     ///
-    /// Tries the `free_slots` stack first (a recycled slot); on empty, mints
-    /// a fresh slot by bumping `count`. Then CASes the slot `FREE → LIVE`,
-    /// bumps its `generation`, and (lazily) materialises the `HeapCore` in
-    /// the slot's `UnsafeCell` if this slot has never been materialised
-    /// before. Returns `null` if `count` has reached `MAX_HEAPS` AND the free
-    /// stack is empty (registry exhaustion — the caller, 12.3, falls back to
-    /// the primordial heap), OR if materialisation itself fails (OOM on the
-    /// slot's first claim — see the M-5 note below).
-    ///
-    /// **M-5 (UBFIX-5):** the materialisation gate is
-    /// `!slot.initialised.load(Acquire)`, NOT `new_gen == 1`. `generation` is
-    /// bumped unconditionally by every successful `FREE → LIVE` CAS,
-    /// including a claim that hits this exact slot again after a PRIOR claim
-    /// materialised-then-OOM'd on it (see below) — in that scenario `new_gen`
-    /// would already be `> 1` on the retry even though the slot's `HeapCore`
-    /// was never actually written, and the old `new_gen == 1` gate would skip
-    /// materialisation entirely and hand out a pointer to
-    /// `MaybeUninit::uninit()` bytes. `initialised` is the correct gate
-    /// because it is FALSE for exactly "this slot's `HeapCore` has never been
-    /// written", independent of how many times `generation` has been bumped
-    /// (see `HeapSlot::initialised`'s doc comment for the full publish
-    /// argument).
-    ///
-    /// **OOM-on-materialisation push-back:** if `HeapCore::new` returns
-    /// `None` (the OS refused the segment reservation), the slot has already
-    /// been popped off `free_slots` (or freshly minted by `bump_count`) and
-    /// CASed to `LIVE` — without pushing it back onto `free_slots`, it would
-    /// be LIVE forever, never materialised and never claimable again (a
-    /// leaked slot; `MAX_HEAPS` reachable prematurely). The OOM branch CASes
-    /// the slot back `LIVE → FREE` and pushes it onto `free_slots` (the exact
-    /// shape of a normal [`recycle`](Self::recycle)) before returning `null`,
-    /// so a later claim can retry the same slot index once memory pressure
-    /// eases.
+    /// Reuses a materialised FREE slot or claims EMPTY→INITIALIZING, then
+    /// publishes OWNED only after construction. Failed construction rolls
+    /// back to EMPTY; a later scan can retry it. Returns null on exhaustion
+    /// or construction failure. The pointer is the legacy TLS handoff; stage
+    /// 4 must replace it with a typed owner capability.
     #[must_use]
     pub fn claim() -> *mut HeapCore {
         // No re-claim-time check: a plain `claim` carries no config to
@@ -91,10 +89,7 @@ impl HeapRegistry {
     /// `GlobalAlloc` method must never unwind (R2-08, task #2010 — a former
     /// debug-build `debug_assert!` here did).
     ///
-    /// **OOM-on-materialisation push-back:** identical to `claim`'s — see
-    /// that method's doc comment for the full rationale. On `HeapCore::new_with_config`
-    /// returning `None`, the slot is CASed back to `FREE` and pushed onto
-    /// `free_slots` before returning `null`, so it is not leaked.
+    /// Failed construction rolls INITIALIZING back to EMPTY.
     ///
     /// Only present under `alloc-decommit`.
     #[cfg(feature = "alloc-decommit")]
@@ -174,13 +169,35 @@ impl HeapRegistry {
             // slot array, lazily materialising the owning chunk if needed.
             let slot = reg.slot(idx);
 
-            if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
-                == Err(STATE_LIVE)
-            {
-                continue; // lost the slot race — retry
-            }
+            let observed = slot.state.load(Ordering::Acquire);
+            let first_claim = match observed {
+                STATE_EMPTY => {
+                    if slot
+                        .cas_state(
+                            STATE_EMPTY,
+                            STATE_INITIALIZING,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    true
+                }
+                STATE_FREE => {
+                    if slot
+                        .cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    false
+                }
+                _ => continue,
+            };
             slot.generation.fetch_add(1, Ordering::Release);
-            if !slot.initialised.load(Ordering::Acquire) {
+            if first_claim {
                 let heap_ptr = slot.heap.get();
                 match materialise(idx as u32) {
                     // SAFETY: sole writer, uninitialised slot, first claim.
@@ -209,6 +226,17 @@ impl HeapRegistry {
                 // aggregation readers (`tcache_hits_total`,
                 // `large_cache_hits_total`) pair it with an Acquire load.
                 slot.initialised.store(true, Ordering::Release);
+                if slot
+                    .cas_state(
+                        STATE_INITIALIZING,
+                        STATE_LIVE,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    )
+                    .is_err()
+                {
+                    std::process::abort();
+                }
             } else {
                 // Re-claim of an already-materialised slot. SAFETY: slot is
                 // LIVE and initialised; we are the sole writer (just won the
@@ -242,7 +270,15 @@ impl HeapRegistry {
     /// exhaustion (`count >= MAX_HEAPS` AND free stack empty).
     pub(super) fn pick_slot() -> Option<usize> {
         let reg = ensure();
-        pop_free_slot(reg).or_else(|| bump_count(reg))
+        let hint = reg.reuse_hint.swap(MAX_HEAPS as u32, Ordering::AcqRel) as usize;
+        if hint < (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS)
+            && reg.slot_if_materialised(hint).is_some()
+        {
+            return Some(hint);
+        }
+        scan_claimable_slot(reg)
+            .map(|(idx, _)| idx)
+            .or_else(|| bump_count(reg))
     }
 
     /// Recycle a live slot back to the free pool. Called by the owning
@@ -288,19 +324,62 @@ impl HeapRegistry {
         // link, which is stored only afterwards, inside `push_free_slot`.
         // Relaxed on failure: the slot was not LIVE (double-recycle or
         // raced); we no-op.
-        if slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)
-            == Err(STATE_FREE)
+        if slot
+            .cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)
+            .is_err()
         {
             // Already FREE — defensive no-op (do not push a free slot twice,
             // which would corrupt the stack).
             return;
         }
 
-        // Push the slot onto the free_slots stack (tagged-Treiber). The push
-        // stores the `next_free` link and then Release-CASes the stack head,
-        // which is what publishes the link; a later claim's Acquire pop of
-        // that head observes it, making this slot available for that claim.
-        push_free_slot(reg, idx as u32);
+        // Hint only; a later claimant still needs a winning Acquire CAS.
+        reg.reuse_hint.store(idx as u32, Ordering::Relaxed);
+    }
+}
+
+/// Non-copyable authority to mutate a FREE heap for one maintenance pass.
+/// Its atomic sidecar is outside the `HeapCore` exclusive-borrow range.
+#[doc(hidden)]
+pub struct MaintenanceLease {
+    index: usize,
+    slot: &'static HeapSlot,
+    _not_send: PhantomData<*mut ()>,
+}
+
+impl MaintenanceLease {
+    /// Stable slot index while this lease is held.
+    pub fn slot_index(&self) -> usize {
+        self.index
+    }
+    /// # Safety
+    /// No legacy raw `HeapCore` alias may be used after recycle, and the
+    /// callback must not access producer-reachable bytes through `&mut`.
+    pub unsafe fn with_core<R>(&mut self, f: impl FnOnce(&mut HeapCore) -> R) -> R {
+        // SAFETY: the FREE→MAINTENANCE CAS won, initialised is true, and the
+        // caller upholds the raw-pointer/remote-sidecar aliasing contract.
+        let core = unsafe { &mut *self.slot.heap.get().cast::<HeapCore>() };
+        f(core)
+    }
+}
+
+impl Drop for MaintenanceLease {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            std::process::abort();
+        }
+        if self
+            .slot
+            .cas_state(
+                STATE_MAINTENANCE,
+                STATE_FREE,
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            std::process::abort();
+        }
     }
 }
 
@@ -381,49 +460,19 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     heap_ref.bind_sidecar_oom_latch(&slot.remote.sidecar_oom_latch);
 }
 
-/// M-5 (UBFIX-5): push a slot back onto `free_slots` after its `HeapCore`
-/// materialisation failed (OOM). Called from `claim`/`claim_with_config`
-/// ONLY on the `HeapCore::new`/`new_with_config` `None` branch — at that
-/// point the slot is `LIVE` (the caller already won the `FREE → LIVE` CAS)
-/// but `heap` was never written and `initialised` was never published, so
-/// this is NOT the general [`HeapRegistry::recycle`](HeapRegistry::recycle)
-/// path (which requires a valid `*mut HeapCore` derived from a completed
-/// claim) — it is the OOM-specific mirror of it, working directly off the
-/// slot reference and index the caller already has in hand.
-///
-/// CASes the slot `LIVE → FREE` (mirrors `recycle`'s CAS — Release on
-/// success, ordering this caller's writes for a later Acquire read of
-/// `state`; the CAS is a state transition only and does NOT publish the
-/// `next_free` link) then pushes it onto `free_slots`, exactly as `recycle`
-/// does — the link is published by the push's own Release CAS on the
-/// `free_slots` stack head, which a later claim's Acquire pop observes.
-/// Without this push-back the slot
-/// would stay `LIVE` forever: never materialised (so every future `claim`
-/// hitting the initialisation branch on the SAME index would see
-/// `initialised == false` and retry `HeapCore::new`, which is a correctness
-/// non-issue) but also never reachable via `pick_slot` again (`free_slots`
-/// never gets it back and `count` already counted it) — a genuine slot leak
-/// under sustained memory pressure, tightening the effective `MAX_HEAPS`
-/// cap with every transient OOM.
-///
-/// The CAS is expected to always succeed: the caller is the slot's sole
-/// writer since winning the `FREE → LIVE` CAS in `claim`/`claim_with_config`,
-/// and no other path can observe this slot as `LIVE` and race a state
-/// transition on it before the caller itself either finishes materialising
-/// or calls this function. We still use a CAS (not a plain store) to mirror
-/// `recycle`'s defensive shape and keep `state`'s only mutator discipline
-/// uniform across the module.
+/// Construction failure: roll INITIALIZING back to EMPTY. The numeric hint
+/// accelerates a retry; the full materialised-slot scan is authoritative.
 pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
-    // Run-5 audit P4-3: the "expected to always succeed" contract documented
-    // above is a debug-asserted invariant, not a discarded value — a future
-    // caller reaching this function with an already-FREE slot would
-    // otherwise silently double-push `idx` onto `free_slots` (compare
-    // `recycle`'s explicit already-FREE no-op). Release behaviour is
-    // unchanged: the push stays unconditional.
-    let cas = slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed);
-    debug_assert!(
-        cas.is_ok(),
-        "push_back_after_oom: slot was not LIVE; pushing it again would double-push"
-    );
-    push_free_slot(reg, idx);
+    if slot
+        .cas_state(
+            STATE_INITIALIZING,
+            STATE_EMPTY,
+            Ordering::Release,
+            Ordering::Relaxed,
+        )
+        .is_err()
+    {
+        std::process::abort();
+    }
+    reg.reuse_hint.store(idx, Ordering::Relaxed);
 }

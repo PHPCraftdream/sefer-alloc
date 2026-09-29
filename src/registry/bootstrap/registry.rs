@@ -30,26 +30,6 @@ use super::loom_shim::OncePtrCell;
 use crate::registry::heap_slot::HeapSlot;
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;
-// CRATE-P7: the `free_slots` stack head. Under a NORMAL/`production` build sefer
-// uses the real `tagged_index_stack::StackHead`. Under `--cfg loom` the crate
-// aliases its atomics to `loom`, so `StackHead::new` is NOT `const`
-// (loom's `AtomicU64::new` has no const ctor) and `static REGISTRY: Registry =
-// Registry::new()` would fail to const-evaluate — the SAME const-static hazard
-// the `OncePtrCell` shim above solves. So under loom we swap in a const-capable,
-// `core`-atomic shim with the identical `new`/`StackStorage`/`StackOps` API
-// `bootstrap` and `heap_registry` use (over the shim's mirrored
-// `StackStorage`/`StackOps` traits — only the `AtomicU64` head must be `core`,
-// not `loom`, for const-ness). This is
-// sound: the real-type loom VERIFICATION of the tagged stack lives in the
-// crate's OWN suite (`crates/tagged-index-stack/tests/loom_aba.rs`, run via
-// `-p tagged-index-stack`); sefer's loom harnesses never exercise `free_slots`
-// contention (the former in-tree `loom_free_slots_aba` model was replaced by
-// that crate suite), so the shim is NEVER on any modeled interleaving — it
-// exists only to keep the const static compiling.
-#[cfg(loom)]
-use super::loom_shim::StackHead;
-#[cfg(not(loom))]
-use tagged_index_stack::StackHead;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one
 /// slot for its heap; `recycle` returns it. 4096 is generous for realistic
@@ -67,8 +47,8 @@ pub const MAX_HEAPS: usize = 4096;
 /// lazily-materialised chunk pointers plus the dynamic atomics that drive
 /// `claim`/`recycle`.
 ///
-/// Small and entirely `Atomic*`-typed (`NUM_CHUNKS` pointers + two more
-/// atomics — 512 + 12 bytes at `NUM_CHUNKS = 64`), so — unlike the pre-chunking
+/// Small and entirely atomic (`NUM_CHUNKS` pointers + three control words),
+/// so — unlike the pre-chunking
 /// `Registry`, which inlined the whole feature-dependent-size slot array and
 /// therefore had to live behind a lazily-heap-allocated `AtomicPtr<Registry>`
 /// — this struct is const-initialisable and lives as a genuine
@@ -90,27 +70,17 @@ pub struct Registry {
     /// unchanged.
     pub(super) chunks: [OncePtrCell<RegistryChunk>; NUM_CHUNKS],
     /// High-water mark of allocated slots (the next unused slot index). A
-    /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
-    /// slot. Capped at `MAX_HEAPS`.
+    /// Claim mints indices with a capped CAS after scanning reusable slots.
     pub(crate) count: AtomicU32,
-    /// The `free_slots` recycler: the ABA-tagged Treiber free-index stack,
-    /// extracted to the `tagged-index-stack` crate (CRATE-P7). Its head is one
-    /// `AtomicU64` packing `(index:16 | tag:48)`; the per-slot next links live
-    /// slot-resident in [`HeapSlot::next_free`] and are bound to the head by
-    /// `Registry`'s own `StackStorage` impl (see `heap_registry`'s
-    /// `StackStorage<16> for Registry` impl and
-    /// `pop_free_slot`/`push_free_slot`). The H-2 empty-transition tag
-    /// preservation and the RAD-1 lazy-link discipline both live inside the
-    /// crate's `StackStorage`/`StackOps` traits now. `INDEX_BITS = 16` holds
-    /// every valid slot index
-    /// (`0..MAX_HEAPS = 4096`) with the empty sentinel `0xFFFF` reserved above
-    /// the cap, leaving the 48-bit ABA tag (the W7a repack). Initialised empty.
-    pub(crate) free_slots: StackHead<16>,
+    /// Rotating start of materialised-slot scans; a hint, never ownership.
+    pub(crate) scan_cursor: AtomicU32,
+    /// Latest recycled/failed-init index. Overwrites are harmless: scans win.
+    pub(crate) reuse_hint: AtomicU32,
 }
 
 impl Registry {
     /// Const-construct an all-`UNINIT` registry: every chunk pointer `null`,
-    /// `count` zero, `free_slots` the empty tagged sentinel.
+    /// `count` and the scan cursor zero.
     ///
     /// Uses the `[const { .. }; N]` inline-const-in-array-repeat-expression
     /// syntax (stable since Rust 1.79, well under this crate's MSRV floor of
@@ -126,7 +96,8 @@ impl Registry {
         Registry {
             chunks: [const { OncePtrCell::new() }; NUM_CHUNKS],
             count: AtomicU32::new(0),
-            free_slots: StackHead::new(),
+            scan_cursor: AtomicU32::new(0),
+            reuse_hint: AtomicU32::new(MAX_HEAPS as u32),
         }
     }
 
@@ -244,13 +215,7 @@ impl Registry {
     /// discipline as [`slot`](Self::slot) / [`slot_or_none`](Self::slot_or_none)
     /// — every caller derives `idx` from a `count`-bounded loop).
     ///
-    /// `alloc-stats`-gated: its sole caller, `walk_initialised_slots`
-    /// (`heap_registry::counters`), only exists under that feature (the
-    /// per-slot counters it aggregates are themselves only ever incremented
-    /// under `alloc-stats` — see that function's own doc comment). Gating
-    /// this method the same way avoids an unused-`pub(crate)`-method dead-code
-    /// lint in any feature configuration without `alloc-stats`.
-    #[cfg(feature = "alloc-stats")]
+    /// Used by stats and lease scans in every registry feature profile.
     #[inline]
     pub(crate) fn slot_if_materialised(&self, idx: usize) -> Option<&'static HeapSlot> {
         debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
@@ -338,7 +303,7 @@ impl Registry {
 }
 
 // `Registry` is shared across threads via `&'static Registry`. All mutable
-// access to its fields goes through atomics (`chunks`, `count`, `free_slots`)
+// access to its fields goes through atomics (`chunks`, `count`, `scan_cursor`)
 // or the slot-level single-writer protocol inside a materialised chunk (see
 // `HeapSlot`'s own `Sync` proof in `heap_slot.rs`). Every field is `Atomic*`,
 // so `Registry` AUTO-derives `Sync`; no `unsafe impl` is needed (task #21 /
@@ -357,7 +322,7 @@ const _: () = {
 //
 // `HeapSlot`'s state/generation fields are `pub(crate)`: safe code OUTSIDE
 // the crate must not be able to mutate the slot state machine or push onto
-// `free_slots`. The integration tests in `tests/` that legitimately need to
+// the state machine. The integration tests in `tests/` that need to
 // OBSERVE slot state/generation (and, in one counterfactual, preset a
 // generation near the u32 boundary) go through these narrow accessors
 // instead. The reads are plain atomic loads — always sound — so they stay
@@ -369,9 +334,7 @@ const _: () = {
 // -------------------------------------------------------------------------
 impl Registry {
     /// Read a slot's `state` atomically (test helper). Materialises the
-    /// slot's chunk if not already materialised (mirrors production `slot()`
-    /// behaviour — a test reading a not-yet-claimed slot's state observes
-    /// `STATE_FREE` from the freshly-materialised, OS-zeroed chunk).
+    /// slot's chunk if not already materialised; an untouched slot is EMPTY.
     #[doc(hidden)]
     #[inline]
     pub fn dbg_slot_state(&self, idx: usize) -> u8 {
