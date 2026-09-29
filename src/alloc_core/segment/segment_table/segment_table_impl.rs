@@ -1,7 +1,7 @@
 #[cfg(feature = "alloc-global")]
 use super::route_slots::RouteSlots;
 use super::*;
-use crate::alloc_core::segment_header::SegmentKind;
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use core::mem::size_of;
 
 #[doc(hidden)]
@@ -276,6 +276,22 @@ impl SegmentTable {
         if let Some(routes) = &mut self.routes {
             routes.close_all();
         }
+    }
+
+    /// Owner-only class publication. Standalone AllocCore has no route.
+    #[inline]
+    pub(crate) fn issue_small(&self, base: *mut u8, offset: u32, class_idx: usize) {
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &self.routes {
+            let class = u8::try_from(class_idx).unwrap_or_else(|_| std::process::abort());
+            let index = SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                std::process::abort();
+            }
+            routes.issue_small(index, base, offset, class);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = (base, offset, class_idx);
     }
 
     /// Register a new segment base. Returns its assigned `segment_id` (the

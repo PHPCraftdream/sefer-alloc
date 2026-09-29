@@ -401,6 +401,7 @@ impl AllocCore {
         // recommit is needed on this path — only `carve_block` writes fresh
         // payload and thus recommits.
         meta.inc_live();
+        self.table.issue_small(segment, head_off, class_idx);
         // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
         // hands a block directly to the caller (it is the non-magazine substrate
         // pop, reachable from `alloc_small`). Under `hardened` (which implies
@@ -519,6 +520,7 @@ impl AllocCore {
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);
+                self.table.issue_small(segment, head_off, class_idx);
                 out[k] = block_ptr;
                 k += 1;
                 head_off = if next.is_null() {
@@ -690,6 +692,8 @@ impl AllocCore {
             }
         }
         let ptr = Node::deref(segment, aligned_bump);
+        self.table
+            .issue_small(segment, aligned_bump as u32, class_idx);
         Some(ptr)
     }
 
@@ -850,7 +854,9 @@ impl AllocCore {
                     prev_page = page;
                 }
             }
-            *slot = Node::deref(segment, off);
+            let ptr = Node::deref(segment, off);
+            self.table.issue_small(segment, off as u32, class_idx);
+            *slot = ptr;
         }
         n
     }

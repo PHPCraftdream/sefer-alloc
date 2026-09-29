@@ -23,6 +23,20 @@ impl RouteRegistration<'_> {
     pub fn small_sidecar(&self) -> Option<&SmallSidecar> {
         self.entry.small_sidecar()
     }
+    /// Owner-only publication; false means this is not a valid Small issue.
+    pub(crate) fn issue_small(&self, offset: u32, class: u8) -> bool {
+        self.small_sidecar()
+            .is_some_and(|sidecar| sidecar.issue(offset, class))
+    }
+
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn class_at_global_address_for_test(address: usize) -> Option<u8> {
+        let key = core::ptr::without_provenance_mut::<u8>(address);
+        let pin = RouteDirectory::global().lookup(key)?;
+        let offset = u32::try_from(address & (crate::alloc_core::os::SEGMENT - 1)).ok()?;
+        pin.entry.small_sidecar()?.class_at_for_test(offset)
+    }
     pub fn large_state(&self) -> Option<&LargeState> {
         self.entry.large_state()
     }
