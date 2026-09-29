@@ -22,6 +22,8 @@
 
 mod alloc_stats;
 mod fallback;
+#[doc(hidden)]
+pub mod reclaimer;
 mod sefer_alloc;
 // `pub` (not private) so the task #129 teardown-ordering test can reach the
 // `#[doc(hidden)]` test hook `tls_heap::dbg_teardown_then_resolve_is_fallback`
