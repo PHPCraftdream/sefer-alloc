@@ -1,6 +1,6 @@
 #![cfg(all(feature = "alloc-global", feature = "batch-api"))]
 
-use std::alloc::{GlobalAlloc, Layout};
+use std::alloc::Layout;
 
 use sefer_alloc::SeferAlloc;
 

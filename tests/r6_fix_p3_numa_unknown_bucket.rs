@@ -42,7 +42,9 @@ fn drive_class_to_idle(core: &mut AllocCore, class: usize, live: &[*mut u8]) {
     // Each existing segment can contain at most SEGMENT / block_size blocks
     // of this class. Exhausting that many per table entry must force a fresh
     // segment; one additional allocation observes that transition.
-    let max_attempts = table_count
+    let table_entries =
+        usize::try_from(table_count).expect("segment table count must fit the platform usize");
+    let max_attempts = table_entries
         .saturating_mul(blocks_per_segment)
         .saturating_add(1);
     let mut fresh_segment = None;
@@ -133,7 +135,8 @@ fn unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket() {
     switch_node(&mut core, overflow_node);
     let mut overflow_live = alloc_n(&mut core, overflow_class, count);
     let overflow_registration = overflow_live.pop().unwrap();
-    let overflow_slot = core.dbg_segment_id_of(overflow_registration) as usize;
+    let overflow_slot = usize::try_from(core.dbg_segment_id_of(overflow_registration))
+        .expect("segment slot id must fit the platform usize");
     // SAFETY: this is a live allocation made with this class's layout.
     unsafe { core.dealloc(overflow_registration, layout_for_class(overflow_class)) };
     let unknown = AllocCore::dbg_directory_node_bitmaps() - 1;
@@ -167,9 +170,12 @@ fn unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket() {
     );
     assert!(core.dbg_find_segment_with_free(overflow_class).is_none());
 
+    let class_count = AllocCore::dbg_small_class_count();
+    let table_entries = usize::try_from(core.dbg_table_count())
+        .expect("segment table count must fit the platform usize");
     for bucket in 0..unknown {
-        let set_bits = (0..core.dbg_small_class_count())
-            .flat_map(|class| (0..core.dbg_table_count()).map(move |slot| (class, slot)))
+        let set_bits = (0..class_count)
+            .flat_map(|class| (0..table_entries).map(move |slot| (class, slot)))
             .filter(|&(class, slot)| {
                 core.dbg_directory_get_bit_bucket(bucket, class, slot) == Some(true)
             })
