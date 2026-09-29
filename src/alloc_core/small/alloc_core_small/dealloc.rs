@@ -18,8 +18,8 @@ use crate::alloc_core::alloc_core::AllocCore;
 
 impl AllocCore {
     /// Deallocate a small block: push it onto its owning segment's class free
-    /// list. `ptr` is the block address; `base` is its segment base (computed
-    /// by the caller via `segment_of`).
+    /// list. `ptr` identifies the block address; `base` is the allocator's
+    /// stored segment root.
     ///
     /// **Double-free guard (M2 — Phase 13.4a):** before pushing, we test the
     /// segment's [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) bit for this
@@ -102,7 +102,10 @@ impl AllocCore {
         if bm.is_free(off) {
             return; // Already on a free list (M2 double-free): no-op.
         }
-        let block_nn = match NonNull::new(ptr) {
+        // The user pointer supplied only the numeric offset. The table-owned
+        // root covers the physical block, including its free-list word even
+        // when the caller's reborrow covered fewer bytes.
+        let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
             Some(nn) => nn,
             None => return,
         };

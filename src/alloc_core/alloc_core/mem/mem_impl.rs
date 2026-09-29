@@ -2,8 +2,8 @@
 //!
 //! Holds `alloc`, `alloc_zeroed`, `dealloc`, and `realloc`, plus two
 //! `alloc-global` without `fastbin` entries that skip work the caller already
-//! did: `alloc_with_class` (size class) and `dealloc_with_base` (base and
-//! `contains_base`). They do not exist under `production`.
+//! did: `alloc_with_class` (size class) and `dealloc_with_base` (base key).
+//! They do not exist under `production`.
 
 use core::alloc::Layout;
 
@@ -20,6 +20,21 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta}
 use crate::alloc_core::size_classes::AllocKind;
 
 impl AllocCore {
+    /// Resolve an address supplied by a caller into this core's stored
+    /// reservation root and a physical block pointer derived from that root.
+    /// The returned block is dereferenceable only to the extent established
+    /// by the allocation/layout contract; membership alone is not enough.
+    #[inline]
+    pub(crate) fn canonical_block_of(&self, ptr: *mut u8) -> Option<(*mut u8, *mut u8)> {
+        if ptr.is_null() {
+            return None;
+        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
+        let block = Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
+        Some((base, block))
+    }
+
     /// Allocate `layout.size()` bytes satisfying `layout.align()`.
     ///
     /// Returns a non-null `*mut u8` on success, or null on OOM. The memory is
@@ -149,11 +164,9 @@ impl AllocCore {
     /// **Phase 13.3 — arithmetic own-thread free.** The hot path is now pure
     /// arithmetic + (at most) one field-specific header byte read, NOT a
     /// full-struct `SegmentHeader::read_at`. Specifically:
-    ///   - `segment_base_of(ptr)` — one mask (already the case).
-    ///   - `self.table.contains_base(base)` — the foreign-pointer guard (this
-    ///     is the load-bearing defence-in-depth check, NOT the `magic` word:
-    ///     a foreign pointer's computed base is simply not in our registry,
-    ///     so we never touch its bytes).
+    ///   - `segment_base_of_ptr(ptr)` — an address key, never dereferenced.
+    ///   - `self.table.canonical_base_of(key)` — the foreign-pointer guard
+    ///     and allocator-owned metadata root in one lookup.
     ///   - `SegmentHeader::kind_at(base)` — ONE byte field read (via
     ///     `offset_of!`) to distinguish Large from Small/Primordial. This is
     ///     the minimum read necessary: Large blocks are freed by marking the
@@ -172,7 +185,7 @@ impl AllocCore {
     /// here: it lives ONLY on the defensive cross-thread routing path
     /// (`HeapCore::dealloc_routing` under `alloc-xthread`), where a foreign
     /// pointer could in principle resolve to a registered-but-not-ours base.
-    /// On the trusted own-thread path, `contains_base` is the sole guard and
+    /// On the trusted own-thread path, canonical table membership is the sole guard and
     /// the `Layout` is authoritative for the class — a full header load would
     /// be a dependent load on the free critical path with no correctness gain.
     ///
@@ -206,22 +219,21 @@ impl AllocCore {
         if ptr.is_null() {
             return;
         }
-        let base = os::segment_base_of_ptr(ptr);
-        // Foreign-pointer check: if the computed segment base is NOT one of our
-        // registered segments, this pointer is not one of ours — no-op (do not
-        // touch foreign memory, do not even read a header that may be unmapped).
-        if !self.table.contains_base(base) {
+        let candidate = os::segment_base_of_ptr(ptr);
+        // The candidate is only an address key. It may carry provenance for
+        // just the requested byte; metadata and free-list access need the
+        // allocator's stored reservation root.
+        let Some(base) = self.table.canonical_base_of(candidate) else {
             // Make the drop observable (`FOREIGN_OR_UNROUTABLE_FREES`); gated on
             // `alloc-stats` so a standalone `AllocCore` pays nothing by default.
             // Unreachable under `alloc-global`: `HeapCore::dealloc_routing`
-            // already proved `contains_base` and counts its own drops.
+            // already proved ownership and counts its own drops.
             #[cfg(feature = "alloc-stats")]
             FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return;
-        }
-        // SAFETY: `ptr`/`layout` satisfy this fn's own contract (forwarded
-        // verbatim); `base` was just computed from `ptr` and proved via
-        // `contains_base` immediately above.
+        };
+        // SAFETY: the caller owns the live block; `base` is the table's
+        // stored, live reservation root, not a pointer derived from `ptr`.
         unsafe { self.dealloc_at_base(ptr, layout, base) };
     }
 
@@ -231,8 +243,8 @@ impl AllocCore {
     ///
     /// # Safety
     /// Same contract as [`dealloc`](Self::dealloc) for `ptr`/`layout`, plus:
-    /// `base` MUST equal `os::segment_base_of_ptr(ptr)` and
-    /// `self.table.contains_base(base)` MUST be `true` — unchecked here.
+    /// `base` MUST be the table's canonical, live reservation root at the
+    /// segment address of `ptr`, not merely an address-equal lookup key.
     #[inline(always)]
     #[allow(unsafe_code)] // R6-MS-1/2 sibling: shares `dealloc`'s caller-pointer contract.
     unsafe fn dealloc_at_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
@@ -487,7 +499,7 @@ impl AllocCore {
                 };
                 self.dealloc_small(base, ptr, class_idx);
             }
-            // L-5 (UBFIX-11): `contains_base` already proved `base` is one of
+            // L-5 (UBFIX-11): table lookup already proved `base` is one of
             // OUR registered segments, but the `kind` BYTE at that base has
             // been corrupted to something other than the three legitimate
             // discriminants (0/1/2) — `kind_at`'s strict decode maps that to
@@ -511,15 +523,18 @@ impl AllocCore {
     ///
     /// # Safety
     /// Same contract as [`dealloc`](Self::dealloc) for `ptr`/`layout`, plus:
-    /// `base` MUST equal `os::segment_base_of_ptr(ptr)` and
-    /// `self.table.contains_base(base)` MUST already be `true` — the caller
-    /// has proved both; this function does not re-verify either.
+    /// `base` is an address-equal key for `ptr` already verified by the
+    /// caller. This method resolves the table's stored root before any access.
     #[cfg(all(feature = "alloc-global", not(feature = "fastbin")))]
     #[inline]
     #[allow(unsafe_code)] // R6-MS-1/2 sibling: `unsafe fn` boundary (caller-pointer contract).
     pub(crate) unsafe fn dealloc_with_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
-        // SAFETY: forwarded from this fn's own contract above.
-        unsafe { self.dealloc_at_base(ptr, layout, base) };
+        let Some(root) = self.table.canonical_base_of(base) else {
+            return;
+        };
+        // SAFETY: caller owns the live block and `root` is the stored root
+        // corresponding to the already-verified address key.
+        unsafe { self.dealloc_at_base(ptr, layout, root) };
     }
 
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
@@ -598,8 +613,7 @@ impl AllocCore {
         // truth here closes the unmarked duplication/divergence hazard flagged
         // in the X-arc retrospective (C2): a bugfix applied to one copy but
         // not the other would silently disagree.
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base(base) {
+        let Some((base, block)) = self.canonical_block_of(ptr) else {
             // Foreign/unregistered pointer: NOT a legitimate move-leg
             // candidate at the substrate level (see doc comment above and F1
             // in the UB/memory-safety audit). Symmetric with `dealloc`'s
@@ -608,8 +622,9 @@ impl AllocCore {
             // would read `old_layout.size()` bytes from an address we never
             // registered.
             return core::ptr::null_mut();
-        }
-        if let Some(p) = self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
+        };
+        if let Some(p) =
+            self.realloc_inplace_fast_path_known_base(base, block, old_layout, new_size)
         {
             return p;
         }
@@ -631,7 +646,7 @@ impl AllocCore {
         // (single-threaded, `!Send`) `AllocCore`'s own segments, so this is
         // always a same-thread read of the owner-only commit frontier
         // (R2-02) — see `safe_payload_read_span`'s doc.
-        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, true) {
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, block, true) {
             return core::ptr::null_mut();
         }
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
@@ -643,14 +658,14 @@ impl AllocCore {
             return core::ptr::null_mut();
         }
         let copy = old_layout.size().min(new_size);
-        Node::copy_nonoverlapping(ptr, new_ptr, copy);
-        // SAFETY: `ptr` is a live own-segment allocation (proven by
-        // `contains_base(base)` above) whose true size bounds the move-leg
+        Node::copy_nonoverlapping(block, new_ptr, copy);
+        // SAFETY: `ptr` is a live own-segment allocation (caller contract;
+        // canonical lookup proves segment membership) whose true size bounds the move-leg
         // read (`old_layout.size() <= safe_payload_read_span`), made with
         // `old_layout`; the fresh `new_ptr` holds the copied prefix, so
         // freeing the old block once here completes the contract-honouring
         // realloc move leg.
-        unsafe { self.dealloc(ptr, old_layout) };
+        unsafe { self.dealloc_at_base(ptr, old_layout, base) };
         new_ptr
     }
 }

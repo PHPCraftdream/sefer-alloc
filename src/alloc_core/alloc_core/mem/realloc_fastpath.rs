@@ -269,13 +269,13 @@ impl AllocCore {
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
-        // #1984 (P1-2): was a release `assert!`; both callers already prove
-        // `contains_base(base)` on the same path, so this stays debug-only
-        // (no-panic entry points; F12 falsification-pin style).
-        debug_assert!(
-            self.table.contains_base_ro(base),
-            "known-base realloc called for a segment not owned by this core"
-        );
+        // The caller's base is an address key, even when it has already
+        // passed an address-membership check. Resolve the stored root before
+        // reading or mutating header fields.
+        let base = self.table.canonical_base_of(base)?;
+        // `ptr` is an address key, possibly a narrow reborrow. Return the
+        // allocator-derived block pointer even for an in-place resize.
+        let ptr = crate::alloc_core::node::Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
         let kind = SegmentHeader::kind_at(base);
         // OPT-G: Large→Large in-place grow.
         if kind == SegmentKind::Large {
