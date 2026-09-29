@@ -1383,7 +1383,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **303 integration test files** ship
+a test file, and a reproducible command. **304 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **17 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1391,7 +1391,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (303 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (304 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1427,8 +1427,8 @@ The full safety stack and the relationship between layers is documented in
 |---|---|---|---|---|
 | `std` | — | `SyncRegion`, all `std`-gated tiers | **on** | almost always |
 | `alloc-core` | `std` | The segment substrate (`AllocCore`) | off | building on `AllocCore` directly |
-| `alloc-xthread` | `alloc-core` | Lock-free cross-thread free via `RemoteFreeRing` | off | multi-thread allocator |
-| `alloc-global` | `alloc-core` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
+| `alloc-xthread` | `alloc-core` | Lock-free cross-thread free via `RemoteFreeRing` | off | multi-thread allocator; also pulled in automatically by `alloc-global` (R5-01) |
+| `alloc-global` | `alloc-core + alloc-xthread` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |

@@ -33,11 +33,9 @@
 //!
 //! Blocks allocated from the fallback are normal segment blocks — their
 //! owning segment's header carries `owner_thread_free` set to the fallback
-//! heap's TFS head (under `alloc-xthread`). So a later cross-thread free
-//! routes correctly via `segment_base_of` → header owner, no special-casing
-//! on the free path. Under plain `alloc-global` (no `alloc-xthread`) the
-//! blocks are own-thread-only (the fallback is single-threaded anyway in
-//! that config).
+//! heap's TFS head. `alloc-global` unconditionally implies `alloc-xthread`
+//! (R5-01), so a later cross-thread free always routes correctly via
+//! `segment_base_of` → header owner, no special-casing on the free path.
 //!
 //! ## M5-clean bootstrap
 //!

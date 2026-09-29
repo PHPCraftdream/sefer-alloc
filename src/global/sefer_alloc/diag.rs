@@ -87,19 +87,13 @@ impl SeferAlloc {
             #[cfg(not(feature = "alloc-decommit"))]
             decommit_calls: 0,
 
-            #[cfg(feature = "alloc-xthread")]
             large_xthread_reclaimed: crate::registry::DBG_LARGE_XTHREAD_RECLAIMED
                 .load(core::sync::atomic::Ordering::Relaxed),
-            #[cfg(not(feature = "alloc-xthread"))]
-            large_xthread_reclaimed: 0,
 
             tcache_hits,
 
-            #[cfg(feature = "alloc-xthread")]
             ring_overflows: crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW
                 .load(core::sync::atomic::Ordering::Relaxed),
-            #[cfg(not(feature = "alloc-xthread"))]
-            ring_overflows: 0,
 
             segments_reserved_total: crate::alloc_core::AllocCore::dbg_segments_reserved_total(),
             segments_released_total: crate::alloc_core::AllocCore::dbg_segments_released_total(),
@@ -122,11 +116,8 @@ impl SeferAlloc {
 
             // R2-09: legacy terminal-loss counter, now zero for legal frees
             // because the intrusive spill retains them after both rings fill.
-            #[cfg(feature = "alloc-xthread")]
             cross_thread_frees_lost: crate::registry::DBG_RING_PUSH_RETRY_EXHAUSTED
                 .load(core::sync::atomic::Ordering::Relaxed),
-            #[cfg(not(feature = "alloc-xthread"))]
-            cross_thread_frees_lost: 0,
         }
     }
 

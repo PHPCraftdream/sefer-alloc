@@ -217,13 +217,6 @@ impl HeapCore {
         {
             self.alloc_with_class(layout, class)
         }
-        #[cfg(not(any(
-            feature = "alloc-xthread",
-            all(feature = "alloc-global", feature = "fastbin")
-        )))]
-        {
-            self.alloc_with_class(layout)
-        }
     }
 
     /// The body of [`alloc`](Self::alloc), taking the size-class
@@ -774,11 +767,6 @@ impl HeapCore {
                 all(feature = "alloc-global", feature = "fastbin")
             ))]
             let ptr = self.alloc_with_class(layout, class);
-            #[cfg(not(any(
-                feature = "alloc-xthread",
-                all(feature = "alloc-global", feature = "fastbin")
-            )))]
-            let ptr = self.alloc_with_class(layout);
             if !ptr.is_null() {
                 Node::zero(ptr, size);
             }

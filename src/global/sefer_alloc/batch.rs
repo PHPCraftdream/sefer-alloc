@@ -8,7 +8,6 @@ use core::alloc::Layout;
 
 use crate::global::fallback;
 use crate::global::tls_heap::CurrentHeap;
-#[cfg(feature = "alloc-xthread")]
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
 
 use super::SeferAlloc;
@@ -95,17 +94,14 @@ impl SeferAlloc {
     /// cross-thread-owned, Large-classified, null). Null entries are always
     /// skipped (matching the per-block contract).
     ///
-    /// oxx R2-03: under `alloc-xthread`, resolved via the same DEALLOC-ONLY
-    /// `current_for_dealloc` the scalar `GlobalAlloc::dealloc`
-    /// (`global_alloc.rs`) uses — NOT `self.current_heap()` — so a
-    /// dealloc-only thread (never allocated, or already `TORN`) does not pay
-    /// to claim/materialise a registry slot or take the fallback spinlock
-    /// just to free a batch of foreign pointers. See
-    /// `tls_heap::current_for_dealloc`'s doc comment for the full rationale
-    /// and `SeferAlloc::dealloc`'s `ForeignNoBind` arm for the identical
-    /// trade-off note (TORN + fallback-owned). Without `alloc-xthread` there
-    /// is no heap-instance-independent routing concept, so this keeps the
-    /// old `current_heap()` bind/fallback behavior.
+    /// oxx R2-03: resolved via the same DEALLOC-ONLY `current_for_dealloc`
+    /// the scalar `GlobalAlloc::dealloc` (`global_alloc.rs`) uses — NOT
+    /// `self.current_heap()` — so a dealloc-only thread (never allocated, or
+    /// already `TORN`) does not pay to claim/materialise a registry slot or
+    /// take the fallback spinlock just to free a batch of foreign pointers.
+    /// See `tls_heap::current_for_dealloc`'s doc comment for the full
+    /// rationale and `SeferAlloc::dealloc`'s `ForeignNoBind` arm for the
+    /// identical trade-off note (TORN + fallback-owned).
     ///
     /// # Safety
     /// Same contract as [`GlobalAlloc::dealloc`](core::alloc::GlobalAlloc::dealloc): every non-null `blocks[i]`
@@ -116,56 +112,37 @@ impl SeferAlloc {
     /// [`alloc_batch`]: Self::alloc_batch
     #[cfg(feature = "batch-api")]
     pub unsafe fn dealloc_batch(&self, layout: Layout, blocks: &[*mut u8]) {
-        #[cfg(feature = "alloc-xthread")]
-        {
-            match current_for_dealloc() {
-                CurrentHeapForDealloc::Own(heap) => {
-                    // SAFETY: `heap` is non-null and points to a live
-                    // `HeapCore` owned by THIS thread (single-writer
-                    // invariant); `HeapCore::dealloc_batch` upholds the same
-                    // per-block contract as scalar `dealloc` for every entry
-                    // it does not route through its batched fast path.
-                    unsafe { (*heap).dealloc_batch(layout, blocks) };
-                }
-                CurrentHeapForDealloc::ForeignNoBind => {
-                    // Mirrors `SeferAlloc::dealloc`'s `ForeignNoBind` arm
-                    // exactly, looped per non-null block: this thread never
-                    // bound a heap (or its slot was already recycled/torn),
-                    // so every valid pointer reaching here is foreign BY
-                    // CONSTRUCTION — route it through the heap-instance-
-                    // independent routing tail, WITHOUT claiming a registry
-                    // slot and WITHOUT constructing or dereferencing any
-                    // `*mut HeapCore`.
-                    //
-                    // SAFETY: `blocks`/`layout` are the caller-bound
-                    // dealloc-batch contract pair (this whole fn is `unsafe
-                    // fn`); `dealloc_foreign_routing` applies the same
-                    // null-base and magic-mismatch guards the scalar foreign
-                    // path uses before touching any segment memory.
-                    for &ptr in blocks {
-                        if ptr.is_null() {
-                            continue;
-                        }
-                        let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
-                        crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
-                    }
-                }
+        match current_for_dealloc() {
+            CurrentHeapForDealloc::Own(heap) => {
+                // SAFETY: `heap` is non-null and points to a live
+                // `HeapCore` owned by THIS thread (single-writer
+                // invariant); `HeapCore::dealloc_batch` upholds the same
+                // per-block contract as scalar `dealloc` for every entry
+                // it does not route through its batched fast path.
+                unsafe { (*heap).dealloc_batch(layout, blocks) };
             }
-        }
-        #[cfg(not(feature = "alloc-xthread"))]
-        {
-            match self.current_heap() {
-                CurrentHeap::Fallback => {
-                    // SAFETY: caller upholds the dealloc-batch contract for
-                    // every non-null entry of `blocks`.
-                    let _ = fallback::with_heap(|h| unsafe { h.dealloc_batch(layout, blocks) });
+            CurrentHeapForDealloc::ForeignNoBind => {
+                // Mirrors `SeferAlloc::dealloc`'s `ForeignNoBind` arm
+                // exactly, looped per non-null block: this thread never
+                // bound a heap (or its slot was already recycled/torn),
+                // so every valid pointer reaching here is foreign BY
+                // CONSTRUCTION — route it through the heap-instance-
+                // independent routing tail, WITHOUT claiming a registry
+                // slot and WITHOUT constructing or dereferencing any
+                // `*mut HeapCore`.
+                //
+                // SAFETY: `blocks`/`layout` are the caller-bound
+                // dealloc-batch contract pair (this whole fn is `unsafe
+                // fn`); `dealloc_foreign_routing` applies the same
+                // null-base and magic-mismatch guards the scalar foreign
+                // path uses before touching any segment memory.
+                for &ptr in blocks {
+                    if ptr.is_null() {
+                        continue;
+                    }
+                    let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
+                    crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
                 }
-                // SAFETY: `heap` is non-null and points to a live `HeapCore`
-                // owned by THIS thread (single-writer invariant);
-                // `HeapCore::dealloc_batch` upholds the same per-block
-                // contract as scalar `dealloc` for every entry it does not
-                // route through its batched fast path.
-                CurrentHeap::Own(heap) => unsafe { (*heap).dealloc_batch(layout, blocks) },
             }
         }
     }

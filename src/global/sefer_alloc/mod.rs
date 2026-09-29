@@ -58,10 +58,16 @@
 //!   (returns null on OOM). If `current_for_alloc()` itself yields the
 //!   fallback (TLS teardown), the fallback's `with_heap` returns `None` only
 //!   on true OOM → null.
-//! - `dealloc`: `current_for_alloc()` → `HeapCore::dealloc`. If TLS is torn down, the
-//!   fallback's `with_heap` deallocs under the spinlock; a torn-down-TLS
-//!   dealloc still routes correctly (the segment's owner routes via the
-//!   header). On any failure this is a no-op (the block is leaked safely).
+//! - `dealloc`: resolves via the DEALLOC-ONLY
+//!   [`tls_heap::current_for_dealloc`](super::tls_heap::current_for_dealloc)
+//!   (not `current_for_alloc`), which never claims a registry slot just to
+//!   free a pointer. `CurrentHeapForDealloc::Own` routes to that heap's
+//!   `HeapCore::dealloc` (own-thread or cross-thread via `dealloc_routing` —
+//!   `alloc-global` unconditionally implies `alloc-xthread`, R5-01);
+//!   `ForeignNoBind` (TLS never bound, or torn down) routes directly through
+//!   the heap-instance-independent `HeapCore::dealloc_foreign_routing`,
+//!   without constructing a `*mut HeapCore` at all. On any failure this is a
+//!   no-op (the block is leaked safely, never corrupted).
 //! - `realloc`: an in-place fast path for same-class / compatible growth (C2:
 //!   own-thread reallocs delegate to `AllocCore::realloc`, which short-circuits
 //!   when the block can stay put), falling back to `alloc` + copy + `dealloc`

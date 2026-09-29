@@ -18,7 +18,6 @@ use core::alloc::Layout;
 
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::os;
-#[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::segment_header::{SegmentHeader, SEGMENT_MAGIC};
 use crate::alloc_core::{node::Node, AllocCore};
 
@@ -81,20 +80,17 @@ impl HeapCore {
     ///
     /// ## Foreign pointers
     ///
-    /// A `ptr` we do NOT own (e.g. under `alloc-xthread`, a block that lives
-    /// in ANOTHER heap's segment) takes the foreign leg. R2-1: before copying,
-    /// the leg now validates that `ptr` resolves to a LIVE sefer segment
-    /// (segment-header magic check, mirroring `dealloc_foreign_slow`'s first
-    /// guard) AND that `old_layout.size()` does not exceed that segment's
-    /// committed span. A bogus/foreign pointer (stack, foreign allocator,
-    /// dangling) or an oversized claim is rejected (null) BEFORE any copy —
-    /// never read out of bounds. A legitimate cross-heap sefer pointer passes
-    /// both checks, copies `min(old, new)`, then frees the OLD pointer via
-    /// `self.dealloc` (which routes cross-thread correctly under
-    /// `alloc-xthread`). Without `alloc-xthread` there is no legitimate
-    /// cross-heap owner, so the foreign leg returns null outright (symmetric
-    /// with `AllocCore::realloc`'s foreign-pointer null and `dealloc`'s
-    /// foreign no-op).
+    /// A `ptr` we do NOT own (a block that lives in ANOTHER heap's segment)
+    /// takes the foreign leg. R2-1: before copying, the leg validates that
+    /// `ptr` resolves to a LIVE sefer segment (segment-header magic check,
+    /// mirroring `dealloc_foreign_slow`'s first guard) AND that
+    /// `old_layout.size()` does not exceed that segment's committed span. A
+    /// bogus/foreign pointer (stack, foreign allocator, dangling) or an
+    /// oversized claim is rejected (null) BEFORE any copy — never read out of
+    /// bounds. A legitimate cross-heap sefer pointer passes both checks,
+    /// copies `min(old, new)`, then frees the OLD pointer via `self.dealloc`
+    /// (which routes cross-thread correctly — `alloc-global`, this module's
+    /// gate, unconditionally implies `alloc-xthread`, R5-01).
     ///
     /// This is an **`unsafe fn`** (R6-MS-1/2): the move legs' `copy_nonoverlapping`
     /// read out of `ptr` trusts the caller's `old_layout`/`ptr` exactly as
@@ -378,24 +374,19 @@ impl HeapCore {
         // against a contract violation, not a safety requirement of a safe
         // caller).
         //
-        // Under `alloc-xthread` this leg is the deliberately-designed
-        // cross-heap path (a pointer from ANOTHER live heap is legitimate,
-        // and `self.dealloc` routes its free cross-thread). The membership
+        // This leg is the deliberately-designed cross-heap path (a pointer
+        // from ANOTHER live heap is legitimate, and `self.dealloc` routes its
+        // free cross-thread — `alloc-global`, this module's gate,
+        // unconditionally implies `alloc-xthread`, R5-01). The membership
         // barrier is the segment-header magic check (mirrors
         // `dealloc_foreign_slow`'s first guard): a pointer whose computed
         // base is not a live sefer segment — stack, foreign allocator,
-        // dangling — is rejected (null) before any copy. A REAL cross-heap
-        // sefer segment passes magic, then the same R2-1 span bound as the
-        // own-seg leg applies.
-        //
-        // Without `alloc-xthread` there is no cross-thread routing and thus
-        // no legitimate owner for a pointer this heap does not recognise:
-        // without this guard, copying from it would read arbitrary
-        // caller-supplied memory on a contract violation (this is an
-        // `unsafe fn`, not a safe fn — oxx R2-07). Return null, `ptr`
-        // untouched — symmetric with `AllocCore::realloc`'s foreign-pointer
-        // null and `dealloc`'s foreign no-op.
-        #[cfg(feature = "alloc-xthread")]
+        // dangling — is rejected (null) before any copy, guarding against
+        // exactly the contract violation oxx R2-07 discusses (`realloc` is a
+        // `pub unsafe fn`; this is defence-in-depth against a caller
+        // violating that contract, not a safety requirement of a safe
+        // caller). A REAL cross-heap sefer segment passes magic, then the
+        // same R2-1 span bound as the own-seg leg applies.
         {
             let base = os::segment_base_of_ptr(ptr);
             // R4-2 (memory_safety_review, R4-MS-1/MS-2): guard the degenerate
@@ -444,11 +435,6 @@ impl HeapCore {
             // realloc.
             unsafe { self.dealloc(ptr, old_layout) };
             new_ptr
-        }
-        #[cfg(not(feature = "alloc-xthread"))]
-        {
-            let _ = new_size;
-            core::ptr::null_mut()
         }
     }
 

@@ -172,7 +172,8 @@ alloc-core = ["std", "dep:aligned-vmem", "dep:once-ptr-cell", "dep:size-classes"
 # to reclaim lazily; the old abandon/adopt segment-transfer substrate was
 # removed in task #97 / R4-5 — see CHANGELOG.md). Without this feature, the
 # `alloc-core` substrate provides single-thread-only allocation (sound: single
-# owner, no cross-thread refs). Requires `alloc-core`.
+# owner, no cross-thread refs). Requires `alloc-core`. Implied by
+# `alloc-global`; standalone it serves the bare substrate and the loom models.
 alloc-xthread = ["alloc-core"]
 # Phase 11: the drop-in `GlobalAlloc` face -- `SeferAlloc`. Installs over the
 # per-thread `HeapCore` substrate via the registry-backed raw-pointer TLS
@@ -193,10 +194,14 @@ alloc-xthread = ["alloc-core"]
 # (the free path is fallible instead, via `slot_or_none`/`try_ensure_chunk`,
 # R34-15). Reentrancy-free (M5) is upheld structurally: no
 # `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path -- the TLS init is
-# the lazy allocation-free discipline. Requires `alloc-core`. Add `alloc-xthread`
-# alongside it for the multi-thread face (cross-thread `dealloc` via
-# per-segment `RemoteFreeRing`s).
-alloc-global = ["alloc-core", "dep:tagged-index-stack"]
+# the lazy allocation-free discipline. Requires `alloc-core`.
+#
+# R5-01: `alloc-xthread` is required, not an optional add-on. `alloc-global`
+# alone leaked cross-thread frees (pinning their segment) and returned null
+# from a cross-thread `realloc` (an abort for a moved-then-grown `Vec`).
+# `src/lib.rs` carries a `compile_error!` guard for a stale manifest;
+# `production` already enabled both.
+alloc-global = ["alloc-core", "alloc-xthread", "dep:tagged-index-stack"]
 # R10-7 follow-up: the tcache-aware batch allocation API
 # (`SeferAlloc::alloc_batch` / `dealloc_batch` + the underlying
 # `HeapCore::alloc_batch`). EXPERIMENTAL — opt-in, NOT part of `production`

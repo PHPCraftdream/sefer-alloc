@@ -182,6 +182,15 @@ export const PER_PR_ROWS = [
       'configuration the guard exists to test.',
   },
   {
+    id: 'test-alloc-global-minimal-r5-01',
+    kind: 'test',
+    features: 'alloc-global',
+    target: { flag: '--test', name: 'regression_r5_01_alloc_global_cross_thread' },
+    note:
+      'R5-01: minimal public GlobalAlloc feature set (no internals) must ' +
+      'route cross-thread frees.',
+  },
+  {
     id: 'check-alloc-core-decommit-internals-warnings',
     kind: 'check',
     features: 'alloc-core alloc-decommit internals',

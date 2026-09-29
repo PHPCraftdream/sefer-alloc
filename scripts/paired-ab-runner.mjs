@@ -154,6 +154,9 @@ function seferConfig() {
       ['sefer', 'mimalloc'],
       ['sefer', 'system'],
     ],
+    // R5-01: `alloc-global` now includes `alloc-xthread` (Cargo.toml feature
+    // unification) — the old no-xthread `sefer` arm is reproducible only on
+    // a pre-R5-01 SHA.
     features_note: 'alloc-global',
     is_sefer_builtin: true,
   };

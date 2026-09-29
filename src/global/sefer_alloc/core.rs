@@ -41,9 +41,10 @@ use crate::global::tls_heap::CurrentHeap;
 /// on first allocation via the raw-pointer TLS binding -- no `RefCell`, no
 /// reentrant-borrow failure). `alloc`/`dealloc`/`realloc`/`alloc_zeroed`
 /// route through the per-thread heap's segment-centric `BinTable` free lists
-/// (the Phase 12.1 hot path). With `alloc-xthread`, cross-thread `dealloc`
-/// routes through the Phase 10 Treiber stack, now stamped from the
-/// registry-resident heap (12.3 owner stamping).
+/// (the Phase 12.1 hot path). `alloc-global` unconditionally implies
+/// `alloc-xthread` (R5-01), so cross-thread `dealloc` always routes through
+/// the Phase 10 Treiber stack, stamped from the registry-resident heap (12.3
+/// owner stamping).
 ///
 /// Thread exit recycles the slot for whole-slot reuse (Phase 12.5): the
 /// `HeapCore` and ALL its segments (plus their remote-free queues) stay
@@ -59,26 +60,17 @@ use crate::global::tls_heap::CurrentHeap;
 /// audit's F5; `docs/ALLOC_PLAN.md` SS3 preserves the original "one substrate,
 /// two faces" design intent as history, not current architecture).
 ///
-/// # Multi-thread safety — read this before enabling `alloc-global` alone
+/// # Multi-thread safety
 ///
-/// **`alloc-global` without `alloc-xthread` is a footgun in any
-/// multi-threaded program.** Without `alloc-xthread` there is no
-/// ownership-checked routing path for a cross-thread free (no owner stamp,
-/// no per-segment `RemoteFreeRing`): a block allocated on thread A and freed
-/// on thread B has nowhere sound to go. In this configuration a
-/// cross-thread `dealloc` degrades to a **leak of that block**, not a data
-/// race — the fallback/registry paths never write into a foreign thread's
-/// private free lists — but any workload that regularly frees on a
-/// different thread than it allocated (thread pools, work-stealing queues,
-/// producer/consumer channels) will leak monotonically under
-/// `alloc-global` alone. The companion `fastbin` feature *requires*
-/// `alloc-xthread` for exactly this reason (enforced by a `compile_error!`
-/// in `lib.rs` — see `Cargo.toml`'s `fastbin = ["alloc-global",
-/// "alloc-xthread"]`).
+/// `alloc-global` implies `alloc-xthread`, so a plain `--features
+/// alloc-global` build routes cross-thread `dealloc` and `realloc` soundly
+/// (thread pools, channels and work-stealing queues are fine). Without
+/// `alloc-xthread` a cross-thread free leaked its block and a cross-thread
+/// `realloc` returned null (R5-01); `lib.rs` now refuses to build that
+/// combination.
 ///
-/// For any real multi-threaded deployment, build with at least
-/// `["alloc-global", "alloc-xthread"]`, or use the `production` feature
-/// bundle (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty`), which
+/// The `production` feature bundle
+/// (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty`)
 /// is the combination this crate is tested and tuned for. See
 /// `docs/INTEGRATION.md` for the full feature matrix.
 ///

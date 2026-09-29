@@ -86,7 +86,9 @@ pub struct AllocStats {
 
     /// Number of large allocations reclaimed from another thread's heap via
     /// the cross-thread large-object reclaim path (task A1) since process
-    /// start. Requires the `alloc-xthread` feature; `0` otherwise.
+    /// start. `AllocStats` only exists under `alloc-global`, which (R5-01)
+    /// unconditionally implies `alloc-xthread` — this field is always live
+    /// wherever `AllocStats` is.
     pub large_xthread_reclaimed: u64,
 
     /// Number of small allocations served from a thread's per-class magazine
@@ -104,8 +106,9 @@ pub struct AllocStats {
     pub tcache_hits: u64,
 
     /// Number of cross-thread frees whose FIRST push attempt onto a segment's
-    /// remote-free ring found it full (a first-tier miss). Requires the
-    /// `alloc-xthread` feature; `0` otherwise.
+    /// remote-free ring found it full (a first-tier miss). `AllocStats` only
+    /// exists under `alloc-global`, which (R5-01) unconditionally implies
+    /// `alloc-xthread` — this field is always live wherever `AllocStats` is.
     ///
     /// **This is NOT a leak counter.** The underlying counter
     /// (`DBG_RING_OVERFLOW`) ticks once per logical free that saw a full
@@ -184,19 +187,25 @@ pub struct AllocStats {
     /// (foreign or unroutable pointer). Cumulative since process start,
     /// process-wide.
     ///
-    /// **This is the field to alert on for a cross-thread-free leak under a
-    /// misconfigured build.** In a build WITHOUT `alloc-xthread` there is no
-    /// cross-thread routing: a block allocated on thread A and freed on thread
-    /// B has nowhere sound to go, so `dealloc` drops it and the block is
-    /// **leaked permanently** (see the "Multi-thread safety" section of
-    /// [`SeferAlloc`](super::SeferAlloc)). `alloc-global` without `alloc-xthread`
-    /// is a legitimate single-threaded trade-off — so the crate does not
-    /// `compile_error!` on it — but a multi-threaded program built that way by
-    /// mistake would leak with no other observable signal. A non-zero and
-    /// growing value here is the signature of that misconfiguration (or of a
-    /// genuine foreign-pointer free). Under `production` (which includes
-    /// `alloc-xthread`) legitimate cross-thread frees are routed, not dropped,
-    /// so this should stay at (or near) `0`.
+    /// **R5-01 correction:** this field's original doc described alerting on
+    /// an `alloc-global`-without-`alloc-xthread` misconfiguration; that
+    /// configuration is no longer buildable at all (`src/lib.rs` now carries
+    /// a `compile_error!` — `alloc-global` unconditionally implies
+    /// `alloc-xthread`), so the scenario below is historical, not a live
+    /// build this crate produces. Under `alloc-xthread` (always the case now)
+    /// a genuine foreign-pointer free is still dropped here, but the
+    /// `!alloc-xthread` leak signature this field was designed to surface can
+    /// no longer occur. Full re-evaluation of this field's semantics/docs is
+    /// tracked as a follow-up, not done in this change.
+    ///
+    /// (Historical, pre-R5-01 text:) In a build WITHOUT `alloc-xthread` there
+    /// is no cross-thread routing: a block allocated on thread A and freed on
+    /// thread B has nowhere sound to go, so `dealloc` drops it and the block
+    /// is **leaked permanently**. A non-zero and growing value here was the
+    /// signature of that misconfiguration (or of a genuine foreign-pointer
+    /// free). Under `production` (which includes `alloc-xthread`) legitimate
+    /// cross-thread frees are routed, not dropped, so this should stay at (or
+    /// near) `0`.
     ///
     /// **Scope: this counter is `!alloc-xthread`-specific, not a general
     /// "any foreign free" signal.** Under `alloc-xthread`, a foreign/unroutable
@@ -247,6 +256,9 @@ pub struct AllocStats {
     /// This counter therefore stays at zero for legal frees in the current
     /// protocol. [`ring_overflows`](Self::ring_overflows) still counts the
     /// first-tier ring-full event, including frees recovered by the heap ring
-    /// or spill. The field is `0` when `alloc-xthread` is disabled.
+    /// or spill. `AllocStats` only exists under `alloc-global`, which
+    /// (R5-01) unconditionally implies `alloc-xthread`, so this field's
+    /// backing counter is always compiled in wherever `AllocStats` is (it
+    /// still reads `0` for every legal free — see above).
     pub cross_thread_frees_lost: u64,
 }

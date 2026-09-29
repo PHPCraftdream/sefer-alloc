@@ -184,9 +184,9 @@ impl HeapCore {
     ///
     /// Own-thread path: routes to the owning segment's `BinTable` via
     /// [`AllocCore::dealloc`](crate::alloc_core::AllocCore::dealloc) (which applies the M2 double-free guard).
-    /// Under `alloc-xthread`: if the segment is stamped with another heap's
-    /// head, route cross-thread via the TFS (the §2.2 protocol re-based on
-    /// the registry). Only a **null** `ptr` is always a safe no-op; a
+    /// If the segment is stamped with another heap's head, route
+    /// cross-thread via the TFS (the §2.2 protocol re-based on the
+    /// registry). Only a **null** `ptr` is always a safe no-op; a
     /// foreign, unmapped, or already-released `ptr` violates the `# Safety`
     /// contract below (UB-adjacent) — the magic/M2 checks are best-effort
     /// defence-in-depth, not a validity check, and reading an unmapped
@@ -220,34 +220,25 @@ impl HeapCore {
         if ptr.is_null() {
             return;
         }
-        #[cfg(feature = "alloc-xthread")]
-        {
-            self.dealloc_routing(ptr, layout);
-        }
-        #[cfg(not(feature = "alloc-xthread"))]
-        {
-            self.dealloc_own_thread(ptr, layout);
-        }
+        self.dealloc_routing(ptr, layout);
     }
 
     /// Own-thread dealloc: small frees go to the magazine (under fastbin),
-    /// everything else to `core.dealloc`. Called from the `!alloc-xthread`
-    /// path (no routing needed) and from `dealloc_routing` after confirming
-    /// the block is ours.
+    /// everything else to `core.dealloc`. Reached only from
+    /// `dealloc_routing`'s own-thread arm, after confirming the block is
+    /// ours.
     ///
     /// Э9 (P7.1, task #160): under fastbin this delegates to
     /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base),
     /// computing `base = os::segment_base_of_ptr(ptr)` itself. The
     /// Э9 (P7.1): under fastbin the magazine body lives in
     /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
-    /// (which takes the pre-computed `base`), and BOTH callers of the
-    /// own-thread path under fastbin already hold `base` (the cross-thread
-    /// `dealloc_routing` from its `contains_base` check; there is no
-    /// `!alloc-xthread` caller under fastbin since `fastbin ⟹ alloc-xthread`).
-    /// So this own-arg wrapper is compiled ONLY when fastbin is OFF — where the
-    /// own-thread path has no magazine and simply delegates to `core.dealloc`.
-    /// Callers: the `!alloc-xthread` branch of [`dealloc`](Self::dealloc) and
-    /// the non-fastbin arm of `dealloc_routing`.
+    /// (which takes the pre-computed `base`), and the sole caller of the
+    /// own-thread path under fastbin already holds `base` (the cross-thread
+    /// `dealloc_routing`'s `contains_base` check). So this own-arg wrapper is
+    /// compiled ONLY when fastbin is OFF — where the own-thread path has no
+    /// magazine and simply delegates to `core.dealloc`. Caller: the
+    /// non-fastbin arm of `dealloc_routing`.
     #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
     #[inline(always)]
     pub(crate) fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {

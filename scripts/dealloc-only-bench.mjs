@@ -23,6 +23,11 @@
 //   node scripts/dealloc-only-bench.mjs --full        # full (B,T) cross product
 //   node scripts/dealloc-only-bench.mjs --samples 10  # override sample count
 //   npm run dealloc-only                                # if wired in package.json
+//
+// R5-01: `--features alloc-global` below now includes `alloc-xthread`
+// (Cargo.toml feature unification) — the old no-xthread `dealloc` path this
+// runner may have implicitly exercised is only reproducible on a pre-R5-01
+// SHA.
 
 import { REPO_ROOT, run } from './lib.mjs';
 

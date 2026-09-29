@@ -398,11 +398,8 @@ pub enum CurrentHeapForDealloc {
 ///
 /// **Passive, read-only.** This resolver reads `LOCAL` and nothing else — it
 /// never writes `LOCAL`, never calls `HeapRegistry::claim`, and never calls
-/// `fallback::with_heap`. Only present under `alloc-xthread`: without
-/// cross-thread routing there is no heap-independent way to route a foreign
-/// pointer at all (see `SeferAlloc::dealloc`'s `not(alloc-xthread)` arm,
-/// which keeps the OLD `current_for_alloc` + bind/fallback behavior for that
-/// configuration).
+/// `fallback::with_heap`. Gated on `alloc-xthread`, which `alloc-global`
+/// implies (R5-01), so it is always present wherever `SeferAlloc::dealloc` is.
 ///
 /// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
 ///   identical fast path to [`current_for_alloc`]'s `Own` arm, unchanged.

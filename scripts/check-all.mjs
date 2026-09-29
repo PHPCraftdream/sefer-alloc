@@ -110,13 +110,18 @@
 //      --no-fail-fast row ci.yml gained in task #1141/L2, commit `3e8c3fe`);
 //      doc (--all-features, warnings-as-errors); semver-checks (optional,
 //      skipped if cargo-semver-checks not installed).
-//   31-33. the 3 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   31-34. the 4 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own); the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
-//      `internals` so the guard is non-vacuous); and `cargo check --features
+//      `internals` so the guard is non-vacuous); the R5-01 minimal
+//      `alloc-global` cross-thread routing regression test
+//      (`tests/regression_r5_01_alloc_global_cross_thread.rs`, PLAIN
+//      `alloc-global`, no `internals` — the exact minimal public feature set
+//      the review flagged as unsound before `alloc-global` unification-
+//      required `alloc-xthread`); and `cargo check --features
 //      "alloc-core alloc-decommit internals"` under RUSTFLAGS=-D warnings
 //      (R1-08: the counterfactual enforcement row for the 10-warning
 //      unused_imports/dead_code combination that review finding R1-08

@@ -39,9 +39,10 @@
 //! hit rates, cross-thread reclaim/overflow counts, and cumulative
 //! segment/heap totals (`segments_reserved_total - segments_released_total`
 //! is the live segment count — the field to alert on for a segment leak;
-//! `foreign_or_unroutable_frees` is the field to alert on for a cross-thread-
-//! free leak under an `alloc-global`-without-`alloc-xthread` misconfiguration,
-//! and requires the `alloc-stats` feature to be populated).
+//! `foreign_or_unroutable_frees` is a legacy diagnostic field, requiring the
+//! `alloc-stats` feature to be populated — R5-01 made `alloc-global` always
+//! imply `alloc-xthread`, so the misconfiguration it used to signal can no
+//! longer be built).
 //! `stats()` is lock-free and allocation-free, but its cost is
 //! feature-dependent: without `alloc-stats` it is a handful of relaxed atomic
 //! loads (O(1)); with `alloc-stats` on, the two hit counters are summed by an
@@ -63,12 +64,15 @@
 //! println!("segments_live={segments_live} tcache_hits={}", stats.tcache_hits);
 //! ```
 //!
-//! **Multi-thread footgun:** `alloc-global` without `alloc-xthread` has no
-//! sound cross-thread free path — a block freed on a different thread than
-//! it was allocated on leaks (safely, but permanently) instead of racing.
-//! See `SeferAlloc`'s "Multi-thread safety" doc
-//! section for the full explanation. Use `["alloc-global", "alloc-xthread"]`
-//! (or the `production` bundle) for any real multi-threaded deployment.
+//! **Multi-thread safety:** `alloc-global` unconditionally implies
+//! `alloc-xthread` (R5-01) — without it, a block freed on a different thread
+//! than it was allocated on had no sound routing path (leaked, safely but
+//! permanently) and a cross-thread `realloc` returned null (an abort for a
+//! `Vec` grown after being moved to another thread). `Cargo.toml`'s feature
+//! unification plus a `compile_error!` guard in `src/lib.rs` make that
+//! configuration unbuildable, so any `--features alloc-global` build is sound
+//! for real multi-threaded deployment. See `SeferAlloc`'s "Multi-thread
+//! safety" doc section for the full explanation.
 //!
 //! `SeferAlloc` (and the whole allocator stack) is **`std`-only** — it needs
 //! thread-local storage and `std::time::Instant`. `Region<T>` / `Handle<T>`
@@ -331,6 +335,20 @@ compile_error!(
      without it races the per-thread magazine/free-list — unsound). Enable \
      both, e.g. `--features fastbin,alloc-xthread`, or use the `production` \
      feature bundle."
+);
+
+// R5-01 (xxs round 5): without `alloc-xthread` a cross-thread free leaks its
+// block and a cross-thread `realloc` returns null (an abort for a moved-then-
+// grown `Vec`). `Cargo.toml` makes `alloc-global` imply it; this guard covers
+// a stale/vendored manifest, like `fastbin`'s guard above.
+#[cfg(all(feature = "alloc-global", not(feature = "alloc-xthread")))]
+compile_error!(
+    "sefer-alloc: `alloc-global` requires `alloc-xthread` (without it, a \
+     cross-thread free leaks its block and pins its segment, and a \
+     cross-thread realloc returns null — an abort for a moved-then-grown \
+     Vec). Enable both, e.g. `--features alloc-global,alloc-xthread`, or use \
+     the `production` feature bundle. Check for a stale/vendored Cargo.toml \
+     if you did not request this combination directly."
 );
 
 // R2-17 (independent src review round 2, docs/reviews/2026-09-22-120730-src-review-xa-round-2.md) — the allocator's

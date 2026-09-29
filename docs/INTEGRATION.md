@@ -31,8 +31,7 @@ Other valid feature shapes:
 |---|---|---|
 | Handle store only (default) | _omit_ | `Region<T>` / `Handle<T>` for typed slot storage |
 | `no_std` + `alloc` core | `default-features = false` | embedded targets |
-| Single-thread allocator | `["alloc-global"]` | single-thread process |
-| Multi-thread allocator | `["alloc-global", "alloc-xthread"]` | multi-thread, no segment recycling (1024-segment ceiling) |
+| Global allocator (`alloc-global` implies `alloc-xthread`, R5-01) | `["alloc-global"]` | multi-thread process, no segment recycling (4096-segment ceiling) |
 | **Recommended for servers** | `["production"]` | long-running multi-thread (DBMS, async runtime) |
 | `production` + NUMA | `["production", "numa-aware"]` | multi-socket NUMA hardware |
 

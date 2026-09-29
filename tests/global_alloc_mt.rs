@@ -23,9 +23,10 @@
 //!   runs, releasing the slot (the HeapCore stays whole — segments + inline
 //!   TFS — for the next claimant). A later worker reclaims the slot and drains
 //!   its TFS on first alloc (the shard-reuse discipline).
-//! - Cross-thread free (under `alloc-xthread`): blocks allocated on one
-//!   thread's heap may be freed on another (the channel test hands off
-//!   ownership); the TFS routing + drain handles this.
+//! - Cross-thread free: blocks allocated on one thread's heap may be freed on
+//!   another (the channel test hands off ownership); the TFS routing + drain
+//!   handles this. `alloc-global` unconditionally implies `alloc-xthread`
+//!   (R5-01), so this path is always exercised here.
 //!
 //! ## Non-vacuous
 //!
@@ -37,10 +38,11 @@
 //!
 //! ## Scope note
 //!
-//! This runs under `alloc-global` (own-thread + abandon/reclaim) and
-//! `alloc-xthread` (adds cross-thread free routing). The default `alloc`
-//! single-thread path is covered by `heap_soak`/`heap_cross_thread` and is
-//! untouched by Phase 12.5.
+//! This runs under `alloc-global` (own-thread + abandon/reclaim, cross-thread
+//! free routing — R5-01: `alloc-global` unconditionally implies
+//! `alloc-xthread`, so both are always present together here). The default
+//! `alloc` single-thread path is covered by `heap_soak`/`heap_cross_thread`
+//! and is untouched by Phase 12.5.
 
 #![cfg(feature = "alloc-global")]
 
@@ -171,16 +173,16 @@ fn global_allocator_serves_multithreaded_churn_with_thread_exit() {
     );
 }
 
-/// Cross-thread free stress (requires `alloc-xthread`): blocks allocated on
-/// producer threads are freed on the consumer thread by sending them through a
-/// bounded channel. This forces the TFS routing + drain path. Combined with
-/// producer thread exit (slot release), it exercises cross-thread free +
-/// shard-reuse together.
+/// Cross-thread free stress: blocks allocated on producer threads are freed
+/// on the consumer thread by sending them through a bounded channel. This
+/// forces the TFS routing + drain path. Combined with producer thread exit
+/// (slot release), it exercises cross-thread free + shard-reuse together.
+/// R5-01: `alloc-global` (this file's gate) unconditionally implies
+/// `alloc-xthread`, so this test needs no separate feature gate of its own.
 ///
 /// Non-vacuous: the consumer sums the freed values and we compare against the
 /// deterministic expected sum. A lost/corrupted/double-freed box fails the
 /// assertion.
-#[cfg(feature = "alloc-xthread")]
 #[test]
 fn global_allocator_cross_thread_free() {
     let _serial = SerialGuard::acquire();
