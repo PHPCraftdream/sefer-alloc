@@ -2,9 +2,9 @@
 //! table" of §1 of `ALLOC_PLAN_PHASE12-13.md`: the heap pool itself becomes a
 //! slot table).
 //!
-//! Each slot is a fixed-size record carved from the registry's primordial
-//! segment. Its lifecycle is `FREE → LIVE → FREE → …`: a `claim` flips it
-//! `FREE → LIVE` and bumps `generation`; a `recycle` flips it back `FREE`.
+//! Each slot is a fixed-size record in a lazy registry chunk. Its state runs
+//! `EMPTY → INITIALIZING → OWNED → FREE`, then `FREE → OWNED` or
+//! `FREE → MAINTENANCE → FREE`. Only a successful CAS grants mutation access.
 //! `generation` is NOT the M8/M9 coherence key: the segment-header owner
 //! stamp (`pack_owner`, `alloc_core/segment/segment_header/mod.rs`) packs the
 //! slot's `id` with a generation field that is always 0 (the adoption
@@ -32,9 +32,9 @@
 //! segment). We CANNOT materialise a live
 //! `HeapCore` per slot at registry-init time: that would reserve
 //! `MAX_HEAPS × 4 MiB` of OS memory up front. Instead each slot holds a
-//! [`MaybeUninit<HeapCore>`]; the slot starts `FREE` with an *uninitialised*
+//! [`MaybeUninit<HeapCore>`]; the slot starts `EMPTY` with an *uninitialised*
 //! heap value, and `claim` lazily `HeapCore::new`s into the slot on its first
-//! `FREE → LIVE` transition. On a later `recycle → reclaim` the slot's
+//! `EMPTY → INITIALIZING` transition. On a later `recycle → reclaim` the slot's
 //! `HeapCore` is already live and is reused as-is (its `AllocCore` and its
 //! segments persist; only `id` may be refreshed). This is the standard
 //! lazy-materialise pattern for a slot pool whose values are expensive to
@@ -63,14 +63,14 @@
 //
 // The slot's `Sync` proof (and every neighbouring registry SAFETY proof)
 // relies on the CAS-gated single-writer protocol on `state`/`heap`. Safe code
-// that could flip `state` LIVE→FREE or write `heap`/`next_free` directly would
+// that could flip `state` OWNED→FREE or write `heap` directly would
 // break that invariant with NO `unsafe` keyword at the violation site — this
 // is the general "safe membrane over a seam" limit spelled out in
 // `src/lib.rs`. EVERY slot field is therefore `pub(crate)` (reachable only
 // inside the crate's confined registry code). Task #93 / R4-MS-4 narrowed the
 // last two holdouts — `state` and `generation` — down from `pub` to
 // `pub(crate)`: while they were `pub`, safe downstream code could execute the
-// `LIVE → FREE` transition and re-push the slot onto `free_slots` itself,
+// `OWNED → FREE` transition itself,
 // handing a LIVE `HeapCore` to a second thread and breaking the very
 // single-writer invariant below. Integration tests that still need to
 // read/preset these fields go through the narrow `#[doc(hidden)]` accessors on
@@ -83,7 +83,7 @@ use core::mem::MaybeUninit;
 #[cfg(feature = "alloc-xthread")]
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::AtomicU64;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
+use core::sync::atomic::{AtomicBool, AtomicU8};
 
 use super::heap_core::HeapCore;
 #[cfg(feature = "alloc-xthread")]
@@ -93,16 +93,18 @@ use crate::alloc_core::dirty_by_class::PerClassDirty;
 #[cfg(feature = "class-aware-dirty")]
 use once_ptr_cell::OncePtrCell;
 
-/// Slot state: `FREE` (available for claim) or `LIVE` (owned by a thread).
-/// Stored as a `u8` so the `FREE → LIVE` / `LIVE → FREE` transitions are
-/// single-word atomic CASes (the linearization points of claim / recycle).
-pub const STATE_FREE: u8 = 0;
-pub const STATE_LIVE: u8 = 1;
-
-/// Sentinel stored in [`HeapSlot::next_free`] to denote "this is the stack
-/// tail" (no next free slot). No real slot index is `u32::MAX` (the registry
-/// caps at `MAX_HEAPS`, far below).
-pub const NEXT_FREE_TAIL: u32 = u32::MAX;
+/// Zeroed, never-materialised slot.
+pub const STATE_EMPTY: u8 = 0;
+/// First claimant is constructing the core; no other thread may use it.
+pub const STATE_INITIALIZING: u8 = 2;
+/// An owner has exclusive mutation authority.
+pub const STATE_OWNED: u8 = 1;
+/// Initialised core available for a new owner or maintenance worker.
+pub const STATE_FREE: u8 = 3;
+/// A maintenance worker has exclusive mutation authority.
+pub const STATE_MAINTENANCE: u8 = 4;
+/// Compatibility name for existing owner-side routing.
+pub const STATE_LIVE: u8 = STATE_OWNED;
 
 /// PERF-PASS-4 (G8/ML2, task #52) — the remote/foreign-access fields of a
 /// [`HeapSlot`], grouped into their own 64-byte-aligned sub-struct.
@@ -371,11 +373,11 @@ pub(crate) const DIRTY_BITMAP_WORDS: usize = crate::alloc_core::segment_table::M
 /// this slot's owner-hot fields).
 #[repr(C, align(64))]
 pub struct HeapSlot {
-    /// `FREE` or `LIVE`. The claim/recycle CAS target.
+    /// Lease state. The claim/recycle/maintenance CAS target.
     ///
     /// `pub(crate)` (task #93 / R4-MS-4): while this was `pub`, safe downstream
-    /// code could `state.store(STATE_FREE, ..)` on a LIVE slot and re-push it
-    /// onto `free_slots`, breaking the single-writer invariant the
+    /// code could `state.store(STATE_FREE, ..)` on an OWNED slot, breaking the
+    /// single-writer invariant the
     /// `unsafe impl Sync` below depends on (R4-MS-4). Integration tests read it
     /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap`).
     pub(crate) state: AtomicU8,
@@ -419,24 +421,15 @@ pub struct HeapSlot {
     /// the no-concurrent-claim precondition that makes the direct write sound.
     pub(crate) generation: AtomicU64,
     /// The heap value, lazily materialised by `claim` on the slot's first
-    /// `FREE → LIVE` transition and reused on later reclaims. Wrapped in
+    /// `EMPTY → INITIALIZING` transition and reused on later reclaims. Wrapped in
     /// `UnsafeCell` so `claim` can return `&mut HeapCore` through a shared
     /// `&HeapSlot`, and `MaybeUninit` so a `FREE` slot carries no live
     /// (expensive-to-construct) `HeapCore`.
     pub(crate) heap: UnsafeCell<MaybeUninit<HeapCore>>,
-    /// Intrusive link for the `free_slots` Treiber stack. Holds the NEXT free
-    /// slot's index (or [`NEXT_FREE_TAIL`] for the stack tail) while the slot
-    /// is on the free list. The current slot owner executes `store_next`
-    /// before publishing the index into `free_slots`; a stale popper may
-    /// atomically read this dedicated cell after another thread has already
-    /// moved the slot into its next `LIVE` epoch. Its lifetime and index-to-cell
-    /// mapping are stable, and it is not aliased with the heap payload, so it
-    /// must remain atomic.
-    pub(crate) next_free: AtomicU32,
     /// Release-published "heap is materialised" flag (task #133 hardening).
     ///
     /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
-    /// slot's first `claim` (`new_gen == 1` branch, immediately after
+    /// slot's first successful construction, immediately after
     /// `heap_ptr.write(hc)` completes) — see `HeapRegistry::claim` /
     /// `claim_with_config`. NEVER reset back to `false` afterwards: once a
     /// slot's `HeapCore` is materialised it is reused as-is across every
@@ -520,23 +513,23 @@ impl HeapSlot {
 }
 
 // SAFETY (Sync): `HeapSlot` is shared across threads (the registry array is
-// process-global). Synchronisation is provided by its atomic fields (`state`,
-// `next_free`) and the single-writer invariant on `heap` (the `UnsafeCell`):
-// at most one thread — the slot's owner, established by the `FREE → LIVE` CAS
-// in `claim` — may mutate `heap` at any time, and that owner has observed the
+// process-global). Synchronisation is provided by its atomic `state` and
+// the single-writer invariant on `heap` (the `UnsafeCell`):
+// at most one thread — the owner or maintenance CAS winner — may mutate
+// `heap` at any time, and that winner has observed the
 // CAS that excludes all other writers. Reads of `heap` (the `*mut HeapCore`
 // handed out by `claim`) are sound because the slot array is immovable and
 // lives for the process lifetime (the primordial registry segment is never
 // freed). This is exactly the soundness argument for `UnsafeCell` under a
 // single-writer discipline; the registry's atomic protocol is what establishes
 // the single writer. `MaybeUninit` adds no new hazard: the registry's contract
-// is that `heap` is read only while `state == LIVE` (which means `claim` has
-// init'd it).
+// is that `heap` is read only by the INITIALIZING winner or while state is
+// OWNED/MAINTENANCE (the latter two require prior full initialisation).
 //
 // This single-writer invariant ADDITIONALLY rests on `state`, `generation`,
-// `next_free` and every `Registry` control atomic being `pub(crate)`
+// and every `Registry` control atomic being `pub(crate)`
 // (task #93 / R4-MS-4): safe code OUTSIDE the crate cannot execute the
-// `LIVE → FREE` transition or push onto `free_slots`, so it cannot smuggle a
+// `OWNED → FREE` transition, so it cannot smuggle a
 // second owner past the CAS gate. While those fields were `pub`, a safe
 // downstream crate could re-claim a LIVE slot under a thread that still held
 // a cached TLS `*mut HeapCore`, materialising two `&mut HeapCore` over one

@@ -9,7 +9,7 @@ use super::claim::{push_back_after_oom, HeapRegistry};
 use crate::registry::bootstrap::{ensure, MAX_HEAPS};
 #[cfg(feature = "alloc-stats")]
 use crate::registry::heap_slot::HeapSlot;
-use crate::registry::heap_slot::{STATE_FREE, STATE_LIVE};
+use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
 /// — times `claim_with_config` found an already-materialised slot whose live
@@ -357,52 +357,28 @@ fn walk_initialised_slots(mut visit: impl FnMut(&'static HeapSlot)) {
 }
 
 // ---------------------------------------------------------------------------
-// UBFIX-5 test-only hooks (M-5 / L-9a regression coverage).
-//
-// There is no test-only way to force `HeapCore::new`/`new_with_config` to
-// return `None` (a real OS reservation refusal) without touching
-// `alloc_core.rs` (out of this task's scope — see the task's isolation
-// note). These hooks instead reproduce the EXACT slot-level state the OOM
-// branch leaves behind, by driving the identical `FREE → LIVE` CAS +
-// `generation` bump + push-back-to-FREE sequence `claim` performs, WITHOUT
-// running `HeapCore::new` — i.e. "claim a slot, then simulate materialisation
-// failing" — so a caller-side test can verify the state `push_back_after_oom`
-// produces (LIVE→FREE, back on `free_slots`, `generation` bumped but
-// `initialised` still false) and that a SUBSEQUENT real `claim()` recovers it
-// correctly (the M-5 fix under test: the gate is `initialised`, not
-// `generation == 1`).
+// Failed-initialisation test hook: exercise the same state transitions without
+// asking the OS to fail a reservation.
 // ---------------------------------------------------------------------------
 
-/// Test-only hook (UBFIX-5 / M-5): claim a slot via the exact `pick_slot` +
-/// `FREE → LIVE` CAS + `generation` bump prelude `claim` uses, then — instead
-/// of materialising a `HeapCore` — immediately push it back to `FREE` via
-/// [`push_back_after_oom`], exactly as `claim`'s OOM branch does. Returns the
-/// slot index touched, or `None` on registry exhaustion (mirrors `claim`'s
-/// own `None` case, vanishingly unlikely in a test).
-///
-/// This reproduces, deterministically and without touching `alloc_core.rs`,
-/// the exact post-OOM slot state `claim`'s `HeapCore::new() == None` branch
-/// leaves behind: `state == FREE`, the slot back on `free_slots`,
-/// `generation` bumped by exactly one, and `initialised` still `false` (the
-/// slot's `HeapCore` was never written). A caller can use the returned index
-/// with [`dbg_slot_generation`] / a subsequent `claim()` to verify (a) the
-/// slot is not leaked (a following `claim()` can reach it again) and (b) a
-/// following `claim()` on this exact slot — which will observe
-/// `generation >= 2` (already bumped once here) — still correctly
-/// materialises the `HeapCore` rather than skipping materialisation (the
-/// defect the old `new_gen == 1` gate had: it would treat any
-/// `generation > 1` slot as "already materialised" regardless of
-/// `initialised`, handing out a pointer to `MaybeUninit::uninit()` bytes).
+/// Reserve a fresh slot, simulate constructor failure, and return its index.
+/// The postcondition is EMPTY with `initialised == false`; the next claim can
+/// retry construction even though `generation` is nonzero.
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
-    let idx = HeapRegistry::pick_slot()?;
     let reg = ensure();
-    // R6-OPT-P0-2: `idx < MAX_HEAPS` by `pick_slot`; `slot()` resolves it
-    // through the chunked slot array.
+    let idx = super::stack::bump_count(reg)?;
+    // `bump_count` bounds the index; slot() materialises its chunk.
     let slot = reg.slot(idx);
-    if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
-        == Err(STATE_LIVE)
+    if slot
+        .cas_state(
+            STATE_EMPTY,
+            STATE_INITIALIZING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_err()
     {
         // Lost the slot race to a concurrent real claim (should not happen
         // under the crate's `tests/` serial-guard discipline, but stay

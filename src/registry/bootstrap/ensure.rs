@@ -100,8 +100,7 @@ pub(super) fn ensure_chunk_slow(
         // but under miri we are NOT the global allocator, so no reentrancy.
         // The whole `CHUNK_SIZE` span is guaranteed zeroed on every backend, so
         // `base` points at a fully valid all-zero `RegistryChunk`:
-        //   next_free   = 0 (NOT NEXT_FREE_TAIL — lazy init, RAD-1)
-        //   state       = 0 = STATE_FREE
+        //   state       = 0 = STATE_EMPTY
         //   generation  = 0
         //   heap        = MaybeUninit::uninit() (zero is fine)
         //   initialised = 0 = false
