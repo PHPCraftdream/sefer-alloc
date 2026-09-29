@@ -730,6 +730,33 @@ impl AllocCore {
         drained
     }
 
+    /// Cold trim may retire an empty carve cursor without waiting for a new
+    /// allocation to replace it. A zero outstanding credit excludes issued,
+    /// unpublished and pending remote-free blocks alike.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn release_empty_current_small_for_trim(&mut self) {
+        let base = self.small_cur;
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+            return;
+        }
+        let meta = SegmentMeta::new(base);
+        if meta.live_count_of() != 0 || meta.is_decommitted() {
+            return;
+        }
+        debug_assert!(self.pool_head != base && meta.pool_prev_of().is_null());
+        let primordial = self.table.base_at(0);
+        debug_assert!(!primordial.is_null());
+        debug_assert!(matches!(
+            SegmentHeader::kind_at(primordial),
+            SegmentKind::Primordial
+        ));
+        self.small_cur = primordial;
+        #[cfg(feature = "alloc-segment-directory")]
+        self.clear_segment_directory(SegmentHeader::segment_id_at(base) as usize);
+        Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        self.table.recycle(base);
+    }
+
     /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile this heap's segment
     /// state via a DUAL enumeration (R2-14): (1) every LIVE (non-NULL)
     /// segment-table slot — `table.base_at(i)` for `i in

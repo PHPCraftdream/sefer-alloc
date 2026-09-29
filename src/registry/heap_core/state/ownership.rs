@@ -264,6 +264,7 @@ impl HeapCore {
         #[cfg(feature = "alloc-decommit")]
         {
             self.core.drain_small_pool();
+            self.core.release_empty_current_small_for_trim();
             self.core.evict_all();
         }
     }
