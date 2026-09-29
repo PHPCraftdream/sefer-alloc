@@ -243,6 +243,15 @@ impl AllocCore {
         // race-free against the owner's disjoint `bump` writes.
         match SegmentHeader::kind_at(base) {
             SegmentKind::Large => {
+                // LIVE carries this instance's sole credit until the owner
+                // claims it. A failed claim must not unregister or unmap it.
+                let terminal_meta = SegmentMeta::new(base);
+                let state = crate::alloc_core::large::reservation_state::LargeReservationState::new(
+                    terminal_meta.large_state_atomic(),
+                );
+                let Some(generation) = state.claim_live() else {
+                    std::process::abort();
+                };
                 // Large/huge: the segment is being freed. The full header read
                 // here is on the cold Large path (one allocation per segment,
                 // rare), so the dependent-load cost does not matter.
@@ -401,7 +410,9 @@ impl AllocCore {
                         let magic_off = core::mem::offset_of!(SegmentHeader, magic);
                         Node::atomic_u32_at(base, magic_off)
                             .store(0, core::sync::atomic::Ordering::Release);
-                        SegmentMeta::new(base).mark_large_cached();
+                        if !state.cache_consumed(generation) {
+                            std::process::abort();
+                        }
                         // Deposit into cache and update the byte-budget counter.
                         let seq = self.large_cache_seq;
                         self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
@@ -435,7 +446,9 @@ impl AllocCore {
                     // ordering), THEN release — Drop's `table.bases()` walk
                     // will no longer see `base`, so there is no double-free.
                     self.table.unregister(base);
-                    SegmentMeta::new(base).mark_large_released();
+                    if !state.release_consumed(generation) {
+                        std::process::abort();
+                    }
                     os::release_segment(stale.reservation, stale.reservation_len);
                 }
                 #[cfg(not(feature = "alloc-decommit"))]
@@ -446,7 +459,9 @@ impl AllocCore {
                     // to `Drop` leaks the reservation AND the `SegmentTable`
                     // slot for the remaining process lifetime.
                     self.table.unregister(base);
-                    SegmentMeta::new(base).mark_large_released();
+                    if !state.release_consumed(generation) {
+                        std::process::abort();
+                    }
                     os::release_segment(stale.reservation, stale.reservation_len);
                 }
             }
