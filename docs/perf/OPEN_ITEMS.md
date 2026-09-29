@@ -2963,6 +2963,14 @@ for completeness.
     - **Current-number-or-verdict:** the review names three candidates. (a) `LockFreeRegion` clones the snapshot page table and a full slot page on each successful write (`src/concurrent/lock_free/lock_free_region.rs`); a more granular persistent structure would copy less but cost read time and complexity. (b) `ShardedRegion::len`/`is_empty` visit every shard; a shared count would make `len` O(1) but adds an RMW contention point and does not give snapshot semantics (see P3-1). (c) Fallback-heap lock serialization under registry exhaustion is item 66's subject, not a new one. Both regions are outside the `production` allocator path.
     - **Next trigger:** a write-heavy or query-heavy region benchmark showing the cost. Gate: A/B of write throughput and query latency in the same workload regime; merge only on a measured win.
     - **Evidence:** `docs/reviews/2026-09-28-232143-src-review-xs-sol-round-3.md` "Optimization ideas".
+    - **Added by xxs round 5:** (d) `AllocStats` `stats()` walks every materialised registry slot to sum hit counters (`src/global/sefer_alloc/diag.rs`, `src/registry/heap_registry/counters.rs`); a frequent scrape with many slots could favor process-wide aggregates, weighed against extra atomics on the alloc hot path. (e) every remote `EpochRegion` evict takes one shared `Mutex<Vec<u32>>` (`src/concurrent/epoch/epoch_region.rs`); batching or a bounded MPSC queue is the alternative. (f) `LockFreeRegion` copies the whole page-pointer `Vec` on each write. Evidence: `docs/reviews/2026-09-29-091221-src-review-xxs-sol-round-5.md` "Идеи для измеряемой оптимизации". Still nothing measured.
+
+74. **[L] `scripts/paired-ab-runner.mjs` builtin `sefer` arm builds `--features alloc-global`, not `production`.** (Filed 2026-09-29, R5-01 design consultation.)
+
+    - **Status:** OPEN — measurement-hygiene gap; it now includes `alloc-xthread` (R5-01), so old no-xthread numbers are reproducible only on pre-R5-01 SHAs.
+    - **Current-number-or-verdict:** the arm and `scripts/dealloc-only-bench.mjs` (`FEATURES='alloc-global'`) measure a configuration that is not what ships as `production` (no `fastbin` magazine). Numbers taken with them are not production evidence.
+    - **Next trigger:** the next process-level A/B round: pick `production` (or record the feature set per arm as the R26-4 rule requires) before citing a verdict.
+    - **Evidence:** `scripts/paired-ab-runner.mjs` `seferConfig()`; R5-01 consultation notes.
 
 ## Recently resolved (closure trail — do not re-list as open)
 

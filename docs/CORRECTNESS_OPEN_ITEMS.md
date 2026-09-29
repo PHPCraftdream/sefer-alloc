@@ -251,7 +251,7 @@ directly, which still works and needs no table at all).
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (5 cards) --
+- **`docs/correctness-open-items/TRACKED_misc.md`** (8 cards) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -431,6 +431,9 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 156 | `TRACKED_ci_gate_coverage.md` |
 | 157 | `TRACKED_misc.md` |
 | 158 | `TRACKED_misc.md` |
+| 159 | `TRACKED_misc.md` |
+| 160 | `TRACKED_misc.md` |
+| 161 | `TRACKED_misc.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
