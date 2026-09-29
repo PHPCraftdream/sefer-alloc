@@ -187,7 +187,8 @@ impl SeferAlloc {
     /// per-thread heap when that heap's registry slot is **first
     /// materialised** — which happens on the thread's first allocation (the
     /// cold TLS `bind_slow` path; subsequent allocations hit the cached TLS
-    /// pointer and never re-read the config).
+    /// pointer and never re-read the config). A fallback allocation instead
+    /// materialises the process-global fallback heap with this same policy.
     ///
     /// # Binding semantics — single instance vs. multiple instances
     ///
@@ -202,6 +203,10 @@ impl SeferAlloc {
     /// - **Per thread (TLS):** the first allocation on a thread caches the
     ///   heap pointer in TLS; every later allocation reuses that cached
     ///   pointer. The config is consulted only on the cold first-bind branch.
+    /// - **Fallback:** the first fallback allocation fixes its process-global
+    ///   heap policy. Later incompatible instances cannot reconfigure it;
+    ///   each conflicting fallback allocation increments
+    ///   [`fallback_config_conflicts`](Self::fallback_config_conflicts).
     ///
     /// For the normal, supported usage — **one** `#[global_allocator]` `static`
     /// `SeferAlloc` per process — this is consistent and correct: every thread
@@ -230,6 +235,8 @@ impl SeferAlloc {
     /// wins (this is a detect-and-signal fix, not a reconfigure), but a
     /// non-zero `config_conflicts` is the signature that multiple
     /// incompatible instances are competing for the same registry slots.
+    /// Fallback conflicts have their own counter above; `stats()` does not
+    /// yet include them.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub const fn with_config(config: crate::alloc_core::LargeCacheConfig) -> Self {
@@ -305,5 +312,29 @@ impl SeferAlloc {
         {
             current_for_alloc()
         }
+    }
+
+    /// Run a fallback allocation under the same policy as this instance.
+    #[inline]
+    pub(super) fn with_fallback_heap<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut crate::registry::HeapCore) -> R,
+    {
+        #[cfg(feature = "alloc-decommit")]
+        {
+            crate::global::fallback::with_heap_config(self.config, f)
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        {
+            crate::global::fallback::with_heap(f)
+        }
+    }
+
+    /// Number of fallback policy conflicts. The first fallback initializer's
+    /// policy wins; later incompatible requests are counted without panicking.
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn fallback_config_conflicts(&self) -> u64 {
+        crate::global::fallback::config_conflicts_total()
     }
 }

@@ -123,6 +123,9 @@ static mut FALLBACK: MaybeUninit<HeapCore> = MaybeUninit::uninit();
 /// The bootstrap state-machine word: `UNINIT → INITIALIZING → READY`.
 static INIT_STATE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
 
+#[cfg(feature = "alloc-decommit")]
+static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
+
 #[cfg(all(
     feature = "alloc-xthread",
     feature = "internals",
@@ -167,7 +170,25 @@ static LOCK: AtomicBool = AtomicBool::new(false);
 /// yield null, and it is the correct M10 outcome (true OOM, not a missing
 /// heap).
 #[must_use]
+#[cfg(feature = "alloc-decommit")]
 pub fn heap_ptr() -> *mut HeapCore {
+    heap_ptr_impl(None)
+}
+
+#[must_use]
+#[cfg(not(feature = "alloc-decommit"))]
+pub fn heap_ptr() -> *mut HeapCore {
+    heap_ptr_impl()
+}
+
+#[cfg(feature = "alloc-decommit")]
+fn heap_ptr_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
+    heap_ptr_impl(Some(config))
+}
+
+fn heap_ptr_impl(
+    #[cfg(feature = "alloc-decommit")] config: Option<crate::alloc_core::LargeCacheConfig>,
+) -> *mut HeapCore {
     loop {
         // Fast path: already READY. Acquire to see the init thread's writes.
         if INIT_STATE.load(Ordering::Acquire) == STATE_READY {
@@ -239,7 +260,20 @@ pub fn heap_ptr() -> *mut HeapCore {
             let new_heap = if forced_oom {
                 None
             } else {
-                HeapCore::new(crate::alloc_core::segment_header::OWNER_ID_FALLBACK)
+                #[cfg(feature = "alloc-decommit")]
+                {
+                    match config {
+                        Some(config) => HeapCore::new_with_config(
+                            crate::alloc_core::segment_header::OWNER_ID_FALLBACK,
+                            config,
+                        ),
+                        None => HeapCore::new(crate::alloc_core::segment_header::OWNER_ID_FALLBACK),
+                    }
+                }
+                #[cfg(not(feature = "alloc-decommit"))]
+                {
+                    HeapCore::new(crate::alloc_core::segment_header::OWNER_ID_FALLBACK)
+                }
             };
             match new_heap {
                 Some(hc) => {
@@ -379,6 +413,32 @@ where
     // exclusive `&mut` access — no other thread can be inside `with_heap`. The
     // `HeapCore` is valid for the process lifetime (never dropped).
     Some(f(unsafe { &mut *heap }))
+}
+
+/// Initialise with the requesting allocator's policy. A later incompatible
+/// request keeps the first policy and increments a diagnostic counter.
+#[cfg(feature = "alloc-decommit")]
+pub(crate) fn with_heap_config<F, R>(config: crate::alloc_core::LargeCacheConfig, f: F) -> Option<R>
+where
+    F: FnOnce(&mut HeapCore) -> R,
+{
+    let heap = heap_ptr_with_config(config);
+    if heap.is_null() {
+        return None;
+    }
+    let _guard = LockGuard::acquire();
+    // SAFETY: READY published the process-lifetime heap and the fallback
+    // lock grants exclusive access for both policy comparison and `f`.
+    let heap = unsafe { &mut *heap };
+    if !heap.live_config_matches(&config) {
+        CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
+    }
+    Some(f(heap))
+}
+
+#[cfg(feature = "alloc-decommit")]
+pub(crate) fn config_conflicts_total() -> u64 {
+    CONFIG_CONFLICTS.load(Ordering::Relaxed)
 }
 
 /// Try to execute `f` with exclusive access to an already-ready fallback
