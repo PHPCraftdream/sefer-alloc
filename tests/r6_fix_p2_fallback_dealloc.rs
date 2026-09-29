@@ -3,7 +3,6 @@
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
-    feature = "fastbin",
     feature = "internals",
     feature = "bench-internals",
     not(miri)
@@ -11,7 +10,9 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "alloc-decommit")]
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use sefer_alloc::alloc_core::segment_header::OWNER_ID_FALLBACK;
@@ -26,6 +27,7 @@ static TEARDOWN_PTR: AtomicUsize = AtomicUsize::new(0);
 static TEARDOWN_FREE_RAN: AtomicBool = AtomicBool::new(false);
 static TEARDOWN_LOCK_BEFORE: AtomicU64 = AtomicU64::new(0);
 static TEARDOWN_LOCK_AFTER: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "alloc-decommit")]
 static TEARDOWN_LIVE_BEFORE_FREE: AtomicU32 = AtomicU32::new(0);
 
 struct FreeAfterFallbackAlloc;
@@ -46,6 +48,7 @@ impl Drop for FallbackAllocAfterGuard {
         // LOCAL TORN and recycled the registry slot before this destructor.
         // SAFETY: the layout is valid and non-zero.
         let ptr = unsafe { SeferAlloc::new().alloc(layout()) };
+        #[cfg(feature = "alloc-decommit")]
         if !ptr.is_null() {
             let live = HeapCore::dbg_with_fallback_for_test(|heap| {
                 heap.dbg_live_count_for(ptr).unwrap_or(0)
@@ -160,38 +163,64 @@ fn real_teardown_case() {
         "the teardown dealloc must acquire the fallback lock exactly once"
     );
 
-    let (class, free, live, ring, overflow, in_magazine) =
-        HeapCore::dbg_with_fallback_for_test(|heap| {
-            assert_eq!(heap.dbg_owner_id_for(ptr), Some(OWNER_ID_FALLBACK));
-            let class = heap.dbg_class_for(layout()).expect("small class");
-            (
-                class,
-                heap.dbg_is_free_for(ptr),
-                heap.dbg_live_count_for(ptr),
-                heap.dbg_segment_ring_cursors_for_test(ptr),
-                heap.dbg_overflow_cursors_for_test(),
-                heap.dbg_tcache_contains(class, ptr),
-            )
-        })
-        .expect("fallback remains initialized");
-    assert!(
-        in_magazine,
-        "direct fallback dealloc did not park the block in its class magazine: \
-         class={class}, free={free}, live={live:?}, ring={ring:?}, overflow={overflow:?}"
-    );
-    // Direct small frees park in the magazine; only a later flush sets the
-    // alloc-bitmap bit to free. Reallocation below verifies immediate reuse.
-    assert!(
-        !free,
-        "magazine-resident blocks remain allocated in the bitmap"
-    );
-    assert_eq!(
-        live,
-        Some(TEARDOWN_LIVE_BEFORE_FREE.load(Ordering::Acquire)),
-        "magazine parking must leave the live count unchanged"
-    );
+    let (free, ring, overflow) = HeapCore::dbg_with_fallback_for_test(|heap| {
+        assert_eq!(heap.dbg_owner_id_for(ptr), Some(OWNER_ID_FALLBACK));
+        (
+            heap.dbg_is_free_for(ptr),
+            heap.dbg_segment_ring_cursors_for_test(ptr),
+            heap.dbg_overflow_cursors_for_test(),
+        )
+    })
+    .expect("fallback remains initialized");
     assert_eq!(ring, Some((0, 0)), "the free must not take the remote ring");
     assert_eq!(overflow, (0, 0), "the free must not enter heap overflow");
+
+    #[cfg(feature = "fastbin")]
+    {
+        let (class, in_magazine) = HeapCore::dbg_with_fallback_for_test(|heap| {
+            let class = heap.dbg_class_for(layout()).expect("small class");
+            (class, heap.dbg_tcache_contains(class, ptr))
+        })
+        .expect("fallback remains initialized");
+        assert!(
+            in_magazine,
+            "direct fallback dealloc did not park the block in its class magazine: \
+             class={class}, free={free}, ring={ring:?}, overflow={overflow:?}"
+        );
+        // Magazine-resident blocks remain allocated in the bitmap and live
+        // count; the subsequent alloc proves immediate reuse.
+        assert!(!free, "magazine resident block remains allocated in bitmap");
+    }
+
+    #[cfg(not(feature = "fastbin"))]
+    {
+        assert!(free, "non-fastbin free must return the block to its bitmap");
+    }
+
+    #[cfg(feature = "alloc-decommit")]
+    {
+        let live_after = HeapCore::dbg_with_fallback_for_test(|heap| heap.dbg_live_count_for(ptr))
+            .expect("fallback remains initialized");
+        let live_before = TEARDOWN_LIVE_BEFORE_FREE.load(Ordering::Acquire);
+        assert!(
+            live_before > 0,
+            "allocation must be live before teardown free"
+        );
+
+        #[cfg(feature = "fastbin")]
+        assert_eq!(
+            live_after,
+            Some(live_before),
+            "magazine parking must leave the live count unchanged"
+        );
+
+        #[cfg(not(feature = "fastbin"))]
+        assert_eq!(
+            live_after,
+            Some(live_before - 1),
+            "non-fastbin free must decrement live count exactly once"
+        );
+    }
 
     let reused = HeapCore::dbg_with_fallback_for_test(|heap| {
         let reused = heap.alloc(layout());
