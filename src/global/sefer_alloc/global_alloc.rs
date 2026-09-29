@@ -6,50 +6,14 @@
 #![allow(unsafe_code)]
 
 use core::alloc::{GlobalAlloc, Layout};
-use core::cell::Cell;
 
+use crate::alloc_core::segment_header::{SegmentHeader, OWNER_ID_FALLBACK};
 use crate::global::fallback;
-use crate::global::tls_heap::CurrentHeap;
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
 
+use crate::global::tls_heap::CurrentHeap;
+
 use super::SeferAlloc;
-
-thread_local! {
-    static FALLBACK_LOCK_ACTIVE: Cell<bool> = const { Cell::new(false) };
-}
-
-struct FallbackLockScope(bool);
-
-impl FallbackLockScope {
-    fn enter() -> Self {
-        let previous = FALLBACK_LOCK_ACTIVE
-            .try_with(|held| {
-                let previous = held.get();
-                held.set(true);
-                previous
-            })
-            .unwrap_or(false);
-        Self(previous)
-    }
-}
-
-impl Drop for FallbackLockScope {
-    fn drop(&mut self) {
-        let _ = FALLBACK_LOCK_ACTIVE.try_with(|held| held.set(self.0));
-    }
-}
-
-fn fallback_lock_active() -> bool {
-    FALLBACK_LOCK_ACTIVE.try_with(Cell::get).unwrap_or(false)
-}
-
-fn with_fallback_heap<F, R>(f: F) -> Option<R>
-where
-    F: FnOnce(&mut crate::registry::HeapCore) -> R,
-{
-    let _scope = FallbackLockScope::enter();
-    fallback::with_heap(f)
-}
 
 // SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/
 // `alloc_zeroed`/`realloc` return valid memory for the requested `Layout`
@@ -72,7 +36,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // `with_heap`. `with_heap` returns `None` only on true OOM → we
             // surface null.
             CurrentHeap::Fallback => {
-                with_fallback_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
+                fallback::with_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in
             // a registry slot. `current_heap` returned it for THIS thread;
@@ -88,9 +52,6 @@ unsafe impl GlobalAlloc for SeferAlloc {
         if ptr.is_null() {
             return;
         }
-        // The dealloc-only resolver never claims a slot. Threads with no
-        // fallback history keep the lock-free foreign route; fallback users
-        // consult the fallback heap under its lock.
         match current_for_dealloc() {
             CurrentHeapForDealloc::Own(heap) => {
                 // SAFETY: `heap` is non-null and points to a live `HeapCore`
@@ -98,23 +59,26 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 // invariant).
                 unsafe { (*heap).dealloc(ptr, layout) };
             }
-            CurrentHeapForDealloc::FallbackSeen => {
-                // The fallback HeapCore distinguishes its own allocations
-                // from foreign pointers while the global lock is held.
-                // Never reacquire that non-recursive lock from inside it.
-                if !fallback_lock_active()
-                    && with_fallback_heap(|h| unsafe { h.dealloc(ptr, layout) }).is_some()
-                {
-                    return;
-                }
-                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
-                crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
-            }
             CurrentHeapForDealloc::ForeignNoBind => {
-                // This thread has no live own heap and no fallback history,
-                // so preserve the bind-less remote route without taking the
-                // process-wide fallback lock. A fallback-owned remote free
-                // remains valid through its stamped ring/overflow route.
+                // This thread has no live own heap; inspect ownership without
+                // relying on TLS teardown state.
+                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
+                // Caller contract guarantees this live segment remains
+                // mapped; the accessor validates magic and reads only its
+                // atomic owner field, not the full header racing with `bump`.
+                let fallback_owned = SegmentHeader::owner_id_at(base) == Some(OWNER_ID_FALLBACK);
+                if fallback_owned {
+                    // Lock order: atomic owner stamp, then fallback LOCK.
+                    // This try-lock never waits, including on recursive entry;
+                    // on failure no fallback guard is held for remote routing.
+                    // SAFETY: `ptr`/`layout` are the caller's live allocation
+                    // pair, and `try_with_heap` grants exclusive fallback access.
+                    if fallback::try_with_heap(|h| unsafe { h.dealloc(ptr, layout) }).is_some() {
+                        return;
+                    }
+                    // A busy lock falls through to the existing valid remote
+                    // route, which does not reacquire the fallback lock.
+                }
                 //
                 // SAFETY: `ptr`/`layout` are the caller-bound
                 // `GlobalAlloc::dealloc` contract pair (this whole fn is
@@ -129,7 +93,6 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 // read, and excluding that case is the caller's baseline
                 // `GlobalAlloc` obligation, not something these guards
                 // relax.
-                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
                 crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
             }
         }
@@ -149,7 +112,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         match self.current_heap() {
             CurrentHeap::Fallback => {
-                with_fallback_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
+                fallback::with_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: as in `alloc`.
             CurrentHeap::Own(heap) => unsafe { (*heap).alloc_zeroed(layout) },
@@ -169,7 +132,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // contract pair (this whole fn is `unsafe fn realloc`); the
             // closure forwards them to the fallback heap's `HeapCore::realloc`.
             CurrentHeap::Fallback => {
-                with_fallback_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
+                fallback::with_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
                     .unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: as in `alloc`. `realloc` takes the C2 in-place fast path
@@ -192,7 +155,7 @@ impl SeferAlloc {
     #[doc(hidden)]
     pub unsafe fn dbg_dealloc_while_fallback_lock_held(ptr: *mut u8, layout: Layout) {
         let allocator = Self::new();
-        let _ = with_fallback_heap(|_| {
+        let _ = fallback::with_heap(|_| {
             // SAFETY: upheld by this hook's caller contract above.
             unsafe { allocator.dealloc(ptr, layout) };
         });

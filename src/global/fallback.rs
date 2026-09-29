@@ -130,10 +130,9 @@ static INIT_STATE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
 ))]
 static DBG_INJECT_FALLBACK_OOM: AtomicBool = AtomicBool::new(false);
 
-/// R6-OPT-P0-1: process-wide count of [`LOCK`] acquisitions (i.e. of
-/// [`with_heap`] calls that got past the null check and entered the guarded
-/// section). Diagnostic-only, `Relaxed` — mirrors the crate's existing
-/// cold-path counter discipline (e.g. `CONFIG_CONFLICTS` in
+/// R6-OPT-P0-1: process-wide count of successful [`LOCK`] acquisitions by
+/// [`with_heap`] and [`try_with_heap`]. Diagnostic-only, `Relaxed` — mirrors
+/// the crate's existing cold-path counter discipline (e.g. `CONFIG_CONFLICTS` in
 /// `registry::heap_registry`): always compiled in (not gated behind
 /// `alloc-stats`), since acquiring the fallback lock is definitionally a
 /// cold/rare path already, not a hot-path tax this counter would visibly add
@@ -144,12 +143,11 @@ static DBG_INJECT_FALLBACK_OOM: AtomicBool = AtomicBool::new(false);
 /// this module (`LOCK` itself is private). See
 /// [`dbg_fallback_lock_acquisitions`] and
 /// `tests/dealloc_only_no_bind_torn.rs`'s TORN-thread test, which snapshots
-/// this counter immediately before and after a TORN-thread dealloc and
-/// asserts it did not move (R6-OPT-P0-1's `current_for_dealloc` routes a
-/// TORN thread's dealloc directly through `HeapCore::dealloc_foreign_routing`
-/// without ever calling `with_heap`). `u64` (not `u8`/`u32`) so a long-running
-/// process/test-binary that legitimately calls `with_heap` many times cannot
-/// wrap this counter around and produce a false "unchanged" reading.
+/// this counter immediately before and after a TORN-thread dealloc of a
+/// registry-owned block and asserts it did not move. Fallback-owned blocks
+/// now try the lock based on their segment stamp. `u64` (not `u8`/`u32`) so a
+/// long-running process/test-binary that legitimately calls these routes
+/// cannot wrap this counter around and produce a false "unchanged" reading.
 static LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
 
 /// The fallback-heap spinlock. Held while a thread is performing an
@@ -383,6 +381,26 @@ where
     Some(f(unsafe { &mut *heap }))
 }
 
+/// Try to execute `f` with exclusive access to an already-ready fallback
+/// heap. Returns `None` without waiting if it is uninitialised or locked.
+/// The fallback-owned dealloc route has already read a live fallback segment
+/// stamp, so `READY` is expected; checking it here keeps this API nonblocking.
+pub(crate) fn try_with_heap<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut HeapCore) -> R,
+{
+    if INIT_STATE.load(Ordering::Acquire) != STATE_READY {
+        return None;
+    }
+    // SAFETY: READY is monotonic and Acquire observes the fully initialized
+    // process-lifetime fallback heap, as in `heap_ptr`'s fast path.
+    let heap = addr_of_mut!(FALLBACK) as *mut HeapCore;
+    let _guard = LockGuard::try_acquire()?;
+    // SAFETY: the guard owns LOCK, granting exclusive access; the heap lives
+    // for the process lifetime.
+    Some(f(unsafe { &mut *heap }))
+}
+
 #[cfg(all(
     feature = "alloc-xthread",
     feature = "internals",
@@ -431,6 +449,20 @@ struct LockGuard;
 const LOCK_TIGHT_SPINS: u32 = 64;
 
 impl LockGuard {
+    fn acquired() -> Self {
+        LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "alloc-xthread")]
+        crate::registry::set_fallback_lock_held(true);
+        LockGuard
+    }
+
+    /// Acquire without waiting; a busy lock may be held by this thread.
+    fn try_acquire() -> Option<Self> {
+        LOCK.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()?;
+        Some(Self::acquired())
+    }
+
     /// Acquire the fallback spinlock, returning the guard that will release it.
     ///
     /// R1-06: past [`LOCK_TIGHT_SPINS`] failed attempts, back off to
@@ -458,19 +490,7 @@ impl LockGuard {
                 core::hint::spin_loop();
             }
         }
-        // R6-OPT-P0-1: diagnostic-only, `Relaxed` — see `LOCK_ACQUISITIONS`'s
-        // doc comment. Bumped once per successful acquisition (this point is
-        // reached only after the CAS loop above wins).
-        LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
-        // R1-06: record that THIS thread now holds the fallback lock, so
-        // `push_with_overflow_retry` (`heap_core_xthread/overflow.rs`) can
-        // skip its bounded sleep-retry tier for the duration — see
-        // `registry::xthread_fallback_gate`'s module doc for the full
-        // rationale. Only meaningful under `alloc-xthread` (the retry tier it
-        // gates does not exist otherwise).
-        #[cfg(feature = "alloc-xthread")]
-        crate::registry::set_fallback_lock_held(true);
-        LockGuard
+        Self::acquired()
     }
 }
 
