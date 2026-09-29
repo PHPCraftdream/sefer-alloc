@@ -1,5 +1,7 @@
 //! Owning backing for the single authoritative SidecarBitmap primitive.
 
+#[cfg(feature = "internals")]
+use core::sync::atomic::Ordering;
 use core::sync::atomic::{AtomicU64, AtomicU8};
 
 use crate::alloc_core::remote_bitmap::SidecarBitmap;
@@ -23,6 +25,19 @@ impl SmallSidecar {
     /// Owner-only class issue before allocation handoff.
     pub fn issue(&self, offset: u32, class: u8) -> bool {
         self.bitmap().issue(offset, class)
+    }
+
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn class_at_for_test(&self, offset: u32) -> Option<u8> {
+        let offset = offset as usize;
+        let granule = crate::alloc_core::size_classes::MIN_BLOCK;
+        if offset >= crate::alloc_core::os::SEGMENT || !offset.is_multiple_of(granule) {
+            return None;
+        }
+        self.classes[offset / granule]
+            .load(Ordering::Acquire)
+            .checked_sub(1)
     }
 
     /// Producer terminal publication, called by consuming RoutePin.

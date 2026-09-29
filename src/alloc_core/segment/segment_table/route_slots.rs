@@ -95,6 +95,19 @@ impl RouteSlots {
         *slot = Some(route);
     }
 
+    pub(super) fn issue_small(&self, index: usize, base: *mut u8, offset: u32, class: u8) {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-only access to an initialized slot in the live array.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base || !route.issue_small(offset, class) {
+            std::process::abort();
+        }
+    }
+
     pub(super) fn remove(&mut self, index: usize) {
         if index >= self.cap {
             std::process::abort();
