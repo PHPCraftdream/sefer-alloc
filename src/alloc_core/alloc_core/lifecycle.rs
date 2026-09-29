@@ -6,19 +6,21 @@
 //! `LargeCacheDecayConfig::from_config` constructor, and the
 //! `bench-internals`-gated `DBG_RESERVATION_OWNER_ID_COUNTER` source.
 //! Teardown: the `Drop` implementation that releases every OS reservation (including the owner-only sidecar spans via their `*_vm` reservation tokens, R2-12),
-//! plus the `base_add` node-seam offset helper. Pure code movement; no
-//! behavior changed.
+//! plus the `base_add` node-seam offset helper.
 
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
+#[cfg(feature = "alloc-decommit")]
+use crate::alloc_core::segment_header::large_generation;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 
 use super::bootstrap;
 #[cfg(feature = "alloc-decommit")]
 use super::counters::LargeCacheHitCounter;
 #[cfg(feature = "alloc-decommit")]
-use super::{LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
+use super::{CachedLarge, LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
 #[cfg(feature = "numa-aware")]
@@ -48,6 +50,20 @@ impl LargeCacheDecayConfig {
             headroom_bytes: cfg.resolved_headroom_bytes(),
         }
     }
+}
+
+#[cfg(feature = "alloc-decommit")]
+fn release_cached_on_drop(cached: CachedLarge) {
+    // The detached slot owns the reservation; a failed credit transition is
+    // terminal, and must never be followed by an OS release.
+    {
+        let meta = SegmentMeta::new(cached.base);
+        let generation = large_generation(meta.terminal_snapshot().large_state);
+        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+            std::process::abort();
+        }
+    }
+    os::release_segment(cached.reservation, cached.reservation_len);
 }
 
 /// Task #1998: resolve the empty-small-segment pool cap (`min(by_segments,
@@ -348,20 +364,19 @@ impl AllocCore {
 ///    `recycle` — `recycle` only flips the slot's state and pushes it onto
 ///    `free_slots` for reuse; see `HeapRegistry::recycle`). So the ONLY way
 ///    to reach `AllocCore::drop` today is constructing a STANDALONE
-///    `AllocCore` directly (`AllocCore::new`/`::default`, bypassing the
+///    `AllocCore` directly (`AllocCore::new`, bypassing the
 ///    registry entirely) and letting it go out of scope.
 /// 2. **A standalone `AllocCore` cannot be shared across threads in the
 ///    first place.** `AllocCore` carries raw pointers (`table`, `small_cur`,
 ///    `large_cache` entries) and has no `unsafe impl Sync for AllocCore`
 ///    anywhere in this crate (verified by grep at the time of writing) — so
 ///    it is `!Sync` by the ordinary auto-trait rules, and a `&AllocCore`
-///    cannot be handed to another thread to begin with. Without a live
-///    `&AllocCore` on some OTHER thread, nothing can call the remote-free
-///    routing that would push onto a segment's `RemoteFreeRing` while this
-///    thread's `drop` is unmapping it — the race this note warns about has
-///    no way to be constructed against a standalone `AllocCore` today.
+///    cannot be handed to another thread to begin with. Its public free
+///    requires `&mut self`, so a standalone core has no remote-free producer
+///    that can publish while `drop` owns the core. Any outstanding allocation
+///    pointer becomes invalid when the core is dropped.
 ///
-/// Both conditions must be independently defeated before this becomes live:
+/// Either of these changes can make the race live:
 /// (a) some future change makes registry heaps droppable (e.g. a
 /// decommit-when-empty or heap-teardown policy that actually frees a
 /// `HeapCore`'s `AllocCore`, not just recycles the slot), OR (b) some future
@@ -392,8 +407,7 @@ impl Drop for AllocCore {
         #[cfg(feature = "alloc-decommit")]
         for slot in &mut self.large_cache {
             if let Some(cached) = slot.take() {
-                SegmentMeta::new(cached.base).mark_large_released();
-                os::release_segment(cached.reservation, cached.reservation_len);
+                release_cached_on_drop(cached);
             }
         }
         // R13-7 (task #277): the lazily-materialised extension sidecar holds
@@ -423,8 +437,7 @@ impl Drop for AllocCore {
             };
             for slot in &mut ext.slots {
                 if let Some(cached) = slot.take() {
-                    SegmentMeta::new(cached.base).mark_large_released();
-                    os::release_segment(cached.reservation, cached.reservation_len);
+                    release_cached_on_drop(cached);
                 }
             }
         }
@@ -467,7 +480,18 @@ impl Drop for AllocCore {
                 continue;
             }
             if hdr.kind == SegmentKind::Large {
-                SegmentMeta::new(base).mark_large_released();
+                // A registered Large in a standalone core is still LIVE.
+                // Claim its credit before the terminal transition and unmap.
+                {
+                    let meta = SegmentMeta::new(base);
+                    let state = LargeReservationState::new(meta.large_state_atomic());
+                    let Some(generation) = state.claim_live() else {
+                        std::process::abort();
+                    };
+                    if !state.release_consumed(generation) {
+                        std::process::abort();
+                    }
+                }
             }
             os::release_segment(hdr.reservation, hdr.reservation_len);
         }
