@@ -660,7 +660,7 @@ hard compile error in every configuration:
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse); and the `bench-internals`-gated `unsafe fn dbg_restore_local_for_test` test hook (R29-7, task #438) — covered by this module's tier-1 allow, with no separate item-level allow (so it adds no tier-2 site). | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
-| [`src/registry/bootstrap/registry.rs`](src/registry/bootstrap/registry.rs) | The `Registry` struct: `MAX_HEAPS`, the per-chunk slot resolver (`slot`/`slot_or_none`), the sync assert, the test-only dbg accessors, and the process-global `static REGISTRY` — raw-pointer footprint carving of the metadata region + the chunk-materialisation OOM `std::process::abort()` on the alloc path | `alloc-global` |
+| [`src/registry/bootstrap/registry.rs`](src/registry/bootstrap/registry.rs) | The `Registry` struct: `MAX_HEAPS`, per-chunk slot resolution, and process-global metadata. New claims use fallible `slot_or_none` and can reach fallback on chunk OOM; infallible `slot` retains an abort only as an invariant tripwire for already-materialised chunks. | `alloc-global` |
 | [`src/registry/bootstrap/ensure.rs`](src/registry/bootstrap/ensure.rs) | The process-global `ensure()` accessor, the per-chunk materialisation slow path (`ensure_chunk_slow`), and the test-only dbg hooks (OOM injection, sentinel-rollback probe, slot introspection) | `alloc-global` |
 | [`src/registry/bootstrap/overflow_sidecar.rs`](src/registry/bootstrap/overflow_sidecar.rs) | Lazy `HeapOverflow` sidecar materialisation — the third instance of the CAS-then-spin-then-publish protocol, plus the `deref_overflow_sidecar` safe membrane | `alloc-global` |
 | [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` / the tagged free-list head (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
@@ -1386,7 +1386,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **325 integration test files** ship
+a test file, and a reproducible command. **326 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **20 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1394,7 +1394,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (325 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (326 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

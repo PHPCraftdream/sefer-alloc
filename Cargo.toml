@@ -189,10 +189,11 @@ alloc-xthread = ["alloc-core"]
 # unreachable under correct operation; NOT a guaranteed abort -- no
 # `GlobalAlloc` method may unwind, and the crate does not lean on the std
 # shims to contain one, see that doc's R2-08 note) and
-# `src/registry/bootstrap.rs`'s `Registry::ensure_chunk` for the
-# direct `std::process::abort()` on alloc-path chunk-materialisation OOM
-# (the free path is fallible instead, via `slot_or_none`/`try_ensure_chunk`,
-# R34-15). Reentrancy-free (M5) is upheld structurally: no
+# `src/registry/bootstrap.rs`'s `Registry::ensure_chunk` for an invariant
+# abort if a caller claimed an already-materialised chunk but it is absent.
+# New claims and free-path lookups use fallible `slot_or_none`, so chunk OOM
+# can return to the allocator's fallback path. Reentrancy-free (M5) is upheld
+# structurally: no
 # `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path -- the TLS init is
 # the lazy allocation-free discipline. Requires `alloc-core`.
 #

@@ -285,10 +285,9 @@ fn no_stale_abandon_adopt_substrate_references() {
 ///      `tests/no_panic_doc_accuracy.rs`) — release `assert!`/`.expect()`/
 ///      `unreachable!()` sites kept as deliberate defence-in-depth, which
 ///      abort the process via the `#[rustc_nounwind]` `GlobalAlloc` shims.
-///   2. `Registry::ensure_chunk` in `src/registry/bootstrap/registry.rs` calls
-///      `std::process::abort()` directly and unconditionally on
-///      chunk-materialisation OOM on the ALLOC path (the free path is
-///      fallible instead, via `slot_or_none`/`try_ensure_chunk`, R34-15).
+///   2. New claims use fallible `slot_or_none` and can select fallback after
+///      chunk OOM. `Registry::ensure_chunk` still aborts if an already-proven
+///      materialised chunk is unexpectedly absent.
 ///
 /// This test pins three things so the Cargo.toml wording cannot silently
 /// drift back to the false blanket claim without a conscious update:
@@ -296,13 +295,10 @@ fn no_stale_abandon_adopt_substrate_references() {
 ///   * Cargo.toml's `alloc-global` comment block does NOT contain the old
 ///     unqualified overclaim ("never panic/abort" as a blanket guarantee).
 ///   * Cargo.toml's `alloc-global` comment block DOES point a reader at
-///     `sefer_alloc.rs` (the tripwires doc) and at the direct
-///     `std::process::abort()` call, so the corrected wording itself cannot
-///     silently regress into vague prose that re-introduces the same gap.
-///   * `src/registry/bootstrap/registry.rs` still actually contains the
-///     `std::process::abort()` call the corrected wording cites — if that
-///     call is ever removed/softened, this test forces a conscious
-///     Cargo.toml wording update rather than leaving a now-stale citation.
+///     `sefer_alloc.rs`, the fallible claim route, and the remaining invariant
+///     tripwire rather than claiming every allocator failure is fatal.
+///   * The source still routes claim through `slot_or_none` and retains the
+///     separate `ensure_chunk` invariant abort.
 ///
 /// Doc-only guard: reads Cargo.toml + source text, never links the crate, so
 /// it runs in every feature configuration.
@@ -332,8 +328,8 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
          'never panic/abort' overclaim without the qualifying caveat (Sol-F3 \
          regression). Ordinary failure paths are no-op/null, but five \
          release-surviving invariant tripwires (src/global/sefer_alloc.rs) \
-         and registry-chunk alloc-path OOM (src/registry/bootstrap/registry.rs) \
-         terminate the process by design. See \
+         can terminate the process by design, while chunk OOM on a new claim \
+         can reach fallback. See \
          docs/reviews/2026-08-05-sol-release-readonly-review.md finding F3."
     );
     assert!(
@@ -343,15 +339,15 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
          invariant tripwires) — Sol-F3 regression guard."
     );
     assert!(
-        block.contains("std::process::abort()"),
-        "Cargo.toml's `alloc-global` comment must cite the direct \
-         `std::process::abort()` call on the alloc path (registry chunk OOM, \
-         `src/registry/bootstrap/registry.rs`) — Sol-F3 regression guard."
+        block.contains("slot_or_none") && block.contains("fallback"),
+        "Cargo.toml must describe the fallible chunk-claim route to fallback"
+    );
+    assert!(
+        block.contains("ensure_chunk") && block.contains("invariant"),
+        "Cargo.toml must distinguish the remaining invariant abort"
     );
 
-    // The corrected wording cites a REAL abort() call — if bootstrap/registry.rs's
-    // abort is ever removed/softened without updating Cargo.toml, fail here
-    // instead of leaving a stale citation.
+    // Check both sides of the documented split against executable source.
     let bootstrap = fs::read_to_string(
         manifest
             .join("src")
@@ -362,11 +358,15 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
     .expect("read src/registry/bootstrap/registry.rs");
     assert!(
         bootstrap.contains("std::process::abort()"),
-        "src/registry/bootstrap/registry.rs no longer calls `std::process::abort()` \
-         directly — Cargo.toml's `alloc-global` comment cites this call as \
-         part of the accurate panic/abort contract (Sol-F3); if the abort \
-         was removed or made fallible, update Cargo.toml's wording \
-         accordingly rather than leaving a stale citation."
+        "the documented invariant abort is absent from Registry::ensure_chunk"
+    );
+    let claim = fs::read_to_string(
+        manifest.join("src").join("registry").join("heap_registry").join("claim.rs"),
+    )
+    .expect("read claim.rs");
+    assert!(
+        claim.contains("reg.slot_or_none(idx)"),
+        "new claims must use fallible chunk lookup"
     );
 }
 
