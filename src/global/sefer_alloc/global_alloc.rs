@@ -6,12 +6,50 @@
 #![allow(unsafe_code)]
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::cell::Cell;
 
 use crate::global::fallback;
 use crate::global::tls_heap::CurrentHeap;
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
 
 use super::SeferAlloc;
+
+thread_local! {
+    static FALLBACK_LOCK_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+struct FallbackLockScope(bool);
+
+impl FallbackLockScope {
+    fn enter() -> Self {
+        let previous = FALLBACK_LOCK_ACTIVE
+            .try_with(|held| {
+                let previous = held.get();
+                held.set(true);
+                previous
+            })
+            .unwrap_or(false);
+        Self(previous)
+    }
+}
+
+impl Drop for FallbackLockScope {
+    fn drop(&mut self) {
+        let _ = FALLBACK_LOCK_ACTIVE.try_with(|held| held.set(self.0));
+    }
+}
+
+fn fallback_lock_active() -> bool {
+    FALLBACK_LOCK_ACTIVE.try_with(Cell::get).unwrap_or(false)
+}
+
+fn with_fallback_heap<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut crate::registry::HeapCore) -> R,
+{
+    let _scope = FallbackLockScope::enter();
+    fallback::with_heap(f)
+}
 
 // SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/
 // `alloc_zeroed`/`realloc` return valid memory for the requested `Layout`
@@ -34,7 +72,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // `with_heap`. `with_heap` returns `None` only on true OOM → we
             // surface null.
             CurrentHeap::Fallback => {
-                fallback::with_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
+                with_fallback_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in
             // a registry slot. `current_heap` returned it for THIS thread;
@@ -50,14 +88,9 @@ unsafe impl GlobalAlloc for SeferAlloc {
         if ptr.is_null() {
             return;
         }
-        // R6-OPT-P0-1: resolve via the DEALLOC-ONLY `current_for_dealloc` —
-        // NOT `self.current_heap()` — so a thread whose TLS is null (never
-        // allocated anything itself) or `TORN` (already exited) does not pay
-        // to claim a registry slot or take the fallback spinlock just to
-        // free one foreign pointer. See `tls_heap::current_for_dealloc`'s doc
-        // comment for the full rationale, and the "TORN + fallback-owned"
-        // trade-off note below. `alloc-global` implies `alloc-xthread`
-        // (R5-01), so this is the only dealloc routing.
+        // The dealloc-only resolver never claims a slot. Threads with no
+        // fallback history keep the lock-free foreign route; fallback users
+        // consult the fallback heap under its lock.
         match current_for_dealloc() {
             CurrentHeapForDealloc::Own(heap) => {
                 // SAFETY: `heap` is non-null and points to a live `HeapCore`
@@ -65,38 +98,23 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 // invariant).
                 unsafe { (*heap).dealloc(ptr, layout) };
             }
+            CurrentHeapForDealloc::FallbackSeen => {
+                // The fallback HeapCore distinguishes its own allocations
+                // from foreign pointers while the global lock is held.
+                // Never reacquire that non-recursive lock from inside it.
+                if !fallback_lock_active()
+                    && with_fallback_heap(|h| unsafe { h.dealloc(ptr, layout) }).is_some()
+                {
+                    return;
+                }
+                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
+                crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
+            }
             CurrentHeapForDealloc::ForeignNoBind => {
-                // This thread never bound a heap, or its heap's slot was
-                // already recycled (TORN), or its TLS is torn down. Every
-                // valid pointer reaching `dealloc` here is foreign BY
-                // CONSTRUCTION (see `current_for_dealloc`'s doc comment):
-                // route it directly through the heap-instance-independent
-                // cross-thread routing tail, WITHOUT claiming a registry
-                // slot and WITHOUT constructing or dereferencing any
-                // `*mut HeapCore` at all.
-                //
-                // Deliberate, documented trade-off (verified sound — see
-                // `HeapCore::dealloc_foreign_routing`'s doc comment and
-                // the R6-OPT-P0-1 task report): for the TORN case
-                // specifically, the OLD code routed through
-                // `fallback::with_heap`, which checked the FALLBACK
-                // heap's OWN `contains_base` FIRST — so a pointer that
-                // genuinely belongs to the fallback's own segments took
-                // the direct free path under the lock. This shortcut has
-                // no fallback `HeapCore` instance to consult, so it
-                // ALWAYS treats a TORN thread's dealloc as foreign-by-
-                // header, pushing onto whatever ring the header says
-                // owns it — for a fallback-owned pointer, that means the
-                // fallback's OWN ring instead of a direct free. This is
-                // NOT a correctness bug: pushing to a ring is safe for
-                // ANY live segment regardless of caller identity (see
-                // `dealloc_foreign_routing`'s doc comment), and the
-                // fallback drains its own ring lazily on its next
-                // `with_heap` call exactly like any other segment's
-                // owner — it is a narrow efficiency trade-off in an
-                // already-rare corner case (TORN AND fallback-owned),
-                // traded for removing the claim/lock cost in the
-                // overwhelmingly common case this task targets.
+                // This thread has no live own heap and no fallback history,
+                // so preserve the bind-less remote route without taking the
+                // process-wide fallback lock. A fallback-owned remote free
+                // remains valid through its stamped ring/overflow route.
                 //
                 // SAFETY: `ptr`/`layout` are the caller-bound
                 // `GlobalAlloc::dealloc` contract pair (this whole fn is
@@ -131,7 +149,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         match self.current_heap() {
             CurrentHeap::Fallback => {
-                fallback::with_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
+                with_fallback_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: as in `alloc`.
             CurrentHeap::Own(heap) => unsafe { (*heap).alloc_zeroed(layout) },
@@ -151,7 +169,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // contract pair (this whole fn is `unsafe fn realloc`); the
             // closure forwards them to the fallback heap's `HeapCore::realloc`.
             CurrentHeap::Fallback => {
-                fallback::with_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
+                with_fallback_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
                     .unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: as in `alloc`. `realloc` takes the C2 in-place fast path
@@ -160,5 +178,23 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // the old allocation intact on OOM.
             CurrentHeap::Own(heap) => unsafe { (*heap).realloc(ptr, old_layout, new_size) },
         }
+    }
+}
+
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+impl SeferAlloc {
+    /// Exercise the production dealloc path while this thread already holds
+    /// the fallback lock.
+    ///
+    /// # Safety
+    /// `ptr` must be a live allocation produced by this allocator with
+    /// `layout`, and must not be freed again.
+    #[doc(hidden)]
+    pub unsafe fn dbg_dealloc_while_fallback_lock_held(ptr: *mut u8, layout: Layout) {
+        let allocator = Self::new();
+        let _ = with_fallback_heap(|_| {
+            // SAFETY: upheld by this hook's caller contract above.
+            unsafe { allocator.dealloc(ptr, layout) };
+        });
     }
 }

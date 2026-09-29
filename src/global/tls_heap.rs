@@ -140,6 +140,10 @@ thread_local! {
     /// borrow state to fail under reentrancy: reading is a single load.
     static LOCAL: Cell<*mut HeapCore> = const { Cell::new(core::ptr::null_mut()) };
 
+    /// Sticky hint that this thread has resolved the process-global fallback.
+    /// It does not identify any particular pointer's owner.
+    static FALLBACK_SEEN: Cell<bool> = const { Cell::new(false) };
+
     /// The thread-exit abandon guard. Holds a COPY of the heap pointer
     /// (set in [`finish_bind`]) so its `Drop` does not need to read `LOCAL`
     /// (which may already be torn down). On drop: if the copy is non-null,
@@ -353,24 +357,27 @@ pub fn current_for_alloc() -> CurrentHeap {
         // see "TLS destructor ordering" in the module doc. MUST route to
         // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
         // GUARD and leak the recycled slot).
-        Ok(_) => CurrentHeap::Fallback, // p == TORN
+        Ok(_) => {
+            note_fallback_seen();
+            CurrentHeap::Fallback // p == TORN
+        }
         // TLS destroyed: fall back, never null.
-        Err(_) => CurrentHeap::Fallback,
+        Err(_) => {
+            note_fallback_seen();
+            CurrentHeap::Fallback
+        }
     }
 }
 
-/// R6-OPT-P0-1: which heap [`current_for_dealloc`] resolved to, for the
-/// **dealloc-only** entry point. Distinct from [`CurrentHeap`] because the
-/// bind-less case here is NOT the fallback heap — it is "definitely a
-/// foreign pointer, route it WITHOUT ever materialising (binding OR
-/// fallback-locking) a `HeapCore` at all". See [`current_for_dealloc`]'s doc
-/// comment for the full rationale.
+/// Which route the dealloc-only resolver selected without binding a heap.
 #[cfg(feature = "alloc-xthread")]
 #[must_use]
 pub enum CurrentHeapForDealloc {
     /// A registry slot owned by this thread (identical fast path to
     /// [`CurrentHeap::Own`] — the thread has a real, bound heap).
     Own(*mut HeapCore),
+    /// This thread has used the fallback heap; consult it under its lock.
+    FallbackSeen,
     /// This thread never bound a heap (TLS still null), or its heap's slot
     /// was already recycled (`TORN`), or its TLS is torn down (`Err`). Any
     /// pointer reaching `dealloc` on such a thread is foreign BY
@@ -381,10 +388,12 @@ pub enum CurrentHeapForDealloc {
     ForeignNoBind,
 }
 
-/// R6-OPT-P0-1: a **dealloc-only** resolver — reads `LOCAL` exactly like
-/// [`current_for_alloc`], but the bind-less case (`null` / `TORN` / `Err`)
-/// does **not** bind a heap or resolve the fallback pointer at all. This is
-/// the fix for the diagnosed defect: `SeferAlloc::dealloc` used to call
+/// R6-OPT-P0-1 / R6-02: a **dealloc-only** resolver — it does not bind a heap.
+/// If this thread has previously resolved fallback, it asks the caller to
+/// inspect that heap under its lock; otherwise a bind-less pointer follows
+/// the allocation-independent remote route. This fixes fallback-owned
+/// same-thread frees without adding a lock to ordinary foreign-only threads.
+/// `SeferAlloc::dealloc` used to call
 /// `current_heap()` (== `current_for_alloc`) unconditionally, which for a
 /// thread whose TLS is `null` (never allocated anything itself — e.g. a
 /// worker thread that only ever receives a pointer via a channel from a
@@ -396,31 +405,21 @@ pub enum CurrentHeapForDealloc {
 /// overwhelming majority of cases — a foreign pointer that does not even
 /// belong to the fallback heap.
 ///
-/// **Passive, read-only.** This resolver reads `LOCAL` and nothing else — it
-/// never writes `LOCAL`, never calls `HeapRegistry::claim`, and never calls
-/// `fallback::with_heap`. Gated on `alloc-xthread`, which `alloc-global`
-/// implies (R5-01), so it is always present wherever `SeferAlloc::dealloc` is.
+/// **Passive, read-only.** This resolver reads `FALLBACK_SEEN` and `LOCAL`; it
+/// never writes either, never calls `HeapRegistry::claim`, and never acquires
+/// the fallback lock. Gated on `alloc-xthread`, which `alloc-global` implies.
 ///
 /// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
 ///   identical fast path to [`current_for_alloc`]'s `Own` arm, unchanged.
-/// - `null` (never bound) → [`CurrentHeapForDealloc::ForeignNoBind`]. Does
-///   **not** call `bind_slow_tagged` — that is the entire point
-///   of this task: a thread whose TLS is null has never allocated anything
-///   of its own under this allocator instance (`SeferAlloc::alloc` always
-///   binds on first use), so any pointer reaching `dealloc` here must have
-///   arrived from elsewhere (e.g. a channel) — it is foreign by
-///   construction, and the caller routes it via
-///   `HeapCore::dealloc_foreign_routing(ptr, base, layout, None)` without
-///   ever touching the registry.
+/// - `null` (never bound) without a fallback history →
+///   [`CurrentHeapForDealloc::ForeignNoBind`]. It does not bind a slot or
+///   touch the fallback lock; valid frees route through the remote-free path.
+/// - any state with a fallback history → [`CurrentHeapForDealloc::FallbackSeen`].
+///   The fallback heap checks ownership under its lock and routes a non-owned
+///   pointer remotely.
 /// - `TORN` (this thread's `AbandonGuard` already recycled its slot) →
-///   ALSO [`CurrentHeapForDealloc::ForeignNoBind`] — see the module doc's
-///   "TLS teardown and the TORN sentinel" section for why the cached
-///   pointer must not be dereferenced. Unlike [`current_for_alloc`], this
-///   does NOT route through `fallback::with_heap` (no fallback spinlock is
-///   taken) — see this function's own module-level trade-off note in
-///   `sefer_alloc.rs`'s `dealloc` for the deliberate, documented narrowing
-///   this causes for the rare "TORN AND the pointer happens to be
-///   fallback-owned" case.
+///   `FallbackSeen` if advertised, otherwise `ForeignNoBind`; the stale
+///   pointer is never dereferenced.
 /// - `Err` (TLS destroyed) → same `ForeignNoBind` treatment as `TORN`.
 #[cfg(feature = "alloc-xthread")]
 #[inline(always)]
@@ -435,8 +434,14 @@ pub fn current_for_dealloc() -> CurrentHeapForDealloc {
         // null (first call ever, on this thread) OR TORN (slot already
         // recycled): both are "no live heap of our own to consult" — route
         // as foreign, no bind, no fallback lock.
+        Ok(_) if FALLBACK_SEEN.try_with(|c| c.get()).unwrap_or(false) => {
+            CurrentHeapForDealloc::FallbackSeen
+        }
         Ok(_) => CurrentHeapForDealloc::ForeignNoBind,
         // TLS destroyed: same treatment.
+        Err(_) if FALLBACK_SEEN.try_with(|c| c.get()).unwrap_or(false) => {
+            CurrentHeapForDealloc::FallbackSeen
+        }
         Err(_) => CurrentHeapForDealloc::ForeignNoBind,
     }
 }
@@ -463,8 +468,14 @@ pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfi
         // #129 mapping.
         Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
         Ok(p) if p.is_null() => bind_slow_tagged_with_config(*config),
-        Ok(_) => CurrentHeap::Fallback, // p == TORN
-        Err(_) => CurrentHeap::Fallback,
+        Ok(_) => {
+            note_fallback_seen();
+            CurrentHeap::Fallback // p == TORN
+        }
+        Err(_) => {
+            note_fallback_seen();
+            CurrentHeap::Fallback
+        }
     }
 }
 
@@ -584,6 +595,7 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
     let heap = if heap.is_null() {
         // Registry exhausted or primordial OOM: fall back, never null.
+        note_fallback_seen();
         return CurrentHeap::Fallback;
     } else {
         heap
@@ -595,6 +607,7 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
         // SAFETY: `heap` came from `claim`/`claim_with_config` above and is
         // not yet recycled; no guard was armed to recycle it later.
         unsafe { HeapRegistry::recycle(heap) };
+        note_fallback_seen();
         return CurrentHeap::Fallback;
     }
 
@@ -603,10 +616,16 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
         let _ = LOCAL.try_with(|c| c.set(core::ptr::null_mut()));
         // SAFETY: as above; this is the only chance to recycle `heap`.
         unsafe { HeapRegistry::recycle(heap) };
+        note_fallback_seen();
         return CurrentHeap::Fallback;
     }
 
     CurrentHeap::Own(heap)
+}
+
+#[inline]
+fn note_fallback_seen() {
+    let _ = FALLBACK_SEEN.try_with(|c| c.set(true));
 }
 
 /// Test-only hook (task #129): deterministically exercises the TORN→Fallback
