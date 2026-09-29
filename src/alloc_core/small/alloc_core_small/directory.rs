@@ -43,7 +43,8 @@ impl AllocCore {
     /// Called after every successful `table.register()` on the small-segment
     /// path. Fast path (already materialised OR below threshold): one
     /// null-check + one u32 comparison. Slow path (first materialisation):
-    /// one OS VM reservation + one full-table-scan rebuild.
+    /// one OS VM reservation + one full-table-scan rebuild, including after
+    /// a cold trim released the previous directory.
     ///
     /// Sidecar OOM is NOT allocator OOM: on reserve failure, the pointer
     /// stays null and the mechanism is simply off (the linear scan fallback
@@ -75,7 +76,7 @@ impl AllocCore {
             Some(pair) => pair,
             None => return, // OOM — mechanism stays off, not an error.
         };
-        // One-time rebuild: walk every registered small/primordial segment,
+        // Fresh rebuild: walk every registered small/primordial segment,
         // read each class's BinTable head, set the exact class_nonempty bits.
         // The sidecar's bitmap fields were OS-zeroed (all bits clear) and its
         // `node_ids` (numa-aware) already repaired by `reserve_directory_sidecar`
@@ -93,6 +94,16 @@ impl AllocCore {
 
         self.directory_sidecar = ptr;
         self.directory_sidecar_vm = Some(vm);
+    }
+
+    /// Drop only the owner-private directory on a cold trim. The stable
+    /// cross-thread dirty sidecar and its publication state are independent.
+    /// A later small-segment registration lazily rebuilds the directory from
+    /// the still-live table, including its bitmap and NUMA bucket counters.
+    pub(crate) fn release_directory_for_cold_trim(&mut self) {
+        self.directory_sidecar = core::ptr::null_mut();
+        self.directory_miss_streak.fill(0);
+        drop(self.directory_sidecar_vm.take());
     }
 
     /// Return a shared reference to the materialised directory sidecar, or

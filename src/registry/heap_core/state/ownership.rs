@@ -267,5 +267,7 @@ impl HeapCore {
             self.core.release_empty_current_small_for_trim();
             self.core.evict_all();
         }
+        #[cfg(feature = "alloc-segment-directory")]
+        self.core.release_directory_for_cold_trim();
     }
 }
