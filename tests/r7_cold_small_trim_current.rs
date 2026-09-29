@@ -6,7 +6,9 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::Mutex;
+use std::thread;
 
+use sefer_alloc::global::tls_heap;
 use sefer_alloc::{SeferAlloc, SegmentLayout};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -99,4 +101,62 @@ fn live_current_small_is_not_released() {
     unsafe { a.dealloc(live, layout) };
     a.trim_current_thread();
     assert!(a.stats().segments_released_total > before);
+}
+
+#[test]
+fn recycled_slot_can_be_claimed_and_allocated_again() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    let layout = Layout::from_size_align(SegmentLayout::SMALL_MAX, 8).unwrap();
+    let first_slot = thread::spawn(move || {
+        let a = SeferAlloc::new();
+        let mut ptrs = Vec::new();
+        let first_base = loop {
+            // SAFETY: layout is valid; every returned pointer is freed below.
+            let p = unsafe { a.alloc(layout) };
+            assert!(!p.is_null());
+            let base = SegmentLayout::segment_base_of(p as usize);
+            if ptrs.is_empty() {
+                ptrs.push(p);
+                continue;
+            }
+            let primordial = SegmentLayout::segment_base_of(ptrs[0] as usize);
+            ptrs.push(p);
+            if base != primordial {
+                break primordial;
+            }
+            assert!(ptrs.len() <= 32);
+        };
+        assert_ne!(
+            SegmentLayout::segment_base_of(*ptrs.last().unwrap() as usize),
+            first_base
+        );
+        let slot = tls_heap::current_for_trim().expect("claimed heap") as usize;
+        for p in ptrs {
+            // SAFETY: p came from this allocator with layout and is freed once.
+            unsafe { a.dealloc(p, layout) };
+        }
+        a.trim_current_thread();
+        slot
+    })
+    .join()
+    .expect("first thread");
+
+    let second_slot = thread::spawn(move || {
+        let a = SeferAlloc::new();
+        // SAFETY: valid layout; the returned pointer is freed below.
+        let p = unsafe { a.alloc(layout) };
+        assert!(!p.is_null());
+        let slot = tls_heap::current_for_trim().expect("reclaimed heap") as usize;
+        // SAFETY: p is live and at least one byte long.
+        unsafe { p.write(0x3C) };
+        // SAFETY: p remains live until the dealloc below.
+        assert_eq!(unsafe { p.read() }, 0x3C);
+        // SAFETY: p came from this allocator with layout and is freed once.
+        unsafe { a.dealloc(p, layout) };
+        a.trim_current_thread();
+        slot
+    })
+    .join()
+    .expect("second thread");
+    assert_eq!(second_slot, first_slot, "recycled slot must be reused");
 }
