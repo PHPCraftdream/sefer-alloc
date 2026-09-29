@@ -9,7 +9,7 @@ use sefer_alloc::SeferAlloc;
 static ALLOCATOR: SeferAlloc = SeferAlloc::new();
 
 #[test]
-fn route_identity_ops_do_not_reenter_global_allocator() {
+fn system_backed_route_metadata_does_not_reenter_global_allocator() {
     const SEGMENT: usize = 4 * 1024 * 1024;
     let layout = Layout::from_size_align(SEGMENT, SEGMENT).unwrap();
     // SAFETY: System allocation is independent of the installed allocator
@@ -20,7 +20,10 @@ fn route_identity_ops_do_not_reenter_global_allocator() {
     let route = directory
         .register(root, SEGMENT, root, 23, RouteKind::Small)
         .unwrap();
+    assert!(route.small_sidecar().unwrap().issue(0, 0));
     let pin = directory.lookup(root).unwrap();
+    assert!(pin.small_publisher().unwrap().publish(0));
+    assert_eq!(route.small_sidecar().unwrap().cut_word(0), Some(1));
     drop(route);
     assert!(directory.lookup(root).is_none());
     assert_eq!(pin.owner(), 23);

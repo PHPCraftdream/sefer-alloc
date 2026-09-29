@@ -3,6 +3,6 @@
 pub enum RouteError {
     InvalidSpan,
     Duplicate,
-    Full,
+    OutOfMemory,
     IncarnationExhausted,
 }

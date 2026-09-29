@@ -16,6 +16,7 @@ fn duplicate_key_and_same_address_reuse_preserve_old_pin_identity() {
         .register(root, SEGMENT, root, 17, RouteKind::Small)
         .unwrap();
     let first_id = first.incarnation();
+    let old_sidecar_addr = core::ptr::from_ref(first.small_sidecar().unwrap()).addr();
     assert_eq!(first.root(), root);
     let old = directory.lookup(root).unwrap();
     assert_eq!(old.owner(), 17);
@@ -34,19 +35,26 @@ fn duplicate_key_and_same_address_reuse_preserve_old_pin_identity() {
     assert_eq!(current.owner(), 19);
     assert_eq!(old.owner(), 17);
     assert_eq!(old.incarnation(), first_id);
+    assert_ne!(
+        old_sidecar_addr,
+        core::ptr::from_ref(second.small_sidecar().unwrap()).addr()
+    );
     drop(second);
     assert!(directory.lookup(root).is_none());
 }
 
 #[test]
-fn retirement_does_not_wait_for_a_paused_pin() {
+fn paused_published_pin_survives_removal_and_same_address_registration() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
     let route = directory
         .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
-    let (pinned_tx, pinned_rx) = mpsc::channel();
+    assert!(route.small_sidecar().unwrap().issue(0, 0));
+    let old_sidecar_addr = core::ptr::from_ref(route.small_sidecar().unwrap()).addr();
+    let old_incarnation = route.incarnation();
+    let (published_tx, published_rx) = mpsc::channel();
     let (resume_tx, resume_rx) = mpsc::channel();
     let addr = root.addr();
     thread::scope(|scope| {
@@ -55,30 +63,45 @@ fn retirement_does_not_wait_for_a_paused_pin() {
             let pin = directory_ref
                 .lookup(core::ptr::without_provenance_mut(addr))
                 .unwrap();
-            pinned_tx.send(()).unwrap();
+            assert!(pin.small_publisher().unwrap().publish(0));
+            published_tx.send(()).unwrap();
             resume_rx.recv().unwrap();
-            assert_eq!(pin.owner(), 1);
+            drop(pin);
         });
-        pinned_rx.recv().unwrap();
+        published_rx.recv().unwrap();
+        assert_eq!(route.small_sidecar().unwrap().cut_word(0), Some(1));
         drop(route);
-        assert!(directory.lookup(root).is_none());
+        let replacement = directory
+            .register(root, SEGMENT, root, 2, RouteKind::Primordial)
+            .unwrap();
+        assert!(replacement.incarnation() > old_incarnation);
+        assert_ne!(
+            core::ptr::from_ref(replacement.small_sidecar().unwrap()).addr(),
+            old_sidecar_addr
+        );
+        assert_eq!(directory.lookup(root).unwrap().owner(), 2);
+        drop(replacement);
+        drop(reservation);
         resume_tx.send(()).unwrap();
     });
 }
 
 #[test]
-fn retired_pin_identity_survives_reservation_unmap() {
+fn published_pin_cleanup_survives_reservation_unmap() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
     let route = directory
         .register(root, SEGMENT, root, 2, RouteKind::Small)
         .unwrap();
+    assert!(route.small_sidecar().unwrap().issue(0, 0));
     let pin = directory.lookup(root).unwrap();
+    assert_eq!(route.small_sidecar().unwrap().class_at(0), Some(0));
+    assert!(pin.small_publisher().unwrap().publish(0));
+    assert_eq!(route.small_sidecar().unwrap().cut_word(0), Some(1));
     drop(route);
     drop(reservation);
-    assert_eq!(pin.owner(), 2);
-    assert_eq!(pin.kind(), RouteKind::Small);
+    // After terminal publish the producer only releases the sidecar pin.
     drop(pin);
 }
 
@@ -96,7 +119,20 @@ fn large_route_key_and_invalid_span() {
         .lookup(core::ptr::without_provenance_mut(later.addr()))
         .unwrap();
     assert_eq!(pin.kind(), RouteKind::Large);
+    assert!(route.activate_large());
+    assert_eq!(route.large_state().unwrap().generation(), 1);
+    assert!(pin.large_publisher().unwrap().publish());
+    assert!(route.claim_large());
+    assert!(route.cache_large());
+    assert!(route.reissue_large());
+    assert_eq!(route.large_state().unwrap().generation(), 2);
     drop(pin);
+    let next = directory.lookup(later).unwrap();
+    assert!(next.large_publisher().unwrap().publish());
+    drop(next);
+    assert!(route.claim_large());
+    assert!(route.cache_large());
+    assert!(route.retire_cached_large());
     drop(route);
     assert!(matches!(
         directory.register(root, 0, root, 3, RouteKind::Small),
@@ -124,4 +160,79 @@ fn incarnation_exhaustion_never_wraps() {
 fn owner_registration_can_move_between_lease_threads() {
     fn assert_send<T: Send>() {}
     assert_send::<sefer_alloc::registry::segment_route::RouteRegistration<'static>>();
+}
+
+#[test]
+fn more_than_4096_active_routes_and_same_shard_collision() {
+    let directory = RouteDirectory::new();
+    let mut routes = Vec::new();
+    // Routing-only synthetic addresses: neither root nor payload is ever
+    // dereferenced. This exercises directory cardinality, not OS reservation.
+    for i in 1..=5000_usize {
+        let key = i * SEGMENT;
+        let p = core::ptr::without_provenance_mut::<u8>(key);
+        routes.push(directory.register(p, 1, p, i, RouteKind::Large).unwrap());
+    }
+    assert_eq!(
+        directory
+            .lookup(core::ptr::without_provenance_mut(SEGMENT))
+            .unwrap()
+            .owner(),
+        1
+    );
+    assert_eq!(
+        directory
+            .lookup(core::ptr::without_provenance_mut(65 * SEGMENT))
+            .unwrap()
+            .owner(),
+        65
+    );
+    assert!(directory.retained_pointer_capacity_for_test() >= 5000);
+    drop(routes);
+    assert!(directory
+        .lookup(core::ptr::without_provenance_mut(65 * SEGMENT))
+        .is_none());
+}
+
+#[test]
+fn repeated_churn_reuses_pointer_array_capacity() {
+    let directory = RouteDirectory::new();
+    let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
+    let root = reservation.as_ptr();
+    for _ in 0..512 {
+        let route = directory
+            .register(root, SEGMENT, root, 7, RouteKind::Large)
+            .unwrap();
+        let pin = directory.lookup(root).unwrap();
+        drop(route);
+        drop(pin);
+    }
+    assert_eq!(directory.retained_pointer_capacity_for_test(), 8);
+}
+
+#[test]
+fn sorted_shard_keeps_neighbors_after_middle_unlink() {
+    let directory = RouteDirectory::new();
+    // Routing-only numeric keys; no synthetic reservation is dereferenced.
+    let keys = [SEGMENT, 65 * SEGMENT, 129 * SEGMENT, 193 * SEGMENT];
+    let mut routes = keys.map(|key| {
+        let p = core::ptr::without_provenance_mut::<u8>(key);
+        Some(directory.register(p, 1, p, key, RouteKind::Large).unwrap())
+    });
+    drop(routes[1].take());
+    for (index, key) in keys.into_iter().enumerate() {
+        let found = directory.lookup(core::ptr::without_provenance_mut(key));
+        if index == 1 {
+            assert!(found.is_none());
+        } else {
+            assert_eq!(found.unwrap().owner(), key);
+        }
+    }
+    let middle = core::ptr::without_provenance_mut::<u8>(65 * SEGMENT);
+    routes[1] = Some(
+        directory
+            .register(middle, 1, middle, 65, RouteKind::Large)
+            .unwrap(),
+    );
+    assert_eq!(directory.lookup(middle).unwrap().owner(), 65);
 }

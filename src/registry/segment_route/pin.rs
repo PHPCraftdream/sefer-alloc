@@ -1,32 +1,30 @@
-use super::{RouteDirectory, RouteKind};
+use super::directory::EntryHandle;
+use super::{LargePublisher, RouteKind, SmallPublisher};
 
-/// A counted identity pin. It does not retain reservation memory.
-pub struct RoutePin<'a> {
-    pub(super) directory: &'a RouteDirectory,
-    pub(super) key: usize,
-    pub(super) index: usize,
-    pub(super) incarnation: u64,
-    pub(super) owner: usize,
-    pub(super) kind: RouteKind,
+/// Counted descriptor and sidecar capability, not a reservation credit.
+/// No allocator-origin root is accessible through a producer pin.
+pub struct RoutePin {
+    pub(super) entry: EntryHandle,
 }
 
-impl RoutePin<'_> {
+impl RoutePin {
     pub fn owner(&self) -> usize {
-        self.owner
+        self.entry.owner()
     }
-
     pub fn kind(&self) -> RouteKind {
-        self.kind
+        self.entry.kind()
     }
-
     pub fn incarnation(&self) -> u64 {
-        self.incarnation
+        self.entry.incarnation()
     }
-}
-
-impl Drop for RoutePin<'_> {
-    fn drop(&mut self) {
-        self.directory
-            .release_pin(self.key, self.index, self.incarnation);
+    pub fn small_publisher(&self) -> Option<SmallPublisher<'_>> {
+        self.entry
+            .small_sidecar()
+            .map(|sidecar| SmallPublisher { sidecar })
+    }
+    pub fn large_publisher(&self) -> Option<LargePublisher<'_>> {
+        self.entry
+            .large_state()
+            .map(|state| LargePublisher { state })
     }
 }
