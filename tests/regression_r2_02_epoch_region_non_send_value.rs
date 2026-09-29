@@ -18,6 +18,8 @@
 //! specifically E0277 ("cannot be sent between threads safely"), not
 //! succeed and not fail for some unrelated reason.
 
+#![cfg(feature = "experimental")]
+
 use std::path::PathBuf;
 use std::process::Command;
 
