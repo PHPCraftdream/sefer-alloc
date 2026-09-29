@@ -654,6 +654,8 @@ hard compile error in every configuration:
 | [`src/alloc_core/platform/dirty_by_class.rs`](src/alloc_core/platform/dirty_by_class.rs) | The lazily-materialised per-(segment, class) dirty-bit sidecar (`PerClassDirty`); dereferences the `OncePtrCell`-published sidecar pointer | `class-aware-dirty` |
 | [`src/alloc_core/large/large_cache_extended.rs`](src/alloc_core/large/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `OncePtrCell` — no cross-thread publisher); reserves via `alloc_core::platform::sidecar::reserve`, dereferences via `sidecar::deref[_mut]` | `large-cache-extended` |
 | [`src/alloc_core/platform/sidecar.rs`](src/alloc_core/platform/sidecar.rs) | R14-9 (task #294): the shared owner-only lazily-materialised sidecar primitive (`reserve` / `reserve_zeroed_with` / `deref` / `deref_mut`) used by `os.rs`'s `SegmentDirectory` reservation and `large_cache_extended.rs`'s `LargeCacheExtension` reservation | `alloc-core` |
+| [`src/alloc_core/segment/remote_inbox/inbox.rs`](src/alloc_core/segment/remote_inbox/inbox.rs) | Experimental terminal intrusive-node publication; not a production route | `alloc-core` |
+| [`src/alloc_core/segment/remote_inbox/tests.rs`](src/alloc_core/segment/remote_inbox/tests.rs) | Raw reservation fixtures for the inbox primitive | `cfg(test)` |
 | [`src/global/sefer_alloc/global_alloc.rs`](src/global/sefer_alloc/global_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse); and the `bench-internals`-gated `unsafe fn dbg_restore_local_for_test` test hook (R29-7, task #438) — covered by this module's tier-1 allow, with no separate item-level allow (so it adds no tier-2 site). | `alloc-global` |
@@ -671,7 +673,8 @@ hard compile error in every configuration:
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
 + primordial-lazy-commit + class-aware-dirty`) the active internal seams are
-**eleven** — `alloc_core::platform::{os, node, sidecar, dirty_by_class}` plus
+**twelve** — `alloc_core::platform::{os, node, sidecar, dirty_by_class}` plus
+`alloc_core::segment::remote_inbox::inbox` plus
 `global::{sefer_alloc, tls_heap, fallback}` plus
 `registry::{bootstrap, heap_slot, heap_registry, segment_route}`. `alloc_core::platform::sidecar`
 (R14-9, task #294) is active because `alloc-global` pulls in `alloc-core`;
@@ -737,7 +740,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **25** tier-1 module-level seams (19 in
+That's the full list (both tiers): **26** tier-1 module-level seams (20 in
 `src/`, 6 in `crates/`) plus **105** tier-2 item-scoped allows across **35**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
@@ -1383,19 +1386,19 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **304 integration test files** ship
+a test file, and a reproducible command. **323 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
-`benches/`; **17 root Loom models** in `tests/`, plus two member-crate
+`benches/`; **20 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (304 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (323 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | **Root (17 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_overflow_spill.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_remote_ring_tail_aba.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `ArrayIndexStack`) |
+| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | **Root (20 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_overflow_spill.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_remote_ring_tail_aba.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_inbox.rs`, `tests/loom_terminal_large.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `ArrayIndexStack`) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit`; package-specific `tagged-index-stack` target `narrow_domain_unchecked_storage` in `scripts/miri.mjs` executes in-domain unchecked accesses only |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |

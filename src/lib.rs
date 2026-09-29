@@ -210,6 +210,11 @@
 //                             by `os`'s SegmentDirectory reservation and
 //                             `large_cache_extended`'s LargeCacheExtension
 //                             reservation. (under `alloc-core`)
+//      * `alloc_core::segment::remote_inbox::inbox` — experimental
+//                             terminal intrusive-node publication seam;
+//                             not a production route. (under `alloc-core`)
+//      * `alloc_core::segment::remote_inbox::tests` — raw reservation
+//                             fixtures for that primitive. (`cfg(test)`)
 //      * `global::sefer_alloc::global_alloc` — the `unsafe impl GlobalAlloc`
 //                             alloc-face seam (trait obligation + pointer handoff).
 //                             (under `alloc-global`)
