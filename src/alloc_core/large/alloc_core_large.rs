@@ -818,5 +818,5 @@ impl AllocCore {
 }
 
 #[cfg(all(test, feature = "alloc-xthread"))]
-#[path = "../../../tests/r6_large_credit_reclaim.rs"]
+#[path = "../../../tests/support/r6_large_credit_reclaim.rs"]
 mod credit_tests;
