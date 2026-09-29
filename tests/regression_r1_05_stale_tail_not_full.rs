@@ -42,7 +42,7 @@
 //! expect code `1` (Stale) instead observe code `2` (Full) — i.e. this file's
 //! assertions are not vacuously true.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 #[cfg(feature = "alloc-xthread")]
 mod remote_free_ring_stale_tail {
