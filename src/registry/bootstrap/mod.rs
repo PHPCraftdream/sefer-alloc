@@ -119,7 +119,7 @@
 //! | `SENTINEL_INITIALIZING` (`1 as *mut`) | `INITIALIZING` — one thread won the CAS and is allocating this chunk |
 //! | real `*mut RegistryChunk` | `READY` — this chunk fully initialised; safe to dereference |
 //!
-//! 1. The first `slot()` call touching an index in this chunk observes `null`
+//! 1. The first `slot_or_none()` or `slot()` call touching this chunk observes `null`
 //!    and CASes it to `SENTINEL_INITIALIZING`. The CAS winner:
 //!    a. Calls `aligned_vmem::reserve_aligned(CHUNK_SIZE, CHUNK_ALIGN)` —
 //!       direct OS syscall, no `std::alloc`, no registry dependency.
@@ -133,7 +133,7 @@
 //!    the CAS) and spin until they observe a non-null, non-sentinel pointer
 //!    under `Acquire`. The spin window is tiny (one OS page allocation of
 //!    `CHUNK_SIZE` bytes, far smaller than the old whole-registry window).
-//! 3. After `READY`, every subsequent `slot()` call touching this chunk is a
+//! 3. After `READY`, every subsequent slot lookup touching this chunk is a
 //!    single `Acquire` load + two cheap comparisons + an array index.
 //!
 //! `Release`/`Acquire` on the pointer transition establishes happens-before

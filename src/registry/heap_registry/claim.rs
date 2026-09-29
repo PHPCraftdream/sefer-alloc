@@ -4,8 +4,8 @@
 // `src/lib.rs`); this is the documented registry seam (the pointer handoff
 // `*mut HeapCore` out of a slot's `UnsafeCell`). R6-OPT-P0-2 (round 1): the
 // former `get_unchecked` on a `'static` inline slot array is gone — every
-// slot-array access now goes through `Registry::slot(idx)`
-// (`bootstrap::registry`), the chunk-resolving accessor, which is safe
+// slot-array access now goes through `Registry`'s chunk-resolving accessors
+// (`bootstrap::registry`), which are safe
 // (range-checked via `debug_assert!` and array-index, not `get_unchecked`).
 // `allow` lifts the crate-level `deny` for this file only — `unsafe`
 // anywhere else in the crate is a hard error. Every remaining `unsafe` block
@@ -60,7 +60,7 @@ impl HeapRegistry {
     ///
     /// Reuses a materialised FREE slot or claims EMPTY→INITIALIZING, then
     /// publishes OWNED only after construction. Failed construction rolls
-    /// back to EMPTY; a later scan can retry it. Returns null on exhaustion
+    /// back to FREE; a later scan can retry it. Returns null on exhaustion
     /// or construction failure. The pointer is the legacy TLS handoff; stage
     /// 4 must replace it with a typed owner capability.
     #[must_use]
@@ -89,7 +89,7 @@ impl HeapRegistry {
     /// `GlobalAlloc` method must never unwind (R2-08, task #2010 — a former
     /// debug-build `debug_assert!` here did).
     ///
-    /// Failed construction rolls INITIALIZING back to EMPTY.
+    /// Failed construction rolls INITIALIZING back to FREE.
     ///
     /// Only present under `alloc-decommit`.
     #[cfg(feature = "alloc-decommit")]
@@ -137,7 +137,7 @@ impl HeapRegistry {
     /// it — `HeapCore::new` for [`claim`](Self::claim),
     /// `HeapCore::new_with_config` for
     /// [`claim_with_config`](Self::claim_with_config). Returning `None`
-    /// (OOM) pushes the slot back to `FREE` (see
+    /// (OOM) releases the slot to `FREE` (see
     /// [`push_back_after_oom`]) and this function returns `null`.
     ///
     /// `on_already_initialised(heap_ptr)` is called exactly once, only on a
@@ -165,9 +165,13 @@ impl HeapRegistry {
                 None => return core::ptr::null_mut(),
             };
             let reg = ensure();
-            // R6-OPT-P0-2: `slot()` resolves the index through the chunked
-            // slot array, lazily materialising the owning chunk if needed.
-            let slot = reg.slot(idx);
+            // A freshly minted index has already advanced `count`, but its
+            // chunk may still fail to materialise. The scan can rediscover
+            // that index on a later claim; no slot-state transition occurred.
+            let Some(slot) = reg.slot_or_none(idx) else {
+                reg.reuse_hint.store(idx as u32, Ordering::Relaxed);
+                return core::ptr::null_mut();
+            };
 
             let observed = slot.state.load(Ordering::Acquire);
             let first_claim = match observed {
@@ -186,13 +190,32 @@ impl HeapRegistry {
                     true
                 }
                 STATE_FREE => {
+                    // Claim ownership before reading the monotonic flag: a
+                    // pre-CAS read could go stale across another claim/recycle.
                     if slot
                         .cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
                         .is_err()
                     {
                         continue;
                     }
-                    false
+                    if slot.initialised.load(Ordering::Acquire) {
+                        false
+                    } else {
+                        // No core was ever published, so no producer can
+                        // target this slot. Maintenance requires initialised.
+                        if slot
+                            .cas_state(
+                                STATE_LIVE,
+                                STATE_INITIALIZING,
+                                Ordering::Release,
+                                Ordering::Relaxed,
+                            )
+                            .is_err()
+                        {
+                            std::process::abort();
+                        }
+                        true
+                    }
                 }
                 _ => continue,
             };
@@ -203,7 +226,7 @@ impl HeapRegistry {
                     // SAFETY: sole writer, uninitialised slot, first claim.
                     Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
                     None => {
-                        // OOM on materialisation: push the slot back to FREE
+                        // OOM on materialisation: release the slot to FREE
                         // so it is not leaked (M-5) — same shape as `recycle`.
                         push_back_after_oom(reg, slot, idx as u32);
                         return core::ptr::null_mut();
@@ -265,20 +288,15 @@ impl HeapRegistry {
         }
     }
 
-    /// Pick a candidate slot index: pop from `free_slots` (recycled slot)
-    /// or mint a fresh one by bumping `count`. Returns `None` on registry
-    /// exhaustion (`count >= MAX_HEAPS` AND free stack empty).
+    /// Pick a candidate index from the hint, scan, or capped high-water bump.
+    /// An unmaterialised index below `count` is recoverable after chunk OOM.
     pub(super) fn pick_slot() -> Option<usize> {
         let reg = ensure();
         let hint = reg.reuse_hint.swap(MAX_HEAPS as u32, Ordering::AcqRel) as usize;
-        if hint < (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS)
-            && reg.slot_if_materialised(hint).is_some()
-        {
+        if hint < (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS) {
             return Some(hint);
         }
-        scan_claimable_slot(reg)
-            .map(|(idx, _)| idx)
-            .or_else(|| bump_count(reg))
+        scan_claimable_slot(reg).or_else(|| bump_count(reg))
     }
 
     /// Recycle a live slot back to the free pool. Called by the owning
@@ -460,13 +478,13 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     heap_ref.bind_sidecar_oom_latch(&slot.remote.sidecar_oom_latch);
 }
 
-/// Construction failure: roll INITIALIZING back to EMPTY. The numeric hint
-/// accelerates a retry; the full materialised-slot scan is authoritative.
+/// Construction failure: release INITIALIZING to FREE. The next claimant
+/// checks `initialised` before choosing FREE -> INITIALIZING or LIVE.
 pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     if slot
         .cas_state(
             STATE_INITIALIZING,
-            STATE_EMPTY,
+            STATE_FREE,
             Ordering::Release,
             Ordering::Relaxed,
         )
