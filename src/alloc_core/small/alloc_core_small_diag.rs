@@ -33,12 +33,11 @@ use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "internals")]
 impl AllocCore {
     /// Owner-only outstanding Small/Primordial credits, independent of decommit.
+    /// `ptr` supplies only an address key; metadata reads use the stored root.
     #[doc(hidden)]
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
+        let key = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(key)?;
         if !matches!(
             SegmentHeader::kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial
