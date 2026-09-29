@@ -25,7 +25,7 @@ impl SegmentTable {
     /// for a fast modulo (power-of-two capacity).
     #[inline(always)]
     fn hash_index(base: *mut u8) -> usize {
-        (base as usize >> SEGMENT_SHIFT) & (HASH_CAPACITY - 1)
+        (base.addr() >> SEGMENT_SHIFT) & (HASH_CAPACITY - 1)
     }
 
     /// Address of hash slot `i`. Pure pointer arithmetic through the `node` seam.
