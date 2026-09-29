@@ -33,23 +33,62 @@ fn alloc_n(core: &mut AllocCore, class: usize, count: usize) -> Vec<*mut u8> {
 
 fn drive_class_to_idle(core: &mut AllocCore, class: usize, live: &[*mut u8]) {
     let layout = layout_for_class(class);
+    let blocks_per_segment = sefer_alloc::SegmentLayout::SEGMENT / AllocCore::dbg_block_size(class);
     for &p in live {
         // SAFETY: each pointer is a live allocation returned for `layout`.
         unsafe { core.dealloc(p, layout) };
     }
     let table_count = core.dbg_table_count();
-    loop {
+    // Each existing segment can contain at most SEGMENT / block_size blocks
+    // of this class. Exhausting that many per table entry must force a fresh
+    // segment; one additional allocation observes that transition.
+    let max_attempts = table_count
+        .saturating_mul(blocks_per_segment)
+        .saturating_add(1);
+    let mut fresh_segment = None;
+    for _ in 0..max_attempts {
         let p = core.alloc(layout);
-        assert!(!p.is_null());
+        assert!(
+            !p.is_null(),
+            "allocation failed while draining class {class}"
+        );
         if core.dbg_table_count() != table_count {
-            while core.dbg_freelist_head_for(p, class) != u32::MAX {
-                let extra = core.alloc(layout);
-                assert!(!extra.is_null());
-                assert_eq!(core.dbg_segment_id_of(extra), core.dbg_segment_id_of(p));
-            }
+            fresh_segment = Some(p);
             break;
         }
     }
+    let p = fresh_segment.unwrap_or_else(|| {
+        panic!(
+            "class {class} did not reach a fresh segment within {max_attempts} \
+             attempts (table entries={table_count}, blocks/segment={blocks_per_segment})"
+        )
+    });
+
+    // A fresh segment can contribute no more than its physical class capacity.
+    // Include the terminal observation in the bound so exactly-full segments
+    // are accepted without an unbounded condition loop.
+    let mut drained = false;
+    for attempt in 0..=blocks_per_segment {
+        if core.dbg_freelist_head_for(p, class) == u32::MAX {
+            drained = true;
+            break;
+        }
+        assert!(
+            attempt < blocks_per_segment,
+            "fresh segment for class {class} retained a free-list head after \
+             its capacity of {blocks_per_segment} blocks was drained"
+        );
+        let extra = core.alloc(layout);
+        assert!(
+            !extra.is_null(),
+            "allocation failed draining fresh class {class} segment"
+        );
+        assert_eq!(core.dbg_segment_id_of(extra), core.dbg_segment_id_of(p));
+    }
+    assert!(
+        drained,
+        "fresh segment for class {class} was not observed empty within its physical capacity"
+    );
 }
 
 #[test]
