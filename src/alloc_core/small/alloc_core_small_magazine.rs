@@ -548,14 +548,14 @@ impl AllocCore {
                 i += 1;
                 continue; // defensive: skip nulls (matches per-block path)
             }
-            let base = os::segment_base_of_ptr(ptr);
+            let candidate = os::segment_base_of_ptr(ptr);
             // Detect the run of consecutive same-segment blocks starting at `i`.
             // Nulls terminate a run (they are handled by the outer loop as
             // no-ops, exactly as the per-block path skips them).
             let mut run_end = i + 1;
             while run_end < blocks.len() {
                 let q = blocks[run_end];
-                if q.is_null() || os::segment_base_of_ptr(q) != base {
+                if q.is_null() || os::segment_base_of_ptr(q) != candidate {
                     break;
                 }
                 run_end += 1;
@@ -569,12 +569,14 @@ impl AllocCore {
             // state); the batched run path must do it explicitly because it
             // hoists metadata reads ONCE per run, before any per-block guard
             // could observe the segment having vanished mid-batch.
-            let already_recycled = recycled_bases[..recycled_n].contains(&base);
+            let already_recycled = recycled_bases[..recycled_n].contains(&candidate);
             if !already_recycled {
-                let recycled_now = self.flush_run(class_idx, base, &blocks[i..run_end]);
-                if recycled_now && recycled_n < RECYCLED_CAP {
-                    recycled_bases[recycled_n] = base;
-                    recycled_n += 1;
+                if let Some(base) = self.table.canonical_base_of(candidate) {
+                    let recycled_now = self.flush_run(class_idx, base, &blocks[i..run_end]);
+                    if recycled_now && recycled_n < RECYCLED_CAP {
+                        recycled_bases[recycled_n] = candidate;
+                        recycled_n += 1;
+                    }
                 }
             }
             i = run_end;
@@ -646,7 +648,9 @@ impl AllocCore {
             if bm.is_free(off) {
                 continue;
             }
-            let block_nn = match NonNull::new(ptr) {
+            // `ptr` identifies the offset only. Link through the stored
+            // reservation root, which covers the entire free-list word.
+            let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
                 Some(nn) => nn,
                 None => continue,
             };
