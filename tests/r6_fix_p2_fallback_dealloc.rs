@@ -3,6 +3,7 @@
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
+    feature = "fastbin",
     feature = "internals",
     feature = "bench-internals",
     not(miri)
@@ -10,10 +11,11 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use sefer_alloc::alloc_core::segment_header::OWNER_ID_FALLBACK;
+use sefer_alloc::global::dbg_fallback_lock_acquisitions;
 use sefer_alloc::registry::HeapCore;
 use sefer_alloc::SeferAlloc;
 
@@ -22,6 +24,9 @@ const CHILD_TIMEOUT: Duration = Duration::from_secs(15);
 
 static TEARDOWN_PTR: AtomicUsize = AtomicUsize::new(0);
 static TEARDOWN_FREE_RAN: AtomicBool = AtomicBool::new(false);
+static TEARDOWN_LOCK_BEFORE: AtomicU64 = AtomicU64::new(0);
+static TEARDOWN_LOCK_AFTER: AtomicU64 = AtomicU64::new(0);
+static TEARDOWN_LIVE_BEFORE_FREE: AtomicU32 = AtomicU32::new(0);
 
 struct FreeAfterFallbackAlloc;
 struct FallbackAllocAfterGuard;
@@ -41,6 +46,13 @@ impl Drop for FallbackAllocAfterGuard {
         // LOCAL TORN and recycled the registry slot before this destructor.
         // SAFETY: the layout is valid and non-zero.
         let ptr = unsafe { SeferAlloc::new().alloc(layout()) };
+        if !ptr.is_null() {
+            let live = HeapCore::dbg_with_fallback_for_test(|heap| {
+                heap.dbg_live_count_for(ptr).unwrap_or(0)
+            })
+            .unwrap_or(0);
+            TEARDOWN_LIVE_BEFORE_FREE.store(live, Ordering::Release);
+        }
         TEARDOWN_PTR.store(ptr as usize, Ordering::Release);
     }
 }
@@ -49,9 +61,11 @@ impl Drop for FreeAfterFallbackAlloc {
     fn drop(&mut self) {
         let ptr = TEARDOWN_PTR.load(Ordering::Acquire) as *mut u8;
         if !ptr.is_null() {
+            TEARDOWN_LOCK_BEFORE.store(dbg_fallback_lock_acquisitions(), Ordering::Relaxed);
             // SAFETY: the preceding TLS destructor allocated this live block
             // with the same allocator and layout, then published it here.
             unsafe { SeferAlloc::new().dealloc(ptr, layout()) };
+            TEARDOWN_LOCK_AFTER.store(dbg_fallback_lock_acquisitions(), Ordering::Relaxed);
             TEARDOWN_FREE_RAN.store(true, Ordering::Release);
         }
     }
@@ -138,13 +152,57 @@ fn real_teardown_case() {
         !ptr.is_null(),
         "teardown allocation did not publish a block"
     );
+    let lock_delta = TEARDOWN_LOCK_AFTER
+        .load(Ordering::Relaxed)
+        .wrapping_sub(TEARDOWN_LOCK_BEFORE.load(Ordering::Relaxed));
     assert_eq!(
+        lock_delta, 1,
+        "the teardown dealloc must acquire the fallback lock exactly once"
+    );
+
+    let (class, free, live, ring, overflow, in_magazine) =
         HeapCore::dbg_with_fallback_for_test(|heap| {
             assert_eq!(heap.dbg_owner_id_for(ptr), Some(OWNER_ID_FALLBACK));
-            heap.dbg_is_free_for(ptr)
-        }),
-        Some(true),
-        "the final TLS destructor must reclaim the fallback block directly"
+            let class = heap.dbg_class_for(layout()).expect("small class");
+            (
+                class,
+                heap.dbg_is_free_for(ptr),
+                heap.dbg_live_count_for(ptr),
+                heap.dbg_segment_ring_cursors_for_test(ptr),
+                heap.dbg_overflow_cursors_for_test(),
+                heap.dbg_tcache_contains(class, ptr),
+            )
+        })
+        .expect("fallback remains initialized");
+    assert!(
+        in_magazine,
+        "direct fallback dealloc did not park the block in its class magazine: \
+         class={class}, free={free}, live={live:?}, ring={ring:?}, overflow={overflow:?}"
+    );
+    // Direct small frees park in the magazine; only a later flush sets the
+    // alloc-bitmap bit to free. Reallocation below verifies immediate reuse.
+    assert!(
+        !free,
+        "magazine-resident blocks remain allocated in the bitmap"
+    );
+    assert_eq!(
+        live,
+        Some(TEARDOWN_LIVE_BEFORE_FREE.load(Ordering::Acquire)),
+        "magazine parking must leave the live count unchanged"
+    );
+    assert_eq!(ring, Some((0, 0)), "the free must not take the remote ring");
+    assert_eq!(overflow, (0, 0), "the free must not enter heap overflow");
+
+    let reused = HeapCore::dbg_with_fallback_for_test(|heap| {
+        let reused = heap.alloc(layout());
+        // SAFETY: `reused` came from this heap with this layout and is live.
+        unsafe { heap.dealloc(reused, layout()) };
+        reused
+    })
+    .expect("fallback reallocation");
+    assert_eq!(
+        reused, ptr,
+        "the directly reclaimed block must be immediately reusable"
     );
 }
 
