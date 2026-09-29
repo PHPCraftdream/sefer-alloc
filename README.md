@@ -1386,7 +1386,7 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **326 integration test files** ship
+a test file, and a reproducible command. **327 integration test files** ship
 in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
 `benches/`; **20 root Loom models** in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1394,7 +1394,7 @@ real-type suites; **3 libFuzzer targets** in `fuzz/`
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (326 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (327 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
