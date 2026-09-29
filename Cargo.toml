@@ -2438,6 +2438,13 @@ name = "regression_r2_20_lock_free_rejected_no_cow"
 path = "tests/regression_r2_20_lock_free_rejected_no_cow.rs"
 required-features = ["experimental", "bench-internals"]
 
+# R5-03: this regression uses the capacity-check test hook, same rationale as
+# R2-20's entry immediately above — keep the Cargo test target gated too.
+[[test]]
+name = "xxs_r5_03_lock_free_with_pages_overflow"
+path = "tests/xxs_r5_03_lock_free_with_pages_overflow.rs"
+required-features = ["experimental", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

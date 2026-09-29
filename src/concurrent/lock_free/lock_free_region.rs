@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
 
+use crate::concurrent::lock_free::lock_free_capacity::checked_total_slots;
 use crate::concurrent::LockFreeHandle;
 
 /// Source of [`LockFreeRegion::region_id`]: a process-global, monotonically
@@ -232,17 +233,22 @@ impl<T> LockFreeRegion<T> {
     ///
     /// # Panics
     ///
-    /// Panics on `u32` index overflow in the astronomically unlikely case of a
-    /// page table whose global slot indices exceed `u32::MAX`.
+    /// Panics, before any allocation, if `page_count * PAGE` (the total
+    /// indexable slot count) does not fit in `u32`, i.e. if `page_count`
+    /// exceeds `u32::MAX / PAGE`.
     #[must_use]
     pub fn with_pages(page_count: usize) -> Self {
         let page_len = u32::try_from(PAGE).expect("PAGE fits u32");
+        let total_slots = checked_total_slots(page_count, PAGE).expect(
+            "with_pages: page_count * PAGE (indexable slot count) overflows u32; reduce page_count",
+        );
         let mut pages: Vec<Arc<Vec<Slot<T>>>> = Vec::with_capacity(page_count);
         // Thread every slot of every pre-allocated page into a single free list
         // in ASCENDING global-index order: slot[i].next_free = i+1 (or None at
         // the very last slot). free_head then points at the smallest index.
         let mut free_head: Option<u32> = None;
-        let total_pages = u32::try_from(page_count).expect("page_count overflows u32");
+        // Fits: `page_count <= page_count * PAGE = total_slots <= u32::MAX`.
+        let total_pages = u32::try_from(page_count).expect("unreachable: proven to fit u32 above");
         for page_idx in 0..total_pages {
             let base = page_idx
                 .checked_mul(page_len)
@@ -254,7 +260,7 @@ impl<T> LockFreeRegion<T> {
                     .expect("global slot index overflows u32");
                 // `next_free` points at the next slot in ascending order, or
                 // None if this is the global last slot.
-                let next_free = if global + 1 >= total_pages * page_len {
+                let next_free = if global + 1 >= total_slots {
                     None
                 } else {
                     Some(global + 1)
@@ -484,6 +490,15 @@ impl<T> LockFreeRegion<T> {
     #[must_use]
     pub fn _forge_handle_for_tests(&self, index: u32, generation: u32) -> LockFreeHandle<T> {
         LockFreeHandle::new(self.region_id, index, generation)
+    }
+
+    /// Test-only forwarder to the pure `checked_total_slots` check, so tests
+    /// can probe `with_pages`'s boundary without allocating.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _checked_total_slots_for_tests(page_count: usize, page_len: usize) -> Option<u32> {
+        checked_total_slots(page_count, page_len)
     }
 }
 
