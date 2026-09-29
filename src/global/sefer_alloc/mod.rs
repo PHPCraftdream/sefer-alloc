@@ -126,14 +126,14 @@
 //!   `realloc_inplace_fast_path_known_base`
 //!   (`alloc_core/alloc_core/mem/realloc_fastpath.rs`: `assert!(self.table
 //!   .contains_base_ro(base), "known-base realloc …")`) — was
-//!   demoted to `debug_assert!` (#1984, alloc-core perf review P1-2). Both
-//!   callers (`AllocCore::realloc` / `HeapCore::realloc`) already prove
-//!   `contains_base(base)` on the same path before calling, so the re-probe
-//!   was redundant, and a release-surviving panic on the alloc path
-//!   contradicted the no-panic discipline above. The check is retained as a
-//!   debug-only falsification pin (the F12 style in `alloc_core_large.rs`);
-//!   `tests/no_panic_doc_accuracy.rs` pins both its message string and its
-//!   demoted form.
+//!   first demoted to `debug_assert!` (#1984, alloc-core perf review P1-2):
+//!   both callers already prove membership, so a release panic and duplicate
+//!   probe were unnecessary. It was later replaced by fallible
+//!   `canonical_base_of(base)?`. A missing address returns `None` without
+//!   panicking; a hit supplies the table's allocator-owned root before any
+//!   metadata read. There is no remaining debug-only re-probe.
+//!   `tests/no_panic_doc_accuracy.rs` pins this fallible root resolution and
+//!   the absence of a release `assert!` in that file.
 //!
 //! **`GlobalAlloc` methods must not unwind — upheld at the source, NOT
 //! delegated to the std shims (R2-08).** `GlobalAlloc`'s safety contract
