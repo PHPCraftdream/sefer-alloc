@@ -15,7 +15,7 @@ mod remote_bitmap;
 
 mod tests {
     use super::remote_bitmap::{BitmapRecord, SidecarBitmap};
-    use core::sync::atomic::{AtomicU64, AtomicU8};
+    use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Barrier};
 
     fn backing() -> (Vec<AtomicU64>, Vec<AtomicU8>) {
@@ -48,7 +48,7 @@ mod tests {
         while let Some(mut cut) = scan.next_cut() {
             cuts += 1;
             while let Some(record) = cut.pop() {
-                records.push(record.unwrap());
+                records.push(record);
             }
         }
         assert_eq!(cuts, 2);
@@ -65,7 +65,7 @@ mod tests {
         while let Some(mut cut) = full.next_cut() {
             visits += 1;
             if let Some(record) = cut.pop() {
-                final_record = Some(record.unwrap());
+                final_record = Some(record);
             }
         }
         assert_eq!(visits, 4096);
@@ -116,14 +116,14 @@ mod tests {
             published.wait();
             let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
             assert_eq!(
-                cut.pop().unwrap().unwrap(),
+                cut.pop().unwrap(),
                 BitmapRecord {
                     offset: 16,
                     class: 3
                 }
             );
             assert_eq!(
-                cut.pop().unwrap().unwrap(),
+                cut.pop().unwrap(),
                 BitmapRecord {
                     offset: 32,
                     class: 4
@@ -142,21 +142,41 @@ mod tests {
         assert!(map.issue(offset, 2));
         assert!(map.publish(offset));
         let mut first = map.scan(1024).unwrap().next_cut().unwrap();
-        assert_eq!(first.pop().unwrap().unwrap().class, 2);
+        assert_eq!(first.pop().unwrap().class, 2);
         assert!(first.pop().is_none());
         assert!(map.issue(offset, 5));
         assert!(map.publish(offset));
         let mut second = map.scan(1024).unwrap().next_cut().unwrap();
-        assert_eq!(second.pop().unwrap().unwrap().class, 5);
+        assert_eq!(second.pop().unwrap().class, 5);
         assert!(second.pop().is_none());
     }
 
     #[test]
-    fn r6_missing_issue_is_explicit_error() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
-        assert!(map.publish(16));
-        let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
-        assert!(cut.pop().unwrap().is_err());
+    fn r6_invalid_class_aborts_without_unwind() {
+        const CHILD: &str = "SEFER_R6_SIDECAR_INVALID_CLASS_CHILD";
+        if let Some(encoded) = std::env::var_os(CHILD) {
+            let encoded: u8 = encoded.to_string_lossy().parse().unwrap();
+            let (words, classes) = backing();
+            let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+            classes[1].store(encoded, Ordering::Relaxed);
+            assert!(map.publish(16));
+            let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
+            let _ = cut.pop();
+            return;
+        }
+
+        let executable = std::env::current_exe().unwrap();
+        for encoded in [0u8, u8::MAX] {
+            let status = std::process::Command::new(&executable)
+                .args(["--exact", "tests::r6_invalid_class_aborts_without_unwind"])
+                .env(CHILD, encoded.to_string())
+                .status()
+                .unwrap();
+            assert!(
+                !status.success(),
+                "invalid class {encoded} returned normally"
+            );
+            assert_ne!(status.code(), Some(101), "invalid class {encoded} unwound");
+        }
     }
 }

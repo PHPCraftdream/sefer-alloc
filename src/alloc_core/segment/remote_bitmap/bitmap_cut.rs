@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use super::{BitmapRecord, InvalidClass};
+use super::BitmapRecord;
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 /// Detached bits must be consumed or persisted before the backing is freed.
@@ -16,22 +16,23 @@ impl BitmapCut<'_> {
         self.bits == 0
     }
 
-    /// Read class before reclaim/reissue. Do not unwind or discard a record
-    /// before its ledger/reclaim commit. A cut does no work in Drop.
-    pub(crate) fn pop(&mut self) -> Option<Result<BitmapRecord, InvalidClass>> {
+    /// Read class before reclaim/reissue. Invalid class aborts before the
+    /// bit is cleared; no panic or recoverable error can discard its credit.
+    /// Do not discard a valid record before ledger/reclaim commit.
+    pub(crate) fn pop(&mut self) -> Option<BitmapRecord> {
         if self.bits == 0 {
             return None;
         }
         let bit = self.bits.trailing_zeros() as usize;
-        self.bits &= self.bits - 1;
         let granule = self.word * 64 + bit;
         let encoded = self.classes[granule].load(Ordering::Relaxed);
         if encoded == 0 || usize::from(encoded) > SMALL_CLASS_COUNT {
-            return Some(Err(InvalidClass));
+            std::process::abort();
         }
-        Some(Ok(BitmapRecord {
+        self.bits &= self.bits - 1;
+        Some(BitmapRecord {
             offset: (granule * MIN_BLOCK) as u32,
             class: encoded - 1,
-        }))
+        })
     }
 }

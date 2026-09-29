@@ -17,7 +17,7 @@ impl<'a> BitmapScan<'a> {
         }
         let word = self.next_word;
         self.next_word += 1;
-        let bits = self.bitmap.pending[word].swap(0, Ordering::Acquire);
+        let bits = self.bitmap.pending[word].swap(0, Ordering::AcqRel);
         Some(BitmapCut {
             classes: self.bitmap.classes,
             word,

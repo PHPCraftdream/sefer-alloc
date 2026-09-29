@@ -23,11 +23,11 @@ impl Word {
     }
 
     fn publish(&self, slot: usize) {
-        self.bits.fetch_or(1 << slot, Ordering::Release);
+        self.bits.fetch_or(1 << slot, Ordering::AcqRel);
     }
 
     fn cut(&self) -> u64 {
-        self.bits.swap(0, Ordering::Acquire)
+        self.bits.swap(0, Ordering::AcqRel)
     }
 
     fn class(&self, slot: usize) -> u8 {

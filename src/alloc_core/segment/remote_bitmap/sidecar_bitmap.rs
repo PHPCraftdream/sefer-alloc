@@ -59,7 +59,7 @@ impl<'a> SidecarBitmap<'a> {
         true
     }
 
-    /// Producer terminal action. No class, header, or reservation access;
+    /// Producer terminal AcqRel RMW. No class, header, or reservation access;
     /// no sidecar access is permitted after this RMW. Exactly one producer
     /// publishes each valid allocation instance. An unpublished producer
     /// retains its segment credit; a published one retains it until reclaim.
@@ -67,7 +67,7 @@ impl<'a> SidecarBitmap<'a> {
         let Some(granule) = Self::granule(offset) else {
             return false;
         };
-        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Release);
+        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
         true
     }
 
@@ -93,6 +93,6 @@ impl<'a> SidecarBitmap<'a> {
 
     fn granule(offset: u32) -> Option<usize> {
         let offset = offset as usize;
-        (offset < SEGMENT && offset % MIN_BLOCK == 0).then_some(offset / MIN_BLOCK)
+        (offset < SEGMENT && offset.is_multiple_of(MIN_BLOCK)).then_some(offset / MIN_BLOCK)
     }
 }
