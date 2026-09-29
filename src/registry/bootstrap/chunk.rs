@@ -26,7 +26,8 @@
 //! instead of once globally — see [`super::registry::Registry::slot`] (the
 //! single place that resolves a slot index to a `&'static HeapSlot`, and the
 //! only code in the crate allowed to dereference chunk memory) for the CAS +
-//! spin + publish sequence. This module owns only the chunk's LAYOUT and
+//! spin + publish sequence. Claim uses its fallible `slot_or_none` variant.
+//! This module owns only the chunk's LAYOUT and
 //! sizing constants; the state machine lives with `Registry` in
 //! `bootstrap` (it needs `Registry::chunks` to drive the CAS, so keeping
 //! the state machine there mirrors the existing whole-registry code instead

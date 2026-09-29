@@ -5,27 +5,32 @@ use core::sync::atomic::Ordering;
 use crate::registry::bootstrap::{Registry, MAX_HEAPS};
 use crate::registry::heap_slot::{HeapSlot, STATE_EMPTY, STATE_FREE};
 
-/// Try only already-materialised, initialised slots. The caller must win its
-/// own state CAS before touching the core; observing FREE grants no authority.
-pub(super) fn scan_claimable_slot(reg: &Registry) -> Option<(usize, &'static HeapSlot)> {
+/// Prefer claimable materialised slots, then an index in an unmaterialised
+/// chunk. The latter may have been minted before a failed chunk reservation;
+/// only the caller's slot-state CAS grants ownership after materialisation.
+pub(super) fn scan_claimable_slot(reg: &Registry) -> Option<usize> {
     let count = (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS);
     if count == 0 {
         return None;
     }
     let start = reg.scan_cursor.fetch_add(1, Ordering::Relaxed) as usize % count;
+    let mut unmaterialised = None;
     for offset in 0..count {
         let idx = (start + offset) % count;
         let Some(slot) = reg.slot_if_materialised(idx) else {
+            if unmaterialised.is_none() {
+                unmaterialised = Some(idx);
+            }
             continue;
         };
         let state = slot.state.load(Ordering::Acquire);
-        if (state == STATE_FREE && slot.initialised.load(Ordering::Acquire))
+        if state == STATE_FREE
             || (state == STATE_EMPTY && !slot.initialised.load(Ordering::Acquire))
         {
-            return Some((idx, slot));
+            return Some(idx);
         }
     }
-    None
+    unmaterialised
 }
 
 /// One fair pass over the high-water range, skipping unmaterialised chunks.

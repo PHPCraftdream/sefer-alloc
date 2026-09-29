@@ -49,14 +49,15 @@ pub fn ensure() -> &'static Registry {
 /// spin-while-INITIALIZING-loser / OOM-rollback protocol now lives INSIDE the
 /// cell (the extracted `UNINIT -> INITIALIZING -> READY` state machine). This
 /// function supplies only the winner's fallible OS reservation closure; the
-/// OOM policy (abort for the alloc path, return `None` for the free path) lives
-/// in the CALLER ([`Registry::ensure_chunk`] vs [`Registry::try_ensure_chunk`]).
+/// OOM policy lives in the caller: claim and free paths return `None` via
+/// `try_ensure_chunk`; `ensure_chunk` remains an invariant tripwire for
+/// already-materialised indices.
 ///
 /// Returns `None` on chunk-materialisation OOM. The cell has ALREADY rolled its
 /// sentinel back to null by then (anti-livelock — losers re-race; a future
 /// call can retry this chunk index). Before R34-15 (task #534) this function
-/// aborted on OOM directly; the abort policy now lives in `ensure_chunk` (alloc
-/// path only), while `try_ensure_chunk` (free path) passes the `None` through.
+/// aborted on OOM directly. Now `try_ensure_chunk` passes `None` to claim
+/// and free callers; `ensure_chunk` remains for proven-existing chunks.
 ///
 /// The cell guarantees exactly-once init, a single published pointer for all
 /// racers, Release/Acquire happens-before, and — critically for M5 — that a

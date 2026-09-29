@@ -362,7 +362,7 @@ fn walk_initialised_slots(mut visit: impl FnMut(&'static HeapSlot)) {
 // ---------------------------------------------------------------------------
 
 /// Reserve a fresh slot, simulate constructor failure, and return its index.
-/// The postcondition is EMPTY with `initialised == false`; the next claim can
+/// The postcondition is FREE with `initialised == false`; the next claim can
 /// retry construction even though `generation` is nonzero.
 #[doc(hidden)]
 #[must_use]

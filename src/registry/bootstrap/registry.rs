@@ -109,11 +109,10 @@ impl Registry {
     /// inline `slots: [HeapSlot; MAX_HEAPS]` array directly now calls this
     /// instead, so there is exactly one path that can ever dereference chunk
     /// memory, and it always guarantees the chunk exists before returning.
-    /// Callers that already resolved an index via `pick_slot`/`bump_count`/
-    /// `pop_free_slot` do NOT need any extra "ensure my chunk exists" step of
-    /// their own — calling `slot()` (which they already do, immediately after
-    /// obtaining the index) handles it uniformly, whether the index was
-    /// freshly minted or popped off the free list.
+    /// New claims use [`slot_or_none`](Self::slot_or_none). This infallible
+    /// form is for production callers whose index came from a successful
+    /// earlier claim, proving that its chunk is already materialised. Test
+    /// hooks can also use it to deliberately materialise an untouched slot.
     ///
     /// # Panics
     ///
@@ -124,11 +123,8 @@ impl Registry {
     ///
     /// # OOM
     ///
-    /// If the owning chunk has not yet been materialised and the OS refuses
-    /// the VM reservation, this method **aborts the process** (preserving the
-    /// historic infallible `&'static HeapSlot` contract for alloc-path
-    /// callers). Free-path callers that must not abort should use
-    /// [`slot_or_none`](Self::slot_or_none) instead (R34-15/task #534).
+    /// If an unmaterialised chunk is passed and its reservation fails, this
+    /// method aborts. Claim and free paths use the fallible accessor.
     #[inline]
     pub(crate) fn slot(&self, idx: usize) -> &'static HeapSlot {
         debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
@@ -139,18 +135,16 @@ impl Registry {
         unsafe { chunk.slots.get_unchecked(slot_in_chunk) }
     }
 
-    /// Fallible variant of [`slot`](Self::slot) for the **free path**
-    /// (R34-15/task #534). Returns `None` when the owning chunk has not yet
+    /// Fallible variant of [`slot`](Self::slot) for claim and free paths.
+    /// Returns `None` when the owning chunk has not yet
     /// been materialised AND the OS refuses the VM reservation, instead of
     /// aborting. Every free-path caller already has a defensive "unstamped /
     /// garbled owner id" early-return two lines above its call site; the
     /// `None` case folds into that same graceful bail.
     ///
-    /// Alloc-path callers continue to use the infallible [`slot`](Self::slot)
-    /// — they run on the allocating thread where an OOM abort is the correct
-    /// policy (the allocation itself would fail immediately afterward), so
-    /// this method is deliberately NOT a drop-in replacement for `slot()`
-    /// across the crate.
+    /// A failed new claim can use the already-live fallback heap, so claim
+    /// must not call the infallible accessor. Existing-heap callers can use
+    /// `slot()` after proving their chunk was previously materialised.
     ///
     /// **F-3 context (documented, not fixed):** the two production callers —
     /// `resolve_dirty_bit_target` and `resolve_heap_overflow` in
@@ -242,13 +236,10 @@ impl Registry {
     /// cell's `get_or_try_init` (CAS-reserve, OS reservation, Release-publish,
     /// spin-while-INITIALIZING loser, OOM rollback).
     ///
-    /// **OOM policy (alloc path):** on chunk-materialisation OOM this method
-    /// ABORTS the process. This preserves the historic infallible
-    /// `&'static RegistryChunk` contract for every alloc-path caller of
-    /// [`slot`](Self::slot) / `pick_slot` / `claim` (an OOM abort on the
-    /// alloc path is the correct policy — the allocation itself would fail
-    /// immediately afterward). Free-path callers use [`try_ensure_chunk`]
-    /// instead (R34-15/task #534).
+    /// **OOM policy:** production callers have already materialised their
+    /// chunks, so the abort is an invariant tripwire. Test hooks can force
+    /// materialisation here. New claims and free-path callers use
+    /// [`try_ensure_chunk`] instead.
     #[inline]
     fn ensure_chunk(&self, chunk_idx: usize) -> &'static RegistryChunk {
         if let Some(p) = self.chunks[chunk_idx].get() {
@@ -265,30 +256,19 @@ impl Registry {
         match ensure_chunk_slow(&self.chunks[chunk_idx]) {
             Some(chunk) => chunk,
             None => {
-                // Chunk-materialisation OOM (alloc path). The cell has ALREADY
+                // Chunk-materialisation OOM. The cell has ALREADY
                 // rolled its sentinel back to null (anti-livelock — losers
                 // re-race; a future `slot()` call can retry this chunk index).
                 //
-                // We keep the historic ABORT policy for the alloc path
-                // (unchanged in effect from before R34-15): `Registry::slot` /
-                // `pick_slot` / `claim` assume `slot()` always succeeds
-                // (`&'static HeapSlot`, not `Option<..>`), and a
-                // chunk-materialisation OOM is exceedingly rare (the OS
-                // refusing a tens-of-KiB-to-low-MiB reservation while the
-                // process is already so starved that the `HeapCore::new()`
-                // segment reservation a few lines later would fail anyway).
-                // The free path now has a non-aborting path via
-                // [`try_ensure_chunk`] / [`slot_or_none`] (R34-15/task #534);
-                // widening `slot()` itself to `Option` remains deliberately
-                // out of scope (alloc-path callers still need the infallible
-                // `&'static` contract).
+                // Production callers pass indices from a successful earlier
+                // claim; test hooks may deliberately force this path.
                 std::process::abort();
             }
         }
     }
 
     /// Fallible variant of [`ensure_chunk`](Self::ensure_chunk) for the
-    /// **free path** (R34-15/task #534). Returns `None` on
+    /// claim and free paths. Returns `None` on
     /// chunk-materialisation OOM instead of aborting. The cell's anti-livelock
     /// rollback (sentinel back to null) runs identically in both variants —
     /// only the caller-visible policy differs.
