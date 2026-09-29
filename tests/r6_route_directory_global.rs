@@ -23,7 +23,8 @@ fn system_backed_route_metadata_does_not_reenter_global_allocator() {
     assert!(route.small_sidecar().unwrap().issue(0, 0));
     let pin = directory.lookup(root).unwrap();
     assert_eq!(pin.owner(), 23);
-    assert!(pin.publish_small(0));
+    // SAFETY: the test owns the issued standalone block and transfers it once.
+    assert!(unsafe { pin.publish_small(0) });
     let mut scan = route.small_sidecar().unwrap().scan(16).unwrap();
     let mut cut = scan.next_cut().unwrap();
     assert_eq!(cut.pop().unwrap().offset, 0);

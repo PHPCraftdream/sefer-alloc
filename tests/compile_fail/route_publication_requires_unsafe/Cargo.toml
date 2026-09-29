@@ -1,0 +1,10 @@
+[package]
+name = "route-publication-requires-unsafe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sefer-alloc = { path = "../../..", default-features = false, features = ["alloc-global", "internals"] }
+
+[workspace]

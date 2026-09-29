@@ -5,27 +5,49 @@ use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, RoutePin};
 const SEGMENT: usize = 4 * 1024 * 1024;
 
 #[test]
+#[cfg(not(miri))]
 fn terminal_publication_signatures_consume_the_pin() {
-    let _: fn(RoutePin, u32) -> bool = RoutePin::publish_small;
-    let _: fn(RoutePin) -> bool = RoutePin::publish_large;
+    let _: unsafe fn(RoutePin, u32) -> bool = RoutePin::publish_small;
+    let _: unsafe fn(RoutePin) -> bool = RoutePin::publish_large;
+    // A safe function coerces to an unsafe fn pointer, so those assignments
+    // alone cannot detect a regression of the ownership boundary.
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/compile_fail/route_publication_requires_unsafe/Cargo.toml");
+    let target = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("route_publication_requires_unsafe");
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let output = std::process::Command::new(cargo)
+        .args(["check", "--locked", "--offline", "--manifest-path"])
+        .arg(manifest)
+        .env("CARGO_TARGET_DIR", target)
+        .env_remove("RUSTFLAGS")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env("CARGO_TERM_COLOR", "never")
+        .output()
+        .expect("compile route ownership fixture");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "safe publication compiled");
+    assert_eq!(stderr.matches("error[E0133]").count(), 2, "{stderr}");
 }
 
 #[test]
-fn negative_control_cached_cannot_publish_before_owner_reset() {
+fn cached_instance_cannot_be_claimed_before_owner_reset() {
     let directory = RouteDirectory::new();
-    // Routing-only key; no reservation byte is accessed in this model.
-    let root = core::ptr::without_provenance_mut::<u8>(SEGMENT);
+    let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
+    let root = reservation.as_ptr();
     let route = directory
         .register(root, 1, root, 1, RouteKind::Large)
         .unwrap();
-    assert!(directory.lookup(root).unwrap().publish_large());
+    // SAFETY: the test owns this live standalone instance and transfers it once.
+    assert!(unsafe { directory.lookup(root).unwrap().publish_large() });
     let generation = route.claim_large_pending().unwrap();
     assert!(route.cache_large_consumed(generation));
     let next = route.begin_large_reuse().unwrap();
-    assert!(!directory.lookup(root).unwrap().publish_large());
+    assert!(route.claim_large_pending().is_none());
     // This model checks the phase gate; production owner reset is out of scope.
     assert!(route.finish_large_reuse_after_reset(next));
-    assert!(directory.lookup(root).unwrap().publish_large());
+    // SAFETY: reset completed; the test owns the new instance and transfers once.
+    assert!(unsafe { directory.lookup(root).unwrap().publish_large() });
     let second = route.claim_large_pending().unwrap();
     assert!(route.cache_large_consumed(second));
     assert!(route.release_cached_large(second));

@@ -19,13 +19,26 @@ impl RoutePin {
     }
     /// Terminal publication consumes the producer capability. Drop then
     /// touches only the independently allocated descriptor/sidecar.
-    pub fn publish_small(self, offset: u32) -> bool {
+    ///
+    /// # Safety
+    /// This pin and `offset` identify the caller's current issued Small or
+    /// Primordial allocation. The caller transfers its unique ownership once
+    /// and must not access or free that allocation after successful publication.
+    /// Address lookup alone does not establish this ownership.
+    #[allow(unsafe_code)]
+    pub unsafe fn publish_small(self, offset: u32) -> bool {
         self.entry
             .small_sidecar()
             .is_some_and(|sidecar| sidecar.publish(offset))
     }
     /// Terminal LIVE(g) -> PENDING(g) CAS, consuming this pin.
-    pub fn publish_large(self) -> bool {
+    ///
+    /// # Safety
+    /// This pin identifies the caller's current issued Large allocation.
+    /// The caller transfers its unique ownership once and must not access or
+    /// free that allocation after successful publication.
+    #[allow(unsafe_code)]
+    pub unsafe fn publish_large(self) -> bool {
         self.entry
             .large_state()
             .is_some_and(|state| state.publish_pending())

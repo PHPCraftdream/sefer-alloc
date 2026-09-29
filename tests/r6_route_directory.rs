@@ -75,7 +75,8 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
             let pin = directory_ref
                 .lookup(core::ptr::without_provenance_mut(addr))
                 .unwrap();
-            assert!(pin.publish_small(0));
+            // SAFETY: the model issued offset zero once and transfers it here.
+            assert!(unsafe { pin.publish_small(0) });
             published_tx.send(()).unwrap();
             resume_rx.recv().unwrap();
         });
@@ -114,7 +115,8 @@ fn published_pin_cleanup_survives_reservation_unmap() {
         .unwrap();
     assert!(route.small_sidecar().unwrap().issue(0, 0));
     let pin = directory.lookup(root).unwrap();
-    assert!(pin.publish_small(0));
+    // SAFETY: the owned model block at offset zero is issued and transferred once.
+    assert!(unsafe { pin.publish_small(0) });
     assert_eq!(
         cut_one(&route),
         RouteRecord {
@@ -142,19 +144,21 @@ fn large_route_key_and_invalid_span() {
         .unwrap();
     assert_eq!(pin.kind(), RouteKind::Large);
     assert_eq!(route.large_state().unwrap().generation(), 1);
-    assert!(pin.publish_large());
+    // SAFETY: this standalone route's live instance is owned by this test.
+    assert!(unsafe { pin.publish_large() });
     let first_generation = route.claim_large_pending().unwrap();
     assert_eq!(first_generation, 1);
     assert!(route.cache_large_consumed(first_generation));
     let next_generation = route.begin_large_reuse().unwrap();
     assert_eq!(next_generation, 2);
-    assert!(!directory.lookup(later).unwrap().publish_large());
+    assert!(route.claim_large_pending().is_none());
     assert!(!route.finish_large_reuse_after_reset(first_generation));
     // Actual owner layout/table reset belongs to the later integration.
     assert!(route.finish_large_reuse_after_reset(next_generation));
     assert_eq!(route.large_state().unwrap().generation(), 2);
     let next = directory.lookup(later).unwrap();
-    assert!(next.publish_large());
+    // SAFETY: reset completed and the test owns the newly issued instance.
+    assert!(unsafe { next.publish_large() });
     let second_generation = route.claim_large_pending().unwrap();
     assert_eq!(second_generation, 2);
     assert!(route.cache_large_consumed(second_generation));

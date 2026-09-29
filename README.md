@@ -704,6 +704,7 @@ item-scoped regions.
 
 | File | Sites | What they cover |
 |---|---|---|
+| [`src/registry/segment_route/pin.rs`](src/registry/segment_route/pin.rs) | 2 | Consuming Small/Large publication boundaries: the caller must uniquely own and transfer the current allocation; address lookup alone grants no right to free it. |
 | [`src/alloc_core/alloc_core/mem/mem_impl.rs`](src/alloc_core/alloc_core/mem/mem_impl.rs) | 4 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract); plus `dealloc_at_base` (the shared `kind_at`-onward tail both `dealloc` and the non-fastbin `dealloc_with_base` call) and `dealloc_with_base` itself (xxs-r5-01c: already-proven-`base` sibling entry, non-fastbin only) |
 | [`src/alloc_core/alloc_core/lifecycle.rs`](src/alloc_core/alloc_core/lifecycle.rs) | 1 | `Drop::drop` — internal call-site block into `deref_large_cache_extension_mut` (R14-1, task #286) |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs) | 3 | `dbg_stamp_segment_id` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
@@ -741,7 +742,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **105** tier-2 item-scoped allows across **35**
+`src/`, 6 in `crates/`) plus **107** tier-2 item-scoped allows across **36**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
