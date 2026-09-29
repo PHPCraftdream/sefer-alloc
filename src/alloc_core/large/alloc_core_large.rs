@@ -4,17 +4,15 @@
 //! large/huge alloc + reclaim methods. It is a pure code-movement sibling of
 //! `alloc_core.rs`; no behavior changed.
 
+#[cfg(any(feature = "alloc-decommit", feature = "alloc-xthread"))]
+use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 #[cfg(feature = "numa-aware")]
 use crate::alloc_core::numa;
 #[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
-#[cfg(any(
-    feature = "numa-aware",
-    feature = "alloc-decommit",
-    feature = "alloc-xthread"
-))]
+#[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{align_up, SegmentHeader};
 
@@ -260,7 +258,13 @@ impl AllocCore {
                     None => {
                         self.large_cache_used_bytes =
                             self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                        terminal_meta.mark_large_released();
+                        let state = LargeReservationState::new(terminal_meta.large_state_atomic());
+                        let word = terminal_meta.terminal_snapshot().large_state;
+                        if !state.release_cached(
+                            crate::alloc_core::segment_header::large_generation(word),
+                        ) {
+                            std::process::abort();
+                        }
                         os::release_segment(slot.reservation, slot.reservation_len);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
@@ -474,7 +478,11 @@ impl AllocCore {
                 let id = match self.table.register(slot.base) {
                     Some(id) => id,
                     None => {
-                        terminal_meta.mark_large_released();
+                        if !LargeReservationState::new(terminal_meta.large_state_atomic())
+                            .release_initializing(generation)
+                        {
+                            std::process::abort();
+                        }
                         os::release_segment(slot.reservation, slot.reservation_len);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
@@ -703,6 +711,13 @@ impl AllocCore {
     /// `alloc_large` slow-path, once per queued base.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
+        let terminal_meta = SegmentMeta::new(base);
+        let state = LargeReservationState::new(terminal_meta.large_state_atomic());
+        // The existing deferred stack has not yet been replaced by the
+        // terminal ingress: it leaves LIVE. Future ingress leaves PENDING.
+        let Some(generation) = state.claim_pending().or_else(|| state.claim_live()) else {
+            std::process::abort();
+        };
         let hdr = SegmentHeader::read_at(base);
         // Remove from the table FIRST (frees the slot for reuse regardless of
         // which branch below runs) — mirrors the own-thread cache-deposit
@@ -770,7 +785,9 @@ impl AllocCore {
                 let magic_off = core::mem::offset_of!(SegmentHeader, magic);
                 Node::atomic_u32_at(base, magic_off)
                     .store(0, core::sync::atomic::Ordering::Release);
-                SegmentMeta::new(base).mark_large_cached();
+                if !state.cache_consumed(generation) {
+                    std::process::abort();
+                }
                 let seq = self.large_cache_seq;
                 self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                 self.large_cache_slot_set(
@@ -793,7 +810,13 @@ impl AllocCore {
         // the OS reservation immediately. The slot is already unregistered
         // above, so there is no dangling table entry pointing at unmapped
         // memory.
-        SegmentMeta::new(base).mark_large_released();
+        if !state.release_consumed(generation) {
+            std::process::abort();
+        }
         os::release_segment(hdr.reservation, hdr.reservation_len);
     }
 }
+
+#[cfg(all(test, feature = "alloc-xthread"))]
+#[path = "../../../tests/support/r6_large_credit_reclaim.rs"]
+mod credit_tests;

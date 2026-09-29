@@ -6,7 +6,9 @@
 //! code-movement sibling of `alloc_core.rs`; no behavior changed. The whole
 //! module is `alloc-decommit`-gated because every method here is.
 
+use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::os;
+use crate::alloc_core::segment_header::large_generation;
 use crate::alloc_core::segment_header::SegmentMeta;
 
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
@@ -675,7 +677,11 @@ impl AllocCore {
             // Release the OS reservation. The slot was unregistered from the
             // table on deposit (same as `try_evict_to_fit`), so we release
             // directly without touching the table.
-            SegmentMeta::new(victim.base).mark_large_released();
+            let meta = SegmentMeta::new(victim.base);
+            let generation = large_generation(meta.terminal_snapshot().large_state);
+            if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+                std::process::abort();
+            }
             os::release_segment(victim.reservation, victim.reservation_len);
             released += victim.usable_size;
         }
@@ -862,7 +868,11 @@ impl AllocCore {
         self.large_cache_used_bytes = self
             .large_cache_used_bytes
             .saturating_sub(victim.usable_size);
-        SegmentMeta::new(victim.base).mark_large_released();
+        let meta = SegmentMeta::new(victim.base);
+        let generation = large_generation(meta.terminal_snapshot().large_state);
+        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
+            std::process::abort();
+        }
         os::release_segment(victim.reservation, victim.reservation_len);
         true
     }

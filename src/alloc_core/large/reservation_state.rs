@@ -53,6 +53,26 @@ impl<'a> LargeReservationState<'a> {
             .map(|_| generation)
     }
 
+    /// Owner-only claim of the allocation still held by its local caller.
+    /// Also used by the legacy deferred stack until ingress integration.
+    #[inline(always)]
+    pub(crate) fn claim_live(&self) -> Option<u64> {
+        let observed = self.word.load(Ordering::Acquire);
+        if large_phase(observed) != Some(LargePhase::Live) {
+            return None;
+        }
+        let generation = large_generation(observed);
+        self.word
+            .compare_exchange(
+                observed,
+                pack_large_state(LargePhase::Consuming, generation),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .ok()
+            .map(|_| generation)
+    }
+
     #[inline(always)]
     pub(crate) fn cache_consumed(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Consuming, LargePhase::Cached)
@@ -68,6 +88,12 @@ impl<'a> LargeReservationState<'a> {
     #[inline(always)]
     pub(crate) fn release_cached(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Cached, LargePhase::Released)
+    }
+
+    /// Cache-hit rollback after CACHED -> INITIALIZING, before user issuance.
+    #[inline(always)]
+    pub(crate) fn release_initializing(&self, generation: u64) -> bool {
+        self.transition(generation, LargePhase::Initializing, LargePhase::Released)
     }
 
     /// None leaves CACHED unchanged: the owner retires this reservation.
@@ -111,3 +137,7 @@ impl<'a> LargeReservationState<'a> {
 #[cfg(test)]
 #[path = "../../../tests/support/r6_terminal_large_state.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/support/r6_large_credit_state.rs"]
+mod credit_tests;
