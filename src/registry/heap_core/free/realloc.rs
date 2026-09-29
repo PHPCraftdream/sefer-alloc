@@ -122,12 +122,12 @@ impl HeapCore {
         }
         #[cfg(feature = "alloc-global")]
         {
-            let base = os::segment_base_of_ptr(ptr);
+            let own_block = self.core.canonical_block_of(ptr);
             // Task #135 (Part 2): O(1) membership test (`AllocCore::contains_base`
             // → the OPT-B hash table) replaces the O(segment count) linear scan
             // `segment_bases().any(|b| b == base)`. Same semantics: `true` iff
             // `base` is one of THIS heap's registered, live segments.
-            if self.core.contains_base(base) {
+            if let Some((base, block)) = own_block {
                 // Own-segment pointer. The resize proceeds in up to three
                 // phases (see the doc comment above): A1 Large drain, in-place
                 // attempt, then move leg — all funnelled through the
@@ -180,14 +180,18 @@ impl HeapCore {
                 //       `AllocCore::realloc`'s blind alloc→alloc_small path.
                 if let Some(p) = self
                     .core
-                    .try_realloc_inplace_known_base(base, ptr, old_layout, new_size)
+                    .try_realloc_inplace_known_base(base, block, old_layout, new_size)
                 {
                     // `try_realloc_inplace_known_base` mutates the block's header in
                     // place and always returns the SAME pointer on success
                     // (it never moves the block). The segment was already
                     // stamped when first allocated, so there is nothing to
                     // re-stamp here.
-                    debug_assert_eq!(p, ptr, "known-base realloc must return the same pointer");
+                    debug_assert_eq!(
+                        p.addr(),
+                        ptr.addr(),
+                        "known-base realloc must preserve the address"
+                    );
                     return p;
                 }
                 //   (2.5) Small/medium->Large promotion (R14-4, task #289,
@@ -265,7 +269,7 @@ impl HeapCore {
                     )
                     .is_some()
                 {
-                    if let Some(p) = self.try_promote_to_large(base, ptr, old_layout, new_size) {
+                    if let Some(p) = self.try_promote_to_large(base, block, old_layout, new_size) {
                         return p;
                     }
                 }
@@ -292,7 +296,7 @@ impl HeapCore {
                 //       segments, so this is a same-thread read of the
                 //       owner-only commit frontier (R2-02) — see
                 //       `safe_payload_read_span`'s doc.
-                if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, true) {
+                if old_layout.size() > AllocCore::safe_payload_read_span(base, block, true) {
                     return core::ptr::null_mut();
                 }
                 let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
@@ -304,7 +308,7 @@ impl HeapCore {
                     return core::ptr::null_mut();
                 }
                 let copy = old_layout.size().min(new_size);
-                crate::alloc_core::node::Node::copy_nonoverlapping(ptr, new_ptr, copy);
+                crate::alloc_core::node::Node::copy_nonoverlapping(block, new_ptr, copy);
                 // F6 (task #494): `base` is already in hand from the
                 // `contains_base(base)` check above — hand it directly to the
                 // own-thread free body instead of routing back through
@@ -360,9 +364,9 @@ impl HeapCore {
                 // `dealloc_routing`'s identical two-arm call (`heap_core_
                 // xthread.rs`).
                 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-                self.dealloc_own_thread_with_base(ptr, old_layout, base);
+                self.dealloc_own_thread_with_base(block, old_layout, base);
                 #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
-                self.dealloc_own_thread(ptr, old_layout, base);
+                self.dealloc_own_thread(block, old_layout, base);
                 return new_ptr;
             }
         }

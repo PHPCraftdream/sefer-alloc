@@ -9,8 +9,6 @@
 
 use core::alloc::Layout;
 
-#[cfg(feature = "alloc-global")]
-use crate::alloc_core::os;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(all(
@@ -319,6 +317,12 @@ impl HeapCore {
         layout: Layout,
         base: *mut u8,
     ) {
+        let Some((root, block)) = self.core.canonical_block_of(ptr) else {
+            return;
+        };
+        if root.addr() != base.addr() {
+            return;
+        }
         {
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
             use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
@@ -345,8 +349,8 @@ impl HeapCore {
                     // the M2 oracles, the Э6 double-free-oracle redesign
                     // history, and the RESIDUAL M2 LIMIT this pair does NOT
                     // cover — task #164/X7).
-                    let (off, meta) = match small_free_guard(base, ptr, c, layout) {
-                        SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
+                    let (off, meta) = match small_free_guard(root, ptr, c, layout) {
+                        SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(root)),
                         SmallFreeGuard::RejectNoOp => return,
                         SmallFreeGuard::RouteToLargeFree => {
                             // SAFETY: this own-thread body is reached only
@@ -359,7 +363,7 @@ impl HeapCore {
                             // `span_usable`, ignoring the layout.
                             #[allow(unsafe_code)]
                             unsafe {
-                                self.core.dealloc(ptr, layout)
+                                self.core.dealloc(block, layout)
                             };
                             return;
                         }
@@ -381,7 +385,7 @@ impl HeapCore {
                         // doc; `docs/perf/IAI_BASELINE.md`'s RAD-5 entry has
                         // the measured verdict on whether this is worth it.
                         meta.magazine_bitmap().mark_magazine(off);
-                        self.tcache.classes[c].slots[cnt] = ptr;
+                        self.tcache.classes[c].slots[cnt] = block;
                         self.tcache.classes[c].count = (cnt + 1) as u8;
                         // R13-3 (task #273): a pushed-back block was
                         // previously issued (it is being FREED right now) —
@@ -421,7 +425,7 @@ impl HeapCore {
                         // batch.
                         #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                         unsafe {
-                            self.core.flush_class(c, core::slice::from_ref(&ptr));
+                            self.core.flush_class(c, core::slice::from_ref(&block));
                         }
                         return;
                     }
@@ -444,8 +448,11 @@ impl HeapCore {
                     // `flush_class`/`flush_run`; this bitmap's clear happens
                     // here since `AllocCore` has no magazine concept).
                     for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
-                        let fbase = os::segment_base_of_ptr(flushed);
-                        let foff = (flushed as usize - fbase as usize) as u32;
+                        let (fbase, _) = self
+                            .core
+                            .canonical_block_of(flushed)
+                            .expect("magazine slot belongs to a live segment");
+                        let foff = (flushed.addr() - fbase.addr()) as u32;
                         SegmentMeta::new(fbase)
                             .magazine_bitmap()
                             .clear_magazine(foff);
@@ -482,7 +489,7 @@ impl HeapCore {
                     // double-free is caught even when the magazine is full.
                     // RAD-5: mark the newly-pushed block magazine-resident.
                     meta.magazine_bitmap().mark_magazine(off);
-                    self.tcache.classes[c].slots[remaining] = ptr;
+                    self.tcache.classes[c].slots[remaining] = block;
                     self.tcache.classes[c].count = (remaining + 1) as u8;
                     // R13-3: the newly-pushed block is a freed (previously
                     // issued) block — never virgin (dispatch conjunct), same
@@ -509,7 +516,7 @@ impl HeapCore {
         // and we forward the same pair to the substrate.
         #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
         unsafe {
-            self.core.dealloc(ptr, layout)
+            self.core.dealloc(block, layout)
         };
     }
 }

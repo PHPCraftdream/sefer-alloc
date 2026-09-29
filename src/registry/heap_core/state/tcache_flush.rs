@@ -10,8 +10,6 @@
 use ::core::sync::atomic::Ordering;
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::os;
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 
 use crate::registry::heap_core::HeapCore;
@@ -86,8 +84,11 @@ impl HeapCore {
             // magazine-residency bit BEFORE the flush, mirroring the
             // production overflow-flush site in `dealloc_own_thread_with_base`.
             for &flushed in &self.tcache.classes[c].slots[0..n] {
-                let fbase = os::segment_base_of_ptr(flushed);
-                let foff = (flushed as usize - fbase as usize) as u32;
+                let (fbase, _) = self
+                    .core
+                    .canonical_block_of(flushed)
+                    .expect("magazine slot belongs to a live segment");
+                let foff = (flushed.addr() - fbase.addr()) as u32;
                 SegmentMeta::new(fbase)
                     .magazine_bitmap()
                     .clear_magazine(foff);

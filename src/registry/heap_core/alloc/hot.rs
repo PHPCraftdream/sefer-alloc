@@ -29,7 +29,8 @@ impl HeapCore {
     /// HIT (a fresh refill's issued block never sets this bit to begin with,
     /// so only the two hit arms, `alloc` and `alloc_small_zeroed_via_magazine`,
     /// need this) clears the RAD-5 (E4) bit `refill_class_bump[_checked]`'s
-    /// `mark_magazine` set on admission. Returns `(base, off)` so an
+    /// `mark_magazine` set on admission. Resolves the stored segment root;
+    /// returns `(base, off)` so an
     /// immediately-following `hardened` generation bump
     /// ([`bump_gen_on_issue`](Self::bump_gen_on_issue)) can reuse them instead
     /// of re-deriving `base` via a second `segment_base_of_ptr` call — before
@@ -40,10 +41,14 @@ impl HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
     pub(in crate::registry::heap_core) fn clear_magazine_on_issue(
+        &self,
         issued: *mut u8,
     ) -> (*mut u8, usize) {
-        let base = os::segment_base_of_ptr(issued);
-        let off = issued as usize - base as usize;
+        let (base, _) = self
+            .core
+            .canonical_block_of(issued)
+            .expect("issued magazine block belongs to a live segment");
+        let off = issued.addr() - base.addr();
         SegmentMeta::new(base)
             .magazine_bitmap()
             .clear_magazine(off as u32);
@@ -398,7 +403,7 @@ impl HeapCore {
                         // measured cost of this specific store on
                         // `small_churn_16b` et al.
                         #[cfg_attr(not(feature = "hardened"), allow(unused_variables))]
-                        let (base, off) = Self::clear_magazine_on_issue(issued);
+                        let (base, off) = self.clear_magazine_on_issue(issued);
                         // X7 Ф3 (task #191) touch (a): bump the generation at
                         // ISSUE. The block leaves the allocator's bookkeeping
                         // (the magazine) and enters the caller's hands — this
@@ -531,7 +536,7 @@ impl HeapCore {
             let is_virgin = (self.tcache.classes[c].virgin_mask & bit) != 0;
             self.tcache.classes[c].virgin_mask &= !bit;
             #[cfg_attr(not(feature = "hardened"), allow(unused_variables))]
-            let (base, off) = Self::clear_magazine_on_issue(issued);
+            let (base, off) = self.clear_magazine_on_issue(issued);
             #[cfg(feature = "hardened")]
             {
                 // SAFETY: `base`/`off` describe the block just cleared
