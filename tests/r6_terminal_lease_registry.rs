@@ -1,14 +1,14 @@
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use sefer_alloc::registry::heap_registry::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
-use sefer_alloc::registry::heap_slot::{STATE_EMPTY, STATE_FREE, STATE_LIVE, STATE_MAINTENANCE};
+use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE, STATE_MAINTENANCE};
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
 #[test]
 fn failed_init_claim_maintenance_recycle_handoff() {
     let index = dbg_claim_then_simulate_oom().expect("fresh index");
     let registry = bootstrap::ensure();
-    assert_eq!(registry.dbg_slot_state(index as usize), STATE_EMPTY);
+    assert_eq!(registry.dbg_slot_state(index as usize), STATE_FREE);
     assert!(!dbg_slot_initialised(index));
 
     let owner = HeapRegistry::claim();
