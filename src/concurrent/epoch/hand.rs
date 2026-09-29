@@ -177,6 +177,10 @@ impl<T> AtomicSlot<T> {
     /// # Panics
     ///
     /// Panics if the slot currently holds a live value (is occupied).
+    ///
+    /// `internals`-gated like its only caller
+    /// `EpochRegion::_set_slot_generation_for_tests` (xxs R5-02).
+    #[cfg(feature = "internals")]
     pub(crate) fn set_generation_for_tests(&mut self, generation: u32) {
         // SAFETY: `&mut self` proves exclusive access to this slot for the
         // whole call — no concurrent reader (no pinned guard can reference

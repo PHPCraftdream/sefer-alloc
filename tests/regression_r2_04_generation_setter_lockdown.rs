@@ -24,6 +24,10 @@
 //!    check.
 
 #![cfg(feature = "experimental")]
+// R5-02 (independent src review round 5): every test in this file drives
+// `_set_slot_generation_for_tests` directly, and that hook is now
+// `internals`-gated.
+#![cfg(feature = "internals")]
 
 use sefer_alloc::EpochRegion;
 

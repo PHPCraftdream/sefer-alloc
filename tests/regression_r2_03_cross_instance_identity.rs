@@ -92,6 +92,9 @@ fn epoch_cross_instance_occupied_target_is_rejected_without_state_change() {
     assert_eq!(region_b.get_with(_handle_b, |v| *v), Some("victim"));
 }
 
+// R5-02 (independent src review round 5): `_set_slot_generation_for_tests`
+// is now `internals`-gated, so this test is too.
+#[cfg(feature = "internals")]
 #[test]
 fn epoch_cross_instance_saturated_target_is_rejected_without_state_change() {
     // Single-slot regions: `EpochRegion`'s free list is LIFO (the first

@@ -624,6 +624,12 @@ impl<T> EpochRegion<T> {
     ///
     /// Panics if `index` is out of range for this region's capacity, or if
     /// the target slot currently holds a live value (is occupied).
+    ///
+    /// `internals`-gated (xxs R5-02): on a vacant slot it could roll the
+    /// generation back so an already-removed handle resolves a new value
+    /// again (no-ABA broken in safe code), or set `u32::MAX` so the slot
+    /// could never be evicted.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn _set_slot_generation_for_tests(&mut self, index: u32, generation: u32) {
         self.slots[index as usize].set_generation_for_tests(generation);

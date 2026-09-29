@@ -217,6 +217,10 @@ fn region_drop_runs_live_value_destructors_once() {
 /// and `region.len()` returned to `0` after both removes — this test would
 /// have failed both assertions. No prior test in this suite exercised the
 /// saturation boundary at all.
+///
+/// R5-02 (independent src review round 5): `_set_slot_generation_for_tests`
+/// is now `internals`-gated, so this test is too.
+#[cfg(feature = "internals")]
 #[test]
 fn eviction_landing_on_max_generation_retires_the_slot_instead_of_reusing_it() {
     // Single-slot region: index 0 is the only slot, so whether it goes back
