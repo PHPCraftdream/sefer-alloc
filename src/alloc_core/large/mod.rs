@@ -14,6 +14,8 @@
 pub(super) mod alloc_core_large;
 #[cfg(feature = "alloc-decommit")]
 pub(super) mod alloc_core_large_cache;
+#[cfg(feature = "alloc-decommit")]
+mod alloc_core_large_cache_eviction;
 /// The cross-thread deferred-free Treiber stack for Large/huge segments
 /// (task A1, extracted for #132). Used by the allocator face
 /// (`registry::heap_core::HeapCore`) and any direct `AllocCore` user so the
