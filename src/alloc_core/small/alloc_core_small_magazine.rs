@@ -621,9 +621,7 @@ impl AllocCore {
         let old_head = bt.head(class_idx);
         let mut prev_off = old_head; // next-target for the next accepted block
         let mut last_accepted: Option<u32> = None;
-        // Track how many blocks were accepted, in source order, so the decommit
-        // step can run per accepted block AFTER the run's single `set_head`.
-        #[cfg(feature = "alloc-decommit")]
+        // Count accepted blocks for one owner-side credit retirement after `set_head`.
         let mut accepted_count: usize = 0;
 
         for &ptr in run {
@@ -665,10 +663,7 @@ impl AllocCore {
             bm.mark_free(off);
             prev_off = off;
             last_accepted = Some(off);
-            #[cfg(feature = "alloc-decommit")]
-            {
-                accepted_count += 1;
-            }
+            accepted_count += 1;
         }
 
         // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
@@ -691,6 +686,7 @@ impl AllocCore {
         // single decommit check is byte-identical to the former per-accepted-block
         // `dec_live_and_maybe_decommit` loop — at most one decommit fires, on the
         // same transition, under the same proviso. Recycle the slot if it fired.
+        SegmentMeta::new(base).sub_live(accepted_count as u32);
         #[cfg(feature = "alloc-decommit")]
         {
             let small_cur = self.small_cur;

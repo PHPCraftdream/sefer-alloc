@@ -6,18 +6,23 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentMeta};
 
 impl SegmentMeta {
     // -------------------------------------------------------------------
-    // Phase 35 (M6 decommit) — field-specific owner-only accessors for the
-    // `live_count` and `decommitted` fields. Identical discipline to
+    // Owner-only accessors for `live_count` and `decommitted`. Identical discipline to
     // `bump_of`/`set_bump`: a single-word load/store at the field's
     // `offset_of!` offset through the `node` seam, so this file stays
     // `unsafe`-free. Owner-only (the owning thread is the sole mutator of
     // both fields — own-thread alloc/free and the owner-side ring drain;
     // the cross-thread freer never touches them), so a plain field
     // read/write is race-free, exactly as for `bump`.
+    //
+    // Transition                 Credit       Owner action
+    // virgin/free -> issued       +1           carve or freelist pop (also refill)
+    // issued -> held/published    0            user/magazine/private/inbox/detached
+    // held -> allocator free      -1           local free, ring reclaim, batch flush
+    // failed issue / pool reuse   0            no issue, or free state remains free
+    // Primordial uses the same transitions; decommit is separate policy.
     // -------------------------------------------------------------------
 
-    /// Read the owner-only `live_count` (number of carved-and-not-free blocks).
-    #[cfg(feature = "alloc-decommit")]
+    /// Read the owner-only outstanding-credit count for Small/Primordial.
     #[inline(always)]
     pub(crate) fn live_count_of(&self) -> u32 {
         let off = core::mem::offset_of!(SegmentHeader, live_count);
@@ -25,64 +30,49 @@ impl SegmentMeta {
     }
 
     /// Write the owner-only `live_count`.
-    #[cfg(feature = "alloc-decommit")]
     #[inline(always)]
     fn set_live_count(&mut self, value: u32) {
         let off = core::mem::offset_of!(SegmentHeader, live_count);
         Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
     }
 
-    /// Increment `live_count` (a block was handed to the caller). Saturating so
-    /// a corrupt/overflowed counter never wraps to zero and spuriously triggers
-    /// a decommit of a non-empty segment (defence-in-depth; a real `live_count`
-    /// is bounded by `SEGMENT / MIN_BLOCK` ≪ `u32::MAX`).
-    #[cfg(feature = "alloc-decommit")]
+    /// Issue one credit. A segment contains at most `SEGMENT / MIN_BLOCK` blocks.
     #[inline(always)]
     pub(crate) fn inc_live(&mut self) {
-        let v = self.live_count_of();
-        self.set_live_count(v.saturating_add(1));
+        self.add_live(1);
     }
 
     /// Add `n` to `live_count` in ONE load+store (E1, task W4 — batched carve).
     /// Equivalent to `n` sequential [`inc_live`](Self::inc_live) calls: the
-    /// counter is owner-only (single-writer), so the intermediate per-block
-    /// values are unobservable and collapsing them to one saturating add is
-    /// byte-identical in the final state — the same D1-equivalence argument
-    /// `drain_freelist_batch` uses for its batched `inc_live`. Saturating for
-    /// the same defence-in-depth reason as `inc_live`.
-    #[cfg(feature = "alloc-decommit")]
+    /// counter is owner-only, so intermediate values are unobservable.
     #[inline(always)]
     pub(crate) fn add_live(&mut self, n: u32) {
         let v = self.live_count_of();
-        self.set_live_count(v.saturating_add(n));
+        let limit =
+            (crate::alloc_core::os::SEGMENT / crate::alloc_core::size_classes::MIN_BLOCK) as u32;
+        let Some(new) = v.checked_add(n).filter(|&sum| sum <= limit) else {
+            std::process::abort();
+        };
+        self.set_live_count(new);
     }
 
     /// Decrement `live_count` (a block was freed) and return the NEW value.
-    /// Saturating at zero: a decrement below zero would indicate a double-free
-    /// that slipped past the bitmap guard (it cannot, since the caller checks
-    /// `is_free` first), but saturating keeps the counter sane rather than
-    /// wrapping to `u32::MAX` and permanently suppressing decommit.
-    #[cfg(feature = "alloc-decommit")]
+    /// Underflow is terminal: a valid owner-side retirement has a credit.
     #[inline(always)]
     pub(crate) fn dec_live(&mut self) -> u32 {
-        let v = self.live_count_of();
-        let new = v.saturating_sub(1);
-        self.set_live_count(new);
-        new
+        self.sub_live(1)
     }
 
     /// Subtract `n` from `live_count` in ONE load+store and return the NEW
     /// value (E3, task W4 — batched flush). Equivalent to `n` sequential
     /// [`dec_live`](Self::dec_live) calls: the counter is owner-only, so the
-    /// intermediate per-block values are unobservable and collapsing them to one
-    /// saturating sub is byte-identical in the final value. Saturating at zero
-    /// for the same defence-in-depth reason as `dec_live` (a real flush never
-    /// removes more live blocks than exist).
-    #[cfg(feature = "alloc-decommit")]
+    /// intermediate per-block values are unobservable.
     #[inline(always)]
     pub(crate) fn sub_live(&mut self, n: u32) -> u32 {
         let v = self.live_count_of();
-        let new = v.saturating_sub(n);
+        let Some(new) = v.checked_sub(n) else {
+            std::process::abort();
+        };
         self.set_live_count(new);
         new
     }

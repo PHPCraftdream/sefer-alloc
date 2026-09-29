@@ -115,6 +115,7 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
         bm.mark_free(off);
+        SegmentMeta::new(base).dec_live();
         // R7-A2: directory bitmap maintenance — the new head is always non-null
         // (we just pushed `off`), so the only transition is empty→non-empty
         // when old_head was FREE_LIST_NULL.
