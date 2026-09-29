@@ -80,11 +80,22 @@ impl SegmentHashHarness {
     /// not present.
     pub fn remove(&mut self, base: *mut u8) {
         self.table.hash_remove(base);
+        self.table.own_cache_clear(base);
     }
 
     /// O(1)-average membership test for `base`.
     pub fn contains(&self, base: *mut u8) -> bool {
         self.table.hash_contains(base)
+    }
+
+    /// Exercise the cache-fill path with an address-only lookup key.
+    pub fn contains_cached(&mut self, key: *mut u8) -> bool {
+        self.table.contains_base(key)
+    }
+
+    /// Return the table's canonical entry, including on a cache hit.
+    pub fn canonical(&self, key: *mut u8) -> Option<*mut u8> {
+        self.table.canonical_base_of(key)
     }
 
     /// A synthetic, distinct, nonzero, SEGMENT-aligned pointer VALUE whose

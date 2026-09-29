@@ -99,8 +99,8 @@ pub(crate) const FREE_LIST_FOOTPRINT: usize = FREE_LIST_CAPACITY * size_of::<u32
 
 /// PERF-P2 (eureka Э3) — number of slots in the direct-mapped own-segment
 /// cache. A power of two (indexed by masking) kept deliberately tiny (start
-/// small, measure before growing). The cache holds ONLY bases proven present
-/// by a won `hash_contains` probe (it *remembers proven*, never *asserts*),
+/// small, measure before growing). The cache holds ONLY stored pointers
+/// returned by a won `hash_find` probe (it *remembers proven*, never *asserts*),
 /// and every table-mutation path that can remove a base
 /// (`unregister`/`recycle`) clears the matching slot IN THE SAME FUNCTION that
 /// mutates the hash — so complete invalidation is structural, not a
@@ -175,14 +175,14 @@ pub(crate) struct SegmentTable {
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
     /// PERF-P2 (Э3) — a tiny fixed-size direct-mapped cache of segment bases
-    /// that have been PROVEN present by a won `hash_contains` probe. It is an
+    /// returned by a won `hash_find` probe. It is an
     /// inline struct field (NOT primordial-resident memory), zero-initialised
     /// (all `null_mut()`) in `from_primordial`.
     ///
     /// ## Invariant (the correctness keystone — a stale hit is UB / M2 breach)
     ///
-    /// `own_cache[i]` is either `null_mut()` (empty) or a base that is
-    /// CURRENTLY registered and live in the hash table. A cache HIT
+    /// `own_cache[i]` is either `null_mut()` (empty) or an allocator-origin
+    /// pointer CURRENTLY registered and live in the hash table. A cache HIT
     /// (`own_cache[cache_index(base)] == base`, non-null) therefore carries the
     /// exact same guarantee as `hash_contains(base) == true`: the segment is
     /// registered, live, and mapped by us. This invariant is preserved
@@ -551,7 +551,7 @@ impl SegmentTable {
     /// from a won probe) and is evicted in lockstep with every hash removal
     /// (`unregister`/`recycle`), so a hit carries the exact `hash_contains ==
     /// true` guarantee (registered + live + mapped). A MISS falls through to
-    /// the full `hash_contains`; on a probe hit we FILL the cache slot
+    /// the full `hash_find`; on a probe hit we FILL the cache slot
     /// (remember-proven) and return `true`; on a probe miss we return `false`
     /// WITHOUT filling (the cache never holds an absent base). Requires `&mut
     /// self` for the fill; all hot free-path callers (`dealloc`,
@@ -577,8 +577,9 @@ impl SegmentTable {
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        if self.hash_contains(base) {
-            self.own_cache[idx] = base;
+        if let Some(stored) = self.hash_find(base) {
+            // The key may carry only a user's narrow reborrow provenance.
+            self.own_cache[idx] = stored;
             true
         } else {
             false
@@ -623,12 +624,9 @@ impl SegmentTable {
     /// [`register`](Self::register) from a pointer the allocator itself
     /// derived and therefore genuinely has provenance over the segment) —
     /// never through the caller-supplied `base` that was only used as the
-    /// lookup key. `own_cache`'s stored values carry the same guarantee:
-    /// every write to it (`contains_base`'s Tier-1 fill) only ever stores a
-    /// `base` that a PRODUCTION call site passed — `contains_base_ro`
-    /// (used by every diagnostic accessor with an untrusted caller pointer)
-    /// is documented never to write the cache, so a diagnostic call can
-    /// never poison it with a provenance-less pointer.
+    /// lookup key. `own_cache` carries the same guarantee: its only fill
+    /// stores the pointer returned by `hash_find`, not the lookup key.
+    /// This remains true after a caller-derived fill, hit, or collision.
     #[inline(always)]
     pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
         let idx = Self::cache_index(base);
@@ -676,7 +674,7 @@ impl SegmentTable {
     /// first to get a dense per-segment key, then mask to `OWN_CACHE_SIZE`.
     #[inline(always)]
     fn cache_index(base: *mut u8) -> usize {
-        (base as usize >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+        (base.addr() >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
     }
 
     /// PERF-P2 (Э3): evict `base` from the direct-mapped cache if (and only if)
@@ -714,7 +712,7 @@ impl SegmentTable {
         allow(dead_code)
     )]
     #[inline]
-    fn own_cache_clear(&mut self, base: *mut u8) {
+    pub(super) fn own_cache_clear(&mut self, base: *mut u8) {
         let idx = Self::cache_index(base);
         if self.own_cache[idx] == base {
             self.own_cache[idx] = core::ptr::null_mut();
