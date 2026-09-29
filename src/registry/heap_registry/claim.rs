@@ -17,7 +17,7 @@ use core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
-use super::stack::{bump_count, scan_claimable_slot, scan_free_slot};
+use super::stack::{pick_with_saturation, scan_claimable_slot, scan_free_slot};
 use crate::registry::bootstrap::{ensure, Registry, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
 use crate::registry::heap_slot::{
@@ -170,6 +170,7 @@ impl HeapRegistry {
             // that index on a later claim; no slot-state transition occurred.
             let Some(slot) = reg.slot_or_none(idx) else {
                 reg.reuse_hint.store(idx as u32, Ordering::Relaxed);
+                reg.saturation.publish_claimable();
                 return core::ptr::null_mut();
             };
 
@@ -292,11 +293,14 @@ impl HeapRegistry {
     /// An unmaterialised index below `count` is recoverable after chunk OOM.
     pub(super) fn pick_slot() -> Option<usize> {
         let reg = ensure();
-        let hint = reg.reuse_hint.swap(MAX_HEAPS as u32, Ordering::AcqRel) as usize;
-        if hint < (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS) {
-            return Some(hint);
-        }
-        scan_claimable_slot(reg).or_else(|| bump_count(reg))
+        pick_with_saturation(
+            &reg.reuse_hint,
+            &reg.count,
+            &reg.saturation,
+            MAX_HEAPS,
+            || scan_claimable_slot(reg),
+            || super::stack::bump_count(reg),
+        )
     }
 
     /// Recycle a live slot back to the free pool. Called by the owning
@@ -353,6 +357,7 @@ impl HeapRegistry {
 
         // Hint only; a later claimant still needs a winning Acquire CAS.
         reg.reuse_hint.store(idx as u32, Ordering::Relaxed);
+        reg.saturation.publish_claimable();
     }
 }
 
@@ -398,6 +403,7 @@ impl Drop for MaintenanceLease {
         {
             std::process::abort();
         }
+        ensure().saturation.publish_claimable();
     }
 }
 
@@ -493,4 +499,5 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
         std::process::abort();
     }
     reg.reuse_hint.store(idx, Ordering::Relaxed);
+    reg.saturation.publish_claimable();
 }

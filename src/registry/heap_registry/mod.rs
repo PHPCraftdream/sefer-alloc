@@ -21,6 +21,12 @@
 mod claim;
 mod counters;
 mod stack;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use super::bootstrap::saturation::SaturationHint;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use stack::pick_with_saturation;
 
 pub use claim::{HeapRegistry, MaintenanceLease};
 // R1-10 (src review round 1): the fallback heap's own process-static

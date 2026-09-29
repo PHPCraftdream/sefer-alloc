@@ -223,6 +223,7 @@ pub(crate) mod loom_shim;
 #[cfg(feature = "alloc-xthread")]
 mod overflow_sidecar;
 mod registry;
+pub(crate) mod saturation;
 
 // Re-exports preserving the flat file's item paths (`bootstrap::X` — consumed
 // by `heap_registry`, `heap_overflow`, `heap_core_xthread`, and the
