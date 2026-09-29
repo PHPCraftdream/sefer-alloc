@@ -337,10 +337,7 @@ impl AllocCore {
     /// (it becomes the new head) via the node seam.
     #[inline(always)]
     fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Option<*mut u8> {
-        #[cfg(feature = "alloc-decommit")]
         let mut meta = SegmentMeta::new(segment);
-        #[cfg(not(feature = "alloc-decommit"))]
-        let meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
         let head_off = bt.head(class_idx);
         if head_off == FREE_LIST_NULL {
@@ -403,7 +400,6 @@ impl AllocCore {
         // reset to an empty free list, so `pop_free` finds nothing there), so no
         // recommit is needed on this path — only `carve_block` writes fresh
         // payload and thus recommits.
-        #[cfg(feature = "alloc-decommit")]
         meta.inc_live();
         // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
         // hands a block directly to the caller (it is the non-magazine substrate
@@ -485,10 +481,7 @@ impl AllocCore {
         if out.is_empty() {
             return 0;
         }
-        #[cfg(feature = "alloc-decommit")]
         let mut meta = SegmentMeta::new(segment);
-        #[cfg(not(feature = "alloc-decommit"))]
-        let meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
 
         {
@@ -552,7 +545,6 @@ impl AllocCore {
             // there), so no recommit is needed on this path. Applied via the
             // batch `add_live(k)` primitive (byte-identical to `k` per-block
             // `inc_live`s — see `add_live`'s D1-equivalence note).
-            #[cfg(feature = "alloc-decommit")]
             meta.add_live(k as u32);
             k
         }
@@ -683,7 +675,6 @@ impl AllocCore {
         // the refill path — immediately pushed to the free list, which calls
         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
         // caller's block keeps the +1). Owner-only counter, plain field bump.
-        #[cfg(feature = "alloc-decommit")]
         meta.inc_live();
         // Mark the page containing `aligned_bump` as owned by `class_idx`.
         // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
@@ -834,7 +825,6 @@ impl AllocCore {
         // byte-identical to the final `set_bump` of the n-th sequential carve.
         meta.set_bump(aligned_start + n * block_size);
         // Batched live increment (D1): exactly `n` blocks handed out.
-        #[cfg(feature = "alloc-decommit")]
         meta.add_live(n as u32);
         // Page-map "first class wins", applied once per DISTINCT page entered by
         // this run. `carve_block` marks a page iff it was not already owned; the

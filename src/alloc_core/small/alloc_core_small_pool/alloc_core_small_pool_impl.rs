@@ -5,12 +5,7 @@
 use core::ptr;
 
 use crate::alloc_core::alloc_core::{AllocCore, DECOMMIT_CALLS};
-// `os` is consulted here only by the `internals`-gated `dbg_live_count_for`
-// accessor, and `SEGMENT` only by `dbg_segment_state_reconciliation`'s byte
-// accounting (additionally `bench-internals`-gated) — gate each import to
-// its consumer so plain `alloc-decommit` builds stay warning-clean.
-#[cfg(feature = "internals")]
-use crate::alloc_core::os;
+// `SEGMENT` is used only by the reconciliation diagnostic.
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 use crate::alloc_core::os::SEGMENT;
 // `SegmentHeader`/`SegmentKind` are consumed only inside this module's
@@ -35,10 +30,9 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use super::segment_state_reconciliation::SegmentStateReconciliation;
 
 impl AllocCore {
-    /// Phase 35 (M6 decommit) — the shared dec-then-maybe-decommit step, called
-    /// after a block returns to a segment's free list (own-thread `dealloc_small`
-    /// or owner-side `reclaim_offset`). It decrements the owner-only `live_count`
-    /// and, if the segment just went empty (`live_count == 0`) AND is not the
+    /// Phase 35 (M6 decommit) — policy check after owner-side credit retirement
+    /// by `dealloc_small` or `reclaim_offset`. If the segment just went empty
+    /// (`live_count == 0`) AND is not the
     /// current carve target (`base != small_cur`), returns the segment's payload
     /// pages to the OS, resets the segment, releases the OS reservation, and
     /// recycles the table slot (task #60, variant B).
@@ -89,8 +83,8 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[inline(always)]
     pub(crate) fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
-        let mut meta = SegmentMeta::new(base);
-        let live = meta.dec_live();
+        let meta = SegmentMeta::new(base);
+        let live = meta.live_count_of();
         // Only an empty, non-current, not-already-decommitted segment is
         // eligible for release/pool. The current carve target stays committed
         // (we are about to bump-allocate into it); already-decommitted is
@@ -126,17 +120,17 @@ impl AllocCore {
     }
 
     /// E3 (task W4) — batched dec-then-maybe-decommit for a same-segment flush
-    /// run. Subtracts `k` (the number of accepted blocks in the run) from
-    /// `live_count` in ONE `sub_live` and makes the SAME decommit decision the
+    /// run. `flush_run` has already subtracted `k` accepted credits in one
+    /// `sub_live`; this method makes the SAME decommit decision the
     /// per-block loop would make.
     ///
-    /// ## Byte-identical to `k` sequential `dec_live_and_maybe_decommit` calls
+    /// ## Policy-equivalent to `k` sequential retire-and-check calls
     ///
     /// `flush_run`'s doc already proves that within a same-segment run `live`
     /// can only reach 0 at the LAST accepted block (every still-un-flushed
     /// same-segment block counts as live, so the segment empties iff the run
     /// flushes ALL its remaining live blocks — and then only at block `k`). So:
-    ///   - The final `live_count` is identical: `sub_live(k)` == `k` `dec_live`s.
+    ///   - The final `live_count` was set by `flush_run` before this check.
     ///   - Decommit fires at most once, on the SAME transition (the k-th block
     ///     that brings `live` to 0), under the SAME proviso
     ///     (`live == 0 && base != small_cur && !is_decommitted && kind == Small`)
@@ -155,8 +149,8 @@ impl AllocCore {
         if k == 0 {
             return false;
         }
-        let mut meta = SegmentMeta::new(base);
-        let live = meta.sub_live(k);
+        let meta = SegmentMeta::new(base);
+        let live = meta.live_count_of();
         if live != 0 || base == small_cur || meta.is_decommitted() {
             return false;
         }
@@ -662,26 +656,6 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_decommit_count() -> u64 {
         DECOMMIT_CALLS.load(core::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// TEST-ONLY (Phase 35): the owner-only `live_count` of `ptr`'s segment, or
-    /// `None` if `ptr` is foreign / not small/primordial. Lets the soak test
-    /// assert a segment reaches `live_count == 0` before decommit.
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    #[cfg(feature = "alloc-decommit")]
-    pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
-            return None;
-        }
-        Some(SegmentMeta::new(base).live_count_of())
     }
 
     /// TEST-ONLY (Mechanism 2, task #51): the number of empty small segments

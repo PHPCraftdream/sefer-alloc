@@ -32,6 +32,21 @@ use crate::alloc_core::alloc_core::AllocCore;
 
 #[cfg(feature = "internals")]
 impl AllocCore {
+    /// Owner-only outstanding Small/Primordial credits, independent of decommit.
+    #[doc(hidden)]
+    pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return None;
+        }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).live_count_of())
+    }
     /// TEST-ONLY (E1, task W4): drive [`carve_batch`](Self::carve_batch)
     /// directly (it is a private internal), so the equivalence regression test
     /// can carve a run and inspect the exact block set without going through the

@@ -235,10 +235,13 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off as u32);
         bm.mark_free(off as u32);
+        // The owner retires the credit only after the block enters the free list.
+        // Callers (including the legacy overflow ingress) only select policy.
+        SegmentMeta::new(base).dec_live();
         // R10-3: return `true` whenever the BinTable was actually mutated
         // (block linked to freelist + mark_free). The caller is responsible
-        // for calling `dec_live_and_maybe_decommit` for the live-count /
-        // decommit side effect. Previously this returned
+        // for calling `dec_live_and_maybe_decommit` for decommit policy only;
+        // the credit was retired above. Previously this returned
         // `dec_live_and_maybe_decommit`'s result (true = decommit fired) —
         // which under `not(alloc-decommit)` was always `false`, making the
         // return value useless for tracking whether the BinTable changed.
