@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use super::*;
 use std::alloc::{alloc, dealloc, Layout};
 use std::sync::atomic::AtomicPtr;
