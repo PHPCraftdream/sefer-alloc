@@ -1,4 +1,5 @@
-//! Unconnected process-wide route directory and sidecar substrate.
+//! Process-wide route directory: HeapCore segment registration is connected;
+//! foreign-free ingress remains on the existing path.
 //!
 //! Blocking progress: lookup takes one shard mutex and binary-searches a
 //! sorted pointer array. Registration alone grows arrays using `System`;

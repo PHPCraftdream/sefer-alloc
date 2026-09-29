@@ -109,7 +109,18 @@ impl AllocCore {
             crate::alloc_core::large_cache_config::LargeCacheConfig::DEFAULT,
         );
         #[cfg(not(feature = "alloc-decommit"))]
-        return Self::new_inner();
+        return Self::new_inner(None);
+    }
+
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn new_with_owner(owner: u32) -> Option<Self> {
+        #[cfg(feature = "alloc-decommit")]
+        return Self::new_with_config_and_owner(
+            crate::alloc_core::large_cache_config::LargeCacheConfig::DEFAULT,
+            Some(owner),
+        );
+        #[cfg(not(feature = "alloc-decommit"))]
+        return Self::new_inner(Some(owner));
     }
 
     /// Bootstrap the allocator with a user-supplied large-cache configuration.
@@ -140,7 +151,23 @@ impl AllocCore {
     pub fn new_with_config(
         config: crate::alloc_core::large_cache_config::LargeCacheConfig,
     ) -> Option<Self> {
-        let mut core = Self::new_inner()?;
+        Self::new_with_config_and_owner(config, None)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
+    pub(crate) fn new_with_config_for_owner(
+        config: crate::alloc_core::large_cache_config::LargeCacheConfig,
+        owner: u32,
+    ) -> Option<Self> {
+        Self::new_with_config_and_owner(config, Some(owner))
+    }
+
+    #[cfg(feature = "alloc-decommit")]
+    fn new_with_config_and_owner(
+        config: crate::alloc_core::large_cache_config::LargeCacheConfig,
+        owner: Option<u32>,
+    ) -> Option<Self> {
+        let mut core = Self::new_inner(owner)?;
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
         // R3-B (round3, решение №2): `LargeCacheMode` now carries only the
@@ -221,17 +248,13 @@ impl AllocCore {
     /// self-hosted metadata. All feature-gated fields are set to their
     /// defaults here; `new_with_config` then overwrites the decommit knobs.
     #[inline]
-    fn new_inner() -> Option<Self> {
-        let prim = bootstrap::primordial()?;
+    fn new_inner(owner: Option<u32>) -> Option<Self> {
+        #[cfg_attr(not(feature = "alloc-global"), allow(unused_mut))]
+        let mut prim = bootstrap::primordial()?;
         let primordial_base = prim.segment.as_ptr();
         // The primordial segment hosts the registry AND serves as the first
         // small segment (its remaining payload is free for small allocs).
         let small_cur = primordial_base;
-        // We take ownership of the registry; the primordial Segment handle is
-        // forgotten — its memory is freed by walking the registry in `drop`
-        // (the registry records the reservation pointers, so we do not need
-        // the Rust `Segment` handle to free it).
-        core::mem::forget(prim.segment);
         // Phase C (numa-aware): the primordial segment was reserved by
         // `bootstrap::primordial()` via the plain OS path (it predates NUMA
         // awareness). Stamp the current thread's NUMA node into its header NOW
@@ -244,6 +267,15 @@ impl AllocCore {
             let my_node = numa::current_node();
             SegmentMeta::new(primordial_base).set_node_id(my_node);
         }
+        #[cfg(feature = "alloc-global")]
+        if let Some(owner) = owner {
+            prim.table.attach_owner(owner, primordial_base)?;
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = owner;
+        // Keep the owning Segment alive through every fallible/panic-capable
+        // bootstrap step. The table now owns release at AllocCore::drop.
+        core::mem::forget(prim.segment);
         Some(Self {
             table: prim.table,
             small_cur,
@@ -399,6 +431,8 @@ impl Drop for AllocCore {
                           // reference to the sidecar is live across this call (this IS the
                           // teardown path — no other method runs concurrently with `drop`).
     fn drop(&mut self) {
+        // Close directory admission while every reservation is still mapped.
+        self.table.close_routes();
         // OPT-E (alloc-decommit): release any large segments held in the
         // free-cache BEFORE walking the segment table. The cached entries are
         // NOT in the table (they were unregistered on deposit), so the normal

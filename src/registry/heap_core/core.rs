@@ -605,7 +605,7 @@ impl HeapCore {
     /// heap value in the slot's `UnsafeCell`.
     #[must_use]
     pub(crate) fn new(id: u32) -> Option<Self> {
-        let core = AllocCore::new()?;
+        let core = AllocCore::new_with_owner(id)?;
         Some(Self {
             id,
             core,
@@ -649,7 +649,7 @@ impl HeapCore {
         id: u32,
         config: crate::alloc_core::LargeCacheConfig,
     ) -> Option<Self> {
-        let core = AllocCore::new_with_config(config)?;
+        let core = AllocCore::new_with_config_for_owner(config, id)?;
         Some(Self {
             id,
             core,

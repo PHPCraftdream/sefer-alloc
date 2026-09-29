@@ -12,7 +12,7 @@ use crate::alloc_core::numa;
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
 use crate::alloc_core::segment_header::{
-    BinTable, Layout as SegLayout, SegmentHeader, SegmentMeta,
+    BinTable, Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
 };
 // R12-11 (task #262): `PageMap::init_in_place` is diagnostic-only (see its
 // doc) and its sole call site in this file is gated behind `page-map-diag`.
@@ -245,7 +245,7 @@ impl AllocCore {
 
         // no-panic: register returns None if the segment table is full. We
         // must release the reservation we just made before returning None.
-        let id = match self.table.register(base) {
+        let id = match self.table.register(base, SEGMENT, SegmentKind::Small) {
             Some(id) => id,
             None => {
                 // Release the reservation we just made (we own it now).
