@@ -11,24 +11,23 @@
 //! `GlobalAlloc` aborts via `#[rustc_nounwind]` (not UB), independent of any
 //! downstream `panic = "abort"` setting.
 //!
-//! #1984 (alloc-core perf review P1-2) later demoted the realloc ownership
-//! re-check (former site 1) to `debug_assert!`, leaving FOUR
-//! release-surviving tripwires (the large-cache slot take/set sites). This
-//! test pins both sides of that resolution so neither silently regresses:
+//! #1984 (alloc-core perf review P1-2) demoted the realloc ownership
+//! re-check (former site 1) to `debug_assert!`, leaving FOUR release-surviving
+//! tripwires. A later canonical-root change replaced that duplicate probe
+//! with fallible `canonical_base_of(base)?`. This test pins the current
+//! mechanism and the four remaining large-cache tripwires:
 //!
 //!   * **Code side:** the four remaining distinctive panic-message strings
 //!     each appear exactly once in their expected source file, AND the
-//!     demoted realloc site stays demoted (its message survives, attached to
-//!     a `debug_assert!`, and no release-surviving `assert!(` remains in its
-//!     file — the file's only one WAS that site). If a tripwire is removed,
-//!     reworded, or re-promoted to a release assert, this fails and forces a
-//!     conscious doc update (a removed tripwire may be a real softening the
-//!     doc must reflect; a reworded one must stay in lockstep with the doc's
-//!     enumeration).
+//!     former realloc site resolves the table-stored canonical root with `?`
+//!     before deriving the block pointer or reading its header, and no
+//!     release-surviving `assert!(` appears in that file. Removing that
+//!     fallible resolution or restoring a panic fails this guard.
 //!
 //!   * **Doc side:** `sefer_alloc.rs`'s "No-panic" section contains the
 //!     qualifying language (`rustc_nounwind`, `invariant tripwire`), states
-//!     the FOUR count (not the stale five), keeps the #1984 demotion note,
+//!     the FOUR count (not the stale five), names the fallible canonical-root
+//!     replacement,
 //!     and does NOT contain the old unqualified overclaim. If the section is
 //!     rewritten back to "NEVER panics" without the caveat, this fails.
 //!
@@ -67,37 +66,32 @@ fn assert_count(haystack: &str, needle: &str, expected: usize, ctx: &str) {
 
 #[test]
 fn four_invariant_tripwires_pinned_by_message() {
-    // Former site 1 — the realloc ownership re-check, demoted to
-    // `debug_assert!` by #1984 (P1-2): both callers already prove
-    // `contains_base(base)` on the same path, and a release panic on the
-    // alloc path violated the no-panic contract. Pinned three ways so the
-    // demotion cannot silently regress in EITHER direction:
-    //   * the check still exists, on the same predicate, still carrying its
-    //     distinctive message exactly once (guards outright deletion);
-    //   * it is attached to a `debug_assert!` (debug-only, the F12
-    //     falsification-pin style);
-    //   * NO release-surviving `assert!(` remains in the file — the file's
-    //     only one WAS this site, so this is the exact inverse of the old
-    //     pin, not a weaker cousin.
+    // Former site 1 now uses the table's stored root as a fallible boundary:
+    // a missing address returns None, and no caller-derived pointer reaches
+    // the block/header reads. A release assert remains forbidden here.
     let core = read_src("alloc_core/alloc_core/mem/realloc_fastpath.rs");
-    assert_count(
-        &core,
-        "known-base realloc called for a segment not owned by this core",
-        1,
-        "mem/realloc_fastpath.rs former site 1 (message must survive the #1984 demotion)",
-    );
-    // Whitespace-normalized structural pins (robust to reflow/rustfmt).
     let squashed: String = core.split_whitespace().collect::<Vec<_>>().join(" ");
+    let marker = "let base = self.table.canonical_base_of(base)?;";
+    assert_count(&squashed, marker, 1, "fallible known-base root resolution");
+    let known_base = squashed
+        .split_once("pub(super) fn realloc_inplace_fast_path_known_base(")
+        .expect("known-base realloc function")
+        .1;
+    let root = known_base.find(marker).expect("canonical root assignment");
+    let block = known_base
+        .find("let ptr = crate::alloc_core::node::Node::deref(base,")
+        .expect("allocator-root block derivation");
+    let kind = known_base
+        .find("let kind = SegmentHeader::kind_at(base);")
+        .expect("header read");
     assert!(
-        squashed.contains("debug_assert!( self.table.contains_base_ro(base),"),
-        "mem/realloc_fastpath.rs's realloc ownership re-check must stay a \
-         `debug_assert!` on `contains_base_ro` (#1984 demotion regressed)"
+        root < block && block < kind,
+        "canonical root must precede block derivation and header read"
     );
     assert!(
         !squashed.contains(" assert!("),
         "mem/realloc_fastpath.rs must contain no release-surviving `assert!(` — \
-         its only one WAS the realloc ownership re-check, demoted by #1984; a \
-         re-promotion (or a new release assert) regresses the no-panic \
+         a re-promotion (or a new release assert) regresses the no-panic \
          contract this guard pins"
     );
 
@@ -189,11 +183,14 @@ fn no_panic_doc_is_qualified() {
          #1984)"
     );
 
-    // The #1984 demotion note must stay: the demoted site's message is
-    // pinned above; this keeps its doc mention from silently vanishing.
+    // Keep the historical demotion and current fallible replacement distinct.
     assert!(
-        doc.contains("demoted to `debug_assert!`"),
-        "sefer_alloc.rs must keep the #1984 note recording the realloc \
-         ownership re-check's demotion to `debug_assert!`"
+        doc.contains("first demoted to `debug_assert!`"),
+        "sefer_alloc.rs must preserve the #1984 demotion history"
+    );
+    assert!(
+        doc.contains("fallible") && doc.contains("`canonical_base_of(base)?`"),
+        "sefer_alloc.rs must describe the current no-panic canonical-root \
+         resolution rather than a retained debug assertion"
     );
 }

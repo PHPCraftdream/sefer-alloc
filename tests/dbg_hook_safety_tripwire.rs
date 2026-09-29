@@ -241,7 +241,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_chunk",
     "src/alloc_core/small/alloc_core_small_diag.rs::dbg_lazy_first_chunk",
     "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count",
-    "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_live_count_for",
+    "src/alloc_core/small/alloc_core_small_diag.rs::dbg_live_count_for",
     "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pooled_count",
     "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
     "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
@@ -414,6 +414,10 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "entry CAS proves the chunk cell UNINIT before touching it; restores to null before returning",
     ),
     (
+        "src/registry/bootstrap/saturation.rs::dbg_with_word_for_test",
+        "constructs only a local atomic hint for boundary models; never touches the process-global registry",
+    ),
+    (
         "src/registry/heap_registry/counters.rs::dbg_claim_then_simulate_oom",
         "claims a real slot via the production pick_slot/CAS/push_back_after_oom path; reproduces, does not invent, the real post-OOM rollback state",
     ),
@@ -493,6 +497,7 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs::dbg_decomp_win_release_only",
     "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_force_decommit_retain_for",
     "src/alloc_core/small/alloc_core_small_reclaim.rs::dbg_push_to_ring",
+    "src/global/sefer_alloc/global_alloc.rs::dbg_dealloc_while_fallback_lock_held",
     "src/global/tls_heap.rs::dbg_restore_local_for_test",
     "src/registry/bootstrap/registry.rs::dbg_slot_preset_generation",
     "src/registry/heap_core/diag/queries.rs::dbg_push_to_ring",

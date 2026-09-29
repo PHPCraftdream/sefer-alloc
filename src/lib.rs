@@ -255,7 +255,11 @@
 //      * `registry::segment_route::directory` — System-backed route entry,
 //                             sidecar and sorted pointer-array allocation/
 //                             reclamation; lookup pinning under shard lock.
-//                             Unconnected substrate. (under `alloc-global`)
+//                             (under `alloc-global`)
+//      * `alloc_core::segment::segment_table::route_slots` — System-backed,
+//                             owner-only non-Copy registration storage;
+//                             routes close before reservation release.
+//                             (under `alloc-global`)
 //
 //    Optional `numa-aware` path: no new unsafe seams — `alloc_core::platform::numa`
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`
