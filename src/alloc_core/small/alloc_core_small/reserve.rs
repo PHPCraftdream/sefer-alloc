@@ -267,6 +267,7 @@ impl AllocCore {
             reservation.as_ptr(),
             reservation_len,
         ));
+        meta.init_small_terminal();
         // Phase C (numa-aware): stamp the NUMA node into the header NOW,
         // immediately after writing it. The header constructor set node_id to
         // NO_NODE_RAW; we overwrite it with the actual node. This must happen

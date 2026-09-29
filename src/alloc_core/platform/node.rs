@@ -506,6 +506,24 @@ impl Node {
         unsafe { &*ptr }
     }
 
+    /// Construct an atomic word in exclusively owned, aligned segment metadata.
+    /// Call only on a fresh reservation, before any view or publication exists.
+    pub(crate) fn init_atomic_u32_at(base: *mut u8, off: usize, value: u32) {
+        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU32;
+        // SAFETY: the fresh reservation owns the aligned four-byte slot, and no
+        // reference to it exists before this initialization.
+        unsafe { ptr.write(core::sync::atomic::AtomicU32::new(value)) };
+    }
+
+    /// Construct an atomic word in exclusively owned, aligned segment metadata.
+    /// Call only on a fresh reservation, before any view or publication exists.
+    pub(crate) fn init_atomic_u64_at(base: *mut u8, off: usize, value: u64) {
+        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
+        // SAFETY: the fresh reservation owns the aligned eight-byte slot, and no
+        // reference to it exists before this initialization.
+        unsafe { ptr.write(core::sync::atomic::AtomicU64::new(value)) };
+    }
+
     /// Write a single `u32` `value` at `dst` (aligned — used by the ring init).
     /// Same contract as [`write_u32_unaligned`] but requires 4-byte alignment
     /// (the ring slots are 4-aligned by the Layout).

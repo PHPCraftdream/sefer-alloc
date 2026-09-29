@@ -12,7 +12,7 @@
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::SegmentHeader;
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 
 use super::bootstrap;
 #[cfg(feature = "alloc-decommit")]
@@ -25,8 +25,6 @@ use crate::alloc_core::large_cache_mode::LargeCacheMode;
 use crate::alloc_core::numa;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::os::SEGMENT;
-#[cfg(feature = "numa-aware")]
-use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
@@ -394,6 +392,7 @@ impl Drop for AllocCore {
         #[cfg(feature = "alloc-decommit")]
         for slot in &mut self.large_cache {
             if let Some(cached) = slot.take() {
+                SegmentMeta::new(cached.base).mark_large_released();
                 os::release_segment(cached.reservation, cached.reservation_len);
             }
         }
@@ -424,6 +423,7 @@ impl Drop for AllocCore {
             };
             for slot in &mut ext.slots {
                 if let Some(cached) = slot.take() {
+                    SegmentMeta::new(cached.base).mark_large_released();
                     os::release_segment(cached.reservation, cached.reservation_len);
                 }
             }
@@ -465,6 +465,9 @@ impl Drop for AllocCore {
             if i == 0 {
                 primordial_reservation = Some((hdr.reservation, hdr.reservation_len));
                 continue;
+            }
+            if hdr.kind == SegmentKind::Large {
+                SegmentMeta::new(base).mark_large_released();
             }
             os::release_segment(hdr.reservation, hdr.reservation_len);
         }

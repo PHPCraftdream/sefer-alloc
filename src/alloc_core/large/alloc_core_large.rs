@@ -10,7 +10,11 @@ use crate::alloc_core::numa;
 #[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
-#[cfg(feature = "numa-aware")]
+#[cfg(any(
+    feature = "numa-aware",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread"
+))]
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{align_up, SegmentHeader};
 
@@ -250,6 +254,17 @@ impl AllocCore {
             }
             if let Some(idx) = hit_idx {
                 let slot = self.large_cache_slot_take(idx);
+                let terminal_meta = crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
+                let generation = match terminal_meta.begin_large_reuse() {
+                    Some(generation) => generation,
+                    None => {
+                        self.large_cache_used_bytes =
+                            self.large_cache_used_bytes.saturating_sub(slot.usable_size);
+                        terminal_meta.mark_large_released();
+                        os::release_segment(slot.reservation, slot.reservation_len);
+                        return self.alloc_large_slow(size, align, usable, hdr_aligned);
+                    }
+                };
                 // Diagnostic (task D1): count this as a cache hit.
                 // Э5 (task #145): load+store instead of `fetch_add` — no
                 // `lock xadd`. SOUND for the same single-writer reason as
@@ -448,6 +463,7 @@ impl AllocCore {
                         as *mut *const core::sync::atomic::AtomicPtr<u8>,
                     core::ptr::null(),
                 );
+                terminal_meta.finish_large_reuse(generation);
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
                 // `register()` will reuse — so this should not fail. If it does
@@ -459,6 +475,7 @@ impl AllocCore {
                 let id = match self.table.register(slot.base) {
                     Some(id) => id,
                     None => {
+                        terminal_meta.mark_large_released();
                         os::release_segment(slot.reservation, slot.reservation_len);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
@@ -646,6 +663,7 @@ impl AllocCore {
             reservation_len,
         );
         Node::write_struct(base as *mut SegmentHeader, hdr);
+        crate::alloc_core::segment_header::SegmentMeta::new(base).init_large_terminal();
         // Phase C (numa-aware): stamp the NUMA node into the header after
         // writing it (the constructor sets node_id to NO_NODE_RAW).
         #[cfg(feature = "numa-aware")]
@@ -752,6 +770,7 @@ impl AllocCore {
                 let magic_off = core::mem::offset_of!(SegmentHeader, magic);
                 Node::atomic_u32_at(base, magic_off)
                     .store(0, core::sync::atomic::Ordering::Release);
+                SegmentMeta::new(base).mark_large_cached();
                 let seq = self.large_cache_seq;
                 self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                 self.large_cache_slot_set(
@@ -774,6 +793,7 @@ impl AllocCore {
         // the OS reservation immediately. The slot is already unregistered
         // above, so there is no dangling table entry pointing at unmapped
         // memory.
+        SegmentMeta::new(base).mark_large_released();
         os::release_segment(hdr.reservation, hdr.reservation_len);
     }
 }

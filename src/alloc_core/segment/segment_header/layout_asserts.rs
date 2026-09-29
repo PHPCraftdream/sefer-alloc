@@ -3,6 +3,7 @@ use core::mem::size_of;
 use crate::alloc_core::os::PAGE;
 
 use super::{Layout, SegmentHeader, NO_NODE_RAW};
+use super::{LARGE_STATE_OFF, REMOTE_HEAD_OFF, TERMINAL_WORDS_OFF};
 
 pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
     let mask = a - 1;
@@ -59,6 +60,13 @@ const _: () =
 // header's existing sub-page padding).
 const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
 const _: () = assert!(Layout::page_map_off() == PAGE);
+const _: () = assert!(TERMINAL_WORDS_OFF >= size_of::<SegmentHeader>());
+const _: () =
+    assert!(REMOTE_HEAD_OFF.is_multiple_of(core::mem::align_of::<core::sync::atomic::AtomicU32>()));
+const _: () =
+    assert!(LARGE_STATE_OFF.is_multiple_of(core::mem::align_of::<core::sync::atomic::AtomicU64>()));
+const _: () = assert!(REMOTE_HEAD_OFF + size_of::<u32>() <= LARGE_STATE_OFF);
+const _: () = assert!(LARGE_STATE_OFF + size_of::<u64>() <= Layout::page_map_off());
 // Phase B: `NO_NODE_RAW` (declared here, in safe code) and `numa::NO_NODE`
 // (declared in the confined-unsafe seam) must be identical so comparisons
 // like `node_id_of(base) != numa::NO_NODE` are consistent without coupling

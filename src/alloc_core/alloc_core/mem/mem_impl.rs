@@ -16,7 +16,7 @@ use super::super::CachedLarge;
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::AllocKind;
 
 impl AllocCore {
@@ -401,6 +401,7 @@ impl AllocCore {
                         let magic_off = core::mem::offset_of!(SegmentHeader, magic);
                         Node::atomic_u32_at(base, magic_off)
                             .store(0, core::sync::atomic::Ordering::Release);
+                        SegmentMeta::new(base).mark_large_cached();
                         // Deposit into cache and update the byte-budget counter.
                         let seq = self.large_cache_seq;
                         self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
@@ -434,6 +435,7 @@ impl AllocCore {
                     // ordering), THEN release — Drop's `table.bases()` walk
                     // will no longer see `base`, so there is no double-free.
                     self.table.unregister(base);
+                    SegmentMeta::new(base).mark_large_released();
                     os::release_segment(stale.reservation, stale.reservation_len);
                 }
                 #[cfg(not(feature = "alloc-decommit"))]
@@ -444,6 +446,7 @@ impl AllocCore {
                     // to `Drop` leaks the reservation AND the `SegmentTable`
                     // slot for the remaining process lifetime.
                     self.table.unregister(base);
+                    SegmentMeta::new(base).mark_large_released();
                     os::release_segment(stale.reservation, stale.reservation_len);
                 }
             }

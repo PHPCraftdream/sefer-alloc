@@ -260,6 +260,8 @@ impl PageClass {
 }
 
 /// A fixed-size `SegmentHeader` laid down at offset 0 of every segment.
+/// The R6 terminal words follow this struct in page 0. They are actual atomic
+/// objects, outside this `Copy` type and outside `read_at`'s byte range.
 ///
 /// `#[repr(C)]` so the layout is deterministic and the bootstrap can compute
 /// the page-map / bin-table offsets after it.
@@ -897,7 +899,9 @@ impl SegmentHeader {
     /// structurally: it never performs a non-atomic read over
     /// `deferred_next`'s bytes at all, filling them via a real atomic load
     /// instead — so `read_at` is sound for EVERY caller, including a
-    /// diagnostic/census walk over segments this thread does not own.
+    /// diagnostic/census walk over segments this thread does not own. The R6
+    /// terminal words are disjoint from this copy; read them only through
+    /// `SegmentMeta::terminal_snapshot` or their atomic accessors.
     pub(crate) fn read_at(base: *mut u8) -> Self {
         Node::read_struct_with_atomic_word::<SegmentHeader>(
             base as *const SegmentHeader,

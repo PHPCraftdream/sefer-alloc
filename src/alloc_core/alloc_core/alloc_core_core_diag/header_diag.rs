@@ -8,8 +8,13 @@ use core::alloc::Layout;
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-#[cfg(feature = "virgin-zero-skip")]
+#[cfg(any(feature = "virgin-zero-skip", feature = "bench-internals"))]
 use crate::alloc_core::segment_header::SegmentMeta;
+#[cfg(feature = "bench-internals")]
+use crate::alloc_core::segment_header::{
+    next_large_generation, LARGE_STATE_OFF, MAX_LARGE_GENERATION, REMOTE_HEAD_OFF,
+    TERMINAL_WORDS_OFF,
+};
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::alloc_core::size_classes::{AllocKind, SizeClasses};
 
@@ -17,6 +22,48 @@ use crate::alloc_core::size_classes::{AllocKind, SizeClasses};
 /// hook in this file. See this file's module doc for the full rationale.
 #[cfg(feature = "internals")]
 impl AllocCore {
+    /// Test-only layout pin for the atomic region beyond the Copy header.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn terminal_header_layout_for_test() -> (usize, usize, usize, usize, usize) {
+        (
+            core::mem::size_of::<SegmentHeader>(),
+            TERMINAL_WORDS_OFF,
+            REMOTE_HEAD_OFF,
+            LARGE_STATE_OFF,
+            crate::alloc_core::segment_header::Layout::page_map_off(),
+        )
+    }
+
+    /// Test-only atomic snapshot of an owned, registered reservation.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn terminal_header_snapshot_for_test(&self, ptr: *mut u8) -> Option<(u32, u64)> {
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
+        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        Some((snapshot.remote_head, snapshot.large_state))
+    }
+
+    /// Test-only snapshot through the table's canonical Primordial base.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn terminal_primordial_snapshot_for_test(&self) -> Option<(u32, u64)> {
+        let base = self.table.base_at(0);
+        if base.is_null() {
+            return None;
+        }
+        let snapshot = SegmentMeta::new(base).terminal_snapshot();
+        Some((snapshot.remote_head, snapshot.large_state))
+    }
+
+    /// Test-only boundary oracle for the no-wrap cache-generation policy.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn terminal_next_generation_for_test(generation: u64) -> Option<u64> {
+        assert!(generation <= MAX_LARGE_GENERATION);
+        next_large_generation(generation)
+    }
     /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
     /// `ptr`'s segment header (not decoded through `SegmentHeader::kind_at` —
     /// the exact byte at the `kind` field's offset). Lets a test capture the
