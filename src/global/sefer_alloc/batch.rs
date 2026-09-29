@@ -49,16 +49,18 @@ impl SeferAlloc {
     /// Resolves the per-thread heap ONCE (one TLS lookup for the whole batch,
     /// vs N for N scalar `alloc` calls), then delegates to
     /// [`HeapCore::alloc_batch`], which drains the warm magazine and
-    /// batch-refills only the remainder. Returns the number of slots filled
-    /// (0 only on true OOM); `out[filled..]` is left uninitialised and MUST
-    /// NOT be used by the caller.
+    /// batch-refills only the remainder. Returns the number of slots filled:
+    /// zero for an empty output slice or when a non-empty request cannot fill
+    /// any slot, and a positive count for full or partial success. Only
+    /// `out[..filled]` contains returned allocations; the remaining entries
+    /// are untouched and must not be treated as allocations.
     ///
     /// # Safety
-    /// Same contract as [`GlobalAlloc::alloc`](core::alloc::GlobalAlloc::alloc): `layout` must be a non-zero-size
-    /// valid `Layout`. Every returned non-null pointer is a live allocation owned
-    /// by this allocator and must be freed exactly once via [`dealloc_batch`] (or
-    /// N scalar `dealloc` calls). Null entries (on partial fill / OOM) must not
-    /// be freed.
+    /// Same contract as [`GlobalAlloc::alloc`](core::alloc::GlobalAlloc::alloc):
+    /// `layout` must be a non-zero-size valid `Layout`. The first returned
+    /// count of entries are live allocations owned by this allocator and must
+    /// be freed exactly once via [`dealloc_batch`] (or scalar `dealloc` calls).
+    /// Entries after that count are not results and must not be freed.
     ///
     /// [`dealloc_batch`]: Self::dealloc_batch
     #[cfg(feature = "batch-api")]

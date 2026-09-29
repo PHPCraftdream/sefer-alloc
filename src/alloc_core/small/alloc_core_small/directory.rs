@@ -172,26 +172,26 @@ impl AllocCore {
     /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
     /// slot `slot_idx` (segment base `base`) transitioned from non-empty to
     /// empty (old_head was not FREE_LIST_NULL, new_head is FREE_LIST_NULL).
-    /// Clears the corresponding bit in the segment's node bucket.
+    /// Clears the corresponding bit in every node bucket. A segment may have
+    /// published its bit to the unknown bucket before its node obtained a
+    /// dedicated bucket; clearing only the node's current bucket would leave
+    /// that old candidate stale indefinitely.
     ///
-    /// If `base` is null (the stale-bit-clearing path in directory validation,
-    /// where the segment was already recycled), the node is unknowable so the
-    /// bit is cleared across ALL node buckets (`clear_bit_all_nodes`).
+    /// Clearing across all buckets also handles a recycled null base and bits
+    /// left behind by a node's transition from the unknown bucket to a
+    /// dedicated one. `clear_bit_all_nodes` keeps each dedicated bucket's
+    /// active-bit count in sync.
     ///
     /// No-op if the directory is not materialised.
     #[inline]
     pub(in crate::alloc_core) fn publish_empty(
         &mut self,
-        base: *mut u8,
+        _base: *mut u8,
         class_idx: usize,
         slot_idx: usize,
     ) {
         if let Some(dir) = self.directory_mut() {
-            if base.is_null() {
-                dir.clear_bit_all_nodes(class_idx, slot_idx);
-            } else {
-                dir.clear_bit(directory_node_id_of(base), class_idx, slot_idx);
-            }
+            dir.clear_bit_all_nodes(class_idx, slot_idx);
         }
     }
 
