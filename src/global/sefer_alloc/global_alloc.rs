@@ -35,9 +35,9 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // fallback OOM): route through the fallback's spinlock-guarded
             // `with_heap`. `with_heap` returns `None` only on true OOM → we
             // surface null.
-            CurrentHeap::Fallback => {
-                fallback::with_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
-            }
+            CurrentHeap::Fallback => self
+                .with_fallback_heap(|h| h.alloc(layout))
+                .unwrap_or(core::ptr::null_mut()),
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in
             // a registry slot. `current_heap` returned it for THIS thread;
             // the single-writer invariant (the CAS-won slot owner) makes
@@ -111,9 +111,9 @@ unsafe impl GlobalAlloc for SeferAlloc {
     #[inline(always)]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         match self.current_heap() {
-            CurrentHeap::Fallback => {
-                fallback::with_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
-            }
+            CurrentHeap::Fallback => self
+                .with_fallback_heap(|h| h.alloc_zeroed(layout))
+                .unwrap_or(core::ptr::null_mut()),
             // SAFETY: as in `alloc`.
             CurrentHeap::Own(heap) => unsafe { (*heap).alloc_zeroed(layout) },
         }
@@ -131,10 +131,9 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // SAFETY: `ptr`/`old_layout` are the caller-bound GlobalAlloc
             // contract pair (this whole fn is `unsafe fn realloc`); the
             // closure forwards them to the fallback heap's `HeapCore::realloc`.
-            CurrentHeap::Fallback => {
-                fallback::with_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
-                    .unwrap_or(core::ptr::null_mut())
-            }
+            CurrentHeap::Fallback => self
+                .with_fallback_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
+                .unwrap_or(core::ptr::null_mut()),
             // SAFETY: as in `alloc`. `realloc` takes the C2 in-place fast path
             // for a same-class / compatible resize of an own-thread block, and
             // otherwise falls back to alloc-new + copy + dealloc-old, leaving

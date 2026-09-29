@@ -6,7 +6,6 @@
 
 use core::alloc::Layout;
 
-use crate::global::fallback;
 use crate::global::tls_heap::CurrentHeap;
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
 
@@ -66,9 +65,9 @@ impl SeferAlloc {
     #[cfg(feature = "batch-api")]
     pub unsafe fn alloc_batch(&self, layout: Layout, out: &mut [*mut u8]) -> usize {
         match self.current_heap() {
-            CurrentHeap::Fallback => {
-                fallback::with_heap(|h| h.alloc_batch(layout, out)).unwrap_or(0)
-            }
+            CurrentHeap::Fallback => self
+                .with_fallback_heap(|h| h.alloc_batch(layout, out))
+                .unwrap_or(0),
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
             // registry slot owned by THIS thread (single-writer invariant) —
             // `current_heap()` just resolved it for the calling thread.
