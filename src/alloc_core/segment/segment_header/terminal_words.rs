@@ -169,23 +169,6 @@ impl SegmentMeta {
         }
     }
 
-    /// Owner-only transition after unregister, before placing a Large
-    /// reservation in cache. This word is not yet the authoritative ingress.
-    #[cfg(feature = "alloc-decommit")]
-    pub(crate) fn mark_large_cached(&self) {
-        let word = self.large_state_atomic().load(Ordering::Acquire);
-        if !matches!(
-            large_phase(word),
-            Some(LargePhase::Live | LargePhase::Consuming)
-        ) {
-            std::process::abort();
-        }
-        self.large_state_atomic().store(
-            pack_large_state(LargePhase::Cached, large_generation(word)),
-            Ordering::Release,
-        );
-    }
-
     /// Owner-only cache-hit preparation. Exhausted generations retire this
     /// reservation; the caller must release it and allocate fresh memory.
     #[cfg(feature = "alloc-decommit")]
@@ -209,12 +192,4 @@ impl SegmentMeta {
         }
     }
 
-    /// Terminal store while still mapped, strictly before OS release.
-    pub(crate) fn mark_large_released(&self) {
-        let word = self.large_state_atomic().load(Ordering::Acquire);
-        self.large_state_atomic().store(
-            pack_large_state(LargePhase::Released, large_generation(word)),
-            Ordering::Release,
-        );
-    }
 }
