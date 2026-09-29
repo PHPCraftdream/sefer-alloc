@@ -275,7 +275,7 @@ impl HeapCore {
         // regress: this loop does exactly the same number of RMWs the
         // old per-pop clear did, just batched at the end.
         for &p in &out[..magazine_drained] {
-            let _ = Self::clear_magazine_on_issue(p);
+            let _ = self.clear_magazine_on_issue(p);
         }
 
         filled

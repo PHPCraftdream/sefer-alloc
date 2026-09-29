@@ -11,8 +11,6 @@
 use core::alloc::Layout;
 
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::os;
-#[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
@@ -255,7 +253,7 @@ impl HeapCore {
             if p.is_null() {
                 continue;
             }
-            let base = os::segment_base_of_ptr(p);
+            let owned = self.core.canonical_block_of(p);
             // Ownership gate (task R11-4 requirement): the SAME O(1) test
             // `dealloc_routing` uses. A block that is not one of THIS heap's
             // registered segments (foreign, or cross-thread-owned under
@@ -264,7 +262,7 @@ impl HeapCore {
             // membership check, mirroring `flush_class`'s own `# Safety`
             // contract) — fall back to the scalar, fully-correct `dealloc`
             // for that one block.
-            if !self.core.contains_base(base) {
+            let Some((base, block)) = owned else {
                 // SAFETY: caller upholds the dealloc-batch contract for `p`;
                 // `dealloc` performs its own ownership routing (foreign
                 // no-op / cross-thread ring push) for this individual block.
@@ -273,7 +271,7 @@ impl HeapCore {
                     self.dealloc(p, layout)
                 };
                 continue;
-            }
+            };
 
             // Task #2002: the shared F7/H1/M2 guard chain — see
             // `small_free_guard`'s own doc comment
@@ -303,7 +301,7 @@ impl HeapCore {
                     // the substrate.
                     #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into scalar `dealloc`.
                     unsafe {
-                        self.dealloc(p, layout)
+                        self.dealloc(block, layout)
                     };
                     continue;
                 }
@@ -320,7 +318,7 @@ impl HeapCore {
             let cap = FREE_PARK_CAP[c] as usize;
             if cnt < cap {
                 meta.magazine_bitmap().mark_magazine(off);
-                self.tcache.classes[c].slots[cnt] = p;
+                self.tcache.classes[c].slots[cnt] = block;
                 self.tcache.classes[c].count = (cnt + 1) as u8;
                 // R13-3 (task #273): a batched-freed block is, like the
                 // scalar push in `dealloc_own_thread_with_base`, never
@@ -352,7 +350,7 @@ impl HeapCore {
                 };
                 staged = 0;
             }
-            stage[staged] = p;
+            stage[staged] = block;
             staged += 1;
         }
 

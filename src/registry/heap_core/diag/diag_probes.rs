@@ -383,7 +383,7 @@ impl HeapCore {
         // SAFETY: forwarded from this caller's identical `# Safety` contract —
         // `issued` is a live block in an owned segment, exactly as production
         // assumes at the magazine-hit call site.
-        let _ = Self::clear_magazine_on_issue(issued);
+        let _ = self.clear_magazine_on_issue(issued);
     }
 
     // ── R29-3 (task #434) — segment-lifecycle decomposition delegation ──────
