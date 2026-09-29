@@ -3,6 +3,7 @@
 use core::mem::{align_of, offset_of, size_of};
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 
 use super::{align_up_const, SegmentHeader, SegmentMeta};
@@ -68,7 +69,12 @@ pub(crate) const fn large_phase(word: u64) -> Option<LargePhase> {
 
 #[inline(always)]
 pub(crate) const fn next_large_generation(generation: u64) -> Option<u64> {
-    if generation >= MAX_LARGE_GENERATION {
+    next_large_generation_bounded(generation, MAX_LARGE_GENERATION)
+}
+
+#[inline(always)]
+pub(crate) const fn next_large_generation_bounded(generation: u64, limit: u64) -> Option<u64> {
+    if generation >= limit || limit > MAX_LARGE_GENERATION {
         None
     } else {
         Some(generation + 1)
@@ -118,6 +124,42 @@ impl SegmentMeta {
         Node::atomic_u64_at(self.base, LARGE_STATE_OFF)
     }
 
+    /// Terminal producer transition. On success the caller must not access
+    /// any byte of this reservation again, including this metadata word.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn publish_large_pending(&self, generation: u64) -> bool {
+        LargeReservationState::new(self.large_state_atomic()).publish_pending(generation)
+    }
+
+    /// Owner-only, under the heap lease, from a canonical table base.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn claim_large_pending(&self) -> Option<u64> {
+        LargeReservationState::new(self.large_state_atomic()).claim_pending()
+    }
+
+    /// Owner-only after removal from the active table.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn cache_consumed_large(&self, generation: u64) -> bool {
+        LargeReservationState::new(self.large_state_atomic()).cache_consumed(generation)
+    }
+
+    /// Owner-only after removal, while still mapped and before OS release.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn release_consumed_large(&self, generation: u64) -> bool {
+        LargeReservationState::new(self.large_state_atomic()).release_consumed(generation)
+    }
+
+    /// Owner-only cache eviction, while still mapped and before OS release.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn release_cached_large(&self, generation: u64) -> bool {
+        LargeReservationState::new(self.large_state_atomic()).release_cached(generation)
+    }
+
     /// Atomic loads only; never copies bytes of either atomic object.
     #[inline(always)]
     pub(crate) fn terminal_snapshot(&self) -> TerminalSnapshot {
@@ -148,27 +190,23 @@ impl SegmentMeta {
     /// reservation; the caller must release it and allocate fresh memory.
     #[cfg(feature = "alloc-decommit")]
     pub(crate) fn begin_large_reuse(&self) -> Option<u64> {
+        let state = LargeReservationState::new(self.large_state_atomic());
         let word = self.large_state_atomic().load(Ordering::Acquire);
         if large_phase(word) != Some(LargePhase::Cached) {
             std::process::abort();
         }
-        let next = next_large_generation(large_generation(word))?;
-        self.large_state_atomic().store(
-            pack_large_state(LargePhase::Initializing, next),
-            Ordering::Release,
-        );
-        Some(next)
+        state.begin_reuse()
     }
 
-    /// Complete a cache-hit reset before the table exposes the reservation.
+    /// Complete a cache-hit reset after metadata/table preparation, before
+    /// returning the allocation to its caller.
     #[cfg(feature = "alloc-decommit")]
     pub(crate) fn finish_large_reuse(&self, generation: u64) {
         self.remote_head_atomic()
             .store(REMOTE_HEAD_EMPTY, Ordering::Relaxed);
-        self.large_state_atomic().store(
-            pack_large_state(LargePhase::Live, generation),
-            Ordering::Release,
-        );
+        if !LargeReservationState::new(self.large_state_atomic()).finish_reuse(generation) {
+            std::process::abort();
+        }
     }
 
     /// Terminal store while still mapped, strictly before OS release.
