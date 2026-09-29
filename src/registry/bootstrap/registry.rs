@@ -27,6 +27,7 @@ use super::chunk::{RegistryChunk, CHUNK_SLOTS, NUM_CHUNKS};
 use super::ensure::ensure_chunk_slow;
 #[cfg(loom)]
 use super::loom_shim::OncePtrCell;
+use super::saturation::SaturationHint;
 use crate::registry::heap_slot::HeapSlot;
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;
@@ -47,7 +48,7 @@ pub const MAX_HEAPS: usize = 4096;
 /// lazily-materialised chunk pointers plus the dynamic atomics that drive
 /// `claim`/`recycle`.
 ///
-/// Small and entirely atomic (`NUM_CHUNKS` pointers + three control words),
+/// Small and entirely atomic (`NUM_CHUNKS` pointers + claim control words),
 /// so — unlike the pre-chunking
 /// `Registry`, which inlined the whole feature-dependent-size slot array and
 /// therefore had to live behind a lazily-heap-allocated `AtomicPtr<Registry>`
@@ -76,6 +77,8 @@ pub struct Registry {
     pub(crate) scan_cursor: AtomicU32,
     /// Latest recycled/failed-init index. Overwrites are harmless: scans win.
     pub(crate) reuse_hint: AtomicU32,
+    /// Versioned negative-scan hint; never substitutes for a slot CAS.
+    pub(crate) saturation: SaturationHint,
 }
 
 impl Registry {
@@ -98,6 +101,7 @@ impl Registry {
             count: AtomicU32::new(0),
             scan_cursor: AtomicU32::new(0),
             reuse_hint: AtomicU32::new(MAX_HEAPS as u32),
+            saturation: SaturationHint::new(),
         }
     }
 
