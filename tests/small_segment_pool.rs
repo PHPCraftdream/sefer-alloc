@@ -35,6 +35,17 @@ use sefer_alloc::{AllocCore, LargeCacheConfig, SmallSegmentPoolConfig};
 const SEGMENT: usize = 4 * 1024 * 1024;
 const MIB: usize = 1024 * 1024;
 
+/// The reservation counters (`dbg_segments_reserved_total`) are process-wide,
+/// so tests that assert on their deltas must not overlap with any other test
+/// here that reserves segments: all tests take this lock.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serialize() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Spread allocations across `target` distinct fresh small segments, recording
 /// one survivor pointer per segment. Mirrors `regression_c3_unbounded_recycle`'s
 /// spreading construction (keep every block alive until spreading is done, so
@@ -71,6 +82,7 @@ fn spread_across_segments(
 /// The default config (production) enables the pool at 4 segments.
 #[test]
 fn default_pool_cap_is_four() {
+    let _serial = serialize();
     let ac = AllocCore::new().expect("primordial");
     assert_eq!(ac.dbg_pool_cap(), 4, "default pool cap must be 4");
 }
@@ -78,6 +90,7 @@ fn default_pool_cap_is_four() {
 /// `pool_segments(0)` disables the pool (cap resolves to 0).
 #[test]
 fn pool_segments_zero_disables() {
+    let _serial = serialize();
     let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
     let ac = AllocCore::new_with_config(cfg).expect("primordial");
     assert_eq!(
@@ -90,6 +103,7 @@ fn pool_segments_zero_disables() {
 /// `pool_byte_cap(0)` disables the pool (cap resolves to 0).
 #[test]
 fn pool_byte_cap_zero_disables() {
+    let _serial = serialize();
     let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_byte_cap(0));
     let ac = AllocCore::new_with_config(cfg).expect("primordial");
     assert_eq!(
@@ -103,6 +117,7 @@ fn pool_byte_cap_zero_disables() {
 /// even though `pool_segments` requests 4.
 #[test]
 fn byte_cap_clamps_segment_count() {
+    let _serial = serialize();
     let cfg = LargeCacheConfig::new().pool(
         SmallSegmentPoolConfig::new()
             .pool_segments(4)
@@ -129,6 +144,7 @@ fn byte_cap_clamps_segment_count() {
 /// to 99.
 #[test]
 fn pool_segments_above_old_hard_cap_is_honoured() {
+    let _serial = serialize();
     let cfg = LargeCacheConfig::new().pool(
         SmallSegmentPoolConfig::new()
             .pool_segments(99)
@@ -154,6 +170,7 @@ fn pool_segments_above_old_hard_cap_is_honoured() {
 /// "set DEFAULT_POOL_SEGMENTS = 8" edit would produce.)
 #[test]
 fn paired_knob_promotion_is_not_a_noop() {
+    let _serial = serialize();
     // The well-formed PAIRED change (8 segments, 32 MiB) → effective cap 8.
     let cfg_paired = LargeCacheConfig::new().pool(
         SmallSegmentPoolConfig::new()
@@ -191,6 +208,7 @@ fn paired_knob_promotion_is_not_a_noop() {
 #[cfg_attr(miri, ignore)] // large N; native soak, mirrors c3 sizing
 #[test]
 fn pool_fills_to_cap_and_no_more() {
+    let _serial = serialize();
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
     let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
@@ -244,6 +262,7 @@ fn pool_fills_to_cap_and_no_more() {
 #[cfg_attr(miri, ignore)] // large N; native soak
 #[test]
 fn reuse_pooled_segment_skips_os_reservation() {
+    let _serial = serialize();
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
     let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
@@ -325,6 +344,7 @@ fn reuse_pooled_segment_skips_os_reservation() {
 #[cfg_attr(miri, ignore)] // large N; native soak
 #[test]
 fn disabled_pool_never_retains() {
+    let _serial = serialize();
     let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
     let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
     assert_eq!(ac.dbg_pool_cap(), 0);
@@ -377,6 +397,7 @@ fn disabled_pool_never_retains() {
 #[cfg_attr(miri, ignore)] // large N; native soak
 #[test]
 fn stale_free_into_pooled_segment_is_noop() {
+    let _serial = serialize();
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
     let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
@@ -470,6 +491,7 @@ fn stale_free_into_pooled_segment_is_noop() {
 #[cfg_attr(miri, ignore)] // large N; native soak
 #[test]
 fn reuse_invariant_under_pool_churn() {
+    let _serial = serialize();
     let mut ac = AllocCore::new().expect("primordial");
     assert!(ac.dbg_pool_cap() > 0, "pool must be ON for this test");
     // 1 KiB blocks: ~4K per segment. A working set of 12K spills ~3 segments.
@@ -605,6 +627,7 @@ fn fill_ordered_segments(
 #[cfg_attr(miri, ignore)] // large N; native soak, mirrors the other pool tests' sizing
 #[test]
 fn pooled_segment_emptied_mid_scan_is_reused_in_same_call() {
+    let _serial = serialize();
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
     let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
