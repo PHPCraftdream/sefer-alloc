@@ -463,7 +463,6 @@ impl AllocCore {
                         as *mut *const core::sync::atomic::AtomicPtr<u8>,
                     core::ptr::null(),
                 );
-                terminal_meta.finish_large_reuse(generation);
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
                 // `register()` will reuse — so this should not fail. If it does
@@ -495,6 +494,7 @@ impl AllocCore {
                     let my_node = self.current_node_cached();
                     SegmentMeta::new(slot.base).set_node_id(my_node);
                 }
+                terminal_meta.finish_large_reuse(generation);
                 return (Node::deref(slot.base, hdr_aligned), false);
             }
         }

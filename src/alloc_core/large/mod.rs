@@ -32,3 +32,4 @@ pub mod deferred_large;
 /// `OncePtrCell` needed).
 #[cfg(feature = "large-cache-extended")]
 pub(crate) mod large_cache_extended;
+pub(crate) mod reservation_state;
