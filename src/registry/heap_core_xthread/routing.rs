@@ -59,15 +59,12 @@ impl HeapCore {
         // table"), without reading `base`'s memory at all. Route it own-thread
         // immediately — no magic/kind read needed.
         if self.core.contains_base(base) {
-            // Э9 (P7.1): `base` is already in hand from the `contains_base`
-            // ownership check above; under fastbin, hand it to the own-thread
-            // body directly so `segment_base_of_ptr` is not recomputed. Under
-            // non-fastbin `dealloc_own_thread` just delegates to `core.dealloc`
-            // (base unused there).
+            // `base` is already in hand from the `contains_base` check above;
+            // hand it down so neither is recomputed.
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             self.dealloc_own_thread_with_base(ptr, layout, base);
             #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
-            self.dealloc_own_thread(ptr, layout);
+            self.dealloc_own_thread(ptr, layout, base);
             return;
         }
         // `contains_base` is FALSE: not one of our segments. The entire cold

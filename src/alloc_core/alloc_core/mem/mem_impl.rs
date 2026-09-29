@@ -1,7 +1,9 @@
 //! GlobalAlloc-face entry points of [`AllocCore`] (split out of `mem.rs`).
 //!
-//! Holds `alloc`, `alloc_zeroed`, `dealloc`, and `realloc`. Pure code
-//! movement; no behavior changed.
+//! Holds `alloc`, `alloc_zeroed`, `dealloc`, and `realloc`, plus two
+//! `alloc-global` without `fastbin` entries that skip work the caller already
+//! did: `alloc_with_class` (size class) and `dealloc_with_base` (base and
+//! `contains_base`). They do not exist under `production`.
 
 use core::alloc::Layout;
 
@@ -40,6 +42,25 @@ impl AllocCore {
             // `alloc_zeroed` below consults the bool. Behaviour is byte-
             // identical to the pre-tuple `alloc_large` call.
             AllocKind::Large => self.alloc_large(size, align).0,
+        }
+    }
+
+    /// Like [`alloc`](Self::alloc) with the size class the caller already
+    /// computed (`SizeClasses::class_for(size.max(MIN_BLOCK), align)`), so it
+    /// is not derived twice. Without `fastbin` every alloc reaches here;
+    /// under `production` this does not exist and `alloc` is unchanged.
+    #[cfg(all(feature = "alloc-global", not(feature = "fastbin")))]
+    #[must_use]
+    #[inline(always)]
+    pub(crate) fn alloc_with_class(&mut self, layout: Layout, class: Option<usize>) -> *mut u8 {
+        match class {
+            Some(class_idx) => self.alloc_small(class_idx),
+            None => {
+                let size = layout
+                    .size()
+                    .max(crate::alloc_core::size_classes::MIN_BLOCK);
+                self.alloc_large(size, layout.align()).0
+            }
         }
     }
 
@@ -198,6 +219,23 @@ impl AllocCore {
             FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return;
         }
+        // SAFETY: `ptr`/`layout` satisfy this fn's own contract (forwarded
+        // verbatim); `base` was just computed from `ptr` and proved via
+        // `contains_base` immediately above.
+        unsafe { self.dealloc_at_base(ptr, layout, base) };
+    }
+
+    /// The `kind_at`-onward tail of [`dealloc`](Self::dealloc), shared with
+    /// [`dealloc_with_base`](Self::dealloc_with_base). `#[inline(always)]`
+    /// keeps `dealloc`'s compiled code identical to before the split.
+    ///
+    /// # Safety
+    /// Same contract as [`dealloc`](Self::dealloc) for `ptr`/`layout`, plus:
+    /// `base` MUST equal `os::segment_base_of_ptr(ptr)` and
+    /// `self.table.contains_base(base)` MUST be `true` — unchecked here.
+    #[inline(always)]
+    #[allow(unsafe_code)] // R6-MS-1/2 sibling: shares `dealloc`'s caller-pointer contract.
+    unsafe fn dealloc_at_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
         // Field-specific `kind` read (Phase 13.3): a single byte at its
         // `offset_of!` offset, NOT a full-struct `read_at`. Distinguishes
         // Large (free = mark segment) from Small/Primordial (free = push to
@@ -445,6 +483,25 @@ impl AllocCore {
             // lower-bound guard (UBFIX-3).
             SegmentKind::Unknown => {}
         }
+    }
+
+    /// Own-thread dealloc with an already-proven `base` (the non-fastbin
+    /// sibling of `HeapCore::dealloc_own_thread_with_base`): skips recomputing
+    /// `segment_base_of_ptr` and `contains_base`, which the caller
+    /// (`dealloc_routing` or a realloc leg) already proved. Does not exist
+    /// under `production`.
+    ///
+    /// # Safety
+    /// Same contract as [`dealloc`](Self::dealloc) for `ptr`/`layout`, plus:
+    /// `base` MUST equal `os::segment_base_of_ptr(ptr)` and
+    /// `self.table.contains_base(base)` MUST already be `true` — the caller
+    /// has proved both; this function does not re-verify either.
+    #[cfg(all(feature = "alloc-global", not(feature = "fastbin")))]
+    #[inline]
+    #[allow(unsafe_code)] // R6-MS-1/2 sibling: `unsafe fn` boundary (caller-pointer contract).
+    pub(crate) unsafe fn dealloc_with_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
+        // SAFETY: forwarded from this fn's own contract above.
+        unsafe { self.dealloc_at_base(ptr, layout, base) };
     }
 
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.

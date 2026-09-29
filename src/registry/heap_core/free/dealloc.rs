@@ -239,17 +239,21 @@ impl HeapCore {
     /// compiled ONLY when fastbin is OFF — where the own-thread path has no
     /// magazine and simply delegates to `core.dealloc`. Caller: the
     /// non-fastbin arm of `dealloc_routing`.
+    ///
+    /// Takes the `base` every caller already proved with `contains_base` and
+    /// forwards it to [`AllocCore::dealloc_with_base`](crate::alloc_core::AllocCore::dealloc_with_base).
     #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
     #[inline(always)]
-    pub(crate) fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {
-        // Non-fastbin own-thread free: no magazine — delegate to core.
+    pub(crate) fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
+        // No magazine: delegate to core; the caller proved `base` is ours.
         // SAFETY: this own-thread body is reached only from `HeapCore::dealloc`,
         // an `unsafe fn` whose caller bound `ptr`/`layout` to the
         // `GlobalAlloc::dealloc` contract (valid live start pointer, matching
-        // layout, freed once); we forward the same pair unchanged.
-        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
+        // layout, freed once); `base` is `os::segment_base_of_ptr(ptr)` and
+        // `contains_base(base)` was just proved true by the caller.
+        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc_with_base`.
         unsafe {
-            self.core.dealloc(ptr, layout)
+            self.core.dealloc_with_base(ptr, layout, base)
         };
     }
 }

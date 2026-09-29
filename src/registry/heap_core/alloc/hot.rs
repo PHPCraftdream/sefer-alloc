@@ -471,7 +471,12 @@ impl HeapCore {
         }
 
         // Existing path: reclaim+alloc through AllocCore (large, or non-fastbin).
+        // Without fastbin every alloc reaches here, so hand the class computed
+        // above down instead of reclassifying inside `AllocCore::alloc`.
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         let ptr = self.core.alloc(layout);
+        #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
+        let ptr = self.core.alloc_with_class(layout, class);
         if !ptr.is_null() {
             self.stamp_segment_owner(ptr);
         }

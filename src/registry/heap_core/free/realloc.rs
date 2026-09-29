@@ -362,7 +362,7 @@ impl HeapCore {
                 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
                 self.dealloc_own_thread_with_base(ptr, old_layout, base);
                 #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
-                self.dealloc_own_thread(ptr, old_layout);
+                self.dealloc_own_thread(ptr, old_layout, base);
                 return new_ptr;
             }
         }
@@ -658,7 +658,7 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         self.dealloc_own_thread_with_base(ptr, old_layout, base);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
-        self.dealloc_own_thread(ptr, old_layout);
+        self.dealloc_own_thread(ptr, old_layout, base);
         Some(new_ptr)
     }
     }
