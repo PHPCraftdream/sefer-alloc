@@ -33,6 +33,18 @@ impl HeapCore {
         self.drain_sidecar_ingress()
     }
 
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_background_maintenance_step(&mut self, budget: usize) -> (usize, usize) {
+        self.background_maintenance_step(budget)
+    }
+
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    #[doc(hidden)]
+    pub fn dbg_background_cursor(&self) -> (usize, usize) {
+        self.background_cursor
+    }
+
     /// Probe the real logical-retirement primitive with a synthetic detached
     /// record, including an already free or magazine-resident block. No route
     /// publication occurs and reservation finalization is left to cold trim.

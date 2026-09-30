@@ -77,14 +77,22 @@ impl<'a> SidecarBitmap<'a> {
     /// or waiting for paused producers. An in-flight producer after a word's
     /// cut belongs to a later scan.
     pub(crate) fn scan(&self, high_water: usize) -> Option<BitmapScan<'a>> {
+        self.scan_from(high_water, 0)
+    }
+
+    /// Owner resumes at a numeric word, never at a retained sidecar borrow.
+    pub(crate) fn scan_from(&self, high_water: usize, start_word: usize) -> Option<BitmapScan<'a>> {
         if high_water > SEGMENT {
             return None;
         }
         let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+        if start_word > end_word {
+            return None;
+        }
         Some(BitmapScan {
-            pending: self.pending.iter(),
+            pending: self.pending.get(start_word..)?.iter(),
             classes: self.classes,
-            next_word: 0,
+            next_word: start_word,
             end_word,
         })
     }

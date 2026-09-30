@@ -11,6 +11,8 @@ use crate::alloc_core::segment_header::SegmentMeta;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
+    pub(crate) const BACKGROUND_INGRESS_BUDGET: usize = 64;
+
     /// Stamp this heap's canonical reservation root with its owner id.
     /// Foreign frees route exclusively through terminal descriptors, never
     /// through an owner-header pointer or an intrusive deferred stack.
@@ -108,6 +110,23 @@ impl HeapCore {
         // reservations; a pre-publication producer keeps its outstanding credit.
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
         let _ = self.drain_sidecar_ingress();
+        self.trim_cold_retention();
+    }
+
+    /// A worker visit cuts only a bounded ingress prefix, retaining the
+    /// independent cold cache/pool policy of the strict trim.
+    pub(crate) fn background_maintenance_step(&mut self, budget: usize) -> (usize, usize) {
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let result = self
+            .core
+            .drain_sidecar_ingress_bounded(&mut self.background_cursor, budget);
+        #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
+        let result = (0, 0);
+        self.trim_cold_retention();
+        result
+    }
+
+    fn trim_cold_retention(&mut self) {
         // Flush every tcache class → blocks return to segments → segments
         // may empty → decommit/release or pool.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]

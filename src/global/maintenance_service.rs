@@ -21,7 +21,7 @@ use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
 use super::{fallback, MaintenanceStartError};
-use crate::registry::HeapRegistry;
+use crate::registry::{HeapCore, HeapRegistry};
 
 const IDLE: u8 = 0;
 const STARTING: u8 = 1;
@@ -144,8 +144,10 @@ impl MaintenanceService {
             let _ = HeapRegistry::maintenance_pass(&mut cursor, SLOT_BUDGET);
             // Uninitialized or paused fallback: skip, never wait or materialize
             // it. A later periodic pass retries independently of notifications.
-            let fallback_visited =
-                fallback::try_with_heap(|core| core.trim_for_recycle()).is_some();
+            let fallback_visited = fallback::try_with_heap(|core| {
+                core.background_maintenance_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
+            })
+            .is_some();
             #[cfg(feature = "internals")]
             {
                 // Test acknowledgements occur only AFTER all leases/locks have
@@ -176,6 +178,12 @@ impl MaintenanceService {
     #[doc(hidden)]
     pub fn fallback_visits_for_test() -> u64 {
         FALLBACK_VISITS.load(Ordering::Acquire)
+    }
+
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn try_fallback_step_for_test(budget: usize) -> Option<(usize, usize)> {
+        fallback::try_with_heap(|core| core.background_maintenance_step(budget))
     }
 
     /// Wait for a real completed worker pass; a timeout is only a test failure

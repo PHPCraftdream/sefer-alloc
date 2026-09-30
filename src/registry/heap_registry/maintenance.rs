@@ -9,12 +9,13 @@ use core::sync::atomic::Ordering;
 
 use super::HeapRegistry;
 use crate::registry::bootstrap::{ensure, MAX_HEAPS};
+use crate::registry::HeapCore;
 
 impl HeapRegistry {
     /// Visit at most `budget` indices in one round-robin pass. Discovery is
     /// O(indices visited), not a full high-water scan for each absent heap.
-    /// Each acquired heap receives one finite owner sweep, never a repeated
-    /// drain-until-empty. Contended, incomplete and absent slots are skipped.
+    /// Each acquired heap receives one bounded ingress step. Contended,
+    /// incomplete and absent slots are skipped.
     pub(crate) fn maintenance_pass(cursor: &mut usize, budget: usize) -> usize {
         let reg = ensure();
         let count = (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS);
@@ -35,7 +36,11 @@ impl HeapRegistry {
             // legacy owner's accesses before its Release publication. Foreign
             // producers access independent sidecars, not HeapCore or its
             // reservations. The callback neither allocates nor exports aliases.
-            unsafe { lease.with_core(|core| core.trim_for_recycle()) };
+            unsafe {
+                lease.with_core(|core| {
+                    core.background_maintenance_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
+                })
+            };
             drop(lease);
             maintained += 1;
         }

@@ -57,4 +57,10 @@ impl SmallSidecar {
             .scan(high_water)
             .map(|inner| RouteScan { inner })
     }
+
+    pub(crate) fn scan_from(&self, high_water: usize, word: usize) -> Option<RouteScan<'_>> {
+        self.bitmap()
+            .scan_from(high_water, word)
+            .map(|inner| RouteScan { inner })
+    }
 }

@@ -2,8 +2,104 @@
 
 use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+use crate::alloc_core::size_classes::MIN_BLOCK;
 
 impl AllocCore {
+    /// At most `budget` slot inspections or word cuts. Cursor holds no root.
+    /// Returns (retired records, charged operations).
+    pub(crate) fn drain_sidecar_ingress_bounded(
+        &mut self,
+        cursor: &mut (usize, usize),
+        budget: usize,
+    ) -> (usize, usize) {
+        if !self.table.is_routed() || budget == 0 {
+            return (0, 0);
+        }
+        let end = self.table.count() as usize;
+        if cursor.0 >= end {
+            *cursor = (0, 0);
+        }
+        let mut reclaimed = 0;
+        let mut units = 0;
+        while cursor.0 < end && units < budget {
+            let index = cursor.0;
+            let base = self.table.base_at(index);
+            if base.is_null() {
+                cursor.0 += 1;
+                cursor.1 = 0;
+                units += 1;
+                continue;
+            }
+            match SegmentHeader::kind_at(base) {
+                SegmentKind::Small | SegmentKind::Primordial => {
+                    let high_water = SegmentMeta::new(base).bump_of();
+                    let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+                    if cursor.1 >= end_word {
+                        cursor.0 += 1;
+                        cursor.1 = 0;
+                        units += 1;
+                        continue;
+                    }
+                    let mut changed_classes = 0u64;
+                    {
+                        let Some(mut scan) = self
+                            .table
+                            .scan_small_route_from(index, base, high_water, cursor.1)
+                        else {
+                            std::process::abort();
+                        };
+                        let Some(mut cut) = scan.next_cut() else {
+                            std::process::abort();
+                        };
+                        while let Some(record) = cut.pop() {
+                            if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+                                changed_classes |= 1u64 << record.class;
+                                reclaimed += 1;
+                            }
+                        }
+                    }
+                    units += 1;
+                    cursor.1 += 1;
+                    // All route borrows and detached records are consumed
+                    // before a reservation can be released or pooled.
+                    #[cfg(feature = "alloc-segment-directory")]
+                    self.sync_directory_for_segment_classes(base, index, changed_classes);
+                    #[cfg(not(feature = "alloc-segment-directory"))]
+                    let _ = changed_classes;
+                    #[cfg(feature = "alloc-decommit")]
+                    if changed_classes != 0
+                        && Self::dec_live_and_maybe_decommit(base, self.small_cur)
+                    {
+                        let _ = self.release_or_pool_empty_segment(base);
+                        cursor.0 += 1;
+                        cursor.1 = 0;
+                        continue;
+                    }
+                    if cursor.1 == end_word {
+                        cursor.0 += 1;
+                        cursor.1 = 0;
+                    }
+                }
+                SegmentKind::Large => {
+                    if self.table.claim_large_route(index, base) {
+                        self.reclaim_large_segment(base);
+                        LARGE_REMOTE_RETIREMENTS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        reclaimed += 1;
+                    }
+                    cursor.0 += 1;
+                    cursor.1 = 0;
+                    units += 1;
+                }
+                SegmentKind::Unknown => std::process::abort(),
+            }
+        }
+        if cursor.0 == end {
+            *cursor = (0, 0);
+        }
+        (reclaimed, units)
+    }
+
     /// Fixes the table high-water at entry and visits each live slot once.
     /// The owner lease excludes issue/reuse throughout this pass. Each Small
     /// word is exchanged exactly once; post-cut publishers wait for a later
