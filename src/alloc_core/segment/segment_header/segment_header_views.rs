@@ -5,18 +5,7 @@ use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 
 impl SegmentHeader {
-    /// Read the header's `kind` field only (field-specific read: a single
-    /// byte load at the field's offset, NOT a full-struct read). The
-    /// dealloc-routing hot path needs just this together with `magic` and
-    /// `owner_thread_free`; reading each field individually avoids the
-    /// full-struct `read_at` that raced with the owner's `bump` field writes
-    /// (the §11 root cause — `kind`/`owner_thread_free` are written once at
-    /// init/stamp time and only read cross-thread thereafter, with no atomic
-    /// writer anywhere, so a plain field read of either does not race the
-    /// owner's `bump` writes on a disjoint field. `magic` is read separately
-    /// by `magic_at` as an ATOMIC load because it IS atomically zeroed on
-    /// recycle — see that accessor and the R6-MS-5 audit note in the block
-    /// comment above `bump_of`).
+    /// Owner-only, field-specific kind read from the canonical table root.
     #[allow(dead_code)] // Used by Phase 9+ cross-thread routing; kept for that.
     #[inline(always)]
     pub(crate) fn kind_at(base: *mut u8) -> SegmentKind {
@@ -55,150 +44,32 @@ impl SegmentHeader {
         }
     }
 
-    /// Read the header's `magic` field only (field-specific ATOMIC `u32`
-    /// load). Used by the cross-thread dealloc-routing path to validate the
-    /// segment base without reading the whole mutable header.
-    ///
-    /// `magic` is laid down as `SEGMENT_MAGIC` at segment construction (via a
-    /// full-struct `Node::write_struct`) and is then ATOMICALLY zeroed by the
-    /// large-object recycle/reclaim paths when a segment is returned to the
-    /// OS-reservation cache — `AllocCore::dealloc`'s Large-cache-deposit
-    /// branch (`alloc_core.rs`) and `AllocCore::alloc_large`'s eviction branch
-    /// (`alloc_core_large.rs`) both write it through
-    /// `Node::atomic_u32_at(base, off).store(0, Ordering::Release)`. A PLAIN
-    /// (non-atomic) read here, racing that atomic store from another thread,
-    /// is a data race under Rust's memory model (R6-MS-5 / U-R5-1) — and the
-    /// defensive-free contract exists precisely to stay safe under caller
-    /// misuse (a stale/duplicate remote free), which is exactly the misuse
-    /// that can interleave this read with the recycler's atomic zeroing store,
-    /// so this validation route must not itself become a data-race source.
-    ///
-    /// We therefore read through the same `&AtomicU32` view at `magic`'s
-    /// `offset_of!` offset the writers use, with `Ordering::Acquire` to pair
-    /// their `Release` store: this field is the FIRST thing the cross-thread
-    /// dealloc-routing path reads before touching any further header state
-    /// (`kind_at`/`owner_thread_free_at`/`large_size_at`), and an Acquire load
-    /// keeps those subsequent reads ordered after the header-write they
-    /// describe (a load observing `SEGMENT_MAGIC` sees a live, fully-
-    /// constructed header; a load observing `0` has synchronized-with the
-    /// recycler's Release and routes the base to the foreign/no-op branch). On
-    /// x86_64 an Acquire `u32` load compiles to a plain `mov` (no fence), so
-    /// this is not a pessimization of the hot free path — confirmed by the iai
-    /// before/after in the R6-MS-5 commit (Ir unchanged on the recycle bench).
-    #[cfg(feature = "alloc-xthread")]
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub(crate) fn magic_at(base: *mut u8) -> u32 {
-        let off = core::mem::offset_of!(SegmentHeader, magic);
-        Node::atomic_u32_at(base, off).load(core::sync::atomic::Ordering::Acquire)
-    }
-
-    /// Read the packed owner id after validating a live segment header.
-    /// Every segment kind stores `owner_state` at this fixed header offset;
-    /// reading only this atomic field avoids racing the mutable `bump` field.
-    ///
-    /// Caller contract: `base` must be a mapped segment base with a valid
-    /// header for the duration of the call. A valid live `GlobalAlloc::dealloc`
-    /// pointer provides that guarantee; the magic check is not a guard for
-    /// arbitrary or already-unmapped pointers.
-    #[cfg(feature = "alloc-xthread")]
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub(crate) fn owner_id_at(base: *mut u8) -> Option<u32> {
-        if base.is_null()
-            || Self::magic_at(base) != crate::alloc_core::segment_header::SEGMENT_MAGIC
-        {
-            return None;
-        }
-        let off = core::mem::offset_of!(SegmentHeader, owner_state);
-        let word = Node::atomic_u64_at(base, off).load(core::sync::atomic::Ordering::Acquire);
-        Some(crate::alloc_core::segment_header::unpack_owner_id(word))
-    }
-
-    /// Read the header's `owner_thread_free` field only (field-specific pointer
-    /// load). Used by the cross-thread dealloc-routing path to find the owning
-    /// heap's TFS head without reading the whole mutable header. The field is
-    /// written ONCE at stamp time (by the owning thread) and only read
-    /// cross-thread thereafter, so a field read does not race with the owner's
-    /// `bump` writes on a disjoint field.
-    #[cfg(feature = "alloc-xthread")]
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub(crate) fn owner_thread_free_at(base: *mut u8) -> *const core::sync::atomic::AtomicPtr<u8> {
-        let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
-        Node::read_ptr(Node::offset(base, off) as *const *const core::sync::atomic::AtomicPtr<u8>)
-    }
-
-    /// Read the header's `large_size` field only (field-specific `usize`
-    /// load). 0.3.0 (task #138, A1 post-reuse mitigation): used by the
-    /// cross-thread Large-free routing paths (`HeapCore::dealloc_routing`,
-    /// `Heap::dealloc_any_thread`) to sanity-check that the freeing layout is
-    /// consistent with the CURRENT occupant of the segment before queuing it
-    /// onto the owner's deferred-free stack — see the mitigation's doc
-    /// comment on [`push_large_deferred_free`](crate::alloc_core::deferred_large::push_large_deferred_free)
-    /// for the full rationale and its documented residual limit.
-    ///
-    /// `large_size` is written at segment construction (`SegmentHeader::large`,
-    /// via the slow path's full-struct `Node::write_struct`) and at every
-    /// large-cache-hit reuse (`AllocCore::alloc_large`'s hit path, via the
-    /// targeted `set_large_size_at` since F12/eb2463a — a single
-    /// field-specific store, NOT a whole-header rewrite). In BOTH cases the
-    /// write runs strictly BEFORE `register()` publishes the segment to
-    /// `contains_base`, so no cross-thread reader can observe the write in
-    /// progress (the publication-barrier argument — F12 changed the write's
-    /// SHAPE from full-struct to field-specific, not its TIMING). After
-    /// publication, `large_size` is touched only by the owner's own `realloc`
-    /// in-place grow path (`set_large_size_at` at a disjoint call site) — a
-    /// concurrent cross-thread read of the same pointer would itself be UB
-    /// (use-after-realloc). So a field-specific read here races neither the
-    /// publication-time write (complete before the segment is reachable) nor
-    /// the owner's hot `bump` writes (disjoint field at a disjoint offset),
-    /// the same two-pillar argument (write-before-publish +
-    /// disjoint-from-bump) that held before F12. It IS, by design, able to
-    /// observe a DIFFERENT value than the one the freeing thread's stale
-    /// `Layout` was allocated against, if the segment has already been
-    /// reclaimed and reused for a new allocation between the free and this
-    /// read — that race is exactly what this check exists to catch (a
-    /// mismatch here means "this is not a free of the CURRENT occupant").
-    #[cfg(feature = "alloc-xthread")]
+    /// Owner-only logical Large size, read through the canonical table root.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "medium-classes",
+        any(
+            not(feature = "exact-span-large"),
+            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+        )
+    ))]
     #[inline(always)]
     pub(crate) fn large_size_at(base: *mut u8) -> usize {
         let off = core::mem::offset_of!(SegmentHeader, large_size);
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
 
-    /// Read the header's `large_align` field only (field-specific `usize`
-    /// load, mirrors `large_size_at`'s exact pattern). R22-5 (task #356):
-    /// used alongside `large_size_at` by
-    /// [`large_layout_consistent`](crate::alloc_core::deferred_large::large_layout_consistent)
-    /// to sanity-check that the freeing layout's ALIGNMENT — not just its
-    /// size — is consistent with the CURRENT occupant of the segment before
-    /// treating a free as legitimate. `GlobalAlloc`'s contract requires the
-    /// caller to pass back the identical `Layout` (size AND align) it
-    /// allocated with, so a size-only check leaves a gap: a fabricated free
-    /// with the right size but a wrong align would previously pass.
-    ///
-    /// `large_align` is written at segment construction (`SegmentHeader::large`,
-    /// via the slow path's full-struct `Node::write_struct`) and at every
-    /// large-cache-hit reuse (`AllocCore::alloc_large`'s hit path, via the
-    /// targeted `set_large_align_at` since F12/eb2463a — a single
-    /// field-specific store, NOT a whole-header rewrite). In BOTH cases the
-    /// write runs strictly BEFORE `register()` publishes the segment to
-    /// `contains_base`, so no cross-thread reader can observe the write in
-    /// progress (the publication-barrier argument — F12 changed the write's
-    /// SHAPE from full-struct to field-specific, not its TIMING). After
-    /// publication, `large_align` is never written again until the segment is
-    /// freed, unregistered, and reused — so a field-specific read here races
-    /// neither the publication-time write (complete before the segment is
-    /// reachable) nor the owner's hot `bump` writes (disjoint field at a
-    /// disjoint offset), the same two-pillar argument (write-before-publish +
-    /// disjoint-from-bump) that held before F12. It IS, by design, able to
-    /// observe a DIFFERENT value than the one the freeing thread's stale
-    /// `Layout` was allocated against, if the segment has already been
-    /// reclaimed and reused for a new allocation between the free and this
-    /// read — that race is exactly what this check exists to catch (same
-    /// rationale as `large_size_at`'s doc).
-    #[cfg(feature = "alloc-xthread")]
+    /// Owner-only alignment for the current Large allocation.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "medium-classes",
+        any(
+            not(feature = "exact-span-large"),
+            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+        )
+    ))]
     #[inline(always)]
     pub(crate) fn large_align_at(base: *mut u8) -> usize {
         let off = core::mem::offset_of!(SegmentHeader, large_align);

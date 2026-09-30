@@ -157,3 +157,17 @@ the reversal record.)
     force-touch/rebuild the `env!(CARGO_MANIFEST_DIR)`-dependent test files
     after removing a scratch worktree, rather than re-diagnosing this from
     scratch.
+
+162. **[A] Root src R6-01/R6-03, R8-01 — complete terminal ingress and autonomous ownerless reclamation.**
+
+    - **Status:** OPEN — owner consumer stage integrated; production cutover/service acceptance in progress.
+    - **Current-number-or-verdict:** public cold trim and TLS teardown consume terminal sidecar publications. A native public-API smoke retained the Large route before the owner patch and removed it afterward. Native owner tests pass under minimal `alloc-global`, fastbin without decommit, `production` and all features; bounded publication/credit Loom models pass. This does not yet prove normal foreign-free or autonomous ownerless behavior.
+    - **Next trigger:** integrate the single authoritative producer/consumer cutover and explicitly fallible maintenance service; prove owner exit followed by the last remote free without subsequent allocator calls/claim, strict trim under paused publishers, fallback, provenance and feature boundaries.
+    - **Evidence:** `docs/REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`; `docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`; xs round 8 on `2ebb6d80` confirms the missing executor independently. No release GO or speedup is claimed.
+
+163. **[A] Root src R7 P3-2 / R8-02 — implement Large alignment at or above segment granularity.**
+
+    - **Status:** OPEN — canonical geometry implementation in progress; rejection guard remains in main.
+    - **Current-number-or-verdict:** valid alignment `>= SEGMENT` is rejected before OS allocation. This is a fail-closed functional limitation, not a `GlobalAlloc` memory-safety violation; architecture documentation alone is not its closure.
+    - **Next trigger:** integrate original release-token / usable-root / payload / numeric-key geometry and migrate all own, foreign, fallback, batch, realloc and rollback paths; verify successful `SEGMENT`, `2 * SEGMENT` and `16 * SEGMENT` cases before removing the guard.
+    - **Evidence:** `docs/LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`; `AllocCore::alloc_large`; xs round 8 on `2ebb6d80`.

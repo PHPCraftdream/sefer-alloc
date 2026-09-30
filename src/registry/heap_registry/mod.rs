@@ -21,6 +21,7 @@
 mod claim;
 mod counters;
 mod stack;
+mod maintenance;
 #[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use super::bootstrap::saturation::SaturationHint;

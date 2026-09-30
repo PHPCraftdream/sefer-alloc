@@ -538,10 +538,8 @@ fn main() {
     }
 
     println!();
-    println!("NOTE: a DIRECT process-wide ring-overflow counter now exists");
-    println!("  (SeferAlloc::stats().ring_overflows, backed by DBG_RING_OVERFLOW —");
-    println!("  task D2). The in-flight estimate (allocs - frees) above is retained");
-    println!("  as an independent cross-check, not the only signal available.");
+    println!("NOTE: in-flight estimates are allocations minus observed frees;");
+    println!("  retired ring-overflow diagnostics are not available.");
     println!();
     println!("NOTE: Run with --features alloc-decommit to compare recovery ratio.");
 }

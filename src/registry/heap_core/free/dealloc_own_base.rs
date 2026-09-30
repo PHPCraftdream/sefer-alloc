@@ -206,7 +206,8 @@ pub(super) fn small_free_guard(
             && SegmentHeader::kind_at(base) == SegmentKind::Large
         {
             if !cfg!(feature = "hardened")
-                || crate::alloc_core::deferred_large::large_layout_consistent(base, layout)
+                || (SegmentHeader::large_size_at(base) == layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK)
+                    && SegmentHeader::large_align_at(base) == layout.align())
             {
                 return SmallFreeGuard::RouteToLargeFree;
             }
