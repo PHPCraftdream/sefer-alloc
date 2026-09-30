@@ -35,6 +35,9 @@ additional rows; the table does not claim to cover future commits.
   Parent focused Miri with the same features and a prepared sysroot: 3/3,
   exit 0, task `60342d2b-943e-4f47-8ef9-916bad23eba3`. No borrow tracking
   or validation was disabled. This is not installed-global-allocator Miri.
+  Parent subsequently repeated with explicit
+  `MIRIFLAGS="-Zmiri-strict-provenance"`: 3/3, exit 0, task
+  `16cface6-ee9e-4b96-9b84-0fd1fbc072ab`.
 - R9-03 P3 and R9-04 P4: accepted documentation/example changes. Parent
   compiled and executed `sefer_alloc_examples` (3/3) and
   `no_stale_doc_references` (30/30) with
@@ -60,6 +63,8 @@ additional rows; the table does not claim to cover future commits.
 - Parent all-target clippy with the expanded feature set and `-D warnings`
   passed on the accepted kind/stats tree, task
   `f684b53c-5732-476e-9ec4-e2445d1321a4`. Later source fixes need fresh checks.
+  The repeat after strict-doc/CI acceptance also passed, task
+  `b15e8cca-2ec4-4e71-ab97-899c3844204b`.
 
 ## Unchanged limits
 
