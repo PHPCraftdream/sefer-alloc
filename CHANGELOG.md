@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 11 (2026-09-30; remediation active)
+
+- Independent source-only XS review reports one experimental false-full P2
+  and three production work/storage P3 observations. HS handles the queue
+  fallback; XXS advises on the coupled production policies and lifecycle.
+- No R11 fix acceptance or measured speedup is claimed yet. See
+  `docs/perf/round-manifests/SRC_REVIEW_R11_MANIFEST.md`; R10's successful
+  checks are not a certificate for these future changes or release GO.
+
 ### Root allocator `src/` review round 10 (2026-09-30; fixes accepted)
 
 - Independent source-only XS review confirmed one P3 historical-high-water
