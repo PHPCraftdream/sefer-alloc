@@ -1441,7 +1441,7 @@ fn vmem_error_kinds_are_distinguishable() {
 
 #[test]
 // task #714 zero-trust re-verification found this incompatible with miri:
-// under miri's `std::alloc`-based fallback backend, there is no OS-level
+// under miri's `System.alloc` fallback backend, there is no OS-level
 // commit-charge limit to refuse against -- miri's own interpreter tries to
 // genuinely honor the 64 TiB request and exhausts ITS OWN resources
 // ("resource exhaustion: tried to allocate more memory than available to

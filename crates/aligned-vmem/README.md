@@ -116,8 +116,9 @@ was converted (task #962).
   `.into_reservation()` on the result.
 
 Backends: `mmap`/`munmap`/`madvise` on Unix,
-`VirtualAlloc`/`VirtualFree(MEM_DECOMMIT/MEM_RELEASE)` on Windows, `std::alloc`
-fallback under miri (so consumers stay miri-testable).
+`VirtualAlloc`/`VirtualFree(MEM_DECOMMIT/MEM_RELEASE)` on Windows, direct
+`System.alloc`/`System.dealloc` under miri (bypassing an installed global
+allocator so self-hosting consumers stay miri-testable).
 
 ## Why not `region` / `memmap2` / `mmap-rs`?
 

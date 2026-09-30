@@ -11,11 +11,15 @@ use crate::reservation_parts::ReservationParts;
 /// # Safety
 ///
 /// `reservation`, `reservation_len` and `align` must be the three values
-/// returned by [`Reservation::into_parts`](crate::Reservation::into_parts) (or, for a self-hosting caller that
-/// always uses one alignment, that same alignment constant), and the
-/// reservation must be released **exactly once**. The native (`munmap` /
-/// `VirtualFree`) paths ignore `align`; it is consulted only by the miri
-/// fallback to reconstruct the exact `Layout`.
+/// returned by [`Reservation::into_parts`](crate::Reservation::into_parts) (or describe an
+/// equivalent live, exclusively owned raw reservation as specified by
+/// [`Reservation::from_raw_parts`](crate::Reservation::from_raw_parts)), and the
+/// reservation must be released **exactly once**. Under miri, `reservation`
+/// must be the original `System.alloc` pointer, with exactly the
+/// `Layout::from_size_align(reservation_len, align)` used to allocate it;
+/// `std::alloc::alloc` is not sufficient evidence of this origin when a
+/// different global allocator is installed.
+/// The native (`munmap` / `VirtualFree`) paths ignore `align`.
 ///
 /// If `reservation` is null, this function returns early and does nothing
 /// (the call is a no-op). The mock recorder is also skipped in this case,

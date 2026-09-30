@@ -1,11 +1,12 @@
 use core::ptr::NonNull;
+use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::error::VmemError;
 use crate::os::DecommitKind;
 
 /// task #713: a bad `(size, align)` `Layout` combination is a caller contract
 /// violation, not an OS refusal — maps to [`VmemError::invalid_argument`]. A
-/// genuine `std::alloc::alloc` failure (null return) has no real
+/// genuine `System.alloc` failure (null return) has no real
 /// `errno`/`GetLastError` to read under miri; `VmemError::last_os_error()`
 /// correctly yields [`VmemError::os_refusal_unknown_code`] here rather than a
 /// misleading `code 0`.
@@ -14,11 +15,10 @@ pub(crate) fn reserve_aligned_raw(
     size: usize,
     align: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
-    use std::alloc::Layout;
     let layout = Layout::from_size_align(size, align).map_err(|_| VmemError::invalid_argument())?;
-    // SAFETY: `layout` has non-zero size and pow2 align; under miri the consumer
-    // is not the global allocator, so no reentrancy.
-    let ptr = unsafe { std::alloc::alloc(layout) };
+    // SAFETY: `layout` has non-zero size and power-of-two alignment. `System`
+    // bypasses an installed global allocator, including this crate's consumer.
+    let ptr = unsafe { System.alloc(layout) };
     match NonNull::new(ptr) {
         Some(base) => Ok((base, base, size)), // Never huge under miri
         None => Err(VmemError::last_os_error()),
@@ -31,15 +31,12 @@ pub(crate) unsafe fn release_reservation(
     reservation_len: usize,
     align: usize,
 ) {
-    use std::alloc::Layout;
-    // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly
-    // this layout — by construction when `reserve_aligned_raw` built it, and
-    // by `Reservation::from_raw_parts`'s `# Safety` contract (which requires
-    // that exact pointer/`Layout` pair under miri) when the caller adopted it;
-    // freed once.
+    // Constructors create this layout; raw adoption checks its shape and
+    // requires the exact original layout by its unsafe caller contract.
     let layout = Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
-    // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly this layout.
-    unsafe { std::alloc::dealloc(reservation.as_ptr(), layout) };
+    // SAFETY: `reservation` is the original `System.alloc` pointer, still live
+    // and uniquely owned, and `layout` is the exact original allocation layout.
+    unsafe { System.dealloc(reservation.as_ptr(), layout) };
 }
 
 #[cfg(miri)]

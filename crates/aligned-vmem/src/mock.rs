@@ -299,10 +299,11 @@ pub fn fail_next_commit(n: u32) {
 /// or panicking. The reentrant call's own recording is lost, but the outer
 /// recording remains intact and the allocator path completes safely.
 ///
-/// This is the same hazard class already documented for the miri backend in
-/// the crate-level module header (see `lib.rs`'s "A consumer that installs
-/// itself as `#[global_allocator]` cannot use this crate under miri..."
-/// paragraph — the mock backend has the same issue for the same reason).
+/// Unlike the miri backend's direct `System.alloc` path, the recorder's
+/// `Vec` allocates through the installed global allocator before reservation.
+/// This guard prevents recursive log mutation, not allocator bootstrap
+/// reentrancy; combining `aligned_vmem_mock` with a self-hosting global
+/// allocator is still not reentrancy-safe.
 ///
 /// # Thread-local storage teardown safety (task #945/M-2)
 ///

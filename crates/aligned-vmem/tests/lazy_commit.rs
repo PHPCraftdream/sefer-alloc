@@ -499,7 +499,7 @@ fn sequential_commit_range_grows_incrementally() {
     unsafe {
         // task #716: this test never writes offset 0 -- on a real OS backend
         // that byte is a fresh, zero-filled page (guaranteed by the OS), but
-        // under miri's `std::alloc`-based fallback (documented as NOT
+        // under miri's `System.alloc` fallback (documented as NOT
         // zeroing, unlike a real OS) reading it is a genuine uninitialized-
         // memory read. Mirrors the identical, already-established gate in
         // tests/smoke.rs's `decommit_recommit_roundtrip`
