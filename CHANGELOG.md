@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 10 (2026-09-30; remediation active)
+
+- Independent source-only XS review confirmed one P3 historical-high-water
+  hot-scan cost and three P4 doc/proof defects. No new valid-use memory-safety
+  counterexample was confirmed; this is not a safety certification.
+- An owner-visible active-index design and contract/doc repairs are in
+  isolated worktrees. No fix acceptance, measured speedup or release GO is
+  claimed here. Evidence/dispositions belong to
+  `docs/perf/round-manifests/SRC_REVIEW_R10_MANIFEST.md`.
+
 ### Root allocator `src/` review round 9 (2026-09-30; fixes accepted)
 
 - `internals` Small diagnostic readers now reject Large segments before
