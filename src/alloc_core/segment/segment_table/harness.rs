@@ -104,7 +104,9 @@ impl SegmentHashHarness {
     /// Adding `HASH_CAPACITY` before shifting keeps every value nonzero (so it
     /// is never confused with the `null_mut()` empty marker) for any `index`.
     pub fn base_for_index(index: usize) -> *mut u8 {
-        core::ptr::without_provenance_mut::<u8>((index + HASH_CAPACITY) << SEGMENT_SHIFT)
+        let high = (index + HASH_CAPACITY) & !(HASH_CAPACITY - 1);
+        let low = (index ^ (high >> 13) ^ (high >> 26)) & (HASH_CAPACITY - 1);
+        core::ptr::without_provenance_mut::<u8>((high | low) << SEGMENT_SHIFT)
     }
 
     /// The hash-table capacity (`HASH_CAPACITY`), re-exposed for the property

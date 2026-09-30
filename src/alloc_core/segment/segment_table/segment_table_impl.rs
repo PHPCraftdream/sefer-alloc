@@ -271,6 +271,15 @@ impl SegmentTable {
         Some(())
     }
 
+    /// Whether this instance attached terminal descriptors before first issue.
+    /// Standalone owner-local cores never attach them. Once attached, missing
+    /// per-segment descriptors remain a broken invariant, not a local-mode hint.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline]
+    pub(crate) fn is_routed(&self) -> bool {
+        self.routes.is_some()
+    }
+
     pub(crate) fn close_routes(&mut self) {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &mut self.routes {
@@ -294,6 +303,23 @@ impl SegmentTable {
         let _ = (base, offset, class_idx);
     }
 
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn scan_small_route(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+    ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
+        self.routes.as_ref()?.scan_small(index, base, high_water)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn claim_large_route(&self, index: usize, base: *mut u8) -> bool {
+        self.routes
+            .as_ref()
+            .is_some_and(|routes| routes.claim_large_pending(index, base))
+    }
+
     /// Register a new segment base. Returns its assigned `segment_id` (the
     /// index it was placed at), or `None` if the table is full or routed
     /// registration fails. In either failure case, no table slot is changed
@@ -311,6 +337,17 @@ impl SegmentTable {
     /// no-panic (Phase 11 GlobalAlloc face): returns `None` so the caller
     /// returns null (graceful OOM) rather than aborting.
     pub(crate) fn register(&mut self, base: *mut u8, len: usize, kind: SegmentKind) -> Option<u32> {
+        self.register_payload(base, len, kind, base)
+    }
+
+    pub(crate) fn register_payload(
+        &mut self,
+        base: *mut u8,
+        len: usize,
+        kind: SegmentKind,
+        payload: *mut u8,
+    ) -> Option<u32> {
+        let key = crate::alloc_core::os::segment_base_of_ptr(payload);
         let has_free = crate::alloc_core::node::Node::read_u32(self.free_top) != 0;
         if !has_free && self.count as usize >= MAX_SEGMENTS {
             return None;
@@ -320,7 +357,7 @@ impl SegmentTable {
         #[cfg(feature = "alloc-global")]
         let route = if let Some(routes) = &mut self.routes {
             let needed = self.count as usize + usize::from(!has_free);
-            Some(routes.prepare(needed, base, len, kind)?)
+            Some(routes.prepare(needed, base, len, kind, payload)?)
         } else {
             None
         };
@@ -331,7 +368,7 @@ impl SegmentTable {
             // currently NULL (see `free_list_push`'s contract) — reuse it.
             crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
             // OPT-B: also insert into the hash table so `contains_base` is O(1).
-            self.hash_insert(base);
+            self.hash_insert_identity(key, i);
             #[cfg(feature = "alloc-global")]
             if let Some(route) = route {
                 self.routes
@@ -350,7 +387,7 @@ impl SegmentTable {
         crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
         self.count += 1;
         // OPT-B: also insert into the hash table so `contains_base` is O(1).
-        self.hash_insert(base);
+        self.hash_insert_identity(key, idx as u32);
         #[cfg(feature = "alloc-global")]
         if let Some(route) = route {
             self.routes
@@ -423,6 +460,10 @@ impl SegmentTable {
             return;
         };
         let slot = Self::slot_ptr(self.slots, slot_id);
+        let header = SegmentHeader::read_at(base);
+        let key = crate::alloc_core::os::segment_base_of_ptr(
+            crate::alloc_core::node::Node::offset(base, header.payload_offset),
+        );
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &mut self.routes {
             routes.remove(slot_id);
@@ -431,7 +472,7 @@ impl SegmentTable {
         crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
         // OPT-B: remove from hash table via backward-shift deletion (R4-8/N3:
         // no tombstone, no rebuild — see `hash_remove`).
-        self.hash_remove(base);
+        self.hash_remove(key);
         // PERF-P2 (Э3): `base` is leaving the table — it MUST NOT remain
         // cached. A stale cache slot surviving removal would let a future
         // `contains_base` HIT on an unregistered/recycled/unmapped base and
@@ -645,34 +686,26 @@ impl SegmentTable {
     /// `dealloc_routing`, `realloc`) already hold `&mut`.
     #[inline(always)]
     pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
-        let idx = Self::cache_index(base);
-        // Fast path: proven-present cache hit.
-        if self.own_cache[idx] == base && !base.is_null() {
-            // R32-10 (task #501, F2): path-activation oracle — Tier-1 hit.
-            // `bench-internals`-gated (see `CONTAINS_BASE_TIER1_HITS`'s own
-            // doc in `alloc_core.rs`); compiled out entirely otherwise, so
-            // this cannot add overhead to a real production build.
+        self.canonical_base_of_mut(base).is_some()
+    }
+
+    /// Owner lookup with cache fill; the cache retains only allocator roots.
+    #[inline(always)]
+    pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
+        let index = Self::cache_index(key);
+        if self.own_cache[index].addr() == key.addr() && !key.is_null() {
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            return true;
+            return Some(self.own_cache[index]);
         }
-        // Miss → full O(1) hash probe. Fill the cache only on a won probe.
-        // R32-10: this call fell through to Tier-2 — count the routing
-        // decision BEFORE running the probe (a Tier-2 fallback occurred
-        // regardless of whether the probe itself then finds `base`).
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        if let Some(stored) = self.hash_find(base) {
-            // The key may carry only a user's narrow reborrow provenance.
-            self.own_cache[idx] = stored;
-            true
-        } else {
-            false
-        }
+        let root = self.hash_find(key)?;
+        self.own_cache[index] = root;
+        Some(root)
     }
-
     /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
     /// (no fill), for `&self` contexts (test-only `dbg_*` accessors, census).
     /// Same result as `contains_base` — it just skips the remember-proven
@@ -800,9 +833,10 @@ impl SegmentTable {
     )]
     #[inline]
     pub(super) fn own_cache_clear(&mut self, base: *mut u8) {
-        let idx = Self::cache_index(base);
-        if self.own_cache[idx] == base {
-            self.own_cache[idx] = core::ptr::null_mut();
+        for cached in &mut self.own_cache {
+            if *cached == base {
+                *cached = core::ptr::null_mut();
+            }
         }
     }
 

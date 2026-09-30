@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! Regression tests for Э8 (task #162) — same-segment run batching in
 //! `AllocCore::flush_class`. Each test is a COUNTERFACTUAL: it goes RED if the
 //! batch flush drops one of the two per-block guards (`is_free`, `off >= bump`)
@@ -104,7 +110,7 @@ fn seg_base(ptr: *mut u8) -> usize {
 #[cfg(feature = "alloc-xthread")]
 #[test]
 fn a_ring_df_block_is_skipped_by_flush() {
-    let mut core = AllocCore::new().unwrap();
+    let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
     let c = class_for(&core, 16, 8);
     let layout = Layout::from_size_align(16, 8).unwrap();
 
@@ -130,10 +136,10 @@ fn a_ring_df_block_is_skipped_by_flush() {
         // this push is its single logical remote free — it is reclaimed onto the
         // BinTable freelist by the `dbg_drain_all_rings` below (no dealloc /
         // re-issue of `p` in between). `c` is the block's actual class.
-        unsafe { core.dbg_push_to_ring(p, c) },
+        unsafe { core.dbg_publish_small_sidecar_free(p) },
         "ring push failed (ring full or P not owned)"
     );
-    core.dbg_drain_all_rings();
+    core.dbg_drain_sidecar_ingress();
 
     // Sanity: P is now free on the BinTable (the ring drain reclaimed it).
     // (No direct getter for is_free at the core level, but the flush's skip is

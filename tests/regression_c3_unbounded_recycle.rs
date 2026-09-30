@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! Regression test for task #126 (redo of the rejected Phase C "C3" attempt).
 //!
 //! ## Background
@@ -104,11 +110,8 @@ const TARGET_SEGMENTS: usize = 150;
 #[cfg_attr(miri, ignore)] // large N; native-only soak, mirrors decommit_soak / decommit_stale_ring sizing conventions
 #[test]
 fn unbounded_recycle_within_single_scan() {
-    let mut ac = AllocCore::new().expect("primordial");
+    let mut ac = AllocCore::dbg_new_routed_for_test().expect("routed primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac
-        .dbg_layout_class_for(layout)
-        .expect("256 B is a small class");
 
     // A 4 MiB segment holds roughly 16K of these 256 B blocks. We drive
     // `small_cur` forward across many fresh segments by allocating in bulk
@@ -179,7 +182,7 @@ fn unbounded_recycle_within_single_scan() {
         // push is its single logical remote free — survivors are reclaimed by the
         // `dbg_drain_all_rings` below (no dealloc / re-issue of `p` before that).
         // `class_idx` is the block's actual class.
-        if unsafe { ac.dbg_push_to_ring(p, class_idx) } {
+        if unsafe { ac.dbg_publish_small_sidecar_free(p) } {
             pushed += 1;
         }
     }
@@ -193,7 +196,7 @@ fn unbounded_recycle_within_single_scan() {
     // ONE single scan: drains every owned segment's ring, exactly as
     // `find_segment_with_free` does internally. Every survivor's segment
     // should empty out (live_count 0) and be recycled within this ONE call.
-    ac.dbg_drain_all_rings();
+    ac.dbg_drain_sidecar_ingress();
 
     let decommit_after = AllocCore::dbg_decommit_count();
     let decommits_this_scan = decommit_after - decommit_before;

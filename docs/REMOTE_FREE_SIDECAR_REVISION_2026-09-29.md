@@ -1,6 +1,7 @@
 # Remote-free contract revision: provenance-safe sidecar ingress
 
-Status: design decision, **not an implemented release guarantee**. Supersedes the
+Status: implemented in the 2026-09-30 dirty snapshot, **not yet an accepted
+release guarantee**. Supersedes the
 payload-intrusive ingress proposed in `REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`;
 its ledger, lease, bounded-trim and ownerless-progress obligations remain in force.
 
@@ -44,7 +45,7 @@ stored entry, never the lookup pointer supplied by the caller.
   `CACHED`, `INITIALIZING`, `RELEASED` hold none. No predecessor link is
   written to a Large reservation by a foreign publisher.
 
-The first prototype uses a byte-per-granule class table for mixed-class
+The current prototype uses a byte-per-granule class table for mixed-class
 Small segments. At 4 MiB / 16 bytes this is 32 KiB pending bitmap plus
 256 KiB class metadata per fully materialized segment, before allocator and
 VM rounding overhead. These are logical sizes, **not RSS measurements**.
@@ -90,7 +91,65 @@ controls must distinguish wrong ordering and premature reclamation. Native
 tests cover OS decommit/release. Measure latency and RSS against the previous
 route before claiming an optimization.
 
-Until the directory, issue/free conversion, strict sweep, fallible autonomous
-service and these gates are complete, **R6-01/R6-03 remain open and release is
-NO-GO**. The existing intrusive inbox remains an unconnected experimental
-primitive, not an alternative production ingress.
+The directory, issue/free conversion, strict sweep and explicit fallible
+service are present in this snapshot. Their complete acceptance gates have
+not been run here, so **R6-01/R6-03 remain open and release is NO-GO**.
+The old intrusive inbox, rings, overflow/spill and deferred Large stack
+have been removed; no parallel authoritative ingress remains.
+
+## Integrated terminal-sidecar snapshot (2026-09-30)
+
+The earlier owner-drain-only stage has been joined to the foreign producer
+and fallible ownerless worker. The release NO-GO above remains an acceptance
+status, not a claim that the old route is still connected.
+
+- `HeapCore::trim_for_recycle` runs `drain_sidecar_ingress` before magazine
+  flush, Small pool release and Large cache eviction. Its real callers are
+  public `SeferAlloc::trim_current_thread`, the existing diagnostic trim, and
+  TLS `AbandonGuard::drop` while the exiting thread still owns the slot.
+  Public trim is available in the minimal `alloc-global` build too.
+- The pass fixes the table high-water on entry. Every live Small/Primordial
+  slot fixes its issued bump bound, exchanges each covered bitmap word once,
+  and consumes every detached record. It never drains until globally empty,
+  waits for paused producers, or relies on legacy dirty notifications.
+- Class comes from the owner-issued sidecar record, not requested size or
+  the mixed-class page map. Reservation access derives only from the stored
+  table root and numerical offset. Free-list and magazine guards precede
+  node overwrite; a rejected stale record retires no credit. Accepted records
+  link the physical block, mark it free and retire exactly one owner credit,
+  in every feature set (not only `alloc-decommit`). No user callback is run.
+- Every cut and route scan borrow ends before directory synchronization and
+  Small pool/release finalization. Detached and unpublished valid instances
+  remain credited until actual owner retirement. Primordial is never released
+  by this pass. Current Small release on cold trim is a separate policy step.
+- Large consumes only a successful descriptor `PENDING -> CONSUMING` claim.
+  The existing reservation-state reclaim primitive then retires its instance
+  into cache or OS release and unregisters the old route. Cache reissue gets
+  a fresh descriptor incarnation; an old pin cannot name the new instance.
+  Descriptor retirement does not wait for pins and never releases a reservation.
+
+Behavioral test sources include `tests/r6_terminal_owner_drain.rs` (minimum requested
+sizes, mixed classes, backlog beyond the former ring capacity, duplicate/magazine guards,
+Large cache reissue, last-Small finalization, public trim and TLS exit),
+`tests/r6_terminal_owner_drain_model.rs` (post-word-cut publication), and
+`tests/loom_terminal_owner_drain.rs` (unpublished/detached credit lifetime and
+the negative producer-retirement control). New `tests/r8_*` cases exercise
+foreign/free, high alignment and maintenance paths. Presence of tests is not
+a claim that the parent acceptance matrix has passed.
+
+**Current producer chain:** `HeapCore::publish_foreign` uses numeric
+`RouteDirectory::lookup` and pins its sidecar. The ready idle fallback may
+reclaim directly under its exclusive lock; otherwise Small/Primordial
+publishes a bitmap bit and Large claims a descriptor state. `dealloc` does
+not start a worker. `SeferAlloc::start_maintenance()` explicitly attempts
+spawn, returns `InProgress` or `Spawn` on failure, and returns success only
+after RUNNING acknowledgement. Only after success, fair scheduling and
+available exclusive leases provide eventual logical reclamation of frees
+on ownerless heaps without another caller; no wall-clock bound or unconditional
+OS release is promised. An unexpected worker exit aborts, and fork/unload
+after activation is unsupported. Strict trim covers each pre-entry
+publication in its finite per-word pass; a post-cut publication waits for a
+later pass. Follow the stage-4/5 gates in
+`REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`, especially GlobalAlloc,
+fallback, aliasing/Miri, paused-producer, service-failure, feature-matrix,
+OS and real RSS/latency acceptance. No current speedup is claimed.

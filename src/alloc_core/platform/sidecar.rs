@@ -129,7 +129,7 @@
 // this function cannot check itself; (3) under `miri`, explicitly zeroing
 // the freshly-reserved span in [`AccountedSidecar::reserve`] — sound because
 // the reservation is exclusively owned and not yet observed by any other
-// reference (miri's `std::alloc` fallback does not zero; every real OS
+// reference (miri's `System.alloc` fallback does not zero; every real OS
 // backend hands back zeroed anonymous pages, the same discipline
 // `aligned_vmem::leak_zeroed_pages` documents); and (4) dereferencing the
 // resulting `*mut T` / `*const T` as `&'a T` / `&'a mut T` in [`deref`]/[`deref_mut`]
@@ -209,7 +209,7 @@ impl AccountedSidecar {
     /// `aligned_vmem::PAGE` — [`sidecar_size`] produces that) of anonymous
     /// virtual memory for one sidecar of `kind`, returning the accounted
     /// token. The span is all-zero: every real OS backend hands back zeroed
-    /// anonymous pages, and under `miri` (whose `std::alloc` fallback does
+    /// anonymous pages, and under `miri` (whose `System.alloc` fallback does
     /// NOT zero) the span is explicitly zeroed here — the same guarantee
     /// `aligned_vmem::leak_zeroed_pages` documented and provided before
     /// R2-12. Returns `None` only on OOM (sidecar OOM is NOT allocator OOM;

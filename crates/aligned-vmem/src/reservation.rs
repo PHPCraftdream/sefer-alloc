@@ -1085,7 +1085,7 @@ impl Reservation {
     /// (or via [`release`](crate::api::release)) the underlying reservation is returned to the OS
     /// using the platform-appropriate release routine
     /// (`VirtualFree(MEM_RELEASE)` on Windows, `munmap` on Unix,
-    /// `std::alloc::dealloc` on miri).
+    /// `System.dealloc` on miri).
     ///
     /// This is **not** the inverse of [`into_parts`](Self::into_parts): that
     /// method returns only 3 of the 6 fields this constructor requires
@@ -1136,10 +1136,11 @@ impl Reservation {
     ///   **This alignment to page_size() is NOT checked by the constructor's
     ///   `assert!`** — it is the caller's responsibility to ensure it.
     /// - Under miri specifically, `reservation` — NOT `base` — MUST be the exact
-    ///   pointer returned by a `std::alloc::alloc` call, and that call's `Layout`
+    ///   pointer returned by `System.alloc` (through `GlobalAlloc`), not a
+    ///   different installed global allocator, and that call's `Layout`
     ///   must equal `Layout::from_size_align(reservation_len, align)`. The miri
     ///   `release_reservation` reconstructs precisely that `Layout` and hands
-    ///   `reservation` to `std::alloc::dealloc`, which requires the pointer to be
+    ///   `reservation` to `System.dealloc`, which requires the pointer to be
     ///   the one `alloc` returned and the layout to match exactly; anything else
     ///   is undefined behaviour, not a leak.
     ///
@@ -1193,7 +1194,7 @@ impl Reservation {
     ///     requirement" bullet in "Correctness contract" below for the
     ///     checked form of this requirement.
     ///   - **miri:** `release` reconstructs a `Layout` from
-    ///     `reservation_len`/`align` and hands it to `std::alloc::dealloc`,
+    ///     `reservation_len`/`align` and hands it to `System.dealloc`,
     ///     which requires the EXACT size the allocation was made with — no
     ///     rounding, and a mismatch is undefined behaviour rather than a leak.
     ///     The rounding case above cannot arise here: under `cfg(miri)`
@@ -1557,7 +1558,7 @@ impl Drop for Reservation {
         // constructor built this handle: `self.reservation` describes a
         // live OS reservation valid for `self.reservation_len` bytes,
         // release-compatible with the platform backend below (an exact
-        // `std::alloc::alloc` provenance/`Layout` match under miri; a live
+        // `System.alloc` provenance/`Layout` match under miri; a live
         // `mmap`'d region on Unix; a `VirtualAlloc(MEM_RESERVE)` region on
         // Windows), and this handle owns it exclusively (no aliasing —
         // `Reservation` is `Send` but not `Sync`). Dropping returns the

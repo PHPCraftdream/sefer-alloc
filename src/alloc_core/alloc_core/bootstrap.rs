@@ -191,16 +191,6 @@ pub(crate) fn primordial() -> Option<Primordial> {
         base,
         Layout::magazine_bitmap_off(),
     ));
-    // Initialise the per-segment non-intrusive cross-thread-free ring (the
-    // Variant-2 fix: queues carry offsets, never poison the block). Only under
-    // `alloc-xthread`; without it the ring metadata is reserved (the Layout
-    // always carves it, to keep the byte layout uniform) but left uninitialised
-    // — it is never read on the single-thread path.
-    #[cfg(feature = "alloc-xthread")]
-    {
-        let ring_off = Layout::remote_ring_off();
-        super::super::remote_free_ring::RemoteFreeRing::init_in_place(base, ring_off);
-    }
     // X7 Ф3 (task #191): zero the per-segment generation table under
     // `hardened`. Compiled ONLY under `hardened`; under any other feature the
     // table does not exist and this call is absent (byte-identical to the
@@ -262,13 +252,16 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // find the first empty slot, and write `base`. Since the table is freshly
     // zeroed, slot hash_index(base) is guaranteed empty.
     {
-        let start_idx =
-            (base as usize >> segment_table::SEGMENT_SHIFT) & (segment_table::HASH_CAPACITY - 1);
+        let key = base.addr() >> segment_table::SEGMENT_SHIFT;
+        let start_idx = (key ^ (key >> 13) ^ (key >> 26)) & (segment_table::HASH_CAPACITY - 1);
         let hash_slot = super::super::node::Node::offset(
             hash_slots as *mut u8,
             start_idx * core::mem::size_of::<*mut u8>(),
         ) as *mut *mut u8;
-        super::super::node::Node::write_struct::<*mut u8>(hash_slot, base);
+        super::super::node::Node::write_struct::<*mut u8>(
+            hash_slot,
+            core::ptr::without_provenance_mut(base.addr() | 1),
+        );
     }
 
     // 4c. Task #135 (Part 1): initialise the free-list index-stack (recycled
@@ -407,7 +400,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // first `small_cur` carve target, so `carve_block`/`carve_batch` must see
     // the correct bit before the very first post-bootstrap allocation.
     // Withheld under `cfg!(miri)` for the same reason as every other
-    // freshness signal on this path (miri's `std::alloc` fallback does not
+    // freshness signal on this path (miri's `System.alloc` fallback does not
     // zero).
     #[cfg(feature = "virgin-zero-skip")]
     meta.set_payload_virgin(cfg!(not(miri)));

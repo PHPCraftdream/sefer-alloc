@@ -1087,17 +1087,11 @@ fn bench_working_set_cycle(c: &mut Criterion) {
 /// cap rises from 0 through 32 against this task's fixed code).
 ///
 /// **Why `AllocCore` (not `SeferAlloc`) — no TLS/thread plumbing needed.**
-/// `AllocCore::new_with_config` builds a standalone allocator directly (no
-/// registry/TLS bind), so — unlike the `SeferAlloc`-based approach, which
-/// needed a fresh OS thread per cap to get a never-before-bound TLS slot —
-/// this harness just constructs a fresh `AllocCore` per cap on the criterion
-/// runner's own thread. `AllocCore` is `pub` (re-exported at the crate root),
-/// so a bench (like `tests/small_segment_pool.rs`, an integration test) may
-/// use it directly; the `dbg_*` seams used below
-/// (`dbg_layout_class_for`/`dbg_push_to_ring`/`dbg_drain_all_rings`/
-/// `dbg_decommit_count`) are the SAME `#[doc(hidden)] pub` test-only surface
-/// `tests/small_segment_pool.rs` and `tests/regression_c3_unbounded_recycle.rs`
-/// already rely on.
+/// This publication probe explicitly constructs a fresh descriptor-backed
+/// test core before first issue via `dbg_new_routed_with_config_for_test`.
+/// Ordinary `AllocCore::new_with_config` remains owner-local and has no
+/// terminal publication capability. Each arm has its own actual route table
+/// and resolved configuration; no registry/TLS slot is reused across arms.
 ///
 /// `pool_byte_cap` is set generously (256 MiB, i.e. 64 segments' worth) so
 /// that only `pool_segments` — not the byte ceiling — constrains occupancy at
@@ -1111,14 +1105,26 @@ fn bench_working_set_cycle(c: &mut Criterion) {
 /// `alloc-xthread` dependency) — gating on `alloc-decommit` alone left this
 /// code uncompilable under that combination even though `production` (which
 /// always pulls in both) masked the gap in the project's own CI matrix.
-#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 const POOL_CAP_SWEEP_VALUES: &[usize] = &[0, 1, 4, 8, 16];
 
 /// Number of distinct small segments to spread allocations across before
 /// emptying them all in one scan — comfortably above every value in
 /// [`POOL_CAP_SWEEP_VALUES`] so the pool is genuinely saturated at each cap
 /// (otherwise a low target could never exercise cap=16, for instance).
-#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 const SPREAD_TARGET_SEGMENTS: usize = 40;
 
 /// Spread allocations of `layout` across [`SPREAD_TARGET_SEGMENTS`] distinct
@@ -1131,18 +1137,22 @@ const SPREAD_TARGET_SEGMENTS: usize = 40;
 /// primordial segment) in a single call, exactly the scenario
 /// `regression_c3_unbounded_recycle` exercises. Returns the
 /// `dbg_decommit_count()` delta observed across that single drain call.
-#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 fn pool_cap_sweep_spread_and_drain(cap: usize, size: usize) -> u64 {
     let config = sefer_alloc::LargeCacheConfig::new().pool(
         sefer_alloc::SmallSegmentPoolConfig::new()
             .pool_segments(cap)
             .pool_byte_cap(256 * 1024 * 1024),
     );
-    let mut ac = sefer_alloc::AllocCore::new_with_config(config).expect("primordial reservation");
+    let mut ac = sefer_alloc::AllocCore::dbg_new_routed_with_config_for_test(config)
+        .expect("routed primordial reservation");
     let layout = Layout::from_size_align(size, 8).unwrap();
-    let class_idx = ac
-        .dbg_layout_class_for(layout)
-        .expect("bench sizes are all small classes");
 
     const SEGMENT: usize = 4 * 1024 * 1024;
     // Scale the per-round block count to `size` so a round reliably advances
@@ -1190,11 +1200,11 @@ fn pool_cap_sweep_spread_and_drain(cap: usize, size: usize) -> u64 {
         // survivors were deliberately excluded from that dealloc loop), with no
         // re-issue before the `dbg_drain_all_rings` below. `class_idx` is the
         // block's actual class.
-        unsafe { ac.dbg_push_to_ring(p, class_idx) };
+        assert!(unsafe { ac.dbg_publish_small_sidecar_free(p) });
     }
 
     let before = sefer_alloc::AllocCore::dbg_decommit_count();
-    ac.dbg_drain_all_rings();
+    ac.dbg_drain_sidecar_ingress();
     let after = sefer_alloc::AllocCore::dbg_decommit_count();
 
     // Cleanup: the pool may still hold up to `cap` segments; force-drain so
@@ -1218,7 +1228,13 @@ fn pool_cap_sweep_spread_and_drain(cap: usize, size: usize) -> u64 {
 /// wall-clock judge; the sweep's signal is the `eprintln!` counter deltas,
 /// not the criterion timing table (the spread/drain construction cost swamps
 /// the drain itself, so the criterion timing column is not meaningful here).
-#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 fn bench_pool_cap_sweep(c: &mut Criterion) {
     let mut group = c.benchmark_group("pool_cap_sweep");
     group.sample_size(10);
@@ -1740,7 +1756,13 @@ fn bench_batch_ceiling_followup(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 criterion_group!(
     benches,
     bench_global_alloc,
@@ -1753,7 +1775,13 @@ criterion_group!(
     bench_batch_ceiling,
     bench_batch_ceiling_followup
 );
-#[cfg(not(all(feature = "alloc-decommit", feature = "alloc-xthread")))]
+#[cfg(not(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+)))]
 criterion_group!(
     benches,
     bench_global_alloc,

@@ -4,12 +4,11 @@
 //! power-of-two `align`, commit/decommit its pages, and release it — directly
 //! through the OS (`mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/
 //! `VirtualFree` on Windows), with **no file-mapping machinery** and **no
-//! dependencies**. Under [miri](https://github.com/rust-lang/miri) it falls
-//! back to `std::alloc` so consumers stay miri-testable. A consumer that
-//! installs itself as `#[global_allocator]` cannot use this crate under miri,
-//! because the miri backend routes allocations through the global allocator and
-//! would create a reentrancy hazard (the same class of issue `numa-shim` hit
-//! in #777).
+//! dependencies**. Under [miri](https://github.com/rust-lang/miri) it uses
+//! `System.alloc`/`System.dealloc` directly, bypassing an installed global
+//! allocator so self-hosting consumers remain miri-testable. The separate
+//! `aligned_vmem_mock` recorder uses `Vec` and is not reentrancy-safe when
+//! combined with a self-hosting global allocator.
 //!
 //! This is the OS aperture extracted from
 //! [`sefer-alloc`](https://crates.io/crates/sefer-alloc). It is the one crate

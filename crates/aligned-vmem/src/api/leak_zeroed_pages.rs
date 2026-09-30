@@ -17,7 +17,7 @@ use super::reserve::reserve_aligned;
 ///   the OS may round further beyond `PAGE`, so the actual granularity
 ///   consumed can exceed `PAGE`.
 /// - the span is guaranteed all-zero on every backend, INCLUDING the miri
-///   fallback (`std::alloc` does not zero; this helper zeroes explicitly under
+///   fallback (`System.alloc` does not zero; this helper zeroes explicitly under
 ///   miri), so the returned memory is a valid all-zero initial state.
 /// - the reservation is `mem::forget`-leaked: it lives for the process lifetime
 ///   and is never released.
@@ -36,7 +36,7 @@ pub fn leak_zeroed_pages(size: usize) -> Option<NonNull<u8>> {
     let reservation = reserve_aligned(rounded, PAGE)?;
     let base = reservation.as_ptr();
 
-    // Under miri, `reserve_aligned` falls back to `std::alloc`, which does NOT
+    // Under miri, `reserve_aligned` falls back to `System.alloc`, which does NOT
     // zero the bytes; every real OS backend hands back zeroed pages. Zero
     // explicitly under miri so the all-zero initial-state guarantee holds on
     // every backend.

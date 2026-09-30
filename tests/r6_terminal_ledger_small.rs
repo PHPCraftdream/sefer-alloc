@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 #![cfg(all(feature = "alloc-xthread", feature = "internals"))]
 
 use std::alloc::Layout;
@@ -6,18 +12,17 @@ use sefer_alloc::AllocCore;
 
 #[test]
 fn primordial_credit_survives_publication_until_owner_reclaim() {
-    let mut core = AllocCore::new().expect("primordial reservation");
+    let mut core = AllocCore::dbg_new_routed_for_test().expect("routed primordial reservation");
     let layout = Layout::from_size_align(32, 8).unwrap();
-    let class = core.dbg_layout_class_for(layout).unwrap();
     let ptr = core.alloc(layout);
     assert!(!ptr.is_null());
     assert_eq!(core.dbg_live_count_for(ptr), Some(1));
 
     // SAFETY: `ptr` is the sole live allocation with the matching class;
     // the test transfers it once to the ring and never dereferences it again.
-    assert!(unsafe { core.dbg_push_to_ring(ptr, class) });
+    assert!(unsafe { core.dbg_publish_small_sidecar_free(ptr) });
     assert_eq!(core.dbg_live_count_for(ptr), Some(1));
-    core.dbg_drain_all_rings();
+    core.dbg_drain_sidecar_ingress();
     assert_eq!(core.dbg_live_count_for(ptr), Some(0));
 
     let reused = core.alloc(layout);

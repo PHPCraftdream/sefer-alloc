@@ -36,46 +36,6 @@
 //! has heaps live in other chunks keeps working even if one chunk's
 //! reservation fails).
 //!
-//! ## R6-OPT-P0-2 (round 2) — lazy `HeapOverflow` sidecar
-//!
-//! Round 1 left one dominant cost per materialised chunk: `HeapOverflow`
-//! (`heap_overflow/`), a `[AtomicPtr<u8>; HEAP_OVERFLOW_CAP] +
-//! [AtomicU32; HEAP_OVERFLOW_CAP]` pair inline in EVERY `HeapSlot`
-//! (`HEAP_OVERFLOW_CAP = 2048` native), 24 KiB/slot. Round 2 shrinks this by
-//! splitting `HeapOverflow`'s storage into a small always-inline "emergency"
-//! tier (`INLINE_CAP` entries) plus a lazily-materialised sidecar for the
-//! rest — see `heap_overflow/`'s module doc for the full two-tier design
-//! and the wedge-hazard correctness argument.
-//!
-//! **Unsafe-seam placement decision:** the sidecar's materialisation
-//! machinery ([`ensure_overflow_sidecar`] / [`deref_overflow_sidecar`]) lives
-//! in [`overflow_sidecar`], a sibling tier-1 `#![allow(unsafe_code)]` seam
-//! file in THIS directory next to [`registry`] and [`ensure`], rather than in
-//! a new seam inside `heap_overflow/`. Reasons: (1) it is LITERALLY the
-//! same protocol as [`ensure_chunk`]/[`ensure_chunk_slow`] (CAS-reserve a
-//! sentinel, `aligned_vmem::reserve_aligned`, in-place init, publish with
-//! Release, spin-wait losers) — a third instance of one already-audited
-//! pattern, not a new one; keeping all three instances documented together in
-//! this one directory (even though R1-07 split each into its own file — see
-//! "Structural reorg step 5" below) keeps that pattern's soundness argument in
-//! one place rather than duplicated across directories; (2) `heap_overflow/`
-//! explicitly documents (and its module doc still asserts) that it needs NO
-//! unsafe seam of its own — round 2 preserves that property rather than
-//! breaking it, so a reader auditing "which files can materialise raw OS
-//! memory and dereference raw pointers" finds the answer unchanged
-//! (`bootstrap`'s own files, still the only ones in `registry/` besides
-//! `heap_registry`'s); (3) `heap_overflow/`'s `push`/`drain` need only a
-//! SAFE `&HeapOverflowSidecar` once materialised — [`deref_overflow_sidecar`]
-//! is the one safe membrane function that hands that out, exactly mirroring
-//! how [`Registry::slot`] hands out a safe `&'static HeapSlot` from chunk
-//! memory. This mirrors round 1's own choice (`registry_chunk.rs`/[`chunk`]
-//! stays unsafe-free; all raw-pointer work lives in `bootstrap`'s other
-//! files) — the SAME reasoning applied one level further down. `bootstrap`'s
-//! individual seam files ([`registry`], [`ensure`], [`overflow_sidecar`]) are
-//! each ALREADY listed as their own tier-1 unsafe seam in `src/lib.rs`'s
-//! inventory and README's "Where unsafe lives" table, so no additional
-//! entry is needed for this addition.
-//!
 //! ## History — why the slot array was EVER moved out of `.data`/`.bss`
 //!
 //! The original design used `static REGISTRY: Registry = Registry::new_zeroed()`.
@@ -143,20 +103,19 @@
 //!
 //! ## M5 (reentrancy-free) — CANNOT BE VIOLATED
 //!
-//! `aligned_vmem::reserve_aligned` is a direct OS syscall (`VirtualAlloc` /
-//! `mmap`) — it does NOT call `std::alloc`, `Box`, `Vec`, or any other
-//! Rust allocator entry point. Its dependency graph (verified by reading
-//! `crates/aligned-vmem/src/lib.rs` in full):
+//! `aligned_vmem::reserve_aligned` uses direct OS syscalls (`VirtualAlloc` /
+//! `mmap`) natively and direct `System.alloc` under Miri — it does NOT call
+//! the installed global allocator, `Box`, or `Vec`. Its dependency graph
+//! (verified by reading `crates/aligned-vmem/src/lib.rs` in full):
 //!
 //! - Windows: `extern "system" { fn VirtualAlloc(...) }` — no std alloc.
 //! - Unix: `extern "C" { fn mmap(...) }` — no std alloc.
-//! - Miri: `std::alloc` — but under miri we are NOT the global allocator
-//!   (the host miri allocator backs the harness), so no reentrancy.
+//! - Miri: direct `System.alloc`, bypassing the installed global allocator.
 //!
 //! No path from [`ensure_chunk_slow`] touches `sefer_alloc::registry::*` —
 //! confirmed by inspection (unchanged from the pre-chunking `ensure_slow`).
-//! The reservation call chain is a straight line to a kernel syscall
-//! boundary.
+//! The reservation call chain reaches a kernel syscall on native targets or
+//! `System` directly under Miri.
 //!
 //! ## Provenance model (task #140)
 //!
@@ -191,9 +150,6 @@
 //    above (the state-machine ITSELF is `once_ptr_cell::OncePtrCell`,
 //    CRATE-P3-extracted; this file's own `unsafe` is the pointer cast/deref
 //    around calling it).
-//  - [`overflow_sidecar`] (`alloc-xthread` only) — a third, inline instance
-//    of the same CAS/reserve/publish/spin protocol plus its own
-//    `unsafe { &*p }` deref, for the lazy `HeapOverflow` sidecar.
 //  - [`loom_shim`] (`--cfg loom` only) — `unsafe impl Send`/`Sync` for its
 //    const-capable `OncePtrCell` stand-in, plus `NonNull::new_unchecked`
 //    calls proved by the sentinel-address check immediately above each site.
@@ -213,21 +169,15 @@
 // - [`loom_shim`] — the `#[cfg(loom)]` const-capable atomics shim (formerly
 //   an inner module; the `bootstrap::loom_shim` path is preserved for
 //   `heap_registry`'s cfg-gated `StackStorage` impl).
-// - [`overflow_sidecar`] — the `alloc-xthread` lazy `HeapOverflow` sidecar
-//   materialisation (formerly an inner module; the `bootstrap::overflow_sidecar`
-//   path is preserved).
 mod chunk;
 mod ensure;
 #[cfg(loom)]
 pub(crate) mod loom_shim;
-#[cfg(feature = "alloc-xthread")]
-mod overflow_sidecar;
 mod registry;
 pub(crate) mod saturation;
 
 // Re-exports preserving the flat file's item paths (`bootstrap::X` — consumed
-// by `heap_registry`, `heap_overflow`, `heap_core_xthread`, and the
-// integration tests):
+// by registry heaps and integration tests):
 pub use ensure::count_for_test;
 pub use ensure::dbg_num_chunks;
 pub use ensure::dbg_rollback_chunk_sentinel_reenterable;
@@ -242,9 +192,4 @@ pub use ensure::ensure;
 /// pure data with no atomics, so it is loom-agnostic and the same enum
 /// serves both the real cell and the `#[cfg(loom)]` shim.
 pub use once_ptr_cell::RollbackProbe;
-#[cfg(feature = "alloc-xthread")]
-pub(crate) use overflow_sidecar::{
-    dbg_rollback_overflow_sidecar_sentinel_reenterable, deref_overflow_sidecar,
-    ensure_overflow_sidecar,
-};
 pub use registry::{Registry, MAX_HEAPS};

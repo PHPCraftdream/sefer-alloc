@@ -128,7 +128,7 @@ fn fresh_small_alloc_zeroed_is_all_zero_and_skips_zero_pass() {
     assert_eq!(
         zero_delta, 1,
         "fresh small alloc_zeroed under miri must run the explicit zero pass \
-         (miri's std::alloc fallback gives no zero guarantee)"
+         (miri's System.alloc fallback gives no zero guarantee)"
     );
     #[cfg(not(feature = "alloc-stats"))]
     let _ = (zero_passes_before, zero_delta);
@@ -491,7 +491,7 @@ fn fresh_small_alloc_zeroed_via_heapcore() {
     assert_eq!(
         zero_delta, 1,
         "HeapCore::alloc_zeroed under miri must always run the explicit zero \
-         pass (miri's std::alloc fallback gives no zero guarantee)"
+         pass (miri's System.alloc fallback gives no zero guarantee)"
     );
     #[cfg(not(feature = "alloc-stats"))]
     let _ = (zero_passes_before, zero_delta);

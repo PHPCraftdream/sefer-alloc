@@ -1,19 +1,8 @@
-//! Ownership / binding machinery for [`HeapCore`] (mechanical split of
-//! `heap_core.rs`, task R6-CQ-7b).
-//!
-//! This file holds the `impl HeapCore { .. }` block for the W3 slot-counter-
-//! handle binding (`bind_thread_free`, `bind_overflow`, `thread_free_head`),
-//! the OPT-C segment-ownership stamp (`stamp_segment_owner`), and the
-//! production teardown-trim primitive (`trim_for_recycle`). Pure
-//! code-movement sibling of `heap_core.rs`; no behavior changed.
+//! Canonical owner stamping and exclusive cold trim for [`HeapCore`].
 
-#[cfg(feature = "alloc-xthread")]
-use ::core::sync::atomic::AtomicPtr;
 #[cfg(feature = "alloc-global")]
 use ::core::sync::atomic::Ordering;
 
-#[cfg(feature = "alloc-global")]
-use crate::alloc_core::os;
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::segment_header::pack_owner;
 #[cfg(feature = "alloc-global")]
@@ -22,94 +11,9 @@ use crate::alloc_core::segment_header::SegmentMeta;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
-    /// task H1: plant the stable `&'static` handle to THIS heap's slot-resident
-    /// (or fallback-static) cross-thread free-stack head. Called once, right
-    /// after the slot / fallback heap is materialised and before any allocation
-    /// on this heap runs, by
-    /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
-    /// (via `bind_slot_counters`) / `fallback::heap_ptr`. Idempotent — on a
-    /// slot re-claim the handle already references the same `'static` word, so
-    /// re-planting is a harmless no-op store. Same discipline as
-    /// [`bind_tcache_hits`](Self::bind_tcache_hits).
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn bind_thread_free(&mut self, head: &'static AtomicPtr<u8>) {
-        self.thread_free = Some(head);
-    }
-
-    /// RAD-4b (task #72): plant the stable `&'static` handle to THIS heap's
-    /// slot-resident [`HeapOverflow`](crate::registry::heap_overflow::HeapOverflow)
-    /// ring (or the process-static fallback ring). Same discipline as
-    /// [`bind_thread_free`](Self::bind_thread_free) /
-    /// [`bind_tcache_hits`](Self::bind_tcache_hits): called from
-    /// `bind_slot_counters` at claim, or during fallback init before READY.
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn bind_overflow(
-        &mut self,
-        overflow: &'static crate::registry::heap_overflow::HeapOverflow,
-    ) {
-        self.overflow = Some(overflow);
-    }
-
-    /// R7-A4: plant the stable `&'static` handle to THIS heap's slot-resident
-    /// `dirty_segments` bitmap. Same discipline as `bind_overflow` / `bind_thread_free`.
-    /// Called once, right after the slot binds, from `bind_slot_counters`.
-    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-    pub(crate) fn bind_dirty_segments(
-        &mut self,
-        ds: &'static [::core::sync::atomic::AtomicU64;
-                     crate::alloc_core::segment_directory::WORDS_PER_CLASS],
-    ) {
-        self.core.dirty_segments = Some(ds);
-    }
-
-    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): plant the stable
-    /// `&'static` handle to THIS heap's slot-resident per-(segment, class)
-    /// dirty-bit sidecar CELL (the `OncePtrCell` itself — the sidecar it
-    /// guards may still be UNINIT). Same discipline as `bind_dirty_segments`.
-    /// Called once, right after the slot binds, from `bind_slot_counters`.
-    #[cfg(feature = "class-aware-dirty")]
-    pub(crate) fn bind_dirty_by_class(
-        &mut self,
-        cell: &'static once_ptr_cell::OncePtrCell<crate::alloc_core::dirty_by_class::PerClassDirty>,
-    ) {
-        self.core.dirty_by_class = Some(cell);
-    }
-
-    /// R13-1 (task #271, P0 fix): plant the stable `&'static` handle to THIS
-    /// heap's slot-resident coarse-only latch. Same discipline as
-    /// `bind_dirty_by_class`. Called once, right after the slot binds, from
-    /// `bind_slot_counters`.
-    #[cfg(feature = "class-aware-dirty")]
-    pub(crate) fn bind_sidecar_oom_latch(
-        &mut self,
-        latch: &'static ::core::sync::atomic::AtomicBool,
-    ) {
-        self.core.sidecar_oom_latch = Some(latch);
-    }
-
-    /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
-    /// null in the transient pre-bind window (no cross-thread stamping has
-    /// happened yet → cross-thread frees to this heap's segments are a safe
-    /// no-op). Used by the drain / routing paths on the owning thread. task H1:
-    /// resolves to the OWNING slot's `thread_free` word (via the `&'static`
-    /// handle), NOT an inline `HeapCore` field — so the returned address is
-    /// outside every `&mut HeapCore` retag range.
-    #[cfg(feature = "alloc-xthread")]
-    #[inline(always)]
-    pub(crate) fn thread_free_head(&self) -> *const AtomicPtr<u8> {
-        self.thread_free
-            .map_or(::core::ptr::null(), |h| h as *const AtomicPtr<u8>)
-    }
-
-    /// Stamp a segment's header with this heap's ownership. Two parts:
-    ///
-    /// 1. **`owner_state = LIVE(self.id, 0)`** — the ownership field. Set on
-    ///    every alloc so cross-thread free routing can resolve a segment's
-    ///    owning heap from its `owner_id`. Idempotent: a segment already
-    ///    stamped with our id is left alone.
-    /// 2. **(alloc-xthread only) `owner_thread_free` head pointer** — the
-    ///    cross-thread free routing target, so a remote freer can find this
-    ///    heap's TFS. Idempotent: only stamps if currently null.
+    /// Stamp this heap's canonical reservation root with its owner id.
+    /// Foreign frees route exclusively through terminal descriptors, never
+    /// through an owner-header pointer or an intrusive deferred stack.
     ///
     /// Called on the alloc path after a successful allocation. The segment is
     /// exclusively ours (single-writer invariant from the claim CAS), so the
@@ -133,7 +37,9 @@ impl HeapCore {
     #[inline(always)]
     pub(crate) fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
-        let base = os::segment_base_of_ptr(ptr);
+        let Some((base, _)) = self.core.canonical_block_of(ptr) else {
+            std::process::abort();
+        };
 
         // -----------------------------------------------------------------------
         // OPT-C fast path: cache-hit check.
@@ -152,9 +58,6 @@ impl HeapCore {
             let cur = owner_atomic.load(Ordering::Relaxed);
             if unpack_owner_id(cur) == self.id {
                 // Still our segment, already stamped. Skip the Release-store.
-                // The alloc-xthread TFS stamp is also idempotent (once
-                // stamped it stays); if `last_stamped_segment` is set then
-                // the TFS was already written on the slow path below.
                 return;
             }
             // Ownership mismatch (e.g., recycled segment): clear the cache
@@ -165,11 +68,7 @@ impl HeapCore {
         // -----------------------------------------------------------------------
         // Slow path: full Acquire-load + conditional Release-store.
         // -----------------------------------------------------------------------
-        // `mut` is needed under `alloc-xthread` (the stamp branch below calls
-        // `meta.stamp_owner_thread_free(&mut self)`). Silence the unused-mut
-        // warning under plain `alloc-global` where the branch is absent.
-        #[allow(unused_mut)]
-        let mut meta = SegmentMeta::new(base);
+        let meta = SegmentMeta::new(base);
         // 1. Stamp owner_state (ownership resolution).
         let owner_atomic = meta.owner_state_atomic();
         let cur = owner_atomic.load(Ordering::Acquire);
@@ -178,56 +77,6 @@ impl HeapCore {
             // Release: a later cross-thread freer's Acquire read of owner_state
             // (to resolve the owning heap) must observe our stamp.
             owner_atomic.store(me, Ordering::Release);
-        }
-        // 2. (alloc-xthread) Stamp the TFS head for cross-thread routing.
-        // Phase 12.5 (shard model): stamped ONCE, when the segment is first
-        // allocated from, and NEVER cleared or re-stamped. The inline TFS
-        // head's address is stable for the slot's lifetime (it does not
-        // change across release→claim), so the stamp remains valid for as
-        // long as the slot owns this segment — which is forever in the shard
-        // model (segments do not leave their heap).
-        //
-        // Field-specific write (task #33 root-cause fix): we stamp ONLY the
-        // `owner_thread_free` field via `stamp_owner_thread_free`, NOT a
-        // full-struct `write_header`. A full-struct RMW here rewrote `bump`
-        // and every other field, and — although the stamp itself runs on the
-        // owning thread — the struct read it performed (`meta.header()`)
-        // raced the Owner's own later `bump` writes is not the issue; the
-        // issue is that `write_header` writes `magic`/`kind`/`bump` bytes
-        // that a concurrent Remote `dealloc_routing` field-read may observe
-        // mid-update. Writing only the `owner_thread_free` word touches bytes
-        // disjoint from every field a Remote reads, so there is no race.
-        // The single-writer invariant (the slot's owner is the sole writer
-        // of its segments' headers) makes the plain field write race-free.
-        #[cfg(feature = "alloc-xthread")]
-        {
-            let cur_head =
-                crate::alloc_core::segment_header::SegmentHeader::owner_thread_free_at(base);
-            if cur_head.is_null() {
-                // Task #142: expose this atomic's provenance so a REMOTE
-                // freer can reconstruct a wildcard pointer to it (via
-                // `Node::atomic_ptr_ref` → `with_exposed_provenance_mut`)
-                // rather than inheriting a reference provenance a concurrent
-                // remote write would disable, corrupting other remotes' access
-                // (see `Node::atomic_ptr_ref`).
-                //
-                // task H1: the head is the OWNING SLOT's `thread_free` word,
-                // reached through the `&'static` handle planted at claim time
-                // — NOT an inline `HeapCore` field. This is the whole point of
-                // the H1 hoist: the exposed address is outside every `&mut
-                // HeapCore` retag range, so a remote CAS onto it no longer
-                // races the owner's `alloc(&mut self)` protector. `handle as
-                // *const _` takes the slot field's stable address without any
-                // `&mut self`-rooted retag; `expose_provenance` registers it
-                // for the paired `with_exposed_provenance_mut`. `None` cannot
-                // occur here — stamping runs only after the claim that planted
-                // the handle (defensive: skip the stamp if somehow unbound).
-                if let Some(handle) = self.thread_free {
-                    let tf_ptr = handle as *const AtomicPtr<u8>;
-                    let _ = tf_ptr.expose_provenance();
-                    meta.stamp_owner_thread_free(tf_ptr as *const _);
-                }
-            }
         }
 
         // Slow path succeeded: cache the segment base so the next alloc from
@@ -254,6 +103,11 @@ impl HeapCore {
     /// Each sub-operation carries its own feature gate; in a build without
     /// the relevant feature the corresponding step compiles to nothing.
     pub(crate) fn trim_for_recycle(&mut self) {
+        // Terminal sidecars require a full, bounded sweep independent of dirty
+        // hints. Retire detached records before flushing magazines or releasing
+        // reservations; a pre-publication producer keeps its outstanding credit.
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let _ = self.drain_sidecar_ingress();
         // Flush every tcache class → blocks return to segments → segments
         // may empty → decommit/release or pool.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]

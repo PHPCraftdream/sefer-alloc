@@ -16,16 +16,6 @@ pub(super) mod alloc_core_large;
 pub(super) mod alloc_core_large_cache;
 #[cfg(feature = "alloc-decommit")]
 mod alloc_core_large_cache_eviction;
-/// The cross-thread deferred-free Treiber stack for Large/huge segments
-/// (task A1, extracted for #132). Used by the allocator face
-/// (`registry::heap_core::HeapCore`) and any direct `AllocCore` user so the
-/// double-push-guarded push/drain logic is not duplicated.
-///
-/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
-/// `#[doc(hidden)]` (see `lib.rs`): `DBG_LARGE_XTHREAD_RECLAIMED` is
-/// re-exported (via `registry`) as a `#[doc(hidden)]` test-only diagnostic.
-#[doc(hidden)]
-pub mod deferred_large;
 /// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): the lazily-
 /// materialised sidecar that widens the large-segment free-cache beyond the
 /// fixed 8 base slots. See the module doc for the full design. A named

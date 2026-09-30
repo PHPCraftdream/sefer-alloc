@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! R12-1 (task #252) regression test — the directory-driven scan loop in
 //! `find_segment_with_free_impl` must NOT hold a live `&SegmentDirectory`
 //! reference across a call that can mutate the same sidecar allocation.
@@ -173,7 +179,7 @@ fn assert_directory_equals_rebuild(core: &mut AllocCore) {
 /// to cross `DIRECTORY_MATERIALIZE_THRESHOLD` in the fewest allocations.
 #[test]
 fn directory_hit_triggers_mutation_during_scan_stays_consistent() {
-    let mut core = AllocCore::new().unwrap();
+    let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
 
     // Materialise the directory (still via SMALL_MAX — fewest allocations to
     // cross the threshold; unrelated to the p/p2 density concern below).
@@ -228,7 +234,7 @@ fn directory_hit_triggers_mutation_during_scan_stays_consistent() {
     // SAFETY: `p2` is a live pointer from `core.alloc(tiny_layout)` above, of
     // the same layout/class, not touched again until the drain below
     // consumes this note (per `dbg_push_to_ring`'s contract).
-    let pushed = unsafe { core.dbg_push_to_ring(p2, class_idx) };
+    let pushed = unsafe { core.dbg_publish_small_sidecar_free(p2) };
     assert!(pushed, "dbg_push_to_ring must succeed for a live block");
 
     // Load-bearing counterfactual: the ring note is UNCONSUMED at this point

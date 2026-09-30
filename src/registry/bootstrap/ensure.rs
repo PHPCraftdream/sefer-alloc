@@ -63,27 +63,6 @@ pub fn ensure() -> &'static Registry {
 /// racers, Release/Acquire happens-before, and — critically for M5 — that a
 /// loser observing the OOM rollback (sentinel back to null) re-races the CAS
 /// rather than spinning forever on a READY that will never come.
-///
-/// ## CRATE-P3 — why the overflow-sidecar path below did NOT also migrate
-///
-/// The chunk site maps cleanly onto `OncePtrCell<RegistryChunk>`: it wants a
-/// `&'static RegistryChunk`, and `RegistryChunk` is never a ZST.
-/// The `alloc-xthread` overflow-sidecar path (`ensure_overflow_sidecar` in
-/// `super::overflow_sidecar`)
-/// deliberately stays spelled out inline because it does NOT fit the generic
-/// cell's shape without weakening it: (a) it returns a `bool`
-/// materialised-or-not and the DEREF happens separately in
-/// `deref_overflow_sidecar` (a different membrane split than the chunk's
-/// `&'static`-returning resolver); (b) its OOM contract is "return `false`, let
-/// the caller's existing bounded-leak path retry LATER" — a loser that observes
-/// the rollback returns `false` immediately rather than re-racing within the
-/// same call, the opposite of the cell's re-race-now liveness; and (c) under
-/// miri `SIDECAR_CAP == 0` makes `HeapOverflowSidecar` a ZST (align 1), which
-/// would trip `OncePtrCell`'s `align_of >= 2` sentinel-collision guard at
-/// `const` construction. Forcing it would risk the M5-critical wedge-hazard
-/// ordering for no real dedup gain, so it is left as an honest inline second
-/// instance — the shared protocol it relies on is still proved by the crate's
-/// real-type loom suite.
 #[cold]
 pub(super) fn ensure_chunk_slow(
     chunk_cell: &OncePtrCell<RegistryChunk>,
@@ -94,11 +73,11 @@ pub(super) fn ensure_chunk_slow(
         // initialiser of THIS chunk. Allocate it from OS VM.
         //
         // M5 (reentrancy-free) proof: unchanged from the pre-extraction inline
-        // winner branch — `aligned_vmem::leak_zeroed_pages` is a direct OS
-        // syscall (reserve + zero-under-miri + `mem::forget`-leak), no
-        // `std::alloc`/`Box`/`Vec`, no transitive dependency on
-        // `sefer_alloc::registry::*`. Under miri it falls back to `std::alloc`,
-        // but under miri we are NOT the global allocator, so no reentrancy.
+        // winner branch — `aligned_vmem::leak_zeroed_pages` uses direct OS
+        // reservation or Miri `System` (plus explicit Miri zeroing and leak), no
+        // installed global allocator/`Box`/`Vec`, no transitive dependency on
+        // `sefer_alloc::registry::*`. Under miri it calls `System.alloc`
+        // directly, including when Sefer is the installed global allocator.
         // The whole `CHUNK_SIZE` span is guaranteed zeroed on every backend, so
         // `base` points at a fully valid all-zero `RegistryChunk`:
         //   state       = 0 = STATE_EMPTY

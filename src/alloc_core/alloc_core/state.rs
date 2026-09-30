@@ -209,30 +209,6 @@ impl AllocCore {
         self.table.contains_base(base)
     }
 
-    /// RAD-4b (task #72): the current small segment's base, for callers
-    /// outside this module that need to pass it into
-    /// [`reclaim_offset`](Self::reclaim_offset) /
-    /// [`reclaim_offset_checked`](Self::reclaim_offset_checked) (both of
-    /// which take `small_cur` as a plain argument rather than reading `self`,
-    /// since they are associate functions, not methods — see their doc
-    /// comments). `small_cur` itself is `pub(super)` (module-private); this
-    /// thin `pub(crate)` accessor is the sole reason `HeapCore::
-    /// drain_heap_overflow` (`src/registry/heap_core.rs`, `registry` module,
-    /// outside `alloc_core`) needs to exist.
-    ///
-    /// Gated on `all(alloc-xthread, alloc-decommit)`, not `alloc-xthread`
-    /// alone: the sole call site (`heap_core_xthread.rs::drain_heap_overflow`)
-    /// only reads `small_cur` inside its own `#[cfg(feature =
-    /// "alloc-decommit")]` block (it feeds `dec_live_and_maybe_decommit`,
-    /// which exists only under that feature) — `alloc-xthread` without
-    /// `alloc-decommit` (e.g. `hardened medium-classes`) left this method
-    /// genuinely unused (R23-5, task #374).
-    #[cfg(all(feature = "alloc-xthread", feature = "alloc-decommit"))]
-    #[must_use]
-    pub(crate) fn small_cur(&self) -> *mut u8 {
-        self.small_cur
-    }
-
     // Э4 (task #145) "classify once" wrappers `alloc_small_class` /
     // `dealloc_small_class` were RETIRED in P3 (task #147): their only callers
     // were the P7 alloc-side and dealloc-side bulk bypasses, both removed here.
