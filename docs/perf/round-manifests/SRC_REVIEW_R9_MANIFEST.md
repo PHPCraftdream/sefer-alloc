@@ -90,6 +90,10 @@ additional rows; the table does not claim to cover future commits.
   **6 ignored**, 289 result groups (232 with executing tests). Task
   `ef6a6b16-c668-4ea0-afac-0e7ac7d8d951`. Cargo's saved summaries produced
   these counts; ignored or cfg-empty groups are not presented as passed cases.
+- All-features targeted maintenance/owner/trim checks passed **24** tests;
+  post-runtime all-features root rustdoc with `-D warnings` also passed.
+  Task `d30f3ca1-8700-45c7-a9fc-a9bd3b568fb3`. This is a targeted
+  all-features check, not an all-features full-suite or target-matrix claim.
 - Post-runtime all-target clippy `-D warnings`: exit 0. Eight reduced ordering
   model tests covering class/bit publication, credit lifetime, Large terminal
   admission and exclusive maintenance lease also passed, including negative
