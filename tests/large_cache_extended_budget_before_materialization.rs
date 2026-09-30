@@ -19,9 +19,10 @@ fn zero_budget_never_materialises_extension_even_past_base_eight() {
     let mut ac = AllocCore::new().expect("primordial");
     ac.dbg_set_large_cache_budget(Some(0));
     let bytes = bounded::large_request();
-    for _ in 0..9 {
-        let live = bounded::allocate_live(&mut ac, &[bytes]);
-        bounded::deposit_all(&mut ac, live);
+    let live = bounded::allocate_live(&mut ac, &[bytes; 9]);
+    for (p, l) in live {
+        // SAFETY: p is live from allocate_live and l is its matching layout.
+        unsafe { ac.dealloc(p, l) };
         assert_eq!(ac.dbg_large_cache_used(), 0);
         assert!(!ac.dbg_large_cache_extension_materialised());
     }
@@ -56,9 +57,10 @@ fn budget_smaller_than_every_span_never_materialises_extension() {
     let mut ac = AllocCore::new().expect("primordial");
     let bytes = bounded::large_request();
     ac.dbg_set_large_cache_budget(Some(bytes - 1));
-    for _ in 0..9 {
-        let live = bounded::allocate_live(&mut ac, &[bytes]);
-        bounded::deposit_all(&mut ac, live);
+    let live = bounded::allocate_live(&mut ac, &[bytes; 9]);
+    for (p, l) in live {
+        // SAFETY: p is live from allocate_live and l is its matching layout.
+        unsafe { ac.dealloc(p, l) };
         assert_eq!(ac.dbg_large_cache_used(), 0);
         assert!(!ac.dbg_large_cache_extension_materialised());
     }
