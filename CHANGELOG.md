@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The public stats example uses the actual dropped/unroutable-free metric;
   executable example and doc guards protect it. Current sidecar/unsafe
   inventory prose replaces removed ring/dirty names.
-- Bounded background maintenance and expanded rustdoc-link acceptance are
-  still pending. No release GO or speedup is claimed; installed allocator
+- Expanded rustdoc links were repaired without visibility/runtime changes;
+  parent exact-production and expanded-production `-D warnings` docs builds
+  and 31 doc guards passed. Bounded background maintenance remains pending.
+  No release GO or speedup is claimed; installed allocator
   Miri remains an independent open acceptance gate. See
   `docs/perf/round-manifests/SRC_REVIEW_R9_MANIFEST.md` for scoped evidence.
 

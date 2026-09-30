@@ -6,7 +6,7 @@ This is an unfinished round, not a release GO. Review baseline:
 
 ## Accepted commits
 
-Derived from `git log --reverse --format="%H %s" 77058068..85551d7f`:
+Derived from `git log --reverse --format="%H %s" 77058068..1ecb8a55`:
 
 | Commit | Classification | Task |
 |---|---|---|
@@ -14,6 +14,8 @@ Derived from `git log --reverse --format="%H %s" 77058068..85551d7f`:
 | `f7e1c5bba6a8a90ccb55e3c272be31acb97aca0d` | correctness, diagnostic API | R9-01 kind guards and regression; test inventory 286 |
 | `09fa1f3a1deea7f64a0b4a2d3d8038147130fa12` | docs-only | XXS bounded-maintenance design advice |
 | `85551d7ffd332bdba87aa28c79e49e3f0fe522d5` | docs and executable example/guards | R9-03/R9-04 current stats and sidecar contracts |
+| `115ed78b698429d44f9c211a98dfef6485ac5f3c` | docs-only | Incremental round acceptance record |
+| `1ecb8a55ca548baed244670e8e4c36b3a027abc9` | docs and source guard | Expanded rustdoc-link repair; no visibility/runtime changes |
 
 The manifest's own commit is resolved with `git log -1 --format=%H --
 docs/perf/round-manifests/SRC_REVIEW_R9_MANIFEST.md`. Later fixes require
@@ -39,11 +41,19 @@ additional rows; the table does not claim to cover future commits.
 - R9-02 P3: OPEN. A separate HS worktree implements the consultant's
   bounded numeric background cursor. Explicit trim/TLS/claim retain their
   complete retirement contract. Implementation and acceptance are pending.
-- Expanded rustdoc: OPEN, observed failure in that same parent task.
+- Expanded rustdoc: accepted after the observed failure in that same parent task.
   `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps` with the expanded feature
-  set found broken/private links outside the original example. A separate
-  HS worktree fixes them; a worker's exact-production rustdoc pass is not
-  evidence that this expanded invocation passes.
+  set found broken/private links outside the original example. Parent read
+  the entire 14-file docs/guard diff and repeated both exact `production`
+  and expanded rustdoc with `-D warnings`: exit 0 for each. Doc guards
+  passed 31/31, task `e09dd54f-ab58-4284-9f3b-dd9ee4505850`. This does not
+  claim every feature set or a newly wired continuous CI rustdoc gate.
+  Parent `--all-features` rustdoc also passed with `-D warnings`, task
+  `6fb4144d-db1f-4495-88f2-def6fa83f415`; correctness item 156 retains
+  the separate CI-wiring obligation.
+- Parent all-target clippy with the expanded feature set and `-D warnings`
+  passed on the accepted kind/stats tree, task
+  `f684b53c-5732-476e-9ec4-e2445d1321a4`. Later source fixes need fresh checks.
 
 ## Unchanged limits
 
