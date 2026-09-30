@@ -31,7 +31,8 @@ impl HeapCore {
     /// which carries the same experimental marker on its own (visible)
     /// rustdoc entry (R12-12). Fills `out` with up to `out.len()` live
     /// blocks of `layout` (same validity contract as a single `alloc`),
-    /// returning the count written (0 only on true OOM).
+    /// returning the count written. Zero means either `out` was empty or
+    /// no slot of a non-empty request could be allocated.
     ///
     /// Design — "drain what's already warm, batch-refill only the miss":
     /// 1. classify ONCE (vs N times for N scalar `alloc` calls).

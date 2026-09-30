@@ -422,24 +422,21 @@ impl Node {
         unsafe { dst.write(value) };
     }
 
-    /// Compute `base + off` as a `*mut u8` — the address-arithmetic primitive
-    /// the safe Cartographer needs to address in-segment metadata. Wrapping
-    /// `*mut u8::add` (an `unsafe fn` because a bad offset could wrap or
-    /// escape the allocation) in the seam, with the segment-bounds contract
-    /// documented on the caller.
+    /// Compute `base + off` as a `*mut u8`. Callers use this for segment
+    /// metadata, bitmap/table subregions, and biased Large reservation roots
+    /// (whose offset may exceed `SEGMENT`).
     ///
     /// # Caller's contract
     ///
-    /// `off` must be `<= SEGMENT` and `base + off` must lie within a single
-    /// segment owned by this allocator. The Cartographer only ever passes
-    /// offsets derived from the fixed [`crate::alloc_core::segment_header::Layout`] or the
-    /// bump cursor (both bounded by `SEGMENT`), so this holds by construction.
+    /// `base` must carry provenance into one live allocation. `off` must be
+    /// `<= isize::MAX`, and `base + off` must not wrap and must remain within
+    /// that same allocation or point one-past-the-end. The caller proves this
+    /// against its actual allocation extent, not merely a segment-size bound.
     #[inline(always)]
     pub(crate) fn offset(base: *mut u8, off: usize) -> *mut u8 {
-        // SAFETY: caller guarantees `off <= SEGMENT` and `base` is the start of
-        // a segment of `>= SEGMENT` bytes, so `base + off` is in-bounds and
-        // does not wrap (off <= SEGMENT < isize::MAX). `add` computes the
-        // address without dereferencing.
+        // SAFETY: the caller supplies a live allocation-derived `base`, an
+        // `off <= isize::MAX`, and a non-wrapping result in that allocation or
+        // one-past. `add` does not dereference the result.
         unsafe { base.add(off) }
     }
 

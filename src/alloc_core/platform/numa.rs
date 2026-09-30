@@ -153,20 +153,47 @@ pub(crate) fn reserve_biased_on_node(
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
     let raw_len = useful.checked_add(align)?;
     let (origin, token, len) = reserve_aligned_on_node(raw_len, node)?;
-    let root_offset = origin
-        .as_ptr()
-        .addr()
-        .checked_add(metadata)
-        .and_then(|v| v.checked_add(align - 1))
-        .map(|v| v & !(align - 1))
-        .and_then(|v| v.checked_sub(metadata))
-        .and_then(|v| v.checked_sub(origin.as_ptr().addr()));
-    let Some(offset) =
-        root_offset.filter(|offset| offset.checked_add(useful).is_some_and(|end| end <= raw_len))
+    let Some(offset) = biased_root_offset(origin.as_ptr().addr(), raw_len, useful, align, metadata)
     else {
         crate::alloc_core::os::release_segment(token.as_ptr(), len);
         return None;
     };
+    // `origin` retains provenance into the live usable span of at least
+    // `raw_len` bytes. The checked geometry places the entire `useful` window
+    // inside it. A valid Large Layout gives power-of-two `align <= isize::MAX`;
+    // alignment padding makes `offset < align`, hence `offset <= isize::MAX`.
+    // Keep the provenance-carrying pointer through Node::offset.
     let root = crate::alloc_core::node::Node::offset(origin.as_ptr(), offset);
     Some((NonNull::new(root)?, token, len))
+}
+
+/// The root calculation used by the live NUMA biased-reservation path.
+/// `align` is the nonzero power-of-two alignment of a valid Large Layout.
+fn biased_root_offset(
+    origin: usize,
+    raw_len: usize,
+    useful: usize,
+    align: usize,
+    metadata: usize,
+) -> Option<usize> {
+    let root_offset = origin
+        .checked_add(metadata)
+        .and_then(|v| v.checked_add(align - 1))
+        .map(|v| v & !(align - 1))
+        .and_then(|v| v.checked_sub(metadata))
+        .and_then(|v| v.checked_sub(origin));
+    root_offset.filter(|offset| offset.checked_add(useful).is_some_and(|end| end <= raw_len))
+}
+
+/// Test-only access to the calculation used by `reserve_biased_on_node`.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub fn biased_root_offset_for_test(
+    origin: usize,
+    raw_len: usize,
+    useful: usize,
+    align: usize,
+    metadata: usize,
+) -> Option<usize> {
+    biased_root_offset(origin, raw_len, useful, align, metadata)
 }

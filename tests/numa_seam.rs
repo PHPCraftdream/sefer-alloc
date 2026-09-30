@@ -123,3 +123,41 @@ fn reserve_aligned_on_node_unaddressable_node_falls_back_to_unbound() {
     );
     assert!(reservation_len >= segment_size);
 }
+
+/// The live biased-reservation calculation must permit roots beyond one
+/// segment while keeping the entire useful window in the raw reservation.
+#[test]
+fn biased_root_can_exceed_segment_but_stay_in_raw_extent() {
+    use sefer_alloc::SegmentLayout;
+
+    let segment = SegmentLayout::SEGMENT;
+    let align = 4 * segment;
+    let metadata = SegmentLayout::PAGE;
+    let useful = segment;
+    let raw_len = useful + align;
+    let origin = segment;
+
+    let offset =
+        numa::biased_root_offset_for_test(origin, raw_len, useful, align, metadata).unwrap();
+    assert_eq!(offset, 3 * segment - metadata);
+    assert!(offset > segment);
+    assert!(offset + useful <= raw_len);
+    assert_eq!((origin + offset + metadata) % align, 0);
+
+    assert_eq!(
+        numa::biased_root_offset_for_test(origin, offset + useful - 1, useful, align, metadata),
+        None,
+        "the same root must be rejected if its useful window escapes the raw span"
+    );
+    assert_eq!(
+        numa::biased_root_offset_for_test(
+            usize::MAX - metadata + 1,
+            raw_len,
+            useful,
+            align,
+            metadata,
+        ),
+        None,
+        "address overflow must not produce a root"
+    );
+}

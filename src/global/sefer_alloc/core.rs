@@ -70,7 +70,7 @@ use crate::global::tls_heap::CurrentHeap;
 /// combination.
 ///
 /// The `production` feature bundle
-/// (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty`)
+/// (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit`)
 /// is the combination this crate is tested and tuned for. See
 /// `docs/INTEGRATION.md` for the full feature matrix.
 ///

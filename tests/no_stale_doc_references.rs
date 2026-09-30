@@ -843,6 +843,41 @@ fn parse_production_feature_list(cargo: &str) -> Vec<String> {
         .collect()
 }
 
+fn exact_production_bundle(rest: &str, canonical: &str) -> bool {
+    rest.strip_prefix(canonical)
+        .is_some_and(|tail| {
+            !matches!(tail.chars().next(), Some(c) if c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '/'))
+                && !tail.trim_start().starts_with('+')
+        })
+}
+
+#[test]
+fn production_bundle_guard_rejects_non_manifest_suffix() {
+    let cargo = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+        .expect("read Cargo.toml");
+    let features = parse_production_feature_list(&cargo);
+    let canonical = features.join(" + ");
+    assert!(exact_production_bundle(
+        &format!("{canonical})"),
+        &canonical
+    ));
+    for suffix in ["-unknown", "+ unknown", "   + unknown"] {
+        assert!(!exact_production_bundle(
+            &format!("{canonical}{suffix}"),
+            &canonical,
+        ));
+    }
+    if !features
+        .iter()
+        .any(|feature| feature == "class-aware-dirty")
+    {
+        assert!(!exact_production_bundle(
+            &format!("{canonical} + class-aware-dirty)"),
+            &canonical,
+        ));
+    }
+}
+
 /// Derive a Rust module path from a source file path relative to `src/`
 /// (e.g. `src/alloc_core/platform/sidecar.rs` -> `alloc_core::sidecar`). Returns `None`
 /// for `mod.rs` / `lib.rs` (crate or parent-module roots, which have no own
@@ -941,7 +976,8 @@ fn extract_seam_bullets(lib_rs: &str) -> Vec<String> {
 /// test parses `production = [...]` from Cargo.toml, renders the feature list
 /// in the `a + b + c` form the prose uses, and asserts every doc site that
 /// writes the bundle out as a `+`-separated list contains the FULL canonical
-/// list — catching both "bundle removed" and "stale partial list" drift.
+/// list with no trailing extra feature — catching removed, partial, and
+/// nonexistent-feature drift.
 ///
 /// Companion to `readme_unsafe_inventory_counts_match_reality` (which pins
 /// the README's aggregate unsafe-seam COUNTS the same way).
@@ -984,20 +1020,20 @@ fn production_feature_bundle_doc_sites_match_cargo_toml() {
         let flat = flatten_whitespace(&text);
 
         // Walk every occurrence of the `+`-separated bundle prefix; each must
-        // extend to the full canonical list. A prefix that stops short is a
-        // stale partial bundle.
+        // extend to the full canonical list and stop there. A trailing
+        // ` + feature` is just as stale as a missing feature.
         let mut from = 0usize;
         let mut canonical_hits = 0usize;
         while let Some(rel_off) = flat[from..].find(&anchor) {
             let pos = from + rel_off;
-            if flat[pos..].starts_with(&canonical) {
+            if exact_production_bundle(&flat[pos..], &canonical) {
                 canonical_hits += 1;
             } else {
                 let end_ctx = (pos + 80).min(flat.len());
                 let ctx = &flat[pos..end_ctx];
                 offenders.push(format!(
-                    "{rel}: stale/partial `production` bundle (does not list \
-                     all {n} features) near: `{ctx}`",
+                    "{rel}: stale `production` bundle (expected exactly \
+                     {n} features) near: `{ctx}`",
                     n = features.len(),
                 ));
             }
@@ -1016,7 +1052,7 @@ fn production_feature_bundle_doc_sites_match_cargo_toml() {
         offenders.is_empty(),
         "the `production` feature bundle in Cargo.toml is `{canonical}` \
          ({n} features), but these doc sites that spell the bundle out in \
-         prose do not match (stale/partial or missing). Cargo.toml's \
+         prose do not match (stale, extra, or missing). Cargo.toml's \
          `production = [...]` is the single source of truth — update every \
          prose site to the full list:\n{}",
         offenders.join("\n"),
