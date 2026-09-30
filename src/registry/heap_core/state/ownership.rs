@@ -254,6 +254,11 @@ impl HeapCore {
     /// Each sub-operation carries its own feature gate; in a build without
     /// the relevant feature the corresponding step compiles to nothing.
     pub(crate) fn trim_for_recycle(&mut self) {
+        // Terminal sidecars require a full, bounded sweep independent of dirty
+        // hints. Retire detached records before flushing magazines or releasing
+        // reservations; a pre-publication producer keeps its outstanding credit.
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let _ = self.drain_sidecar_ingress();
         // Flush every tcache class → blocks return to segments → segments
         // may empty → decommit/release or pool.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]

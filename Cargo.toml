@@ -163,7 +163,7 @@ pinning = ["experimental", "dep:core_affinity"]
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
-alloc-core = ["std", "dep:aligned-vmem", "dep:once-ptr-cell", "dep:size-classes"]
+alloc-core = ["std", "dep:aligned-vmem", "aligned-vmem/lazy-commit", "dep:once-ptr-cell", "dep:size-classes"]
 # Cross-thread free support. Adds per-segment `RemoteFreeRing`s (lock-free
 # SPSC rings) for cross-thread `dealloc`, the `dealloc_any_thread` entry point,
 # owner stamping on segment headers, and the whole-slot-reuse teardown model
