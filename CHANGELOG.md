@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 9 (2026-09-30; in progress)
+
+- `internals` Small diagnostic readers now reject Large segments before
+  reading Small-only metadata, retaining canonical-root lookup and class
+  bounds. Native regression and focused Miri witnesses passed.
+- The public stats example uses the actual dropped/unroutable-free metric;
+  executable example and doc guards protect it. Current sidecar/unsafe
+  inventory prose replaces removed ring/dirty names.
+- Bounded background maintenance and expanded rustdoc-link acceptance are
+  still pending. No release GO or speedup is claimed; installed allocator
+  Miri remains an independent open acceptance gate. See
+  `docs/perf/round-manifests/SRC_REVIEW_R9_MANIFEST.md` for scoped evidence.
+
 ### Terminal-sidecar cutover snapshot (2026-09-30; acceptance pending)
 
 - Foreign `GlobalAlloc` frees now use numeric directory lookup and pinned,
