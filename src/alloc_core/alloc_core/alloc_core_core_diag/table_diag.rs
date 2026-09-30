@@ -156,8 +156,8 @@ impl AllocCore {
     }
 
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
-    /// `SegmentTable::contains_base` calls that HIT the Tier-1 direct-mapped
-    /// `own_cache` — see
+    /// mutable `SegmentTable::canonical_base_of_mut` lookups that HIT the
+    /// Tier-1 direct-mapped `own_cache` (including `contains_base`) — see
     /// [`CONTAINS_BASE_TIER1_HITS`](crate::alloc_core::alloc_core::counters::CONTAINS_BASE_TIER1_HITS)'s
     /// own doc for the full rationale (the missing path-activation oracle
     /// `docs/perf/OPEN_ITEMS.md` item 1's own text left as an open clause).
@@ -265,11 +265,10 @@ impl AllocCore {
     #[doc(hidden)]
     #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
     pub unsafe fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_stamp_segment_id: ptr's segment is not owned by this AllocCore"
-        );
+        let base = self
+            .table
+            .canonical_base_of(os::segment_base_of_ptr(ptr))
+            .expect("dbg_stamp_segment_id: pointer names an owned segment");
         SegmentHeader::set_segment_id_at(base, id);
     }
 
@@ -293,7 +292,9 @@ impl AllocCore {
     )]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_unregister(&mut self, ptr: *mut u8) {
-        self.table.unregister(os::segment_base_of_ptr(ptr));
+        if let Some(base) = self.table.canonical_base_of(os::segment_base_of_ptr(ptr)) {
+            self.table.unregister(base);
+        }
     }
 
     /// TEST-ONLY (L-3, UBFIX-11): directly invoke `SegmentTable::recycle` for
@@ -305,7 +306,7 @@ impl AllocCore {
     /// whatever corrupted-`segment_id` scenario the test needs beforehand
     /// (e.g. via `dbg_stamp_segment_id`) and for any cleanup afterwards.
     ///
-    /// # Safety contract mirrors `SegmentTable::recycle`'s caller contract
+    /// # Safety
     ///
     /// After this call returns, `ptr`'s segment's OS reservation has been
     /// released (defensive tail) or released-and-slot-NULLed (main path) —
@@ -319,7 +320,9 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_recycle(&mut self, ptr: *mut u8) {
-        let base = os::segment_base_of_ptr(ptr);
+        let Some(base) = self.table.canonical_base_of(os::segment_base_of_ptr(ptr)) else {
+            return;
+        };
         // R7-A2: clear directory bits before the slot is recycled.
         #[cfg(feature = "alloc-segment-directory")]
         {

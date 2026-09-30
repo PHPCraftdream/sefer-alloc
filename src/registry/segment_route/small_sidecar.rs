@@ -39,6 +39,12 @@ impl SmallSidecar {
             .load(Ordering::Acquire)
             .checked_sub(1)
     }
+    #[cfg(feature = "internals")]
+    pub(super) fn pending_for_test(&self, offset: u32) -> bool {
+        let bit = offset as usize / crate::alloc_core::size_classes::MIN_BLOCK;
+        bit < SidecarBitmap::GRANULES
+            && self.pending[bit / 64].load(Ordering::Acquire) & (1u64 << (bit % 64)) != 0
+    }
 
     /// Producer terminal publication, called by consuming RoutePin.
     pub(super) fn publish(&self, offset: u32) -> bool {

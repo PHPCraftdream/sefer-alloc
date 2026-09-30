@@ -17,6 +17,23 @@ impl RoutePin {
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }
+    /// Capacity validation reads only the independent immutable descriptor.
+    pub fn contains_payload(&self, ptr: *mut u8, size: usize) -> bool {
+        self.entry.contains_payload(ptr.addr(), size)
+    }
+    /// Read-only terminal-publication oracle; does not grant owner mutation.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn pending_for_test(&self, ptr: *mut u8) -> bool {
+        if let Some(state) = self.entry.large_state() {
+            state.pending_for_test()
+        } else {
+            let offset = (ptr.addr() & (crate::alloc_core::os::SEGMENT - 1)) as u32;
+            self.entry
+                .small_sidecar()
+                .is_some_and(|sidecar| sidecar.pending_for_test(offset))
+        }
+    }
     /// Terminal publication consumes the producer capability. Drop then
     /// touches only the independently allocated descriptor/sidecar.
     ///

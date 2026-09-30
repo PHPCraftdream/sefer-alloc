@@ -5,18 +5,16 @@
 //!
 //! Two counterfactual-shaped tests: one proves a REPEATED free of the SAME
 //! recently-touched segment is observed as an all-hits run (the cache slot
-//! stays warm across calls — the intended fast case); the other proves that
+//! stays warm across mutable canonical lookups); the other proves that
 //! calling `SegmentTable::dbg_hash_contains_only` (the Tier-2-only bypass
 //! hook used by the pre-existing R23-3 isolation gate) does NOT move these
-//! new counters at all — confirming the counters are wired specifically to
-//! `contains_base`'s own Tier-1 check, not to Tier-2 traffic in general
+//! new counters at all — confirming the counters are wired to the mutable
+//! canonical Tier-1 check, not to Tier-2 traffic in general
 //! (a wiring bug that swapped which function increments would otherwise be
 //! silently invisible: both hooks ultimately touch the same hash table).
 //!
-//! Both tests require `bench-internals` (the counters read 0 without it —
-//! this is itself asserted as the gate's off-state, matching this project's
-//! established "reads 0 unless the gating feature is on" convention for
-//! every other diagnostic counter, e.g. `dbg_maybe_decay_guard_passed_count`).
+//! Both tests require `bench-internals`; without it, the counters and this
+//! integration test's body are compiled out.
 
 #![cfg(all(
     all(feature = "alloc-core", feature = "bench-internals"),
@@ -31,7 +29,7 @@ use std::sync::Mutex;
 // static atomics shared across every `AllocCore` in the process. `cargo test`
 // runs the two tests in this file in parallel by default, and both read a
 // before/after delta on these same counters — a parallel sibling test's
-// `contains_base` traffic mid-sequence would pollute the other's delta,
+// mutable canonical lookup traffic mid-sequence would pollute the other's delta,
 // exactly the pre-existing flaky-test class already documented in
 // `docs/CORRECTNESS_OPEN_ITEMS.md`'s "Recently resolved" item 1. Found here
 // via `npm run check`'s own `--all-features` step: one flaky repro,
@@ -50,10 +48,9 @@ static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Repeated own-thread frees of blocks from the SAME segment must be
 /// observed as Tier-1 HITS after the first touch establishes the cache
-/// entry: `contains_base` is called by `AllocCore::dealloc`'s M2 defensive
-/// check on every dealloc (see `alloc_core.rs`'s `dealloc` — the
-/// single-threaded face still calls `contains_base` for the same ownership
-/// guard `HeapCore::dealloc_routing` calls under `alloc-xthread`), so N
+/// entry: `AllocCore::dealloc` calls the cache-filling
+/// `canonical_block_of` on every dealloc, the same owner-root lookup used by
+/// `HeapCore::dealloc_routing` under `alloc-xthread`. Thus N
 /// deallocs of blocks living in ONE segment (well within `OWN_CACHE_SIZE`)
 /// must show `hits >= N-1` (the very first call may be a genuine miss if
 /// this is the first-ever probe for that base; every call after the base is
@@ -91,15 +88,12 @@ fn repeated_same_segment_frees_are_observed_as_tier1_hits() {
     assert_eq!(
         hits_delta + misses_delta,
         N as u64,
-        "expected exactly one contains_base call per dealloc (N={N}); \
+        "expected exactly one mutable canonical lookup per dealloc (N={N}); \
          hits_delta={hits_delta} misses_delta={misses_delta}"
     );
     // All N blocks live in the SAME (primordial) segment, well within
-    // OWN_CACHE_SIZE. `AllocCore::alloc`'s own hot path does not call
-    // `contains_base` at all (it is a dealloc-only ownership guard), so the
-    // FIRST dealloc in this loop is this process's first-ever probe for the
-    // primordial base and may be a genuine Tier-1 miss (the cache starts
-    // all-null — see `SegmentTable::from_primordial`); every call AFTER that
+    // OWN_CACHE_SIZE. The first dealloc may miss (the cache starts all-null;
+    // see `SegmentTable::from_primordial`); every call after that
     // first one must hit, since the base was just proven present and cached.
     assert!(
         misses_delta <= 1,
@@ -110,7 +104,7 @@ fn repeated_same_segment_frees_are_observed_as_tier1_hits() {
     assert_eq!(
         hits_delta + misses_delta,
         N as u64,
-        "sanity: every dealloc must produce exactly one contains_base call"
+        "sanity: every dealloc must produce exactly one mutable canonical lookup"
     );
     assert!(
         hits_delta >= (N as u64) - 1,
@@ -122,9 +116,9 @@ fn repeated_same_segment_frees_are_observed_as_tier1_hits() {
 /// `SegmentTable::dbg_hash_contains_only` (exposed at `AllocCore` as
 /// `dbg_hash_contains_only`) is the PRE-EXISTING R23-3 Tier-2-only bypass
 /// hook: it calls `hash_contains` directly, deliberately skipping the
-/// Tier-1 `own_cache` check `contains_base` performs. The new counters must
+/// Tier-1 `own_cache` check `canonical_base_of_mut` performs. The counters must
 /// NOT move when this bypass hook is called — they are wired specifically
-/// inside `contains_base`'s own body, not inside `hash_contains` itself (if
+/// inside `canonical_base_of_mut`, not inside `hash_contains` (if
 /// they had been wired into `hash_contains`, calling the bypass hook would
 /// wrongly inflate `misses`, corrupting the hit-rate this oracle exists to
 /// report honestly).

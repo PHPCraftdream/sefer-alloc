@@ -124,42 +124,6 @@ impl SegmentMeta {
         Node::atomic_u64_at(self.base, LARGE_STATE_OFF)
     }
 
-    /// Terminal producer transition. On success the caller must not access
-    /// any byte of this reservation again, including this metadata word.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn publish_large_pending(&self, generation: u64) -> bool {
-        LargeReservationState::new(self.large_state_atomic()).publish_pending(generation)
-    }
-
-    /// Owner-only, under the heap lease, from a canonical table base.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn claim_large_pending(&self) -> Option<u64> {
-        LargeReservationState::new(self.large_state_atomic()).claim_pending()
-    }
-
-    /// Owner-only after removal from the active table.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn cache_consumed_large(&self, generation: u64) -> bool {
-        LargeReservationState::new(self.large_state_atomic()).cache_consumed(generation)
-    }
-
-    /// Owner-only after removal, while still mapped and before OS release.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn release_consumed_large(&self, generation: u64) -> bool {
-        LargeReservationState::new(self.large_state_atomic()).release_consumed(generation)
-    }
-
-    /// Owner-only cache eviction, while still mapped and before OS release.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn release_cached_large(&self, generation: u64) -> bool {
-        LargeReservationState::new(self.large_state_atomic()).release_cached(generation)
-    }
-
     /// Atomic loads only; never copies bytes of either atomic object.
     #[inline(always)]
     pub(crate) fn terminal_snapshot(&self) -> TerminalSnapshot {
@@ -191,5 +155,4 @@ impl SegmentMeta {
             std::process::abort();
         }
     }
-
 }

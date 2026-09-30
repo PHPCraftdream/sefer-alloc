@@ -134,32 +134,29 @@ impl AllocCore {
     /// per-block bitmap and no interaction with any decommit/MADV_FREE reuse
     /// path.
     pub(crate) fn alloc_large(&mut self, size: usize, align: usize) -> (*mut u8, bool) {
-        // align >= SEGMENT is not serviceable by the dedicated-segment large
-        // path: the block would land at base + SEGMENT-multiple (mis-registered
-        // → dealloc leak → eventual MAX_SEGMENTS abort) or, for align >
-        // SEGMENT, at a pointer only SEGMENT-aligned (GlobalAlloc contract
-        // violation → UB). Reject with null — a legal alloc-failure signal —
-        // rather than leak/misalign. (Task #130.)
-        if align >= SEGMENT {
-            return (core::ptr::null_mut(), true);
-        }
-
         // Phase 2: lazy decay tick on every large allocation.
         #[cfg(feature = "alloc-decommit")]
         self.maybe_decay_large_cache();
 
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
-        let hdr_aligned = align_up(
-            core::mem::size_of::<SegmentHeader>(),
-            align.max(crate::alloc_core::os::PAGE),
-        );
+        let hdr_aligned = if align >= SEGMENT {
+            align_up(
+                core::mem::size_of::<SegmentHeader>(),
+                aligned_vmem::page_size(),
+            )
+        } else {
+            align_up(
+                core::mem::size_of::<SegmentHeader>(),
+                align.max(aligned_vmem::page_size()),
+            )
+        };
         // task #25 (security): `checked_add` for local overflow safety — a
         // wrap here is unreachable under the `Layout` size/align invariant
         // today, but this no longer RELIES on the caller's `Layout` being
         // well-formed (parity with the realloc path, which already uses
         // `checked_add`). A wrap → null (a legal alloc-failure signal).
-        let needed = match hdr_aligned.checked_add(align_up(size, align)) {
+        let needed = match hdr_aligned.checked_add(size) {
             Some(n) => n,
             None => return (core::ptr::null_mut(), true),
         };
@@ -184,12 +181,10 @@ impl AllocCore {
         // `reserve_aligned_on_node` in particular already forwards `usable`
         // unrounded. See the `exact-span-large` feature doc in `Cargo.toml`.
         //
-        // Alignment stays `SEGMENT` unconditionally (`align_up`/`div_ceil`
-        // above already only ever go through `align.max(PAGE)`, never
-        // `SEGMENT`, for the header offset) — the segment's BASE remains
-        // SEGMENT-aligned either way, so `segment_base_of_ptr` (which masks
-        // on SEGMENT) is unaffected; only the physical `usable` byte count
-        // computed here differs.
+        // Useful-window sizing and identity are separate. Ordinary Large roots
+        // retain SEGMENT alignment; over-segment requests use a page-aligned
+        // biased metadata root immediately before the aligned payload. Lookup
+        // uses the numeric payload key, never a masked-pointer metadata root.
         //
         // With the feature OFF this computation is byte-for-byte identical
         // to before: round `needed` up to a whole number of SEGMENT-sized
@@ -218,7 +213,7 @@ impl AllocCore {
         // bound prevents a 64 MiB cached segment from permanently absorbing
         // every 4 MiB request.
         #[cfg(feature = "alloc-decommit")]
-        {
+        if align < SEGMENT {
             // G11 (task #51) — BEST-FIT: consider every cached entry and pick the compatible
             // entry with the SMALLEST `usable_size`, instead of taking the first
             // fit. A cached entry is compatible when it is big enough
@@ -345,7 +340,7 @@ impl AllocCore {
                 // "never called on any production path"), so this production
                 // patch performs the identical single `Node::write_u32` inline
                 // instead of repurposing that test seam.
-                let bump = hdr_aligned + align_up(size, align);
+                let bump = hdr_aligned + size;
                 // `span_usable` is carried forward from the CACHED slot's own
                 // `usable_size` — the true physical span of the segment being
                 // reused — NOT recomputed from the new (possibly smaller)
@@ -425,27 +420,13 @@ impl AllocCore {
                 SegmentHeader::set_large_size_at(slot.base, size);
                 SegmentHeader::set_large_align_at(slot.base, align);
                 SegmentHeader::set_bump_at(slot.base, bump);
-                // R34-14 (task #533): reset the three owner/deferred fields
-                // to their neutral pre-stamp values before register. The
-                // pre-eb2463a full-struct write did this implicitly via
-                // `SegmentHeader::large`'s constructor; F12's targeted writes
-                // left them carried forward, which is a real defect for
-                // `deferred_next` (a segment that went through the deferred-
-                // large-free path retains a non-`ABANDONED_TAIL` link value;
-                // a subsequent cross-thread free's
-                // `push_large_deferred_free` CAS from `ABANDONED_TAIL` then
-                // FAILS, silently dropping the free → permanent leak) and
-                // widens the defensive window for `owner_state`/
-                // `owner_thread_free` (between register and
-                // stamp_segment_owner, a stale free sees the PREVIOUS
-                // occupant's values instead of the neutral OWNER_ID_NONE/
-                // null the old full-struct write established). All three are
-                // plain stores — sound for the same unregistered-window
-                // reason as the four writes above (no cross-thread reader
-                // can address this segment yet). See the exhaustive field-
-                // classification pin in `segment_header.rs` (R34-14) for the
-                // complete inventory of every SegmentHeader field's carry-
-                // forward status.
+                Node::write_usize(
+                    Node::offset(
+                        slot.base,
+                        core::mem::offset_of!(SegmentHeader, payload_offset),
+                    ) as *mut usize,
+                    hdr_aligned,
+                );
                 {
                     let meta = crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
                     meta.owner_state_atomic().store(
@@ -456,17 +437,7 @@ impl AllocCore {
                         ),
                         core::sync::atomic::Ordering::Relaxed,
                     );
-                    meta.deferred_next_atomic().store(
-                        crate::alloc_core::segment_header::ABANDONED_TAIL,
-                        core::sync::atomic::Ordering::Relaxed,
-                    );
                 }
-                let otf_off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
-                Node::write_ptr(
-                    Node::offset(slot.base, otf_off)
-                        as *mut *const core::sync::atomic::AtomicPtr<u8>,
-                    core::ptr::null(),
-                );
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
                 // `register()` will reuse — so this should not fail. If it does
@@ -475,10 +446,12 @@ impl AllocCore {
                 // are already written above (F12's targeted writes + R34-14's
                 // owner/deferred resets), but the slot never becomes visible
                 // in that failure branch, so there is nothing to unwind.
-                let id = match self
-                    .table
-                    .register(slot.base, slot.usable_size, SegmentKind::Large)
-                {
+                let id = match self.table.register_payload(
+                    slot.base,
+                    slot.reserved_capacity,
+                    SegmentKind::Large,
+                    Node::offset(slot.base, hdr_aligned),
+                ) {
                     Some(id) => id,
                     None => {
                         if !LargeReservationState::new(terminal_meta.large_state_atomic())
@@ -539,7 +512,11 @@ impl AllocCore {
 
         #[cfg(feature = "numa-aware")]
         let (base, reservation, reservation_len) = {
-            let reserved = numa::reserve_aligned_on_node(usable, my_node);
+            let reserved = if align >= SEGMENT {
+                numa::reserve_biased_on_node(usable, align, hdr_aligned, my_node)
+            } else {
+                numa::reserve_aligned_on_node(usable, my_node)
+            };
             // Mechanism 2 (task #51): if the OS refused the reservation, the
             // small-segment hysteresis pool may be holding committed memory the
             // OS could hand back — drain it and retry ONCE before conceding OOM.
@@ -551,7 +528,11 @@ impl AllocCore {
                 Some(t) => Some(t),
                 None if self.pooled_count > 0 => {
                     self.drain_small_pool();
-                    numa::reserve_aligned_on_node(usable, my_node)
+                    if align >= SEGMENT {
+                        numa::reserve_biased_on_node(usable, align, hdr_aligned, my_node)
+                    } else {
+                        numa::reserve_aligned_on_node(usable, my_node)
+                    }
                 }
                 None => None,
             };
@@ -598,7 +579,11 @@ impl AllocCore {
             // identical reservation when `reserved_capacity_target ==
             // usable`, e.g. right at the `LARGE_RESERVED_CAP_BYTES` cap).
             #[cfg(feature = "large-reserved-capacity")]
-            let mut seg = Segment::reserve_capacity_exact(reserved_capacity_target, usable);
+            let mut seg = if align >= SEGMENT {
+                None
+            } else {
+                Segment::reserve_capacity_exact(reserved_capacity_target, usable)
+            };
             // `mut` is needed under `alloc-decommit` (the pool-drain-and-retry
             // arm below reassigns `seg`). Silence the unused-mut warning when
             // `alloc-decommit` is off and this binding is never reassigned.
@@ -607,14 +592,22 @@ impl AllocCore {
                 not(feature = "exact-span-large")
             ))]
             #[allow(unused_mut)]
-            let mut seg = Segment::reserve(usable);
+            let mut seg = if align >= SEGMENT {
+                None
+            } else {
+                Segment::reserve(usable)
+            };
             #[cfg(all(not(feature = "large-reserved-capacity"), feature = "exact-span-large"))]
-            let mut seg = Segment::reserve_exact(usable);
+            let mut seg = if align >= SEGMENT {
+                None
+            } else {
+                Segment::reserve_exact(usable)
+            };
             // Mechanism 2 (task #51): pool-drain-and-retry on OS-reservation
             // failure — see the numa-aware arm above for the rationale (the pool
             // is a reclaimable soft reserve, not a hard pin).
             #[cfg(feature = "alloc-decommit")]
-            if seg.is_none() && self.pooled_count > 0 {
+            if align < SEGMENT && seg.is_none() && self.pooled_count > 0 {
                 self.drain_small_pool();
                 #[cfg(feature = "large-reserved-capacity")]
                 {
@@ -632,15 +625,27 @@ impl AllocCore {
                     seg = Segment::reserve_exact(usable);
                 }
             }
-            let segment = match seg {
-                Some(s) => s,
-                None => return (core::ptr::null_mut(), true),
-            };
-            let b = segment.as_ptr();
-            let r = segment.reservation();
-            let rl = segment.reservation_len();
-            core::mem::forget(segment);
-            (b, r, rl, reserved_capacity_target)
+            if align >= SEGMENT {
+                let Some((b, r, rl)) = os::Segment::reserve_biased(
+                    reserved_capacity_target,
+                    usable,
+                    align,
+                    hdr_aligned,
+                ) else {
+                    return (core::ptr::null_mut(), true);
+                };
+                (b, r, rl, reserved_capacity_target)
+            } else {
+                let segment = match seg {
+                    Some(s) => s,
+                    None => return (core::ptr::null_mut(), true),
+                };
+                let b = segment.as_ptr();
+                let r = segment.reservation();
+                let rl = segment.reservation_len();
+                core::mem::forget(segment);
+                (b, r, rl, reserved_capacity_target)
+            }
         };
         #[cfg(feature = "numa-aware")]
         let reserved_capacity = usable;
@@ -648,7 +653,12 @@ impl AllocCore {
         // no-panic: register returns None if the segment table is full (too many
         // live large allocations). We release the reservation and return null
         // (graceful OOM) rather than panicking.
-        let id = match self.table.register(base, usable, SegmentKind::Large) {
+        let id = match self.table.register_payload(
+            base,
+            reserved_capacity,
+            SegmentKind::Large,
+            Node::offset(base, hdr_aligned),
+        ) {
             Some(id) => id,
             None => {
                 // Release the reservation we own.
@@ -657,7 +667,7 @@ impl AllocCore {
             }
         };
         // Lay down the large header. The allocation lives at `hdr_aligned`.
-        let bump = hdr_aligned + align_up(size, align);
+        let bump = hdr_aligned + size;
         // Fresh reservation: `span_usable` = the just-computed physical
         // usable span (`usable`) — this is the ORIGINAL stamping that every
         // later cache-hit reuse of this segment will carry forward verbatim.
@@ -716,9 +726,9 @@ impl AllocCore {
     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
         let terminal_meta = SegmentMeta::new(base);
         let state = LargeReservationState::new(terminal_meta.large_state_atomic());
-        // The existing deferred stack has not yet been replaced by the
-        // terminal ingress: it leaves LIVE. Future ingress leaves PENDING.
-        let Some(generation) = state.claim_pending().or_else(|| state.claim_live()) else {
+        // The sidecar has transferred one consume obligation. This physical
+        // owner-only lifecycle credit is claimed once, never producer-mutated.
+        let Some(generation) = state.claim_live() else {
             std::process::abort();
         };
         let hdr = SegmentHeader::read_at(base);
@@ -752,7 +762,8 @@ impl AllocCore {
             // `large_cache_deposit_budget_infeasible`'s doc for the full
             // rationale.
             let mut admitted: Option<usize> = None;
-            if !self.large_cache_deposit_budget_infeasible(usable_size) {
+            if hdr.large_align < SEGMENT && !self.large_cache_deposit_budget_infeasible(usable_size)
+            {
                 loop {
                     let free_slot = self.large_cache_find_free_slot();
                     let budget_ok = self
@@ -819,7 +830,3 @@ impl AllocCore {
         os::release_segment(hdr.reservation, hdr.reservation_len);
     }
 }
-
-#[cfg(all(test, feature = "alloc-xthread"))]
-#[path = "../../../tests/support/r6_large_credit_reclaim.rs"]
-mod credit_tests;

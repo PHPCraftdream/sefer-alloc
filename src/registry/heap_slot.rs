@@ -80,18 +80,10 @@
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-#[cfg(feature = "alloc-xthread")]
-use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::{AtomicBool, AtomicU8};
 
 use super::heap_core::HeapCore;
-#[cfg(feature = "alloc-xthread")]
-use super::heap_overflow::HeapOverflow;
-#[cfg(feature = "class-aware-dirty")]
-use crate::alloc_core::dirty_by_class::PerClassDirty;
-#[cfg(feature = "class-aware-dirty")]
-use once_ptr_cell::OncePtrCell;
 
 /// Zeroed, never-materialised slot.
 pub const STATE_EMPTY: u8 = 0;
@@ -106,43 +98,8 @@ pub const STATE_MAINTENANCE: u8 = 4;
 /// Compatibility name for existing owner-side routing.
 pub const STATE_LIVE: u8 = STATE_OWNED;
 
-/// PERF-PASS-4 (G8/ML2, task #52) — the remote/foreign-access fields of a
-/// [`HeapSlot`], grouped into their own 64-byte-aligned sub-struct.
-///
-/// **The false-sharing residue this fixes:** measured via nightly
-/// `-Zprint-type-sizes` (`--features production`) before this change, the
-/// single cache line at `HeapSlot` byte offset 6976..7040 simultaneously
-/// held FOUR unrelated access patterns:
-///   1. `last_stamped_segment`/`id` (inside `heap: HeapCore`) — owner-hot,
-///      read on every stamp fast-path check (`heap_core.rs` OPT-C).
-///   2. `thread_free`@7016 — remote-CASed by a cross-thread Large free on
-///      EVERY such free (`push_large_deferred_free`), Acquire-loaded on the
-///      drain check. This is the H1 word: the earlier UB fix this session
-///      hoisted it OUT of `HeapCore` (to escape the owner's `&mut HeapCore`
-///      Stacked-Borrows retag range) but physically re-created the adjacency
-///      — a remote CAS on `thread_free` invalidates the very line holding
-///      the owner's stamp cache.
-///   3. `tcache_hits`/`large_cache_hits`@7000/7008 — read CROSS-THREAD by the
-///      `stats()` aggregator (`tcache_hits_total`/`large_cache_hits_total`).
-///   4. The START of the NEXT slot's `state`/`generation` (the un-padded
-///      7024-byte stride is not a multiple of 64, so slot boundaries drift
-///      through cache-line phase across the 4096-slot array).
-///
-/// **The fix:** every field a REMOTE thread ever touches — the CASed
-/// `thread_free` word and the cross-thread-read diagnostic counters — moves
-/// into this sub-struct, `#[repr(C, align(64))]` so it starts its own cache
-/// line, disjoint from `HeapSlot`'s owner-hot fields (`heap`'s
-/// `last_stamped_segment`/`id`) and from the next array element (paired with
-/// `#[repr(align(64))]` on `HeapSlot` itself, below, which rounds the
-/// per-slot stride up to a 64-multiple).
-///
-/// Field ORDER inside is unchanged from the flat layout (still `#[repr(C)]`,
-/// still initialised the same way by the bootstrap's `addr_of_mut!`
-/// writes) — only the GROUPING and alignment
-/// changed. Every external reference (`&'static AtomicU64`/`&'static
-/// AtomicPtr<u8>` handles bound at `claim` time — see
-/// `heap_registry::bind_slot_counters`) is unaffected: a Rust field
-/// reference's address is stable regardless of struct nesting.
+/// Stable process-lifetime counters read without borrowing the owner's core.
+/// Cache-line isolation keeps diagnostic readers off owner-hot storage.
 #[repr(C, align(64))]
 pub(crate) struct HeapSlotRemote {
     /// DIAGNOSTIC (task W3): this slot's process-lifetime magazine (tcache)
@@ -173,188 +130,7 @@ pub(crate) struct HeapSlotRemote {
     /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
     #[cfg(feature = "alloc-decommit")]
     pub(crate) large_cache_hits: AtomicU64,
-
-    /// Cross-thread free-stack head / identity stamp (task H1 — the W3 hoist
-    /// applied to the TFS head).
-    ///
-    /// This is the storage that used to be the INLINE `HeapCore::thread_free`
-    /// `AtomicPtr<u8>` field. It was moved OUT of `HeapCore` and into this
-    /// `Sync`, process-`'static` slot for exactly the reason W3 moved the
-    /// diagnostic counters: a REMOTE thread cross-thread-freeing a Large
-    /// segment owned by this heap CASes this word (through EXPOSED provenance —
-    /// `Node::atomic_ptr_ref` → `with_exposed_provenance_mut` →
-    /// `compare_exchange`, see `alloc_core::deferred_large::push`), while the
-    /// OWNING thread concurrently holds a protected `&mut HeapCore` spanning
-    /// the whole struct. When this word lived INSIDE `HeapCore`, that foreign
-    /// write landed inside the range of the owner's protected `&mut` — a
-    /// protector/data-race violation under Stacked/Tree Borrows (empirically
-    /// confirmed by miri: a retag-write vs. atomic-load data race between the
-    /// owner's `stamp_segment_owner(&mut self)` fn-entry retag and the remote's
-    /// `head.load()` in `push_large_deferred_free`). See
-    /// `tests/regression_xthread_thread_free_alias_miri.rs`.
-    ///
-    /// Moving the word into the slot removes it from every `&mut HeapCore`
-    /// retag range: the owner reaches it through a stable `&'static AtomicPtr`
-    /// handle (planted at [`super::heap_registry::HeapRegistry::claim`] time,
-    /// like `tcache_hits`), and remote freers reach the SAME word through the
-    /// `owner_thread_free_at(base)` segment-header stamp — which now stores
-    /// this slot field's address. The slot lives in the `'static` registry
-    /// array, so the address is stable for the slot's (process) lifetime and
-    /// never re-pointed across `recycle`→`claim`.
-    ///
-    /// Dual role, unchanged from the old inline field: the ADDRESS is the
-    /// per-heap identity token compared by `dealloc_routing`
-    /// (`owner_thread_free_at(base) == our head`); the VALUE (`AtomicPtr<u8>`)
-    /// is the head of this heap's deferred-free Treiber stack over Large
-    /// segment bases (`null` = empty). The two uses touch disjoint parts of the
-    /// same word, so there is no conflation.
-    ///
-    /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) thread_free: AtomicPtr<u8>,
-
-    /// R7-A4: per-slot dirty-segment bitmap — 64 `AtomicU64` words covering
-    /// all 4096 segment-table slot indices (`MAX_SEGMENTS / 64 = 64`).
-    ///
-    /// A cross-thread freer (producer) sets bit `segment_id % 64` of word
-    /// `segment_id / 64` via `fetch_or(bit, Release)` AFTER a successful
-    /// `RemoteFreeRing::push` / `try_push_uncounted`. The owning thread
-    /// (consumer) `swap(0, Acquire)`s each word, iterates set bits, and
-    /// drains ONLY those segments' rings — replacing the O(S) "drain every
-    /// ring" scan with O(dirty) targeted drains.
-    ///
-    /// Lives in `HeapSlotRemote` (the STABLE, cross-thread-reachable part of
-    /// the slot) so producers can reach it from any thread via the registry's
-    /// `slot(owner_id)` — the same resolution path `push_to_heap_overflow`
-    /// and `resolve_heap_overflow` use. Zero-initialised (OS-zeroed pages):
-    /// no segment is dirty until a producer sets a bit.
-    ///
-    /// **Lost-wakeup safety:** the producer sets the bit AFTER publishing
-    /// the ring entry (the `Release` store on `push`/`try_push_uncounted`
-    /// happens-before the `Release` `fetch_or` here). A producer arriving
-    /// after the owner's `swap(0, Acquire)` re-sets the bit for the next
-    /// drain pass. A push during a drain is either seen by that drain
-    /// (the ring's `drain` reads up to the current `tail`) or leaves the
-    /// bit set for the next pass. Slot reuse is always revalidated via
-    /// `base_at(slot) + kind + segment_id` checks before draining.
-    ///
-    /// **P4 (visibility contract change):** a producer stalled between
-    /// `push` and `fetch_or` is invisible to the dirty-routing drain until
-    /// its bit lands (or until the linear-scan fallback, which still drains
-    /// every ring unconditionally, eventually finds it). This is bounded
-    /// deferral of the same class as the existing "later drain picks it up"
-    /// contract. See `remote_free_ring.rs` module doc for the pinned note.
-    ///
-    /// Only compiled under `alloc-xthread` AND `alloc-segment-directory`
-    /// (the dirty routing only matters when the directory drives the drain).
-    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-    pub(crate) dirty_segments: [AtomicU64; DIRTY_BITMAP_WORDS],
-
-    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): the lazily-
-    /// materialised per-(segment, class) dirty-bit sidecar — see
-    /// `dirty_by_class`'s module doc for the full design. `null` (UNINIT)
-    /// until this heap's first class-routed cross-thread free; a heap that
-    /// never receives one never pays the ~24.5 KiB reservation.
-    ///
-    /// Additive over [`dirty_segments`](Self::dirty_segments): the existing
-    /// per-segment bitmap is set unconditionally on every push regardless of
-    /// this feature, so it remains the fallback/ground-truth signal even
-    /// when this sidecar is in use.
-    #[cfg(feature = "class-aware-dirty")]
-    pub(crate) dirty_by_class: OncePtrCell<PerClassDirty>,
-
-    /// R13-1 (task #271, P0 fix): the coarse-only latch — set PERMANENTLY,
-    /// once, the first time [`ensure_per_class_dirty`](crate::alloc_core::dirty_by_class::ensure_per_class_dirty)
-    /// fails to materialise this heap's [`dirty_by_class`](Self::dirty_by_class)
-    /// sidecar (OOM). See `apply_resolved_dirty_bit`'s doc comment
-    /// (`registry::heap_core_xthread`) for the producer-side write and
-    /// `AllocCore::drain_dirty_segments`'s doc comment for the consumer-side
-    /// read and the visibility-gap bug this closes.
-    ///
-    /// **Why this is needed:** without the latch, a producer that hit the
-    /// OOM window sets ONLY the coarse `dirty_segments` bit for its entry (no
-    /// per-class bit — the sidecar never materialised for THAT push). If a
-    /// LATER producer on the SAME heap successfully materialises the sidecar
-    /// (a fresh `ensure_per_class_dirty` call, e.g. after the OS freed
-    /// memory), the consumer's `drain_dirty_segments` switches to scanning
-    /// ONLY the per-class slice — and the earlier coarse-only entry becomes
-    /// invisible to it until the periodic full-scan fallback (64 misses) or
-    /// an OOM-rescue scan eventually finds it. Under memory pressure this can
-    /// materialise up to 64 avoidable extra 4 MiB segments (~256 MiB VA) at
-    /// the worst possible time. The latch makes the two publication paths
-    /// mutually exclusive FOR THE LIFETIME OF THE HEAP SLOT: once ANY
-    /// producer has ever failed to materialise the sidecar for this heap,
-    /// EVERY future `drain_dirty_segments` call for this heap ignores the
-    /// per-class path entirely (even if the sidecar later does materialise
-    /// via a different producer) and scans only the coarse bitmap — the
-    /// same, always-correct fallback behaviour the feature has when OFF.
-    ///
-    /// **Never reset.** `false` -> `true` is a one-way transition for the
-    /// process lifetime of the slot (mirrors [`HeapSlot::initialised`]'s own
-    /// "publish once, never revert" discipline): a slot recycle does not
-    /// clear it, because a later occupant reusing this slot's already-
-    /// permanently-degraded coarse-only routing is a strictly conservative
-    /// (never incorrect) choice, and clearing it would re-open the exact
-    /// interleaving window this latch exists to close if the new occupant's
-    /// OOM history differs from the old one's.
-    ///
-    /// R14-2 (task #287) considered clearing the latch at the slot's
-    /// existing teardown-trim quiescent point
-    /// (`HeapCore::trim_for_recycle`, `registry::heap_core_ownership`, run by
-    /// the owning thread on thread exit, single-writer, immediately before
-    /// `HeapRegistry::recycle`'s `LIVE -> FREE` CAS) so a future occupant of
-    /// the slot would start un-degraded instead of inheriting a possibly
-    /// long-past transient OOM. **Decided NOT to implement this round** —
-    /// this field is written by REMOTE (cross-thread) producers, and
-    /// `resolve_dirty_bit_target`'s (`registry::heap_core_xthread`) owner
-    /// resolution is an unconditional segment-header-stamp read with NO
-    /// `STATE_LIVE` check at all (unlike the advisory `owner_slot_is_live`
-    /// probe `push_with_overflow_retry` uses for a different purpose) — a
-    /// remote free can and does land on a segment whose owning slot has
-    /// JUST been recycled (`heap_core_xthread`'s own `owner_slot_is_live`
-    /// doc comment calls the analogous race "benign" for the overflow-ring
-    /// destination, precisely because nothing else in this registry assumes
-    /// slot-exit quiescence for cross-thread writers). A plain reset at
-    /// `trim_for_recycle` would therefore race a still-in-flight legitimate
-    /// `store(true, Release)` from that same window with no synchronisation
-    /// between the two writes — a genuine lost-trip hazard, not a provable
-    /// quiescent-point clear, and not something this round's loom coverage
-    /// (which models the OOM -> publish -> consumer race, not a concurrent
-    /// reset) would catch. Recovery (either variant) remains an open,
-    /// explicit candidate for a future round once it is designed to survive
-    /// that race (e.g. gated on a slot generation counter the remote
-    /// producer can validate).
-    ///
-    /// **Ordering:** producer writes `true` with `Release`
-    /// (`apply_resolved_dirty_bit`, `registry::heap_core_xthread`); the
-    /// consumer (`AllocCore::drain_dirty_segments`) reads `Acquire`
-    /// (R14-2, task #287 — promoted from a `Relaxed` read three independent
-    /// Round 13 reviews found diverged from this doc comment and from the
-    /// loom model, `tests/loom_class_aware_dirty.rs`, which had always used
-    /// `Acquire`). This pairing establishes real happens-before from "the
-    /// sidecar materialisation attempt that failed" to "the consumer decides
-    /// to ignore the per-class path": once a drain observes the latch `true`,
-    /// it is guaranteed to also observe every write that producer's push
-    /// performed program-order-before the `store` (in particular, the
-    /// coarse `dirty_segments` bit for that same entry) — so an OOM-window
-    /// entry is visible to the VERY NEXT drain that observes the latch, not
-    /// merely "eventually" via the periodic full-scan fallback. Idempotent:
-    /// multiple producers racing to set the latch is benign (`store(true,
-    /// Release)` from any number of racing writers converges to the same
-    /// final state; a plain store is sufficient — no CAS needed — because
-    /// every writer stores the exact same value).
-    #[cfg(feature = "class-aware-dirty")]
-    pub(crate) sidecar_oom_latch: AtomicBool,
 }
-
-/// R7-A4: number of `AtomicU64` words in the per-slot dirty-segment bitmap.
-/// `MAX_SEGMENTS / 64 = 64`. Mirrors `segment_directory::WORDS_PER_CLASS` but
-/// defined here so this module does not depend on the `alloc-segment-directory`-
-/// gated `segment_directory` module at the type level (the array size must be
-/// available whenever both `alloc-xthread` and `alloc-segment-directory` are
-/// active, without requiring a cfg-conditional import of the directory module).
-#[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-pub(crate) const DIRTY_BITMAP_WORDS: usize = crate::alloc_core::segment_table::MAX_SEGMENTS / 64;
 
 /// One registry slot. `#[repr(C, align(64))]`: `repr(C)` so the bootstrap can
 /// compute the slot array's footprint deterministically and lay it down at a
@@ -463,38 +239,8 @@ pub struct HeapSlot {
     /// per-heap counter either).
     pub(crate) initialised: AtomicBool,
 
-    /// PERF-PASS-4 (G8/ML2, task #52): the remote/foreign-access fields
-    /// (`tcache_hits`, `large_cache_hits`, `thread_free`), grouped into their
-    /// own 64-byte-aligned sub-struct — see [`HeapSlotRemote`]'s doc comment
-    /// for the false-sharing residue this fixes. Always present in the
-    /// layout (mirroring the fields' own prior discipline of being "present
-    /// but inert" under a non-matching feature set) — `HeapSlotRemote` itself
-    /// degrades to a smaller/empty `#[repr(align(64))]` struct when every
-    /// gated field is compiled out. A zero-sized type stays 0 bytes even
-    /// under `align(64)` (Rust does not pad a ZST up to its alignment), so
-    /// in that degenerate config `remote` contributes no bytes at all — which
-    /// is still sound, because with zero live fields there is nothing left
-    /// for a remote thread to touch, so the false-sharing question this
-    /// grouping exists to answer does not arise in the first place.
+    /// Stable diagnostic counters, isolated from exclusive owner storage.
     pub(crate) remote: HeapSlotRemote,
-
-    /// RAD-4b (task #72): the slot-resident second-chance MPSC overflow ring
-    /// — see [`HeapOverflow`]'s module doc for the full design rationale.
-    /// Materialised unconditionally (like `remote`, above) so both the
-    /// owner's drain and a remote producer's push reach it through the SAME
-    /// `&'static HeapSlot` the registry already hands out, with no separate
-    /// claim-time wiring step (unlike `HeapCore::thread_free`'s `&'static`
-    /// handle, this ring needs no handle at all — a remote producer resolves
-    /// it directly from `bootstrap::ensure().slot(owner_id)`, see
-    /// `HeapCore::push_with_overflow_retry`).
-    ///
-    /// Only present under `alloc-xthread` (the cross-thread feature this
-    /// mechanism exists to serve) — mirrors `HeapSlotRemote::thread_free`'s
-    /// own gate. All-zero initial state, so an unclaimed or never-overflowing
-    /// slot never first-touches its 96 KiB array (see
-    /// `HeapOverflow::HEAP_OVERFLOW_CAP`'s RSS-discipline doc comment).
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) overflow: HeapOverflow,
 }
 
 impl HeapSlot {

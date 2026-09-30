@@ -209,35 +209,6 @@ impl SegmentMeta {
     }
 
     // -------------------------------------------------------------------
-    // PERF-PASS-4 (G9/C2, task #52) — field-specific owner-only accessor for
-    // the `ring_drain_head` drain-guard cache. Identical discipline to
-    // `live_count`/`decommitted`/`node_id`: a single-word load/store at the
-    // field's `offset_of!` offset through the `node` seam. Owner-only: only
-    // `find_segment_with_free_impl`'s drain guard (running exclusively on the
-    // segment's owning thread, the same thread that calls
-    // `RemoteFreeRing::drain`) reads or writes this field.
-    // -------------------------------------------------------------------
-
-    /// Read the owner-cached `RemoteFreeRing` head, as of the last drain (or
-    /// segment init, if never drained).
-    #[cfg(feature = "alloc-xthread")]
-    #[inline(always)]
-    pub(crate) fn ring_drain_head_of(&self) -> u32 {
-        let off = core::mem::offset_of!(SegmentHeader, ring_drain_head);
-        Node::read_u32(Node::offset(self.base, off) as *const u32)
-    }
-
-    /// Write the owner-cached `RemoteFreeRing` head. Called after a drain (real
-    /// or skipped) to record the ring's current `head` for the next guard
-    /// check.
-    #[cfg(feature = "alloc-xthread")]
-    #[inline(always)]
-    pub(crate) fn set_ring_drain_head(&mut self, value: u32) {
-        let off = core::mem::offset_of!(SegmentHeader, ring_drain_head);
-        Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
-    }
-
-    // -------------------------------------------------------------------
     // R12-10 (task #261, `virgin-zero-skip`) — field-specific owner-only
     // accessors for the `payload_virgin` flag. Identical discipline to
     // `live_count`/`decommitted`: a single-word load/store at the field's
@@ -264,25 +235,5 @@ impl SegmentMeta {
     pub(crate) fn set_payload_virgin(&mut self, value: bool) {
         let off = core::mem::offset_of!(SegmentHeader, payload_virgin);
         Node::write_u32(Node::offset(self.base, off) as *mut u32, u32::from(value));
-    }
-
-    /// Stamp the `owner_thread_free` field ONLY (not a full-struct
-    /// `write_header`). The stamping path runs on the owning thread and writes
-    /// the field at most once per segment (when it transitions null → the
-    /// heap's inline TFS head address); cross-thread readers use the
-    /// field-specific [`SegmentHeader::owner_thread_free_at`]. A single-word
-    /// field write here cannot race with a Remote's single-word field read of
-    /// a disjoint header field.
-    #[cfg(feature = "alloc-xthread")]
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    pub(crate) fn stamp_owner_thread_free(
-        &mut self,
-        head: *const core::sync::atomic::AtomicPtr<u8>,
-    ) {
-        let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
-        Node::write_ptr(
-            Node::offset(self.base, off) as *mut *const core::sync::atomic::AtomicPtr<u8>,
-            head,
-        );
     }
 }

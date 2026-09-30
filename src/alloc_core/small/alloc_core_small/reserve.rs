@@ -435,15 +435,6 @@ impl AllocCore {
             base,
             SegLayout::magazine_bitmap_off(),
         ));
-        // Initialise the per-segment remote-free ring (Variant-2 fix). Only
-        // under `alloc-xthread`; the Layout always reserves the bytes.
-        #[cfg(feature = "alloc-xthread")]
-        {
-            crate::alloc_core::remote_free_ring::RemoteFreeRing::init_in_place(
-                base,
-                SegLayout::remote_ring_off(),
-            );
-        }
         // X7 Ф3 (task #191): zero the per-segment generation table under
         // `hardened`. Compiled ONLY under `hardened`; under any other feature
         // the table does not exist and this call is absent (byte-identical to

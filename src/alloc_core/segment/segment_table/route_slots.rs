@@ -5,7 +5,7 @@ use core::ptr;
 use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::alloc_core::segment_header::SegmentKind;
-use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration};
+use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
 use super::MAX_SEGMENTS;
 
@@ -22,7 +22,13 @@ impl RouteSlots {
             cap: 0,
             owner: owner as usize,
         };
-        let route = slots.prepare(1, primordial, segment_len, SegmentKind::Primordial)?;
+        let route = slots.prepare(
+            1,
+            primordial,
+            segment_len,
+            SegmentKind::Primordial,
+            primordial,
+        )?;
         slots.put(0, route);
         Some(slots)
     }
@@ -70,6 +76,7 @@ impl RouteSlots {
         base: *mut u8,
         len: usize,
         kind: SegmentKind,
+        payload: *mut u8,
     ) -> Option<RouteRegistration<'static>> {
         self.ensure_capacity(needed)?;
         let kind = match kind {
@@ -79,7 +86,7 @@ impl RouteSlots {
             SegmentKind::Unknown => return None,
         };
         RouteDirectory::global()
-            .register(base, len, base, self.owner, kind)
+            .register(base, len, payload, self.owner, kind)
             .ok()
     }
 
@@ -106,6 +113,39 @@ impl RouteSlots {
         if route.root() != base || !route.issue_small(offset, class) {
             std::process::abort();
         }
+    }
+
+    pub(super) fn scan_small(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+    ) -> Option<RouteScan<'_>> {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-only read of an initialized live route slot.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route.small_sidecar()?.scan(high_water)
+    }
+
+    pub(super) fn claim_large_pending(&self, index: usize, base: *mut u8) -> bool {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-only read of an initialized live route slot.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route.claim_large_pending().is_some()
     }
 
     pub(super) fn remove(&mut self, index: usize) {

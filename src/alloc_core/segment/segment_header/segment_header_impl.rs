@@ -280,55 +280,10 @@ impl PageClass {
 /// alignment-descending within each group (8-byte fields, then 4-byte
 /// fields, then the 1-byte `kind`), which packs with ZERO internal padding.
 ///
-/// The small-segment per-operation hot set — `bump` (refill/carve cursor,
-/// rewritten on every `carve_block`), `owner_thread_free` (cross-thread free
-/// routing), `owner_state` (owner-id compare — the state bit is
-/// structurally always LIVE since the adoption substrate that wrote
-/// `ABANDONED` was removed, task #97 / R4-5), `magic`
-/// (dealloc-routing base validation), `live_count` / `decommitted` (M6
-/// decommit bookkeeping, touched on every own-thread free/carve under
-/// `alloc-decommit`), `ring_drain_head` (task #52's drain-guard cache,
-/// read/written on every refill-miss free-list scan), and `kind`
-/// (dealloc-routing dispatch) — is declared FIRST: 8+8+8 (three 8-byte
-/// fields, offsets 0/8/16) + 4+4+4+4 (four 4-byte fields, offsets
-/// 24/28/32/36) + 1 (`kind`, offset 40) = 41 bytes, all naturally aligned
-/// with no INTERNAL gaps, so the whole hot set occupies bytes 0..41 —
-/// comfortably inside the first 64-byte cache line. The Large-only /
-/// teardown-only / unregister-only cold fields (`large_size`, `large_align`,
-/// `span_usable`, `reservation`, `reservation_len`, `deferred_next`,
-/// `pool_next`, `pool_prev`, `segment_id`, `node_id`) are declared AFTER,
-/// likewise alignment-descending; a 7-byte tail-alignment gap after `kind`
-/// (offset 41..48, needed to re-align the first cold 8-byte field,
-/// `large_size`, to its natural 8-byte boundary) pushes the cold set to bytes
-/// 48..120 — measured via `-Zprint-type-sizes` (see the task's verification
-/// notes). That single unavoidable gap is the ONLY padding in the whole
-/// struct; the hot set itself (bytes 0..41) has zero internal padding.
-///
-/// ## RAD-3 (E2, task #56) — `size_of::<SegmentHeader>()` grew 104 → 120 bytes
-///
-/// Two new 8-byte pointer fields (`pool_next`, `pool_prev` — the intrusive
-/// doubly-linked list for the empty-small-segment hysteresis pool, replacing
-/// the old fixed `[*mut u8; POOL_MAX_SLOTS]` array that lived in `AllocCore`
-/// and scaled with `MAX_HEAPS`) were appended to the cold set. The 7-byte
-/// tail-alignment gap after `kind` (bytes 41..48) is UNCHANGED — it exists to
-/// re-align the cold set's first 8-byte field, independent of how many 8-byte
-/// fields follow. `size_of::<SegmentHeader>()` is confirmed by the
-/// field-by-field accounting: 3×8 + 4×4 + 1 + 7 pad (hot set, bytes 0..48) +
-/// 8×8 + 2×4 (cold set: `large_size`, `large_align`, `span_usable`,
-/// `reservation`, `reservation_len`, `deferred_next`, `pool_next`,
-/// `pool_prev`, then `segment_id`, `node_id`) = 48 + 72 = 120, verified via
-/// `-Zprint-type-sizes` while adding these fields. `Layout::page_map_off()`
-/// (`align_up(size_of::<SegmentHeader>(), PAGE)`) is `align_up(120, 4096) ==
-/// 4096` — byte-identical to the pre-RAD-3 value (both 104 and 120 round up
-/// to one page), so every downstream metadata offset
-/// (`bin_table_off`/`alloc_bitmap_off`/`remote_ring_off`/`small_meta_end`/…)
-/// is UNCHANGED — this growth is fully absorbed by the header's own
-/// sub-page padding and does not ripple into the rest of the segment layout.
-/// The `size_of::<SegmentHeader>() <= PAGE` / `Layout::page_map_off() ==
-/// PAGE` const-asserts at the bottom of this file are a coarser compile-time
-/// sanity bound (they would also pass at, say, 128 bytes), not a byte-exact
-/// pin; they still catch any REGRESSION that pushes the header past a full
-/// page, which is the invariant they exist to guard.
+/// Owner-only bookkeeping and explicit Large geometry. Remote publishers never
+/// read this header: their capability contains only an independent sidecar.
+/// The plain snapshot excludes physical lifecycle words. Header and lifecycle
+/// metadata must fit before the first page-map/payload boundary.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct SegmentHeader {
@@ -341,16 +296,6 @@ pub(crate) struct SegmentHeader {
     /// Rewritten on every `carve_block` — the single hottest owner-write in
     /// the refill path.
     pub bump: usize,
-    /// Phase 10: a stable pointer to the owning heap's thread-free stack head
-    /// (`*const AtomicPtr<u8>`). A cross-thread freer reads this from the
-    /// segment header after `segment_base_of(ptr)` and CAS-pushes the freed
-    /// block onto the Treiber stack. `null` for segments not yet bound to a
-    /// heap (Phase 8 `AllocCore`-only segments). The pointer is stable because
-    /// it addresses a process-`'static` head: a registry-slot-resident
-    /// `HeapSlot::thread_free` field (the slot array is `'static`) or the
-    /// fallback `FALLBACK_TFS` static atomic (post-W3, task #13 — no longer a
-    /// `Box`).
-    pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
     /// The segment's ownership state — packed
     /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /
     /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The state bit is
@@ -387,10 +332,8 @@ pub(crate) struct SegmentHeader {
     /// race-free under the single-writer discipline (see §2 of the Phase 35
     /// design and the `bump_of`/`set_bump` precedent).
     ///
-    /// The field is present in EVERY build's layout (so the header byte layout
-    /// is stable regardless of feature config — like `owner_state`/
-    /// `deferred_next`); it is read/mutated ONLY under `alloc-decommit`. Without
-    /// that feature it is dead data (silenced below).
+    /// Present in every build. This exactly-once ledger is correctness state
+    /// under alloc-xthread as well as alloc-decommit; page policy is separate.
     pub live_count: u32,
     /// Phase 35 (M6 decommit): owner-only flag (0 / 1) recording whether this
     /// segment's payload pages are currently DECOMMITTED (returned to the OS).
@@ -398,44 +341,6 @@ pub(crate) struct SegmentHeader {
     /// cleared when the segment is reselected for carving and the payload is
     /// recommitted. Present in every layout, used only under `alloc-decommit`.
     pub decommitted: u32,
-    /// PERF-PASS-4 (G9/C2, task #52): the owner's cached copy of the
-    /// `RemoteFreeRing`'s `head` cursor, as last observed by THIS segment's
-    /// `find_segment_with_free_impl` drain guard. Lets the guard skip a
-    /// `RemoteFreeRing::drain` call (and its unconditional `head.store(_,
-    /// Release)`) when the ring's `tail` has not advanced past this cached
-    /// value since the last drain — i.e. the ring is provably empty of
-    /// anything new, without touching the ring's `head` atomic at all.
-    ///
-    /// **Not atomic — owner-only**, identical discipline to `bump` /
-    /// `live_count`: the segment's owning thread is the ONLY reader/writer
-    /// (the drain guard runs exclusively on the owner, exactly like the
-    /// `RemoteFreeRing::drain` call it gates). A plain `u32` field, accessed
-    /// through its `offset_of!` offset, is race-free under the same
-    /// single-writer argument `bump_of`/`set_bump` document.
-    ///
-    /// **Why this lives in the segment header, not `SegmentTable`:** the
-    /// cache must travel with SEGMENT identity, not with a `SegmentTable`
-    /// slot INDEX. A `SegmentTable` slot index is reused across
-    /// register/recycle for a completely different segment (task #60 slot
-    /// recycle), so an index-keyed cache would need explicit invalidation at
-    /// reuse — exactly the "stale cache surviving a re-claim" hazard this
-    /// task's spec calls out. The header field instead lives inside the very
-    /// segment memory it describes: a fresh segment always gets a fresh
-    /// header via `SegmentHeader::small(..)` (see [`small`](Self::small),
-    /// which zero-inits this field), so there is no way to observe a stale
-    /// value from a PRIOR segment's ring occupying the same virtual address
-    /// or the same table slot — the field's lifetime is the segment's
-    /// lifetime, exactly like `bump`/`live_count`/the ring itself.
-    ///
-    /// **Present in EVERY build's layout** (same discipline as
-    /// `live_count`/`node_id`): read/written only under
-    /// `#[cfg(feature = "alloc-xthread")]`, but the byte layout of
-    /// `SegmentHeader` does not otherwise shift across feature configs.
-    /// Starts at 0 (matching a freshly-initialised ring's `head == 0`), so
-    /// the FIRST scan of a brand-new segment correctly treats "cached head ==
-    /// real head == 0" as "nothing to drain" until a real push moves `tail`.
-    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
-    pub ring_drain_head: u32,
     /// The segment kind (primordial / small / large). Decides dealloc routing.
     /// Read on every cross-thread dealloc-routing dispatch.
     pub kind: SegmentKind,
@@ -448,6 +353,8 @@ pub(crate) struct SegmentHeader {
     pub large_size: usize,
     /// For large/huge segments: the alignment of the single allocation.
     pub large_align: usize,
+    /// Explicit allocation start relative to the canonical usable root.
+    pub payload_offset: usize,
     /// For large/huge segments: the PHYSICAL committed usable span of this
     /// segment (`n_segments * SEGMENT`, computed once from the ORIGINAL OS
     /// reservation). Set exactly once — at the segment's initial OS
@@ -482,30 +389,6 @@ pub(crate) struct SegmentHeader {
     /// The full size of the OS reservation (head + usable + tail). Paired with
     /// `reservation` for the OS free call.
     pub reservation_len: usize,
-    /// The intrusive link for the cross-thread deferred-large-free Treiber
-    /// stack (see `alloc_core::deferred_large`): while a Large segment `base`
-    /// is queued for its owning heap to reclaim, this field holds the ADDRESS
-    /// of the NEXT queued base (packed as an exposed-provenance `u64`), or a
-    /// sentinel. Stored as a plain `u64` (not a pointer) so the field is plain
-    /// `Copy` data inside the header; the address↔pointer reconstruction is
-    /// done at the push/drain call sites via `expose_provenance` /
-    /// `with_exposed_provenance_mut` (the crate's sanctioned exposed-provenance
-    /// pairing — see `deferred_large::push`/`drain`).
-    ///
-    /// Three sentinels: [`ABANDONED_TAIL`] (`u64::MAX`, "not linked into any
-    /// stack" — every fresh/reclaimed segment starts here, and the
-    /// double-push guard claims the link word FROM this value) and
-    /// `DEFERRED_LARGE_TAIL` (`u64::MAX - 1`, "on this stack, no next" — the
-    /// bottom-of-stack marker), and `DEFERRED_LARGE_PUBLISHING`
-    /// (`u64::MAX - 2`, claimed/swapped but link not yet ready). Accessed atomically through
-    /// [`deferred_next_atomic`](SegmentMeta::deferred_next_atomic).
-    ///
-    /// Historically this field was the link for the abandoned-segments stack of
-    /// the segment-transfer substrate; that substrate was removed (task #97 /
-    /// R4-5) and the field was repurposed for the deferred-large stack, which
-    /// is its sole current consumer. The `ABANDONED_TAIL` sentinel keeps its
-    /// historical name for the same reason (it is that link's "free" marker).
-    pub deferred_next: u64,
     /// RAD-3 (E2, task #56) — the intrusive DOUBLY-linked list link to the
     /// NEXT more-recently-pooled segment in the empty-small-segment
     /// hysteresis pool (Mechanism 2), or `null` if this is the pool's HEAD
@@ -521,13 +404,8 @@ pub(crate) struct SegmentHeader {
     /// **Owner-only, plain pointer (not atomic).** The pool is exclusively
     /// single-threaded bookkeeping — every push/pop/remove happens on the
     /// segment's owning thread inside `AllocCore`'s pool methods (mirroring
-    /// `bump`/`live_count`'s owner-only discipline); no cross-thread reader
-    /// ever touches these fields (unlike `deferred_next`, which the
-    /// CROSS-THREAD deferred-large-free protocol accesses via a `&AtomicU64`
-    /// view — hence THAT field stays a `u64` address/sentinel hybrid with exposed
-    /// provenance, while these can be plain `*mut u8` pointers accessed
-    /// through ordinary field-specific reads/writes, see
-    /// [`SegmentMeta::pool_next_of`]/[`SegmentMeta::set_pool_next`]).
+    /// `bump`/`live_count`'s owner-only discipline); remote publishers never
+    /// access these fields.
     ///
     /// List order: HEAD = most-recently-pooled (`pop_pooled_segment` pops the
     /// head in O(1) — the "warmest" reuse the old max-seq scan achieved by
@@ -559,7 +437,7 @@ pub(crate) struct SegmentHeader {
     ///
     /// **Present in EVERY build's layout** — the byte layout of
     /// `SegmentHeader` is identical regardless of feature config (same
-    /// discipline as `live_count`/`node_id`/`ring_drain_head`). The field is
+    /// discipline as `live_count`/`node_id`). The field is
     /// READ and WRITTEN only under `#[cfg(any(feature = "primordial-lazy-commit",
     /// feature = "small-segment-lazy-commit"))]` (R12-9, task #260: the split
     /// sibling features of the former single `alloc-lazy-commit`, which is now
@@ -702,25 +580,6 @@ pub(crate) struct SegmentHeader {
     pub payload_virgin: u32,
 }
 
-/// Sentinel for the [`deferred_next`](SegmentHeader::deferred_next) link
-/// word meaning "not currently linked into any stack" — the rest value
-/// every fresh/reclaimed segment header starts with, and the value the
-/// deferred-large double-push guard claims the link word FROM (see
-/// `alloc_core::deferred_large::push`). Deliberately distinct from
-/// `DEFERRED_LARGE_TAIL` (`u64::MAX - 1`, "on this stack, no next"): if the
-/// two coincided, a `base` pushed onto an EMPTY deferred-large stack would
-/// read back as "never pushed", silently defeating the guard the first time
-/// it ran. Neither `u64::MAX` nor `u64::MAX - 1` is ever a real link value
-/// (a queued base address cast to `u64` is SEGMENT-aligned and nowhere near
-/// `usize::MAX`), so both are unambiguous.
-///
-/// The `ABANDONED_` prefix is historical: this sentinel pre-dates the
-/// deferred-large repurposing of `deferred_next` (it was the abandoned-
-/// segments stack tail). The name is retained; the value is now the
-/// deferred-large link's "free" marker.
-#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-pub(crate) const ABANDONED_TAIL: u64 = u64::MAX;
-
 /// Sentinel for `SegmentHeader::node_id`: "no NUMA node / feature disabled /
 /// unsupported platform". Mirrors `alloc_core::numa::NO_NODE` (`u32::MAX`),
 /// but declared here (safe code) so the constructors can use it without a
@@ -750,12 +609,11 @@ impl SegmentHeader {
             bump,
             large_size: 0,
             large_align: 0,
+            payload_offset: 0,
             span_usable: 0,
             reservation,
             reservation_len,
-            owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
-            deferred_next: ABANDONED_TAIL,
             // RAD-3 (E2): a fresh segment is not on the empty-segment pool's
             // list yet — both links start null (the "not pooled" sentinel).
             pool_next: core::ptr::null_mut(),
@@ -777,11 +635,6 @@ impl SegmentHeader {
             // (reserve_small_segment under numa-aware) stamps the real value
             // immediately after writing the header via set_node_id.
             node_id: NO_NODE_RAW,
-            // PERF-PASS-4 (G9/C2): a fresh segment's ring starts at head == 0
-            // (RemoteFreeRing::init_in_place zeroes the cursors); the cache
-            // starts at the same value so the first drain guard check
-            // correctly observes "nothing to drain yet".
-            ring_drain_head: 0,
             // R12-10 (`virgin-zero-skip`): the constructor sets a PLACEHOLDER
             // (0/false) — the caller (`reserve_small_segment`) stamps the
             // real value (`cfg!(not(miri))`) immediately after writing the
@@ -844,12 +697,11 @@ impl SegmentHeader {
             bump,
             large_size: size,
             large_align: align,
+            payload_offset: bump - size,
             span_usable,
             reservation,
             reservation_len,
-            owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
-            deferred_next: ABANDONED_TAIL,
             // RAD-3 (E2): Large segments never join the small-segment pool —
             // inert, like live_count/decommitted below.
             pool_next: core::ptr::null_mut(),
@@ -868,9 +720,6 @@ impl SegmentHeader {
             // Phase B: same sentinel as small(); the caller (alloc_large under
             // numa-aware) stamps the real value after writing the header.
             node_id: NO_NODE_RAW,
-            // Large segments have no RemoteFreeRing (no BinTable either) —
-            // inert, like live_count/decommitted above.
-            ring_drain_head: 0,
             // R12-10 (`virgin-zero-skip`): inert for Large segments — the
             // virgin-carve skip is Small-only by design (Large already has
             // its own, structurally simpler, per-segment freshness skip via
@@ -884,28 +733,13 @@ impl SegmentHeader {
     /// seam. Returns a copy of the header. `base` MUST be a live segment base
     /// with a valid header at offset 0.
     ///
-    /// R2-06 (independent src review round 2, task #2008): `deferred_next`
-    /// is the cross-thread deferred-large-free protocol's intrusive Treiber
-    /// link word — a REMOTE thread may CAS/store it at any time via
-    /// [`SegmentMeta::deferred_next_atomic`] (`push_large_deferred_free`),
-    /// independent of whatever this snapshot's caller owns/holds. A plain
-    /// full-struct load (the old implementation, `Node::read_struct`) would
-    /// read those bytes non-atomically — a data race, and therefore
-    /// undefined behavior, against that concurrent atomic write, regardless
-    /// of whether a given call site happens to be safe in practice (several
-    /// are, by protocol construction, but proving that per call site is
-    /// fragile and does not scale to every current AND future caller of this
-    /// function). [`Node::read_struct_with_atomic_word`] closes this
-    /// structurally: it never performs a non-atomic read over
-    /// `deferred_next`'s bytes at all, filling them via a real atomic load
-    /// instead — so `read_at` is sound for EVERY caller, including a
-    /// diagnostic/census walk over segments this thread does not own. The R6
-    /// terminal words are disjoint from this copy; read them only through
-    /// `SegmentMeta::terminal_snapshot` or their atomic accessors.
+    /// Owner-only fields are copied under the heap lease. The owner identity
+    /// word is loaded atomically; physical lifecycle words are disjoint from
+    /// this plain snapshot, and producers access only independent sidecars.
     pub(crate) fn read_at(base: *mut u8) -> Self {
         Node::read_struct_with_atomic_word::<SegmentHeader>(
             base as *const SegmentHeader,
-            core::mem::offset_of!(SegmentHeader, deferred_next),
+            core::mem::offset_of!(SegmentHeader, owner_state),
         )
     }
 }

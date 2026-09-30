@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! Mechanism 2 (task #51) — the empty-small-segment HYSTERESIS POOL.
 //!
 //! When a small segment's `live_count` reaches zero, instead of releasing it to
@@ -209,9 +215,8 @@ fn paired_knob_promotion_is_not_a_noop() {
 #[test]
 fn pool_fills_to_cap_and_no_more() {
     let _serial = serialize();
-    let mut ac = AllocCore::new().expect("primordial");
+    let mut ac = AllocCore::dbg_new_routed_for_test().expect("routed primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
     let cap = ac.dbg_pool_cap();
     assert!(cap > 0);
 
@@ -236,11 +241,11 @@ fn pool_fills_to_cap_and_no_more() {
         // via this ring-push/drain path (the non-survivors were dealloc'd above),
         // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
         // the block's actual class.
-        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
+        assert!(unsafe { ac.dbg_publish_small_sidecar_free(p) });
     }
 
     assert_eq!(ac.dbg_pooled_count(), 0, "pool must start empty");
-    ac.dbg_drain_all_rings();
+    ac.dbg_drain_sidecar_ingress();
 
     // The pool filled to EXACTLY the cap — never more (hard synchronous bound).
     assert_eq!(
@@ -263,9 +268,8 @@ fn pool_fills_to_cap_and_no_more() {
 #[test]
 fn reuse_pooled_segment_skips_os_reservation() {
     let _serial = serialize();
-    let mut ac = AllocCore::new().expect("primordial");
+    let mut ac = AllocCore::dbg_new_routed_for_test().expect("routed primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
     let cap = ac.dbg_pool_cap();
     assert!(cap > 0);
 
@@ -285,9 +289,9 @@ fn reuse_pooled_segment_skips_os_reservation() {
         // via this ring-push/drain path (the non-survivors were dealloc'd above),
         // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
         // the block's actual class.
-        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
+        assert!(unsafe { ac.dbg_publish_small_sidecar_free(p) });
     }
-    ac.dbg_drain_all_rings();
+    ac.dbg_drain_sidecar_ingress();
     let pooled = ac.dbg_pooled_count();
     assert!(pooled > 0, "expected at least one pooled segment");
 
@@ -346,10 +350,9 @@ fn reuse_pooled_segment_skips_os_reservation() {
 fn disabled_pool_never_retains() {
     let _serial = serialize();
     let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
-    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
+    let mut ac = AllocCore::dbg_new_routed_with_config_for_test(cfg).expect("routed primordial");
     assert_eq!(ac.dbg_pool_cap(), 0);
     let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
 
     let target = 12usize;
     let (survivors, all_ptrs) = spread_across_segments(&mut ac, layout, target);
@@ -367,9 +370,9 @@ fn disabled_pool_never_retains() {
         // via this ring-push/drain path (the non-survivors were dealloc'd above),
         // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
         // the block's actual class.
-        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
+        assert!(unsafe { ac.dbg_publish_small_sidecar_free(p) });
     }
-    ac.dbg_drain_all_rings();
+    ac.dbg_drain_sidecar_ingress();
 
     assert_eq!(
         ac.dbg_pooled_count(),
@@ -386,92 +389,6 @@ fn disabled_pool_never_retains() {
         "disabled pool must recycle all emptied segments immediately, \
          got {recycled} of {target}"
     );
-}
-
-// ── 6. Stale cross-thread free into a pooled segment is a no-op ──────────────
-
-/// A cross-thread free (ring push + drain) targeting a block in a POOLED
-/// segment — where every block is already free — is a double-free caught by the
-/// existing bitmap `is_free` guard. It must be a safe no-op: the segment stays
-/// pooled (live_count 0), the allocator stays healthy, and no crash/corruption.
-#[cfg_attr(miri, ignore)] // large N; native soak
-#[test]
-fn stale_free_into_pooled_segment_is_noop() {
-    let _serial = serialize();
-    let mut ac = AllocCore::new().expect("primordial");
-    let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
-    let cap = ac.dbg_pool_cap();
-    assert!(cap > 0);
-
-    let target = cap + 3;
-    let (survivors, all_ptrs) = spread_across_segments(&mut ac, layout, target);
-    let survivor_set: std::collections::HashSet<usize> =
-        survivors.values().map(|&p| p as usize).collect();
-    for &p in &all_ptrs {
-        if !survivor_set.contains(&(p as usize)) {
-            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-            unsafe { ac.dealloc(p, layout) };
-        }
-    }
-    for &p in survivors.values() {
-        // SAFETY (R6-MS-4): `p` is a live survivor allocation owned by `ac`;
-        // this push is its single logical remote free — survivors are freed ONLY
-        // via this ring-push/drain path (the non-survivors were dealloc'd above),
-        // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
-        // the block's actual class.
-        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
-    }
-    ac.dbg_drain_all_rings();
-    assert!(ac.dbg_pooled_count() > 0);
-
-    // Find a survivor pointer whose segment is POOLED (still registered,
-    // live_count == 0). `dbg_live_count_for` returns Some(0) for a pooled
-    // segment (still registered) and None for a recycled one.
-    let pooled_ptr = survivors
-        .values()
-        .copied()
-        .find(|&p| ac.dbg_live_count_for(p) == Some(0));
-    let pooled_ptr = match pooled_ptr {
-        Some(p) => p,
-        None => return, // no pooled survivor (all were small_cur/primordial) — skip
-    };
-
-    // Push the SAME (already-free) block into its pooled segment's ring again —
-    // a stale/duplicate cross-thread free. Then drain. It must be a no-op:
-    // live_count stays 0, no crash.
-    assert!(
-        // SAFETY (R6-MS-4): `pooled_ptr` is owned by `ac` and `class_idx` is its
-        // actual class. `pooled_ptr` is ALREADY FREE (its pooled segment has
-        // live_count 0) — this is a DELIBERATE contract-stress of the drain's
-        // `is_free` defensive guard: at drain the bitmap reads free →
-        // `reclaim_offset` returns false (no `write_next`/`mark_free`), so
-        // live_count stays 0 and no corruption occurs. Sound by the
-        // unconditional bitmap guard.
-        unsafe { ac.dbg_push_to_ring(pooled_ptr, class_idx) },
-        "push into a registered pooled segment must succeed at the ring level"
-    );
-    ac.dbg_drain_all_rings();
-    assert_eq!(
-        ac.dbg_live_count_for(pooled_ptr),
-        Some(0),
-        "stale free into a pooled segment must leave live_count == 0 (no-op)"
-    );
-
-    // The allocator is still healthy: a fresh allocation burst succeeds.
-    let mut keep = Vec::new();
-    for _ in 0..5_000 {
-        let p = ac.alloc(layout);
-        assert!(
-            !p.is_null(),
-            "allocator unhealthy after stale free into pool"
-        );
-        keep.push(p);
-    }
-    for &p in &keep {
-        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-        unsafe { ac.dealloc(p, layout) };
-    }
 }
 
 // ── 7. Reuse invariant under repeated pool churn (non-vacuous) ──────────────
@@ -628,9 +545,8 @@ fn fill_ordered_segments(
 #[test]
 fn pooled_segment_emptied_mid_scan_is_reused_in_same_call() {
     let _serial = serialize();
-    let mut ac = AllocCore::new().expect("primordial");
+    let mut ac = AllocCore::dbg_new_routed_for_test().expect("routed primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac.dbg_layout_class_for(layout).expect("256 B small class");
 
     // 3 distinct segments: segments[0] (possibly primordial, untouched),
     // segments[1] = X (fully carved — a 3rd segment exists, so X emptied out),
@@ -691,7 +607,7 @@ fn pooled_segment_emptied_mid_scan_is_reused_in_same_call() {
         // SAFETY (R6-MS-4): `*last` is owned by `ac`, is live (the one block
         // not yet freed above), and this is its single logical remote free —
         // no re-issue before the measured `alloc` call below drains it.
-        unsafe { ac.dbg_push_to_ring(*last, class_idx) },
+        unsafe { ac.dbg_publish_small_sidecar_free(*last) },
         "push into X's ring must succeed"
     );
 

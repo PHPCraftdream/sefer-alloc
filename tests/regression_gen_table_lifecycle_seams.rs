@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! X7 Ф4 (task #192) — lifecycle-seam regression tests for the per-block
 //! generation table.
 //!
@@ -212,7 +218,7 @@ fn fresh_segment_gen_table_is_zeroed() {
 #[cfg_attr(miri, ignore)]
 #[cfg(feature = "alloc-decommit")]
 #[test]
-fn recycled_segment_ring_drain_is_safe() {
+fn recycled_segment_sidecar_drain_is_safe() {
     // Mechanism 2 (task #51): DISABLE the empty-small-segment pool so the
     // decommit+recycle this test asserts fires DETERMINISTICALLY. With the pool
     // ON (production default) up to `pool_cap` emptied segments are retained
@@ -220,15 +226,12 @@ fn recycled_segment_ring_drain_is_safe() {
     // check, so it needs at least one segment to actually recycle. Disabling the
     // pool guarantees that. Pool behaviour is covered by
     // `tests/small_segment_pool.rs`.
-    let mut ac = AllocCore::new_with_config(
+    let mut ac = AllocCore::dbg_new_routed_with_config_for_test(
         sefer_alloc::LargeCacheConfig::new()
             .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
     )
     .expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
-    let class_idx = ac
-        .dbg_layout_class_for(layout)
-        .expect("256 B is a small class");
 
     // Alloc enough to spill into several fresh Small segments. 5,000 blocks at
     // 256 B never left a non-current segment reaching live_count == 0 (a
@@ -246,44 +249,32 @@ fn recycled_segment_ring_drain_is_safe() {
         ptrs.push(p);
     }
 
-    // Push a few blocks to their rings (simulating cross-thread frees) BEFORE
-    // any own-thread dealloc, so the rings carry entries. These entries target
-    // segments that will shortly be recycled.
+    // Transfer every fiftieth allocation to the real terminal descriptor.
+    // Owner-local deallocation below excludes those unique transfers.
     let mut pushed = 0usize;
     for &p in ptrs.iter().step_by(50) {
-        // SAFETY (R6-MS-4): `p` is owned by `ac` and `class_idx` is its actual
-        // class. These pushed blocks are ALSO own-thread-dealloc'd below, so this
-        // is a DELIBERATE contract-stress of the drain's `is_free` defensive
-        // guard (a stale note for an already-freed block), not a contract-honoring
-        // single remote free. It is sound because `reclaim_offset`'s
-        // `bm.is_free(off)` check runs unconditionally and returns false for the
-        // already-freed block, so no `write_next`/`mark_free` runs on a live owner.
-        if unsafe { ac.dbg_push_to_ring(p, class_idx) } {
-            pushed += 1;
-        }
+        // SAFETY: p is a current unique allocation and this is its sole free.
+        assert!(unsafe { ac.dbg_publish_small_sidecar_free(p) });
+        pushed += 1;
     }
-    assert!(pushed > 0, "expected some ring pushes to succeed");
+    assert_eq!(pushed, N.div_ceil(50));
 
-    // Free all blocks via own-thread dealloc. Non-current Small segments that
-    // reach live_count == 0 will decommit and have their slots recycled.
+    // Free only allocations not terminally transferred. The queued records
+    // retain their credits until this exclusive owner sweep consumes them.
     let decommit_before = AllocCore::dbg_decommit_count();
-    for &p in &ptrs {
-        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    for (index, &p) in ptrs.iter().enumerate() {
+        if index % 50 == 0 {
+            continue;
+        }
+        // SAFETY: these current allocations were never published and are freed once.
         unsafe { ac.dealloc(p, layout) };
     }
+    assert_eq!(ac.dbg_drain_sidecar_ingress(), pushed);
     let decommit_after = AllocCore::dbg_decommit_count();
-
     assert!(
         decommit_after > decommit_before,
-        "N={N} 256 B allocations must spill enough non-current Small segments \
-         to trigger at least one decommit+recycle (before={decommit_before}, \
-         after={decommit_after}) — if this fires, bump N further"
+        "the real terminal sweep must release emptied non-current segments"
     );
-
-    // Drain all rings. Any stale entries whose segment was recycled must be
-    // dropped by the existing guards WITHOUT touching unmapped memory. The
-    // drain must not panic, fault, or corrupt state.
-    ac.dbg_drain_all_rings();
 
     // Sanity: the allocator is healthy. Re-alloc a batch; each block must be
     // valid, writable, and distinct.

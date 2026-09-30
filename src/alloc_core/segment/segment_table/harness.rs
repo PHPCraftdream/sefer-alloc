@@ -42,11 +42,11 @@ pub struct SegmentHashHarness {
 
 #[doc(hidden)]
 impl SegmentHashHarness {
-    /// Build an EMPTY hash table over heap-owned backing storage. The slot
-    /// registry `count` is 0: the harness exercises the hash helpers
-    /// directly and never calls `register`/`unregister`/`recycle`.
+    /// Build an EMPTY hash table over heap-owned backing storage. Slot 0 is
+    /// a synthetic primordial root; hash-only tests never register it.
     pub fn new() -> Self {
         let mut slots: Vec<*mut u8> = vec![core::ptr::null_mut(); MAX_SEGMENTS];
+        slots[0] = Self::base_for_index(0);
         let mut hash: Vec<*mut u8> = vec![core::ptr::null_mut(); HASH_CAPACITY];
         let mut free_list: Vec<u32> = vec![0u32; FREE_LIST_CAPACITY];
         let mut free_top: Vec<u32> = vec![0u32; 1];
@@ -55,7 +55,7 @@ impl SegmentHashHarness {
         // `Self` and are never reallocated, so the stored pointers remain valid.
         let table = SegmentTable::from_primordial(
             slots.as_mut_ptr(),
-            0,
+            1,
             hash.as_mut_ptr(),
             free_list.as_mut_ptr(),
             free_top.as_mut_ptr(),
@@ -74,6 +74,29 @@ impl SegmentHashHarness {
     /// factor is ≤ 50%.
     pub fn insert(&mut self, base: *mut u8) {
         self.table.hash_insert(base);
+    }
+
+    /// Register an address key whose canonical root has independent provenance.
+    /// Only one such entry may be live in this harness at a time.
+    pub fn insert_root_for_key(&mut self, key: *mut u8, root: *mut u8) {
+        assert!(!root.is_null());
+        assert_eq!(key.addr() & ((1 << SEGMENT_SHIFT) - 1), 0);
+        self._slots[0] = root;
+        self.table.hash_insert_identity(key, 0);
+    }
+
+    /// Evict the keyed entry and its root before reusing the same address key.
+    pub fn remove_root_for_key(&mut self, key: *mut u8, root: *mut u8) {
+        assert_eq!(self._slots[0], root);
+        self.table.hash_remove(key);
+        self.table.own_cache_clear(root);
+        self._slots[0] = Self::base_for_index(0);
+    }
+
+    /// Model an invalid hash identity with no stored root; no pointer is read.
+    pub fn hide_root_for_test(&mut self, root: *mut u8) {
+        assert_eq!(self._slots[0], root);
+        self._slots[0] = core::ptr::null_mut();
     }
 
     /// Remove `base` via backward-shift deletion. Defensive no-op if `base` is
@@ -104,7 +127,9 @@ impl SegmentHashHarness {
     /// Adding `HASH_CAPACITY` before shifting keeps every value nonzero (so it
     /// is never confused with the `null_mut()` empty marker) for any `index`.
     pub fn base_for_index(index: usize) -> *mut u8 {
-        core::ptr::without_provenance_mut::<u8>((index + HASH_CAPACITY) << SEGMENT_SHIFT)
+        let high = (index + HASH_CAPACITY) & !(HASH_CAPACITY - 1);
+        let low = (index ^ (high >> 13) ^ (high >> 26)) & (HASH_CAPACITY - 1);
+        core::ptr::without_provenance_mut::<u8>((high | low) << SEGMENT_SHIFT)
     }
 
     /// The hash-table capacity (`HASH_CAPACITY`), re-exposed for the property

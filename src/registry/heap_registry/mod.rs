@@ -20,6 +20,7 @@
 // the three files carries its own `// SAFETY:` proof).
 mod claim;
 mod counters;
+mod maintenance;
 mod stack;
 #[cfg(feature = "internals")]
 #[doc(hidden)]

@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! R8-1 (task #214) correctness test — incremental directory sync across a
 //! multi-class ring-drain pass.
 //!
@@ -116,7 +122,7 @@ fn assert_directory_equals_rebuild(core: &mut AllocCore) {
 /// (clear), diverging from a fresh rebuild.
 #[test]
 fn multi_class_drain_sets_all_class_bits() {
-    let mut core = AllocCore::new().unwrap();
+    let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
 
     // Materialise the directory (the A2 oracle requires it).
     let (_threshold_ptrs, _) = push_past_threshold(&mut core);
@@ -201,16 +207,16 @@ fn multi_class_drain_sets_all_class_bits() {
     // logically freed by this push and is not touched again until the drain
     // below consumes the notes (no intervening dealloc/alloc/re-issue of these
     // specific addresses).
-    let pushed_a = unsafe { core.dbg_push_to_ring(drained_a[0], class_a) };
+    let pushed_a = unsafe { core.dbg_publish_small_sidecar_free(drained_a[0]) };
     assert!(pushed_a, "dbg_push_to_ring for class_a must succeed");
-    let pushed_b = unsafe { core.dbg_push_to_ring(drained_b[0], class_b) };
+    let pushed_b = unsafe { core.dbg_publish_small_sidecar_free(drained_b[0]) };
     assert!(pushed_b, "dbg_push_to_ring for class_b must succeed");
 
     // Drain — exercises `dbg_drain_all_rings_impl`'s
     // `sync_directory_for_segment_classes` call (call site #4 of the R8-1
     // wiring). The two pushed notes (one per class) are consumed in a SINGLE
     // drain pass for the target segment.
-    core.dbg_drain_all_rings();
+    core.dbg_drain_sidecar_ingress();
 
     // The oracle: the incrementally-maintained directory must EXACTLY equal a
     // fresh rebuild. Both classes' bits for the target segment must be set

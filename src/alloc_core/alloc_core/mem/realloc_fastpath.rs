@@ -269,10 +269,12 @@ impl AllocCore {
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
-        // The caller's base is an address key, even when it has already
-        // passed an address-membership check. Resolve the stored root before
-        // reading or mutating header fields.
-        let base = self.table.canonical_base_of(base)?;
+        let key = os::segment_base_of_ptr(ptr);
+        let canonical = self.table.canonical_base_of(key)?;
+        if base.addr() != canonical.addr() && base.addr() != key.addr() {
+            return None;
+        }
+        let base = canonical;
         // `ptr` is an address key, possibly a narrow reborrow. Return the
         // allocator-derived block pointer even for an in-place resize.
         let ptr = crate::alloc_core::node::Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
@@ -284,7 +286,10 @@ impl AllocCore {
                 .max(crate::alloc_core::size_classes::MIN_BLOCK);
             let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
             if new_eff >= old_eff {
-                let payload_off = ptr as usize - base as usize;
+                let payload_off = SegmentHeader::read_at(base).payload_offset;
+                if ptr.addr() != base.addr() + payload_off {
+                    return None;
+                }
                 let span_usable = SegmentHeader::span_usable_at(base);
                 if let Some(end) = payload_off.checked_add(new_eff) {
                     if end <= span_usable {

@@ -19,6 +19,8 @@ mod route_cut;
 mod route_record;
 mod route_scan;
 mod small_sidecar;
+#[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
+mod terminal_publication_gate;
 
 pub use directory::RouteDirectory;
 pub use error::RouteError;
@@ -30,3 +32,5 @@ pub use route_cut::RouteCut;
 pub use route_record::RouteRecord;
 pub use route_scan::RouteScan;
 pub use small_sidecar::SmallSidecar;
+#[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
+pub use terminal_publication_gate::TerminalPublicationGate;

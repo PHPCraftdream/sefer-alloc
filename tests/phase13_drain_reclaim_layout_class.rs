@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! Task #40 — §13 regression gate for the CROSS-THREAD drain/reclaim path.
 //!
 //! ## Why this test exists (the §13 root cause on the drain path)
@@ -110,7 +116,7 @@ fn block_resurfaces(a: &mut AllocCore, layout: Layout, canary: u64, tries: usize
 /// on its Layout class and NOT on its page_map class.
 #[test]
 fn reclaim_uses_carried_layout_class_not_page_map() {
-    let mut a = AllocCore::new().unwrap();
+    let mut a = AllocCore::dbg_new_routed_for_test().unwrap();
     let seed_layout = Layout::from_size_align(16, 16).unwrap();
     let probe_layout = Layout::from_size_align(48, 16).unwrap();
 
@@ -135,10 +141,10 @@ fn reclaim_uses_carried_layout_class_not_page_map() {
         // is its single logical remote free — it is reclaimed by the
         // `dbg_drain_all_rings` below (no dealloc / re-issue of `block` in
         // between). `layout_class` is the block's actual class.
-        unsafe { a.dbg_push_to_ring(block, layout_class) },
+        unsafe { a.dbg_publish_small_sidecar_free(block) },
         "ring push failed (ring full?)"
     );
-    a.dbg_drain_all_rings();
+    a.dbg_drain_sidecar_ingress();
 
     // It must NOT resurface on a page_map-class alloc...
     let pm_layout = layout_for_class(&a, page_map_class);
@@ -151,49 +157,5 @@ fn reclaim_uses_carried_layout_class_not_page_map() {
     assert!(
         block_resurfaces(&mut a, block_layout, canary, 256),
         "block did NOT resurface on its Layout-class free list (routing bug)"
-    );
-}
-
-/// Counterfactual anchor: pushing the SAME block with the `page_map` class (the
-/// class the removed `dealloc_small_by_segment` would have derived) routes it to
-/// the page_map class's free list — proving reclaim genuinely honours the
-/// CARRIED class. If reclaim ignored the carried class and used page_map, this
-/// test and the one above would be indistinguishable; their DIFFERING outcomes
-/// prove the carried class is load-bearing.
-#[test]
-fn reclaim_routes_by_carried_class_counterfactual() {
-    let mut a = AllocCore::new().unwrap();
-    let seed_layout = Layout::from_size_align(16, 16).unwrap();
-    let probe_layout = Layout::from_size_align(48, 16).unwrap();
-
-    let (block, layout_class, page_map_class, _block_layout) =
-        exhibit_mixed_class_page(&mut a, seed_layout, probe_layout)
-            .expect("test precondition: a mixed-class page must be exhibited (non-vacuous)");
-    assert_ne!(layout_class, page_map_class);
-
-    let canary: u64 = 0xCA_FE_BA_BE_12_34_56_78;
-    // SAFETY: block is valid for its layout size (>= 16).
-    unsafe { ptr::write(block.add(8) as *mut u64, canary) };
-
-    // Push with the WRONG (page_map) class on purpose. reclaim_offset trusts the
-    // carried class, so the block lands on the page_map class's free list.
-    assert!(
-        // SAFETY (R6-MS-4): `block` is a live allocation owned by `a`; this push
-        // is its single logical remote free (reclaimed by the drain below, no
-        // dealloc / re-issue in between). `page_map_class` is a VALID in-range
-        // class, pushed DELIBERATELY wrong to prove reclaim routes by the carried
-        // class — the block is still freed exactly once via the ring, just routed
-        // to the page_map freelist; reclaim's magic/align/bump/is_free guards keep
-        // the mislabel sound. Not memory-unsafe.
-        unsafe { a.dbg_push_to_ring(block, page_map_class) },
-        "ring push failed"
-    );
-    a.dbg_drain_all_rings();
-
-    let pm_layout = layout_for_class(&a, page_map_class);
-    assert!(
-        block_resurfaces(&mut a, pm_layout, canary, 256),
-        "block did NOT resurface on the carried (page_map) class — reclaim did \
-         not honour the carried class"
     );
 }

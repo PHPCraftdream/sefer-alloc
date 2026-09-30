@@ -187,16 +187,18 @@ pub(crate) struct SegmentTable {
     /// ## Invariant (the correctness keystone — a stale hit is UB / M2 breach)
     ///
     /// `own_cache[i]` is either `null_mut()` (empty) or an allocator-origin
-    /// pointer CURRENTLY registered and live in the hash table. A cache HIT
-    /// (`own_cache[cache_index(base)] == base`, non-null) therefore carries the
-    /// exact same guarantee as `hash_contains(base) == true`: the segment is
-    /// registered, live, and mapped by us. This invariant is preserved
+    /// pointer CURRENTLY registered and live in the hash table. Its numeric
+    /// lookup key lives separately in `own_cache_keys[i]`: a biased Large
+    /// payload key need not equal its reservation root. A matching nonempty
+    /// pair carries the same live-membership guarantee as `hash_find(key)`.
+    /// This invariant is preserved
     /// STRUCTURALLY: the ONLY places that fill the cache are won probes, and
     /// the ONLY places that can remove a base from the hash (`unregister`,
     /// `recycle`) clear the matching cache slot in the SAME function,
     /// immediately after `hash_remove`. You cannot drop a base from the table
     /// without passing through code that also evicts it from the cache.
     own_cache: [*mut u8; OWN_CACHE_SIZE],
+    own_cache_keys: [usize; OWN_CACHE_SIZE],
     /// High-water mark: the number of slots that have EVER been written
     /// (including currently-NULL recyclable slots). Segments 0 (the
     /// primordial) is always at index 0 and is never recycled.
@@ -206,7 +208,7 @@ pub(crate) struct SegmentTable {
     /// `HASH_CAPACITY` entries. Two-state encoding (backward-shift deletion
     /// in `hash_remove` — R4-8/N3 — never leaves tombstones):
     /// - `null_mut()` → empty (terminates a probe chain)
-    /// - other        → live segment base (SEGMENT-aligned pointer)
+    /// - other        → SEGMENT-aligned numeric key plus slot id+1 in low bits
     pub(super) hash_slots: *mut *mut u8,
     /// Task #135 (Part 1): a stack of recycled (NULL) slot indices, carved in
     /// the primordial segment immediately after the hash table. `FREE_LIST_CAPACITY`
@@ -251,6 +253,7 @@ impl SegmentTable {
             // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
             // slots null). It only ever fills from a won `hash_contains` probe.
             own_cache: [core::ptr::null_mut(); OWN_CACHE_SIZE],
+            own_cache_keys: [0; OWN_CACHE_SIZE],
             count,
             hash_slots,
             free_list,
@@ -269,6 +272,15 @@ impl SegmentTable {
             crate::alloc_core::os::SEGMENT,
         )?);
         Some(())
+    }
+
+    /// Whether this instance attached terminal descriptors before first issue.
+    /// Standalone owner-local cores never attach them. Once attached, missing
+    /// per-segment descriptors remain a broken invariant, not a local-mode hint.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline]
+    pub(crate) fn is_routed(&self) -> bool {
+        self.routes.is_some()
     }
 
     pub(crate) fn close_routes(&mut self) {
@@ -294,6 +306,23 @@ impl SegmentTable {
         let _ = (base, offset, class_idx);
     }
 
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn scan_small_route(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+    ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
+        self.routes.as_ref()?.scan_small(index, base, high_water)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn claim_large_route(&self, index: usize, base: *mut u8) -> bool {
+        self.routes
+            .as_ref()
+            .is_some_and(|routes| routes.claim_large_pending(index, base))
+    }
+
     /// Register a new segment base. Returns its assigned `segment_id` (the
     /// index it was placed at), or `None` if the table is full or routed
     /// registration fails. In either failure case, no table slot is changed
@@ -311,6 +340,17 @@ impl SegmentTable {
     /// no-panic (Phase 11 GlobalAlloc face): returns `None` so the caller
     /// returns null (graceful OOM) rather than aborting.
     pub(crate) fn register(&mut self, base: *mut u8, len: usize, kind: SegmentKind) -> Option<u32> {
+        self.register_payload(base, len, kind, base)
+    }
+
+    pub(crate) fn register_payload(
+        &mut self,
+        base: *mut u8,
+        len: usize,
+        kind: SegmentKind,
+        payload: *mut u8,
+    ) -> Option<u32> {
+        let key = crate::alloc_core::os::segment_base_of_ptr(payload);
         let has_free = crate::alloc_core::node::Node::read_u32(self.free_top) != 0;
         if !has_free && self.count as usize >= MAX_SEGMENTS {
             return None;
@@ -320,7 +360,7 @@ impl SegmentTable {
         #[cfg(feature = "alloc-global")]
         let route = if let Some(routes) = &mut self.routes {
             let needed = self.count as usize + usize::from(!has_free);
-            Some(routes.prepare(needed, base, len, kind)?)
+            Some(routes.prepare(needed, base, len, kind, payload)?)
         } else {
             None
         };
@@ -331,7 +371,7 @@ impl SegmentTable {
             // currently NULL (see `free_list_push`'s contract) — reuse it.
             crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
             // OPT-B: also insert into the hash table so `contains_base` is O(1).
-            self.hash_insert(base);
+            self.hash_insert_identity(key, i);
             #[cfg(feature = "alloc-global")]
             if let Some(route) = route {
                 self.routes
@@ -350,7 +390,7 @@ impl SegmentTable {
         crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, base);
         self.count += 1;
         // OPT-B: also insert into the hash table so `contains_base` is O(1).
-        self.hash_insert(base);
+        self.hash_insert_identity(key, idx as u32);
         #[cfg(feature = "alloc-global")]
         if let Some(route) = route {
             self.routes
@@ -423,6 +463,10 @@ impl SegmentTable {
             return;
         };
         let slot = Self::slot_ptr(self.slots, slot_id);
+        let header = SegmentHeader::read_at(base);
+        let key = crate::alloc_core::os::segment_base_of_ptr(
+            crate::alloc_core::node::Node::offset(base, header.payload_offset),
+        );
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &mut self.routes {
             routes.remove(slot_id);
@@ -431,7 +475,7 @@ impl SegmentTable {
         crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
         // OPT-B: remove from hash table via backward-shift deletion (R4-8/N3:
         // no tombstone, no rebuild — see `hash_remove`).
-        self.hash_remove(base);
+        self.hash_remove(key);
         // PERF-P2 (Э3): `base` is leaving the table — it MUST NOT remain
         // cached. A stale cache slot surviving removal would let a future
         // `contains_base` HIT on an unregistered/recycled/unmapped base and
@@ -633,8 +677,8 @@ impl SegmentTable {
     /// use-after-recycle pointer is correctly treated as foreign.
     ///
     /// PERF-P2 (Э3): checks the tiny direct-mapped own-segment cache FIRST. A
-    /// cache HIT (`own_cache[cache_index(base)] == base`, non-null) returns
-    /// `true` immediately — the cache holds ONLY bases proven present (filled
+    /// cache HIT (numeric key matches and the stored root is non-null) returns
+    /// `true` immediately — the cache holds ONLY roots proven present (filled
     /// from a won probe) and is evicted in lockstep with every hash removal
     /// (`unregister`/`recycle`), so a hit carries the exact `hash_contains ==
     /// true` guarantee (registered + live + mapped). A MISS falls through to
@@ -645,34 +689,27 @@ impl SegmentTable {
     /// `dealloc_routing`, `realloc`) already hold `&mut`.
     #[inline(always)]
     pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
-        let idx = Self::cache_index(base);
-        // Fast path: proven-present cache hit.
-        if self.own_cache[idx] == base && !base.is_null() {
-            // R32-10 (task #501, F2): path-activation oracle — Tier-1 hit.
-            // `bench-internals`-gated (see `CONTAINS_BASE_TIER1_HITS`'s own
-            // doc in `alloc_core.rs`); compiled out entirely otherwise, so
-            // this cannot add overhead to a real production build.
+        self.canonical_base_of_mut(base).is_some()
+    }
+
+    /// Owner lookup with cache fill; the cache retains only allocator roots.
+    #[inline(always)]
+    pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
+        let index = Self::cache_index(key);
+        if self.own_cache_keys[index] == key.addr() && !self.own_cache[index].is_null() {
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            return true;
+            return Some(self.own_cache[index]);
         }
-        // Miss → full O(1) hash probe. Fill the cache only on a won probe.
-        // R32-10: this call fell through to Tier-2 — count the routing
-        // decision BEFORE running the probe (a Tier-2 fallback occurred
-        // regardless of whether the probe itself then finds `base`).
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        if let Some(stored) = self.hash_find(base) {
-            // The key may carry only a user's narrow reborrow provenance.
-            self.own_cache[idx] = stored;
-            true
-        } else {
-            false
-        }
+        let root = self.hash_find(key)?;
+        self.own_cache[index] = root;
+        self.own_cache_keys[index] = key.addr();
+        Some(root)
     }
-
     /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
     /// (no fill), for `&self` contexts (test-only `dbg_*` accessors, census).
     /// Same result as `contains_base` — it just skips the remember-proven
@@ -718,7 +755,7 @@ impl SegmentTable {
     pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
         let idx = Self::cache_index(base);
         let cached = self.own_cache[idx];
-        if cached == base && !base.is_null() {
+        if self.own_cache_keys[idx] == base.addr() && !cached.is_null() {
             return Some(cached);
         }
         self.hash_find(base)
@@ -764,45 +801,28 @@ impl SegmentTable {
         (base.addr() >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
     }
 
-    /// PERF-P2 (Э3): evict `base` from the direct-mapped cache if (and only if)
-    /// the slot for `base`'s index currently holds exactly `base`. Called from
-    /// `unregister`/`recycle` in lockstep with `hash_remove`. A slot holding a
-    /// DIFFERENT base (a collision) is left untouched — that other base is
-    /// still live, and evicting it would only cost a future miss, never
-    /// correctness; but we specifically do NOT clear it because doing so is
-    /// unnecessary.
+    /// Evict every cache entry holding this canonical root. A biased payload
+    /// key may map to a different index than its root, so eviction compares
+    /// stored roots, not the numeric lookup keys. Called from
+    /// `unregister`/`recycle` in lockstep with `hash_remove`.
     ///
     /// ## Register-reuse reasoning (why `register` does NOT touch the cache)
     ///
-    /// The cache invariant is "a non-null cache slot holds a base currently
-    /// present in the hash". A newly-registered base `b` at index `i` finds
-    /// `own_cache[i]` either EMPTY (`null` — fine, no stale entry) or holding
-    /// some OTHER base `b' != b`. In the latter case `b'` can only be a base
-    /// that is ITSELF still live in the hash (every eviction path clears the
-    /// slot when its base leaves, so a surviving non-null slot is a live base):
-    /// `b'` is not `b`, so a lookup of `b` MISSES the cache and falls to the
-    /// hash (correct), and a lookup of `b'` still HITS correctly (b' is
-    /// genuinely live). Registering `b` neither creates nor removes a hash
-    /// entry for `b'`, so the invariant holds for both.
-    ///
-    /// It is IMPOSSIBLE for `own_cache[i]` to hold `b` itself at register time:
-    /// the cache only fills from a won probe, and `b` could only have won a
-    /// probe while previously registered; but between that registration and
-    /// this one `b` MUST have been removed via `unregister`/`recycle`, which
-    /// clears the slot for `b`. Hence no stale `b` can survive to this
-    /// `register`. Therefore `register` needs no cache write — the ONLY hazard
-    /// (a stale slot surviving removal) is fully handled by the eviction in
-    /// `unregister`/`recycle`. Verified: see the counterfactual regression test
-    /// `regression_own_segment_cache_invalidation`.
+    /// A non-null pair holds a key and its live, stored root. Registration
+    /// does not fill the cache; a won hash probe does. Unregister/recycle
+    /// remove the hash entry and clear its root before that address can be
+    /// reused, so neither a stale key nor a stale root can survive reuse.
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
         allow(dead_code)
     )]
     #[inline]
     pub(super) fn own_cache_clear(&mut self, base: *mut u8) {
-        let idx = Self::cache_index(base);
-        if self.own_cache[idx] == base {
-            self.own_cache[idx] = core::ptr::null_mut();
+        for i in 0..OWN_CACHE_SIZE {
+            if self.own_cache[i] == base {
+                self.own_cache[i] = core::ptr::null_mut();
+                self.own_cache_keys[i] = 0;
+            }
         }
     }
 

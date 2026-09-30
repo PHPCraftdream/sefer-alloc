@@ -1,3 +1,9 @@
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 //! Miri-plain coverage for the multi-producer SMALL-block `RemoteFreeRing`
 //! push path (audit finding G1, high severity —
 //! `docs/reviews/2026-08-04-release-stabilization-audit.md`).
@@ -173,7 +179,7 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
     // reads of tail/head/slots). This reclaims the offsets the producers
     // pushed, making them available for the owner's future allocations and
     // satisfying miri's leak checker.
-    unsafe { (*heap_ptr).dbg_drain_all_rings() };
+    unsafe { (*heap_ptr).dbg_drain_sidecar_ingress() };
 
     // Cleanup: free everything the owner currently holds and recycle the heap.
     for &p in &owner_ptrs {

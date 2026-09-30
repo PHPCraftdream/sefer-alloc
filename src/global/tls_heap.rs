@@ -202,104 +202,17 @@ impl Drop for AbandonGuard {
         // platform), no post-teardown reader of `LOCAL` can run either — those
         // resolvers get `Err` too and route to Fallback — so the no-op is safe.
         mark_local_torn();
-        // UBFIX-10 (M-9): opportunistic Large-deferred-free drain on thread
-        // exit. Before this task, `HeapCore::drain_large_deferred_free` ran
-        // ONLY from the two Large-classified call sites inside `alloc`/
-        // `realloc` — so a heap whose owning thread stopped issuing Large
-        // requests before it exited (e.g. it only ever allocated Small
-        // blocks, or its last Large request happened long before any
-        // cross-thread free of one of its Large segments arrived) could carry
-        // a non-empty deferred-free stack all the way to thread exit. Under
-        // the Phase 12.5 shard model the slot's `HeapCore` (including this
-        // stack's head) survives recycle intact and is reused whole by
-        // whichever thread next claims this slot — so the entries are not
-        // permanently unreachable, but if no future claimant ever allocates a
-        // Large block on this slot either, they stay queued (mapped, unused
-        // segments) indefinitely. Draining here, once, right before the slot
-        // goes back to the free pool, reclaims them opportunistically instead
-        // of leaving that outcome to chance.
-        //
-        // Placement: BEFORE the `recycle` CAS below, i.e. while this thread is
-        // still the slot's sole owner/writer (`STATE_LIVE`) — exactly the
-        // single-writer window every other mutation of this heap already
-        // relies on. Draining after `recycle` would race a new claimant.
-        //
-        // Cost: thread exit is definitionally cold (runs once per thread,
-        // never on the alloc/dealloc hot path), and
-        // `drain_large_deferred_free`'s pop loop starts with a single Acquire
-        // load of the stack head, returning immediately when empty — so the
-        // common case (nothing queued) costs one atomic load on a path that
-        // is already off every benched hot path.
-        //
-        // SAFETY: `heap` was returned by `HeapRegistry::claim` and is still
-        // LIVE (same justification as the `recycle` call below); `HeapCore`
-        // is `#![deny(unsafe_code)]`, so the dereference happens through the
-        // crate's own safe `&mut *heap` — sound because this thread is the
-        // heap's sole owner until the CAS below flips it to FREE.
-        #[cfg(feature = "alloc-xthread")]
-        unsafe {
-            (*heap).drain_large_deferred_free();
-        }
-        // task #95 / N1 — teardown trim. Flush every tcache class, drain the
-        // small-segment pool, and evict the entire large cache, returning
-        // retained memory to the OS. Same placement window as the
-        // `drain_large_deferred_free` call above: BEFORE the `recycle` CAS,
-        // while this thread is still the slot's sole owner/writer
-        // (`STATE_LIVE`). Without this trim, a wave of short-lived threads
-        // leaves tcache-buffered blocks, pooled small segments (up to 16 MiB
-        // each), and cached large spans pinned on each recycled slot —
-        // RSS/commit stays proportional to peak thread count, not current
-        // load (performance_review.md finding N1).
-        //
-        // Cost: thread exit is definitionally cold (runs once per thread,
-        // never on the alloc/dealloc hot path). Each sub-step starts with a
-        // cheap check (tcache class count == 0 → skip; pool empty → skip;
-        // large cache empty → skip) so a heap that already has nothing
-        // retained costs only a handful of loads on a path that is already
-        // off every benched hot path.
-        //
-        // SAFETY: same as `drain_large_deferred_free` above — `heap` was
-        // returned by `HeapRegistry::claim` and is still LIVE; this thread
-        // is the heap's sole owner until the CAS below flips it to FREE.
+        // Complete the terminal sidecar cut and owner cache trim before releasing
+        // this thread's ownership. Never mutate the core after recycle.
+        // SAFETY: this thread owns the successfully claimed slot until the
+        // matching recycle below; trim mutates only owner-owned state.
         unsafe {
             (*heap).trim_for_recycle();
         }
-        // Phase 12.5 (architectural turn): thread death = RELEASE THE SLOT
-        // ONLY. We do NOT abandon/walk/clear the heap. The HeapCore (with ALL
-        // its segments + the inline TFS head) STAYS WHOLE in the slot — it is
-        // not dropped, not fragmented, not transferred. A later thread that
-        // claims this recycled slot reuses the SAME HeapCore in full (claim
-        // does not re-materialise when `new_gen != 1`): its segments, its free
-        // lists, and crucially its segments' per-segment `RemoteFreeRing`s,
-        // which still hold any cross-thread frees pushed after this thread
-        // exited. The reclaiming thread reclaims those entries LAZILY on a
-        // free-list miss (`AllocCore::find_segment_with_free` drains each owned
-        // segment's ring via `reclaim_offset`) — this is the shard-reuse
-        // discipline (a freed shard's remote-free queue is drained by the new
-        // owner, exactly as `ShardedRegion` 7b models).
-        //
-        // Why NO abandon walk: the abandon/adopt protocol TRANSFERRED SEGMENTS
-        // BETWEEN HEAPS, which meant two heaps could write the same segment's
-        // BinTable/header concurrently (a data race that tore the header and
-        // corrupted free lists). The shard model restores the single-writer
-        // invariant — a segment is written ONLY by its slot's current owner,
-        // full stop. The abandon/adopt substrate (the `abandoned_segs` Treiber
-        // stack + `owner_state` ABANDONED→LIVE adoption CAS) has been REMOVED
-        // (task #97 / R4-5): it was unreachable on this whole-slot-reuse path
-        // and internally inconsistent; git history preserves it if a future
-        // decommit-when-empty policy ever needs to reintroduce segment
-        // transfer.
-        //
-        // `owner_thread_free` points at the slot's inline TFS, whose address is
-        // stable for the process lifetime. Across release→claim it does NOT
-        // change, so it is stamped ONCE (on the segment's first alloc) and
-        // never cleared/re-stamped — removing the racy cross-thread header
-        // writes that caused the corruption.
-        //
-        // SAFETY: `heap` was returned by `HeapRegistry::claim` (set in
-        // `finish_bind`) and has not yet been recycled (the guard drops once,
-        // on thread exit). The slot is still LIVE; `recycle` is the matching
-        // half of `claim` (CAS LIVE→FREE + push_free_slot).
+        // Reservation identities and independently pinned sidecars survive slot
+        // recycle. A later claimant or a successful maintenance lease can consume
+        // late publications; publishers never borrow this core.
+        // SAFETY: this guard recycles its claimed slot once, after all mutation.
         unsafe { HeapRegistry::recycle(heap) };
     }
 }

@@ -245,32 +245,7 @@ impl SegmentMeta {
         Node::write_struct(self.base as *mut SegmentHeader, hdr);
     }
 
-    // -------------------------------------------------------------------
-    // Field-specific header accessors (task #33 root-cause fix).
-    //
-    // The Phase-12 `SegmentHeader` packs an owner-mutated field (`bump`,
-    // rewritten on every `carve_block`) alongside cross-thread-read fields
-    // (`magic`, `kind`, `owner_thread_free`). A full-struct `read_at` /
-    // `write_header` RMW of the whole header therefore races a Remote's
-    // non-atomic struct read with the Owner's `bump`-touching struct write —
-    // a data race and UB (see docs/RACE_DRAIN_RECLAIM.md §11).
-    //
-    // These accessors touch a SINGLE field via its `offset_of!` offset:
-    //   - `bump_of` / `set_bump` — owner-only (the Owner is the sole writer
-    //     and the sole reader of `bump`; no Remote ever reads it), so a plain
-    //     field read/write is race-free.
-    //   - the cross-thread-read fields split by access kind:
-    //     * `kind`, `owner_thread_free` are written ONCE at init/stamp time
-    //       and only read cross-thread thereafter — a plain field read of
-    //       either does not race the owner's disjoint-field `bump` writes
-    //       (verified R6-MS-5: no atomic writer exists for either field, so
-    //       there is no plain-read-vs-atomic-store access-kind mismatch).
-    //     * `magic` is the EXCEPTION — it is ALSO atomically zeroed on
-    //       Large-segment recycle-to-cache (UBFIX-6), so its cross-thread
-    //       read is an ATOMIC Acquire load (`magic_at` via `atomic_u32_at`),
-    //       NOT a plain field read, pairing the recycler's Release store.
-    //       (R6-MS-5 / U-R5-1 closed this access-kind mismatch.)
-    // -------------------------------------------------------------------
+    // Field-specific owner accesses avoid copying unaffected metadata.
 
     /// Read the owner-only `bump` cursor (the next uncarved payload byte
     /// offset). Owner-only: the owning thread is the sole reader/writer of
@@ -281,11 +256,7 @@ impl SegmentMeta {
         Node::read_usize(Node::offset(self.base, off) as *const usize)
     }
 
-    /// Write the owner-only `bump` cursor. Replaces the full-struct
-    /// `write_header` on the `carve_block` hot path: writing only this field
-    /// avoids rewriting the cross-thread-read header fields, so it cannot race
-    /// with a Remote's field read of `magic`/`kind`/`owner_thread_free`.
-    /// Owner-only (the Owner is the sole writer of `bump`).
+    /// Write the owner-only bump cursor without copying the whole header.
     #[inline(always)]
     pub(crate) fn set_bump(&mut self, value: usize) {
         let off = core::mem::offset_of!(SegmentHeader, bump);
@@ -331,19 +302,8 @@ impl SegmentMeta {
         ))
     }
 
-    /// The per-segment `RemoteFreeRing` view (the non-intrusive cross-thread
-    /// free queue). The ring metadata is carved at [`Layout::remote_ring_off`]
-    /// at bootstrap; this returns the typed view over it.
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn remote_ring(&self) -> crate::alloc_core::remote_free_ring::RemoteFreeRing {
-        crate::alloc_core::remote_free_ring::RemoteFreeRing::at(
-            self.base,
-            Layout::remote_ring_off(),
-        )
-    }
-
     // -------------------------------------------------------------------
-    // Atomic views over the owner-state / deferred_next fields. These
+    // Atomic view over the owner identity field.
     // return `&AtomicU64` at the field's fixed offset so a cross-thread
     // read/store is a genuine atomic operation (NOT a non-atomic struct
     // field read, which would be a data race under concurrency). The single
@@ -373,15 +333,6 @@ impl SegmentMeta {
         // `#[repr(C)]` type); the atomic-view dereference is delegated to
         // the `node` seam.
         let off = core::mem::offset_of!(SegmentHeader, owner_state);
-        Node::atomic_u64_at(self.base, off)
-    }
-
-    /// A `&AtomicU64` view over this segment's `deferred_next` intrusive-link
-    /// field. Used by the deferred-large-free push (remote producer) and
-    /// drain (owner) paths — see `alloc_core::deferred_large`.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    pub(crate) fn deferred_next_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
-        let off = core::mem::offset_of!(SegmentHeader, deferred_next);
         Node::atomic_u64_at(self.base, off)
     }
 }

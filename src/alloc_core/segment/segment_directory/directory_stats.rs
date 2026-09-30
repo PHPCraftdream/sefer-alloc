@@ -45,22 +45,6 @@ pub(crate) static DIRECTORY_FALLBACK_SCANS: AtomicU64 = AtomicU64::new(0);
 /// per-class bitmap scan). Reads 0 until A3 wires the increment.
 pub(crate) static DIRECTORY_WORDS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
-/// Dirty segments drained (A4: each segment whose dirty bit was set and whose
-/// ring was drained by the directory-driven lookup). Reads 0 until A4 wires
-/// the increment.
-pub(crate) static DIRTY_SEGMENTS_DRAINED: AtomicU64 = AtomicU64::new(0);
-
-/// R9-6 (class-aware dirty routing judge): counts the subset of
-/// `DIRTY_SEGMENTS_DRAINED` events where the segment's ring, once drained in
-/// response to a `find_segment_with_free_impl(class_idx)` call, produced ZERO
-/// reclaimed blocks of the sought `class_idx` — i.e. from THAT caller's
-/// perspective the drain was wasted work that class-aware dirty routing (a
-/// per-(segment,class) dirty bitmap) would have avoided entirely. Diagnostic
-/// only; does not influence the drain algorithm. Reads 0 unless `alloc-stats`
-/// is on (the increment site is gated) and `alloc-xthread` + not-`numa-aware`
-/// (the drain itself is gated).
-pub(crate) static WASTED_DIRTY_DRAINS: AtomicU64 = AtomicU64::new(0);
-
 /// Slots examined in the CURRENT linear scan (`find_segment_with_free_impl`).
 /// Incremented once per slot visited (including null/skipped slots) so the
 /// baseline already has the scan-cost counter live. This is the PRIMARY

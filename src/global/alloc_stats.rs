@@ -84,11 +84,9 @@ pub struct AllocStats {
     /// equality.
     pub decommit_calls: u64,
 
-    /// Number of large allocations reclaimed from another thread's heap via
-    /// the cross-thread large-object reclaim path (task A1) since process
-    /// start. `AllocStats` only exists under `alloc-global`, which (R5-01)
-    /// unconditionally implies `alloc-xthread` — this field is always live
-    /// wherever `AllocStats` is.
+    /// Completed Large terminal publications since process start, including
+    /// cache admission and OS release. Always live under `alloc-global`;
+    /// local direct frees do not increment this remote-retirement counter.
     pub large_xthread_reclaimed: u64,
 
     /// Number of small allocations served from a thread's per-class magazine
@@ -104,54 +102,6 @@ pub struct AllocStats {
     /// field reads `0` even when magazine hits are occurring; build with
     /// `--features "production alloc-stats"` to get the real count.
     pub tcache_hits: u64,
-
-    /// Number of cross-thread frees whose FIRST push attempt onto a segment's
-    /// remote-free ring found it full (a first-tier miss). `AllocStats` only
-    /// exists under `alloc-global`, which (R5-01) unconditionally implies
-    /// `alloc-xthread` — this field is always live wherever `AllocStats` is.
-    ///
-    /// **This is NOT a leak counter.** The underlying counter
-    /// (`DBG_RING_OVERFLOW`) ticks once per logical free that saw a full
-    /// segment ring — the moment that free enters its recovery chain — and
-    /// most such frees are saved by the next tier: the owning heap's
-    /// second-chance `HeapOverflow` ring (tried immediately, before any
-    /// spinning) and, if that is also momentarily full, the bounded
-    /// spin-retry against both tiers. An elevated or sustained rate here is
-    /// expected under multi-producer fan-in and means "handled
-    /// ring-capacity pressure", not loss.
-    ///
-    /// **A legal cross-thread free has no terminal-loss path in the current
-    /// protocol — do not alert on [`cross_thread_frees_lost`](Self::cross_thread_frees_lost)
-    /// for that purpose.** [`cross_thread_frees_lost`](Self::cross_thread_frees_lost)
-    /// is a legacy pre-R2-09 counter: it used to increment when every tier of
-    /// this chain failed and the freed block was discarded, but R2-09
-    /// replaced that terminal drop with an intrusive spill (the third tier,
-    /// below) and left the counter with no writer — it reads `0` for every
-    /// legal free, always, and is not a useful signal (see its own doc for
-    /// detail; it is retained only for older diagnostic callers).
-    ///
-    /// The chain a cross-thread free actually goes through today: (1) the
-    /// segment's `RemoteFreeRing` (what this field, `ring_overflows`,
-    /// counts a miss on), (2) the owning heap's second-chance `HeapOverflow`
-    /// ring (tried immediately), (3) a bounded spin-retry against both
-    /// rings, and, only if all three miss, (4) an **intrusive spill**: the
-    /// pending free publishes itself without depending on an active owner
-    /// or allocating new metadata, so it remains reachable and is reclaimed
-    /// whenever the owner (or, once it recycles, the next owner) next
-    /// drains. Reading `ring_overflows` in isolation cannot distinguish a
-    /// rescued free from a spilled one, but neither case is a loss:
-    /// `tests/r2_22_ring_overflows_doc_semantics.rs` pins the rescued and
-    /// retry-recovered cases, and `tests/remote_fanin.rs`'s
-    /// `remote_fanin_owner_starved_residual_is_bounded` and
-    /// `remote_fanin_owner_starved_beyond_both_rings_is_lossless` pin the
-    /// spill case (both assert `cross_thread_frees_lost` stays `0` across a
-    /// burst that forces it). There is currently no public `AllocStats`
-    /// counter for third-tier spill pressure specifically — only the
-    /// `internals`/`bench-internals`-gated diagnostic ledger
-    /// (`HeapCore::dbg_spill_ledger_for_test`) observes it; a public spill
-    /// counter is a possible future addition (`AllocStats` is
-    /// `#[non_exhaustive]`), not implemented here.
-    pub ring_overflows: u64,
 
     /// Cumulative count of successful OS segment reservations since process
     /// start, across every heap in the process (small-heap segments,
@@ -220,17 +170,4 @@ pub struct AllocStats {
     /// `alloc-decommit` feature (where `claim_with_config` exists); `0`
     /// otherwise.
     pub config_conflicts: u64,
-
-    /// Historical terminal-loss counter retained for diagnostics. R2-09
-    /// replaced that terminal drop with an intrusive spill: legal small-block
-    /// remote frees now remain reachable when both bounded rings are full,
-    /// without depending on an active owner or allocating new metadata.
-    /// This counter therefore stays at zero for legal frees in the current
-    /// protocol. [`ring_overflows`](Self::ring_overflows) still counts the
-    /// first-tier ring-full event, including frees recovered by the heap ring
-    /// or spill. `AllocStats` only exists under `alloc-global`, which
-    /// (R5-01) unconditionally implies `alloc-xthread`, so this field's
-    /// backing counter is always compiled in wherever `AllocStats` is (it
-    /// still reads `0` for every legal free — see above).
-    pub cross_thread_frees_lost: u64,
 }

@@ -20,7 +20,7 @@
 //!   `HeapCore::alloc_zeroed` (`src/registry/heap_core/alloc/hot.rs:544`)
 //!     -> `alloc_small_zeroed_via_magazine` (`:337`)
 //!       -> on a magazine MISS: `refill_magazine_slow_virgin` (`:433`)
-//!         -> `AllocCore::refill_class_bump_virgin_checked`
+//!         -> `AllocCore::refill_class_bump_virgin`
 //! This refill carves `refill_n_for_class(block_size)` blocks (clamped to
 //! `TCACHE_CAP = 16` by a 64 KiB byte budget), issues ONE to the caller, and
 //! STORES the retained `refill_n-1` blocks' virgin bits into

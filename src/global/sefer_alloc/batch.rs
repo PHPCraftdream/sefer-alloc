@@ -123,26 +123,14 @@ impl SeferAlloc {
                 unsafe { (*heap).dealloc_batch(layout, blocks) };
             }
             CurrentHeapForDealloc::ForeignNoBind => {
-                // Mirrors `SeferAlloc::dealloc`'s `ForeignNoBind` arm
-                // exactly, looped per non-null block: this thread never
-                // bound a heap (or its slot was already recycled/torn),
-                // so every valid pointer reaching here is foreign BY
-                // CONSTRUCTION — route it through the heap-instance-
-                // independent routing tail, WITHOUT claiming a registry
-                // slot and WITHOUT constructing or dereferencing any
-                // `*mut HeapCore`.
-                //
-                // SAFETY: `blocks`/`layout` are the caller-bound
-                // dealloc-batch contract pair (this whole fn is `unsafe
-                // fn`); `dealloc_foreign_routing` applies the same
-                // null-base and magic-mismatch guards the scalar foreign
-                // path uses before touching any segment memory.
+                // Each current issued instance is transferred uniquely. The
+                // lookup uses its address only, without binding a heap.
                 for &ptr in blocks {
                     if ptr.is_null() {
                         continue;
                     }
-                    let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
-                    crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
+                    // SAFETY: the batch caller transfers each live instance once.
+                    unsafe { crate::registry::HeapCore::publish_foreign(ptr, layout) };
                 }
             }
         }

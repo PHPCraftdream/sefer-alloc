@@ -24,6 +24,7 @@ std::thread_local! {
 struct Entry {
     key: usize,
     end: usize,
+    payload: usize,
     root: AtomicPtr<u8>,
     owner: usize,
     kind: RouteKind,
@@ -43,6 +44,7 @@ impl EntryHandle {
         root: *mut u8,
         key: usize,
         end: usize,
+        payload: usize,
         owner: usize,
         kind: RouteKind,
         incarnation: u64,
@@ -80,6 +82,7 @@ impl EntryHandle {
             ptr.write(Entry {
                 key,
                 end,
+                payload,
                 root: AtomicPtr::new(root),
                 owner,
                 kind,
@@ -149,6 +152,12 @@ impl EntryHandle {
     }
     pub(super) fn root(&self) -> *mut u8 {
         self.entry().root.load(Ordering::Relaxed)
+    }
+    pub(super) fn contains_payload(&self, addr: usize, size: usize) -> bool {
+        let entry = self.entry();
+        addr >= entry.payload
+            && (!matches!(entry.kind, RouteKind::Large) || addr == entry.payload)
+            && addr.checked_add(size).is_some_and(|end| end <= entry.end)
     }
 
     pub(super) fn small_sidecar(&self) -> Option<&SmallSidecar> {
@@ -395,14 +404,16 @@ impl RouteDirectory {
         let route_addr = route_ptr.addr();
         let end = start.checked_add(len).ok_or(RouteError::InvalidSpan)?;
         if start == 0
-            || start & (SEGMENT - 1) != 0
+            || start & (aligned_vmem::page_size() - 1) != 0
             || len == 0
             || route_addr < start
             || route_addr >= end
         {
             return Err(RouteError::InvalidSpan);
         }
-        if matches!(kind, RouteKind::Small | RouteKind::Primordial) && len != SEGMENT {
+        if matches!(kind, RouteKind::Small | RouteKind::Primordial)
+            && (len != SEGMENT || start & (SEGMENT - 1) != 0)
+        {
             return Err(RouteError::InvalidSpan);
         }
         let key = route_addr & !(SEGMENT - 1);
@@ -411,7 +422,7 @@ impl RouteDirectory {
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| RouteError::IncarnationExhausted)?
             + 1;
-        let entry = EntryHandle::new(root, key, end, owner, kind, incarnation)?;
+        let entry = EntryHandle::new(root, key, end, route_addr, owner, kind, incarnation)?;
         let shard = &self.shards[Self::shard_index(key)];
         loop {
             let mut guard = shard.lock().unwrap_or_else(|e| e.into_inner());
@@ -467,7 +478,10 @@ impl RouteDirectory {
         // SAFETY: the shard lock excludes unlink and final release; the
         // indexed entry is fully initialized and still owner-referenced.
         let entry = unsafe { &*raw };
-        if addr < entry.root.load(Ordering::Relaxed).addr() || addr >= entry.end {
+        if addr < entry.payload
+            || addr >= entry.end
+            || (matches!(entry.kind, RouteKind::Large) && addr != entry.payload)
+        {
             return None;
         }
         let incarnation = entry.incarnation;
@@ -494,7 +508,8 @@ impl RouteDirectory {
     }
 
     const fn shard_index(key: usize) -> usize {
-        (key / SEGMENT) % SHARDS
+        let value = key / SEGMENT;
+        (value ^ (value >> 13) ^ (value >> 26)) % SHARDS
     }
 }
 

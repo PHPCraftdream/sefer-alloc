@@ -31,17 +31,13 @@ fn pick_class() -> usize {
         .expect("96 B / align 8 is a small class in every size-class table")
 }
 
-fn dummy_pred(_: *mut u8, _: usize) -> bool {
-    false
-}
-
 #[test]
 fn zero_len_refill_zeroes_even_a_poisoned_mask() {
     let mut core = fresh_core();
     let c = pick_class();
     let mut out: [*mut u8; 0] = [];
     let mut mask: u16 = POISON;
-    let filled = core.refill_class_bump_virgin_checked(c, &mut out, &dummy_pred, &mut mask);
+    let filled = core.refill_class_bump_virgin(c, &mut out, &mut mask);
     assert_eq!(filled, 0);
     assert_eq!(
         mask, 0,
@@ -66,7 +62,7 @@ fn recycled_then_fresh_mixed_refill_mask_is_exact() {
     // are NEVER virgin (dispatch conjunct false in the refill doc).
     let mut stage1 = vec![core::ptr::null_mut::<u8>(); 4];
     let mut scratch: u16 = 0;
-    let got1 = core.refill_class_bump_virgin_checked(c, &mut stage1, &dummy_pred, &mut scratch);
+    let got1 = core.refill_class_bump_virgin(c, &mut stage1, &mut scratch);
     assert_eq!(got1, 4);
     assert_eq!(
         scratch, 0b1111,
@@ -85,7 +81,7 @@ fn recycled_then_fresh_mixed_refill_mask_is_exact() {
     // (slots 4..16) set, and the poisoned input must be gone everywhere.
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
     let mut mask: u16 = POISON;
-    let filled = core.refill_class_bump_virgin_checked(c, &mut out, &dummy_pred, &mut mask);
+    let filled = core.refill_class_bump_virgin(c, &mut out, &mut mask);
     assert_eq!(filled, 16);
     assert_eq!(
         mask, 0b1111_1111_1111_0000,
@@ -117,7 +113,7 @@ fn fully_recycled_refill_mask_is_all_clear() {
     // the whole u16 promised).
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
     let mut scratch: u16 = 0;
-    let got = core.refill_class_bump_virgin_checked(c, &mut out, &dummy_pred, &mut scratch);
+    let got = core.refill_class_bump_virgin(c, &mut out, &mut scratch);
     assert_eq!(got, 16);
     assert_eq!(
         scratch,
@@ -136,7 +132,7 @@ fn fully_recycled_refill_mask_is_all_clear() {
     }
     let mut out2 = vec![core::ptr::null_mut::<u8>(); 16];
     let mut mask: u16 = POISON;
-    let got2 = core.refill_class_bump_virgin_checked(c, &mut out2, &dummy_pred, &mut mask);
+    let got2 = core.refill_class_bump_virgin(c, &mut out2, &mut mask);
     assert_eq!(got2, 16);
     assert_eq!(
         mask, 0,
@@ -152,7 +148,7 @@ fn out_len_17_panics_in_every_profile() {
     let c = pick_class();
     let mut out = vec![core::ptr::null_mut::<u8>(); 17];
     let mut mask: u16 = 0;
-    let _ = core.refill_class_bump_virgin_checked(c, &mut out, &dummy_pred, &mut mask);
+    let _ = core.refill_class_bump_virgin(c, &mut out, &mut mask);
 }
 
 #[test]
@@ -162,5 +158,5 @@ fn out_len_32_panics_in_every_profile() {
     let c = pick_class();
     let mut out = vec![core::ptr::null_mut::<u8>(); 32];
     let mut mask: u16 = 0;
-    let _ = core.refill_class_bump_virgin_checked(c, &mut out, &dummy_pred, &mut mask);
+    let _ = core.refill_class_bump_virgin(c, &mut out, &mut mask);
 }

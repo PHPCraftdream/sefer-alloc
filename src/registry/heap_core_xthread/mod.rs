@@ -6,8 +6,6 @@
 //! All methods are `#[cfg(feature = "alloc-xthread")]`.
 //! Pure code-movement sibling of `heap_core.rs`; no behavior changed.
 
-mod drain;
-mod overflow;
-mod ring;
 mod routing;
-mod stall;
+#[cfg(feature = "alloc-global")]
+mod sidecar_drain;

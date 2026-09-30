@@ -31,31 +31,10 @@
 //!
 //! ## Blocks are normal segment blocks
 //!
-//! Blocks allocated from the fallback are normal segment blocks — their
-//! owning segment's header carries `owner_thread_free` set to the fallback
-//! heap's TFS head. `alloc-global` unconditionally implies `alloc-xthread`
-//! (R5-01), so a later cross-thread free always routes correctly via
-//! `segment_base_of` → header owner, no special-casing on the free path.
-//!
-//! ## M5-clean bootstrap
-//!
-//! The fallback's [`HeapCore::new`] goes through the OS aperture
-//! (`mmap`/`VirtualAlloc`) and never `std::alloc` — same M5-clean property
-//! as the registry bootstrap. Under `alloc-xthread`, the cross-thread
-//! free-stack head is NOT an inline `HeapCore` field and is NOT `Box`-allocated:
-//! task H1 hoisted it into the standalone process-`'static` [`FALLBACK_TFS`]
-//! atomic (the fallback's analogue of a registry slot's `thread_free` word),
-//! whose stable address is bound into the fallback `HeapCore` via
-//! [`HeapCore::bind_thread_free`] once, at init under the bootstrap race,
-//! BEFORE the `READY` publish. The same initialization binds the independent
-//! process-static fallback `HeapOverflow`; the sentinel owner id resolves to
-//! it without indexing the registry. Cross-thread-free routing uses these
-//! already-bound `'static` objects — no allocation on any fallback
-//! path, M5-clean and M10-preserving. (A `Box`-via-`std::alloc` here would
-//! self-deadlock — the first fallback alloc runs under the fallback spinlock,
-//! and re-entering the global allocator to grow a `Box` would recurse back
-//! into it; hoisting the head to a `'static` avoids that entirely, with no
-//! first-alloc `Box` and no OOM-on-install case to handle.)
+//! Fallback blocks use the same numeric route directory and terminal sidecars
+//! as registry heaps. Foreign free tries this lock after numeric owner lookup;
+//! a busy lock uses terminal publication, never a header read or wait.
+//! Owner mutation is serialized by LOCK; maintenance uses only try_with_heap.
 //!
 //! [`tls_heap::current_for_alloc`]: super::tls_heap::current_for_alloc
 
@@ -73,33 +52,9 @@
 
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
-#[cfg(feature = "alloc-xthread")]
-use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use crate::registry::HeapCore;
-
-/// task H1: the fallback heap's cross-thread free-stack head / identity stamp,
-/// hoisted OUT of the fallback `HeapCore` into this process-`'static` atomic —
-/// the fallback's analogue of a registry slot's
-/// [`HeapSlot::thread_free`](crate::registry::HeapSlot::thread_free).
-///
-/// The fallback `HeapCore` lives in a `static mut` handed out as `&mut` under
-/// the [`LOCK`] spinlock; a REMOTE thread cross-thread-freeing a Large segment
-/// owned by the fallback CASes its free-stack head through EXPOSED provenance.
-/// Were that head an inline `HeapCore` field, the remote write would land
-/// inside the range of the owner's `&mut *FALLBACK` — the same H1 aliasing
-/// conflict fixed for registry heaps by moving the head into the `Sync` slot.
-/// This standalone `'static` atomic (never inside any `&mut HeapCore`) is the
-/// fallback's equivalent slot word: its stable address is planted into the
-/// fallback `HeapCore` (via `HeapCore::bind_thread_free`) at init, and stamped
-/// into the fallback's segment headers, so remote freers CAS THIS word, never
-/// a byte inside `FALLBACK`.
-///
-/// `AtomicPtr` is `Sync`, so shared cross-thread atomic access is race-free;
-/// null-initialised (empty stack). Only present under `alloc-xthread`.
-#[cfg(feature = "alloc-xthread")]
-static FALLBACK_TFS: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 
 /// Bootstrap-state values (mirrors `registry::bootstrap`). `pub` so the F-8
 /// counterfactual test (`tests/regression_fallback_init_unwind_guard.rs`) can
@@ -286,50 +241,16 @@ fn heap_ptr_impl(
                     // `static_mut_refs`); we cast to `*mut HeapCore` for the
                     // `write`.
                     unsafe { (addr_of_mut!(FALLBACK) as *mut HeapCore).write(hc) };
-                    // task H1 / R1-10: plant every stable handle this fallback
-                    // heap can bind at init — the fallback analogue of
-                    // `bind_slot_counters` binding a registry heap to its
-                    // slot's `thread_free`/hit counters. Done here, under the
-                    // init race (we are the sole initialiser; no other thread
-                    // can read `FALLBACK` until we publish READY), BEFORE the
-                    // Release store — so the first `with_heap` alloc/free
-                    // already sees every bound handle. `heap_ref` goes unused
-                    // when NONE of the gated binds below are compiled in (e.g.
-                    // plain `alloc-global` without `fastbin`/`alloc-decommit`/
-                    // `alloc-xthread`) — `#[cfg_attr]` mirrors
-                    // `bind_slot_counters`'s own guard for the identical
-                    // reason.
-                    #[cfg_attr(
-                        not(any(
-                            all(feature = "alloc-global", feature = "fastbin"),
-                            feature = "alloc-decommit",
-                            feature = "alloc-xthread"
-                        )),
-                        allow(unused_variables)
-                    )]
+                    // Bind real process-wide observer counters before READY.
+                    #[cfg(any(feature = "fastbin", feature = "alloc-decommit"))]
                     {
                         // SAFETY: we won the init race (STATE_INITIALIZING) and
                         // just `write`(hc) into `FALLBACK`; we are its sole
                         // writer and no other thread can reference it until we
                         // publish READY. This exclusive `&mut` lives only for
-                        // the binding calls below. `FALLBACK_TFS`, the fallback
-                        // overflow ring, and the R1-10 fallback hit counters
-                        // are all process-`'static` statics outside the
-                        // `&mut HeapCore` range.
+                        // process-static hit counters outside the &mut HeapCore range.
                         let heap_ref: &mut HeapCore =
                             unsafe { &mut *(addr_of_mut!(FALLBACK) as *mut HeapCore) };
-                        // Skipped when `alloc-xthread` is off (the fallback is
-                        // single-threaded in that config and has no
-                        // cross-thread head/overflow ring to bind). No
-                        // registry slot exists for this owner, hence no slot
-                        // dirty bitmap to bind either way — its slow paths
-                        // drain overflow/spill and scan segment rings
-                        // directly.
-                        #[cfg(feature = "alloc-xthread")]
-                        {
-                            heap_ref.bind_thread_free(&FALLBACK_TFS);
-                            heap_ref.bind_overflow(HeapCore::fallback_overflow());
-                        }
                         // R1-10 (src review round 1): plant the fallback's own
                         // process-static magazine/large-cache hit counters —
                         // the fallback has no registry slot to host
@@ -443,8 +364,8 @@ pub(crate) fn config_conflicts_total() -> u64 {
 
 /// Try to execute `f` with exclusive access to an already-ready fallback
 /// heap. Returns `None` without waiting if it is uninitialised or locked.
-/// The fallback-owned dealloc route has already read a live fallback segment
-/// stamp, so `READY` is expected; checking it here keeps this API nonblocking.
+/// A pinned numeric fallback route proves READY is expected; the explicit
+/// readiness check keeps this API nonblocking without user-header access.
 pub(crate) fn try_with_heap<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HeapCore) -> R,
@@ -481,13 +402,6 @@ impl HeapCore {
     pub fn dbg_inject_fallback_oom_for_test(on: bool) {
         DBG_INJECT_FALLBACK_OOM.store(on, Ordering::Relaxed);
     }
-
-    #[cfg(feature = "alloc-segment-directory")]
-    #[cfg(feature = "bench-internals")]
-    #[doc(hidden)]
-    pub fn dbg_has_dirty_bitmap_for_test(&self) -> bool {
-        self.core.dirty_segments.is_some()
-    }
 }
 
 /// RAII guard over the fallback [`LOCK`] spinlock (task L4). Acquiring it spins
@@ -511,8 +425,6 @@ const LOCK_TIGHT_SPINS: u32 = 64;
 impl LockGuard {
     fn acquired() -> Self {
         LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
-        #[cfg(feature = "alloc-xthread")]
-        crate::registry::set_fallback_lock_held(true);
         LockGuard
     }
 
@@ -556,14 +468,6 @@ impl LockGuard {
 
 impl Drop for LockGuard {
     fn drop(&mut self) {
-        // R1-06: clear BEFORE releasing `LOCK` — this is thread-local state
-        // (no cross-thread visibility to order against the lock release), so
-        // the relative order versus the `LOCK.store` below has no
-        // correctness consequence; clearing first simply keeps the "flag
-        // implies lock held" invariant true for the whole time `LOCK` is
-        // actually held by this thread.
-        #[cfg(feature = "alloc-xthread")]
-        crate::registry::set_fallback_lock_held(false);
         LOCK.store(false, Ordering::Release);
     }
 }

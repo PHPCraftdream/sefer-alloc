@@ -2,6 +2,7 @@ use super::{SegmentTable, HASH_CAPACITY, SEGMENT_SHIFT};
 // The fetch_max sites that consume this static are `alloc-stats`-gated.
 #[cfg(feature = "alloc-stats")]
 use super::HASH_REMOVE_MAX_SCAN_STEPS;
+const _: () = assert!(super::MAX_SEGMENTS < (1usize << SEGMENT_SHIFT));
 
 impl SegmentTable {
     // -------------------------------------------------------------------
@@ -11,7 +12,7 @@ impl SegmentTable {
     // slots array. Capacity = HASH_CAPACITY (a power of two). Two-state
     // encoding (backward-shift deletion — R4-8/N3 — never leaves tombstones):
     //   - null_mut()  → empty  (stops a probe chain)
-    //   - other       → live segment base (SEGMENT-aligned, never null)
+    //   - other       → numeric payload key plus slot id+1 in low bits.
     //
     // All reads/writes go through the `node` seam, keeping this file
     // safe while meeting the crate's unsafe-confinement requirement.
@@ -25,7 +26,8 @@ impl SegmentTable {
     /// for a fast modulo (power-of-two capacity).
     #[inline(always)]
     fn hash_index(base: *mut u8) -> usize {
-        (base.addr() >> SEGMENT_SHIFT) & (HASH_CAPACITY - 1)
+        let key = base.addr() >> SEGMENT_SHIFT;
+        (key ^ (key >> 13) ^ (key >> 26)) & (HASH_CAPACITY - 1)
     }
 
     /// Address of hash slot `i`. Pure pointer arithmetic through the `node` seam.
@@ -72,6 +74,16 @@ impl SegmentTable {
             // terminate: at least HASH_CAPACITY/2 slots are empty.
             debug_assert!(i != start, "hash table full — load factor exceeded");
         }
+    }
+    /// One numeric payload key + slot id in one word; canonical pointers live
+    /// only in owner slots. Low segment bits are available for id+1.
+    pub(super) fn hash_insert_identity(&mut self, key: *mut u8, id: u32) {
+        let encoded = core::ptr::without_provenance_mut(key.addr() | (id as usize + 1));
+        let mut index = Self::hash_index(key);
+        while !self.hash_slot_read(index).is_null() {
+            index = (index + 1) & (HASH_CAPACITY - 1);
+        }
+        self.hash_slot_write(index, encoded);
     }
 
     /// Remove `base` from the hash table using **backward-shift deletion**
@@ -145,7 +157,7 @@ impl SegmentTable {
                 // Defensive no-op (caller bug) — do not corrupt the table.
                 return;
             }
-            if entry == base {
+            if entry.addr() & !((1 << SEGMENT_SHIFT) - 1) == base.addr() {
                 break;
             }
             // A different live entry: skip and continue probing.
@@ -226,16 +238,8 @@ impl SegmentTable {
         self.hash_find(base).is_some()
     }
 
-    /// R2-05 (independent src review round 2, task #2007): like
-    /// [`hash_contains`](Self::hash_contains), but returns the STORED entry
-    /// (this table's own canonical pointer, carrying the allocator's
-    /// provenance over the segment) instead of a bool. `base` is used only
-    /// as a lookup KEY (its address is compared against stored entries); the
-    /// pointer this method returns — never `base` itself — is what a caller
-    /// may soundly dereference. See `SegmentTable::canonical_base_of`'s doc
-    /// for the full rationale (matching an address does not grant
-    /// provenance: safe code can construct a pointer with the same address
-    /// as a live segment but no provenance over it).
+    /// Resolve a numeric payload key through its owner slot. The returned
+    /// canonical pointer comes only from allocator-owned slot storage.
     #[inline(always)]
     pub(super) fn hash_find(&self, base: *mut u8) -> Option<*mut u8> {
         let start = Self::hash_index(base);
@@ -246,8 +250,11 @@ impl SegmentTable {
                 // Empty slot: the probe chain ends here; base is not present.
                 return None;
             }
-            if entry == base {
-                return Some(entry);
+            if entry.addr() & !((1 << SEGMENT_SHIFT) - 1) == base.addr() {
+                let id = entry.addr() & ((1 << SEGMENT_SHIFT) - 1);
+                let root = if id == 0 { entry } else { self.base_at(id - 1) };
+                // A stale identity with an empty slot is not live membership.
+                return (!root.is_null()).then_some(root);
             }
             // A different live entry: skip and continue.
             i = (i + 1) & (HASH_CAPACITY - 1);

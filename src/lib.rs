@@ -36,7 +36,7 @@
 //!
 //! `SeferAlloc` exposes a cheap, process-wide diagnostic snapshot via
 //! `SeferAlloc::stats` → `AllocStats`: cache
-//! hit rates, cross-thread reclaim/overflow counts, and cumulative
+//! hit rates, cross-thread reclaim diagnostics, and cumulative
 //! segment/heap totals (`segments_reserved_total - segments_released_total`
 //! is the live segment count — the field to alert on for a segment leak;
 //! `foreign_or_unroutable_frees` counts frees dropped for violating the
@@ -127,8 +127,7 @@
 // (tier 1), `#[...]` matches are item-scoped `unsafe fn` declarations and
 // their internal call-site `unsafe {}` blocks (tier 2, task #101 / R4-9).
 // Both are comment-proof: `^\s*#!?\[` requires the line to begin with the
-// attribute, not a `//` prefix (the unanchored form has false positives here
-// and in `src/registry/heap_overflow/mod.rs` and `heap_overflow_impl.rs`).
+// attribute, not a `//` prefix (the unanchored form has false positives here).
 //
 // EXTERNAL publishable crates (each independently auditable):
 //
@@ -174,7 +173,7 @@
 //   tagged-index-stack (crates/tagged-index-stack/src/lib.rs) — #![deny(unsafe_code)]
 //     ABA-tagged Treiber free-index stack via a single packed AtomicU64 head
 //     word (monotonic tag in the high bits). no_std, no raw-pointer derefs;
-//     EIGHT audited, item-scoped `#[allow(unsafe_code)]` regions, all in
+//     TEN audited, item-scoped `#[allow(unsafe_code)]` regions, all in
 //     that crate's `src/imp.rs`: the `unsafe trait StackStorage` declaration
 //     (whose three hooks are `unsafe fn`), the sealed `SealedStorage`
 //     trait/bridge surface, and the caller-facing push boundary
@@ -199,7 +198,7 @@
 //  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
-//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty):
+//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit):
 //      * `alloc_core::platform::os`   — thin interop wrapper around aligned-vmem; any
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `alloc-core`)
@@ -210,16 +209,11 @@
 //                             by `os`'s SegmentDirectory reservation and
 //                             `large_cache_extended`'s LargeCacheExtension
 //                             reservation. (under `alloc-core`)
-//      * `alloc_core::segment::remote_inbox::inbox` — experimental
-//                             terminal intrusive-node publication seam;
-//                             not a production route. (under `alloc-core`)
-//      * `alloc_core::segment::remote_inbox::tests` — raw reservation
-//                             fixtures for that primitive. (`cfg(test)`)
 //      * `global::sefer_alloc::global_alloc` — the `unsafe impl GlobalAlloc`
 //                             alloc-face seam (trait obligation + pointer handoff).
 //                             (under `alloc-global`)
 //      * `global::sefer_alloc::batch` — the `batch-api` `alloc_batch`/`dealloc_batch`
-//                             unsafe-fn boundary pair. (under `alloc-global`)
+//                             unsafe-fn boundary pair. (`batch-api` only)
 //      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
 //                             (under `alloc-global`)
 //      * `global::fallback`     — primordial fallback heap seam —
@@ -234,9 +228,6 @@
 //      * `registry::bootstrap::ensure` — the process-global `ensure()` accessor
 //                             and the per-chunk materialisation slow path
 //                             (`ensure_chunk_slow`). (under `alloc-global`)
-//      * `registry::bootstrap::overflow_sidecar` — lazy `HeapOverflow` sidecar
-//                             materialisation (CAS-then-spin-then-publish).
-//                             (under `alloc-global`)
 //      * `registry::bootstrap::loom_shim` — `--cfg loom`-only const-capable
 //                             `OncePtrCell`/`StackHead` stand-ins (loom's real
 //                             atomics have no const constructor, so the
@@ -252,9 +243,12 @@
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
 //      * `registry::heap_registry::counters` — registry diagnostics/aggregators
 //                             over slot-resident counters. (under `alloc-global`)
+//      * `registry::heap_registry::maintenance` — exclusive maintenance lease
+//                             handoff for ownerless sweeps. (under `alloc-global`)
 //      * `registry::segment_route::directory` — System-backed route entry,
 //                             sidecar and sorted pointer-array allocation/
-//                             reclamation; lookup pinning under shard lock.
+//                             reclamation; numeric foreign lookup pins under
+//                             the shard lock.
 //                             (under `alloc-global`)
 //      * `alloc_core::segment::segment_table::route_slots` — System-backed,
 //                             owner-only non-Copy registration storage;
@@ -265,13 +259,6 @@
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`
 //    unsafe seam was removed in task #1306, together with numa-shim's
 //    `bind_range`). (under `numa-aware`)
-//
-//    Optional `class-aware-dirty` path (R12-7 stage 2; promoted into
-//                             `production` in R13-9/task #279 — no longer
-//                             experimental):
-//      * `alloc_core::platform::dirty_by_class` — dereferences the `OncePtrCell`-
-//                             published per-(segment, class) dirty-bit
-//                             sidecar pointer. (under `class-aware-dirty`)
 //
 //    Optional `large-cache-extended` path (R13-6):
 //      * `alloc_core::large::large_cache_extended` — the lazily-materialised
@@ -334,8 +321,8 @@ extern crate alloc;
 // `--no-default-features --features fastbin` against a stale `Cargo.toml` /
 // vendored copy, or a future edit accidentally drops the dependency again.
 // Without `alloc-xthread`, a cross-thread free of a small block has no
-// ownership-checked routing path (`dealloc_routing`'s owner-identity stamp
-// and the per-segment `RemoteFreeRing` both live behind `alloc-xthread`), so
+// ownership-checked routing path (the current terminal sidecar route lives
+// behind `alloc-xthread`), so
 // a naive cross-thread free would write directly into another thread's
 // private magazine/free-list — an unsynchronised data race, not a
 // correctness nicety.
@@ -371,27 +358,10 @@ compile_error!(
 // `alloc-segment-directory`, ...) implies it, so this single gate covers the
 // whole allocator surface.
 //
-// Why 64-bit specifically — the two pins named in the review, plus the
-// protocol they protect:
-//   * `size_of::<SegmentHeader>() == 144`
-//     (`src/alloc_core/segment/segment_header/layout_asserts.rs:83`,
-//     F12/task #498: an EXACT-value pin, not a budget bound) — 144 bytes is
-//     what the F12 targeted field-wise write in `AllocCore::alloc_large`'s
-//     large-cache hit arm was verified against, on a 64-bit `repr(C)` ABI
-//     where `*mut u8`/`usize` are 8 bytes. On a 32-bit ABI the same struct
-//     shrinks and the pin's premise no longer describes reality.
-//   * `::core::mem::offset_of!(PerClass, slots) == 8`
-//     (`src/registry/heap_core/state/tcache.rs:257`) — `slots` is a
-//     `[*mut u8; TCACHE_CAP]`; `#[repr(C)]` pads it up to pointer alignment,
-//     so it only lands at offset 8 when pointers are 8 bytes wide (offset 4
-//     on a 32-bit ABI).
-//   * Both pins sit on top of an AtomicU64-based publication/ownership
-//     protocol (segment `owner_state`, per-segment ring heads, registry
-//     slot claims) whose 32-bit alignment behaviour has NOT been audited.
-// The review's own conclusion is that simply deleting the asserts would be
-// wrong: the arithmetic and the atomics need re-validating, so allocator-on-
-// 32-bit is a future undertaking requiring a full re-audit — not a config
-// toggle.
+// The metadata placement and magazine layout have target-ABI bounds.
+// The header is constrained to fit within one page, not one exact size.
+// AtomicU64 and pointer provenance need a separate 32-bit audit; removing one
+// layout assertion is not target support.
 //
 // What stays available: the region-only surface. The default features are
 // `std` only, and with no allocator feature enabled the crate is a
@@ -409,9 +379,9 @@ compile_error!(
 compile_error!(
     "sefer-alloc: allocator features require a 64-bit target (R2-17 support \
      decision): `alloc-core` and every feature built on it (`alloc-global`, \
-     `production`, ...) are pinned to 64-bit layouts (`size_of::<SegmentHeader>() \
-     == 144`, `PerClass::slots` at offset 8) and an AtomicU64-based protocol \
-     that have NOT been audited on 32-bit pointer widths. Rebuild for a \
+     `production`, ...) require metadata/magazine layout bounds, AtomicU64 and \
+     pointer-provenance rules that have NOT been audited on 32-bit pointer \
+     widths. Rebuild for a \
      64-bit target, or drop the allocator features (the region-only \
      `Region<T>` surface still works on 32-bit). See README.md \
      \"Target support\"."
@@ -429,9 +399,8 @@ mod concurrent;
 // `AllocCore` / `SegmentLayout` (re-exported below via `pub use
 // alloc_core::{...}`, which needs `mod alloc_core` in scope regardless of
 // `internals`). With `internals` ON, the module is also `#[doc(hidden)] pub`
-// so the isolated ring test (`tests/remote_ring_unit.rs`) can reach
-// `alloc_core::remote_free_ring::RemoteFreeRing`'s `#[doc(hidden)]` test
-// surface — this is the established test-only export pattern (see
+// so integration tests can reach internal `#[doc(hidden)]` test
+// surfaces — this is the established test-only export pattern (see
 // `registry` below). Nothing in `alloc_core` is stable public API.
 //
 // R34-3 (task #522, finding B1): `#[doc(hidden)]` alone hides this module
@@ -536,7 +505,7 @@ pub use alloc_core::{AllocCore, SegmentLayout};
 pub use size_classes::InvalidAlign;
 
 #[cfg(feature = "alloc-global")]
-pub use global::{AllocStats, SeferAlloc};
+pub use global::{AllocStats, MaintenanceStartError, SeferAlloc};
 
 #[cfg(kani)]
 mod kani_proofs;

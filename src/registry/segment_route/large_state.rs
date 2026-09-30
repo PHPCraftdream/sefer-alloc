@@ -52,6 +52,11 @@ impl LargeState {
     pub fn generation(&self) -> u64 {
         large_generation(self.word.load(Ordering::Acquire))
     }
+    #[cfg(feature = "internals")]
+    pub(super) fn pending_for_test(&self) -> bool {
+        crate::alloc_core::segment_header::large_phase(self.word.load(Ordering::Acquire))
+            == Some(LargePhase::Pending)
+    }
 }
 
 impl Default for LargeState {

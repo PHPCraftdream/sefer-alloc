@@ -19,7 +19,7 @@
 //!
 //! ## Miri aperture
 //!
-//! `aligned-vmem` already contains the miri fallback (`std::alloc` with the
+//! `aligned-vmem` already contains the miri fallback (`System.alloc` with the
 //! requested alignment); no miri-specific code is needed here.
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-core` on; this is one of
@@ -56,10 +56,13 @@ pub(crate) static SEGMENTS_RESERVED_TOTAL: AtomicU64 = AtomicU64::new(0);
 /// relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
 pub(crate) static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
-/// Process-wide count of OS segment reservations the KERNEL REFUSED — every
-/// `aligned_vmem::reserve_aligned{,_lazy}` call that returned `None` on a
-/// segment-reservation path. Monotonic, relaxed; the third member of the
-/// counter family above.
+/// Process-wide count of failed segment-reservation constructors, including
+/// `aligned_vmem::reserve_aligned{,_lazy}` failures. Monotonic, relaxed; the
+/// third member of the counter family above. The typed biased-window path
+/// excludes invalid arguments, but the `Option` paths cannot distinguish
+/// them. On Windows a lazy constructor can fail during its initial commit;
+/// its error does not identify the syscall stage. This is not an exact count
+/// of refused reserve syscalls or of later useful-window commit failures.
 ///
 /// R35 (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143): a capacity test that
 /// stops early cannot, from the outside, tell WHICH of two very different
@@ -75,8 +78,9 @@ pub(crate) static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
 /// This is deliberately a FAILURE counter rather than an errno/GetLastError
 /// capture: the reservation primitives live behind `aligned_vmem`'s
 /// `Option` API and do not surface an OS error code, and the distinction
-/// the tests need is only "did the kernel refuse us", not which refusal
-/// class it was.
+/// the tests need is whether a reservation constructor failed, not its OS
+/// error code. With valid test inputs, a nonzero delta points outside slot
+/// bookkeeping; a zero delta does not rule out a separate later commit failure.
 pub(crate) static SEGMENTS_RESERVE_FAILED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// The segment size and alignment, in bytes. 4 MiB — mimalloc's default. Every
@@ -161,6 +165,50 @@ pub(crate) fn segment_base_of_ptr(ptr: *mut u8) -> *mut u8 {
 pub struct Segment(vmem::Reservation);
 
 impl Segment {
+    /// Reserve a checked biased Large window. The original release token keeps
+    /// SEGMENT alignment; metadata root is page-aligned before aligned payload.
+    #[cfg(not(feature = "numa-aware"))]
+    pub(crate) fn reserve_biased(
+        useful: usize,
+        committed: usize,
+        align: usize,
+        metadata: usize,
+    ) -> Option<(*mut u8, NonNull<u8>, usize)> {
+        let raw_len = useful.checked_add(align)?;
+        let lazy = match vmem::try_reserve_aligned_lazy(raw_len, SEGMENT, vmem::page_size()) {
+            Ok(lazy) => lazy,
+            Err(error) => {
+                // Preserve the OS-reserve refusal diagnostic, excluding argument/
+                // arithmetic rejection and the later useful-window commit failure.
+                if !error.is_invalid_argument() {
+                    SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add(1, Ordering::Relaxed);
+                }
+                return None;
+            }
+        };
+        let raw = lazy.into_reservation();
+        let origin = raw.as_ptr();
+        let payload = origin
+            .addr()
+            .checked_add(metadata)?
+            .checked_add(align - 1)?
+            & !(align - 1);
+        let root_offset = payload.checked_sub(metadata)?.checked_sub(origin.addr())?;
+        if root_offset.checked_add(useful)? > raw.len() || committed > useful {
+            return None;
+        }
+        // SAFETY: checked offsets lie in this exclusively owned reservation.
+        let root = unsafe { origin.add(root_offset) };
+        // SAFETY: the window is page-aligned and within the original reservation.
+        if !unsafe { vmem::commit_range(root, 0, committed) } {
+            return None;
+        }
+        let token = NonNull::new(raw.reservation_ptr())?;
+        let len = raw.reservation_len();
+        core::mem::forget(raw);
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some((root, token, len))
+    }
     /// Reserve a SEGMENT-aligned span of `len` bytes from the OS.
     ///
     /// `len` is rounded UP to a multiple of `SEGMENT` (a span is always whole
@@ -422,7 +470,11 @@ impl Segment {
     /// eager-fallback behavior (crate-documented on `aligned_vmem::
     /// reserve_aligned_lazy`).
     #[must_use]
-    #[cfg(feature = "bench-internals")]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "internals",
+        feature = "alloc-decommit"
+    ))]
     pub(crate) fn reserve_lazy_for_measurement(initial_commit: usize) -> Option<Self> {
         // `into_reservation()`: see the note at `alloc_core_small.rs`'s lazy
         // branch. The allocator's commit frontier lives in the segment header,
@@ -461,7 +513,7 @@ impl Segment {
     #[must_use]
     pub(crate) fn reservation(&self) -> NonNull<u8> {
         // SAFETY: `aligned_vmem::Reservation::reservation_ptr()` is always
-        // non-null — it was returned by the OS (or `std::alloc` under miri)
+        // non-null — it was returned by the OS (or `System.alloc` under miri)
         // and is non-null by the `reserve_aligned` contract.
         unsafe { NonNull::new_unchecked(self.0.reservation_ptr()) }
     }
@@ -795,7 +847,11 @@ pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize
 /// end_offset)` must be within a live segment's VA reservation, currently
 /// reserved-but-uncommitted (or already committed — idempotent).
 #[must_use]
-#[cfg(feature = "bench-internals")]
+#[cfg(all(
+    feature = "bench-internals",
+    feature = "internals",
+    feature = "alloc-decommit"
+))]
 pub(crate) unsafe fn commit_pages_for_measurement(
     base: *mut u8,
     start_offset: usize,

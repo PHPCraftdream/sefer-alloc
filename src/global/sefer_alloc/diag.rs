@@ -1,15 +1,40 @@
-// #1990: gated to match `trim_current_thread` below — `HeapCore::trim_for_recycle`
-// does real work under `alloc-global + fastbin` too, not only `alloc-decommit`.
-#[cfg(any(
-    feature = "alloc-decommit",
-    all(feature = "alloc-global", feature = "fastbin")
-))]
 use crate::global::tls_heap::current_for_trim;
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::global::tls_heap::CurrentHeap;
 use crate::global::AllocStats;
 
 use super::SeferAlloc;
+
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+impl SeferAlloc {
+    /// Snapshot this owner's live allocation's original OS release token.
+    ///
+    /// # Safety
+    /// `ptr` is the exact start of a live allocation in this thread's current
+    /// heap. No conflicting owner borrow or segment retirement may occur.
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_current_reservation_for_test(
+        &self,
+        ptr: *mut u8,
+    ) -> Option<(usize, usize, usize)> {
+        use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
+
+        let CurrentHeapForDealloc::Own(heap) = current_for_dealloc() else {
+            return None;
+        };
+        // SAFETY: caller retains exclusive owner authority and the live
+        // allocation; only its canonical table root accesses reservation bytes.
+        let core = unsafe { &(*heap).core };
+        let root = core.canonical_root_for(ptr)?;
+        let header = crate::alloc_core::segment_header::SegmentHeader::read_at(root);
+        Some((
+            header.reservation.addr(),
+            header.reservation_len,
+            root.addr(),
+        ))
+    }
+}
 
 impl SeferAlloc {
     /// A cheap, process-wide diagnostic snapshot of this allocator's internal
@@ -87,13 +112,10 @@ impl SeferAlloc {
             #[cfg(not(feature = "alloc-decommit"))]
             decommit_calls: 0,
 
-            large_xthread_reclaimed: crate::registry::DBG_LARGE_XTHREAD_RECLAIMED
+            large_xthread_reclaimed: crate::alloc_core::LARGE_REMOTE_RETIREMENTS
                 .load(core::sync::atomic::Ordering::Relaxed),
 
             tcache_hits,
-
-            ring_overflows: crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW
-                .load(core::sync::atomic::Ordering::Relaxed),
 
             segments_reserved_total: crate::alloc_core::AllocCore::dbg_segments_reserved_total(),
             segments_released_total: crate::alloc_core::AllocCore::dbg_segments_released_total(),
@@ -108,11 +130,6 @@ impl SeferAlloc {
             config_conflicts: crate::registry::config_conflicts_total(),
             #[cfg(not(feature = "alloc-decommit"))]
             config_conflicts: 0,
-
-            // R2-09: legacy terminal-loss counter, now zero for legal frees
-            // because the intrusive spill retains them after both rings fill.
-            cross_thread_frees_lost: crate::registry::DBG_RING_PUSH_RETRY_EXHAUSTED
-                .load(core::sync::atomic::Ordering::Relaxed),
         }
     }
 
@@ -150,10 +167,11 @@ impl SeferAlloc {
     /// **passive** resolver that reports "no live heap yet" instead of
     /// binding one, so a thread with nothing to trim claims nothing.
     ///
-    /// Cost: O(live tcache classes + pooled segments + cached large spans)
-    /// for THIS thread only — no cross-thread coordination, no lock
-    /// contention with any other heap. On a thread with no bound heap the
-    /// cost is a single passive TLS read (no bind, no OS call). Safe to
+    /// Cost: O(table high-water + issued Small bitmap words + detached records +
+    /// live tcache classes + pooled segments + cached large spans) for THIS
+    /// thread only. The sidecar sweep never waits for producer quiescence.
+    /// On a thread with no bound heap, cost is a single passive TLS read (no bind,
+    /// no OS call). Safe to
     /// call from a hot request handler's cold "end of batch" branch; NOT
     /// intended to be called on every allocation (it defeats the
     /// warm-cache/warm-pool amortization this project's whole
@@ -166,29 +184,17 @@ impl SeferAlloc {
     /// `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`. Measured cost
     /// side (trim latency + next-burst cold-start cost): the same report's
     /// later "Cost side" section (task #492).
-    /// # Feature gate (#1990)
+    /// # Terminal route publications
     ///
-    /// Gated on `any(alloc-decommit, all(alloc-global, fastbin))` — the union
-    /// of the configurations in which `HeapCore::trim_for_recycle` actually
-    /// does something, not just the `alloc-decommit` half. Its steps carry
-    /// INDEPENDENT gates (`src/registry/heap_core/state/ownership.rs`): the
-    /// tcache flush is `all(alloc-global, fastbin)`, the small-pool drain and
-    /// large-cache evict are `alloc-decommit`. Before this, the method was
-    /// `alloc-decommit`-only, so a `fastbin`-without-`alloc-decommit` build
-    /// had no public trim API AT ALL — not a degraded one — even though its
-    /// magazines were flushable, and `AbandonGuard::drop`
-    /// (`src/global/tls_heap.rs`) already called `trim_for_recycle` there
-    /// unconditionally at thread exit. R31-10/task #474 established the same
-    /// fact for the `dbg_trim_current_thread` hook below and made it
-    /// unconditional; this brings the public API into line.
+    /// Available with `alloc-global`, including without `fastbin` or
+    /// `alloc-decommit`: terminal sidecar publications completed before entry
+    /// are logically retired before return. Each word is cut once; concurrent
+    /// post-cut publications can wait for the next call. Reservation release
+    /// still follows the build's cache/decommit policy.
     ///
-    /// In a build with only one of the two features, this performs whatever
-    /// subset that build supports — the same "each sub-operation carries its
-    /// own feature gate" contract `trim_for_recycle` documents.
-    #[cfg(any(
-        feature = "alloc-decommit",
-        all(feature = "alloc-global", feature = "fastbin")
-    ))]
+    /// This is the owner-side sidecar contract, not a claim that the legacy
+    /// foreign `dealloc` ring/overflow/stack has already been converted, nor an
+    /// autonomous ownerless-reclamation guarantee. Trim still skips fallback.
     pub fn trim_current_thread(&self) {
         if let Some(heap) = current_for_trim() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
@@ -261,60 +267,6 @@ impl SeferAlloc {
             #[allow(unsafe_code)]
             unsafe {
                 (*heap).trim_for_recycle()
-            };
-        }
-    }
-
-    /// F10 (task #502) TEST/BENCH-ONLY: force-drain every `RemoteFreeRing`
-    /// owned by the CALLING thread's own heap into its `BinTable`, via
-    /// [`HeapCore::dbg_drain_all_rings`](crate::registry::HeapCore::dbg_drain_all_rings).
-    ///
-    /// **Why this exists.** `HeapCore`'s normal small-alloc drain (the
-    /// "lazily drain this segment's remote-free ring before inspecting its
-    /// BinTable" step documented in `AllocCore::alloc_small`) fires only on a
-    /// free-list MISS on the current bump segment — it is not reachable on
-    /// demand from outside the allocator, and a harness that needs to force a
-    /// ring drain on a KNOWN cadence (e.g. `examples/r32_11_remote_ring_shadow_head_gate.rs`'s
-    /// favorable-regime owner thread, which must keep `RemoteFreeRing::push`'s
-    /// target ring far from capacity so the shadow-head fast path — F10,
-    /// `src/alloc_core/segment/remote_free_ring/` — is the mechanism actually under
-    /// measurement, not an accident of allocation-pattern side effects) needs
-    /// a direct hook, not a hoped-for side effect. Mirrors
-    /// [`dbg_trim_current_thread`](Self::dbg_trim_current_thread)'s exact
-    /// pattern: resolve the calling thread's ALREADY-BOUND heap via
-    /// `current_heap()` (never claims a new slot — the same heap
-    /// `alloc`/`dealloc` on this thread already use) and delegate.
-    ///
-    /// `#[doc(hidden)]` — not part of the public API; the established
-    /// test-only export pattern documented in `src/lib.rs`'s `#[doc(hidden)]`
-    /// notes. `bench-internals`-gated per CLAUDE.md's benchmark-hook rule
-    /// (no production caller) — additionally gated on `alloc-xthread` (rings
-    /// do not exist otherwise; matches `HeapCore::dbg_drain_all_rings`'s own
-    /// gate).
-    ///
-    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// `HeapCore::dbg_drain_all_rings` (`registry::heap_core::diag::queries`) is now
-    /// `internals`-gated too (a hard transitive compile dependency, since it
-    /// in turn delegates to `AllocCore::dbg_drain_all_rings[_checked]`,
-    /// moved behind `internals` in `alloc_core_small_reclaim.rs`).
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-xthread",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    pub fn dbg_drain_current_thread_rings(&self) {
-        if let CurrentHeap::Own(heap) = self.current_heap() {
-            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
-            // registry slot owned by THIS thread (same single-writer
-            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
-            // just resolved it for the calling thread; `dbg_drain_all_rings`
-            // requires `&mut HeapCore`, sound here because we are the sole
-            // writer (single-consumer-per-heap, matching every other
-            // `dbg_*` mutator in this file's identical `unsafe` shape).
-            #[allow(unsafe_code)]
-            unsafe {
-                (*heap).dbg_drain_all_rings()
             };
         }
     }

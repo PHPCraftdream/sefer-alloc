@@ -626,46 +626,6 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-segment-directory")]
     pub(in crate::alloc_core) directory_miss_streak: [u8; SMALL_CLASS_COUNT],
 
-    /// R7-A4: reference to the owning HeapSlot's `dirty_segments` bitmap
-    /// (planted by `HeapCore` at bind time). `None` until bound (the
-    /// pre-bind AllocCore is standalone and has no registry slot). The
-    /// reference is `&'static` because the HeapSlot lives in the process-
-    /// global registry array, leaked for the process lifetime.
-    ///
-    /// Used by `find_segment_with_free_impl` to drain ONLY dirty segments'
-    /// rings instead of polling every ring. Feature-gated: the dirty routing
-    /// only matters when both `alloc-xthread` (cross-thread frees exist) and
-    /// `alloc-segment-directory` (the directory drives the drain) are active.
-    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-    pub(crate) dirty_segments: Option<
-        &'static [core::sync::atomic::AtomicU64; super::super::segment_directory::WORDS_PER_CLASS],
-    >,
-
-    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): reference to the
-    /// owning HeapSlot's lazily-materialised per-(segment, class) dirty-bit
-    /// sidecar cell (planted by `HeapCore` at bind time, same discipline as
-    /// [`dirty_segments`](Self::dirty_segments)). `None` until bound.
-    ///
-    /// Note this is a handle to the CELL, not the sidecar itself — the
-    /// sidecar behind the cell may still be UNINIT (no class-routed
-    /// cross-thread free has landed on this heap yet); `drain_dirty_segments`
-    /// resolves it read-only via `dirty_by_class::get_per_class_dirty` (never
-    /// materialising it from the drain side — see that function's doc
-    /// comment).
-    #[cfg(feature = "class-aware-dirty")]
-    pub(crate) dirty_by_class:
-        Option<&'static once_ptr_cell::OncePtrCell<super::super::dirty_by_class::PerClassDirty>>,
-
-    /// R13-1 (task #271, P0 fix): reference to the owning HeapSlot's
-    /// coarse-only latch (planted by `HeapCore` at bind time, same
-    /// discipline as [`dirty_by_class`](Self::dirty_by_class)). `None` until
-    /// bound. See `registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`'s
-    /// doc comment for the full design; read by `drain_dirty_segments` to
-    /// decide whether the per-class scan path may be trusted at all for this
-    /// heap.
-    #[cfg(feature = "class-aware-dirty")]
-    pub(crate) sidecar_oom_latch: Option<&'static core::sync::atomic::AtomicBool>,
-
     /// R31-15 (task #486): a stable, process-wide-unique identity for THIS
     /// `AllocCore`, stamped once at construction ([`new_inner`](Self::new_inner))
     /// from [`DBG_RESERVATION_OWNER_ID_COUNTER`]'s `fetch_add`. Exists solely
@@ -702,6 +662,10 @@ pub struct AllocCore {
     /// touches the decomposition hooks (the same cost-discipline argument
     /// [`pool_head`](Self::pool_head)'s doc comment makes for the intrusive
     /// pool-list redesign).
-    #[cfg(feature = "bench-internals")]
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "internals",
+        feature = "alloc-decommit"
+    ))]
     pub(in crate::alloc_core) dbg_reservation_owner_id: u64,
 }

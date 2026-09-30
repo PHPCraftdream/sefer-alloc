@@ -118,45 +118,14 @@ impl AllocCore {
         self.refill_class_bump_impl(
             class_idx,
             out,
-            #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-            &|_, _| false,
             #[cfg(feature = "virgin-zero-skip")]
             None,
         )
     }
 
-    /// Task #164: variant with magazine predicate.
-    #[doc(hidden)]
-    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-    pub fn refill_class_bump_checked<F: Fn(*mut u8, usize) -> bool>(
-        &mut self,
-        class_idx: usize,
-        out: &mut [*mut u8],
-        is_in_magazine: &F,
-    ) -> usize {
-        self.refill_class_bump_impl(
-            class_idx,
-            out,
-            is_in_magazine,
-            #[cfg(feature = "virgin-zero-skip")]
-            None,
-        )
-    }
-
-    /// R13-3 (task #273): virgin-tracking sibling of
-    /// [`refill_class_bump_checked`](Self::refill_class_bump_checked),
-    /// consumed ONLY by [`HeapCore::refill_magazine_slow`](
-    /// crate::registry::heap_core::HeapCore) so the magazine-plumbed
-    /// `virgin-zero-skip` win (R13-3) can skip `Node::zero` for a
-    /// magazine-HIT block, not just a magazine-bypass block (the R12-10
-    /// regression this task fixes). `virgin_out` receives a bit per output
-    /// slot (`out[i]` virgin ⟺ bit `i` set) — the SAME per-run signal
-    /// `carve_batch`'s doc already establishes (every block within one
-    /// `carve_batch` call shares its source segment's single `payload_virgin`
-    /// bit; `drain_freelist_batch`-sourced blocks are NEVER virgin, dispatch
-    /// conjunct false). Gated on `virgin-zero-skip` end-to-end so a build
-    /// without the feature never materialises this variant or its extra
-    /// per-iteration bit-set logic.
+    /// Refill with a virgin bit for each output slot served by a virgin carve.
+    /// Free-list blocks never set a bit. Uses the same metadata-guarded discovery
+    /// and refill implementation as `refill_class_bump`.
     ///
     /// R2-15: clears `virgin_out` before refilling; only virgin slots below
     /// `filled` may be set afterward. Accepts at most 16 output slots, checked
@@ -167,39 +136,34 @@ impl AllocCore {
         feature = "fastbin",
         feature = "virgin-zero-skip"
     ))]
-    pub fn refill_class_bump_virgin_checked<F: Fn(*mut u8, usize) -> bool>(
+    pub fn refill_class_bump_virgin(
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
-        is_in_magazine: &F,
         virgin_out: &mut u16,
     ) -> usize {
         const VIRGIN_MASK_BITS: usize = u16::BITS as usize;
         assert!(
             out.len() <= VIRGIN_MASK_BITS,
-            "refill_class_bump_virgin_checked: out.len() ({}) exceeds the u16 virgin mask capacity ({VIRGIN_MASK_BITS} bits)",
+            "refill_class_bump_virgin: out.len() ({}) exceeds the u16 virgin mask capacity ({VIRGIN_MASK_BITS} bits)",
             out.len(),
         );
         // Clear reused output bits before any partial or early return.
         *virgin_out = 0;
-        self.refill_class_bump_impl(class_idx, out, is_in_magazine, Some(virgin_out))
+        self.refill_class_bump_impl(class_idx, out, Some(virgin_out))
     }
 
     #[inline]
-    fn refill_class_bump_impl<
-        #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))] F: Fn(*mut u8, usize) -> bool,
-    >(
+    fn refill_class_bump_impl(
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
-        #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))] is_in_magazine: &F,
         // R13-3 (task #273): `Some(mask)` accumulates a per-`out`-slot virgin
         // bitmask (bit `i` set ⟺ `out[i]` was served by a `carve_batch` run
         // on a segment whose `payload_virgin` bit read true, AND
         // `cfg!(not(miri))` — the identical predicate
-        // `AllocCore::alloc_small_with_virgin` already uses). `None` (the
-        // `refill_class`/`refill_class_bump`/`refill_class_bump_checked`
-        // callers) skips every bit-set below — one extra `is_none()` branch
+        // `AllocCore::alloc_small_with_virgin` already uses). `None` from the
+        // ordinary refill skips every bit-set below — one extra `is_none()` branch
         // per producer span (drain call or carve call), not per block, and
         // compiled out entirely when `virgin-zero-skip` is off (the parameter
         // does not exist in that build — see the two thin wrappers above).
@@ -254,32 +218,8 @@ impl AllocCore {
                 // cross-thread frees into the per-segment BinTables) BEFORE it
                 // returns a base — that ordering is preserved: we call the batch
                 // drain only on the base it hands back.
-                // Task R1 (retro C1): wrap the caller's magazine predicate
-                // with an out-membership guard. The predicate passed in from
-                // `refill_magazine_slow` opens with `if k == c { return false; }`
-                // (justified ONLY by the borrow-safety invariant count[c]==0),
-                // which means blocks already pulled into `out[0..filled]` during
-                // THIS refill call — magazine-destined but not yet stamped into
-                // the magazine — are INVISIBLE to it. A stale cross-thread
-                // double-free note for such a block still sitting in a ring
-                // would then be reclaimed (write_next + mark_free), relinking
-                // the block onto the freelist, and the SAME refill loop would
-                // pull it into `out` AGAIN → P issued twice out of one refill.
-                //
-                // The guard closes the window for free: when the ring is empty
-                // (the common case) `issued_so_far.contains` is never consulted,
-                // so the Ir cost on the hot refill path is exactly zero — the
-                // out-buffer is non-empty only when we have already drained at
-                // least one block from the freelist AND the ring has work, and
-                // even then the scan is over a CAP-bounded magazine refill batch.
-                #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-                let found_seg = {
-                    let issued_so_far: &[*mut u8] = &out[..filled];
-                    self.find_segment_with_free_checked(class_idx, &|ptr, k| {
-                        is_in_magazine(ptr, k) || (k == class_idx && issued_so_far.contains(&ptr))
-                    })
-                };
-                #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
+                // All discovery paths use the owner primitive's physical
+                // free/magazine guards; no caller closure or output scan is needed.
                 let found_seg = self.find_segment_with_free(class_idx);
                 if let Some(seg) = found_seg {
                     let n = self.drain_freelist_batch(seg, class_idx, &mut out[filled..]);
@@ -356,26 +296,11 @@ impl AllocCore {
                     // real free block for `class_idx`, leading to a spurious
                     // carve that just OOM'd. Run ONE forced O(S) scan ignoring
                     // the directory-trust and, if it finds a segment, drain its
-                    // freelist into `out` instead of stopping short. Uses the
-                    // CHECKED forced variant under `fastbin` so a cross-thread-
-                    // freed magazine-resident block in a drained ring is NOT
-                    // reclaimed (avoiding a double-issue); the unchecked variant
-                    // otherwise (no magazine → no double-issue hazard).
+                    // freelist into `out` instead of stopping short. Physical
+                    // metadata guards apply equally to ordinary and rescue scans.
                     #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
                     if !self.directory_sidecar.is_null() {
-                        let seg = {
-                            #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-                            {
-                                self.find_segment_with_free_checked_forced(
-                                    class_idx,
-                                    is_in_magazine,
-                                )
-                            }
-                            #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
-                            {
-                                self.find_segment_with_free_forced(class_idx)
-                            }
-                        };
+                        let seg = self.find_segment_with_free_forced(class_idx);
                         if let Some(seg) = seg {
                             #[cfg(feature = "alloc-stats")]
                             crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED

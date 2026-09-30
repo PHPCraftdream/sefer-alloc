@@ -28,8 +28,8 @@ impl HeapCore {
     /// magazine-residency bit at issue time" step — a single-block magazine
     /// HIT (a fresh refill's issued block never sets this bit to begin with,
     /// so only the two hit arms, `alloc` and `alloc_small_zeroed_via_magazine`,
-    /// need this) clears the RAD-5 (E4) bit `refill_class_bump[_checked]`'s
-    /// `mark_magazine` set on admission. Resolves the stored segment root;
+    /// need this) clears the physical magazine-residency bit set on admission.
+    /// Resolves the stored segment root;
     /// returns `(base, off)` so an
     /// immediately-following `hardened` generation bump
     /// ([`bump_gen_on_issue`](Self::bump_gen_on_issue)) can reuse them instead
@@ -44,9 +44,9 @@ impl HeapCore {
         &self,
         issued: *mut u8,
     ) -> (*mut u8, usize) {
-        let (base, _) = self
+        let base = self
             .core
-            .canonical_block_of(issued)
+            .canonical_root_for(issued)
             .expect("issued magazine block belongs to a live segment");
         let off = issued.addr() - base.addr();
         SegmentMeta::new(base)
@@ -250,50 +250,18 @@ impl HeapCore {
         ))]
         class: Option<usize>,
     ) -> *mut u8 {
-        // 0.3.0 (task A1): drain this heap's cross-thread Large-segment
-        // deferred-free stack before a Large-classified request reaches
-        // `AllocCore::alloc_large`'s slow path. Uses the single `class`
-        // computed above (Large ⇔ `class.is_none()`).
+        // Large requests consume descriptor obligations before cache/reserve.
+        // Small discovery stays in actual substrate misses; magazine hits
+        // perform no table or sidecar-word scan.
         #[cfg(feature = "alloc-xthread")]
         {
             if class.is_none() {
-                self.drain_large_deferred_free();
+                self.drain_large_sidecar_ingress();
             }
         }
 
-        // RAD-4b (task #72): opportunistically drain this heap's
-        // slot-resident `HeapOverflow` second-chance ring — see
-        // `push_to_heap_overflow`'s doc comment for the full design. Under
-        // `fastbin`, the drain is placed INSIDE `refill_magazine_slow`
-        // instead (a `#[cold] #[inline(never)]` magazine-MISS-only path —
-        // see that function), so the magazine-HIT fast path this file's own
-        // churn benchmarks measure pays NOTHING extra: adding an unconditional
-        // two-atomic-load check here, ahead of the magazine fast path below,
-        // would tax every alloc including hits, which is exactly the
-        // hot-path leak the task's iai gate exists to catch. Builds WITHOUT
-        // `fastbin` have no magazine and hence no `refill_magazine_slow`
-        // cold-path hook, so for them this call is the only opportunistic
-        // site — unconditional here, but that configuration has no magazine
-        // fast path to protect in the first place.
-        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
-        {
-            self.drain_heap_overflow();
-        }
-
-        // Cross-thread-freed blocks are reclaimed LAZILY, inside
-        // `AllocCore::find_segment_with_free` (the alloc-slow-path drains each
-        // owned segment's `RemoteFreeRing` → `reclaim_offset`). We do NOT drain
-        // eagerly on every alloc: that was a redundant deviation from the
-        // `ShardedRegion` lazy discipline, and draining-before-alloc under a
-        // real allocation workload (the installed `#[global_allocator]` serving
-        // libtest's own cross-thread frees) corrupted the free list, while the
-        // lazy slow-path drain handles the identical workload correctly
-        // (verified: `global_alloc_installed` + `race_repro` ×5). Reclaim
-        // completeness is preserved — the owner drains a segment's ring the
-        // moment it needs a free block from it. Until then legal cross-thread
-        // frees sit in the segment ring, the per-heap sidecar ring, or (when
-        // both are full) the intrusive spill; saturation no longer discards
-        // them as the original 7b policy did.
+        // Terminal Small publications are discovered on actual refill/free-list
+        // misses through canonical table roots, not through an eager alloc scan.
 
         // ── Magazine fast path (P2+P4, fastbin) ─────────────────────────
         // Small-class allocations are served from the per-thread magazine.
@@ -498,7 +466,7 @@ impl HeapCore {
     /// for a genuinely virgin block sitting in the magazine (the R13-3 fix's
     /// whole point: a magazine HIT is not always non-virgin — a `carve_batch`
     /// refill can park still-virgin blocks in the magazine ahead of the
-    /// caller's own `alloc_zeroed` pop, see `refill_class_bump_virgin_checked`'s
+    /// caller's own `alloc_zeroed` pop, see `refill_class_bump_virgin`'s
     /// doc). Returns `(ptr, is_virgin)`; `is_virgin` is always `false` when
     /// `ptr` is null.
     ///
@@ -582,9 +550,9 @@ impl HeapCore {
     /// [`refill_magazine_slow`](Self::refill_magazine_slow), consumed ONLY by
     /// [`alloc_small_zeroed_via_magazine`](Self::alloc_small_zeroed_via_magazine).
     /// Identical drain/refill/stamp/issue shape (see that function's doc for
-    /// the UBFIX-10/RAD-4b drain rationale, unchanged here) plus: calls
-    /// [`AllocCore::refill_class_bump_virgin_checked`] instead of the plain
-    /// `_checked` variant, stores the resulting per-slot virgin mask into
+    /// the cold Large-only sweep) plus: calls
+    /// [`AllocCore::refill_class_bump_virgin`] instead of the ordinary refill,
+    /// stores the resulting per-slot virgin mask into
     /// `PerClass::virgin_mask` for the `n-1` blocks retained in the magazine,
     /// and reports the ONE block popped to the caller's own virgin bit
     /// (cleared from the mask before return, maintaining the "bits >= count
@@ -613,30 +581,16 @@ impl HeapCore {
 
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
         // rationale — identical placement, identical cheap-when-empty shape).
-        self.drain_large_deferred_free();
-        self.drain_heap_overflow();
+        self.drain_large_sidecar_ingress();
 
         let want = crate::registry::heap_core::state::tcache::refill_n_for_class(
             SizeClasses::block_size(c),
         );
-        let (_before, rest) = self.tcache.classes.split_at_mut(c);
-        let (cur, _after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
+        let cur = &mut self.tcache.classes[c];
         let mut virgin_mask: u16 = 0;
-        let n = self.core.refill_class_bump_virgin_checked(
-            c,
-            &mut cur.slots[0..want],
-            &|ptr, k| {
-                if k == c {
-                    return false;
-                }
-                let pbase = os::segment_base_of_ptr(ptr);
-                let poff = (ptr as usize - pbase as usize) as u32;
-                SegmentMeta::new(pbase)
-                    .magazine_bitmap()
-                    .is_in_magazine(poff)
-            },
-            &mut virgin_mask,
-        );
+        let n = self
+            .core
+            .refill_class_bump_virgin(c, &mut cur.slots[0..want], &mut virgin_mask);
         if n == 0 {
             return (::core::ptr::null_mut(), false); // true OOM
         }
@@ -681,12 +635,8 @@ impl HeapCore {
     /// as virgin and is always zeroed explicitly, exactly as before this
     /// feature existed.
     ///
-    /// The Large branch replays the SAME Large-relevant prelude [`alloc`](Self::alloc)
-    /// performs before reaching `AllocCore::alloc_large` —
-    /// [`drain_large_deferred_free`](Self::drain_large_deferred_free) (A1,
-    /// `alloc-xthread`) and [`drain_heap_overflow`](Self::drain_heap_overflow)
-    /// (RAD-4b, `alloc-xthread` without `fastbin`, where it is otherwise hosted
-    /// in the magazine-miss slow path) — then calls `alloc_large` DIRECTLY to
+    /// The Large branch consumes the same descriptor obligations as
+    /// [`alloc`](Self::alloc), then calls `alloc_large` directly to
     /// obtain the freshness tuple (which `self.core.alloc` discards). The
     /// `virgin-zero-skip` Small branch mirrors this shape exactly: it
     /// bypasses `self.alloc()` (the magazine fast path) to reach
@@ -730,22 +680,12 @@ impl HeapCore {
             }
             return ptr;
         }
-        // `virgin-zero-skip` without `fastbin`: there is no magazine to
-        // plumb the signal through (the feature requires only
-        // `alloc-decommit`, not `fastbin` — see `Cargo.toml`), so this
-        // build keeps the R12-10 direct-substrate shape. Unlike R12-10,
-        // it now ALSO replicates the Large branch's drain prelude below
-        // (Defect 2 fix): without `fastbin` there is no
-        // `refill_magazine_slow` to host the M-9/RAD-4b opportunistic
-        // drains, so a heap calling ONLY `alloc_zeroed` would otherwise
-        // never drain its cross-thread deferred-free stacks either.
+        // Without fastbin, use the direct substrate virginity result. Small
+        // sidecar discovery remains miss-only; do not scan the full table on
+        // every scalar calloc. Large obligations are swept by Large slow paths
+        // and exclusive cold trim/maintenance.
         #[cfg(all(feature = "virgin-zero-skip", not(feature = "fastbin")))]
         if let Some(class_idx) = class {
-            #[cfg(feature = "alloc-xthread")]
-            {
-                self.drain_large_deferred_free();
-                self.drain_heap_overflow();
-            }
             let (ptr, is_virgin) = self.core.alloc_small_with_virgin(class_idx);
             if !ptr.is_null() {
                 self.stamp_segment_owner(ptr);
@@ -783,18 +723,10 @@ impl HeapCore {
             return ptr;
         }
 
-        // Large-classified: replicate `alloc`'s Large-relevant prelude (the two
-        // drains below — copied verbatim from `alloc`'s own prelude), THEN call
-        // `alloc_large` directly for the freshness tuple. `alloc` gates
-        // `drain_large_deferred_free` on `class.is_none()`; we are already in
-        // the Large branch, so the `if` collapses to an unconditional call.
+        // Large descriptor obligations are consumed before physical cache reuse.
         #[cfg(feature = "alloc-xthread")]
         {
-            self.drain_large_deferred_free();
-        }
-        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
-        {
-            self.drain_heap_overflow();
+            self.drain_large_sidecar_ingress();
         }
 
         let (ptr, is_fresh) = self.core.alloc_large(size, align);
@@ -802,7 +734,7 @@ impl HeapCore {
             self.stamp_segment_owner(ptr);
             if !is_fresh {
                 // Reused (cache-hit) segment — or ANY allocation under miri
-                // (R9-1: miri's std::alloc fallback does not zero, so
+                // (R9-1: miri's System.alloc fallback does not zero, so
                 // `alloc_large` withholds the freshness signal there): NOT
                 // OS-zero-guaranteed — must explicitly zero the user span.
                 // Fresh real-OS reservations skip this (the OS zero-fills the
@@ -822,87 +754,25 @@ impl HeapCore {
     /// from the closure / `split_at_mut` machinery. Returns the popped pointer
     /// (the block to hand out), or null on true OOM.
     ///
-    /// UBFIX-10 (M-9): opportunistic Large-deferred-free drain. Before this
-    /// task, `drain_large_deferred_free` was called ONLY from the two
-    /// Large-classified sites in [`alloc`](Self::alloc)/[`realloc`](Self::realloc)
-    /// — a heap that stopped allocating Large blocks entirely (e.g. a workload
-    /// that starts Large-heavy and settles into Small-only churn) never drained
-    /// again, so any cross-thread-freed Large segments queued on its deferred
-    /// stack stayed mapped-but-dead for the rest of the process's life
-    /// (unbounded resource retention, not UB — see
-    /// `docs/reviews/2026-07-10-ub-audit-final-synthesis.md` M-9). This is the
-    /// SMALL-path drain site: every magazine MISS (never a hit — this function
-    /// runs only when the fast-path pop in `alloc` found `count[c] == 0`)
-    /// opportunistically reclaims any queued Large segments too, so a
-    /// Small-only workload still recovers them. Placement here (rather than
-    /// unconditionally in `alloc`) keeps the check off the actual hot path —
-    /// `refill_magazine_slow` is `#[cold] #[inline(never)]`, reached only on a
-    /// miss, so the extra call costs nothing on the magazine-hit fast path
-    /// this file's own churn benchmarks measure.
-    ///
-    /// The call is the SAME cheap-precheck shape draining always has:
-    /// `drain_large_deferred_free`'s pop loop starts with a single Acquire
-    /// load of the stack head and returns immediately if it is null (see
-    /// `alloc_core::deferred_large::drain_large_deferred_free`) — an empty
-    /// stack costs exactly one atomic load here, no CAS, no further work.
-    /// `fastbin` requires `alloc-xthread` (`Cargo.toml`: `fastbin =
-    /// ["alloc-global", "alloc-xthread"]`), so the call is unconditional
-    /// inside this `fastbin`-gated function — no extra `cfg` needed.
+    /// On a genuine magazine miss, consume pending Large descriptor obligations
+    /// too, so Small-only churn can retire them. The scan visits table slots
+    /// but never Small sidecar words; magazine hits pay none of this work.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         use crate::alloc_core::size_classes::SizeClasses;
 
-        // UBFIX-10 (M-9): opportunistic drain on every magazine miss — see
-        // the doc comment above. Cheap when empty (one Acquire load).
-        self.drain_large_deferred_free();
-
-        // RAD-4b (task #72): opportunistic drain of this heap's
-        // `HeapOverflow` second-chance ring — same placement rationale as
-        // the M-9 drain immediately above (magazine-MISS-only, so the
-        // magazine-HIT fast path in `alloc` pays nothing extra). See
-        // `push_to_heap_overflow`'s doc comment for the full design and
-        // `alloc`'s matching non-fastbin call site.
-        self.drain_heap_overflow();
+        // Cold Large-only descriptor scan; Small discovery occurs in the refill.
+        self.drain_large_sidecar_ingress();
 
         let want = crate::registry::heap_core::state::tcache::refill_n_for_class(
             SizeClasses::block_size(c),
         );
-        // Task #164 / PERF-PASS-5 (G7): zero-copy split borrow. The refill
-        // writes DIRECTLY into `tcache.classes[c].slots` (no buffer, no
-        // copy). `split_at_mut`/`split_first_mut` is still needed to obtain
-        // `cur: &mut PerClass` (the refill's write target) while the rest of
-        // `self` stays usable inside the closure below.
-        //
-        // RAD-5 (E4) GO/NO-GO EXPERIMENT: the magazine predicate closure used
-        // to scan OTHER classes' magazine slots (`entry.slots[0..cnt]`,
-        // O(cnt) per candidate offset drained from a remote ring, via the
-        // `before`/`after` split halves). Replaced with an O(1) probe of the
-        // second (magazine-residency) bitmap — the probe is keyed by segment
-        // offset, not by class, so `before`/`after` are no longer read (only
-        // `cur.slots` as the write target survives from the original split).
-        //
-        // KEY INVARIANT (load-bearing): at refill time, `count[c] == 0` —
-        // the refill runs ONLY on a magazine miss (the pop in `alloc` failed
-        // because `cnt == 0`). So the predicate for class `c` itself is
-        // trivially false (0 slots to scan), and the mutable borrow of
-        // `classes[c].slots` (for the refill output) is never read by the
-        // closure.
-        let (_before, rest) = self.tcache.classes.split_at_mut(c);
-        let (cur, _after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
-        let n = self
-            .core
-            .refill_class_bump_checked(c, &mut cur.slots[0..want], &|ptr, k| {
-                if k == c {
-                    return false;
-                }
-                let pbase = os::segment_base_of_ptr(ptr);
-                let poff = (ptr as usize - pbase as usize) as u32;
-                SegmentMeta::new(pbase)
-                    .magazine_bitmap()
-                    .is_in_magazine(poff)
-            });
+        // Write directly into this class's empty magazine. Residency checks
+        // belong to the owner retirement primitive, not a caller closure.
+        let cur = &mut self.tcache.classes[c];
+        let n = self.core.refill_class_bump(c, &mut cur.slots[0..want]);
         if n == 0 {
             return ::core::ptr::null_mut(); // true OOM
         }

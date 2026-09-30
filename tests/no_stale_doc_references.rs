@@ -116,82 +116,6 @@ fn no_removed_heap_type_doc_mentions() {
     );
 }
 
-/// Regression-guard against the SPECIFIC pre-task-H1 `thread_free` prose in
-/// `registry/heap_core/core.rs`, `global/fallback.rs`, and `global/sefer_alloc.rs`.
-///
-/// Task #13 (the W3/H1 hoist) moved the cross-thread free-stack head OUT of an
-/// inline `HeapCore` field into the owning `HeapSlot::thread_free` slot word
-/// (and `FALLBACK_TFS` for the fallback heap). Task #31 rewrote the module-doc
-/// and method-doc blocks in those two files that still described the OLD
-/// mechanism (a `Box`-allocated stack, "install" as the binding step, an inline
-/// head field). This test fails if any of those exact stale phrases reappear.
-///
-/// Task #38 additionally REMOVED the `install_thread_free` method itself (it
-/// was a dead call on the TLS bind-slow path — `bind_thread_free` at claim
-/// time, which runs strictly before `finish_bind`, already guarantees
-/// `thread_free` is bound). So the bare token `install_thread_free` is now
-/// ALSO banned outside the one file allowed to mention it historically
-/// (`global/tls_heap.rs`'s `finish_bind` doc, which explains the removal in
-/// the past tense — "this used to also call ..."). A reintroduced call site
-/// or doc claiming the method still exists would be a genuine regression.
-///
-/// Doc-only guard: reads source text, never links the crate, so it runs in
-/// every feature configuration.
-#[test]
-fn no_stale_pre_h1_thread_free_prose() {
-    // (file, list-of-forbidden-substrings). Each substring is an exact phrase
-    // removed by task #31 that would only reappear via a genuine regression.
-    let cases: &[(&str, &[&str])] = &[
-        (
-            "registry/heap_core/core.rs",
-            &[
-                "ThreadFreeStack is Box-allocated",
-                "`ThreadFreeStack` is `Box`-allocated",
-                "hands out the address of the INLINE",
-                "installed separately by\n    /// [`install_thread_free`]",
-                "install_thread_free",
-            ],
-        ),
-        (
-            "global/fallback.rs",
-            &[
-                "already-initialised (in `new`) inline `thread_free` field",
-                "wired purely from the stable inline field",
-                "install_thread_free",
-            ],
-        ),
-        ("global/sefer_alloc/mod.rs", &["install_thread_free"]),
-        ("global/sefer_alloc/core.rs", &["install_thread_free"]),
-        ("global/sefer_alloc/diag.rs", &["install_thread_free"]),
-        ("global/sefer_alloc/batch.rs", &["install_thread_free"]),
-        (
-            "global/sefer_alloc/global_alloc.rs",
-            &["install_thread_free"],
-        ),
-    ];
-
-    let mut offenders = Vec::new();
-    for (rel, needles) in cases {
-        let path = src_dir().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-        let text =
-            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        for needle in *needles {
-            if text.contains(needle) {
-                offenders.push(format!("{}: stale phrase reintroduced: {needle:?}", rel));
-            }
-        }
-    }
-
-    assert!(
-        offenders.is_empty(),
-        "task #13 (H1) hoisted the cross-thread free-stack head out of an \
-         inline `HeapCore` field into the owning slot's `thread_free` word \
-         (and `FALLBACK_TFS`); task #31 rewrote the docs. These pre-H1 stale \
-         phrases (Box-allocated stack / inline head field) were reintroduced:\n{}",
-        offenders.join("\n"),
-    );
-}
-
 /// Regression-guard against doc/comment drift back to the removed
 /// abandon/adopt segment-transfer substrate (round4 task #97 / R4-5, commit
 /// `65d441a`).
@@ -208,9 +132,7 @@ fn no_stale_pre_h1_thread_free_prose() {
 /// This is deliberately narrower than a blanket "abandon"/"adopt" word-stem
 /// ban: those stems are ALSO the live [`AbandonGuard`] type name in
 /// `global/tls_heap.rs` (the TLS destructor guard — a name that outlived the
-/// behaviour it was named for, not renamed by this guard's scope), the
-/// `ABANDONED_TAIL` sentinel used by the still-live `deferred_large`
-/// cross-thread-free stack ([`crate::alloc_core::segment_header`]), and
+/// behaviour it was named for, not renamed by this guard's scope), and
 /// "adopting thread" prose in `concurrent/sharded/sharded_region.rs` describing an
 /// unrelated, still-live shard-reuse mechanism — all correct and not the
 /// target of this guard.
@@ -221,7 +143,7 @@ fn no_stale_pre_h1_thread_free_prose() {
 fn no_stale_abandon_adopt_substrate_references() {
     // Exact identifiers from the removed API surface (commit 65d441a's
     // message enumerates the full removed list). None of these collide with
-    // `AbandonGuard`, `ABANDONED_TAIL`, or generic "adopt"/"abandon" prose.
+    // `AbandonGuard` or generic "adopt"/"abandon" prose.
     let forbidden_tokens: &[&str] = &[
         "try_adopt",
         "abandon_segments",
@@ -361,7 +283,11 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
         "the documented invariant abort is absent from Registry::ensure_chunk"
     );
     let claim = fs::read_to_string(
-        manifest.join("src").join("registry").join("heap_registry").join("claim.rs"),
+        manifest
+            .join("src")
+            .join("registry")
+            .join("heap_registry")
+            .join("claim.rs"),
     )
     .expect("read claim.rs");
     assert!(
@@ -370,11 +296,83 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
     );
 }
 
+#[test]
+fn allocator_64bit_gate_docs_match_live_metadata_bounds() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lib = fs::read_to_string(manifest.join("src/lib.rs")).expect("read src/lib.rs");
+    let cfg = "#[cfg(all(feature = \"alloc-core\", not(target_pointer_width = \"64\")))]";
+    let gate_at = lib
+        .match_indices(cfg)
+        .find_map(|(at, _)| {
+            lib[..at]
+                .rsplit('\n')
+                .next()
+                .is_some_and(|prefix| prefix.trim().is_empty())
+                .then_some(at)
+        })
+        .expect("active 64-bit allocator gate cfg missing");
+    let gate_tail = &lib[gate_at + cfg.len()..];
+    assert!(gate_tail.trim_start().starts_with("compile_error!("));
+    let gate_end = gate_tail
+        .find("\n);")
+        .expect("64-bit compile_error ending missing");
+    let gate = &gate_tail[..gate_end];
+    for required in [
+        "compile_error!(",
+        "allocator features require a 64-bit target",
+        "metadata/magazine layout bounds",
+        "AtomicU64",
+        "pointer-provenance",
+        "region-only",
+    ] {
+        assert!(gate.contains(required), "64-bit gate dropped {required:?}");
+    }
+
+    let comment_at = lib[..gate_at]
+        .rfind("// R2-17")
+        .expect("64-bit gate rationale missing");
+    let rationale = &lib[comment_at..gate_at];
+    assert!(rationale.contains("metadata placement and magazine layout"));
+    assert!(rationale.contains("AtomicU64") && rationale.contains("provenance"));
+
+    let readme = fs::read_to_string(manifest.join("README.md")).expect("read README.md");
+    let support = markdown_section(&readme, "## Target support");
+    for required in [
+        "size_of::<SegmentHeader>() <= PAGE",
+        "metadata/magazine bounds",
+        "AtomicU64",
+        "pointer provenance",
+        "REJECTED at compile time",
+    ] {
+        assert!(
+            support.contains(required),
+            "Target support dropped {required:?}"
+        );
+    }
+
+    let layout = fs::read_to_string(
+        manifest.join("src/alloc_core/segment/segment_header/layout_asserts.rs"),
+    )
+    .expect("read layout_asserts.rs");
+    assert!(layout.contains("assert!(size_of::<SegmentHeader>() <= PAGE)"));
+    for (place, text) in [
+        ("gate", gate),
+        ("rationale", rationale),
+        ("Target support", support),
+        ("layout assertions", &layout),
+    ] {
+        assert!(
+            !text.contains("size_of::<SegmentHeader>() =="),
+            "{place} reintroduced the retired exact header-size claim"
+        );
+    }
+}
+
 /// Regression-guard for a checkable NUMERIC claim in the overview docs.
 ///
 /// `docs/ARCHITECTURE.md` states the count of integration-test files as
-/// `tests/*.rs (<N> files)`. That number silently rots every
-/// time a test file is added or removed. This test recomputes the true count
+/// `tests/*.rs (<N> files)`. The glob is root-only: nested helper `.rs` files
+/// are not included. This test recomputes the true count
 /// and asserts the exact `(<N> files` token is present in ARCHITECTURE.md, so a
 /// drift fails CI at the source rather than being discovered by a human reader.
 ///
@@ -401,7 +399,7 @@ fn architecture_test_file_count_matches_reality() {
     assert!(
         text.contains(&needle),
         "docs/ARCHITECTURE.md test-file count is stale: there are {count} \
-         `tests/*.rs` files but the doc does not contain the token `{needle}`. \
+         root `tests/*.rs` files (not recursive helpers), but the doc does not contain the token `{needle}`. \
          Update the `tests/*.rs (<N> files)` line to {count}.",
     );
 }
@@ -426,7 +424,7 @@ fn verification_inventory_matches_docs() {
             .count()
     };
 
-    let tests_count = count_rs(&manifest.join("tests"));
+    let tests_count = count_rs(&manifest.join("tests")); // Root glob, not recursive.
     let examples_count = count_rs(&manifest.join("examples"));
     let benches_count = count_rs(&manifest.join("benches"));
     let mut root_loom = fs::read_dir(manifest.join("tests"))
@@ -741,9 +739,8 @@ fn extract_seam_bullets(lib_rs: &str) -> Vec<String> {
 /// sites spell the bundle out in prose (rather than just saying
 /// "`production`") so a reader need not open Cargo.toml. Those prose
 /// expansions silently rot every time a feature joins `production`
-/// (R13-9/task #279 added `class-aware-dirty` and `primordial-lazy-commit` to
-/// `production`, but four doc sites kept listing only the pre-R13-9 set —
-/// unnoticed for over 20 rounds until the release-stabilization audit). This
+/// (R13-9/task #279 expanded the bundle, but four doc sites kept listing the
+/// earlier set until the release-stabilization audit). This
 /// test parses `production = [...]` from Cargo.toml, renders the feature list
 /// in the `a + b + c` form the prose uses, and asserts every doc site that
 /// writes the bundle out as a `+`-separated list contains the FULL canonical
@@ -1059,105 +1056,6 @@ fn perclass_doc_offsets_match_const_asserts() {
          layout; the prose must state the SAME numbers. Drifts:\n{}",
         offenders.join("\n"),
     );
-}
-
-/// Regression-guard for the THIRD link in a chain
-/// `tests/dirty_by_class_sidecar_sizing_tripwire.rs`'s v4 tripwire (R19-9,
-/// task #345) only pins two of: (1) the REAL compiled constants
-/// (`AllocCore::dbg_small_class_count`/`dbg_words_per_class`) agree with (2)
-/// that test file's own `EXPECTED_BYTES` constants, per feature combo. This
-/// test checks the missing link 2 <-> 3: that `EXPECTED_BYTES` also agrees
-/// with (3) the PROSE snapshot numbers in
-/// `src/alloc_core/platform/dirty_by_class.rs`'s "## Sizing and lazy materialisation"
-/// module-doc section. Editing that prose to a wrong number left the
-/// existing tripwire green (it never reads the doc comment); this test reads
-/// the doc comment's source text and pins the exact byte-count tokens for
-/// all three feature combos, so such a doc-only drift now fails here instead.
-///
-/// Deliberately does NOT depend on `AllocCore::dbg_*` (unlike the sidecar
-/// tripwire, which needs `alloc-segment-directory` compiled in to call those
-/// debug accessors) — it only reads source text, following this file's
-/// existing "doc-only guard... runs in every feature configuration" pattern,
-/// so the three literals below are cross-checked against
-/// `dirty_by_class_sidecar_sizing_tripwire.rs`'s own `EXPECTED_BYTES`
-/// constants by inspection/duplication, not by linking the crate. If a
-/// future change to `MAX_SEGMENTS`/`SMALL_CLASS_COUNT`/`WORDS_PER_CLASS`
-/// updates the sidecar tripwire's `EXPECTED_BYTES` constants, the SAME change
-/// must update the three literals here (and the doc comment prose itself) —
-/// exactly the discipline the sidecar tripwire's own doc comment already
-/// demands of `dirty_by_class.rs`'s prose.
-#[test]
-fn dirty_by_class_doc_snapshot_matches_sidecar_tripwire_expected_bytes() {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let text = fs::read_to_string(
-        manifest
-            .join("src")
-            .join("alloc_core")
-            .join("platform")
-            .join("dirty_by_class.rs"),
-    )
-    .expect("read src/alloc_core/platform/dirty_by_class.rs");
-
-    // Must match `dirty_by_class_sidecar_sizing_tripwire.rs`'s
-    // `EXPECTED_BYTES` for `#[cfg(not(feature = "medium-classes"))]`.
-    const EXPECTED_BYTES_DEFAULT: usize = 25_088;
-    // Must match `EXPECTED_BYTES` for
-    // `#[cfg(all(feature = "medium-classes", not(feature = "medium-classes-wide")))]`.
-    const EXPECTED_BYTES_MEDIUM: usize = 28_160;
-    // Must match `EXPECTED_BYTES` for `#[cfg(feature = "medium-classes-wide")]`.
-    const EXPECTED_BYTES_WIDE: usize = 29_696;
-
-    let cases: &[(&str, usize)] = &[
-        ("the default 49-class table", EXPECTED_BYTES_DEFAULT),
-        ("55 classes under `medium-classes`", EXPECTED_BYTES_MEDIUM),
-        (
-            "58 classes under `medium-classes-wide`",
-            EXPECTED_BYTES_WIDE,
-        ),
-    ];
-
-    let mut offenders = Vec::new();
-    for (label, expected) in cases {
-        // The doc prose spells byte counts with a thousands separator, e.g.
-        // "25,088 bytes" — match the exact comma-grouped token so a stray
-        // digit edit is caught.
-        let grouped = group_thousands(*expected);
-        let needle = format!("{grouped} bytes");
-        if !text.contains(&needle) {
-            offenders.push(format!(
-                "expected token `{needle}` ({label}) not found in \
-                 src/alloc_core/platform/dirty_by_class.rs's \"## Sizing and lazy \
-                 materialisation\" doc comment"
-            ));
-        }
-    }
-
-    assert!(
-        offenders.is_empty(),
-        "dirty_by_class.rs's doc-comment snapshot prose has drifted from \
-         tests/dirty_by_class_sidecar_sizing_tripwire.rs's own EXPECTED_BYTES \
-         constants (which are themselves re-derived from the real compiled \
-         constants, see that test's own tripwire). Update BOTH the doc \
-         comment's \"## Sizing and lazy materialisation\" prose and, if the \
-         underlying constants changed, EXPECTED_BYTES in both that test and \
-         this one, in the same change:\n{}",
-        offenders.join("\n"),
-    );
-}
-
-/// Format `n` with comma thousands separators, e.g. `25088` -> `"25,088"`.
-/// Small, local, and only used by the doc-snapshot check above — not worth a
-/// dependency for a single call site.
-fn group_thousands(n: usize) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, ch) in digits.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    out.chars().rev().collect()
 }
 
 /// Tripwire against the R29-11 (task #442) gap: every `honest-reject` section
@@ -2288,94 +2186,29 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     );
 }
 
-/// R2-22 (independent src review round 2): guard against the
-/// `AllocStats::ring_overflows` leak-overclaim regression and against losing
-/// the `decommit_calls` logical-vs-syscall distinction.
-///
-/// Pre-R2-22, `ring_overflows`'s doc asserted "On overflow the freed block
-/// is **discarded**" and that a sustained high rate "means blocks are
-/// actually being leaked" — false: the field reads `DBG_RING_OVERFLOW`,
-/// which ticks on the FAILED FIRST ring push, after which the `HeapOverflow`
-/// second-chance ring or the bounded retry usually saves the free. The real
-/// terminal-loss counter is `cross_thread_frees_lost` (R2-09). Similarly,
-/// `decommit_calls` counts ENTRIES into the decommit helper including
-/// `release_follows` early-returns that never reach a decommit syscall —
-/// the doc must keep saying so. This test fails if the overclaiming prose
-/// reappears or the clarifying pointers are dropped.
-///
-/// Doc-only guard: reads source text, never links the crate, so it runs in
-/// every feature configuration.
+/// The decommit counter counts helper entries, including release-follows
+/// early returns that never issue an OS decommit syscall.
 #[test]
-fn no_ring_overflow_leak_overclaim_in_alloc_stats_docs() {
+fn decommit_calls_doc_distinguishes_logical_entries_from_syscalls() {
     let path = src_dir().join("global").join("alloc_stats.rs");
     let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-
-    // The pre-R2-22 overclaiming phrases must never come back.
-    for stale in &[
-        "the freed block is **discarded**",
-        "means blocks are actually being leaked",
-        "OS\" invocations since process start",
-    ] {
+    assert!(
+        !text.contains("OS\" invocations since process start"),
+        "stale AllocStats decommit_calls syscall-count claim reintroduced"
+    );
+    let start = text
+        .find("Number of logical entries into the small-segment decommit helper")
+        .expect("decommit_calls doc block not found");
+    let end = text[start..]
+        .find("pub decommit_calls")
+        .expect("decommit_calls field not found");
+    let doc = &text[start..start + end];
+    for required in ["NOT an OS decommit-syscall count", "release_follows"] {
         assert!(
-            !text.contains(stale),
-            "stale AllocStats doc phrase reintroduced: {stale:?} — \
-             ring_overflows is a first-tier-miss counter \
-             (cross_thread_frees_lost is the loss counter) and decommit_calls \
-             counts logical helper entries, not OS decommit syscalls"
+            doc.contains(required),
+            "decommit_calls doc dropped its logical-entry distinction: {required:?}"
         );
     }
-
-    // The clarifying R2-22 wording must stay.
-    for required in &[
-        "first-tier miss",
-        "This is NOT a leak counter",
-        "NOT an OS decommit-syscall count",
-        "release_follows",
-    ] {
-        assert!(
-            text.contains(required),
-            "required AllocStats doc phrase missing: {required:?} — the R2-22 \
-             clarification (ring_overflows is not a leak counter; \
-             decommit_calls counts logical entries) was dropped"
-        );
-    }
-
-    // `ring_overflows`'s own doc block must not recommend alerting on the
-    // legacy, permanently-zero `cross_thread_frees_lost` counter (oxx R2-04:
-    // R2-09's intrusive spill left that counter with no writer, so the
-    // R2-22 wording "the field to check (and alert on) for an
-    // actually-discarded cross-thread free" became a false, permanently-
-    // green alerting signal — `DBG_RING_PUSH_RETRY_EXHAUSTED` has no
-    // writer anywhere in `src/`).
-    let doc_start = text
-        .find("Number of cross-thread frees whose FIRST push attempt")
-        .expect("ring_overflows' R2-22 doc block not found");
-    let doc_end = text[doc_start..]
-        .find("pub ring_overflows")
-        .expect("ring_overflows field not found");
-    let doc_block = &text[doc_start..doc_start + doc_end];
-    assert!(
-        !doc_block.contains("the field to check (and alert on)"),
-        "ring_overflows' doc block reintroduced the stale R2-22 wording \
-         recommending alerting on `cross_thread_frees_lost` for an actual \
-         loss — that counter has had no writer since R2-09's intrusive \
-         spill replaced the terminal drop, so it is permanently 0 and this \
-         wording is a false always-green alerting signal (oxx R2-04)"
-    );
-    assert!(
-        doc_block.contains("cross_thread_frees_lost") && doc_block.contains("legacy"),
-        "ring_overflows' doc block must still name `cross_thread_frees_lost` \
-         by name and describe it as a legacy counter that never fires for a \
-         legal free, not as a signal worth alerting on (oxx R2-04)"
-    );
-    assert!(
-        doc_block.contains("no terminal-loss path") && doc_block.contains("intrusive spill"),
-        "ring_overflows' doc block must describe the current chain (segment \
-         ring / HeapOverflow second-chance ring / R2-09's intrusive spill) \
-         under which a legal cross-thread free has no terminal-loss path \
-         left — replacing the pre-R2-09 'genuine terminal drop' framing \
-         (oxx R2-04)"
-    );
 }
 
 // ── R2-23 (independent src review round 2): doc/code contradiction guards ────
@@ -2584,81 +2417,6 @@ fn lock_free_generation_max_doc_matches_the_final_reuse_policy() {
     );
 }
 
-/// R2-23 (independent src review round 2) — `alloc_core::platform::dirty_by_class`
-/// still described `class-aware-dirty` as "EXPERIMENTAL: opt-in ... NOT part of
-/// `production`", and `src/lib.rs`'s feature-grid bullet called it experimental,
-/// even though the feature joined the `production` bundle back in R13-9/task
-/// #279. `Cargo.toml`'s `production = [...]` line is the single source of
-/// truth, so this guard parses it (`parse_production_feature_list`) and then
-/// pins every prose site that contradicts it, in both directions: the stale
-/// EXPERIMENTAL/not-in-production claims are forbidden, and the current
-/// "part of the `production` bundle, promoted since R13-9" wording is
-/// required.
-///
-/// Doc-only guard: reads Cargo.toml + source text, never links the crate, so
-/// it runs in every feature configuration.
-#[test]
-fn class_aware_dirty_doc_status_matches_cargo_toml_production() {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cargo = fs::read_to_string(manifest.join("Cargo.toml")).expect("read Cargo.toml");
-    let features = parse_production_feature_list(&cargo);
-    assert!(
-        features.iter().any(|f| f == "class-aware-dirty"),
-        "Cargo.toml's `production = [...]` bundle no longer lists \
-         `class-aware-dirty` — if the manifest ever changes, this pin's doc \
-         wording (the feature IS part of `production`, promoted in \
-         R13-9/task #279) must be revisited (R2-23).",
-    );
-
-    let path = src_dir()
-        .join("alloc_core")
-        .join("platform")
-        .join("dirty_by_class.rs");
-    let flat = doc_prose(&path);
-
-    for stale in ["NOT part of `production`", "is EXPERIMENTAL: opt-in"] {
-        assert!(
-            !flat.contains(stale),
-            "src/alloc_core/platform/dirty_by_class.rs: still describes \
-             `class-aware-dirty` with the pre-R13-9 status claim `{stale}` \
-             (R2-23). The feature joined the `production` bundle in \
-             R13-9/task #279, so it is neither outside `production` nor \
-             experimental.",
-        );
-    }
-
-    // The review paraphrased this as "part of the `production` bundle since
-    // R13-9"; the source states the same fact in its own word order, so the
-    // pin is the verbatim landed sentence (which also names task #279).
-    assert!(
-        flat.contains("since R13-9 (task #279) it is part of the `production` bundle"),
-        "src/alloc_core/platform/dirty_by_class.rs: must state that \
-         `class-aware-dirty` is part of the `production` bundle, promoted in \
-         R13-9/task #279 (R2-23) — Cargo.toml's `production = [...]` is the \
-         source of truth and this module's status prose contradicts it.",
-    );
-
-    let lib_rs_path = manifest.join("src").join("lib.rs");
-    let lib_rs = fs::read_to_string(&lib_rs_path).unwrap_or_else(|e| panic!("read lib.rs: {e}"));
-    let line = lib_rs
-        .lines()
-        .find(|l| l.contains("Optional `class-aware-dirty` path"))
-        .expect("src/lib.rs must keep the `Optional `class-aware-dirty` path` feature-grid bullet (R2-23)");
-    assert!(
-        !line.contains("EXPERIMENTAL"),
-        "src/lib.rs's `Optional `class-aware-dirty` path` bullet still calls the \
-         feature EXPERIMENTAL (R2-23) — it was promoted into `production` in \
-         R13-9/task #279.",
-    );
-    assert!(
-        line.contains("promoted into"),
-        "src/lib.rs's `Optional `class-aware-dirty` path` bullet must say the \
-         feature was promoted into `production` (R13-9/task #279), not merely \
-         list it (R2-23) — this is the crate root's own status call and it must \
-         match Cargo.toml's `production = [...]`.",
-    );
-}
-
 /// R2-23 (independent src review round 2) — the crate-root `stats()` blurb in
 /// `src/lib.rs` described the snapshot as "a handful of relaxed atomic loads
 /// (no locks, no allocation), safe to poll" flat out. With `alloc-stats` on,
@@ -2818,29 +2576,8 @@ fn no_owned_sidecar_references_anywhere() {
 // ── oxx R2-07 (independent src review round 2, oxx series) — doc/safety-
 // argument drift guards ───────────────────────────────────────────────────
 //
-// Seven doc-comment sites made claims about `Send`/`unsafe`/safety that did
-// not match the code: `AllocCore` "is `Send`" (it is neither `Send` nor
-// `Sync`); `large_cache_extended.rs` argued its plain `*mut` sidecar was
-// sound because "an `AllocCore` value never crosses a thread boundary"
-// (false in `production` — a registry slot's `AllocCore` DOES change owning
-// thread when the slot is recycled and re-claimed; soundness actually comes
-// from the ordered CAS hand-off / fallback spinlock, not absence of
-// movement); a module claimed `#![forbid(unsafe_code)]` where the crate is
-// only `#![deny(unsafe_code)]` whenever `alloc-core` is on; `bootstrap.rs`
-// claimed no file has an `unsafe` block, missing the `hardened`-only one;
-// `alloc_core/mod.rs` claimed `os`/`node` are the ONLY confined-`unsafe`
-// seams under `alloc_core/`, missing `large_cache_extended` and
-// `platform::{dirty_by_class,sidecar}`; `remote_free_ring/mod.rs` claimed
-// "there is NO `unsafe` here" while its `ops.rs` child carries two
-// `unsafe fn`s; `heap_core/free/realloc.rs` called an `unsafe fn` a "SAFE
-// `pub fn`" / referred to "a safe caller" / "a safe fn" three times; and
-// `overflow_sidecar.rs` described a real, release-active `assert!` as a
-// "Panics (debug only)" `debug_assert`. Each guard below pins the stale
-// phrase gone and the corrected phrase present. Counterfactual: reverting
-// any one of the "required" checks' target phrase back to its pre-fix
-// wording turns that check red; the "stale" checks are red on the pre-fix
-// text and green on the fixed text (verified manually against `git show
-// HEAD:<path>` for each file below, not committed as a separate step).
+// Retained checks pin AllocCore's thread boundary, unsafe-seam claims,
+// hardened bootstrap exception, and realloc's unsafe caller contract.
 //
 // Doc-only guards: they read source text, never link the crate, so they run
 // in every feature configuration.
@@ -2985,8 +2722,7 @@ fn oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate() {
         !flat.contains("The confined-`unsafe` seams are `os` and `node`; every other file is pure"),
         "src/alloc_core/mod.rs: stale oxx R2-07 claim reintroduced — `os` and \
          `node` are not the complete tier-1 seam inventory under \
-         `src/alloc_core/` (also: `large_cache_extended`, \
-         `platform::dirty_by_class`, `platform::sidecar`), and several \
+         `src/alloc_core/`; several \
          otherwise-safe files carry individually-documented tier-2 \
          `#[allow(unsafe_code)]` items",
     );
@@ -2996,49 +2732,6 @@ fn oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate() {
          `grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' ...` command \
          instead of hand-listing (or hand-counting) the unsafe seams (oxx \
          R2-07)",
-    );
-}
-
-#[test]
-fn oxx_r2_07_remote_free_ring_mod_unsafe_claim_is_accurate() {
-    let path = src_dir()
-        .join("alloc_core")
-        .join("segment")
-        .join("remote_free_ring")
-        .join("mod.rs");
-    let flat = doc_prose(&path);
-    assert!(
-        !flat.contains("There is NO `unsafe` here"),
-        "src/alloc_core/segment/remote_free_ring/mod.rs: stale oxx R2-07 \
-         claim reintroduced — its `ops.rs` child carries two `unsafe fn`s \
-         (`over_test_buffer` / `init_test_buffer`), each with its own \
-         `#[allow(unsafe_code)]` and `# Safety` contract",
-    );
-    assert!(
-        flat.contains("over_test_buffer") && flat.contains("init_test_buffer"),
-        "src/alloc_core/segment/remote_free_ring/mod.rs must name the two \
-         `ops.rs` test-only `unsafe fn`s instead of claiming zero `unsafe` \
-         in the module (oxx R2-07)",
-    );
-
-    let ops_path = src_dir()
-        .join("alloc_core")
-        .join("segment")
-        .join("remote_free_ring")
-        .join("ops.rs");
-    let ops_flat = doc_prose(&ops_path);
-    assert!(
-        !ops_flat.contains("`DBG_RING_PUSH_RETRY_EXHAUSTED` (single bump, if the whole budget is"),
-        "src/alloc_core/segment/remote_free_ring/ops.rs: stale oxx R2-07 \
-         claim reintroduced — `DBG_RING_PUSH_RETRY_EXHAUSTED` has had no \
-         writer anywhere in `src/` since R2-09's intrusive spill replaced \
-         the terminal drop (oxx R2-04/R2-07)",
-    );
-    assert!(
-        ops_flat.contains("legacy pre-R2-09 counter with no writer left anywhere in `src/`"),
-        "src/alloc_core/segment/remote_free_ring/ops.rs must describe \
-         `DBG_RING_PUSH_RETRY_EXHAUSTED` as the legacy, no-longer-incremented \
-         counter it is (oxx R2-07)",
     );
 }
 
@@ -3064,93 +2757,21 @@ fn oxx_r2_07_realloc_unsafe_fn_claims_are_accurate() {
              requirement of a safe caller",
         );
     }
+    let source = fs::read_to_string(&path).expect("read realloc source");
+    let squashed = source.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        flat.matches("oxx R2-07").count() >= 3,
-        "src/registry/heap_core/free/realloc.rs must name oxx R2-07 at each \
-         of the three corrected safe-fn/safe-caller sites",
+        squashed.contains("pub unsafe fn realloc("),
+        "realloc must preserve its caller-owned pointer/layout unsafe boundary",
     );
-}
-
-#[test]
-fn oxx_r2_07_overflow_sidecar_panics_doc_is_accurate() {
-    let path = src_dir()
-        .join("registry")
-        .join("bootstrap")
-        .join("overflow_sidecar.rs");
-    let flat = doc_prose(&path);
-    assert!(
-        !flat.contains("# Panics (debug only)")
-            && !flat.contains("already `debug_assert`s `p` is non-null"),
-        "src/registry/bootstrap/overflow_sidecar.rs: stale oxx R2-07 claim \
-         reintroduced — `HeapOverflow::slot` guards `p` with a real \
-         `assert!` (active in release), not a `debug_assert!`",
-    );
-    assert!(
-        flat.contains("an `assert!`, not a `debug_assert!`, so it stays active in release too"),
-        "src/registry/bootstrap/overflow_sidecar.rs's `deref_overflow_sidecar` \
-         doc must honestly describe the caller's release-active `assert!` \
-         and state the invariant holds constructively (oxx R2-07)",
-    );
-}
-
-/// Regression-guard for fxx R2-02 (`docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md`):
-/// `HeapCore::push_to_heap_overflow` / `resolve_heap_overflow`'s doc comments
-/// in `src/registry/heap_core_xthread/ring.rs` used to claim a stale
-/// `owner_state` read (segment recycled/re-stamped between the load and the
-/// push) is "not a correctness hazard" because `HeapOverflow::try_drain`'s
-/// `reclaim_offset(_checked)` "independently re-validates" `base`'s
-/// magic/kind/bounds — but that re-validation checks no ownership (no
-/// `contains_base`/`contains_base_ro`), so it does not actually rule out a
-/// wrong-heap drain writing another heap's `BinTable`/`live_count` from a
-/// foreign thread. The real reason the scenario cannot occur under contract:
-/// the block whose free is being published keeps its segment's
-/// `live_count >= 1` until drained, so the segment cannot be released and
-/// re-stamped between the `owner_state` load and the push — the stale
-/// scenario is reachable only via a double-free, already UB. This test pins
-/// the corrected wording and bans the old wrong safety argument from
-/// reappearing.
-///
-/// Doc-only guard: reads source text, never links the crate, so it runs in
-/// every feature configuration.
-#[test]
-fn fxx_r2_02_overflow_ring_wrong_heap_doc_is_accurate() {
-    let path = src_dir()
-        .join("registry")
-        .join("heap_core_xthread")
-        .join("ring.rs");
-    let flat = doc_prose(&path);
-
-    assert!(
-        !flat.contains("not a correctness hazard"),
-        "src/registry/heap_core_xthread/ring.rs: stale fxx R2-02 claim \
-         reintroduced — `reclaim_offset(_checked)`'s magic/kind/bounds \
-         re-validation checks no ownership (no `contains_base`), so it does \
-         NOT make a wrong-heap ring push a non-hazard; the real invariant is \
-         `live_count >= 1` on the live block (see the corrected doc comment)",
-    );
-    assert!(
-        !flat.contains("the pushed entry sits in the wrong heap's overflow ring"),
-        "src/registry/heap_core_xthread/ring.rs: stale fxx R2-02 phrasing \
-         reintroduced — a stale `owner_state` read cannot resolve to a \
-         DIFFERENT live heap's slot under contract (live_count >= 1 blocks \
-         release/re-stamp until drain), so this framing (implying it can, \
-         merely 'harmlessly') is inaccurate",
-    );
-    assert!(
-        flat.matches("live_count >= 1").count() >= 2,
-        "src/registry/heap_core_xthread/ring.rs must state the real \
-         `live_count >= 1` invariant in BOTH `push_to_heap_overflow`'s and \
-         `resolve_heap_overflow`'s doc comments (fxx R2-02)",
-    );
-    assert!(
-        flat.matches("fxx R2-02").count() >= 2,
-        "src/registry/heap_core_xthread/ring.rs must name fxx R2-02 at both \
-         corrected doc-comment sites",
-    );
-    assert!(
-        flat.contains("reachable only via a double-free, which is") && flat.contains("already UB"),
-        "src/registry/heap_core_xthread/ring.rs's `push_to_heap_overflow` doc \
-         must state that the stale-read scenario is reachable only via a \
-         double-free (already UB), not via a legal live-block race (fxx R2-02)",
-    );
+    for contract in [
+        "# Safety",
+        "old_layout",
+        "currently-LIVE",
+        "exactly matches",
+    ] {
+        assert!(
+            flat.contains(contract),
+            "realloc pointer contract lost {contract:?}"
+        );
+    }
 }

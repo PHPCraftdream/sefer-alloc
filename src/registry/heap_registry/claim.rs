@@ -37,7 +37,21 @@ impl HeapRegistry {
     #[doc(hidden)]
     #[must_use]
     pub fn try_maintenance() -> Option<MaintenanceLease> {
-        let (index, slot) = scan_free_slot(ensure())?;
+        let (index, _) = scan_free_slot(ensure())?;
+        Self::try_maintenance_at(index)
+    }
+
+    /// Acquire exactly this existing initialized slot; never materialize a
+    /// chunk and never accept a failed ownership CAS.
+    pub(super) fn try_maintenance_at(index: usize) -> Option<MaintenanceLease> {
+        let reg = ensure();
+        if index >= (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS) {
+            return None;
+        }
+        let slot = reg.slot_if_materialised(index)?;
+        if !slot.initialised.load(Ordering::Acquire) {
+            return None;
+        }
         if slot
             .cas_state(
                 STATE_FREE,
@@ -266,6 +280,12 @@ impl HeapRegistry {
                 // LIVE and initialised; we are the sole writer (just won the
                 // FREE→LIVE CAS) — `on_already_initialised` may soundly form
                 // a shared `&HeapCore` over this pointer under that contract.
+                // A reused FREE heap may have received terminal publications
+                // since its previous owner exited. Reclaim once under the new
+                // owner's lease before handing its legacy TLS pointer out.
+                // SAFETY: the successful FREE -> LIVE CAS grants exclusive
+                // access; remote producers touch only independent sidecars.
+                unsafe { (*slot.heap.get().cast::<HeapCore>()).trim_for_recycle() };
                 on_already_initialised(slot.heap.get().cast::<HeapCore>());
             }
             // R11-5: invalidate the per-AllocCore cached NUMA node before
@@ -308,19 +328,19 @@ impl HeapRegistry {
     /// (typically on thread exit — Phase 12.5 whole-heap reuse: the `HeapCore`
     /// stays whole in the slot for the next claimer; nothing is abandoned).
     ///
-    /// `heap` MUST be a pointer previously returned by [`claim`](Self::claim)
-    /// and not yet recycled. Double-recycle is a no-op (defensive): the CAS
-    /// LIVE→FREE fails on an already-FREE slot and we return without pushing.
+    /// `heap` must be a pointer returned by claim and not yet recycled.
+    /// Release-publishing FREE ends all authority through that legacy pointer;
+    /// only a subsequent winning claim or maintenance CAS can regain access.
     ///
     /// # Safety
     ///
     /// `heap` must be either null (treated as a no-op) or a pointer
     /// previously returned by [`claim`](Self::claim) and not yet passed to
     /// `recycle` (the slot must still be `LIVE`). Passing any other pointer
-    /// is undefined behaviour (the registry reads `heap.id()` to find the
-    /// owning slot, and an out-of-range id would index the slot array
-    /// unsafely — the registry guards against this with a range check, but
-    /// a dangling pointer may still fault on the read).
+    /// is undefined behaviour. All owner accesses and borrows must end before
+    /// FREE is published; neither this pointer nor aliases derived from it may
+    /// be dereferenced afterwards, even if no new claimant has been observed.
+    /// Remote terminal publication uses independent sidecars, not this core.
     pub unsafe fn recycle(heap: *mut HeapCore) {
         if heap.is_null() {
             return;
@@ -339,19 +359,14 @@ impl HeapRegistry {
         // this index was returned by a prior `claim`, which touched it).
         let slot = reg.slot(idx);
 
-        // CAS LIVE → FREE. This is a state transition only: its Release
-        // orders this owner's writes sequenced-before it (the heap contents
-        // from the slot's LIVE lifetime) so a later Acquire observation of
-        // `state` as FREE sees them — it cannot publish the `next_free`
-        // link, which is stored only afterwards, inside `push_free_slot`.
-        // Relaxed on failure: the slot was not LIVE (double-recycle or
-        // raced); we no-op.
+        // Release-publish all completed owner writes to a later successful
+        // Acquire claim/maintenance CAS. The following numeric reuse hint is
+        // advisory only and cannot grant ownership or create duplicate entries.
         if slot
             .cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)
             .is_err()
         {
-            // Already FREE — defensive no-op (do not push a free slot twice,
-            // which would corrupt the stack).
+            // A failed state transition grants no further core access.
             return;
         }
 
@@ -432,8 +447,7 @@ impl Drop for MaintenanceLease {
 #[cfg_attr(
     not(any(
         all(feature = "alloc-global", feature = "fastbin"),
-        feature = "alloc-decommit",
-        feature = "alloc-xthread"
+        feature = "alloc-decommit"
     )),
     allow(unused_variables)
 )]
@@ -446,42 +460,6 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     heap_ref.bind_tcache_hits(&slot.remote.tcache_hits);
     #[cfg(feature = "alloc-decommit")]
     heap_ref.bind_large_cache_hits(&slot.remote.large_cache_hits);
-    // task H1: plant the stable `&'static` handle to this slot's cross-thread
-    // free-stack head (moved out of `HeapCore` into the `Sync` slot — see
-    // `HeapSlotRemote::thread_free` / `HeapCore::thread_free`). This is what
-    // makes the remote CAS target the slot word (outside every `&mut
-    // HeapCore` retag range) instead of an inline `HeapCore` field.
-    // PERF-PASS-4 (G8/ML2, task #52): the field moved into the
-    // `remote: HeapSlotRemote` sub-struct; the address handed out here is
-    // unaffected (a field reference's address is stable regardless of
-    // nesting) — same stable `'static` address, just now on its own
-    // 64-byte-aligned cache line.
-    #[cfg(feature = "alloc-xthread")]
-    heap_ref.bind_thread_free(&slot.remote.thread_free);
-    // RAD-4b (task #72): plant the stable `&'static` handle to this slot's
-    // second-chance overflow ring. `overflow` (unlike `remote`'s grouped
-    // fields) lives directly on `HeapSlot`, not inside `HeapSlotRemote` — see
-    // that field's doc comment in `heap_slot.rs`. Same claim-time-binding
-    // discipline as `bind_thread_free`/`bind_tcache_hits` above.
-    #[cfg(feature = "alloc-xthread")]
-    heap_ref.bind_overflow(&slot.overflow);
-    // R7-A4: plant the stable `&'static` handle to this slot's per-slot
-    // dirty-segment bitmap. Same claim-time-binding discipline as
-    // `bind_overflow` above. The dirty bitmap lives in `HeapSlotRemote`
-    // (cross-thread-reachable, process-`'static`).
-    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-    heap_ref.bind_dirty_segments(&slot.remote.dirty_segments);
-    // R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): plant the stable
-    // `&'static` handle to this slot's per-(segment, class) dirty-bit
-    // sidecar cell. Same claim-time-binding discipline as
-    // `bind_dirty_segments` above.
-    #[cfg(feature = "class-aware-dirty")]
-    heap_ref.bind_dirty_by_class(&slot.remote.dirty_by_class);
-    // R13-1 (task #271, P0 fix): plant the stable `&'static` handle to this
-    // slot's coarse-only latch. Same claim-time-binding discipline as
-    // `bind_dirty_by_class` above.
-    #[cfg(feature = "class-aware-dirty")]
-    heap_ref.bind_sidecar_oom_latch(&slot.remote.sidecar_oom_latch);
 }
 
 /// Construction failure: release INITIALIZING to FREE. The next claimant

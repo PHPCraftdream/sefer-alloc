@@ -24,6 +24,9 @@ mod directory;
 #[path = "find_segment.rs"]
 mod find_segment;
 
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+mod sidecar_drain_outcome;
+
 #[path = "reserve.rs"]
 mod reserve;
 
