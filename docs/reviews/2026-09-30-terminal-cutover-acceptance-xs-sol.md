@@ -93,3 +93,45 @@ states were not merged over the integrated main tree. Loose patches and copied
 checkpoints were preserved under `worktrees/accepted-recovery-20260930` rather
 than deleted or committed as production changes. The active Miri worktree and
 unrelated baseline/review worktrees were excluded from cleanup.
+
+## Parent follow-up — custom Miri target, still not accepted
+
+XXS advice is recorded in
+`docs/reviews/2026-09-30-miri-acceptance-advice-xxs-sol.md` (`6174a8e6`).
+Commit `23dc34d5` makes detached class views word-local and advances pending
+words through a safe iterator. It preserves cardinality, high-water cuts,
+terminal ordering and index semantics; native tests include the last granule.
+No production speedup is claimed from diagnostic interpreter timings.
+
+Commit `068d5f63` adds `miri_global_box_acceptance`, explicitly selected with
+`narrow` or `paused`. It has no libtest harness and shares the real Box witness
+body with the existing native target. Its completion markers follow the
+assertions; exit code 0 alone is insufficient. Empty, unknown and extra
+selectors return code 2 without a marker. Default native suites exclude this
+explicit-only target, while CI and the Miri script select its scenarios by
+name. Output capture uses bounded character tails and backpressured streams;
+only stdout can supply the completion marker.
+
+On main, the final production library/integration runtime suite passed again
+in 240 seconds (task `c6830e51-b4b6-41cf-90f9-0c976247c745`), and the custom
+native selector contract passed (`dd169a5e-0d85-4264-adf6-a8661ccda3e0`).
+All-target production clippy passed. A doc-guard failure caused by changing
+item 87's headline wording was fixed before that final runtime pass.
+
+The worker's minimal Windows-target Stacked-Borrows run failed after 506
+seconds (`fea65cd7-68d0-49e4-8d94-5e6344b6cb21`) with host allocation failure
+before a completion marker. A word-local follow-up
+(`a87458c4-35c4-40db-a4f5-29f459fd70e6`) produced no marker or progress frame;
+its confirmed owned process tree was stopped after 1117 seconds, exit 1.
+Neither is a pass or a demonstrated Sefer UB. A separate simple installed
+`Box<u8>` diagnostic passed strict Miri (`e1f63276-15e8-4bf8-87fd-42b0e6c61114`),
+but does not cover the required foreign/reissue and post-terminal pause cases.
+Tree-Borrows and production-profile acceptance of those cases remain open.
+Removing libtest has therefore not closed this machine's Miri barrier.
+
+The worker reported no remaining owned CLI jobs or wait handles. No shared
+cache process or unrelated Miri process was killed. This follow-up accepts
+the inspected infrastructure and native checks, not the missing provenance
+validation or a release GO. Further investigation must distinguish interpreter
+resource cost, toolchain behavior and a possible project mechanism rather
+than repeat an unchanged long-running failure or suppress checker rules.
