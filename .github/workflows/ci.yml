@@ -3053,9 +3053,12 @@ jobs:
       - run: |
           cargo test --release --features "experimental" \
             --test loom_sharded \
-            --test loom_epoch 2>&1 | tee "$RUNNER_TEMP/loom-experimental.log"
+            --test loom_epoch \
+            --test loom_r11_epoch_false_full 2>&1 | tee "$RUNNER_TEMP/loom-experimental.log"
           grep -F "test counterfactual_naive_load_then_swap_loses_live_value - should panic ... ok" "$RUNNER_TEMP/loom-experimental.log"
           grep -F "test counterfactual_no_recheck_yields_torn_read - should panic ... ok" "$RUNNER_TEMP/loom-experimental.log"
+          grep -F "test completed_enqueue_cannot_be_hidden_by_negative_hint ... ok" "$RUNNER_TEMP/loom-experimental.log"
+          grep -F "test old_hint_only_drain_has_a_negative_counterexample - should panic ... ok" "$RUNNER_TEMP/loom-experimental.log"
         shell: bash
 
   loom-misc:

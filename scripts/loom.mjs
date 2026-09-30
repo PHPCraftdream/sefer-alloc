@@ -47,6 +47,7 @@ const FEATURES = {
   loom_active_kind_index: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
+  loom_r11_epoch_false_full: 'experimental',
 };
 
 const ALL = Object.keys(FEATURES);
