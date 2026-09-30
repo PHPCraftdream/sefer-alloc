@@ -25,7 +25,7 @@ impl BitmapCut<'_> {
         }
         let bit = self.bits.trailing_zeros() as usize;
         let granule = self.word * 64 + bit;
-        let encoded = self.classes[granule].load(Ordering::Relaxed);
+        let encoded = self.classes[bit].load(Ordering::Relaxed);
         if encoded == 0 || usize::from(encoded) > SMALL_CLASS_COUNT {
             std::process::abort();
         }

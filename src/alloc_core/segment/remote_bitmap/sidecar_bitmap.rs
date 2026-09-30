@@ -82,10 +82,8 @@ impl<'a> SidecarBitmap<'a> {
         }
         let end_word = high_water.div_ceil(MIN_BLOCK * 64);
         Some(BitmapScan {
-            bitmap: Self {
-                pending: self.pending,
-                classes: self.classes,
-            },
+            pending: self.pending.iter(),
+            classes: self.classes,
             next_word: 0,
             end_word,
         })
