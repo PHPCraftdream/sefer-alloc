@@ -20,20 +20,3 @@ pub use self::core::HeapCore;
 // `state::tcache_flush`).
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use self::core::TcacheHitCounter;
-
-// RAD-4 (Phase 4, E3a): the retry-spin budget. `heap_core_xthread` (now the
-// `heap_core_xthread/` directory under `registry/`) reaches it via
-// `super::heap_core::`; the moved file's `pub(super)` would have confined it
-// to this subtree, so it is widened to `pub(crate)` in `core.rs` and
-// re-exported here. The two cfg'd consts are mutually exclusive (miri vs
-// native); this single `use` binds whichever exists.
-#[cfg(feature = "alloc-xthread")]
-pub(crate) use self::core::RING_PUSH_RETRY_SPINS;
-
-// RAD-4 (Phase 4, E3a): the overflow-retry diagnostic counters, re-exported
-// so `registry`'s `pub use heap_core::{..}` and the flat sibling
-// `heap_core_xthread` keep resolving. `#[doc(hidden)] pub` per the
-// test-only-export pattern (see `registry/mod.rs`).
-#[cfg(feature = "alloc-xthread")]
-#[doc(hidden)]
-pub use self::core::{DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED};

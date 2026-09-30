@@ -55,11 +55,26 @@ mod bootstrap;
 /// `promotion_byte_bucket`, and the `LargeCacheHitCounter` alias.
 #[path = "counters.rs"]
 mod counters;
+#[cfg(feature = "alloc-global")]
+pub(crate) use counters::LARGE_REMOTE_RETIREMENTS;
 
 /// Group module: object lifecycle — construction config resolution, bootstrap
 /// invocation, and teardown.
 #[path = "lifecycle.rs"]
 mod lifecycle;
+
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+#[path = "sidecar_drain.rs"]
+mod sidecar_drain;
+
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "internals",
+    feature = "bench-internals"
+))]
+#[doc(hidden)]
+mod sidecar_test_hooks;
 
 /// Group module: the GlobalAlloc-face entry points (`alloc`, `alloc_zeroed`,
 /// `dealloc`, `realloc`) and the in-place realloc fast-path family.

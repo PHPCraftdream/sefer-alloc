@@ -142,3 +142,31 @@ pub fn reserve_aligned_on_node(
 
     Some((base, reservation, reservation_len))
 }
+
+/// Biased Large geometry over the same best-effort NUMA reservation backend.
+/// NUMA's eager backend commits the raw span; all release tokens are unchanged.
+pub(crate) fn reserve_biased_on_node(
+    useful: usize,
+    align: usize,
+    metadata: usize,
+    node: u32,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    let raw_len = useful.checked_add(align)?;
+    let (origin, token, len) = reserve_aligned_on_node(raw_len, node)?;
+    let root_offset = origin
+        .as_ptr()
+        .addr()
+        .checked_add(metadata)
+        .and_then(|v| v.checked_add(align - 1))
+        .map(|v| v & !(align - 1))
+        .and_then(|v| v.checked_sub(metadata))
+        .and_then(|v| v.checked_sub(origin.as_ptr().addr()));
+    let Some(offset) =
+        root_offset.filter(|offset| offset.checked_add(useful).is_some_and(|end| end <= raw_len))
+    else {
+        crate::alloc_core::os::release_segment(token.as_ptr(), len);
+        return None;
+    };
+    let root = crate::alloc_core::node::Node::offset(origin.as_ptr(), offset);
+    Some((NonNull::new(root)?, token, len))
+}

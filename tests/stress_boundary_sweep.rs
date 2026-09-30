@@ -333,9 +333,8 @@ fn size_grid_full() -> Vec<usize> {
 
 /// Alignment seams: every power of two from 8 up to 65536. The high end
 /// (32768, 65536) exercises the `align > SMALL_ALIGN_MAX` divisibility-walk and
-/// the over-align → dedicated-segment Large path; `SEGMENT` itself (4 MiB) is
-/// handled by the dedicated `over_align_segment_returns_null` test, not the
-/// main sweep grid, since it is a legitimate-null case.
+/// the over-align dedicated Large path. Over-segment biased geometry is
+/// covered separately by r8_large_alignment.
 #[cfg(not(miri))]
 const ALIGN_GRID: &[usize] = &[
     8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
@@ -603,31 +602,6 @@ fn sweep2_realloc_matrix() {
 }
 
 // ── sweep 3: legitimate edge cases from safe usage ───────────────────────────
-
-/// `align >= SEGMENT` (4 MiB) must return null — a legal alloc-failure signal,
-/// never a mis-aligned or mis-registered block (task #130). We assert THAT and
-/// never dereference.
-#[test]
-fn over_align_segment_returns_null() {
-    let mut core = AllocCore::new().expect("AllocCore::new");
-    for &align in &[SEGMENT, 2 * SEGMENT, 4 * SEGMENT] {
-        // A small size with an align >= SEGMENT: the dedicated-segment large
-        // path cannot honour it, so alloc must return null.
-        for &size in &[16usize, 4096, SMALL_MAX + 1] {
-            let layout = match Layout::from_size_align(size, align) {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-            let p = core.alloc(layout);
-            assert!(
-                p.is_null(),
-                "align >= SEGMENT must return null (task #130), got {:#x} for \
-                 size={size}, align={align}",
-                p as usize,
-            );
-        }
-    }
-}
 
 /// `align > SMALL_MAX` but `< SEGMENT` with a small size routes to a dedicated
 /// over-aligned segment (valid). Assert the block is non-null, correctly

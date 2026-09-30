@@ -13,10 +13,9 @@ does). The only C dependency in the repository is the optional `mimalloc`
 dev-dependency used as a baseline in benchmarks — never on a consumer's
 runtime path.
 
-**Date:** 2026-07-10 (as of commit 4a4ff5e). Numbers and inventories below are
-snapshots as of this commit; they may drift with later commits — treat the
-date/commit stamp as the freshness marker and re-verify against the source files
-cited in each section if in doubt.
+**Current-path update:** 2026-09-30 dirty terminal-sidecar snapshot.
+Historical phase/performance measurements below are not acceptance evidence
+for this cutover. No release GO or new performance verdict is implied.
 
 ---
 
@@ -46,7 +45,7 @@ OS-backed segment allocator with its own Cartographer/Hand tiers:
   +--------------------------+   +-----------------------------------+
   |  Region<T> / Handle<T>   |   |  SeferAlloc (alloc face)           |
   |  typed, generational     |   |  unsafe impl GlobalAlloc            |
-  |  wraps slotmap::SlotMap  |   |  MT, production-ready (feature:     |
+  |  wraps slotmap::SlotMap  |   |  MT, acceptance pending (feature:   |
   |  #![forbid(unsafe_code)] |   |  alloc-global + alloc-xthread)      |
   |  own storage, no         |   |                                     |
   |  segment substrate       |   |  CARTOGRAPHER -- 100% safe          |
@@ -58,8 +57,8 @@ OS-backed segment allocator with its own Cartographer/Hand tiers:
   |                          |   |  SEGMENT SUBSTRATE -- self-hosted   |
   |                          |   |   OS-backed memory (Phase 8+): 4 MiB|
   |                          |   |   SEGMENT-aligned spans; metadata   |
-  |                          |   |   carved from segments; no Vec /    |
-  |                          |   |   Box / std::alloc on any path (M5) |
+  |                          |   |   carved from segments; System-     |
+  |                          |   |   backed route sidecars (M5)       |
   |                          |   |                                     |
   |                          |   |  HAND -- confined unsafe seams      |
   |                          |   |   (see SS2)                          |
@@ -77,10 +76,12 @@ OS-backed segment allocator with its own Cartographer/Hand tiers:
   this is a separate, `Region`-scoped confined-`unsafe` seam, not the same
   `Hand` organ the alloc face uses.
 - `SeferAlloc` -- `unsafe impl GlobalAlloc` over the per-thread segment heap.
-  Enabled by feature `alloc-global`, which unconditionally implies
-  `alloc-xthread` (R5-01) -- cross-thread `dealloc` is always sound. The
-  `production` alias bundles `alloc-global + alloc-xthread + alloc-decommit +
-  fastbin` as the recommended long-running deployment set.
+  `alloc-global` implies `alloc-xthread`; foreign frees now publish to a
+  pinned route sidecar, not a segment/heap ring. `production` bundles
+  `alloc-global`, `alloc-xthread`, `alloc-decommit`, `fastbin`,
+  `alloc-segment-directory` and `primordial-lazy-commit`. Its terminal
+  cutover still needs full acceptance; autonomous ownerless progress is
+  opt-in through fallible `SeferAlloc::start_maintenance()`.
 
 Full safety invariants for both APIs: [INVARIANTS.md](INVARIANTS.md)
 (I1-I7 for `Region`/`Handle`, M1-M8 for `SeferAlloc` -- the M-series
@@ -90,14 +91,9 @@ apply to `Region<T>`, which has none).
 **Additional opt-in features** (default OFF, NOT part of `production` — see the
 feature table in [README.md](../README.md#feature-flags)):
 
-- `hardened` (additive over `fastbin`) — paranoid deploy hardening: an
-  interior-pointer free guard (`off % block_size != 0` rejected as a no-op) on
-  both own-thread free faces, plus the **X7 per-granule generational ring**: a
-  per-granule generation counter stamped on each `RemoteFreeRing` note and
-  dropped on drain if it has advanced, closing the *re-issue-before-drain* leg
-  of the ring↔magazine cross-thread double-free residual of M2 (except the
-  1/256 wrap — the accepted probabilistic residual). Costs a modulo-per-free, so
-  it is off the production fast path.
+- `hardened` (additive over `fastbin`) — own-thread interior-pointer
+  detection. The historical X7 ring-note generation guard was removed with
+  the ring; it is not a current foreign-free guarantee.
 - `alloc-stats` — per-hit diagnostic counters: bumps `stats().tcache_hits`
   (magazine) and `stats().large_cache_hits` (large cache) on each hit. The
   per-hit increment is compiled out when off (those two fields then read 0); the
@@ -119,10 +115,10 @@ The founding principle (from [DESIGN.md](DESIGN.md)):
 | **Membrane** | Typed API: `Handle<T>`, generation checks, lifetimes; `AllocCore::alloc` / `SeferAlloc::alloc` -- total, cannot express UB. | `safe` |
 | **Hand** | Confined `unsafe` seams that touch raw memory or issue OS syscalls. | `confined unsafe` |
 
-### Workspace: four independently-publishable companion crates
+### Workspace companions
 
 Before discussing the internal seams, the workspace structure matters for the
-audit story. Four building blocks were extracted as standalone crates:
+audit story. The four original extractions were:
 
 ```
 sefer-alloc
@@ -132,7 +128,9 @@ sefer-alloc
  └── malloc-bench-rs (crates/malloc-bench-rs) — portable GlobalAlloc bench harness (standalone)
 ```
 
-Each is a real crates.io crate (`cargo add aligned-vmem`, etc.). The
+The workspace now has ten companion crates; the complete current list is in
+[README §Workspace](../README.md#workspace-ten-independently-publishable-companion-crates).
+Each original extraction is a real crates.io crate. The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.
 
@@ -149,30 +147,18 @@ small, single-responsibility crates that can be audited in complete isolation.
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
-Under the recommended `production` feature
-(`alloc-global + alloc-xthread + alloc-decommit + fastbin`) the active
-seams are **eight** — the first two `alloc_core::*` rows plus the three
-`global::*` rows plus the three `registry::*` rows
-(`bootstrap`/`heap_slot`/`heap_registry`). `numa-aware` adds one more
-(`alloc_core::numa`), which in turn delegates to the independently-
-auditable `numa-shim` crate. The `experimental` tier opens the older
-research-tier concurrent seam (now deprecated); the production build does
-not pull it in.
-`alloc-xthread`, `alloc-decommit`, and `fastbin` do **not** add new
-`unsafe` seams — they extend existing safe paths.
-
-| Module | Role | Feature gate |
-|---|---|---|
-| [`src/alloc_core/platform/os.rs`](../src/alloc_core/platform/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit. | `alloc-core` |
-| [`src/alloc_core/platform/node.rs`](../src/alloc_core/platform/node.rs) | Intrusive free-list node read/write: the single place that reads/writes the `next` pointer inside a free block; also `release_segment` thin wrapper. | `alloc-core` |
-| [`src/global/sefer_alloc.rs`](../src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore`. | `alloc-global` |
-| [`src/global/tls_heap.rs`](../src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse). | `alloc-global` |
-| [`src/global/fallback.rs`](../src/global/fallback.rs) | Primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (survives reentrant / early-init / teardown access). | `alloc-global` |
-| [`src/registry/bootstrap/`](../src/registry/bootstrap/mod.rs) | The primordial-segment carve / SegmentTable bootstrap seam — raw-pointer footprint carving of the metadata region under the atomic single-writer bootstrap protocol (`mod.rs` itself is reexports-only and carries no allow; each own tier-1 seam is `bootstrap/registry.rs`, `bootstrap/ensure.rs`, `bootstrap/overflow_sidecar.rs` (`alloc-xthread`-gated), and `bootstrap/loom_shim.rs` (`--cfg loom`-only); `bootstrap/chunk.rs` has no `unsafe` of its own). | `alloc-global` |
-| [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
-| [`src/registry/heap_registry/`](../src/registry/heap_registry/mod.rs) | Global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, consulted by every cross-thread routing decision (`mod.rs` itself is reexports-only and carries no allow; each own tier-1 seam is `heap_registry/claim.rs`, `heap_registry/stack.rs`, `heap_registry/counters.rs`). | `alloc-global` |
-| [`src/alloc_core/platform/numa.rs`](../src/alloc_core/platform/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
-| [`src/concurrent/epoch/hand.rs`](../src/concurrent/epoch/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator; **deprecated, legacy/research-tier**). | `experimental` |
+The current tree has **24** tier-1 `#![allow(unsafe_code)]` files (18 in
+`src/`, 6 in `crates/`) and **102** item-scoped allows across **34** files.
+The ordinary `production` build activates 14 internal tier-1 seams;
+`--cfg loom` adds its bootstrap shim, while `batch-api`,
+`large-cache-extended` and `experimental` add optional seams. See
+[README §Where unsafe lives](../README.md#where-unsafe-lives-the-complete-list)
+for the path-by-path current inventory. In particular,
+`registry::segment_route::directory` owns System-backed route entries and
+pins, and `registry::heap_registry::maintenance` owns the exclusive
+maintenance handoff. Neither the removed overflow sidecar nor the old
+remote inbox is an active seam. `numa-aware` adds no internal unsafe seam;
+its wrapper delegates to `numa-shim`.
 
 Outside these tier-1 modules AND the tier-2 item-scoped allows (individual
 `unsafe fn` boundaries in otherwise-safe files — see README §"Where unsafe
@@ -188,8 +174,12 @@ top-level comment.
 
 ### Segment layout
 
-Each segment is a `SEGMENT`-aligned (4 MiB default) OS-reserved span. Its
-first page holds the header; subsequent metadata pages follow immediately:
+Ordinary Small/Primordial segments are `SEGMENT`-aligned (4 MiB) OS spans.
+Large requests with alignment `>= SEGMENT` use biased geometry: the OS
+release token, page-aligned usable metadata root, and aligned payload are
+distinct addresses. Numeric payload lookup selects the stored root; it
+never turns the caller pointer into a metadata capability. The ordinary
+segment header and metadata are laid out as follows:
 
 ```
   [0x000000] SegmentHeader  (magic, kind, segment_id, bump, owner_thread_free,
@@ -198,18 +188,19 @@ first page holds the header; subsequent metadata pages follow immediately:
   [after]    BinTable       (per-size-class free-list head, intrusive pointers
                              into payload blocks)
   [after]    AllocBitmap    (1 bit per MIN_BLOCK slot -- O(1) double-free guard)
-  [after]    RemoteFreeRing (MPSC ring for cross-thread free; see §5)
   [payload]  block data     (carved by bump cursor, returned to callers)
 ```
 
-Metadata lives in committed pages and is **never decommitted**, even under
-`alloc-decommit`. This is load-bearing for the safety of cross-thread free
-(§5, §6).
+The route directory and its typed sidecars are separately allocated via
+`System`, not carved from payload. Outstanding issue credits keep a
+reservation live until its owner consumes terminal publications. Sidecar
+pins can outlive reservation release without dereferencing that reservation.
 
 ### SegmentTable
 
-A process-global `SegmentTable` is itself carved from the first (primordial)
-segment -- zero-allocation bootstrap. It is append-only with 1024 slots.
+A per-heap `SegmentTable` starts in the primordial segment; route handles
+register each issued segment in the process-stable directory before exposure.
+The fixed table has 4096 slots, with slot 0 reserved for Primordial.
 Two lookup structures:
 
 - Sequential scan over live slots: used by `find_segment_with_free`.
@@ -226,8 +217,10 @@ deployments (`alloc-decommit` feature).
 Before Phase 8, the safe `Region<T>` was a *consumer* of the global allocator
 (`Vec<T>` backing). The Membrane Inversion makes the safe slot-table discipline
 a *governor* of OS memory: the allocator's own metadata is carved from
-segments, so no `Vec` / `Box` / `std::alloc` appears on any alloc/dealloc
-path. This is M5 (reentrancy-freedom). See [ALLOC_PLAN.md](ALLOC_PLAN.md) §1.
+segments. Route descriptors and sidecars are allocated through `System`,
+bypassing the installed `GlobalAlloc`; no `Vec`/`Box` recursion is introduced
+on allocator callbacks. This is M5 (reentrancy-freedom). See
+[ALLOC_PLAN.md](ALLOC_PLAN.md) §1 for the earlier self-hosting rationale.
 
 ---
 
@@ -252,8 +245,8 @@ registry hop to find or create the per-thread `HeapCore`.
     3. if segment exhausted: find_segment_with_free -> reserve_small_segment
 
   dealloc_small(ptr):
-    1. if same-thread segment: push to BinTable head  -- pure pointer write via node seam
-    2. if cross-thread segment: push (offset|class) to RemoteFreeRing (§5)
+    1. if same-thread segment: push to BinTable head via node seam
+    2. if foreign: numeric route lookup + terminal sidecar bitmap publish (§5)
 ```
 
 The common case (steps 1 / dealloc step 1) has no lock and no atomic
@@ -274,8 +267,8 @@ unconditionally on every free — an in-magazine `slots` scan and the
 BinTable `is_free` bitmap — with the free path **never touching the
 block body**. Stats (`tcache_hits`, refill/flush counts) are collected
 on the miss path. See `docs/FASTBIN_DESIGN.md` for the full design and
-the R2 residual note (ring↔magazine cross-thread double-free residual
-limit of M2 — task #164).
+the historical R2 ring residual note (task #164), which does not describe
+the current terminal-sidecar ingress.
 
 ### TLS heap binding
 
@@ -292,44 +285,34 @@ subsequent calls pay only a TLS load and a null check.
 Full protocol specification: [CROSS_THREAD_STATE_MACHINES.md](CROSS_THREAD_STATE_MACHINES.md).
 Investigation of the drain-reclaim race: [RACE_DRAIN_RECLAIM.md](RACE_DRAIN_RECLAIM.md).
 
-### RemoteFreeRing (Phase 12.6 / Variant-2)
+### Terminal sidecar ingress
 
-When a thread frees a block it did not allocate, it pushes a ring entry
-`(offset | class)` into the owning segment's `RemoteFreeRing` (a lock-free
-MPSC ring stored in the segment's metadata, never decommitted). The freer:
+The foreign `GlobalAlloc::dealloc` route treats the caller's pointer as a
+numeric lookup key. A shard lock protects pin acquisition on a published
+descriptor; the pin retains a System-backed sidecar and stored owner root.
+Small/Primordial issue records the class in the sidecar. A foreign Small
+publisher touches only that sidecar and terminates at a bitmap `fetch_or`;
+Large terminates at its instance state transition. No caller-derived header
+root, block-slack predecessor, ring, heap overflow or spill is involved.
 
-- Does **NOT** dereference the block (no write to `block.next` or any
-  in-block field).
-- Stamps the size class from its own `Layout` argument.
+An exclusive owner sweep fixes its table high-water on entry, then visits
+each live Small/Primordial issued-word once with `swap(0, AcqRel)`. It
+consumes detached records through the stored root, updates the free list and
+retires exactly one issue credit. A post-cut free waits for a later pass;
+strict trim finitely covers all correctly published pre-entry words without
+waiting for new publishers to stop. Large consumes only a claimed `PENDING`
+descriptor. Directory pins are retired independently of OS reservations.
 
-The owner reclaims lazily on the next alloc-slow-path drain. It reads the ring
-entry, uses the stamped class (not `page_map`), and returns the block to the
-`BinTable`.
-
-### Why the freer stamps the class (§13 fix)
-
-Reading the class from `page_map` on the cross-thread path is unreliable:
-the `page_map` class for a page under active bump allocation can be stale or
-reflect the bump cursor's current target rather than the block's original class
-(mixed-class pages). The freer has the caller's `Layout` at the dealloc call
-site -- that is the authoritative class. This fix (§13 in
-[RACE_DRAIN_RECLAIM.md](RACE_DRAIN_RECLAIM.md)) resolved the drain-reclaim UAF
-that manifested as `STATUS_ACCESS_VIOLATION` in the MT test.
-
-### Field-specific atomic reads (§11 fix)
-
-On the cross-thread path, reading individual fields from the segment header
-(`magic_at`, `kind_at`, `owner_thread_free_at`) uses field-specific `offset_of!`
-reads rather than reading the full `SegmentHeader` struct. A full `read_at`
-would race the owner's `bump` writes to adjacent fields. This is the §11 fix
-from commit #43.
-
-### State machines
-
-SM-BLOCK has four states (`UNCARVED`, `LIVE`, `LOCAL_FREE`, `REMOTE_FREED`)
-with strict single-actor rules: only the Owner mutates `BinTable`; only the
-Remote performs the atomic ring-push. The loom model in `tests/loom_*.rs`
-checks these transitions under bounded interleavings.
+Public `trim_current_thread()` and TLS teardown use this sweep. The
+ownerless executor is **explicitly** started with fallible
+`SeferAlloc::start_maintenance()`: success confirms a running process-life
+worker; failure leaves no autonomous guarantee. Its round-robin passes try
+exclusive maintenance leases for FREE heaps and the fallback lock, without
+stealing a live owner. Fair scheduling is required for eventual logical
+retirement; physical OS return still depends on live credits and retention
+policy. See [the sidecar revision](REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md)
+for proof obligations and acceptance gates. The earlier ring designs in
+[RACE_DRAIN_RECLAIM.md](RACE_DRAIN_RECLAIM.md) are historical.
 
 ---
 
@@ -381,22 +364,15 @@ an `alloc_zeroed` result.
 
 The original Phase 12 design assumed M11 (crossbeam-epoch) was required before
 decommit because the old intrusive cross-thread free wrote `next` *inside* the
-block -- a freer could write into a decommitted page. Variant-2 (Phase 12.6)
-dissolves this: the freer pushes to the `RemoteFreeRing` in metadata (never
-decommitted) and never dereferences the block. Safety argument:
-
-1. Decommit only when `live_count == 0` -- no live block in the payload range.
-2. A late valid cross-thread free is impossible when `live_count == 0`:
-   all blocks are already free; freeing a free block is double-free, caught
-   by AllocBitmap.
-3. Owner-side `reclaim_offset` computes the block address via metadata offset
-   arithmetic, reads `magic`/`kind`/bitmap (`is_free`) -- all in metadata --
-   and no-ops for free blocks before touching payload. The decommitted page is
-   never accessed.
-4. Both `reclaim` and `decommit` run on the owner thread -- serialized, no
-   reclaim-vs-decommit race.
-
-Full argument: [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) §1.
+block. The current foreign publisher touches only a separately pinned
+sidecar, never reservation bytes. Owner issue credits keep the reservation
+live until all valid published/unpublished frees are retired, and only the
+exclusive owner decommits or releases payload. A post-publication producer
+pin retains the descriptor, not the reservation. This removes the old
+payload-write race without epoch reclamation; the full new proof obligations
+are in [the sidecar revision](REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md).
+The earlier argument is preserved in
+[PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) as historical design.
 
 ### OPT-E: large-segment free-cache (#65) + Phase 1-3 adaptive policy (#90-#92)
 
@@ -431,7 +407,7 @@ defaults" model):
   LargeCacheConfig::headroom_bytes(N)` (default 256 MiB) is multiplied by
   `LargeCacheConfig::decay_rate_percent(N)` (default 10 %) and that
   many bytes are FIFO-evicted to the OS. Self-damping (no oscillation),
-  no background thread (idle process pays nothing — mobile-friendly),
+  inline decay (the separately started maintenance worker is a later feature),
   every knob resolved at compile time from the `const fn` builder — no
   environment reads, no runtime parse errors (env vars
   `SEFER_LARGE_CACHE_BUDGET` / `SEFER_LARGE_CACHE_MODE` were removed in
@@ -503,12 +479,17 @@ steers each pinned thread's fresh segments to its node.
 
 ## 8. Verification stack
 
+File counts below cover root `tests/*.rs` targets; nested support and
+compile-fail fixtures are not counted as integration targets.
+Older manual/CI verification rows retain historical evidence only; they
+do not certify the terminal-sidecar snapshot.
+
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (337 files) |
+| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (284 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
-| miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs`, `tests/regression_ring_drain_guard_miri.rs`; package-specific `tagged-index-stack` target `narrow_domain_unchecked_storage` in `scripts/miri.mjs` executes in-domain unchecked accesses only |
-| loom | Cross-thread protocol correctness under bounded interleavings | **Root (20 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_overflow_spill.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_remote_ring_tail_aba.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_inbox.rs`, `tests/loom_terminal_large.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `TaggedIndexStack`). `tests/no_stale_loom_files.rs` remains a structural CI guard, not itself a loom suite. |
+| miri | Selected provenance/aliasing checks; snapshot execution pending | `scripts/miri.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
+| loom | Bounded interleavings; snapshot execution pending | **Root (7 files):** `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |
@@ -529,6 +510,9 @@ commit 4e034e5), not the everyday cycle. See CLAUDE.md "Speed" section.
 ---
 
 ## 9. Performance summary
+
+All figures in this section predate the terminal-sidecar snapshot and are
+historical workload measurements, not its speed/RSS verdict.
 
 Full measurements and OPT candidates: [ALLOC_BENCH.md](ALLOC_BENCH.md) and
 [PROFILE_FLAMEGRAPHS.md](PROFILE_FLAMEGRAPHS.md).

@@ -258,7 +258,7 @@ impl AllocCore {
     }
 
     /// TEST-ONLY (`docs/CORRECTNESS_OPEN_ITEMS.md` item 143): the
-    /// process-wide count of OS segment reservations the KERNEL REFUSED —
+    /// process-wide count of failed segment-reservation constructors —
     /// see [`os::SEGMENTS_RESERVE_FAILED_TOTAL`](crate::alloc_core::os::SEGMENTS_RESERVE_FAILED_TOTAL)
     /// for the full rationale.
     ///
@@ -267,10 +267,10 @@ impl AllocCore {
     /// ceiling such a test is actually asserting) OR the OS declined to back
     /// another mapping because the machine is under memory pressure — a
     /// system-wide condition no test can control. Reading this counter's
-    /// DELTA across the fill loop disambiguates the two: zero means every
-    /// null came from the allocator's own bookkeeping, so the count is a
-    /// valid assertion; non-zero means the environment cut the run short and
-    /// the count says nothing about the ceiling.
+    /// delta across a fill loop detects constructor failures, not later
+    /// commit failures. With valid arguments, nonzero means a VM-side failure
+    /// can invalidate a slot-ceiling assertion; zero alone does not prove
+    /// that every null came from allocator bookkeeping.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_segments_reserve_failed_total() -> u64 {
@@ -464,63 +464,6 @@ impl AllocCore {
         #[cfg(not(feature = "alloc-segment-directory"))]
         {
             false
-        }
-    }
-
-    /// R13-1 (task #271) TEST-ONLY: force-trip this heap's coarse-only latch
-    /// (`registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`) WITHOUT
-    /// actually driving the process to OOM. Reaching a genuine
-    /// `ensure_per_class_dirty` OOM in a test would require exhausting
-    /// virtual memory (impractical and non-deterministic — the same
-    /// rationale [`dbg_directory_rescue_scan`](Self::dbg_directory_rescue_scan)
-    /// documents for its own OOM-adjacent scenario). This hook stores `true`
-    /// directly into the SAME `&'static AtomicBool` handle the real
-    /// `apply_resolved_dirty_bit` (G1 apply phase) sidecar-OOM branch writes (`Release`, matching the
-    /// production write's ordering), letting a test deterministically
-    /// reconstruct "a producer already observed sidecar OOM at least once for
-    /// this heap" and then assert `drain_dirty_segments`'s consumer-side
-    /// behaviour after that point. Returns `true` if the latch handle was
-    /// bound (i.e. `class-aware-dirty` is on and this `AllocCore` has been
-    /// claimed through the registry), `false` otherwise (no-op).
-    #[doc(hidden)]
-    pub fn dbg_force_sidecar_oom_latch(&mut self) -> bool {
-        #[cfg(feature = "class-aware-dirty")]
-        {
-            match self.sidecar_oom_latch {
-                Some(latch) => {
-                    latch.store(true, core::sync::atomic::Ordering::Release);
-                    true
-                }
-                None => false,
-            }
-        }
-        #[cfg(not(feature = "class-aware-dirty"))]
-        {
-            false
-        }
-    }
-
-    /// R13-1 (task #271) TEST-ONLY: read this heap's coarse-only latch
-    /// (`registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`). Returns
-    /// `None` if the latch handle is not bound (`class-aware-dirty` off, or
-    /// this `AllocCore` was never claimed through the registry), `Some(bool)`
-    /// otherwise. `Acquire` load — matches production
-    /// `drain_dirty_segments`'s own read exactly (R14-2, task #287: that
-    /// read was promoted from `Relaxed` to `Acquire` this task, closing a
-    /// divergence three independent Round 13 reviews found against this
-    /// field's doc comment and the loom model, both of which had always
-    /// documented/used `Acquire`).
-    #[doc(hidden)]
-    #[must_use]
-    pub fn dbg_sidecar_oom_latch(&self) -> Option<bool> {
-        #[cfg(feature = "class-aware-dirty")]
-        {
-            self.sidecar_oom_latch
-                .map(|latch| latch.load(core::sync::atomic::Ordering::Acquire))
-        }
-        #[cfg(not(feature = "class-aware-dirty"))]
-        {
-            None
         }
     }
 }

@@ -6,6 +6,11 @@
 //! live at their call sites and are feature-gated there. The path-parity
 //! re-exports for cross-module consumers live in the parent `mod.rs`.
 
+/// Completed Large terminal obligations, including cache admission or release.
+#[cfg(feature = "alloc-global")]
+pub(crate) static LARGE_REMOTE_RETIREMENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
 /// `decommit_empty_segment_impl` (the shared decommit body); read by the soak
 /// test via [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
@@ -46,9 +51,11 @@ pub(in crate::alloc_core) static FORCE_DECAY_CLOCK_READ: core::sync::atomic::Ato
     core::sync::atomic::AtomicBool::new(false);
 
 /// R32-10 (task #501, F2): process-wide path-activation oracle for
-/// `SegmentTable::contains_base`'s Tier-1 direct-mapped `own_cache` — counts
-/// calls that HIT the 4 (now `OWN_CACHE_SIZE`)-entry cache without falling
-/// through to the Tier-2 `hash_contains` open-addressing probe. Paired with
+/// `SegmentTable::canonical_base_of_mut`'s Tier-1 direct-mapped `own_cache`
+/// (including `contains_base` callers) — counts calls that HIT the
+/// `OWN_CACHE_SIZE`-entry cache without falling through to the Tier-2
+/// `hash_find` open-addressing probe. Read-only `canonical_base_of` lookups
+/// are not counted. Paired with
 /// [`CONTAINS_BASE_TIER1_MISSES`] (which counts the complementary fall-
 /// through case), this is the counter
 /// `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` finding F2 and
@@ -69,9 +76,9 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::A
     core::sync::atomic::AtomicU64::new(0);
 
 /// R32-10 (task #501, F2): the Tier-2-fallback complement of
-/// [`CONTAINS_BASE_TIER1_HITS`] — counts `contains_base` calls whose Tier-1
+/// [`CONTAINS_BASE_TIER1_HITS`] — counts mutable canonical lookups whose Tier-1
 /// `own_cache` probe MISSED and therefore fell through to the Tier-2
-/// `hash_contains` open-addressing probe (regardless of whether that Tier-2
+/// `hash_find` open-addressing probe (regardless of whether that Tier-2
 /// probe itself found `base` or not — this counts ROUTING, i.e. which tier
 /// did the work, not membership). `tier1_hit_rate = hits / (hits + misses)`
 /// is the quantity item 1's open clause and F2's own text both ask for.

@@ -209,7 +209,7 @@ function splitIntoRunSteps(lines) {
     // step's ONLY key) or, when a step also carries a `name:` on its own
     // `- name: ...` line above, as a bare `run: <cmd>` / `run: |` line at
     // the SAME indentation as that step's other keys (`shell:`, `env:`,
-    // ...) — e.g. the loom-misc job's `- name: loom_thread_free` /
+    // ...) — e.g. the loom-misc job's named registry step /
     // `        run: |` pair. Both shapes are matched identically here; only
     // the leading `- ` is optional.
     //
@@ -1102,9 +1102,13 @@ function verifyCiSentinels() {
 // its own isolated marker invocation, both in the `aligned-vmem-hugetlb-real`
 // job -- see docs/CORRECTNESS_OPEN_ITEMS.md item 87's card for the full
 // re-derivation this bump pairs with, in the same commit.
-// Current tree update: the tagged-index-stack repository-cfg release and
-// extracted-package rows add six live test sentinels.
-const MIN_SENTINEL_COUNT = 97;
+// R8 clean cutover: 101 live postconditions, mechanically counted from the
+// current YAML's live `grep -F ... "$RUNNER_TEMP/..."` lines. Retired ring/
+// overflow/dirty models were removed; each replacement terminal/sidecar/
+// registry/maintenance target has a real emitted-name or asserted-marker
+// sentinel. Attribute, marker assertion ordering and nocapture checks remain
+// unchanged. This is the current exact floor, not a parser exemption.
+const MIN_SENTINEL_COUNT = 101;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

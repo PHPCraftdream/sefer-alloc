@@ -10,8 +10,6 @@ use ::core::sync::atomic::Ordering;
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "batch-api"))]
 use crate::alloc_core::os;
-#[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "batch-api"))]
-use crate::alloc_core::segment_header::SegmentMeta;
 
 use crate::registry::heap_core::HeapCore;
 
@@ -41,46 +39,14 @@ impl HeapCore {
     ///    magazine-hit fast path, looped (pop + [hardened] gen bump). Reuses
     ///    the blocks already warmed there instead of carving/refilling around
     ///    them.
-    /// 3. for the REMAINDER once the magazine is exhausted: the `AllocCore`
-    ///    batch-refill primitive (`refill_class_bump_checked`) fills the rest
-    ///    DIRECTLY into `out` in one freelist-drain / bump-carve pass (NOT via
-    ///    the magazine), with the magazine-residency predicate +
-    ///    segment-owner stamping `refill_magazine_slow` uses. No block is
-    ///    parked in the magazine — they all go to the caller.
+    /// 3. The ordinary `refill_class_bump` fills the remainder directly into
+    ///    `out`, using the same metadata-guarded discovery as scalar refill.
     ///
-    /// ## R10-7 follow-up — deferred magazine-residency bit clear
-    ///
-    /// Step 1 does NOT call `clear_magazine` per pop (unlike the scalar
-    /// `alloc` magazine-hit arm, which clears the bit immediately). The bits
-    /// for all `magazine_drained` blocks are left SET through step 2 and
-    /// cleared in ONE bulk pass AFTER step 2 returns. Two compounding reasons
-    /// (both pinned by `tests/r10_7_alloc_batch_xthread_double_free.rs`):
-    ///
-    /// 1. **The bit-clear-too-early hazard.** If a caller-side cross-thread
-    ///    double-free of one of these blocks left a stale ring entry, step 2's
-    ///    internal `drain_dirty_segments` / `find_segment_with_free_checked`
-    ///    would encounter it. Once the residency bit is cleared, the
-    ///    `is_in_magazine` guard cannot distinguish "block was drained to
-    ///    `out` (in-flight, not yet handed back)" from "block was handed out
-    ///    long ago" — so `reclaim_offset_checked` links the stale entry onto
-    ///    the freelist, and `drain_freelist_batch` immediately re-issues it
-    ///    into `out[filled..]`: a duplicate of the pointer already sitting in
-    ///    `out[0..magazine_drained]`.
-    /// 2. **The `if k == c { return false; }` short-circuit is unsound here.**
-    ///    `refill_magazine_slow`'s OWN predicate opens with this shortcut,
-    ///    justified by its KEY INVARIANT (`count[c] == 0` at refill time, so
-    ///    nothing of class `c` has been claimed). `alloc_batch` violates that
-    ///    precondition — step 1 has already pulled `magazine_drained` class-`c`
-    ///    blocks into `out`, so the shortcut unconditionally skips the
-    ///    magazine-residency check for EXACTLY the class under refill. This
-    ///    closure therefore drops the shortcut and consults `is_in_magazine`
-    ///    for ALL classes including `c`, so the deferred SET bits from step 1
-    ///    actually do their protective work.
-    ///
-    /// The two halves are inseparable: deferring the clear alone would
-    /// accomplish nothing (the shortcut skips the check for class `c`), and
-    /// dropping the shortcut alone would accomplish nothing (the bit is
-    /// already cleared by step 1). Only together do they close the window.
+    /// Magazine-residency bits for the drained prefix remain SET through the
+    /// remainder refill. The owner retirement primitive reads those physical
+    /// bits for every class, so an in-flight output block cannot be linked back
+    /// into the substrate. After refill, one bulk pass clears the prefix bits
+    /// before the output is handed to the caller.
     ///
     /// Genuinely different from R8-7/R9-9's measured arm, which called the
     /// `AllocCore`-level batch primitive directly, BYPASSING the magazine
@@ -183,45 +149,16 @@ impl HeapCore {
         // below rely on).
         let magazine_drained = filled;
 
-        // ── (2) Refill the REMAINDER directly into `out[filled..]` via the
-        //     AllocCore batch-refill primitive — one freelist-drain /
-        //     bump-carve pass, NOT via the magazine. Same predicate +
-        //     stamping as `refill_magazine_slow`. ──────────────────────────
-        //
-        // R10-7 follow-up: the predicate closure NO LONGER opens with
-        // `if k == c { return false; }`. That short-circuit is sound ONLY
-        // in `refill_magazine_slow`'s own context (KEY INVARIANT: at ITS
-        // refill time, `count[c] == 0`, so nothing of class `c` has been
-        // claimed by that call); `alloc_batch` violates the precondition
-        // because step 1 above has already pulled `magazine_drained`
-        // class-`c` blocks into `out[0..magazine_drained]`. With the bit
-        // still SET (deferred clear), consulting `is_in_magazine` for
-        // `k == c` is exactly what protects those in-flight blocks: a
-        // stale cross-thread double-free ring entry for one of them now
-        // reads `true` and is rejected by `reclaim_offset_checked`'s
-        // existing guard chain — instead of being linked onto the freelist
-        // (which `drain_freelist_batch` would then pull straight back
-        // into `out[filled..]`, producing a duplicate of the pointer
-        // already in `out[0..magazine_drained]`).
-        //
-        // `_k` is unused because the residency bitmap is keyed by segment
-        // OFFSET, not by class — the bitmap probe is O(1) regardless of
-        // which class the ring entry carries.
+        // Refill the remainder directly into out. The owner-side retirement
+        // primitive reads the physical magazine bitmap itself, including the
+        // residency bits held through this batch's in-flight output phase.
         if filled < want {
             // Opportunistic drains (same placement as `refill_magazine_slow`:
             // magazine-miss-only). `fastbin` implies `alloc-xthread`, so both
             // exist here.
-            self.drain_large_deferred_free();
-            self.drain_heap_overflow();
-            let n = self
-                .core
-                .refill_class_bump_checked(c, &mut out[filled..], &|ptr, _k| {
-                    let pbase = os::segment_base_of_ptr(ptr);
-                    let poff = (ptr as usize - pbase as usize) as u32;
-                    SegmentMeta::new(pbase)
-                        .magazine_bitmap()
-                        .is_in_magazine(poff)
-                });
+            self.drain_large_sidecar_ingress();
+
+            let n = self.core.refill_class_bump(c, &mut out[filled..]);
             // P4 stamp-dedupe + hardened gen bump. EVERY refilled block is
             // issued to the caller here (none stay in the magazine), so all
             // get the issue touch — unlike `refill_magazine_slow`, which only
@@ -250,19 +187,8 @@ impl HeapCore {
             filled += n;
         }
 
-        // ── (3) Bulk-clear the magazine-residency bits for the blocks step 1
-        //     drained into `out[0..magazine_drained]`. Their bits were
-        //     intentionally left SET through step 2 (see the deferred-clear
-        //     rationale above) so the predicate could protect them against
-        //     stale ring entries. By this point `refill_class_bump_checked`
-        //     has returned — its internal ring-drain / freelist-drain /
-        //     bump-carve will not touch these blocks again before
-        //     `alloc_batch` returns — so the SET bits have served their
-        //     purpose and must now be cleared to restore the invariant that
-        //     a handed-out block reads "not magazine-resident" (the
-        //     own-thread free path's `is_in_magazine` oracle relies on this
-        //     — see `free/dealloc_own_base.rs`'s magazine-push double-free guard).
-        //     ──────────────────────────────────────────────────────────────
+        // Clear the drained prefix's physical magazine-residency bits only
+        // after the metadata-guarded refill has finished, before caller issue.
         //
         // Coalescing note: per-block clear (one byte RMW per block via
         // `clear_magazine`). The drained blocks tend to cluster by segment
@@ -320,18 +246,6 @@ impl HeapCore {
             return self.alloc_batch_large(out, layout);
         }
 
-        // G3 (P2): non-fastbin Small batches get the SAME unconditional
-        // `drain_heap_overflow` prelude the scalar non-fastbin path carries
-        // (there is no magazine / `refill_magazine_slow` cold path in this
-        // configuration to place it in — identical placement rationale as the
-        // scalar path's own comment). NOT `drain_large_deferred_free`: that
-        // stack is Large-segment-only and the scalar path gates it on
-        // `class.is_none()` for the same reason.
-        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
-        {
-            self.drain_heap_overflow();
-        }
-
         let mut filled = 0usize;
         for slot in out.iter_mut() {
             let p = self.core.alloc(layout);
@@ -345,34 +259,15 @@ impl HeapCore {
         filled
     }
 
-    /// Shared Large-path loop for `alloc_batch` (no magazine for Large
-    /// classes). Stamps each block's owning segment (cross-thread routing
-    /// needs it), matching `HeapCore::alloc`'s Large fallthrough. Performs the
-    /// SAME `drain_large_deferred_free` housekeeping the scalar `alloc`
-    /// performs before a Large request (G3: a batch-only owner never runs the
-    /// scalar path, so without it here, cross-thread-freed Large segments are
-    /// never reclaimed and SegmentTable slots grow O(batches)).
+    /// Large batch slow path: consume descriptor obligations once before
+    /// issuing the batch and considering physical Large-cache reuse.
     #[cfg(feature = "batch-api")]
     fn alloc_batch_large(&mut self, out: &mut [*mut u8], layout: Layout) -> usize {
-        // G3 (P2): drain this heap's cross-thread Large-segment deferred-free
-        // stack before the Large-classified loop below, exactly as the scalar
-        // `alloc` does on every Large request (the `class.is_none()` guard
-        // there is already satisfied by construction here — this function's
-        // ONLY caller is `alloc_batch`'s Large branch). Without it, a
-        // batch-only owner never runs the scalar path, so cross-thread-freed
-        // Large segments queue on the deferred stack unboundedly: held
-        // segments and SegmentTable slots grow O(batches) instead of reaching
-        // a bounded steady state, until a real OOM or `table.register`
-        // failure. This is owner-side housekeeping, NOT magazine hot-path
-        // work: this function has no magazine fast path to protect.
+        // A batch-only owner must consume pending Large obligations too.
         #[cfg(feature = "alloc-xthread")]
         {
-            self.drain_large_deferred_free();
+            self.drain_large_sidecar_ingress();
         }
-
-        // Match the scalar non-fastbin allocation prelude.
-        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
-        self.drain_heap_overflow();
 
         let mut filled = 0usize;
         for slot in out.iter_mut() {

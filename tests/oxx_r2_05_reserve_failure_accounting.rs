@@ -1,5 +1,6 @@
 //! oxx R2-05 (`docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md`):
 //! every raw `aligned_vmem::reserve_aligned(` / `reserve_aligned_lazy(` call
+//! (including typed `try_` variants)
 //! on a segment-reservation path must count BOTH outcomes into the process-
 //! wide counter pair documented on `SEGMENTS_RESERVE_FAILED_TOTAL`
 //! (`src/alloc_core/platform/os.rs`): success into
@@ -90,6 +91,12 @@ const ALLOWLIST: &[Allow] = &[
         func: "reserve_small_lazy",
         requires_failed_counter: true,
         note: "oxx R2-05 fix: Segment::reserve_small_lazy (small-segment-lazy-commit) — accounts both outcomes",
+    },
+    Allow {
+        file: "src/alloc_core/platform/os.rs",
+        func: "reserve_biased",
+        requires_failed_counter: true,
+        note: "Segment::reserve_biased excludes invalid arguments and later useful-window commit failure; the lazy constructor cannot distinguish initial commit from reserve failure",
     },
     Allow {
         file: "src/alloc_core/platform/os.rs",
@@ -260,6 +267,29 @@ fn no_unaccounted_reserve_aligned_calls() {
                             i + 1,
                             a.func,
                             a.note
+                        ));
+                    }
+                    if a.func == "reserve_biased"
+                        && (!enclosing_fn_body_contains(
+                            &fn_at_line,
+                            &lines,
+                            i,
+                            "!error.is_invalid_argument()",
+                        ) || !enclosing_fn_body_contains(
+                            &fn_at_line,
+                            &lines,
+                            i,
+                            "SEGMENTS_RESERVE_FAILED_TOTAL.fetch_add",
+                        ) || !enclosing_fn_body_contains(
+                            &fn_at_line,
+                            &lines,
+                            i,
+                            "SEGMENTS_RESERVED_TOTAL.fetch_add",
+                        ))
+                    {
+                        offenders.push(format!(
+                            "{rel}:{}: biased reserve must distinguish OS refusal from invalid arguments and count successful reservations independently",
+                            i + 1
                         ));
                     }
                 }

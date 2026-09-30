@@ -12,11 +12,13 @@ use sefer_alloc::AllocCore;
 fn terminal_words_are_outside_the_copy_header_and_before_the_page_map() {
     let (header_size, words_off, head_off, state_off, page_map_off) =
         AllocCore::terminal_header_layout_for_test();
-    assert_eq!(header_size, 144);
-    assert_eq!(words_off, 144);
-    assert_eq!(head_off, 144);
-    assert_eq!(state_off, 152);
+    assert_eq!(header_size, 128);
+    assert_eq!(words_off, 128);
+    assert_eq!(head_off, 128);
+    assert_eq!(state_off, 136);
     assert_eq!(page_map_off, 4096);
+    assert!(words_off >= header_size);
+    assert!(head_off >= words_off);
     assert!(head_off + 4 <= state_off);
     assert!(state_off + 8 <= page_map_off);
 }

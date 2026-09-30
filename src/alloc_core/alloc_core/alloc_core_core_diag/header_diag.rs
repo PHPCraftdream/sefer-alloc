@@ -22,6 +22,25 @@ use crate::alloc_core::size_classes::{AllocKind, SizeClasses};
 /// hook in this file. See this file's module doc for the full rationale.
 #[cfg(feature = "internals")]
 impl AllocCore {
+    /// Numeric geometry only, resolved from the owner table's canonical root.
+    #[doc(hidden)]
+    pub fn large_geometry_for_test(
+        &self,
+        ptr: *mut u8,
+    ) -> Option<(usize, usize, usize, usize, usize)> {
+        let base = self.table.canonical_base_of(os::segment_base_of_ptr(ptr))?;
+        let header = SegmentHeader::read_at(base);
+        if header.kind != SegmentKind::Large {
+            return None;
+        }
+        Some((
+            header.reservation.addr(),
+            header.reservation_len,
+            base.addr(),
+            header.payload_offset,
+            header.reserved_capacity,
+        ))
+    }
     /// Test-only layout pin for the atomic region beyond the Copy header.
     #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
@@ -146,11 +165,10 @@ impl AllocCore {
     #[doc(hidden)]
     #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
     pub unsafe fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
-        let base = os::segment_base_of_ptr(ptr);
-        assert!(
-            self.table.contains_base_ro(base),
-            "dbg_stamp_kind_byte: ptr's segment is not owned by this AllocCore"
-        );
+        let base = self
+            .table
+            .canonical_base_of(os::segment_base_of_ptr(ptr))
+            .expect("dbg_stamp_kind_byte: pointer names an owned segment");
         let off = core::mem::offset_of!(SegmentHeader, kind);
         Node::write_u8(Node::offset(base, off), raw);
     }

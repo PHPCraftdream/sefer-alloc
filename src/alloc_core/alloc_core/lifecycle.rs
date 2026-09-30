@@ -34,7 +34,11 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 /// [`AllocCore::dbg_reservation_owner_id`]. `bench-internals`-gated, same
 /// discipline as the field it populates — this static does not exist at all
 /// in a `production` build.
-#[cfg(feature = "bench-internals")]
+#[cfg(all(
+    feature = "bench-internals",
+    feature = "internals",
+    feature = "alloc-decommit"
+))]
 static DBG_RESERVATION_OWNER_ID_COUNTER: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -357,16 +361,10 @@ impl AllocCore {
             directory_sidecar_vm: None,
             #[cfg(feature = "alloc-segment-directory")]
             directory_miss_streak: [0; SMALL_CLASS_COUNT],
-            #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-            dirty_segments: None,
-            #[cfg(feature = "class-aware-dirty")]
-            dirty_by_class: None,
-            #[cfg(feature = "class-aware-dirty")]
-            sidecar_oom_latch: None,
             // R31-15 (task #486): stamp a fresh, process-wide-unique identity
             // for this AllocCore. See the field's own doc comment for why
             // this must be a monotonic counter rather than `&self`'s address.
-            #[cfg(feature = "bench-internals")]
+            #[cfg(all(feature = "bench-internals", feature = "internals", feature = "alloc-decommit"))]
             dbg_reservation_owner_id: DBG_RESERVATION_OWNER_ID_COUNTER
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
         })

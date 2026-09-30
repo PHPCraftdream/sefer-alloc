@@ -1,0 +1,9 @@
+# Historical native AllocCore differential seeds, oldest first.
+# ChaCha; sizes <=2 MiB, equal small/large weights, alignments <=4096,
+# op_strategy length 0..200. Replay uses the unique-free allocator contract.
+cc a59c716c11369158414b66245e0186662d6582a7bf7ff50ecc5bab063770e781
+cc 38f42fdc3580f474563996d7f44636f2dd16c10f10bb80a42d5591b10a1fb246
+cc b2ad64d43642c393391d67be6085b7c4e409f69069392cfbdcf127a990c5d5c2
+cc fd9f7a7d82d00cfa037095a8a1222277eb235a4ddeee8a7b64f49e218be6c4be
+cc cbaadfdd80f212cdb94a0fe444378ab0878a965e8e5dc0ac38d73118d763489c
+cc 956defdc76c19f87ac2c556b81792f810287db9f43752f4887bc30a1619a50ce

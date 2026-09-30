@@ -129,9 +129,12 @@
 //!   first demoted to `debug_assert!` (#1984, alloc-core perf review P1-2):
 //!   both callers already prove membership, so a release panic and duplicate
 //!   probe were unnecessary. It was later replaced by fallible
-//!   `canonical_base_of(base)?`. A missing address returns `None` without
-//!   panicking; a hit supplies the table's allocator-owned root before any
-//!   metadata read. There is no remaining debug-only re-probe.
+//!   `canonical_base_of(key)?`, using a payload-derived segment key. A missing
+//!   address or a supplied base inconsistent with the key/root returns `None`
+//!   without panicking. A hit supplies the table's allocator-owned root for
+//!   block reconstruction and metadata reads; Large in-place growth also
+//!   checks the reconstructed pointer against the header's `payload_offset`
+//!   before changing its size. There is no remaining debug-only re-probe.
 //!   `tests/no_panic_doc_accuracy.rs` pins this fallible root resolution and
 //!   the absence of a release `assert!` in that file.
 //!
@@ -187,5 +190,6 @@ mod batch;
 mod core;
 mod diag;
 mod global_alloc;
+mod maintenance;
 
 pub use core::SeferAlloc;
