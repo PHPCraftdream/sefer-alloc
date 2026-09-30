@@ -2929,12 +2929,12 @@ for completeness.
     - **Next trigger:** the next RSS/commit round, or a phase-switching workload report. Review hypothesis H1: phases that switch size class, measuring commit/RSS through `proc-memstat`, with `small_empty_orphan.count` and `segments_released_total` as the path-activation oracle, A/B against `969933b9^`.
     - **Evidence:** `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` §R2-01 and §5 H1.
 
-69. **[D] oxx R2 H2 — let `trim_current_thread()` release an empty `small_cur` too.**
+69. **[A] oxx R2 H2 — empty-current cold trim implemented; RSS/cold-restart gate remains open.**
 
-    - **Status:** OPEN — design only.
-    - **Current-number-or-verdict:** not measured. After R2-01 an empty cursor is finalized once it stops being the cursor, but trim still leaves the current cursor committed even when empty. The cost is a cold reservation on the next alloc.
+    - **Status:** OPEN — implementation shipped; performance/retention tradeoff not measured.
+    - **Current-number-or-verdict:** `766442ef` implements zero-credit current Small release after moving the cursor to Primordial. The current segment with live credits remains mapped; re-claim/reallocation after cold trim is covered by behavioral tests. No RSS or first-allocation latency improvement is claimed.
     - **Next trigger:** a trim/RSS round. Measure in the `R31_10_TRIM_CURRENT_THREAD_RSS_GATE` setup: RSS after trim against first-alloc latency after trim.
-    - **Evidence:** review §5 H2.
+    - **Evidence:** original review §5 H2; `766442ef`, `9b7dbbca`; `tests/r7_cold_small_trim_current.rs` and `tests/r7_cold_small_trim_directory.rs` passed locally during round-8 owner-sweep integration (2026-09-30).
 
 70. **[D] oxx R2 H3 — the coarse `dirty_segments` bitmap is write-only in steady state under `class-aware-dirty`.**
 

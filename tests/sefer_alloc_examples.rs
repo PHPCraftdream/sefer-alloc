@@ -68,5 +68,4 @@ fn stats_snapshot_fields_are_readable() {
     // Process-wide monitoring contract: these fields exist and are readable
     // regardless of which feature flags populated them.
     let _ = stats.tcache_hits;
-    let _ = stats.ring_overflows;
 }

@@ -29,16 +29,12 @@
 //! - `bootstrap::chunk` — R6-OPT-P0-2 (round 1): a lazily-materialised,
 //!   fixed-size shard of the slot array (`RegistryChunk`), so a process only
 //!   ever pays the OS commit cost for the chunks it actually touches.
-//! - [`heap_overflow`] — RAD-4b: the slot-resident second-chance MPSC
-//!   overflow ring that absorbs a cross-thread free once a segment's
-//!   `RemoteFreeRing` AND its bounded retry are both exhausted.
 //! - [`bootstrap`] — the process-global `Registry` + per-chunk atomic
 //!   state-machine.
 //! - [`heap_registry`] — the claim/recycle API (whole-slot reuse).
 //!
 //! [`heap_core`]: self::heap_core
 //! [`heap_slot`]: self::heap_slot
-//! [`heap_overflow`]: self::heap_overflow
 //! [`bootstrap`]: self::bootstrap
 //! [`heap_registry`]: self::heap_registry
 
@@ -47,16 +43,6 @@ pub mod bootstrap;
 #[doc(hidden)]
 pub mod heap_core;
 mod heap_core_xthread;
-// `pub` (doc-hidden) only so a standalone miri UB-detection test
-// (`tests/miri_heap_overflow_unit.rs`) can reach `HeapOverflow`'s
-// `new_boxed_for_test`/`push`/`try_drain` test surface directly, without paying
-// the full `bootstrap::ensure()` + `MAX_HEAPS`-slot registry cost that made
-// exercising this protocol through the normal `remote_fanin` harnesses
-// impractically slow under miri's interpreter — mirrors the existing
-// `heap_core`/`heap_slot` doc-hidden test-only export pattern.
-#[cfg(feature = "alloc-xthread")]
-#[doc(hidden)]
-pub mod heap_overflow;
 #[doc(hidden)]
 pub mod heap_registry;
 #[doc(hidden)]
@@ -66,32 +52,9 @@ pub mod heap_slot;
 #[doc(hidden)]
 #[allow(dead_code)]
 pub mod segment_route;
-// R1-06 (src review round 1): the fallback-lock-held TLS flag consulted by
-// `heap_core_xthread::overflow`'s `push_with_overflow_retry` and set by
-// `global::fallback::LockGuard` — see that file's module doc for why it
-// lives on the `registry` side of the (one-directional) `global` ->
-// `registry` dependency.
-#[cfg(feature = "alloc-xthread")]
-mod xthread_fallback_gate;
-#[cfg(feature = "alloc-xthread")]
-pub(crate) use xthread_fallback_gate::set_held as set_fallback_lock_held;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;
-// RAD-4 (Phase 4, E3a): the overflow-retry diagnostic counters — see their
-// doc comments in `heap_core.rs` for the full rationale. `#[doc(hidden)]
-// pub` (not stable API) so `tests/remote_fanin.rs` can read them, mirroring
-// the existing `DBG_LARGE_XTHREAD_RECLAIMED` test-only export pattern.
-#[cfg(feature = "alloc-xthread")]
-#[doc(hidden)]
-pub use heap_core::{DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED};
-// 0.3.x task #132: the reclaim counter moved to the shared
-// `alloc_core::deferred_large` module (both public faces bump the SAME
-// counter now); re-exported here for backward compatibility with existing
-// `sefer_alloc::registry::DBG_LARGE_XTHREAD_RECLAIMED` call sites/tests.
-#[cfg(feature = "alloc-xthread")]
-#[doc(hidden)]
-pub use crate::alloc_core::deferred_large::DBG_LARGE_XTHREAD_RECLAIMED;
 #[doc(hidden)]
 pub use heap_registry::config_conflicts_total;
 #[doc(hidden)]

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Terminal route owner-drain stage (2026-09-30)
+
+- **[correctness fix, consumer stage]** Cold owner trim and TLS teardown now
+  consume already-published Small/Primordial bitmap records and pending Large
+  routes. The bounded pass uses stored reservation roots, owner-issued classes,
+  exact credits and duplicate/magazine guards, and drops every cut/scan before
+  Small reservation finalization. Public trim also exists with minimal
+  `alloc-global`, without requiring cache/decommit features. Behavioral tests
+  cover the public caller and TLS exit, record guards, cache reissue and
+  last-Small release; a Loom credit-lifetime model includes a premature-release
+  negative control. Native owner tests passed under minimal `alloc-global`,
+  fastbin without decommit, `production` and all features; publication/credit
+  Loom models and existing cold-trim regressions passed. A public-API smoke
+  failed before the patch and passed after it. Miri completion remains pending.
+- **[contract boundary]** This completes the consumer stage, not normal foreign
+  producer conversion or autonomous ownerless reclamation. Legacy ring/overflow/
+  spill and deferred Large ingress remain pending the clean integration cutover;
+  R6-01/R6-03 and release remain NO-GO. Exact implemented and remaining contracts
+  are recorded in `docs/REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`.
+
 ### Root allocator `src/` review round 5 (xxs, 2026-09-29)
 
 Findings from `docs/reviews/2026-09-29-091221-src-review-xxs-sol-round-5.md` (`c47df005`; 0 P0/P1, 1 P2, 1 P3, 1 P4). Its IDs are cited as "xxs R5-NN". **The feature graph changes: `alloc-global` now implies `alloc-xthread`.** `production` already enabled both, so its executable code is unchanged; no commit claims a speedup.

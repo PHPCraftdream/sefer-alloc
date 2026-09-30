@@ -187,5 +187,6 @@ mod batch;
 mod core;
 mod diag;
 mod global_alloc;
+mod maintenance;
 
 pub use core::SeferAlloc;

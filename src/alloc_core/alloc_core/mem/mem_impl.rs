@@ -20,17 +20,23 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta}
 use crate::alloc_core::size_classes::AllocKind;
 
 impl AllocCore {
+    /// Address-only read-only identity resolution; no cache or metadata write.
+    #[cfg(feature = "alloc-global")]
+    #[inline]
+    pub(crate) fn canonical_root_for(&self, ptr: *mut u8) -> Option<*mut u8> {
+        self.table.canonical_base_of(os::segment_base_of_ptr(ptr))
+    }
     /// Resolve an address supplied by a caller into this core's stored
     /// reservation root and a physical block pointer derived from that root.
     /// The returned block is dereferenceable only to the extent established
     /// by the allocation/layout contract; membership alone is not enough.
     #[inline]
-    pub(crate) fn canonical_block_of(&self, ptr: *mut u8) -> Option<(*mut u8, *mut u8)> {
+    pub(crate) fn canonical_block_of(&mut self, ptr: *mut u8) -> Option<(*mut u8, *mut u8)> {
         if ptr.is_null() {
             return None;
         }
         let candidate = os::segment_base_of_ptr(ptr);
-        let base = self.table.canonical_base_of(candidate)?;
+        let base = self.table.canonical_base_of_mut(candidate)?;
         let block = Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
         Some((base, block))
     }
@@ -355,7 +361,7 @@ impl AllocCore {
                     // single-deposit-vs-budget check, not a full feasibility
                     // predictor for the eviction loop below).
                     let mut admitted: Option<usize> = None;
-                    if !self.large_cache_deposit_budget_infeasible(usable_size) {
+                    if stale.large_align < os::SEGMENT && !self.large_cache_deposit_budget_infeasible(usable_size) {
                         loop {
                             let free_slot = self.large_cache_find_free_slot();
                             let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
@@ -529,12 +535,11 @@ impl AllocCore {
     #[inline]
     #[allow(unsafe_code)] // R6-MS-1/2 sibling: `unsafe fn` boundary (caller-pointer contract).
     pub(crate) unsafe fn dealloc_with_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
-        let Some(root) = self.table.canonical_base_of(base) else {
-            return;
-        };
+        let Some((root, block)) = self.canonical_block_of(ptr) else { return; };
+        if root.addr() != base.addr() { return; }
         // SAFETY: caller owns the live block and `root` is the stored root
         // corresponding to the already-verified address key.
-        unsafe { self.dealloc_at_base(ptr, layout, root) };
+        unsafe { self.dealloc_at_base(block, layout, root) };
     }
 
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.

@@ -536,7 +536,7 @@ pub use alloc_core::{AllocCore, SegmentLayout};
 pub use size_classes::InvalidAlign;
 
 #[cfg(feature = "alloc-global")]
-pub use global::{AllocStats, SeferAlloc};
+pub use global::{AllocStats, MaintenanceStartError, SeferAlloc};
 
 #[cfg(kani)]
 mod kani_proofs;
