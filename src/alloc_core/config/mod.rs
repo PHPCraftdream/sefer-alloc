@@ -13,10 +13,11 @@
 pub mod large_cache_config;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_mode;
-/// R30-7 (task #456), reworked R31-9 (task #473): [`Profile`] — a small
-/// builder composing two independent, named, measured configuration axes
-/// ([`profile::SmallPoolPolicy`] for `pool_segments`/`pool_byte_cap`,
-/// [`profile::LargeCachePolicy`] for large-cache `headroom_bytes`), from
+/// R30-7 (task #456), reworked R31-9 (task #473):
+/// [`Profile`](crate::Profile) — a small builder composing two independent,
+/// named, measured configuration axes
+/// ([`SmallPoolPolicy`](crate::SmallPoolPolicy) for `pool_segments`/`pool_byte_cap`,
+/// [`LargeCachePolicy`](crate::LargeCachePolicy) for large-cache `headroom_bytes`), from
 /// this project's own measured gate reports (R27-3/R27-4/R30-6/R31-1/R31-2).
 /// See the module doc for the full rationale and exact numbers.
 #[cfg(feature = "alloc-decommit")]

@@ -37,14 +37,14 @@ use once_ptr_cell::OncePtrCell;
 /// thread counts (a process with > 4096 simultaneous threads is pathological
 /// for an allocator; the cap can be raised if a measured workload needs it).
 /// The slot space is chunked (see the module doc) into
-/// [`chunk::NUM_CHUNKS`](super::chunk::NUM_CHUNKS) chunks of
-/// [`chunk::CHUNK_SLOTS`](super::chunk::CHUNK_SLOTS)
+/// `chunk::NUM_CHUNKS` chunks of
+/// `chunk::CHUNK_SLOTS`
 /// slots, each materialised lazily via `aligned_vmem::reserve_aligned` on
 /// first touch of an index inside it — NOT a `.data`/`.bss` cost, and no
 /// longer a single whole-array reservation either.
 pub const MAX_HEAPS: usize = 4096;
 
-/// The bootstrap outcome: [`chunk::NUM_CHUNKS`](super::chunk::NUM_CHUNKS)
+/// The bootstrap outcome: `chunk::NUM_CHUNKS`
 /// lazily-materialised chunk pointers plus the dynamic atomics that drive
 /// `claim`/`recycle`.
 ///
@@ -53,7 +53,7 @@ pub const MAX_HEAPS: usize = 4096;
 /// `Registry`, which inlined the whole feature-dependent-size slot array and
 /// therefore had to live behind a lazily-heap-allocated `AtomicPtr<Registry>`
 /// — this struct is const-initialisable and lives as a genuine
-/// `static REGISTRY: Registry = Registry::new()`. See [`ensure`].
+/// `static REGISTRY: Registry = Registry::new()`. See `ensure()`.
 pub struct Registry {
     /// One lazy CAS-published pointer cell per chunk of the slot space
     /// ([`once_ptr_cell::OncePtrCell`], the extracted `UNINIT -> INITIALIZING

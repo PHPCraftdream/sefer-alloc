@@ -37,7 +37,7 @@ static DBG_INJECT_CHUNK_OOM: AtomicBool = AtomicBool::new(false);
 /// no lazy initialisation at all — it is a plain `static` of atomics, valid
 /// from process start. All the laziness that used to live at THIS level (the
 /// `UNINIT → INITIALIZING → READY` CAS dance) now lives one level down, per
-/// chunk, inside [`Registry::slot`] — see that method and [`ensure_chunk_slow`].
+/// chunk, inside `Registry::slot` — see that method and `ensure_chunk_slow`.
 #[inline]
 pub fn ensure() -> &'static Registry {
     &REGISTRY

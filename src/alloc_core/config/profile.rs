@@ -1,6 +1,7 @@
-//! [`Profile`] — a small builder over two independent, named, measured axes
-//! ([`SmallPoolPolicy`] and [`LargeCachePolicy`]) that together resolve to a
-//! [`LargeCacheConfig`] (feature = `alloc-decommit`).
+//! [`Profile`](crate::Profile) — a small builder over two independent,
+//! named, measured axes ([`SmallPoolPolicy`](crate::SmallPoolPolicy) and
+//! [`LargeCachePolicy`](crate::LargeCachePolicy)) that together resolve to a
+//! [`LargeCacheConfig`](crate::LargeCacheConfig) (feature = `alloc-decommit`).
 //!
 //! ## Why this exists
 //!
@@ -28,9 +29,11 @@
 //!    idle-window arms). A burst could leave far more than `headroom_bytes`
 //!    resident per heap indefinitely, yet the variant's own name promised an
 //!    "RSS" outcome. Fixed by dropping the `Rss` name entirely: the low
-//!    large-cache-headroom choice is now [`LargeCachePolicy::LowHeadroom`],
+//!    large-cache-headroom choice is now
+//!    [`LargeCachePolicy::LowHeadroom`](crate::LargeCachePolicy::LowHeadroom),
 //!    whose own doc states plainly that it is a decay floor, not a cap, and
-//!    points to [`LargeCacheConfig::budget_bytes`] for an actual admission
+//!    points to [`LargeCacheConfig::budget_bytes`](crate::LargeCacheConfig::budget_bytes)
+//!    for an actual admission
 //!    ceiling.
 //! 2. **The old `Profile::Throughput` silently lowered the large-cache
 //!    window from 256 MiB to 64 MiB with no same-regime evidence** — at the
@@ -41,18 +44,22 @@
 //!    (87.5 % vs 100.0 %) once burst occupancy genuinely exceeds 64 MiB —
 //!    the exact regime a workload literally named "throughput" is likely to
 //!    hit. Splitting the axes means a caller who wants ONLY the small-pool
-//!    latency win ([`SmallPoolPolicy::Throughput`]) no longer has to also
+//!    latency win ([`SmallPoolPolicy::Throughput`](crate::SmallPoolPolicy::Throughput))
+//!    no longer has to also
 //!    accept the large-cache narrowing as a package deal — and the large
-//!    cache's policies ([`LargeCachePolicy::LowHeadroom`] /
-//!    [`LargeCachePolicy::Trimmed64MiB`] / [`LargeCachePolicy::Default`])
+//!    cache's policies
+//!    ([`LargeCachePolicy::LowHeadroom`](crate::LargeCachePolicy::LowHeadroom) /
+//!    [`LargeCachePolicy::Trimmed64MiB`](crate::LargeCachePolicy::Trimmed64MiB) /
+//!    [`LargeCachePolicy::Default`](crate::LargeCachePolicy::Default))
 //!    are named and documented for what they measurably cost, not what a
 //!    "Throughput"-branded bundle implied.
 //!
 //! Splitting into two independent axes also fixes the underlying structural
 //! problem: bundling meant evidence from ONE workload (small-pool
 //! single-thread teardown churn, or large-cache burst/idle) silently set
-//! policy for the OTHER, unrelated tier. [`Profile`] now composes
-//! [`SmallPoolPolicy`] and [`LargeCachePolicy`] independently — any of the
+//! policy for the OTHER, unrelated tier. [`Profile`](crate::Profile) now composes
+//! [`SmallPoolPolicy`](crate::SmallPoolPolicy) and
+//! [`LargeCachePolicy`](crate::LargeCachePolicy) independently — any of the
 //! 2×4 combinations is directly constructible, each axis documents its own
 //! citations, and a future measured axis value can be added to ONE axis
 //! without touching the other.
@@ -82,8 +89,9 @@
 //! `production`'s feature list and `Profile::DEFAULT` remains
 //! `LargeCachePolicy::Default` — this is additive, not a default change.**
 //!
-//! The low-level [`LargeCacheConfig`] / [`SmallSegmentPoolConfig`] builders
-//! remain the full-control escape hatch — [`Profile`] is a convenience
+//! The low-level [`LargeCacheConfig`](crate::LargeCacheConfig) /
+//! [`SmallSegmentPoolConfig`](crate::SmallSegmentPoolConfig) builders
+//! remain the full-control escape hatch — [`Profile`](crate::Profile) is a convenience
 //! layer over them, not a replacement: `LargeCacheConfig::new().headroom_bytes(n)…`
 //! and `SmallSegmentPoolConfig::new().pool_segments(n)…` are always
 //! available for exact manual tuning outside the named axis values.

@@ -281,7 +281,7 @@ pub enum CurrentHeapForDealloc {
     Own(*mut HeapCore),
     /// This thread never bound a heap, its slot was recycled, or its TLS is
     /// torn down. For pointers not identified as fallback-owned, route through
-    /// [`HeapCore::dealloc_foreign_routing`] without claiming a slot or taking
+    /// foreign deallocation routing without claiming a slot or taking
     /// the fallback lock.
     ForeignNoBind,
 }

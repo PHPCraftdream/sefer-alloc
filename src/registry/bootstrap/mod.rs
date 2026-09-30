@@ -15,23 +15,23 @@
 //! one `VirtualAlloc` call; there is no OS-level "commit only the pages you
 //! touch" for a single reservation of this shape (see `crates/aligned-vmem/src/lib.rs`).
 //!
-//! The fix: split the slot array into [`registry_chunk::NUM_CHUNKS`] chunks of
-//! [`registry_chunk::CHUNK_SLOTS`] slots each ([`RegistryChunk`]), and
+//! The fix: split the slot array into `chunk::NUM_CHUNKS` chunks of
+//! `chunk::CHUNK_SLOTS` slots each (`RegistryChunk`), and
 //! materialise each chunk LAZILY, on first touch of an index that falls
 //! inside it — mirroring the SAME CAS-then-spin publish protocol the old
 //! whole-registry `ensure`/`ensure_slow` used, just applied per-chunk. See
-//! [`Registry::slot`] for the resolver (the single place in the crate allowed
-//! to dereference chunk memory) and [`ensure_chunk_slow`] for the
+//! `Registry::slot` for the resolver (the single place in the crate allowed
+//! to dereference chunk memory) and `ensure_chunk_slow` for the
 //! materialisation protocol.
 //!
 //! **`Registry` itself is now small enough to be a plain `static` again**:
 //! once the giant inline array is gone, `Registry` is just
 //! `chunks: [AtomicPtr<RegistryChunk>; NUM_CHUNKS]` (64 pointers = 512 bytes
 //! at `NUM_CHUNKS = 64`) plus the existing `count`/`free_slots` atomics — all
-//! const-initialisable, so [`ensure`] is now a plain `&'static Registry`
+//! const-initialisable, so `ensure()` is now a plain `&'static Registry`
 //! return with NO CAS, NO sentinel dance, and NO OOM-abort path at the
 //! REGISTRY level at all (OOM can now only happen at PER-CHUNK
-//! materialisation time — see [`ensure_chunk_slow`]'s OOM handling, which is
+//! materialisation time — see `ensure_chunk_slow`'s OOM handling, which is
 //! strictly better than the old whole-registry abort: a process that already
 //! has heaps live in other chunks keeps working even if one chunk's
 //! reservation fails).
@@ -57,7 +57,7 @@
 //! ## RAD-1: lazy `next_free` (no eager per-slot first-touch)
 //!
 //! A chunk's in-place init writes ONLY the slot fields that must be non-zero
-//! (none, currently — see [`ensure_chunk_slow`]); `next_free` is written
+//! (none, currently — see `ensure_chunk_slow`); `next_free` is written
 //! lazily by `push_free_slot` (which runs before any `pop_free_slot` can read
 //! it), so the OS-zeroed initial value (`0`, not `NEXT_FREE_TAIL`) is never
 //! observed. This is the SAME reasoning the old whole-registry `ensure_slow`
@@ -68,7 +68,7 @@
 //!
 //! ## Per-chunk pointer state-machine
 //!
-//! Each `AtomicPtr<RegistryChunk>` in [`Registry::chunks`] independently
+//! Each `AtomicPtr<RegistryChunk>` in `Registry::chunks` independently
 //! drives the `UNINIT → INITIALIZING → READY` transition via pointer values,
 //! identical in spirit to the OLD whole-registry protocol (now removed at the
 //! `Registry` level, reintroduced at the chunk level):
@@ -84,7 +84,7 @@
 //!    a. Calls `aligned_vmem::reserve_aligned(CHUNK_SIZE, CHUNK_ALIGN)` —
 //!       direct OS syscall, no `std::alloc`, no registry dependency.
 //!    b. Field-by-field in-place initialisation (OS zeroed-pages; every field
-//!       already starts at its correct zero value — see [`ensure_chunk_slow`]).
+//!       already starts at its correct zero value — see `ensure_chunk_slow`).
 //!    c. `self.chunks[chunk_idx].store(base, Release)` — publishes the ready
 //!       pointer.
 //!    d. `mem::forget(reservation)` — leaks the reservation intentionally;
@@ -112,7 +112,7 @@
 //! - Unix: `extern "C" { fn mmap(...) }` — no std alloc.
 //! - Miri: direct `System.alloc`, bypassing the installed global allocator.
 //!
-//! No path from [`ensure_chunk_slow`] touches `sefer_alloc::registry::*` —
+//! No path from `ensure_chunk_slow` touches `sefer_alloc::registry::*` —
 //! confirmed by inspection (unchanged from the pre-chunking `ensure_slow`).
 //! The reservation call chain reaches a kernel syscall on native targets or
 //! `System` directly under Miri.
@@ -127,7 +127,7 @@
 //! remaining raw-pointer work is (1) casting the leaked `leak_zeroed_pages`
 //! reservation to `*mut RegistryChunk` and dereferencing the published pointer
 //! the cell hands back, and (2) the `alloc-xthread` overflow-sidecar path below
-//! (still spelled out inline — see the CRATE-P3 note in [`ensure_chunk_slow`]).
+//! (still spelled out inline — see the CRATE-P3 note in `ensure_chunk_slow`).
 //! The A1 deferred-large-free stack's exposed-provenance story
 //! (`alloc_core::deferred_large`) is untouched by this round — see that
 //! module for its own provenance documentation.

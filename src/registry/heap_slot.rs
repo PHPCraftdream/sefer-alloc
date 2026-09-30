@@ -144,7 +144,7 @@ pub(crate) struct HeapSlotRemote {
 /// most 63 bytes of padding per slot (+64 KiB across the whole registry —
 /// negligible; the registry's pages are lazily committed by the OS, so an
 /// idle process never touches the extra padding bytes at all). See
-/// [`HeapSlotRemote`]'s doc comment for the paired fix (grouping the
+/// `HeapSlotRemote`'s doc comment for the paired fix (grouping the
 /// remote-access fields onto their OWN 64-byte-aligned line, disjoint from
 /// this slot's owner-hot fields).
 #[repr(C, align(64))]

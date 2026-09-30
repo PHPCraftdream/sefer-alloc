@@ -189,7 +189,7 @@ const MAX_SHARDS: usize = u16::MAX as usize;
 /// router that lazily binds each writer thread to one shard, **releasable** on
 /// thread exit (Phase 7b).
 ///
-/// See the [module docs](self) for the design, the router, the cross-thread
+/// See the module-level design above for the router, the cross-thread
 /// removal (lock-free eviction CAS; blocking remote-free enqueue), and the
 /// shard lifecycle.
 #[deprecated(
@@ -376,7 +376,7 @@ impl<T> ShardedRegion<T> {
     /// that shard is full (mirroring [`EpochRegion::insert`]).
     ///
     /// On the thread's first insert, lazily claims a shard via the TLS router
-    /// (see [the router docs](self#the-router-7b)). The returned handle carries
+    /// (see the router design in this module). The returned handle carries
     /// the shard id, so later reads/removes route back to this shard.
     ///
     /// # Errors
@@ -444,7 +444,7 @@ impl<T> ShardedRegion<T> {
     /// shard, this takes the OWNER path ([`EpochRegion::remove`], which takes
     /// the shard's writer mutex for free-list bookkeeping only — the evict
     /// itself is a CAS). Otherwise it takes the remote path
-    /// ([`EpochRegion::remote_evict`]), which performs the lock-free
+    /// (`EpochRegion::remote_evict`), which performs the lock-free
     /// generation-CAS eviction WITHOUT the owner shard's writer mutex, then
     /// enqueues the freed index (briefly taking the remote-free queue's
     /// `Mutex<Vec<u32>>` on the CALLING thread) for the owner to drain later.
@@ -514,7 +514,7 @@ impl<T> ShardedRegion<T> {
     ///
     /// If the calling thread already has an exclusive claim on a DIFFERENT
     /// shard, that claim is NOT released by this call (releasing happens only on
-    /// thread exit via the [`ErasedGuard`]'s `Drop`). In the intended
+    /// thread exit via the `ErasedGuard`'s `Drop`). In the intended
     /// thread-per-core topology each thread binds exactly once at startup, so
     /// this does not arise.
     #[must_use]

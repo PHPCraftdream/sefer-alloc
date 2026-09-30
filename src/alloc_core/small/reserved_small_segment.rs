@@ -1,4 +1,4 @@
-//! [`ReservedSmallSegment`] — a typed, non-forgeable, move-consumed handle
+//! `ReservedSmallSegment` — a typed, non-forgeable, move-consumed handle
 //! standing in place of a bare `*mut u8` for exactly one measurement-only
 //! hook pair: `AllocCore::dbg_decomp_reserve_and_keep` /
 //! `AllocCore::dbg_decomp_release` (`alloc_core_small_pool.rs`).
@@ -30,8 +30,8 @@
 //!
 //! Fixed two ways, layered:
 //!
-//! 1. **Structural owner token.** [`Self::owner_id`] stores the minting
-//!    `AllocCore`'s stable, process-wide-unique identity
+//! 1. **Structural owner token.** `ReservedSmallSegment::owner_id` stores
+//!    the minting `AllocCore`'s stable, process-wide-unique identity
 //!    (`AllocCore::dbg_reservation_owner_id`, a monotonic counter — NOT the
 //!    `&self` address, which can be reused by a different logical
 //!    `AllocCore` after a move; see that field's doc comment in
@@ -67,7 +67,8 @@
 //!
 //! This type closes both gaps structurally:
 //!
-//! - **Unforgeable.** The only constructor is [`Self::new_from_reservation`],
+//! - **Unforgeable.** The only constructor is
+//!   `ReservedSmallSegment::new_from_reservation`,
 //!   `pub(super)` — since `reserved_small_segment` is a direct child module
 //!   of `alloc_core` (`src/alloc_core/mod.rs`), `pub(super)` here resolves
 //!   to `pub(in crate::alloc_core)`: reachable from anywhere inside
@@ -78,8 +79,8 @@
 //!   immediately after a genuine `reserve_small_segment_impl()` call
 //!   succeeds. The `base` field is
 //!   private, so external code cannot construct a SECOND handle from a
-//!   pointer it read out via [`Self::dbg_base`] (that method only reads the
-//!   value; it is not a constructor) — the unforgeability guarantee is
+//!   pointer it read out via `ReservedSmallSegment::dbg_base` (that method
+//!   only reads the value; it is not a constructor) — the unforgeability guarantee is
 //!   about minting handles, not about the pointer value being opaque.
 //! - **Double-release is a compile error, not a runtime hazard.**
 //!   `AllocCore::dbg_decomp_release` takes the handle BY VALUE and consumes
@@ -224,7 +225,7 @@ impl ReservedSmallSegment {
 
 /// Defence-in-depth: reaching `drop` without having gone through
 /// `AllocCore::dbg_decomp_release` (i.e. without going through
-/// [`ReservedSmallSegment::into_base`], which forgets `self` first) means
+/// `ReservedSmallSegment::into_base`, which forgets `self` first) means
 /// the handle was leaked by its caller (a measurement-harness bug — forgot
 /// to release), not a soundness hazard by itself (the segment stays
 /// correctly registered in the allocator's own table; nothing is

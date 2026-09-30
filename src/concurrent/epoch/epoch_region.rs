@@ -10,7 +10,7 @@
 //! compatibility and as a research baseline, and `#[deprecated]` on the struct
 //! below. No new development is planned (see the `concurrent` module docs).
 //!
-//! This tier trades the zero-`unsafe` RCU of [`LockFreeRegion`](super::LockFreeRegion)
+//! This tier trades the zero-`unsafe` RCU of [`LockFreeRegion`](crate::LockFreeRegion)
 //! (3b-I) for **O(1) per-slot writes** (no snapshot clone) at the cost of a
 //! confined `unsafe` seam, [`AtomicSlot<T>`] (see [`hand`](super::hand)) —
 //! one of the crate's named `#![allow(unsafe_code)]` modules (see the unsafe
@@ -120,7 +120,7 @@ struct FreeState {
 /// `unsafe` seam (`AtomicSlot<T>`, one of the crate's named
 /// `#![allow(unsafe_code)]` modules) in exchange for
 /// O(1) per-slot writes (no snapshot clone, unlike
-/// [`LockFreeRegion`](super::LockFreeRegion)).
+/// [`LockFreeRegion`](crate::LockFreeRegion)).
 ///
 /// ## Fixed capacity
 ///
@@ -133,7 +133,7 @@ struct FreeState {
 ///
 /// ## Phase 7b — cross-thread removal
 ///
-/// [`remote_evict`](Self::remote_evict) lets ANY thread remove a handle without
+/// `remote_evict` lets ANY thread remove a handle without
 /// taking the owner's writer mutex: it performs the generation-CAS eviction
 /// (the single linearization point) and, on success, enqueues the freed index
 /// into a remote-free queue the owner drains later. The owner's own
@@ -447,7 +447,7 @@ impl<T> EpochRegion<T> {
     /// can no longer rely on the writer mutex for the evict itself. The mutex
     /// is taken ONLY to serialize free-list bookkeeping (and to drain the
     /// remote-free queue); the eviction goes through
-    /// [`AtomicSlot::try_evict_at`] (the single linearization CAS), which
+    /// `AtomicSlot::try_evict_at` (the single linearization CAS), which
     /// returns `Stale` if a remote remover won the race — in which case this
     /// returns `false` (the handle was already removed) and does NOT touch the
     /// free list or `len`.

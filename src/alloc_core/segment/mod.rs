@@ -16,8 +16,8 @@
 /// constant, and the one-time rebuild routine. Lookup wiring is A3 scope.
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) mod segment_directory;
-/// Group module: the per-segment metadata family — [`SegmentHeader`]/
-/// [`PageMap`]/[`BinTable`]/[`Layout`]/[`SegmentMeta`] (`mod.rs` +
+/// Group module: the per-segment metadata family — `SegmentHeader`/
+/// `PageMap`/`BinTable`/`Layout`/`SegmentMeta` (`mod.rs` +
 /// `descriptors.rs` + `layout_asserts.rs`), the `#[path]`-moved
 /// field-accessor siblings (`segment_header_layout.rs`,
 /// `segment_header_meta_fields.rs`, `segment_header_views.rs`), and the

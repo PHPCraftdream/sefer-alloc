@@ -47,7 +47,7 @@ impl SeferAlloc {
     ///
     /// Resolves the per-thread heap ONCE (one TLS lookup for the whole batch,
     /// vs N for N scalar `alloc` calls), then delegates to
-    /// [`HeapCore::alloc_batch`], which drains the warm magazine and
+    /// `HeapCore::alloc_batch`, which drains the warm magazine and
     /// batch-refills only the remainder. Returns the number of slots filled:
     /// zero for an empty output slice or when a non-empty request cannot fill
     /// any slot, and a positive count for full or partial success. Only
@@ -87,7 +87,7 @@ impl SeferAlloc {
     ///
     /// Same `batch-api` feature boundary as [`alloc_batch`] (see that
     /// method's API-boundary doc section). Resolves the per-thread heap
-    /// ONCE, then delegates to [`HeapCore::dealloc_batch`], which partitions
+    /// ONCE, then delegates to `HeapCore::dealloc_batch`, which partitions
     /// `blocks` into a this-heap-owned Small-classified fast subset (batched
     /// magazine-fill + `flush_class` overflow — see that method's doc
     /// comment for the full mechanism and the stated magazine-warmth

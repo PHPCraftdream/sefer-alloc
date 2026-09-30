@@ -1,5 +1,5 @@
-//! [`SegmentHeader`] — the per-segment metadata block that lives at offset 0
-//! of every segment, and [`PageMap`] / [`BinTable`] — the per-segment page
+//! `SegmentHeader` — the per-segment metadata block that lives at offset 0
+//! of every segment, and `PageMap` / `BinTable` — the per-segment page
 //! descriptors and per-size-class free bins, all carved from segment memory.
 //!
 //! These structures are the **self-hosted metadata** of the Phase 8 substrate
@@ -10,11 +10,11 @@
 //!
 //! ## Layout and access discipline
 //!
-//! [`SegmentHeader`] and its accessors are defined in
+//! `SegmentHeader` and its accessors are defined in
 //! `segment_header_impl.rs`; descriptor layouts are
 //! defined in `descriptors.rs`, with compile-time checks in
 //! `layout_asserts.rs`. Raw memory access is routed through the
-//! [`node`](crate::alloc_core::node) seam. This module wires those pieces
+//! `node` seam. This module wires those pieces
 //! together and preserves their `segment_header::` paths.
 //!
 //! ## Layout of a small segment

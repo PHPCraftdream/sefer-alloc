@@ -59,6 +59,142 @@ fn src_dir() -> PathBuf {
 }
 
 #[test]
+fn strict_rustdoc_links_keep_public_targets_and_private_names_plain() {
+    let sites: &[(&str, &[&str], &[&str])] = &[
+        (
+            "concurrent/epoch/epoch_region.rs",
+            &[
+                "[`LockFreeRegion`](super::LockFreeRegion)",
+                "[`remote_evict`](Self::remote_evict) lets",
+                "[`AtomicSlot::try_evict_at`] (the single",
+            ],
+            &["[`LockFreeRegion`](crate::LockFreeRegion)"],
+        ),
+        (
+            "concurrent/sharded/sharded_region.rs",
+            &[
+                "[module docs](self)",
+                "[the router docs](self#",
+                "([`EpochRegion::remote_evict`])",
+                "[`ErasedGuard`]'s `Drop`). In the intended",
+            ],
+            &[],
+        ),
+        (
+            "alloc_core/config/mod.rs",
+            &[
+                "[`Profile`] — a small",
+                "[`profile::SmallPoolPolicy`]",
+                "[`profile::LargeCachePolicy`]",
+            ],
+            &["[`Profile`](crate::Profile)"],
+        ),
+        (
+            "alloc_core/config/profile.rs",
+            &[
+                "//! [`Profile`] —",
+                "//! ([`SmallPoolPolicy`] and",
+                "//! [`SmallPoolPolicy`] and [`LargeCachePolicy`]",
+                "//! [`LargeCacheConfig`] (feature",
+            ],
+            &[
+                "[`Profile`](crate::Profile)",
+                "[`SmallPoolPolicy`](crate::SmallPoolPolicy)",
+                "[`LargeCachePolicy`](crate::LargeCachePolicy)",
+            ],
+        ),
+        (
+            "alloc_core/segment/mod.rs",
+            &["[`SegmentHeader`]/", "[`PageMap`]/[`BinTable`]/"],
+            &[],
+        ),
+        (
+            "alloc_core/segment/segment_header/mod.rs",
+            &[
+                "//! [`SegmentHeader`] —",
+                "//! of every segment, and [`PageMap`]",
+                "[`node`](crate::alloc_core::node)",
+            ],
+            &[],
+        ),
+        (
+            "alloc_core/small/reserved_small_segment.rs",
+            &[
+                "//! [`ReservedSmallSegment`]",
+                "//! 1. **Structural owner token.** [`Self::owner_id`]",
+                "//! - **Unforgeable.** The only constructor is [`Self::new_from_reservation`]",
+                "/// [`ReservedSmallSegment::into_base`]",
+            ],
+            &[],
+        ),
+        (
+            "global/sefer_alloc/batch.rs",
+            &[
+                "/// [`HeapCore::alloc_batch`],",
+                "/// ONCE, then delegates to [`HeapCore::dealloc_batch`],",
+            ],
+            &[
+                "`HeapCore::alloc_batch`, which drains",
+                "delegates to `HeapCore::dealloc_batch`",
+            ],
+        ),
+        (
+            "global/tls_heap.rs",
+            &["[`HeapCore::dealloc_foreign_routing`]"],
+            &[],
+        ),
+        (
+            "registry/bootstrap/mod.rs",
+            &[
+                "[`registry_chunk::",
+                "[`RegistryChunk`]",
+                "[`Registry::slot`]",
+                "[`ensure_chunk_slow`]",
+                "[`Registry::chunks`]",
+                "//! const-initialisable, so [`ensure`]",
+            ],
+            &["const-initialisable, so `ensure()` is now"],
+        ),
+        (
+            "registry/bootstrap/registry.rs",
+            &[
+                "[`chunk::NUM_CHUNKS`](super::chunk::NUM_CHUNKS)",
+                "[`chunk::CHUNK_SLOTS`](super::chunk::CHUNK_SLOTS)",
+                "See [`ensure`]",
+            ],
+            &[],
+        ),
+        (
+            "registry/bootstrap/ensure.rs",
+            &["chunk, inside [`Registry::slot`]"],
+            &[],
+        ),
+        (
+            "registry/heap_slot.rs",
+            &["/// [`HeapSlotRemote`]'s doc comment"],
+            &[],
+        ),
+    ];
+    for (rel, forbidden, required) in sites {
+        let path = src_dir().join(rel);
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for needle in *forbidden {
+            assert!(
+                !text.contains(needle),
+                "{rel}: stale/private rustdoc link {needle}"
+            );
+        }
+        for needle in *required {
+            assert!(
+                text.contains(needle),
+                "{rel}: missing public rustdoc link {needle}"
+            );
+        }
+    }
+}
+
+#[test]
 fn no_crate_heap_module_path() {
     let mut files = Vec::new();
     rs_files(&src_dir(), &mut files);
