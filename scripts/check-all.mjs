@@ -372,8 +372,7 @@ const steps = [
     // regression in run()'s shell:false argv preservation would corrupt
     // every multi-word --features value before cargo ever saw it. Runs in
     // milliseconds and fails fast. Wired in explicitly (not left as a
-    // direct-invocation-only script) so it cannot silently rot — the same
-    // failure mode tests/no_stale_loom_files.rs (R13-5) was created to catch.
+    // direct-invocation-only script) so it cannot silently rot.
     name: 'argv-roundtrip (shell:false regression test)',
     cmd: 'node',
     args: ['scripts/argv-roundtrip-test.mjs'],
@@ -420,12 +419,8 @@ const steps = [
   // tests whose bodies are `#[cfg(feature = "...")]`-gated, so only a run
   // WITH the feature actually exercises them.
   {
-    // R24-6 (task #384): `bench-internals` added so
-    // `tests/class_aware_dirty_oom_latch.rs` (which now additionally gates on
-    // that feature — see `Cargo.toml`'s `bench-internals` doc) keeps running
-    // under this step instead of silently being skipped by its own
-    // `#![cfg]`. `internals` added (R34-3/task #522) — same whole-suite
-    // rationale as the row above.
+    // Sidecar/owner diagnostics and the fallible maintenance-service oracles
+    // require bench-internals; internals exposes this repo's white-box suite.
     name: 'test (--features "production alloc-stats bench-internals internals")',
     cmd: 'cargo',
     args: ['test', '--features', 'production alloc-stats bench-internals internals'],
@@ -784,6 +779,13 @@ const steps = [
     name: 'verify-alloc-core-dbg-internals-exhaustive (H2 exhaustive gating check)',
     cmd: 'node',
     args: ['scripts/verify-alloc-core-dbg-internals-exhaustive.mjs'],
+  },
+  {
+    // Preserve the reviewed security allowlists as repository tooling, not a
+    // source-text integration test. Removed hooks are explicitly pruned.
+    name: 'verify-dbg-hook-safety (reviewed observer/mutator and unsafe hook policy)',
+    cmd: 'node',
+    args: ['scripts/verify-dbg-hook-safety.mjs'],
   },
   {
     // R30-5: generated "feature ABSENT" compile-check enumeration for every

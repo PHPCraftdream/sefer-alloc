@@ -5,16 +5,15 @@
 // Usage (from repo root):
 //   node scripts/miri.mjs           # the full CI miri matrix (strict provenance)
 //   node scripts/miri.mjs decommit_miri_cycle   # a subset (by test name)
-//   node scripts/miri.mjs --plain   # the PLAIN-provenance matrix (exposed-
-//                                    # provenance stacks; see PLAIN_MATRIX below)
-//   node scripts/miri.mjs --plain regression_heap_xthread_large_free_no_leak
+//   node scripts/miri.mjs --plain   # concurrent terminal allocator matrix
+//   node scripts/miri.mjs --plain regression_xthread_large_free_no_leak
+//   node scripts/miri.mjs --tree-borrows r8_global_box_provenance
 //   npm run miri
 //
-// Each entry is [features, testName, packageName?]; miri is slow (segment tests
-// run 1-8 min each), so keep the set to the focused invariant/UB targets per
-// the project's short-scenario policy — not the whole suite. Entries without
-// packageName run against the workspace root package, preserving the historical
-// command shape.
+// Each entry is [features, testName, packageName?, exactTest?]. Keep Miri
+// focused on bounded invariant/UB targets, not whole native workloads.
+// packageName omission means the root package. exactTest selects one genuine
+// invariant within its single target and requires that exact result sentinel.
 
 import { REPO_ROOT, run, verdict } from './lib.mjs';
 
@@ -36,14 +35,6 @@ const MATRIX = [
   // R13-5 fixed elsewhere in this project — this script was simply never
   // updated when R34-3 introduced the `internals` feature).
   ['alloc-core alloc-decommit internals', 'decommit_miri_cycle'],
-  // R34-5-followup: `internals` added, same reason as above.
-  ['alloc-global alloc-xthread internals', 'reclaim_offset_unit'],
-  // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard's
-  // `SegmentHeader::ring_drain_head` field, exercised via a REAL
-  // `find_segment_with_free` scan (not the unconditional `dbg_drain_all_rings`
-  // force-drain `reclaim_offset_unit` uses).
-  // R34-5-followup: `internals` added, same reason as above.
-  ['alloc-global alloc-xthread internals', 'regression_ring_drain_guard_miri'],
   ['alloc-core', 'regression_large_align_no_segment_exhaustion'],
   ['alloc-core', 'regression_page_aligned_no_segment_exhaustion'],
   ['alloc-core', 'regression_realloc_cross_class_shrink'],
@@ -106,6 +97,11 @@ const MATRIX = [
   // It has no crate features; keep the package-qualified invocation separate
   // from the root-package feature matrix entry shape.
   ['', 'narrow_domain_unchecked_storage', 'tagged-index-stack'],
+  // Genuine tiny installed-global Box ownership/reborrow round trip.
+  ['alloc-global internals bench-internals', 'r8_global_box_provenance', undefined, 'installed_box_drop_narrow_transfer_and_reissue'],
+  // Separate exact invocation: owner retirement before the actual Box Drop
+  // producer resumes after its terminal RMW. This test is cfg(miri)-only.
+  ['alloc-global internals bench-internals', 'r8_global_box_provenance', undefined, 'installed_box_drop_retires_before_terminal_producer_resumes'],
   // `regression_own_segment_cache_invalidation` deferred from the miri set
   // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
   // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not
@@ -113,99 +109,25 @@ const MATRIX = [
   // `decommit_miri_cycle`.
 ];
 
-// W6: the PLAIN-provenance matrix. `src/alloc_core/large/deferred_large/mod.rs`
-// (Provenance model, ~lines 19-28) documents that the exposed-provenance intrusive stacks — the A1
-// `deferred_large` push/drain stack and the `abandoned_segs` stack — pack real
-// pointer addresses via `expose_provenance` and re-derive them via
-// `with_exposed_provenance_mut` BY DESIGN. That wildcard-provenance shape is
-// rejected under `-Zmiri-strict-provenance` (correctly — it is the documented
-// structural limit, not a bug), so these tests get ZERO miri coverage in the
-// strict MATRIX above. Run them under PLAIN miri (Stacked Borrows, non-strict
-// provenance — miri's default) instead: the `push.rs` / `drain.rs` /
-// `heap_registry.rs` / `node.rs` pairs ARE validatable there. Small N per test
-// (Large allocs, <=100 iterations) keeps each run miri-affordable. Kept SEPARATE
-// from the strict MATRIX — a strict-clean test must NOT move here and vice-versa.
-// Under plain miri the `expose_provenance`/`with_exposed_provenance_mut` pairs
-// surface as integer-to-pointer cast WARNINGS (validated) — strict miri would
-// hard-ERROR on the same casts, which is the whole reason for a plain job.
-// Verified locally: `regression_xthread_large_free_no_leak` → 3 passed (~156s).
-//
-// NOT here: the explicit-`Heap`-face tests
-// (`regression_heap_xthread_large_free_no_leak`,
-// `regression_xthread_large_free_layout_mismatch`) call `Heap::new()` on a
-// SPAWNED thread; that thread's per-thread primordial 4 MiB segment goes
-// unreachable at thread exit, so miri's leak checker reports it — a per-thread-
-// `Heap` miri artifact, NOT the exposed-provenance path (its p2i re-derivations
-// warn cleanly there too). Suppressing it needs `-Zmiri-ignore-leaks`, which
-// would void the "no_leak" oracle. Their cross-thread reclaim is covered on
-// REAL threads under TSan (see scripts/tsan.mjs) instead.
+// Concurrent terminal-sidecar publication and owner drain. Use the retained
+// behavioral allocator regressions, not the removed deferred/ring models.
 const PLAIN_MATRIX = [
-  // A1 deferred-large stack over the `SeferAlloc`/`HeapCore` (global) face.
-  // R34-5-followup (task #524): `internals` added — this test's
-  // `#![cfg(...)]` gate (added by R34-3/task #522) requires it; without it
-  // this entry (and the two below, before this fix) compiled its `--test`
-  // binary with the module `#[cfg]`d entirely out, so `cargo miri test` ran
-  // "0 tests" and exited 0 -- a silent PASS that validated nothing (the
-  // matrix-selection smoke-guard below only checks the row COUNT, not
-  // whether the resulting binary actually contained any tests). CI's own
-  // `ci.yml` miri-plain job was unaffected (it passes `internals` explicitly
-  // on the command line, independent of this script's MATRIX), but this
-  // LOCAL convenience script silently stopped validating anything for all
-  // three plain-matrix entries from R34-3 until this fix (caught during
-  // R34-5's zero-trust review).
-  ['alloc-global alloc-xthread internals', 'regression_xthread_large_free_no_leak'],
-  // task H1: the `thread_free` aliasing guard. Runs an owner `&mut HeapCore`
-  // alloc loop CONCURRENTLY (real overlap, not the phase-serialised shape of
-  // the test above) with a remote thread CASing the owner's cross-thread
-  // free-stack head. BEFORE the H1 fix (head inline in `HeapCore`) this
-  // reported a retag-write-vs-atomic-load data race under plain miri; AFTER
-  // the fix (head hoisted into the `Sync` `HeapSlot` / `FALLBACK_TFS`, outside
-  // every `&mut HeapCore` retag range) it is clean. Needs the elevated
-  // preemption rate (see PLAIN_MIRIFLAGS) so the scheduler lands a remote CAS
-  // inside a live owner alloc frame.
-  [
-    'alloc-global alloc-xthread internals',
-    'regression_xthread_thread_free_alias_miri',
-  ],
-  // R34-5 (task #524, audit finding G1): the multi-producer SMALL-block
-  // `RemoteFreeRing` push/drain path. The two entries above cover only the
-  // LARGE cross-thread path (deferred_large AtomicPtr stack / thread_free
-  // aliasing). This entry exercises 2 producer threads concurrently pushing
-  // small-block offsets into the SAME per-segment ring (`Node::atomic_u32_at`
-  // CAS-reserve) while the owner allocates (real `&mut HeapCore` overlap),
-  // then force-drains. Needs the elevated preemption rate so the scheduler
-  // interleaves a producer ring-push inside a live owner alloc frame.
-  // Verified locally: 1 passed (~49s).
-  [
-    'alloc-global alloc-xthread internals',
-    'regression_xthread_small_ring_miri',
-  ],
-  // R2-06 (independent src review round 2, task #2008): the
-  // `deferred_next`-vs-diagnostic-snapshot data race. Runs a real owner
-  // `HeapCore::dbg_segment_state_reconciliation()` walk (which reads every
-  // registered segment's header, including Large ones, via
-  // `SegmentHeader::read_at`) CONCURRENTLY with a remote thread's real
-  // cross-thread Large frees (`dealloc_routing` -> `push_large_deferred_free`,
-  // a genuine atomic CAS/store on that segment's `deferred_next`). BEFORE the
-  // fix (`Node::read_struct_with_atomic_word`) this reported a
-  // non-atomic-read-vs-atomic-RMW data race under plain miri; AFTER the fix
-  // it is clean. Needs the elevated preemption rate (see PLAIN_MIRIFLAGS) so
-  // the scheduler lands a remote deferred-free write inside a live owner
-  // `read_at` snapshot.
-  [
-    'alloc-global alloc-xthread alloc-decommit bench-internals internals',
-    'regression_r2_06_header_race_miri',
-  ],
+  ['alloc-global alloc-xthread alloc-decommit internals bench-internals', 'regression_xthread_large_free_no_leak'],
+  ['alloc-global alloc-xthread internals bench-internals', 'regression_xthread_thread_free_alias_miri'],
+  ['alloc-global alloc-xthread internals bench-internals', 'regression_xthread_small_ring_miri'],
+  // One target per invocation: exact filtering must not swallow other binaries.
+  ['alloc-global alloc-xthread internals bench-internals', 'r6_terminal_owner_drain', undefined, 'requested_sizes_one_through_seven_retire_once_and_reissue'],
 ];
 
 const args = process.argv.slice(2);
 const plain = args.includes('--plain');
+const treeBorrows = args.includes('--tree-borrows');
 // The positional args are TEST NAMES (the second column of each MATRIX entry).
 // They are NOT feature names: an entry with several features
 // (`'alloc-global alloc-xthread alloc-decommit fastbin'`) must be selected as a
 // whole by its test name — never token-matched against the space-joined feature
 // string. Filter strictly on the test name (column 2) to keep that distinction.
-const filter = args.filter((a) => a !== '--plain');
+const filter = args.filter((a) => a !== '--plain' && a !== '--tree-borrows');
 const matrix = plain ? PLAIN_MATRIX : MATRIX;
 const knownTests = new Set(matrix.map(([, t]) => t));
 
@@ -233,7 +155,7 @@ const entries = filter.length
 // if it is ZERO — a matrix/filter combination should never resolve to an empty
 // run, which would look green while validating nothing.
 console.log(
-  `[miri] ${plain ? 'PLAIN' : 'strict'} matrix: ${entries.length} entr${
+  `[miri] ${plain ? 'PLAIN' : 'strict'}${treeBorrows ? ' TreeBorrows' : ''} matrix: ${entries.length} entr${
     entries.length === 1 ? 'y' : 'ies'
   } selected — ${
     entries
@@ -253,25 +175,19 @@ if (entries.length === 0) {
   process.exit(2);
 }
 
-// The strict job pins `-Zmiri-strict-provenance`; the plain job DROPS it (the
-// exposed-provenance re-derivations require the default, non-strict model). Both
-// keep `-Zmiri-disable-isolation`.
-// The plain job adds an elevated `-Zmiri-preemption-rate` so the scheduler
-// interleaves a remote cross-thread-free CAS INSIDE a live owner `alloc(&mut
-// self)` frame — the schedule the task H1 aliasing guard
-// (`regression_xthread_thread_free_alias_miri`) and the R34-5 multi-producer
-// small-ring test (`regression_xthread_small_ring_miri`) need to exercise.
-// The remaining plain test (`regression_xthread_large_free_no_leak`) is
-// phase-serialised and indifferent to the rate.
+// Keep strict and non-strict runs separate. The plain run's elevated
+// preemption rate exercises terminal publication inside an owner alloc frame;
+// these are retained behavioral allocator regressions, not legacy ring models.
 const env = {
   ...process.env,
-  MIRIFLAGS: plain
-    ? '-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5'
-    : '-Zmiri-strict-provenance -Zmiri-disable-isolation',
+  MIRIFLAGS: [
+    plain ? '-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5' : '-Zmiri-strict-provenance -Zmiri-disable-isolation',
+    ...(treeBorrows ? ['-Zmiri-tree-borrows'] : []),
+  ].join(' '),
 };
 
 let allOk = true;
-for (const [features, test, packageName] of entries) {
+for (const [features, test, packageName, exactTest] of entries) {
   const packageArg = packageName ? ['-p', packageName] : [];
   const featuresArg = features.trim();
   const featuresArgs = featuresArg ? ['--features', featuresArg] : [];
@@ -296,10 +212,16 @@ for (const [features, test, packageName] of entries) {
       ...featuresArgs,
       '--test',
       test,
+      ...(exactTest ? ['--', '--exact', exactTest] : []),
     ],
     { cwd: REPO_ROOT, env },
   );
-  allOk = verdict(`miri:${test}`, code, out) && allOk;
+  const ranSomething = /running [1-9]\d* test/.test(out);
+  const exactPassed = !exactTest || out.includes(`test ${exactTest} ... ok`);
+  if (!ranSomething || !exactPassed) {
+    console.log(`[miri:${test}] FAIL — no selected invariant completed`);
+  }
+  allOk = verdict(`miri:${test}`, code, out) && ranSomething && exactPassed && allOk;
 }
 
 console.log(`\n[miri] overall: ${allOk ? 'PASS' : 'FAIL'}`);

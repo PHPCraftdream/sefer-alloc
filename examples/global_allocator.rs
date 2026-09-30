@@ -15,6 +15,9 @@ use sefer_alloc::SeferAlloc;
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 fn main() {
+    SeferAlloc::start_maintenance().expect("ownerless maintenance startup");
+    assert!(SeferAlloc::maintenance_running());
+
     // A growing Vec (alloc + realloc churn).
     let mut v: Vec<u64> = Vec::new();
     for i in 0..100_000u64 {
