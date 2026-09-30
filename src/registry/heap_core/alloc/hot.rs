@@ -163,24 +163,15 @@ impl HeapCore {
     /// substrate, no adoption hook — a heap owns its segments exclusively and
     /// never pulls in segments from other heaps). Under `alloc-xthread`,
     /// cross-thread frees that targeted this heap's segments sit in each
-    /// segment's [`RemoteFreeRing`](crate::alloc_core::remote_free_ring) and are
-    /// reclaimed LAZILY by [`AllocCore::find_segment_with_free`] on a free-list
-    /// miss (it drains every owned segment's ring via `reclaim_offset`, which
-    /// trusts the class carried in the ring entry — never the owner's `page_map`,
-    /// unreliable for mixed-class pages, §13). This is the `ShardedRegion` 7b
-    /// shard-reuse discipline; everything else is single-writer (this thread
-    /// owns the slot, ergo its segments).
+    /// segment's [`SmallSidecar`](crate::registry::segment_route::SmallSidecar).
+    /// Small free-list misses discover terminal bitmap publications through
+    /// canonical table roots and reclaim using the issued sidecar class.
+    /// Large requests consume Large descriptor obligations before consulting
+    /// the cache or reserving memory. Owner mutation remains single-writer.
     #[must_use]
     #[inline(always)]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        // 0.3.0 (task A1): drain this heap's cross-thread Large-segment
-        // deferred-free stack before a Large-classified request reaches
-        // `AllocCore::alloc_large`'s slow path. Mirrors the RemoteFreeRing's
-        // lazy-drain discipline (see the comment block below) but is scoped
-        // to ONLY the Large-request case (checked here, not inside
-        // `AllocCore`, because `AllocCore` has no `HeapCore` back-reference
-        // to drain from) — small-classified requests pay zero cost for this
-        // check beyond the one `class_for` call already needed below.
+        // Classify once for Large descriptor draining and magazine routing.
         // Э9 (P7.1, task #160): classify ONCE. `size`, `align` and
         // `class_for(size, align)` are pure functions of `layout`; they were
         // previously computed TWICE per alloc under production (once in the

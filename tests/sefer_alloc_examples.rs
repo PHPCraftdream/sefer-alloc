@@ -24,6 +24,46 @@ use sefer_alloc::SeferAlloc;
 #[global_allocator]
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
+fn report() {
+    let stats = GLOBAL.stats();
+    println!(
+        "segments live ~= {}, tcache hits = {}, dropped/unroutable frees = {}",
+        stats
+            .segments_reserved_total
+            .saturating_sub(stats.segments_released_total),
+        stats.tcache_hits,
+        stats.foreign_or_unroutable_frees,
+    );
+}
+
+#[test]
+fn stats_doc_example_matches_runnable_form() {
+    let doc = include_str!("../src/global/sefer_alloc/diag.rs");
+    let source = include_str!("sefer_alloc_examples.rs");
+    assert!(doc.contains("    /// static GLOBAL: SeferAlloc = SeferAlloc::new();"));
+    let doc_tail = doc
+        .split_once("    /// fn report() {")
+        .expect("stats doc example has report")
+        .1;
+    let doc_end = doc_tail.find("\n    /// }").expect("stats doc report ends");
+    let doc_fn = format!(
+        "fn report() {{\n{}\n}}",
+        doc_tail[..doc_end]
+            .lines()
+            .skip(1)
+            .map(|line| line.strip_prefix("    /// ").expect("doc example line"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let source_tail = source
+        .split_once("fn report() {")
+        .expect("runnable form has report")
+        .1;
+    let source_end = source_tail.find("\n}").expect("runnable report ends");
+    let source_fn = format!("fn report() {{{}\n}}", &source_tail[..source_end]);
+    assert_eq!(doc_fn, source_fn);
+}
+
 /// Allocations routed through the freshly installed global allocator succeed
 /// and round-trip correctly (the `SeferAlloc::new()` install example).
 #[test]
@@ -44,6 +84,7 @@ fn new_global_allocator_serves_allocs() {
 /// the `stats()` / process-wide monitoring doc examples.
 #[test]
 fn stats_snapshot_fields_are_readable() {
+    report();
     // Touch the allocator so its counters are non-trivial.
     let mut v: Vec<u8> = Vec::with_capacity(256);
     v.resize(256, 0x11);

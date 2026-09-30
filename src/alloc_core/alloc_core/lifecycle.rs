@@ -453,10 +453,7 @@ impl Drop for AllocCore {
         // cached entries above are still being read through it. (Before
         // R2-12 the span was leaked for the process lifetime — defensible
         // for registry heaps, an unbounded leak under standalone core
-        // churn; the directory sidecar's token gets the same treatment.
-        // `dirty_by_class`'s `PerClassDirty` stays a documented
-        // process-global leak: it is CAS-published cross-thread, so no
-        // single owner could hold a release token.)
+        // churn; the directory sidecar's token gets the same treatment.)
         #[cfg(feature = "large-cache-extended")]
         if !self.large_cache_extension.is_null() {
             // SAFETY: see the `#[allow(unsafe_code)]` justification on

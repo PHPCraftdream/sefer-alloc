@@ -2,14 +2,12 @@
 //! Inversion), behind the `alloc-core` feature.
 //!
 //! Re-exports only — no logic lives here (per the one-export-per-file rule).
-//! `os` and `node` are two of this tree's named tier-1 `unsafe` seams, but
-//! not the complete inventory (oxx R2-07): `large_cache_extended` and
-//! `platform::{dirty_by_class,sidecar}` are also tier-1
-//! `#![allow(unsafe_code)]` modules, and several otherwise-safe files carry
-//! individually-documented tier-2 `#[allow(unsafe_code)]` items (e.g.
-//! `bootstrap.rs`'s `hardened`-only gen-table init,
-//! `small::alloc_core_small_reclaim`'s `dbg_push_to_ring`,
-//! `segment::remote_free_ring`'s `ops.rs` test-buffer helpers). Do not
+//! Tier-1 `#![allow(unsafe_code)]` seams in this tree (oxx R2-07) are
+//! `platform::{os,node,sidecar}`, `large::large_cache_extended`, and
+//! `segment::segment_table::route_slots`. Otherwise-safe files also carry
+//! individually documented tier-2 `#[allow(unsafe_code)]` items (e.g.
+//! `alloc_core::bootstrap`'s `hardened`-only gen-table init and
+//! `alloc_core::lifecycle`'s large-cache-extension teardown). Do not
 //! hand-count these — per `CLAUDE.md`'s "Active rules" unsafe-inventory
 //! convention, the self-verifying, comment-proof command
 //! `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/alloc_core` enumerates
@@ -26,13 +24,14 @@ mod alloc_core;
 mod config;
 /// Group module: the large/huge allocation path — `alloc_large` + slow path + reclaim, the per-shard large-cache decay/eviction cluster, the experimental `large-cache-extended` sidecar, and the cross-thread deferred-free Treiber stack.
 mod large;
-/// Group module: OS & platform shims (os, numa, size_classes) plus the confined raw-memory unsafe seams (node, sidecar, dirty_by_class).
+/// Group module: OS & platform shims (os, numa, size_classes) plus the confined raw-memory unsafe seams (node, sidecar).
 mod platform;
 /// Group module: the segment substrate — the per-segment metadata header
 /// family (`segment_header/`), the self-hosted `SegmentTable` registry, the
 /// per-class `segment_directory` + its `directory_stats` counters, the
-/// per-segment `remote_free_ring`, the `segment_layout` geometry, and the
-/// per-segment bitmap family (`bitmap/`).
+/// route slots (`segment_table/route_slots.rs`), the `segment_layout`
+/// geometry, and the per-segment bitmap family (`bitmap/`). Production
+/// foreign-free ingress uses the registry's pinned `segment_route` sidecars.
 mod segment;
 /// Group module: the small/medium allocation path — the small
 /// alloc/dealloc/carve hot cluster, directory-accelerated segment lookup,
@@ -151,7 +150,7 @@ pub(crate) use large::large_cache_extended;
 
 pub use alloc_core::AllocCore;
 /// The dropped-free counter, re-exported crate-wide so
-/// `HeapCore::dealloc_foreign_routing` can bump it (like
+/// `HeapCore::publish_foreign` can bump it (like
 /// [`LARGE_ZERO_PASS_CALLS`]). Not public API; read via
 /// `AllocCore::dbg_foreign_or_unroutable_frees`.
 #[cfg(feature = "alloc-xthread")]

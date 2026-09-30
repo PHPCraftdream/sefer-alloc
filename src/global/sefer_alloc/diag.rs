@@ -38,8 +38,8 @@ impl SeferAlloc {
 
 impl SeferAlloc {
     /// A cheap, process-wide diagnostic snapshot of this allocator's internal
-    /// counters — cache-hit rates, cross-thread reclaim/overflow counts, and
-    /// segment/heap totals. See [`AllocStats`] for what each field means and
+    /// counters — cache hits, Large cross-thread retirements, dropped frees,
+    /// and segment/heap totals. See [`AllocStats`] for what each field means and
     /// which feature flags it depends on.
     ///
     /// **Cost.** Without `alloc-stats` (the default — it is not part of
@@ -73,15 +73,17 @@ impl SeferAlloc {
     /// use sefer_alloc::SeferAlloc;
     ///
     /// #[global_allocator]
-    /// static A: SeferAlloc = SeferAlloc::new();
+    /// static GLOBAL: SeferAlloc = SeferAlloc::new();
     ///
     /// fn report() {
-    ///     let stats = A.stats();
+    ///     let stats = GLOBAL.stats();
     ///     println!(
-    ///         "segments live ~= {}, tcache hits = {}, ring overflows = {}",
-    ///         stats.segments_reserved_total.saturating_sub(stats.segments_released_total),
+    ///         "segments live ~= {}, tcache hits = {}, dropped/unroutable frees = {}",
+    ///         stats
+    ///             .segments_reserved_total
+    ///             .saturating_sub(stats.segments_released_total),
     ///         stats.tcache_hits,
-    ///         stats.ring_overflows,
+    ///         stats.foreign_or_unroutable_frees,
     ///     );
     /// }
     /// ```

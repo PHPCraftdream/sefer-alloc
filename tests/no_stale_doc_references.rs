@@ -2775,3 +2775,28 @@ fn oxx_r2_07_realloc_unsafe_fn_claims_are_accurate() {
         );
     }
 }
+
+#[test]
+fn r9_current_stats_and_unsafe_inventory_docs_use_live_routes() {
+    let core = include_str!("../src/alloc_core/mod.rs");
+    let stats = include_str!("../src/global/alloc_stats.rs");
+    let face = include_str!("../src/global/sefer_alloc/mod.rs");
+    let lifecycle = include_str!("../src/alloc_core/alloc_core/lifecycle.rs");
+    let hot = include_str!("../src/registry/heap_core/alloc/hot.rs");
+
+    for stale in ["dirty_by_class", "remote_free_ring"] {
+        assert!(
+            !core.contains(stale),
+            "active alloc_core inventory names {stale}"
+        );
+    }
+    assert!(core.contains("segment::segment_table::route_slots"));
+    assert!(core.contains("registry's pinned `segment_route` sidecars"));
+    assert!(!lifecycle.contains("PerClassDirty"));
+    assert!(!hot.contains("crate::alloc_core::remote_free_ring"));
+    assert!(hot.contains("crate::registry::segment_route::SmallSidecar"));
+    assert!(!face.contains("dealloc_foreign_routing"));
+    assert!(face.contains("HeapCore::publish_foreign"));
+    assert!(stats.contains("This is **not** a ring-overflow count"));
+    assert!(stats.contains("HeapCore::publish_foreign"));
+}

@@ -7,10 +7,10 @@
 //! dbg_*` — reachable only by this crate's own tests, not by a downstream
 //! consumer. A production process running `SeferAlloc` as its
 //! `#[global_allocator]` had no way to see how many segments were live, how
-//! often the large-object cache hit, how many cross-thread frees the ring
-//! dropped, or how many heap slots the registry has minted — all of that was
-//! invisible until something went wrong badly enough to abort (OOM, ring
-//! saturation, ...). [`SeferAlloc::stats`](super::SeferAlloc::stats) closes
+//! often the large-object cache hit, how many frees could not be routed or
+//! published, or how many heap slots the registry has minted — all of that was
+//! invisible until something went wrong badly enough to abort (e.g. OOM).
+//! [`SeferAlloc::stats`](super::SeferAlloc::stats) closes
 //! that gap: one cheap, lock-free snapshot a consumer (e.g. a metrics
 //! exporter) can poll on a timer.
 //!
@@ -37,11 +37,11 @@
 //!
 //! ## Diagnostic, not accounting-grade
 //!
-//! Every field is a `Relaxed`-ordered `AtomicU64`/`AtomicU32` load. There is
-//! no cross-field synchronisation: two fields read a few nanoseconds apart
-//! may reflect slightly different points in concurrent activity on other
-//! threads. Fine for monitoring and alerting; do not treat any field (or a
-//! computed delta) as an exact, linearizable count.
+//! Counter reads use relaxed atomics; the optional hit-counter walk also uses
+//! an Acquire load to check each slot's initialization before reading it.
+//! There is no cross-field synchronisation: fields may reflect different
+//! points in concurrent activity. Fine for monitoring and alerting; do not
+//! treat the snapshot (or a computed delta) as an exact, linearizable count.
 
 /// A process-wide snapshot of `SeferAlloc`'s diagnostic counters, returned by
 /// [`SeferAlloc::stats`](super::SeferAlloc::stats).
@@ -84,9 +84,11 @@ pub struct AllocStats {
     /// equality.
     pub decommit_calls: u64,
 
-    /// Completed Large terminal publications since process start, including
-    /// cache admission and OS release. Always live under `alloc-global`;
-    /// local direct frees do not increment this remote-retirement counter.
+    /// Completed owner-side Large remote retirements since process start,
+    /// whether the retired reservation enters the cache or is released to the
+    /// OS. A terminal publication alone does not increment this counter;
+    /// the owner must claim and reclaim it. Always live under `alloc-global`;
+    /// local direct frees do not increment it.
     pub large_xthread_reclaimed: u64,
 
     /// Number of small allocations served from a thread's per-class magazine
@@ -115,7 +117,7 @@ pub struct AllocStats {
     /// available.
     ///
     /// `segments_reserved_total - segments_released_total` is the
-    /// process-wide **live segment count** at snapshot time (modulo the
+    /// approximate process-wide **live segment count** (subject to the
     /// relaxed-ordering skew documented on the struct) — the single most
     /// useful field for spotting a segment leak (classes A1/D2) in
     /// production before it escalates to an OOM abort.
@@ -132,21 +134,20 @@ pub struct AllocStats {
     /// see `SeferAlloc::stats()`).
     pub heaps_claimed_high_water: u64,
 
-    /// Cumulative, process-wide count of `dealloc` calls that DROPPED a free
-    /// because it violates the `GlobalAlloc` contract instead of applying it:
-    /// a foreign pointer, a double free against an already-released segment,
-    /// or a cross-thread free whose `Layout` does not match the live
-    /// segment's current occupant (a stale/fabricated free). Best-effort: a
-    /// pointer into unmapped memory faults on the header read before it can
-    /// reach any of these checks, so this is a lower bound, not an exhaustive
-    /// audit.
+    /// Cumulative, process-wide count of frees dropped when address-only
+    /// route lookup finds no matching live route or a pinned route's terminal
+    /// sidecar rejects publication. This is **not** a ring-overflow count:
+    /// there is no ring on the current foreign-free path. It is diagnostic,
+    /// not an exhaustive audit of invalid `GlobalAlloc::dealloc` calls;
+    /// callers still must supply a live allocation and its exact `Layout`.
     ///
     /// **Always available — no `alloc-stats` required.** `alloc-global`
     /// always implies `alloc-xthread` (R5-01), and the cross-thread routing
-    /// drop branches (`HeapCore::dealloc_foreign_routing`) increment this
-    /// counter unconditionally, not gated behind `alloc-stats`. A healthy
-    /// program keeps this at `0`; a non-zero, growing value means something
-    /// is calling `dealloc` outside its documented contract.
+    /// drop branches (`HeapCore::publish_foreign`) increment this counter
+    /// unconditionally, not gated behind `alloc-stats`. A standalone
+    /// `AllocCore::dealloc` also counts its rejected foreign branch when
+    /// `alloc-stats` is enabled. A healthy program keeps this at `0`;
+    /// investigate a non-zero, growing value as a dropped free.
     pub foreign_or_unroutable_frees: u64,
 
     /// Number of times `claim_with_config` found an already-materialised
@@ -162,8 +163,8 @@ pub struct AllocStats {
     /// effectively unsupported — see `with_config`'s doc). In the normal
     /// single-global-allocator case this stays at `0`.
     ///
-    /// Unlike the hot-path counters (`tcache_hits`, `large_cache_hits`,
-    /// `foreign_or_unroutable_frees`), this counter's increment is NOT gated
+    /// Unlike the hit counters (`tcache_hits`, `large_cache_hits`), this
+    /// counter's increment is NOT gated
     /// behind `alloc-stats`: it lives on the cold claim/bind path (at most
     /// one increment per thread bind, never on the alloc/dealloc fast path),
     /// so there is no perf cost to always compiling it in. Requires the

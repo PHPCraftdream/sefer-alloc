@@ -47,10 +47,11 @@
 //!
 //! ## No-panic discipline -- how it is upheld
 //!
-//! **Failure paths (the common case) never panic.** `alloc`/`realloc` return
-//! null on failure (OOM, a foreign pointer, a layout we refuse to serve);
-//! `dealloc` is a safe no-op on any failure (an unrecognised block is leaked
-//! rather than corrupting state); `alloc_zeroed` delegates to
+//! **Ordinary service failures do not panic.** `alloc`/`realloc` return null
+//! on OOM or a layout they cannot serve. A missing foreign route or rejected
+//! sidecar publication drops the free rather than mutating another heap;
+//! this defensive behavior does not make an invalid `dealloc` pointer or
+//! `Layout` a valid `GlobalAlloc` call. `alloc_zeroed` delegates to
 //! `HeapCore::alloc_zeroed` (an explicit zero-fill for a reused/non-virgin
 //! block; under the opt-in `virgin-zero-skip` feature, a genuinely virgin
 //! bump-carved block skips the fill entirely — see that method's own doc):
@@ -64,10 +65,14 @@
 //!   free a pointer. `CurrentHeapForDealloc::Own` routes to that heap's
 //!   `HeapCore::dealloc` (own-thread or cross-thread via `dealloc_routing` —
 //!   `alloc-global` unconditionally implies `alloc-xthread`, R5-01);
-//!   `ForeignNoBind` (TLS never bound, or torn down) routes directly through
-//!   the heap-instance-independent `HeapCore::dealloc_foreign_routing`,
-//!   without constructing a `*mut HeapCore` at all. On any failure this is a
-//!   no-op (the block is leaked safely, never corrupted).
+//!   `ForeignNoBind` (TLS never bound, or torn down) calls the heap-instance-
+//!   independent `HeapCore::publish_foreign`, without constructing a
+//!   `*mut HeapCore`. It looks up the address in the route directory and
+//!   publishes through an independently pinned sidecar; an idle fallback can
+//!   reclaim synchronously. A missing route or rejected publication drops the
+//!   free and increments `foreign_or_unroutable_frees`. The caller's live-
+//!   allocation/`Layout` contract remains required; this is not a promise
+//!   that invalid or unmapped pointers are safe to pass.
 //! - `realloc`: an in-place fast path for same-class / compatible growth (C2:
 //!   own-thread reallocs delegate to `AllocCore::realloc`, which short-circuits
 //!   when the block can stay put), falling back to `alloc` + copy + `dealloc`
