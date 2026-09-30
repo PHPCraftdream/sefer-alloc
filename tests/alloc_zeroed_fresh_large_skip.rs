@@ -134,7 +134,7 @@ fn fresh_large_alloc_zeroed_is_all_zero() {
     // OS-zeroed" from "zeroed redundantly" — the counter can. On a real OS
     // backend the fresh-reservation skip MUST fire (delta 0: reintroducing an
     // unconditional memset turns this red). Under miri the freshness signal
-    // is withheld (miri's std::alloc fallback does NOT zero), so the explicit
+    // is withheld (miri's System.alloc fallback does NOT zero), so the explicit
     // zero MUST run (delta 1: the pre-R9-1 bug — trusting miri freshness —
     // turns this red under miri). Gated on `alloc-stats`: the increment is
     // only compiled under that feature, so without it `zero_delta` is always
@@ -149,7 +149,7 @@ fn fresh_large_alloc_zeroed_is_all_zero() {
     assert_eq!(
         zero_delta, 1,
         "fresh large alloc_zeroed under miri must run the explicit zero pass \
-         (miri's std::alloc fallback gives no zero guarantee — R9-1)"
+         (miri's System.alloc fallback gives no zero guarantee — R9-1)"
     );
     #[cfg(not(feature = "alloc-stats"))]
     let _ = (zero_passes_before, zero_delta);
@@ -363,7 +363,7 @@ fn fresh_large_alloc_zeroed_via_heapcore() {
     assert_eq!(
         zero_delta, 1,
         "HeapCore::alloc_zeroed under miri must always run the explicit zero \
-         pass (miri's std::alloc fallback gives no zero guarantee — R9-1)"
+         pass (miri's System.alloc fallback gives no zero guarantee — R9-1)"
     );
     #[cfg(not(feature = "alloc-stats"))]
     let _ = (zero_passes_before, zero_delta);

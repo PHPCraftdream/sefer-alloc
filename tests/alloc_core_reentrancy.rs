@@ -29,11 +29,10 @@
 //! no path from `alloc`/`dealloc`/`realloc`/`alloc_zeroed` to a global
 //! allocation.
 
-// Under miri, `AllocCore` uses `std::alloc` (the miri aperture in `os.rs`), so
-// the M5 reentrancy invariant is inapplicable. Additionally, the `#[global_allocator]`
-// Counting wrapper triggers a Stacked Borrows violation inside `std`'s Windows
-// System allocator — an upstream miri limitation, not our bug. This test is
-// meaningful only on the real (non-miri) path.
+// Miri's direct-System aperture also requires M5. A separate counting-wrapper
+// probe reported a Windows System teardown violation with an unproven cause.
+// This existing counter target stays native-only; installed-Sefer Miri
+// acceptance is tracked separately and is not yet complete.
 #![cfg(not(miri))]
 #![cfg(feature = "alloc-core")]
 // R11-5: skip under `numa_shim_mock`. The mock's `thread_local! Vec<MockCall>`
