@@ -10,7 +10,7 @@ pub(crate) enum Mapping {
 }
 
 #[cfg(all(windows, target_pointer_width = "64"))]
-mod native {
+mod platform {
     use super::{c_void, Mapping};
     use core::mem::{offset_of, size_of, MaybeUninit};
 
@@ -80,7 +80,7 @@ mod native {
 }
 
 #[cfg(target_os = "linux")]
-mod native {
+mod platform {
     use super::{c_void, Mapping};
 
     const ENOMEM: i32 = 12;
@@ -117,4 +117,4 @@ mod native {
 }
 
 #[cfg(any(target_os = "linux", all(windows, target_pointer_width = "64")))]
-pub(crate) use native::mapping_at;
+pub(crate) use platform::mapping_at;
