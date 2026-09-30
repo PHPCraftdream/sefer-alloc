@@ -13,8 +13,8 @@ fn terminal_publication_signatures_consume_the_pin() {
     // alone cannot detect a regression of the ownership boundary.
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/compile_fail/route_publication_requires_unsafe/Cargo.toml");
-    let target = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join("route_publication_requires_unsafe");
+    let target =
+        std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("route_publication_requires_unsafe");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
     let output = std::process::Command::new(cargo)
         .args(["check", "--locked", "--offline", "--manifest-path"])
