@@ -193,9 +193,8 @@ pub struct EpochRegion<T> {
     /// push releases the queue lock; cleared by `drain_remote_free` while
     /// HOLDING that lock, before it takes the queue. Relaxed throughout: it
     /// orders no data — the queue's own mutex carries every happens-before
-    /// edge — and a lost race only costs one spurious lock acquisition or one
-    /// owner-op of extra drain latency, never a lost index (the full argument
-    /// is in `drain_remote_free`).
+    /// edge. A negative observation may skip an opportunistic drain, but
+    /// cannot justify `insert` returning `Err` without checking the queue.
     remote_free_pending: core::sync::atomic::AtomicBool,
     /// Number of currently-live (occupied) entries. `AtomicUsize` so a remote
     /// remover can decrement it without the owner mutex (Phase 7b).
@@ -309,7 +308,9 @@ impl<T> EpochRegion<T> {
     /// mutex, the one lock producers contend on. The swap keeps one paid-for
     /// buffer on each side across drain cycles; see the `drain_scratch` doc for
     /// the steady-state argument.
-    fn drain_remote_free(&self, state: &mut FreeState) {
+    /// Lock order: writer state, then remote queue; producers take only the queue.
+    /// Returns whether the queue mutex was acquired.
+    fn drain_remote_free(&self, state: &mut FreeState, force: bool) -> bool {
         // Fast path: no remote frees → no lock acquisition. Before #1989 this
         // comment described an optimization that did not exist — the lock was
         // taken unconditionally and the `is_empty()` check happened INSIDE it,
@@ -332,15 +333,15 @@ impl<T> EpochRegion<T> {
         // either (a) it was already in the queue when the drain took it — it is
         // drained now — or (b) it was not, in which case its pusher has still
         // to run its `store(true)`, leaving the flag set for the next drain.
-        // The only cost of losing the race is a spurious `true` (one wasted
-        // lock acquisition on the next owner op) or a deferred index (drained
-        // one owner op later) — the same eventual-drain cadence this design
-        // already accepts. An index can never be lost.
-        if !self
-            .remote_free_pending
-            .load(core::sync::atomic::Ordering::Relaxed)
+        // A positive hint can be spurious; a negative hint can defer a drain.
+        // Neither gives a fixed owner-operation latency bound. An insert
+        // with no local free slot checks the queue before returning Err.
+        if !force
+            && !self
+                .remote_free_pending
+                .load(core::sync::atomic::Ordering::Relaxed)
         {
-            return;
+            return false;
         }
         // We peek-lock: swap the queue with the owner's scratch buffer and
         // release the lock; the index-by-index transfer into the free list
@@ -366,7 +367,7 @@ impl<T> EpochRegion<T> {
             self.remote_free_pending
                 .store(false, core::sync::atomic::Ordering::Relaxed);
             if q.is_empty() {
-                return;
+                return true;
             }
             debug_assert!(
                 state.drain_scratch.is_empty(),
@@ -392,6 +393,7 @@ impl<T> EpochRegion<T> {
             }
             state.free.push(index);
         }
+        true
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1), or
@@ -405,9 +407,10 @@ impl<T> EpochRegion<T> {
     ///
     /// # Errors
     ///
-    /// Returns `Err(value)` (handing the value back unchanged) when the region
-    /// is full — every slot is occupied or retired. The region does not grow,
-    /// so a full region stays full until a slot is `remove`d.
+    /// Returns `Err(value)` (handing the value back unchanged) when no
+    /// reusable slot is available after inspecting the free list and remote
+    /// queue. A remote eviction still in progress may not have enqueued its
+    /// index yet; in that overlapping case the insertion may return `Err`.
     ///
     /// # Panics
     ///
@@ -426,8 +429,13 @@ impl<T> EpochRegion<T> {
         // Owner drains any indices a remote remover freed since its last op
         // (single-consumer drain). This is what makes a remote `remote_evict`
         // eventually visible to the owner's free list.
-        self.drain_remote_free(&mut state);
+        let checked_queue = self.drain_remote_free(&mut state, false);
         // Pop a vacant slot; if none, give the value back honestly (no panic).
+        if state.free.is_empty() && !checked_queue {
+            // A relaxed false hint can lag a completed remote enqueue. The
+            // queue mutex, not the hint, decides whether this shard is full.
+            self.drain_remote_free(&mut state, true);
+        }
         let Some(index) = state.free.pop() else {
             return Err(value);
         };
@@ -503,7 +511,7 @@ impl<T> EpochRegion<T> {
         let mut state = self.state.lock().expect("writer mutex poisoned");
         // Drain remote frees opportunistically (cheap if empty) so the owner's
         // free list stays current even under cross-thread churn.
-        self.drain_remote_free(&mut state);
+        self.drain_remote_free(&mut state, false);
         if reusable {
             state.free.push(handle.index);
         }
@@ -652,6 +660,14 @@ impl<T> EpochRegion<T> {
             Err(e) => e.into_inner(),
         };
         (q.as_ptr() as usize, q.len(), q.capacity())
+    }
+
+    /// Diagnostics only: override the advisory hint to exercise a stale read.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub(crate) fn _set_remote_free_hint_for_tests(&self, pending: bool) {
+        self.remote_free_pending
+            .store(pending, core::sync::atomic::Ordering::Relaxed);
     }
 }
 

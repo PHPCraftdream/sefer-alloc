@@ -578,6 +578,17 @@ impl<T> ShardedRegion<T> {
         let shard = self.inner.shards.get(usize::from(shard))?;
         Some(shard._remote_free_queue_buffer_identity_for_tests())
     }
+
+    /// Diagnostics only: force a stale advisory hint for a valid shard.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn _set_remote_free_hint_for_tests(&self, shard: u16, pending: bool) -> bool {
+        let Some(shard) = self.inner.shards.get(usize::from(shard)) else {
+            return false;
+        };
+        shard._set_remote_free_hint_for_tests(pending);
+        true
+    }
 }
 
 impl<T> Default for ShardedRegion<T> {
