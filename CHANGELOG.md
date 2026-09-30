@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Independent source-only XS review reports one experimental false-full P2
   and three production work/storage P3 observations. HS handles the queue
-  fallback; XXS advises on the coupled production policies and lifecycle.
-- No R11 fix acceptance or measured speedup is claimed yet. See
+  fallback, now accepted with native and weak-negative-hint model controls.
+  XXS advice is accepted; three disjoint production implementations are active.
+- No production-cost fix acceptance or measured speedup is claimed yet. See
   `docs/perf/round-manifests/SRC_REVIEW_R11_MANIFEST.md`; R10's successful
   checks are not a certificate for these future changes or release GO.
 
