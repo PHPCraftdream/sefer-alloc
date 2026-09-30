@@ -60,7 +60,8 @@ impl AllocCore {
     /// `ptr`'s segment's `BinTable[class_idx]` free list, or `FREE_LIST_NULL`
     /// (`u32::MAX`) if the list is empty. Lets the batch-drain regression test
     /// observe `set_head`'s exact post-drain value directly (partial drain →
-    /// remaining head; full drain → NULL).
+    /// remaining head; full drain → NULL). Also returns `FREE_LIST_NULL`
+    /// for foreign or Large pointers and out-of-range class indices.
     ///
     /// R2-05 (independent src review round 2, task #2007): reads through the
     /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
@@ -81,14 +82,21 @@ impl AllocCore {
         if class_idx >= SMALL_CLASS_COUNT {
             return FREE_LIST_NULL;
         }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return FREE_LIST_NULL;
+        }
         SegmentMeta::new(base).bin_table().head(class_idx)
     }
 
     /// TEST-ONLY (Э7, task #161): whether `ptr`'s block is currently marked FREE
     /// (on a free list) in its segment's alloc bitmap — the M2 double-free bit.
-    /// `false` ⟺ the block is ALLOCATED (handed out). Lets the batch-drain test
-    /// assert every drained block ends bitmap-allocated, exactly as `pop_free`
-    /// leaves it.
+    /// For Small/Primordial blocks, `false` means the bit is not marked FREE.
+    /// Foreign and Large pointers also return `false`; this is not a Large
+    /// allocation-status query. Lets the batch-drain test assert every drained
+    /// block ends bitmap-allocated, exactly as `pop_free` leaves it.
     ///
     /// R2-05 (independent src review round 2, task #2007): reads through the
     /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived
@@ -100,6 +108,12 @@ impl AllocCore {
         let Some(base) = self.table.canonical_base_of(candidate) else {
             return false;
         };
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return false;
+        }
         let off = (ptr as usize - base as usize) as u32;
         SegmentMeta::new(base).alloc_bitmap().is_free(off)
     }
