@@ -2903,7 +2903,7 @@ for completeness.
 
 65. **[D] R1-03 / H1 — reuse pooled empty small segments as carve targets on `reserve`.**
 
-    - **Status:** OPEN — design only. Commit `2b27b794` corrected the docs (the pool is a same-class free-list reserve, not a carve reserve) and made a segment pooled during the scan's own ring drain reusable in the same call. Carving a pooled segment for another class was not implemented.
+    - **Status:** OPEN — same-class pool-versus-carve design question survives the terminal cutover; the old ring-drain-specific path does not.
     - **Current-number-or-verdict:** not measured. The review observed a fresh 4 MiB reservation (`r1=3 → r2=4`) while a committed empty segment sat in the pool (`pooled_after=1`) after a 16 B → 48 B class switch. The cost is up to `pool_cap × 4 MiB` of committed but unusable RSS plus extra reserve syscalls and page faults on class-switching workloads.
     - **Next trigger:** a class-switching workload (phases 16 B → 48 B → 200 B, producer→consumer pipelines) that shows extra `segments_reserved_total` or RSS. Gate: `segments_reserved_total`, commit/RSS (`proc-memstat`), p99 alloc, with a "pool-pop-as-carve" counter as the path-activation oracle. Re-init cost is about two 32 KiB bitmap memsets plus bump/BinTable reset (`payload_virgin=false`).
     - **Evidence:** review §R1-03 and §5 H1; `tests/r1_03_pool_docs_contract.rs`.
@@ -2918,8 +2918,8 @@ for completeness.
 67. **[L] R1-11 / H8 — `#[inline(always)]` on large cold bodies.**
 
     - **Status:** OPEN — not measured.
-    - **Current-number-or-verdict:** the review names `drain_heap_overflow` (with its closures) and `dealloc_own_thread_with_base` as large bodies forced inline into cold paths, growing code size. No `cargo bloat` or iai numbers exist.
-    - **Next trigger:** a code-size or i-cache investigation. Gate: `cargo bloat` plus iai `Ir` before and after dropping the attribute from each named function, one function per A/B.
+    - **Current-number-or-verdict:** `drain_heap_overflow` was removed by terminal-sidecar cutover. `dealloc_own_thread_with_base` remains the only named current candidate; no `cargo bloat` or iai numbers exist for this snapshot.
+    - **Next trigger:** a current-tree code-size or i-cache investigation of the remaining function, with `cargo bloat` plus iai `Ir` A/B and a path-activation oracle.
     - **Evidence:** review §R1-11 and §5 H8.
 
 68. **[A] oxx R2-01 — finalizing an emptied `small_cur` at cursor switch shipped without an RSS/commit gate.**
@@ -2929,19 +2929,19 @@ for completeness.
     - **Next trigger:** the next RSS/commit round, or a phase-switching workload report. Review hypothesis H1: phases that switch size class, measuring commit/RSS through `proc-memstat`, with `small_empty_orphan.count` and `segments_released_total` as the path-activation oracle, A/B against `969933b9^`.
     - **Evidence:** `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` §R2-01 and §5 H1.
 
-69. **[D] oxx R2 H2 — let `trim_current_thread()` release an empty `small_cur` too.**
+69. **[A] oxx R2 H2 — empty-current cold trim implemented; RSS/cold-restart gate remains open.**
 
-    - **Status:** OPEN — design only.
-    - **Current-number-or-verdict:** not measured. After R2-01 an empty cursor is finalized once it stops being the cursor, but trim still leaves the current cursor committed even when empty. The cost is a cold reservation on the next alloc.
+    - **Status:** OPEN — implementation shipped; performance/retention tradeoff not measured.
+    - **Current-number-or-verdict:** `766442ef` implements zero-credit current Small release after moving the cursor to Primordial. The current segment with live credits remains mapped; re-claim/reallocation after cold trim is covered by behavioral tests. No RSS or first-allocation latency improvement is claimed.
     - **Next trigger:** a trim/RSS round. Measure in the `R31_10_TRIM_CURRENT_THREAD_RSS_GATE` setup: RSS after trim against first-alloc latency after trim.
-    - **Evidence:** review §5 H2.
+    - **Evidence:** original review §5 H2; `766442ef`, `9b7dbbca`; `tests/r7_cold_small_trim_current.rs` and `tests/r7_cold_small_trim_directory.rs` passed locally during round-8 owner-sweep integration (2026-09-30).
 
-70. **[D] oxx R2 H3 — the coarse `dirty_segments` bitmap is write-only in steady state under `class-aware-dirty`.**
+70. **[D] oxx R2 H3 successor — measure terminal-sidecar foreign-publish contention.**
 
-    - **Status:** OPEN — design only; not measured.
-    - **Current-number-or-verdict:** producers do a contended `fetch_or` on every remote note (`heap_core_xthread/overflow.rs`), but the consumer reads the coarse map only before the per-class sidecar exists or after the OOM latch (`alloc_core_small/directory.rs`). Stale bits pile up until the latch fires, then cause a one-off scan spike. The write cannot simply be dropped: a failed concurrent `get_or_try_init` can set the latch after the sidecar is live, so a full per-class pass on the latch transition would be needed.
-    - **Next trigger:** a cross-thread fan-in performance round. Gate: fan-in bench, HITM (`perf c2c` on Linux), iai `Ir`.
-    - **Evidence:** review §5 H3.
+    - **Status:** OPEN — original coarse-dirty-bit hypothesis is superseded; current sidecar contention and memory cost are unmeasured.
+    - **Current-number-or-verdict:** the old `class-aware-dirty` feature and `heap_core_xthread/overflow.rs` producer are removed. Current Small/Primordial foreign publication is `SmallSidecar::publish` through a pinned directory route; its 32 KiB pending bitmap and 256 KiB class table per fully materialized segment are logical bytes, not RSS. No speedup or regression number exists for this cutover.
+    - **Next trigger:** after correctness acceptance, measure current `GlobalAlloc` fan-in latency, HITM (`perf c2c` on Linux), iai `Ir`, and RSS/commit against an immutable prior source identity; prove the sidecar route is active. Do not reuse the old dirty-map verdict.
+    - **Evidence:** historical review §5 H3; current `src/registry/segment_route/small_sidecar.rs`, `src/registry/heap_core_xthread/routing.rs`, `docs/REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`.
 
 71. **[L] oxx R2-03 / H4 — `dealloc_batch` no longer binds a heap; the latency and RSS effect is unmeasured.**
 

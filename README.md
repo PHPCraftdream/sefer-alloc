@@ -13,11 +13,12 @@
 [![unsafe: confined](https://img.shields.io/badge/unsafe-confined%20to%20named%20seams-yellow.svg)](#where-unsafe-lives-the-complete-list)
 
 > A safe-by-construction, **100 % Rust** memory toolkit: a drop-in
-> `#[global_allocator]` and a typed handle store over one verified segment
-> substrate. Compiler-enforced `unsafe` confinement, **no C / C++ libraries
+> `#[global_allocator]` and an independent typed handle store.
+> Compiler-enforced `unsafe` confinement, **no C / C++ libraries
 > pulled in** (no `libnuma`, no `mimalloc`, no `jemalloc`, no `snmalloc` /
-> `tcmalloc`) — and **~12–35× faster than `mimalloc`** on cached large
-> alloc/free (0.3.0, single-host criterion — see [Performance](#performance)).
+> `tcmalloc`). Historical single-host cached-large measurements are in
+> [Performance](#performance); the terminal-sidecar snapshot has no new
+> performance or release GO.
 
 ---
 
@@ -34,10 +35,10 @@ Or via cargo:
 cargo add sefer-alloc --features production
 ```
 
-The `production` feature is the recommended set for any long-running
-multi-thread or async workload. It is shorthand for
-`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty` — the drop-in
-`GlobalAlloc` face, lock-free cross-thread free, OS page decommit, and
+The `production` feature is the intended long-running bundle, pending
+terminal-sidecar acceptance. It is shorthand for
+`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` — the drop-in
+`GlobalAlloc` face, terminal-sidecar cross-thread free, OS page decommit, and
 the per-thread fast-bin magazine. Without `alloc-decommit` the
 `SegmentTable`'s free-list still recycles freed large-segment slots
 (large-alloc/free churn keeps working), but empty small segments cannot
@@ -54,10 +55,13 @@ For the bare `no_std` + `alloc` handle-store core, see
 
 ## Basic usage
 
-Drop-in `#[global_allocator]` — three lines, zero configuration. Every
+Drop-in `#[global_allocator]` — three lines for basic allocation. Every
 `Vec` / `Box` / `String` / `HashMap` allocation in your process
 (including those made by `tokio`, `rayon`, `serde_json`, etc.) goes
 through `sefer-alloc`.
+This alone does **not** start autonomous maintenance; an application
+depending on ownerless progress must call and handle
+`SeferAlloc::start_maintenance()` during initialization.
 
 ```rust
 use sefer_alloc::SeferAlloc;
@@ -93,9 +97,8 @@ deployments, see [Configuration](#configuration) below.
 >
 > **Idle alone does not reclaim any of it.** A thread/process that goes
 > quiet after a burst of large allocations does not shrink its retained
-> large-object cache on its own — decay is inline and event-driven (it
-> only runs from inside the large alloc/dealloc slow path, by design:
-> this project never spawns a background thread), so with no further
+> large-object cache by inline decay alone: decay runs from the large
+> alloc/dealloc slow path, so with no further
 > large-object traffic there is nothing to trigger a decay tick. This
 > was measured directly: across 36 arms sweeping headroom × thread
 > count, a 2-second idle window with zero allocation activity reclaimed
@@ -111,7 +114,13 @@ deployments, see [Configuration](#configuration) below.
 > Measured RSS win: **128.0 MiB during idle** for a representative
 > burst→trim→idle→burst sequence
 > ([`docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`](docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md)),
-> vs. 0 KiB for the same sequence without the trim call.
+> vs. 0 KiB for the same sequence without the trim call. Explicit,
+> fallible `SeferAlloc::start_maintenance()` now offers autonomous
+> ownerless sweeps. It is **not** started by allocation, deallocation or
+> `SeferAlloc::new()`; callers needing that guarantee must handle
+> `MaintenanceStartError` and confirm success. The worker is process-lifetime,
+> with no shutdown API. These older RSS numbers predate the terminal-sidecar
+> cutover and are not fresh performance evidence for it.
 
 This is a real, measured trade-off, not a defect: the 256 MiB default
 genuinely buys a better cache hit rate for large-object churn AT A 64
@@ -297,7 +306,7 @@ const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .headroom_bytes(64 * 1024 * 1024)     //  64 MiB anti-thrash floor
     .decay_interval_ms(200)               // 200 ms between decay ticks
     .decay_rate_percent(25)               //  25 % of excess released per tick
-    .mode(LargeCacheMode::Lazy);          // event-driven (no background thread)
+    .mode(LargeCacheMode::Lazy);          // inline decay; maintenance is separate
 
 #[global_allocator]
 static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
@@ -361,10 +370,13 @@ membrane. No version-scoped audit record for `slotmap` is tracked by
 this project (see `crates/sefer-region/README.md` "## Safety").
 
 `SeferAlloc` (the `#[global_allocator]` below) is a separate, OS-backed
-segment allocator: SEGMENT-aligned (4 MiB) OS-backed spans, self-hosted
-metadata (no `Vec` / `HashSet` / `std::alloc` on any alloc path),
-per-thread heaps, non-intrusive per-segment and per-heap remote-free rings,
-and an intrusive spill when both rings are full. `Region<T>` above does not
+segment allocator: ordinarily SEGMENT-aligned (4 MiB) OS-backed spans,
+self-hosted heap metadata, per-thread heaps, and numeric route lookup into
+independently pinned sidecars for foreign frees. Small/Primordial remote
+publication is a sidecar bitmap bit; Large uses a descriptor state word.
+The old segment/heap rings, overflow and intrusive spill are removed.
+Over-segment Large alignment uses separate release-token, usable-root and
+payload addresses. `Region<T>` above does not
 use any of this — it is backed entirely by `slotmap`'s own storage. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the 30-minute tour.
 
@@ -380,15 +392,10 @@ seam is a hard error). Complete inventory:
 ## Target support
 
 This is an explicit support decision, not an accident of whatever happened
-to compile last. The allocator is pinned to 64-bit layouts — the F12
-exact-size pin `size_of::<SegmentHeader>() == 144`
-(`src/alloc_core/segment/segment_header/layout_asserts.rs`) and the F4
-`#[repr(C)]` pin `offset_of!(PerClass, slots) == 8`
-(`src/registry/heap_core/state/tcache.rs`) are both true only where
-`*mut u8` / `usize` are 8 bytes wide, and the `AtomicU64`-based publication
-and ownership protocol they protect has not been audited at 32-bit pointer
-widths. Rather than let a 32-bit `--features production` build fail with two
-cryptic `error[E0080]` const-assert diagnostics and no explanation, the
+to compile last. Metadata/magazine layout bounds, pointer provenance and
+`AtomicU64` publication/ownership have not been audited at 32-bit pointer
+widths. The header constraint is a page budget
+(`size_of::<SegmentHeader>() <= PAGE`), not an exact byte-size pin. The
 crate root declares the boundary (decision R2-17,
 `docs/reviews/2026-09-22-120730-src-review-xa-round-2.md` §R2-17): any build
 with `alloc-core` — and therefore every feature built on it
@@ -405,8 +412,8 @@ no_std). If you see the gate, the marker message to grep for is
 |---|---|---|
 | x86_64 (linux-gnu, windows-msvc) | supported (CI) | supported (CI) |
 | aarch64 (linux-gnu via cross, apple-darwin) | supported (CI) | supported (CI, incl. weak-memory rows) |
-| other 64-bit pointer-width targets | expected to work, not CI-tested, no claim | compiles by construction (the layout pins are pointer-width-conditional), untested, no claim |
-| 32-bit pointer-width targets (e.g. i686-*) | supported (std or no_std) | REJECTED at compile time by the R2-17 gate (crate-root `compile_error!`); the pinned 144-byte segment header / offset-8 magazine layouts and the AtomicU64 protocol have not been audited for 32-bit |
+| other 64-bit pointer-width targets | expected to work, not CI-tested, no claim | not CI-tested; 64-bit layout gate alone does not establish OS-backend or atomic/provenance support |
+| 32-bit pointer-width targets (e.g. i686-*) | supported (std or no_std) | REJECTED at compile time by the R2-17 gate; metadata/magazine bounds, atomics and pointer provenance require a separate 32-bit audit |
 
 The support boundary is pinned in both directions by
 `tests/regression_r2_17_64bit_target_gate.rs`: the allocator build must fail
@@ -535,7 +542,7 @@ version of this section drew both as reaching into the same `HeapCore`/
                                     │  HeapCore (registry + stamp + xthread routing)      │
                                     │  AllocCore (single-thread alloc/dealloc/realloc)    │
                                     │  SegmentTable + page_map + bin_table + alloc_bitmap │
-                                    │  RemoteFreeRing (per-segment MPSC, non-intrusive)   │
+                                    │  RouteDirectory + terminal sidecar ingress         │
                                     │                                                     │
                                     │  Hand (confined-unsafe seams):                      │
                                     │    os::      mmap/VirtualAlloc, decommit/recommit   │
@@ -591,8 +598,8 @@ infra. The other six are pulled in under the feature gates noted above
 
 (A former eleventh crate, `ring-mpsc` — a standalone bounded MPSC index ring
 + DirtyRouter — was removed from the workspace: it had zero production
-consumers, since the in-tree `RemoteFreeRing`/`HeapOverflow` swap it was
-extracted for was investigated and found NO-GO, see
+consumers; its old proposed ring replacement was investigated and found
+NO-GO before the terminal-sidecar cutover, see
 `docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md`.)
 
 Per-crate status:
@@ -638,7 +645,7 @@ the line to begin with the attribute, not a `//` prefix.
 | `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
 | `sefer-region` | `crates/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/sefer-region/README.md` "## Safety") |
 | `size-classes` | `crates/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
-| `tagged-index-stack` | `crates/tagged-index-stack/` | `#![deny(unsafe_code)]` — exactly NINE audited, item-scoped `#[allow(unsafe_code)]` lint-exception regions, all in its production library source (`src/imp.rs`; its `tests/` are separate crate targets carrying intentional `unsafe impl StackStorage` test fixtures): the `unsafe trait StackStorage` declaration (whose three hooks are `unsafe fn`), the `SealedStorage` trait and bridge (all three hooks are `unsafe fn`, with bridge-side forwarding proofs), the shared `push_index_impl` and `pop_index_impl` caller-side proof regions, the caller-facing push boundaries (`StackOps::push_index`/`ArrayIndexStack::push`), and the direct `ArrayIndexStack` sealed-hook implementation; implementor obligations live in the trait's `# Safety` doc and each hook/push entry point carries its own caller-side `# Safety` contract (allocator consumers rely on its exclusive-issuance contract — `GlobalAlloc` category). Lock-free via a single packed `AtomicU64` head word; ABA tag in the high bits, no raw-pointer derefs |
+| `tagged-index-stack` | `crates/tagged-index-stack/` | `#![deny(unsafe_code)]` with ten item-scoped allows in `src/imp.rs` (nine production regions plus one `--cfg loom` test forwarder). Its unsafe trait/bridge and push boundaries state caller and implementor obligations; the library does not use raw-pointer dereferences for its packed-head protocol. |
 | `proc-probe` | `crates/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** — any `unsafe` token
@@ -649,39 +656,35 @@ hard compile error in every configuration:
 |---|---|---|
 | [`src/alloc_core/platform/os.rs`](src/alloc_core/platform/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
 | [`src/alloc_core/platform/node.rs`](src/alloc_core/platform/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
-| [`src/alloc_core/platform/dirty_by_class.rs`](src/alloc_core/platform/dirty_by_class.rs) | The lazily-materialised per-(segment, class) dirty-bit sidecar (`PerClassDirty`); dereferences the `OncePtrCell`-published sidecar pointer | `class-aware-dirty` |
 | [`src/alloc_core/large/large_cache_extended.rs`](src/alloc_core/large/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `OncePtrCell` — no cross-thread publisher); reserves via `alloc_core::platform::sidecar::reserve`, dereferences via `sidecar::deref[_mut]` | `large-cache-extended` |
 | [`src/alloc_core/platform/sidecar.rs`](src/alloc_core/platform/sidecar.rs) | R14-9 (task #294): the shared owner-only lazily-materialised sidecar primitive (`reserve` / `reserve_zeroed_with` / `deref` / `deref_mut`) used by `os.rs`'s `SegmentDirectory` reservation and `large_cache_extended.rs`'s `LargeCacheExtension` reservation | `alloc-core` |
-| [`src/alloc_core/segment/remote_inbox/inbox.rs`](src/alloc_core/segment/remote_inbox/inbox.rs) | Experimental terminal intrusive-node publication; not a production route | `alloc-core` |
-| [`src/alloc_core/segment/remote_inbox/tests.rs`](src/alloc_core/segment/remote_inbox/tests.rs) | Raw reservation fixtures for the inbox primitive | `cfg(test)` |
 | [`src/global/sefer_alloc/global_alloc.rs`](src/global/sefer_alloc/global_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
-| [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `alloc-global` |
+| [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `batch-api` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse); and the `bench-internals`-gated `unsafe fn dbg_restore_local_for_test` test hook (R29-7, task #438) — covered by this module's tier-1 allow, with no separate item-level allow (so it adds no tier-2 site). | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
 | [`src/registry/bootstrap/registry.rs`](src/registry/bootstrap/registry.rs) | The `Registry` struct: `MAX_HEAPS`, per-chunk slot resolution, and process-global metadata. New claims use fallible `slot_or_none` and can reach fallback on chunk OOM; infallible `slot` retains an abort only as an invariant tripwire for already-materialised chunks. | `alloc-global` |
 | [`src/registry/bootstrap/ensure.rs`](src/registry/bootstrap/ensure.rs) | The process-global `ensure()` accessor, the per-chunk materialisation slow path (`ensure_chunk_slow`), and the test-only dbg hooks (OOM injection, sentinel-rollback probe, slot introspection) | `alloc-global` |
-| [`src/registry/bootstrap/overflow_sidecar.rs`](src/registry/bootstrap/overflow_sidecar.rs) | Lazy `HeapOverflow` sidecar materialisation — the third instance of the CAS-then-spin-then-publish protocol, plus the `deref_overflow_sidecar` safe membrane | `alloc-global` |
 | [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` / the tagged free-list head (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE` claim (plain and config-plumbed), OOM push-back, and the config-conflict rollback guard — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell` | `alloc-global` |
 | [`src/registry/heap_registry/counters.rs`](src/registry/heap_registry/counters.rs) | Registry diagnostics: the config-conflict counter, the process-wide hit-total aggregators over slot-resident W3 counters, the minted-slot high-water mark, and the UBFIX-5 test-only introspection hooks | `alloc-global` |
-| [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries, typed sidecars and sorted pointer arrays; shard-lock pin acquisition prevents load/increment UAF. HeapCore segment lifecycle only; foreign-free ingress remains unchanged. | `alloc-global` |
+| [`src/registry/heap_registry/maintenance.rs`](src/registry/heap_registry/maintenance.rs) | Exclusive maintenance lease handoff for finite ownerless sweeps. | `alloc-global` |
+| [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit + class-aware-dirty`) the active internal seams are
-**thirteen** — `alloc_core::platform::{os, node, sidecar, dirty_by_class}` plus
-`alloc_core::segment::segment_table::route_slots` plus
-`alloc_core::segment::remote_inbox::inbox` plus
-`global::{sefer_alloc, tls_heap, fallback}` plus
-`registry::{bootstrap, heap_slot, heap_registry, segment_route}`. `alloc_core::platform::sidecar`
-(R14-9, task #294) is active because `alloc-global` pulls in `alloc-core`;
-`alloc_core::platform::dirty_by_class` is active because `production` itself enables
-`class-aware-dirty` (R13-9, task #279). `alloc-xthread`, `alloc-decommit`,
-`fastbin`, and `primordial-lazy-commit` themselves do **not** open new
-`unsafe` seams — they extend existing safe code paths.
++ primordial-lazy-commit`) the active internal tier-1 seams are **fourteen**:
+`alloc_core::platform::{os, node, sidecar}` and
+`alloc_core::segment::segment_table::route_slots`;
+`global::{sefer_alloc::global_alloc, tls_heap, fallback}`;
+`registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
+`registry::heap_registry::{claim, counters, maintenance}`, and
+`registry::segment_route::directory`. The `--cfg loom` bootstrap shim is
+additional only in Loom builds; `batch-api`, `large-cache-extended` and
+`experimental` each have separate optional seams. The removed ring, inbox,
+overflow and class-aware-dirty seams are not in this inventory.
 
 `numa-aware` opens no internal unsafe seam of its own — its
 `alloc_core::platform::numa` wrapper has been pure safe delegation to the
@@ -711,7 +714,7 @@ item-scoped regions.
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 1 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
 | [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
-| [`src/alloc_core/small/alloc_core_small/mod.rs`](src/alloc_core/small/alloc_core_small/mod.rs) | 1 | Internal `bump_gen` call-site block (in `pop_free`), hardened path |
+| [`src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs`](src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs) | 1 | Internal generation-table call-site block (hardened path) |
 | [`src/alloc_core/small/alloc_core_small/reserve.rs`](src/alloc_core/small/alloc_core_small/reserve.rs) | 1 | Internal `init_gen_table_in_place` call-site block (in `reserve_small_segment`), hardened path |
 | [`src/alloc_core/small/alloc_core_small/find_segment.rs`](src/alloc_core/small/alloc_core_small/find_segment.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
@@ -719,30 +722,28 @@ item-scoped regions.
 | [`src/alloc_core/small/alloc_core_small_magazine.rs`](src/alloc_core/small/alloc_core_small_magazine.rs) | 1 | `flush_class` — `unsafe fn` boundary (caller-pointer contract) |
 | [`src/alloc_core/small/alloc_core_small_pool/decommit.rs`](src/alloc_core/small/alloc_core_small_pool/decommit.rs) | 1 | `dbg_force_decommit_retain_for` (R29-8, task #439, gated `bench-internals`) — `unsafe fn` boundary: decommits a caller-pointer's segment payload via `decommit_empty_segment_impl` with NO `live_count` check, so the `live_count == 0` precondition lives in the `# Safety` contract, not the body |
 | [`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`](src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs) | 5 | The R29-3 (task #434) segment-lifecycle-decomposition `unsafe fn` boundary `dbg_decomp_decommit_payload` (decommit a caller-supplied segment base's payload) — gated `bench-internals`, forwarding its `# Safety` contract verbatim to the `HeapCore`-level delegation of the same name in `heap_core/diag/diag_probes.rs`; plus the R31-6 (task #469) sibling `unsafe fn` boundary `dbg_decomp_recommit_payload` (recommit a caller-supplied segment base's payload — a real `VirtualAlloc(MEM_COMMIT)` on Windows, a documented no-op on Unix/miri — the counterpart `examples/r29_3_decomposition_gate.rs`'s Measurement B re-fault loop was missing, which crashed that example on Windows); plus `dbg_decomp_release` — `unsafe fn` again as of R31-15 (task #486): R31-4's move-consuming `ReservedSmallSegment` handle closed unforgeability and double-release but NOT owner-binding (a handle reserved on one `AllocCore` could be released on a DIFFERENT `AllocCore`, both safe API calls, corrupting the wrong heap's pool/directory/`SegmentTable` state — a CONFIRMED P0 soundness defect), so the `# Safety` contract ("handle reserved on THIS SAME `AllocCore`, still live/unreleased") is back, layered with a release-build (non-`debug_assert!`) owner-id check as defence-in-depth (see `src/alloc_core/small/reserved_small_segment.rs`'s module doc, "Owner-binding" section); plus two task #504 (F11 step 2) `unsafe fn` boundaries, `dbg_decomp_win_commit_only` (commits a caller-supplied segment base's `[PAGE, SEGMENT)` range — documented raw-pointer precondition) and `dbg_decomp_win_release_only` (releases a caller-supplied `(reservation_ptr, reservation_len)` pair — same double-release/wrong-reservation hazard class as `dbg_decomp_release`), both gated `bench-internals`, isolating `VirtualAlloc(MEM_RESERVE)` from `VirtualAlloc(MEM_COMMIT)` for the Windows-native decomposition gate. |
-| [`src/alloc_core/small/alloc_core_small_reclaim.rs`](src/alloc_core/small/alloc_core_small_reclaim.rs) | 3 | Internal `gen_at` call-site blocks (dealloc_routing + hardened `pack_entry_hardened`) + `dbg_push_to_ring` declaration |
 | [`src/alloc_core/alloc_core/bootstrap.rs`](src/alloc_core/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` (primordial carve, hardened path) |
-| [`src/alloc_core/segment/remote_free_ring/ops.rs`](src/alloc_core/segment/remote_free_ring/ops.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
-| [`src/alloc_core/segment/segment_directory/mod.rs`](src/alloc_core/segment/segment_directory/mod.rs) | 2 | `init_node_ids_raw` (`numa-aware` and non-`numa-aware` variants) — `unsafe fn` boundary; writes the `node_ids` repair through `core::ptr::addr_of_mut!` without ever materialising a `&mut SegmentDirectory` over the not-yet-fully-valid sidecar (R17-1, task #318 — the `reserve_zeroed_with` fixup closure) |
+| [`src/alloc_core/alloc_core/sidecar_test_hooks.rs`](src/alloc_core/alloc_core/sidecar_test_hooks.rs) | 1 | Test-only terminal-sidecar publication boundary. |
+| [`src/alloc_core/segment/segment_directory/segment_directory_impl.rs`](src/alloc_core/segment/segment_directory/segment_directory_impl.rs) | 2 | `init_node_ids_raw` variants — raw fixup of not-yet-valid sidecar storage. |
 | [`src/alloc_core/segment/segment_header/segment_header_gen_table.rs`](src/alloc_core/segment/segment_header/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
-| [`src/registry/heap_core/alloc/hot.rs`](src/registry/heap_core/alloc/hot.rs) | 5 | Internal `bump_gen` call-site blocks in `alloc` / `alloc_small_zeroed_via_magazine` / `refill_magazine_slow` / `refill_magazine_slow_virgin` (R13-3, `virgin-zero-skip` magazine plumbing) (hardened path), plus the shared `bump_gen_on_issue` helper (task #2000) those four sites now call |
+| [`src/registry/heap_core/alloc/hot.rs`](src/registry/heap_core/alloc/hot.rs) | 4 | Internal generation-table call-site blocks in the magazine issue paths (hardened path). |
 | [`src/registry/heap_core/alloc/batch.rs`](src/registry/heap_core/alloc/batch.rs) | 2 | Internal `bump_gen` call-site blocks in `alloc_batch` (both feature variants) (hardened path) |
-| [`src/registry/heap_core/free/dealloc_batch.rs`](src/registry/heap_core/free/dealloc_batch.rs) | 7 | `dealloc_batch` / `dealloc_batch_small` — `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into scalar `dealloc` / `AllocCore::flush_class` (R11-4) |
-| [`src/registry/heap_core/diag/queries.rs`](src/registry/heap_core/diag/queries.rs) | 2 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) |
+| [`src/registry/heap_core/free/dealloc_batch.rs`](src/registry/heap_core/free/dealloc_batch.rs) | 8 | Batch free caller-pointer boundaries and internal scalar/flush calls. |
 | [`src/registry/heap_core/diag/diag_probes.rs`](src/registry/heap_core/diag/diag_probes.rs) | 8 | `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) / `dbg_clear_magazine_on_hit` (R29-10, task #441, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) — plus the R29-3 `dbg_decomp_decommit_payload`/`dbg_decomp_recommit_payload` (R31-6, task #469) delegations (gated `bench-internals`); see the R24-6/R25-1 note below the table. (`dbg_decomp_release`'s delegation is `unsafe fn` again as of R31-15/task #486 — forwards the identical `# Safety` contract; see the `alloc_core_small_pool/decomp_hooks.rs` row above for why.) Plus two task #504 (F11 step 2) delegations, `dbg_decomp_win_commit_only`/`dbg_decomp_win_release_only` (gated `bench-internals`), forwarding their identical `# Safety` contracts from the `alloc_core_small_pool/decomp_hooks.rs` originals. |
 | [`src/registry/heap_core/free/dealloc.rs`](src/registry/heap_core/free/dealloc.rs) | 2 | `dealloc` — `unsafe fn` boundary (caller-pointer contract) + internal call-site block into `AllocCore::dealloc` |
 | [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 4 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) + R1-01's free-side byte-budget-cap call into `AllocCore::flush_class` (a single-block batch, once a class's magazine reaches its D3 refill-byte-budget cap) |
 | [`src/registry/heap_core/free/realloc.rs`](src/registry/heap_core/free/realloc.rs) | 1 | `realloc` — `unsafe fn` boundary (caller-pointer contract); its move leg was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary |
 | [`src/registry/heap_core/state/tcache_flush.rs`](src/registry/heap_core/state/tcache_flush.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
-| [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
-| [`src/registry/heap_core_xthread/overflow.rs`](src/registry/heap_core_xthread/overflow.rs) | 1 | `dbg_resolve_dirty_notification` test hook (`internals` + `bench-internals`), whose caller guarantees a live block during resolution |
-| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 7 | Internal call-site blocks in `trim_current_thread` / `dbg_trim_current_thread` / `dbg_drain_current_thread_rings` / `dbg_current_large_cache_extension_materialised` / `dbg_current_large_cache_total_slots` / `dbg_current_large_cache_budget` / `dbg_current_large_cache_used_bytes` into `HeapCore::trim_for_recycle` / `dbg_drain_all_rings` / `dbg_large_cache_*` accessors — each resolves the calling thread's own already-bound heap via `current_heap()`, never claims a new slot |
+| [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 2 | Unique-transfer foreign publication boundary and its internal call. |
+| [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 2 | Test-only sidecar publication and synthetic detached-record reclaim boundaries. |
+| [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 6 | Exclusive current-heap trim and diagnostic delegation sites. |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **107** tier-2 item-scoped allows across **36**
+That's the full list (both tiers): **24** tier-1 module-level seams (18 in
+`src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -758,16 +759,10 @@ equivalent** on one axis a prior review flagged as worth distinguishing
 precisely: whether the hook's own `#[cfg]` gate happens to be fully
 satisfied by plain `--features production` alone.
 
-- `dbg_dealloc_own_thread_with_base` (R23-3, task #372) and
-  `dbg_push_coarse_only_entry` (R13-1, task #271) were both reachable from
-  a plain `production` build (their prior gates — `alloc-global + fastbin` and
-  `alloc-xthread + alloc-segment-directory + class-aware-dirty` respectively —
-  are each a subset of `production`'s feature list). Each has exactly ONE
-  caller in the whole tree (`benches/perf_gate_iai.rs` for the first,
-  `tests/class_aware_dirty_oom_latch.rs` for the second), so both are now
-  additionally gated behind the `bench-internals` feature (see the feature
-  table above) — a plain `--features production` build no longer compiles
-  either in.
+- `dbg_dealloc_own_thread_with_base` (R23-3, task #372) was moved behind
+  `bench-internals` for its measurement-only pointer contract. The sibling
+  `dbg_push_coarse_only_entry` and its `class-aware-dirty` caller were
+  removed with the old ingress; their earlier gate discussion is historical.
 - `dbg_flush_class_only` (R28-1, task #430) — added to isolate
   `AllocCore::flush_class`'s own standalone Ir cost inside the
   magazine-overflow free path (see `docs/perf/
@@ -803,36 +798,28 @@ satisfied by plain `--features production` alone.
   whose only caller left a temporary magazine-state invariant broken on
   return (see `docs/reviews/2026-07-28-r26-readonly-review.md` P2). Git
   history preserves the reproducer.
-- `dbg_push_to_ring` (`HeapCore`/`AllocCore`, R6-MS-4) is **deliberately left
-  as-is**: its `alloc-xthread` gate is also a `production` subset, but unlike
-  the two above it is called from ~20 files across the entire
-  `alloc-xthread` test suite (predates R23-3 by many rounds — the oldest
-  entry in this file's tier-2 list). Moving it behind a new feature would
-  touch every one of those files' gates for a documentation-precision
-  concern, not a new regression — disproportionate for this round. This note
-  is the resolution: `dbg_push_to_ring` is measurement/test-only and excluded
-  from any "changes production behavior" claim, exactly like its
-  siblings, even though it remains textually reachable under `--features
-  production` (the `#[allow(unsafe_code)]` grep this section's count is
-  built from is feature-gate-blind by construction, so gating a hook behind
-  a new feature would not change the **62** figure above regardless — only
-  whether it compiles into a given build).
+The old `dbg_push_to_ring` hook was removed with ring ingress. The counts
+above are source-attribute counts, independent of feature selection.
 
 ### The segment substrate (Phase 8)
 
-Each segment is `SEGMENT = 4 MiB` of OS-backed, SEGMENT-aligned virtual
-memory. The first metadata page hosts: a `SegmentHeader` (kind, magic, bump
+Ordinary Small/Primordial segments are `SEGMENT = 4 MiB` OS-backed,
+SEGMENT-aligned spans. Large requests with alignment at or above SEGMENT use
+a biased reservation: OS release token, usable metadata root and aligned
+payload are distinct. Segment metadata includes a `SegmentHeader` (kind, magic, bump
 cursor, owner state, NUMA node id, live-count); a `page_map` (one byte per
 page, per-page descriptor); a `BinTable` (per-size-class free-list heads);
-an `AllocBitmap` (1 bit per `MIN_BLOCK` slot, the O(1) double-free guard); a
-`RemoteFreeRing` (the per-segment MPSC ring for cross-thread frees).
+an `AllocBitmap` (1 bit per `MIN_BLOCK` slot, the O(1) double-free guard).
+Foreign-free sidecars are independent System allocations outside the payload.
 
 A self-hosted `SegmentTable` carved from the **primordial** segment indexes
 every live segment by base pointer. It is **append-only with NULL-slot
 recycle** under `alloc-decommit` (see [`docs/ARCHITECTURE.md §3`](docs/ARCHITECTURE.md))
 and from `0.1.0` ships an **open-addressing hash side-index** for O(1)
-`contains_base` at DBMS scale. There is no `Vec` / `HashSet` / `std::alloc`
-on any alloc path — M5 reentrancy-freedom is upheld structurally.
+`contains_base` at DBMS scale. Allocator callbacks do not allocate through
+the installed global allocator: route entries/sidecars use `System` on
+registration, while ordinary heap metadata remains self-hosted. This is
+the M5 non-recursion boundary, not a blanket "no `std::alloc`" claim.
 
 ### Per-thread heaps and the lock-free fast path
 
@@ -842,17 +829,15 @@ seam. No lock, no atomic on the common case. Slow path: refill `REFILL_BATCH
 = 31` blocks from the current segment (the constant is **measured** — see
 commit `81fec54`, bigger refills hurt locality).
 
-Cross-thread free (opt-in `alloc-xthread`) first queues `(offset | class)`
-in the segment's `RemoteFreeRing`, then in a per-heap sidecar ring if needed;
-neither ring reads nor writes the block body. If both rings remain full,
-the intrusive spill writes a 16-byte note into the first bytes of the
-already-freed block. A legal free has transferred exclusive use of that block
-to the allocator before this write; the owner cannot reuse it until reclaim.
-The owner reclaims queued blocks lazily on its alloc-slow-path. The
-freer stamps the class because the `page_map` is unreliable for mixed-class
-pages produced by a shared bump cursor — the §13 race investigation
-([`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md)) traced this
-through four iterations of "peeling" before identifying the true root.
+Cross-thread free (`alloc-xthread`, implied by `alloc-global`) uses an address
+only for numeric directory lookup. The pinned route supplies its owner-issued
+Small/Primordial class and bitmap, or the Large instance state; the foreign
+publisher never reads the header or writes block slack. Owner sweeps exchange
+each covered bitmap word once. `trim_current_thread()` and TLS teardown use
+that finite sweep; after successful `start_maintenance()`, a fair worker also
+visits ownerless heaps. No ring-capacity retry or intrusive spill remains.
+The former ring/race investigation remains historical context in
+[`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md).
 
 ### Decommit (Phase 35) and large-cache (OPT-E)
 
@@ -888,6 +873,11 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 ---
 
 ## Performance
+
+The tables in this section are dated, pre-terminal-sidecar measurements.
+Headings such as "current" mean current **at the cited run**, not this dirty
+snapshot. No throughput, latency or RSS improvement is inferred for the
+new ingress or maintenance worker without a fresh controlled gate.
 
 **sefer-alloc 0.3.x — small-class churn/cold tables re-measured 2026-07-23
 post-Round13 (class-aware dirty routing promoted to `production` in R13-9,
@@ -1136,8 +1126,8 @@ the key survived the free and forced a slow-path scan plus a cold/conflict cache
 line touch at the 256 B stride. **Э6 removed the key entirely**: the two exact
 oracles (in-magazine scan + the `BinTable` `is_free` bitmap, both hot metadata)
 now run unconditionally and **the own-thread magazine free path does not
-touch the block body**. The later-added remote spill is an exception after
-both non-intrusive rings saturate. On the realistic writing pattern
+touch the block body**. The later-added remote spill was removed by the
+terminal-sidecar cutover. On the historical realistic writing pattern
 sefer-alloc now **leads at every size** (256 B
 1.64× faster, 2026-07-10); the artificial non-writing pattern leads too
 (256 B 2.12× faster). This is
@@ -1243,8 +1233,9 @@ qualitative shape — small sizes trail, 1024 B leads — is broadly unchanged
 since the 2026-07-20 run, within this host's usual noise band, though 64 B
 moved from a 1.98× loss to parity this run (a single-host wall-clock swing,
 not attributed to any Round13 code change — Round13's one `production`
-addition, `class-aware-dirty`, is remote-drain-only and iai-confirmed to add
-zero cost to this single-thread cold path; see
+addition at that time, `class-aware-dirty`, was remote-drain-only and
+iai-confirmed to add zero cost to that single-thread cold path; it has since
+been removed with the old ingress. See
 `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md` §1a/§3). The
 "pre-P3 was" column is the pre-X-arc historical run, kept for the
 before/after of the Э1 trajectory.)
@@ -1350,59 +1341,38 @@ double-free is outside its unsafe-caller contract even while the segment
 remains mapped. Own-thread magazine/bitmap and stale-offset checks reject
 some invalid frees as no-ops, but this is defence-in-depth, **not** a
 "double-free of LIVE/MAPPED memory = no-op, never UB" guarantee. In
-particular, two frees of the same block while its remote note is pending
-are not guaranteed safe: the ring and sidecar have no per-block claim, and
-the spill may write the same block twice (a concurrent duplicate can race;
-a sequential duplicate can self-link the intrusive stack). `hardened`'s
-generation check does not make such duplicate spill publication safe.
-Mapped foreign-pointer rejection is likewise best-effort, not a promise
-for arbitrary dangling or unmapped addresses. A further documented
-residual is the
-**ring↔magazine cross-thread double-free residual limit of M2** — a block whose
-cross-thread free is still in-flight in a segment's `RemoteFreeRing` (not yet
-drained) sets neither own-thread oracle (magazine `slots` scan nor BinTable
-`is_free` bitmap). Two of its three legs are closed on plain `production`: the
-in-magazine leg (X2 / #164) and the refill-window double-issue leg (R1, f23f7eb).
-The **third leg — *re-issue-before-drain*** — remains an accepted residual under
-plain `production`: pinned by the permanently-`#[ignore]`d
-`tests/regression_xthread_double_free_residual.rs` (honestly red without
-per-block generations — no distinguishing state exists), modelled by
-`tests/loom_magazine_ring_compose.rs`. Under **`--features hardened`** the X7
-per-granule generation guard (stamp the ring note with the block's generation at
-remote-free time; drop it on drain if the generation has advanced) closes this
-leg — pinned by the sibling `residual_xthread_double_free_no_corruption_hardened`
-test in the same file — **except for the 1/256 wrap**: ≥256 re-issues of one
-block without an intervening drain of the stale note collides with the current
-generation mod 256, the accepted probabilistic residual-of-the-residual (design
-plan §2.5 rejected doubling the ring footprint for a `u64` gen; pinned by
-`tests/regression_gen_wrap_boundary.rs`). Full account in
-[`docs/DURABILITY.md`](docs/DURABILITY.md) (ledger entry + §"X7 per-granule
-generation counter") and
-[`docs/design/X7_GENERATIONAL_RING_PLAN.md`](docs/design/X7_GENERATIONAL_RING_PLAN.md).
-On real workloads — churn, MT, large-alloc — we are net faster while keeping
-those guarantees.
+particular, duplicate frees while a terminal sidecar publication is pending
+violate that contract; the bitmap/state-word protocol is not a license to
+free one live allocation twice. Mapped foreign-pointer rejection is
+best-effort, not a promise for arbitrary dangling or unmapped addresses.
+The former ring↔magazine residual and `hardened` generation-wrap discussion
+in older reports describes removed code, not the current production path.
+The terminal-sidecar cutover still needs full feature, Miri/Loom and platform
+acceptance; the historical throughput tables above are not a fresh GO verdict.
 
 ---
 
 ## Verification evidence
 
-This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **337 integration test files** ship
-in `tests/`; **84 example binaries** in `examples/`; **25 benches** in
-`benches/`; **20 root Loom models** in `tests/`, plus two member-crate
+This is a verification-first project, but the terminal-sidecar snapshot still
+needs its acceptance run. The present tree contains **284 integration test files**,
+**80 example binaries**, **22 benches**, and **7 root Loom models**
+in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
+Counts cover root `*.rs` targets in each folder, excluding nested fixtures
+and support modules. The test tree also contains 9 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (337 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (84 files) |
-| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (284 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (80 files) |
+| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (22 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | **Root (20 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_overflow_spill.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_remote_ring_tail_aba.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_inbox.rs`, `tests/loom_terminal_large.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `ArrayIndexStack`) |
-| `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit`; package-specific `tagged-index-stack` target `narrow_domain_unchecked_storage` in `scripts/miri.mjs` executes in-domain unchecked accesses only |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (7 files):** `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri.mjs` includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
-| ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |
+| ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |
 | Valgrind `memcheck` | UAF, leaks, invalid reads at the process level | Manual: clean on all three cross-thread test binaries. Note: `helgrind` / `DRD` are inapplicable to lock-free atomic code (Valgrind doesn't model Rust atomics) — TSan is the right concurrency detector here. |
 | aarch64 via `qemu-user` | Code-gen + relaxed-memory smoke on ARM | CI job + manual 13/13 tests pass. Honest caveat: TCG translation does not fully model ARM's weak-memory; real ARM hardware verification is a follow-up. |
 | libFuzzer | Op-stream invariants under random input | `fuzz/fuzz_targets/region_ops.rs`, `global_alloc_ops.rs`, `heap_core_ops.rs` (fastbin magazine) |
@@ -1431,18 +1401,18 @@ The full safety stack and the relationship between layers is documented in
 |---|---|---|---|---|
 | `std` | — | `SyncRegion`, all `std`-gated tiers | **on** | almost always |
 | `alloc-core` | `std` | The segment substrate (`AllocCore`) | off | building on `AllocCore` directly |
-| `alloc-xthread` | `alloc-core` | Lock-free cross-thread free via `RemoteFreeRing` | off | multi-thread allocator; also pulled in automatically by `alloc-global` (R5-01) |
+| `alloc-xthread` | `alloc-core` | Cross-thread publication through pinned route sidecars | off | multi-thread allocator; also pulled in automatically by `alloc-global` (R5-01) |
 | `alloc-global` | `alloc-core + alloc-xthread` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
-| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty` | **The recommended combo for long-running multi-thread workloads.** The fast default — no paid caller-misuse checks on the free hot path. | off | **DBMS, async runtimes, anything that allocates over hours.** |
+| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
 | `alloc-stats` | — | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
-| `hardened` | `fastbin` | **Paranoid deploys.** Additive over `production`. Adds opt-in defence-in-depth against UNSAFE-CALLER misuse that costs cycles: currently the interior-pointer free guard on **both** own-thread free faces — the `SeferAlloc` magazine (`HeapCore`) and the `AllocCore` substrate (`dealloc_small`) — rejecting a free of a pointer that is not the block start (`off % block_size != 0`) as a detected no-op instead of a mis-indexed bitmap read → double-issue. The check is a modulo-per-free (a real division), so it is **NOT** on the production fast path. (Cross-thread frees are already guarded unconditionally by `reclaim_offset`.) **X7 closure:** under `hardened`, a per-granule generation counter also closes the *re-issue-before-drain* leg of the ring↔magazine cross-thread double-free residual (the third leg of M2, open under plain `production`) — the ring note is stamped with the block's generation and dropped on drain if it has advanced — **except the 1/256 wrap** (≥256 re-issues without an intervening drain collide mod 256), the accepted probabilistic residual-of-the-residual. See [`docs/DURABILITY.md`](docs/DURABILITY.md) (ledger entry + X7 §). | off | untrusted / adversarial callers, forensic hardening |
+| `hardened` | `fastbin` | Opt-in own-thread interior-pointer guard, rejecting non-block starts. It does not make duplicate or invalid foreign frees legal; the old X7 ring generation path was removed with the ring. | off | Extra misuse detection, subject to current acceptance gates. |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 | `batch-api` | `experimental` + `alloc-core` | Tcache-aware batch alloc/dealloc (`SeferAlloc::alloc_batch`/`dealloc_batch`). **⚠ No semver guarantees** — signature/behavior may change or the feature may be removed in any release while it depends on `experimental` (R12-12) | off | you have measured a real batch-size win for your workload and accept an unstable API |
-| `bench-internals` | — | R24-6 / R25-1 / R29-3 / R29-7 / R29-8 / R29-10: gates the smallest set of `unsafe fn dbg_*` hooks (plus their safe siblings) that exist ONLY to let `benches/perf_gate_iai.rs` / integration tests isolate a perf-gate sub-cost or reconstruct a hard-to-reach test scenario, and whose own `#[cfg]` would otherwise be fully satisfied by `production` alone (`HeapCore::dbg_dealloc_own_thread_with_base`, `HeapCore::dbg_flush_class_only`, `HeapCore::dbg_clear_magazine_on_hit`, all in `heap_core/diag/diag_probes.rs`; `HeapCore::dbg_push_coarse_only_entry` in `heap_core/diag/queries.rs`; and `tls_heap::dbg_restore_local_for_test` + its safe twin `dbg_mark_local_torn_for_test` in `global/tls_heap.rs`, R29-7/task #438 — the first file outside `heap_core/diag/`; and `AllocCore::dbg_force_decommit_retain_for` in `alloc_core/small/alloc_core_small_pool/decommit.rs`, R29-8/task #439 — a safe-`pub fn`-reachable decommit of a segment payload with NO `live_count` check on a crate-root-public type, same R25-1 bug class; and the R29-3/task #434 segment-lifecycle-decomposition pair `dbg_decomp_release` / `dbg_decomp_decommit_payload`, each declared twice — once in `AllocCore` (`alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) and once as the `HeapCore`-level delegation of the same name in `heap_core/diag/diag_probes.rs` — plus their safe siblings `dbg_decomp_full_cycle`/`dbg_decomp_os_roundtrip`/`dbg_decomp_reserve_and_keep`/`dbg_decomp_payload_range`/`dbg_decomp_page_size` in both files). **NOT** in `production` — a plain `--features production` build of the library never compiles any of these hooks in. (An earlier such hook, `dbg_overflow_bitmap_clear_pass`, existed until R27-10/task #428 removed it — see the R24-6/R25-1 note below the tier-2 table.) Carries no code of its own. | off | never, in application code — internal to this crate's own CI perf-gate and tests |
+| `bench-internals` | — | Test/performance-only diagnostic hooks, including selected unsafe raw-pointer probes; absent from plain `production` library builds. The removed coarse-dirty and ring probes are no longer part of this feature. | off | Internal CI and measurement only; not application API. |
 
 **Trap — `numa-aware` silently no-ops `small-segment-lazy-commit`.** The two
 features compose without any compile error or runtime diagnostic, but
@@ -1558,9 +1528,11 @@ This is a workload-shape-specific result, not a general
 retains **~+8 MiB of committed RSS per materialised heap** versus the
 `4 / 16 MiB` default (scaling linearly to **~+255 MiB across 32
 heaps**), and this retained memory does **NOT** decay during pure idle
-time — the small-pool decay is event-driven (no background thread), so
-retention persists until further allocation pressure, an explicit drain,
-or thread-exit. See
+time in that historical measurement — small-pool decay was event-driven.
+The current explicitly started maintenance worker may perform a later cold
+trim after owner exit; no new RSS retention measurement is claimed here.
+Without successful startup, retention persists until further allocation
+pressure, explicit trim or thread exit. See
 [`docs/perf/R27_3_POOL_RETENTION_GATE.md`](docs/perf/R27_3_POOL_RETENTION_GATE.md).
 
 **Trap — both knobs must move together.** The effective runtime cap is
@@ -1619,12 +1591,22 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I7, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
-| [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Design + **implemented** (R31-10, task #474) explicit, caller-driven `SeferAlloc::trim_current_thread()` API — reclaims retention a burst-then-idle workload leaves behind, sidestepping the no-background-thread constraint R27-5's adaptive-pool-budget design could not solve; measured a real 128.0 MiB RSS win during idle in [`docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`](docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md) |
+| [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Historical design and measured caller-driven `trim_current_thread()` result. The old no-background-thread premise predates today's explicitly started maintenance worker. |
 | [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no statistically distinguishable effect at this scale — the mechanism fires identically in both arms (`decommit_calls_total=40` in both), so this workload does not separate them; the null is underpowered (MDE ≈19% of the mean), not a confirmed absence of effect (§0.1/§0.2, corrected 2026-07-30) |
 
 ---
 
 ## Honest limitations
+
+- **Terminal-sidecar acceptance is pending.** This dirty snapshot contains
+  production foreign-sidecar ingress, finite strict trim and optional
+  fallible autonomous maintenance, but it has not earned a release GO or
+  fresh latency/RSS verdict. `start_maintenance()` must be called outside
+  allocator callbacks and handled as a `Result`; it starts a process-lifetime
+  worker with no shutdown, no reclamation deadline, and no guarantee of
+  physical OS return while live allocations or retention policy prevent it.
+  Forking an activated multithreaded process or unloading allocator code
+  while the worker exists is unsupported.
 
 - **Single-thread small-class hot path is ~1.2–2× behind `mimalloc`.** The
   flamegraph at [`docs/PROFILE_FLAMEGRAPHS.md §1`](docs/PROFILE_FLAMEGRAPHS.md)
@@ -1705,41 +1687,20 @@ forking thread survives to run it — so any state another thread was
 mutating at the instant of `fork()` can wedge the child, sometimes on the
 `GlobalAlloc::dealloc` path, not just `alloc`:
 
-- **Unbounded spin, including on free.** The fallback spinlock
-  (`src/global/fallback.rs`, `LockGuard::acquire`) spins until a `bool` flips
-  — if another thread held it (TLS teardown / pre-TLS window) at fork time,
-  the child spins forever, since that thread does not exist in the child to
-  release it. The same file's primordial-init loser loop (spinning while
-  `INIT_STATE == INITIALIZING`) has the identical shape. The
-  `alloc-xthread` overflow-sidecar's materialisation loser wait
-  (`src/registry/bootstrap/overflow_sidecar.rs`) is reached from the
-  **dealloc** path (`HeapOverflow::push_impl`) and spins unboundedly if the
-  winning thread vanished mid-materialisation. The registry chunk
-  materialisation loser loop (`src/registry/bootstrap/registry.rs`,
-  `ensure_chunk`/`try_ensure_chunk`, via the shared once-cell in
-  `crates/once-ptr-cell`) has the same unbounded-spin-on-vanished-winner
-  shape, reached from claiming a new heap slot in the child.
-- **Permanently undrained memory.** A spill-stack node left with
-  `ready == 0` by a producer thread that vanished mid-publish
-  (`src/registry/heap_overflow/spill.rs`) stops that intrusive stack's drain at
-  that node forever — every entry behind it (further towards the tail) is
-  never reclaimed. A deferred-Large stack head left at the `PUBLISHING`
-  sentinel by a vanished producer (`src/alloc_core/large/deferred_large/drain.rs`)
-  stops that thread's entire deferred-Large drain forever, leaking the
-  segments behind it.
-- **Bounded but real stall.** A remote free that targets a block owned by a
-  heap slot still marked `STATE_LIVE` in the child, even though that
-  slot's owning thread vanished at fork (`src/registry/heap_core_xthread/ring.rs`,
-  `owner_slot_is_live`), pays up to `RETRY_STALLED_ROUNDS_GIVE_UP` (128)
-  stalled probe rounds — roughly 0.3–2 s on this project's measured
-  scheduler granularity (`src/registry/heap_core_xthread/overflow.rs`) —
-  before conceding to spill. This one is bounded, not a hang.
+- **Frozen locks and ownership states.** The fallback lock, primordial
+  initialization and registry/directory locks can be inherited while held
+  by a thread that does not survive the fork. A child allocation/free can
+  then deadlock or observe an owner state no surviving thread can advance.
+- **No automatic repair.** Numeric sidecar ingress and an explicitly started
+  process-lifetime maintenance worker do not make post-fork allocator use
+  safe. Forking a multithreaded process with maintenance activated is
+  specifically unsupported; the worker does not survive in the child.
 
 **`fork`+`exec` is safe** because none of the above windows are ever
 observed by the child: the child never calls back into `SeferAlloc` before
 the address space is replaced. Deliberately out of scope here (minimum-fix
 docs only, no runtime code change): a full `pthread_atfork` handler that
-resets the fallback lock/`INIT_STATE`/sentinels and marks orphaned slots
+resets the fallback lock/`INIT_STATE`/route state and marks orphaned slots
 abandoned in the child — tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`.
 
 ---

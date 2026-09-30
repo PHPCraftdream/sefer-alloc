@@ -38,3 +38,46 @@ The reviewed artifact is `2ebb6d80be665a0800d4abf50ae70e9c9ff3f354` **plus the u
 **Oracle calibration:** `tests/r8_global_box_provenance.rs:13-74` really installs `SeferAlloc` as `#[global_allocator]`, transfers narrow `Box<u8>` and `Box<Tiny>` values, drops them on a foreign thread, and checks pending-bit consumption plus free/route state. Its actual-Box post-terminal paused-producer case exists at `:77-116`, but is `#[cfg(miri)]`; this review did **not** run Miri and does not claim a passing result. `tests/r8_terminal_global.rs:89-123` pauses an explicit `GlobalAlloc` producer *before* publication and checks the retained route/second cut. `tests/r8_autonomous_maintenance.rs:52-96` uses a real installed allocator and a completed-worker-pass acknowledgement after owner exit, but its no-future-allocation premise is a test comment rather than an allocation/claim counter, and the P2 physical-release gap remains. Loom files are model oracles, not proof that the production code was run under Loom here.
 
 **Boundary of decision:** This review does not certify all feature profiles, OS backends, Miri provenance, Loom interleavings, or performance/RSS. It finds no valid-use P0/P1 source counterexample in the specified delta; absence of such a finding is not a proof of soundness. The inherited dirty integration and test outcomes remain for the parent to accept separately.
+
+## Parent follow-up — Windows native acceptance
+
+The original findings above remain the historical review of its snapshot.
+The P3 current-ingress documentation has been corrected. The P2 oracle was
+strengthened by `tests/r8_os_release_oracle.rs`: capture exact original tokens
+while the allocating owner is live, exit that owner, perform the last remote
+frees, then use passive worker acknowledgements and native mapping queries.
+The negative control unlinks a synthetic route while its reservation remains
+mapped, proving route disappearance alone cannot satisfy the OS oracle.
+
+The production and minimal `alloc-global,alloc-decommit` profiles, both with
+`internals,bench-internals`, passed on Windows. Small, ordinary Large and biased
+Large tokens became unmapped without a subsequent allocation or claimant.
+Linux is wired into CI but was not executed in this acceptance run. This
+closes the specific Windows evidence gap; it is not an all-platform release GO.
+The old aligned-vmem Miri aperture recursively used the installed allocator.
+Commit `e5a76ee6` pairs System allocation and release in that aperture; five
+focused member Miri tests and 49 native member tests passed. Root tests with
+the actual installed allocator still require acceptance: a later interpreter
+run exited with allocation failure before the harness started. Its cause is
+not established by that exit, and no root Miri pass is claimed.
+
+## Parent follow-up — integrated runtime validation
+
+The full root library/integration runtime suite passed on Windows with
+`production,internals,bench-internals,batch-api`, `--locked`, `-j 1`,
+`--no-fail-fast` and two test threads. Task
+`398c9450-5593-44c6-b8a2-642a62387437` completed with exit code 0 in 244 seconds.
+Native cutover code and targets are committed as `a4245965`; CI/model wiring
+is committed separately as `c46d5052`.
+
+Commit `911c0266` bounds the differential random fixture and the owner-recycle
+fixture without permitting NULL allocations or dropping release accounting.
+All six historical native seeds remain in a tracked fixture and are replayed
+with their original generator. Actual Large-kind witnesses remain, including
+with `medium-classes`; the recycle fixture still detects the former cap of 32.
+The earlier NULL failures did not reproduce in these replays; their historical
+cause is not proven, so these changes are not described as a production leak fix.
+
+CI guards passed for 101 sentinels, seven wired root Loom targets, and the
+reviewed debug-hook safety/gating inventory. This is not a remote CI run or a
+claim that Linux, all feature profiles, or the pending root Miri checks passed.

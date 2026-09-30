@@ -157,3 +157,17 @@ the reversal record.)
     force-touch/rebuild the `env!(CARGO_MANIFEST_DIR)`-dependent test files
     after removing a scratch worktree, rather than re-diagnosing this from
     scratch.
+
+162. **[A] Root src R6-01/R6-03, R8-01 — complete terminal ingress and autonomous ownerless reclamation.**
+
+    - **Status:** OPEN — terminal ingress and explicit fallible service are implemented in the dirty snapshot; full acceptance remains.
+    - **Current-number-or-verdict:** normal foreign Small/Primordial and Large frees now publish through pinned route sidecars; the old ring/overflow/spill/deferred stack is removed. Cold trim/TLS teardown perform finite owner sweeps. `SeferAlloc::start_maintenance()` starts a process-lifetime worker only on explicit successful startup; failure leaves no autonomous guarantee. The 32 KiB bitmap plus 256 KiB class metadata per full Small sidecar is a logical prototype cost, not RSS. No speedup or release GO is claimed.
+    - **Next trigger:** parent acceptance of actual `GlobalAlloc` Box/narrow-reborrow paths, paused-producer strict trim, last free after owner exit without further calls, fallback, startup failure/retry and worker-failure policy, Miri/Loom, feature/OS matrix and measured RSS/latency. Do not close from source inspection or owner-only tests.
+    - **Evidence:** `src/registry/heap_core_xthread/routing.rs`, `src/alloc_core/alloc_core/sidecar_drain.rs`, `src/global/sefer_alloc/maintenance.rs`; `docs/REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`; `docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`. This doc pass did not run tests.
+
+163. **[A] Root src R7 P3-2 / R8-02 — implement Large alignment at or above segment granularity.**
+
+    - **Status:** OPEN — biased high-alignment geometry is implemented in the dirty snapshot; end-to-end acceptance remains.
+    - **Current-number-or-verdict:** `AllocCore::alloc_large` now takes a biased reservation for `align >= SEGMENT`, with distinct release token, usable metadata root and aligned payload. Registration uses the payload key and stored root. No successful-case platform matrix is claimed by this doc pass.
+    - **Next trigger:** parent acceptance of `SEGMENT`, `2 * SEGMENT`, `16 * SEGMENT` success, own/foreign/fallback/batch/realloc and rollback routes, OS release and Miri provenance. Keep this card open until results are reviewed.
+    - **Evidence:** `docs/LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`; `src/alloc_core/large/alloc_core_large.rs`; `src/alloc_core/platform/os.rs`; `tests/r8_large_alignment.rs`. This doc pass did not run tests.
