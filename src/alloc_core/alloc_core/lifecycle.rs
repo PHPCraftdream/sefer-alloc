@@ -357,12 +357,6 @@ impl AllocCore {
             directory_sidecar_vm: None,
             #[cfg(feature = "alloc-segment-directory")]
             directory_miss_streak: [0; SMALL_CLASS_COUNT],
-            #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-            dirty_segments: None,
-            #[cfg(feature = "class-aware-dirty")]
-            dirty_by_class: None,
-            #[cfg(feature = "class-aware-dirty")]
-            sidecar_oom_latch: None,
             // R31-15 (task #486): stamp a fresh, process-wide-unique identity
             // for this AllocCore. See the field's own doc comment for why
             // this must be a monotonic counter rather than `&self`'s address.

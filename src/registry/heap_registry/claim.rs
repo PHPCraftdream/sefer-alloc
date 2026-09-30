@@ -432,8 +432,7 @@ impl Drop for MaintenanceLease {
 #[cfg_attr(
     not(any(
         all(feature = "alloc-global", feature = "fastbin"),
-        feature = "alloc-decommit",
-        feature = "alloc-xthread"
+        feature = "alloc-decommit"
     )),
     allow(unused_variables)
 )]
@@ -446,42 +445,6 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     heap_ref.bind_tcache_hits(&slot.remote.tcache_hits);
     #[cfg(feature = "alloc-decommit")]
     heap_ref.bind_large_cache_hits(&slot.remote.large_cache_hits);
-    // task H1: plant the stable `&'static` handle to this slot's cross-thread
-    // free-stack head (moved out of `HeapCore` into the `Sync` slot — see
-    // `HeapSlotRemote::thread_free` / `HeapCore::thread_free`). This is what
-    // makes the remote CAS target the slot word (outside every `&mut
-    // HeapCore` retag range) instead of an inline `HeapCore` field.
-    // PERF-PASS-4 (G8/ML2, task #52): the field moved into the
-    // `remote: HeapSlotRemote` sub-struct; the address handed out here is
-    // unaffected (a field reference's address is stable regardless of
-    // nesting) — same stable `'static` address, just now on its own
-    // 64-byte-aligned cache line.
-    #[cfg(feature = "alloc-xthread")]
-    heap_ref.bind_thread_free(&slot.remote.thread_free);
-    // RAD-4b (task #72): plant the stable `&'static` handle to this slot's
-    // second-chance overflow ring. `overflow` (unlike `remote`'s grouped
-    // fields) lives directly on `HeapSlot`, not inside `HeapSlotRemote` — see
-    // that field's doc comment in `heap_slot.rs`. Same claim-time-binding
-    // discipline as `bind_thread_free`/`bind_tcache_hits` above.
-    #[cfg(feature = "alloc-xthread")]
-    heap_ref.bind_overflow(&slot.overflow);
-    // R7-A4: plant the stable `&'static` handle to this slot's per-slot
-    // dirty-segment bitmap. Same claim-time-binding discipline as
-    // `bind_overflow` above. The dirty bitmap lives in `HeapSlotRemote`
-    // (cross-thread-reachable, process-`'static`).
-    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
-    heap_ref.bind_dirty_segments(&slot.remote.dirty_segments);
-    // R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): plant the stable
-    // `&'static` handle to this slot's per-(segment, class) dirty-bit
-    // sidecar cell. Same claim-time-binding discipline as
-    // `bind_dirty_segments` above.
-    #[cfg(feature = "class-aware-dirty")]
-    heap_ref.bind_dirty_by_class(&slot.remote.dirty_by_class);
-    // R13-1 (task #271, P0 fix): plant the stable `&'static` handle to this
-    // slot's coarse-only latch. Same claim-time-binding discipline as
-    // `bind_dirty_by_class` above.
-    #[cfg(feature = "class-aware-dirty")]
-    heap_ref.bind_sidecar_oom_latch(&slot.remote.sidecar_oom_latch);
 }
 
 /// Construction failure: release INITIALIZING to FREE. The next claimant

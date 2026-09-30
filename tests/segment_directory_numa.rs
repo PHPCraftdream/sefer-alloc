@@ -314,9 +314,7 @@ fn r82_authoritative_miss_under_numa() {
 
 // ── §7.3 item 4: R9-8 rescue-scan interaction ────────────────────────────
 
-/// The R9-8 rescue-scan wrappers (`find_segment_with_free_forced` /
-/// `find_segment_with_free_checked_forced`) are gated
-/// `#[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]`.
+/// The forced rescue scan is gated to the directory feature without NUMA.
 /// Under NUMA they do not exist — the OOM path surfaces OOM without a rescue
 /// scan (same as the pre-R11-6 status quo). This test confirms the
 /// `dbg_directory_rescue_scan` hook returns `None` under NUMA (the rescue

@@ -331,17 +331,6 @@ impl SegmentMeta {
         ))
     }
 
-    /// The per-segment `RemoteFreeRing` view (the non-intrusive cross-thread
-    /// free queue). The ring metadata is carved at [`Layout::remote_ring_off`]
-    /// at bootstrap; this returns the typed view over it.
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn remote_ring(&self) -> crate::alloc_core::remote_free_ring::RemoteFreeRing {
-        crate::alloc_core::remote_free_ring::RemoteFreeRing::at(
-            self.base,
-            Layout::remote_ring_off(),
-        )
-    }
-
     // -------------------------------------------------------------------
     // Atomic views over the owner-state / deferred_next fields. These
     // return `&AtomicU64` at the field's fixed offset so a cross-thread

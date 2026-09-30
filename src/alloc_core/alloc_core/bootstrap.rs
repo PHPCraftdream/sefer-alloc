@@ -191,16 +191,6 @@ pub(crate) fn primordial() -> Option<Primordial> {
         base,
         Layout::magazine_bitmap_off(),
     ));
-    // Initialise the per-segment non-intrusive cross-thread-free ring (the
-    // Variant-2 fix: queues carry offsets, never poison the block). Only under
-    // `alloc-xthread`; without it the ring metadata is reserved (the Layout
-    // always carves it, to keep the byte layout uniform) but left uninitialised
-    // — it is never read on the single-thread path.
-    #[cfg(feature = "alloc-xthread")]
-    {
-        let ring_off = Layout::remote_ring_off();
-        super::super::remote_free_ring::RemoteFreeRing::init_in_place(base, ring_off);
-    }
     // X7 Ф3 (task #191): zero the per-segment generation table under
     // `hardened`. Compiled ONLY under `hardened`; under any other feature the
     // table does not exist and this call is absent (byte-identical to the

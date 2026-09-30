@@ -166,7 +166,7 @@ impl HeapCore {
                         old_layout.align(),
                     );
                     if class.is_none() {
-                        self.drain_large_deferred_free();
+                        self.drain_large_sidecar_ingress();
                     }
                 }
                 //   (2) In-place attempt — try OPT-F (Small same-class) and
@@ -590,11 +590,7 @@ impl HeapCore {
         // hazard this file's `realloc` doc comment warns about at length).
         #[cfg(feature = "alloc-xthread")]
         {
-            self.drain_large_deferred_free();
-        }
-        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
-        {
-            self.drain_heap_overflow();
+            self.drain_large_sidecar_ingress();
         }
         let (new_ptr, _is_fresh) = self.core.alloc_large(new_size, old_layout.align());
         if new_ptr.is_null() {

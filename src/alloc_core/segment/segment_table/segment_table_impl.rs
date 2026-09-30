@@ -271,6 +271,15 @@ impl SegmentTable {
         Some(())
     }
 
+    /// Whether this instance attached terminal descriptors before first issue.
+    /// Standalone owner-local cores never attach them. Once attached, missing
+    /// per-segment descriptors remain a broken invariant, not a local-mode hint.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline]
+    pub(crate) fn is_routed(&self) -> bool {
+        self.routes.is_some()
+    }
+
     pub(crate) fn close_routes(&mut self) {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &mut self.routes {
@@ -292,6 +301,23 @@ impl SegmentTable {
         }
         #[cfg(not(feature = "alloc-global"))]
         let _ = (base, offset, class_idx);
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn scan_small_route(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+    ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
+        self.routes.as_ref()?.scan_small(index, base, high_water)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn claim_large_route(&self, index: usize, base: *mut u8) -> bool {
+        self.routes
+            .as_ref()
+            .is_some_and(|routes| routes.claim_large_pending(index, base))
     }
 
     /// Register a new segment base. Returns its assigned `segment_id` (the
