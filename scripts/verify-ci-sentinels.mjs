@@ -1108,6 +1108,8 @@ function verifyCiSentinels() {
 // registry/maintenance target has a real emitted-name or asserted-marker
 // sentinel. Attribute, marker assertion ordering and nocapture checks remain
 // unchanged. This is the current exact floor, not a parser exemption.
+// The harness-free installed-Box target replaces four libtest result sentinels
+// with four asserted completion markers; the live count remains 101.
 const MIN_SENTINEL_COUNT = 101;
 
 const { checkedCount, errors } = verifyCiSentinels();

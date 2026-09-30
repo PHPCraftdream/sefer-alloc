@@ -7,15 +7,40 @@
 //   node scripts/miri.mjs decommit_miri_cycle   # a subset (by test name)
 //   node scripts/miri.mjs --plain   # concurrent terminal allocator matrix
 //   node scripts/miri.mjs --plain regression_xthread_large_free_no_leak
-//   node scripts/miri.mjs --tree-borrows r8_global_box_provenance
+//   node scripts/miri.mjs --tree-borrows miri_global_box_acceptance
 //   npm run miri
 //
-// Each entry is [features, testName, packageName?, exactTest?]. Keep Miri
+// Each entry is [features, testName, packageName?, exactTest?, scenario?]. Keep Miri
 // focused on bounded invariant/UB targets, not whole native workloads.
 // packageName omission means the root package. exactTest selects one genuine
 // invariant within its single target and requires that exact result sentinel.
 
 import { REPO_ROOT, run, verdict } from './lib.mjs';
+import { spawn } from 'node:child_process';
+
+const CUSTOM_TAIL_CHARS = 64 * 1024;
+
+function runCustomAcceptance(args, env, marker) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('cargo', args, { cwd: REPO_ROOT, env });
+    let tail = '';
+    let completed = false;
+    let stdoutTail = '';
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdoutTail = (stdoutTail + text).slice(-CUSTOM_TAIL_CHARS);
+      completed ||= stdoutTail.includes(marker);
+      tail = (tail + text).slice(-CUSTOM_TAIL_CHARS);
+    });
+    child.stderr.on('data', (chunk) => {
+      tail = (tail + chunk.toString()).slice(-CUSTOM_TAIL_CHARS);
+    });
+    child.stdout.pipe(process.stdout, { end: false });
+    child.stderr.pipe(process.stdout, { end: false });
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code: code ?? 1, completed, tail }));
+  });
+}
 
 const MATRIX = [
   ['experimental', 'region_invariants'],
@@ -97,11 +122,9 @@ const MATRIX = [
   // It has no crate features; keep the package-qualified invocation separate
   // from the root-package feature matrix entry shape.
   ['', 'narrow_domain_unchecked_storage', 'tagged-index-stack'],
-  // Genuine tiny installed-global Box ownership/reborrow round trip.
-  ['alloc-global internals bench-internals', 'r8_global_box_provenance', undefined, 'installed_box_drop_narrow_transfer_and_reissue'],
-  // Separate exact invocation: owner retirement before the actual Box Drop
-  // producer resumes after its terminal RMW. This test is cfg(miri)-only.
-  ['alloc-global internals bench-internals', 'r8_global_box_provenance', undefined, 'installed_box_drop_retires_before_terminal_producer_resumes'],
+  // Custom harness-free target: one actual installed-Box witness per process.
+  ['alloc-global internals bench-internals', 'miri_global_box_acceptance', undefined, undefined, 'narrow'],
+  ['alloc-global internals bench-internals', 'miri_global_box_acceptance', undefined, undefined, 'paused'],
   // `regression_own_segment_cache_invalidation` deferred from the miri set
   // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
   // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not
@@ -187,15 +210,35 @@ const env = {
 };
 
 let allOk = true;
-for (const [features, test, packageName, exactTest] of entries) {
+for (const [features, test, packageName, exactTest, scenario] of entries) {
   const packageArg = packageName ? ['-p', packageName] : [];
   const featuresArg = features.trim();
   const featuresArgs = featuresArg ? ['--features', featuresArg] : [];
   console.log(
-    `\n[miri] ${test} (package: ${packageName || 'root'}, features: ${
+    `\n[miri] ${test}${scenario ? `:${scenario}` : ''} (package: ${packageName || 'root'}, features: ${
       featuresArg || '(none)'
     })`,
   );
+  if (scenario) {
+    const marker = scenario === 'narrow'
+      ? '[miri_global_box_acceptance] COMPLETE narrow_two_rounds'
+      : '[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement';
+    const customEnv = {
+      ...env,
+      RUSTC_WRAPPER: '',
+      MIRIFLAGS: `${env.MIRIFLAGS} -Zmiri-report-progress=10000000`,
+    };
+    const { code, completed, tail } = await runCustomAcceptance(
+      ['+nightly', 'miri', 'test', ...packageArg, ...featuresArgs,
+        '-j', '1', '--test', test, '--', scenario],
+      customEnv,
+      marker,
+    );
+    const ok = code === 0 && completed && !/^error(\[|:)/m.test(tail);
+    console.log(`[miri:${test}:${scenario}] ${ok ? 'PASS' : `FAIL (exit ${code}, completed=${completed})`}`);
+    allOk = ok && allOk;
+    continue;
+  }
   // `run()` defaults to `shell: false`, so the space-joined `features` value
   // reaches cargo as ONE argv element (no shell to re-split it on whitespace).
   // The previous COMMA-join here existed only to dodge `shell: true`'s

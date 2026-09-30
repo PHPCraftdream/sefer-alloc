@@ -2803,6 +2803,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      RUSTC_WRAPPER: ""
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
@@ -2812,28 +2813,36 @@ jobs:
       - name: region_invariants
         run: cargo miri test --test region_invariants
       - name: installed Box narrow-provenance ownership round trip
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
         run: |
-          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_narrow_transfer_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-installed-box.log"
-          grep -F "test installed_box_drop_narrow_transfer_and_reissue ... ok" "$RUNNER_TEMP/miri-installed-box.log"
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box.log"
+          grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box.log"
         shell: bash
       - name: installed Box narrow-provenance under TreeBorrows
         env:
-          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
         run: |
-          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_narrow_transfer_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
-          grep -F "test installed_box_drop_narrow_transfer_and_reissue ... ok" "$RUNNER_TEMP/miri-installed-box-tree.log"
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
+          grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
         shell: bash
       - name: installed Box retirement before terminal producer resumes
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
         run: |
-          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_retires_before_terminal_producer_resumes 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
-          grep -F "test installed_box_drop_retires_before_terminal_producer_resumes ... ok" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+          grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
         shell: bash
       - name: installed Box terminal producer pause under TreeBorrows
         env:
-          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
         run: |
-          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_retires_before_terminal_producer_resumes 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
-          grep -F "test installed_box_drop_retires_before_terminal_producer_resumes ... ok" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+          grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
         shell: bash
       # Tagged-index-stack Miri automation: the package-specific unchecked-storage oracle for
       # `tagged-index-stack`. Keep this as an explicit Miri invocation under
