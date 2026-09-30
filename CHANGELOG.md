@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
-### Root allocator `src/` review round 9 (2026-09-30; in progress)
+### Root allocator `src/` review round 9 (2026-09-30; fixes accepted)
 
 - `internals` Small diagnostic readers now reject Large segments before
   reading Small-only metadata, retaining canonical-root lookup and class
@@ -17,8 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inventory prose replaces removed ring/dirty names.
 - Expanded rustdoc links were repaired without visibility/runtime changes;
   parent exact-production and expanded-production `-D warnings` docs builds
-  and 31 doc guards passed. Bounded background maintenance remains pending.
-  No release GO or speedup is claimed; installed allocator
+  and doc guards passed; root all-feature/docs.rs warning-strict CI rows are
+  now wired with metadata-derived features.
+- Background maintenance now persists a numeric cursor and cuts at most 64
+  charged ingress units per successful heap visit. Full explicit trim,
+  TLS-exit and claim sweeps plus cold cache/pool policy remain intact, with
+  no producer hint/RMW added. The integrated native suite passed 688 tests,
+  along with all-target clippy, eight ordering-model tests and two focused
+  strict-provenance Miri cases. Independent source review round 10 follows.
+- No release GO or measured speedup is claimed; installed allocator
   Miri remains an independent open acceptance gate. See
   `docs/perf/round-manifests/SRC_REVIEW_R9_MANIFEST.md` for scoped evidence.
 
