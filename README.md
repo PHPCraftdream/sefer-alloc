@@ -380,24 +380,20 @@ seam is a hard error). Complete inventory:
 ## Target support
 
 This is an explicit support decision, not an accident of whatever happened
-to compile last. The allocator is pinned to 64-bit layouts — the F12
-exact-size pin `size_of::<SegmentHeader>() == 144`
-(`src/alloc_core/segment/segment_header/layout_asserts.rs`) and the F4
-`#[repr(C)]` pin `offset_of!(PerClass, slots) == 8`
-(`src/registry/heap_core/state/tcache.rs`) are both true only where
-`*mut u8` / `usize` are 8 bytes wide, and the `AtomicU64`-based publication
-and ownership protocol they protect has not been audited at 32-bit pointer
-widths. Rather than let a 32-bit `--features production` build fail with two
-cryptic `error[E0080]` const-assert diagnostics and no explanation, the
-crate root declares the boundary (decision R2-17,
+to compile last. Allocator metadata and magazine layout bounds, `AtomicU64`
+publication/ownership, and pointer-provenance assumptions have not been
+audited at 32-bit pointer widths. The segment-header assertion is a page
+budget (`size_of::<SegmentHeader>() <= PAGE`), not an exact byte-size pin.
+Rather than treating an incidental 32-bit build result as support, the crate
+root declares the boundary (decision R2-17,
 `docs/reviews/2026-09-22-120730-src-review-xa-round-2.md` §R2-17): any build
 with `alloc-core` — and therefore every feature built on it
 (`alloc-global`, `production`, `fastbin`, …) — is rejected at compile time on
 a non-64-bit target by the gate in `src/lib.rs`. Allocator support for
 32-bit pointer widths is a possible future undertaking, not a configuration
-toggle: it requires re-deriving the pinned layouts for the target ABI and
-re-auditing the atomics, and is scoped out here. The region-only
-`Region<T>` surface is unaffected and stays available on 32-bit (std or
+toggle: it requires re-deriving metadata/magazine bounds for the target ABI
+and re-auditing atomics and pointer provenance, and is scoped out here. The
+region-only `Region<T>` surface is unaffected and stays available on 32-bit (std or
 no_std). If you see the gate, the marker message to grep for is
 `sefer-alloc: allocator features require a 64-bit target`.
 
@@ -405,8 +401,8 @@ no_std). If you see the gate, the marker message to grep for is
 |---|---|---|
 | x86_64 (linux-gnu, windows-msvc) | supported (CI) | supported (CI) |
 | aarch64 (linux-gnu via cross, apple-darwin) | supported (CI) | supported (CI, incl. weak-memory rows) |
-| other 64-bit pointer-width targets | expected to work, not CI-tested, no claim | compiles by construction (the layout pins are pointer-width-conditional), untested, no claim |
-| 32-bit pointer-width targets (e.g. i686-*) | supported (std or no_std) | REJECTED at compile time by the R2-17 gate (crate-root `compile_error!`); the pinned 144-byte segment header / offset-8 magazine layouts and the AtomicU64 protocol have not been audited for 32-bit |
+| other 64-bit pointer-width targets | expected to work, not CI-tested, no claim | passes the pointer-width gate; untested, no claim |
+| 32-bit pointer-width targets (e.g. i686-*) | supported (std or no_std) | REJECTED at compile time by the R2-17 gate (crate-root `compile_error!`); metadata/magazine bounds, AtomicU64 operations and pointer provenance have not been audited for 32-bit |
 
 The support boundary is pinned in both directions by
 `tests/regression_r2_17_64bit_target_gate.rs`: the allocator build must fail
@@ -735,6 +731,7 @@ item-scoped regions.
 | [`src/registry/heap_core/state/tcache_flush.rs`](src/registry/heap_core/state/tcache_flush.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread/routing.rs`](src/registry/heap_core_xthread/routing.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 | [`src/registry/heap_core_xthread/overflow.rs`](src/registry/heap_core_xthread/overflow.rs) | 1 | `dbg_resolve_dirty_notification` test hook (`internals` + `bench-internals`), whose caller guarantees a live block during resolution |
+| [`src/registry/heap_core_xthread/sidecar_drain.rs`](src/registry/heap_core_xthread/sidecar_drain.rs) | 1 | `dbg_reclaim_sidecar_record_for_test` (`internals` + `bench-internals`) — synthetic detached-record probe requiring exclusive owner access, a mapped physical block and its issued class |
 | [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 7 | Internal call-site blocks in `trim_current_thread` / `dbg_trim_current_thread` / `dbg_drain_current_thread_rings` / `dbg_current_large_cache_extension_materialised` / `dbg_current_large_cache_total_slots` / `dbg_current_large_cache_budget` / `dbg_current_large_cache_used_bytes` into `HeapCore::trim_for_recycle` / `dbg_drain_all_rings` / `dbg_large_cache_*` accessors — each resolves the calling thread's own already-bound heap via `current_heap()`, never claims a new slot |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 10 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The tenth is `store_next_for_test`, a `--cfg loom`-only raw link-cell write forwarder used solely by the loom tiny-tag counterfactual (an `unsafe fn`, not a safe one, since misuse can double-issue an index). The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
@@ -742,7 +739,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **107** tier-2 item-scoped allows across **36**
+`src/`, 6 in `crates/`) plus **108** tier-2 item-scoped allows across **37**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

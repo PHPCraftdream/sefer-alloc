@@ -361,35 +361,19 @@ compile_error!(
      if you did not request this combination directly."
 );
 
-// R2-17 (independent src review round 2, docs/reviews/2026-09-22-120730-src-review-xa-round-2.md) — the allocator's
-// 64-bit-only support boundary, declared explicitly instead of surfacing as
-// two cryptic E0080 const-assert failures. What fires here: ANY allocator
-// feature build on a non-64-bit target. `alloc-core` is the substrate root,
+// R2-17 — the allocator's explicit 64-bit support boundary. It rejects any
+// allocator-feature build on a non-64-bit target. `alloc-core` is the root,
 // and every feature above it (`alloc-xthread`, `alloc-global`, `production`,
 // `fastbin`, `batch-api`, `alloc-stats`, `medium-classes`, `numa-aware`,
 // `alloc-decommit`, `page-map-diag`, `exact-span-large`,
 // `alloc-segment-directory`, ...) implies it, so this single gate covers the
 // whole allocator surface.
 //
-// Why 64-bit specifically — the two pins named in the review, plus the
-// protocol they protect:
-//   * `size_of::<SegmentHeader>() == 144`
-//     (`src/alloc_core/segment/segment_header/layout_asserts.rs:83`,
-//     F12/task #498: an EXACT-value pin, not a budget bound) — 144 bytes is
-//     what the F12 targeted field-wise write in `AllocCore::alloc_large`'s
-//     large-cache hit arm was verified against, on a 64-bit `repr(C)` ABI
-//     where `*mut u8`/`usize` are 8 bytes. On a 32-bit ABI the same struct
-//     shrinks and the pin's premise no longer describes reality.
-//   * `::core::mem::offset_of!(PerClass, slots) == 8`
-//     (`src/registry/heap_core/state/tcache.rs:257`) — `slots` is a
-//     `[*mut u8; TCACHE_CAP]`; `#[repr(C)]` pads it up to pointer alignment,
-//     so it only lands at offset 8 when pointers are 8 bytes wide (offset 4
-//     on a 32-bit ABI).
-//   * Both pins sit on top of an AtomicU64-based publication/ownership
-//     protocol (segment `owner_state`, per-segment ring heads, registry
-//     slot claims) whose 32-bit alignment behaviour has NOT been audited.
-// The review's own conclusion is that simply deleting the asserts would be
-// wrong: the arithmetic and the atomics need re-validating, so allocator-on-
+// Why 64-bit: metadata placement and magazine layout have target-ABI bounds;
+// the header is constrained to fit within one page, not to one exact size.
+// AtomicU64 publication/ownership and route-pointer provenance also need a
+// 32-bit audit. Removing a layout assertion alone does not establish support:
+// the arithmetic, atomics and provenance contract need re-validation, so allocator-on-
 // 32-bit is a future undertaking requiring a full re-audit — not a config
 // toggle.
 //
@@ -401,18 +385,17 @@ compile_error!(
 //
 // This gate is deliberately POINTER-WIDTH-conditional, not
 // arch-conditional: it rejects exactly the class of targets where the
-// pinned layout premise (`*mut u8` / `usize` / `AtomicU64` alignment) is
-// false, and says nothing about which architecture family a target belongs
-// to. The full target support matrix lives in README.md "Target support".
+// allocator's ABI/protocol assumptions have not been audited; it does not
+// distinguish architecture families. See README.md "Target support".
 // Review: docs/reviews/2026-09-22-120730-src-review-xa-round-2.md §R2-17.
 #[cfg(all(feature = "alloc-core", not(target_pointer_width = "64")))]
 compile_error!(
     "sefer-alloc: allocator features require a 64-bit target (R2-17 support \
      decision): `alloc-core` and every feature built on it (`alloc-global`, \
-     `production`, ...) are pinned to 64-bit layouts (`size_of::<SegmentHeader>() \
-     == 144`, `PerClass::slots` at offset 8) and an AtomicU64-based protocol \
-     that have NOT been audited on 32-bit pointer widths. Rebuild for a \
-     64-bit target, or drop the allocator features (the region-only \
+     `production`, ...) rely on metadata/magazine layout bounds, AtomicU64 \
+     publication/ownership and pointer-provenance assumptions that have NOT \
+     been audited on 32-bit pointer widths. Rebuild for a 64-bit target, or \
+     drop the allocator features (the region-only \
      `Region<T>` surface still works on 32-bit). See README.md \
      \"Target support\"."
 );

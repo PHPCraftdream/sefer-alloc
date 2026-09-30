@@ -79,12 +79,18 @@ for (const row of rows) {
   // the inherited environment, never replacing it wholesale — mirrors
   // check-all.mjs's identical `step.env` handling and the same rationale
   // (spawn's `env` option replaces PATH entirely if not merged).
-  const { code } = await run('cargo', args, {
+  const { code, out } = await run('cargo', args, {
     cwd: REPO_ROOT,
     ...(row.env ? { env: { ...process.env, ...row.env } } : {}),
   });
   if (code !== 0) {
     console.log(`\n[check-matrix] FAIL at row: ${row.id} (exit ${code})`);
+    allOk = false;
+    break;
+  }
+  const missing = (row.expectTest ?? []).filter((name) => !out.includes(`test ${name} ... ok`));
+  if (missing.length !== 0) {
+    console.log(`\n[check-matrix] FAIL at row: ${row.id} (missing completed tests: ${missing.join(', ')})`);
     allOk = false;
     break;
   }

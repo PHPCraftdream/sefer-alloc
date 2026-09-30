@@ -77,6 +77,8 @@
  *                                    '-D' found`). Both `run-check-matrix.mjs`
  *                                    and `check-all.mjs` merge this onto
  *                                    `process.env` before spawning.
+ * @property {number} [jobs]        - per-invocation Cargo job limit
+ * @property {string[]} [expectTest] - exact completed libtest names required
  * @property {string} note         - one-line rationale (why this row exists)
  */
 
@@ -210,6 +212,86 @@ export const PER_PR_ROWS = [
       '"-D warnings" cargo check --features "alloc-core alloc-decommit ' +
       'internals"` on the pre-fix tree: 10 errors, one per warning).',
   },
+  // R8 cutover: actual terminal producer/owner/service behavior across the
+  // policy boundaries. bench-internals arms fallback/startup/unwind oracles.
+  // Keep these here so local and CI invocations cannot diverge.
+  {
+    id: 'test-r8-minimal-global',
+    kind: 'test',
+    features: 'alloc-global internals bench-internals',
+    note: 'Terminal global allocation, owner sidecar misses and autonomous maintenance without fastbin/decommit/directory.',
+  },
+  {
+    id: 'test-r8-fastbin-no-decommit',
+    kind: 'test',
+    features: 'fastbin internals bench-internals',
+    note: 'Magazine terminal publication/consumption and ownerless Large retirement without decommit.',
+  },
+  {
+    id: 'test-r8-production',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    note: 'Shipping sidecar/owner/service path, including ownerless Small release without any future alloc or claim.',
+  },
+  {
+    id: 'test-r8-hardened-numa-directory',
+    kind: 'test',
+    features: 'production hardened numa-aware internals bench-internals',
+    note: 'Terminal geometry, owner consumption and maintenance with hardened checks, NUMA and directory routing.',
+  },
+  {
+    id: 'test-r8-large-geometry-policies',
+    kind: 'test',
+    features: 'production exact-span-large large-reserved-capacity internals bench-internals',
+    note: 'Biased Large alignment and retirement with exact spans and reserved-capacity grow/shrink.',
+  },
+  {
+    id: 'test-r8-large-commit-failure',
+    kind: 'test',
+    features: 'alloc-core internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'r8_large_alignment' },
+    note: 'Native real commit-failure rollback for biased Large reservations, deliberately without numa-aware: eager NUMA reservation bypasses lazy-commit fault injection.',
+  },
+  {
+    id: 'test-live-doc-contracts',
+    kind: 'test',
+    features: '',
+    target: { flag: '--test', name: 'no_stale_doc_references' },
+    env: { RUSTC_WRAPPER: '' },
+    jobs: 1,
+    note: 'All retained source, safety, feature, inventory and sentinel doc contracts must execute.',
+    expectTest: [
+      'no_crate_heap_module_path',
+      'no_removed_heap_type_doc_mentions',
+      'no_stale_abandon_adopt_substrate_references',
+      'cargo_toml_alloc_global_panic_contract_is_accurate',
+      'allocator_64bit_gate_docs_match_live_metadata_bounds',
+      'architecture_test_file_count_matches_reality',
+      'verification_inventory_matches_docs',
+      'readme_unsafe_inventory_counts_match_reality',
+      'production_feature_bundle_doc_sites_match_cargo_toml',
+      'lib_rs_seam_inventory_matches_canonical_grep',
+      'perclass_doc_offsets_match_const_asserts',
+      'honest_reject_sections_are_indexed',
+      'every_undecided_feature_has_exactly_one_owner_with_a_next_trigger',
+      'correctness_index_recently_resolved_pointers_carry_verdicts',
+      'correctness_item_87_sentinel_counts_agree',
+      'correctness_item_59a_hugetlb_real_sentinel_count_agrees',
+      'decommit_calls_doc_distinguishes_logical_entries_from_syscalls',
+      'epoch_hand_doc_matches_conditional_confinement_and_bounded_impls',
+      'remote_evict_doc_names_the_blocking_bookkeeping',
+      'lock_free_generation_max_doc_matches_the_final_reuse_policy',
+      'crate_root_stats_blurb_matches_method_level_contract',
+      'large_cache_config_doc_matches_budget_and_headroom_behavior',
+      'no_owned_sidecar_references_anywhere',
+      'oxx_r2_07_alloc_core_is_not_send_in_doc',
+      'oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate',
+      'oxx_r2_07_forbid_unsafe_code_claims_are_accurate',
+      'oxx_r2_07_bootstrap_unsafe_block_claim_is_accurate',
+      'oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate',
+      'oxx_r2_07_realloc_unsafe_fn_claims_are_accurate',
+    ],
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal
@@ -258,6 +340,9 @@ export function rowToCargoArgs(row) {
     args.push('--all-features');
   } else if (row.features) {
     args.push('--features', row.features);
+  }
+  if (row.jobs) {
+    args.push('-j', String(row.jobs));
   }
 
   if (row.kind === 'clippy') {

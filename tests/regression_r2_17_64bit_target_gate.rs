@@ -8,9 +8,7 @@
 //! 1. An allocator-feature build (`--features production`) for a 32-bit
 //!    target MUST fail to compile, and MUST fail with the gate's marker
 //!    message. Before R2-17 the same command failed too, but only with two
-//!    cryptic `error[E0080]: evaluation panicked: assertion failed:
-//!    size_of::<SegmentHeader>() == 144` / `... offset_of!(PerClass, slots)
-//!    == 8` diagnostics and no stated support boundary — the review's
+//!    layout/atomic errors with no stated support boundary — the review's
 //!    complaint was the *missing declaration*, not the missing failure.
 //! 2. The region-only surface (`--no-default-features`, the `Region<T>`
 //!    handle store, `no_std` + `alloc` only) MUST still compile on a 32-bit
@@ -33,17 +31,10 @@
 //!
 //! ## Observed reality (recorded, not asserted)
 //!
-//! On `i686-pc-windows-msvc` the gated child currently emits the gate's
-//! `compile_error!` AND the two pre-existing E0080 layout pins together
-//! (the gate fires at crate root without short-circuiting the rest of the
-//! crate's const-eval diagnostics). That is fine and expected — the pins are
-//! deliberately unconditional (see the R2-17 notes in
-//! `src/alloc_core/segment/segment_header/layout_asserts.rs` and
-//! `src/registry/heap_core/state/tcache.rs`), so if the crate-root gate is
-//! ever removed they keep failing loudly. Test 1 therefore asserts that the
-//! build fails AND that the gate message is present, and deliberately does
-//! NOT assert error-exclusivity (a stricter "only the gate fired" oracle
-//! would be one edit away from breaking by design).
+//! The gate can coexist with other target-specific diagnostics: a crate-root
+//! `compile_error!` does not short-circuit the rest of compilation. Test 1
+//! asserts failure AND the gate marker, not error-exclusivity. The header's
+//! current compile-time contract is a page budget, not an exact byte size.
 //!
 //! ## Manual verification (machines without a 32-bit std target installed)
 //!
@@ -152,8 +143,7 @@ fn unsupported_32bit_target_with_alloc_features_is_rejected_by_gate() {
         stderr.contains("sefer-alloc: allocator features require a 64-bit target"),
         "`cargo check --target {target} --features production` failed, but NOT \
          with the R2-17 gate message — the declared support boundary is no \
-         longer what rejects 32-bit allocator builds (the E0080 layout pins \
-         may be firing alone again). stderr:\n{stderr}"
+         longer what rejects 32-bit allocator builds. stderr:\n{stderr}"
     );
 }
 
