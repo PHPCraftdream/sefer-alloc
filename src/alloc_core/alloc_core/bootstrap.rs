@@ -56,7 +56,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // instead of the whole 4 MiB segment. `primordial_meta_end()` is the exact
     // byte offset past every region this function writes below (header, page
     // map, bin table, [bitmaps under miri], remote ring, registry array, hash
-    // table, free-list array + top) — see `Layout::primordial_meta_end`'s doc
+    // table, free-list array + top, active-kind index) — see `Layout::primordial_meta_end`'s doc
     // and the const-assert in `segment_header.rs` pinning the sum (with
     // page-rounding slack) within SEGMENT. Everything this
     // function writes therefore lands strictly inside the committed prefix by
@@ -119,6 +119,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
             initial_commit != 0
                 && initial_commit.is_multiple_of(aligned_vmem::page_size())
                 && initial_commit <= super::super::os::SEGMENT
+                && initial_commit >= Layout::primordial_active_kind_end()
         );
         Segment::reserve_lazy(initial_commit)?
     };
@@ -300,6 +301,9 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // cfg(miri)-gated array fill above.
     let free_top_ptr = base_plus(base, free_top_off) as *mut u32;
     super::super::node::Node::write_u32(free_top_ptr, 0);
+    let active_kind_ptr = base_plus(base, Layout::primordial_active_kind_off())
+        as *mut segment_table::ActiveKindIndex;
+    segment_table::ActiveKindIndex::init_in_place(active_kind_ptr);
 
     // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
     //    carving begins). Mark the page map / bin table / registry pages Meta
@@ -408,8 +412,14 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.
-    let table =
-        SegmentTable::from_primordial(reg_slots, 1, hash_slots, free_list_slots, free_top_ptr);
+    let table = SegmentTable::from_primordial(
+        reg_slots,
+        1,
+        hash_slots,
+        free_list_slots,
+        free_top_ptr,
+        active_kind_ptr,
+    );
 
     Some(Primordial { segment, table })
 }

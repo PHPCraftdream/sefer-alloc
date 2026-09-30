@@ -45,6 +45,11 @@ impl AllocCore {
     }
 
     #[doc(hidden)]
+    pub fn dbg_drain_large_sidecar_ingress(&mut self) -> usize {
+        self.drain_large_sidecar_ingress()
+    }
+
+    #[doc(hidden)]
     pub fn dbg_bounded_sidecar_step(
         &mut self,
         cursor: &mut (usize, usize),

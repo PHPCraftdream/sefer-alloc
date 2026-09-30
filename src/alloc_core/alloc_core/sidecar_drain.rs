@@ -4,6 +4,10 @@ use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::MIN_BLOCK;
 
+#[cfg(feature = "bench-internals")]
+pub(crate) static LARGE_SIDECAR_SLOT_INSPECTIONS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 impl AllocCore {
     /// At most `budget` slot inspections or word cuts. Cursor holds no root.
     /// Returns (retired records, charged operations).
@@ -163,7 +167,7 @@ impl AllocCore {
         reclaimed
     }
 
-    /// Large-only cold scan: the route descriptor must surrender its terminal
+    /// Large-only hot scan: the route descriptor must surrender its terminal
     /// obligation before physical retirement. Before publication its instance
     /// credit pins the reservation; afterward a pin retains only the descriptor.
     pub(crate) fn drain_large_sidecar_ingress(&mut self) -> usize {
@@ -172,12 +176,19 @@ impl AllocCore {
         }
         let end = self.table.count() as usize;
         let mut reclaimed = 0;
-        for index in 0..end {
+        let mut from = 0;
+        while let Some(index) = self.table.next_active(SegmentKind::Large, from) {
+            if index >= end {
+                break;
+            }
+            from = index + 1;
+            #[cfg(feature = "bench-internals")]
+            LARGE_SIDECAR_SLOT_INSPECTIONS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             let base = self.table.base_at(index);
-            if !base.is_null()
-                && SegmentHeader::kind_at(base) == SegmentKind::Large
-                && self.table.claim_large_route(index, base)
-            {
+            if base.is_null() || SegmentHeader::kind_at(base) != SegmentKind::Large {
+                std::process::abort();
+            }
+            if self.table.claim_large_route(index, base) {
                 self.reclaim_large_segment(base);
                 LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 reclaimed += 1;

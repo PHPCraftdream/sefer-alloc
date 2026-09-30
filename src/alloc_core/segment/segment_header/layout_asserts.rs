@@ -15,6 +15,14 @@ pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
 // free-list node.
 const _: () = assert!(Layout::primordial_meta_end() + PAGE <= crate::alloc_core::os::SEGMENT);
 const _: () = assert!(Layout::small_meta_end() + PAGE <= crate::alloc_core::os::SEGMENT);
+const _: () = assert!(Layout::primordial_active_kind_off().is_multiple_of(8));
+const _: () =
+    assert!(Layout::primordial_active_kind_off() >= Layout::primordial_free_top_off() + 4);
+const _: () = assert!(
+    Layout::primordial_active_kind_end()
+        <= align_up_const(Layout::primordial_free_top_off() + 4, PAGE)
+);
+const _: () = assert!(Layout::primordial_active_kind_end() <= Layout::primordial_meta_end());
 // R7-B6 (primordial lazy commit): mirrors `alloc_core_small.rs`'s identical
 // `small_meta_end() + LAZY_FIRST_CHUNK` assert, for the primordial
 // segment's (larger) metadata footprint. `bootstrap::primordial` commits

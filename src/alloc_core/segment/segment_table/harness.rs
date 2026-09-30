@@ -1,4 +1,7 @@
-use super::{SegmentTable, FREE_LIST_CAPACITY, HASH_CAPACITY, MAX_SEGMENTS, SEGMENT_SHIFT};
+use super::{
+    ActiveKindIndex, SegmentTable, FREE_LIST_CAPACITY, HASH_CAPACITY, MAX_SEGMENTS, SEGMENT_SHIFT,
+};
+use crate::alloc_core::segment_header::SegmentKind;
 
 // -----------------------------------------------------------------------
 // R4-8/N3 — TEST-ONLY harness for direct exercise of the open-addressing
@@ -38,10 +41,62 @@ pub struct SegmentHashHarness {
     _hash: Vec<*mut u8>,
     _free_list: Vec<u32>,
     _free_top: Vec<u32>,
+    _active_kind: Vec<u64>,
 }
 
 #[doc(hidden)]
 impl SegmentHashHarness {
+    /// Logical membership fixture; synthetic hash roots are never read.
+    pub fn active_set(&mut self, slot: usize, large: bool) {
+        ActiveKindIndex::set(
+            self.table.active_kind,
+            slot,
+            if large {
+                SegmentKind::Large
+            } else {
+                SegmentKind::Small
+            },
+        );
+    }
+
+    pub fn active_clear(&mut self, slot: usize, large: bool) {
+        ActiveKindIndex::clear(
+            self.table.active_kind,
+            slot,
+            if large {
+                SegmentKind::Large
+            } else {
+                SegmentKind::Small
+            },
+        );
+    }
+
+    pub fn active_next(&self, from: usize, large: bool) -> Option<usize> {
+        ActiveKindIndex::next(
+            self.table.active_kind,
+            if large {
+                SegmentKind::Large
+            } else {
+                SegmentKind::Small
+            },
+            from,
+        )
+    }
+
+    /// Rejection occurs before a synthetic root could be dereferenced.
+    pub fn unknown_registration_is_unchanged(&mut self) -> bool {
+        let count = self.table.count();
+        let top = self._free_top[0];
+        let slot = self._slots[1];
+        let base = Self::base_for_index(1);
+        self.table.register(base, 1, SegmentKind::Unknown).is_none()
+            && self.table.count() == count
+            && self._free_top[0] == top
+            && self._slots[1] == slot
+            && self.active_next(0, false) == Some(0)
+            && self.active_next(0, true).is_none()
+    }
+
     /// Build an EMPTY hash table over heap-owned backing storage. Slot 0 is
     /// a synthetic primordial root; hash-only tests never register it.
     pub fn new() -> Self {
@@ -50,6 +105,9 @@ impl SegmentHashHarness {
         let mut hash: Vec<*mut u8> = vec![core::ptr::null_mut(); HASH_CAPACITY];
         let mut free_list: Vec<u32> = vec![0u32; FREE_LIST_CAPACITY];
         let mut free_top: Vec<u32> = vec![0u32; 1];
+        let mut active_kind = vec![0u64; ActiveKindIndex::FOOTPRINT / 8];
+        let active_kind_ptr = active_kind.as_mut_ptr().cast::<ActiveKindIndex>();
+        ActiveKindIndex::init_in_place(active_kind_ptr);
         // `from_primordial` performs no memory operation — it only stores the
         // pointers. The Vecs' heap allocations are stable across the move into
         // `Self` and are never reallocated, so the stored pointers remain valid.
@@ -59,6 +117,7 @@ impl SegmentHashHarness {
             hash.as_mut_ptr(),
             free_list.as_mut_ptr(),
             free_top.as_mut_ptr(),
+            active_kind_ptr,
         );
         Self {
             table,
@@ -66,6 +125,7 @@ impl SegmentHashHarness {
             _hash: hash,
             _free_list: free_list,
             _free_top: free_top,
+            _active_kind: active_kind,
         }
     }
 

@@ -11,6 +11,7 @@
 //! `diag_probes` module. Pure code-movement sibling of `heap_core.rs`; no
 //! behavior changed.
 
+#[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
 use core::alloc::Layout;
 
 use crate::alloc_core::os;
@@ -98,6 +99,22 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_table_count(&self) -> u32 {
         self.core.dbg_table_count()
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub fn dbg_active_kind_census(&self) -> (usize, usize, bool) {
+        self.core.dbg_active_kind_census()
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "internals",
+        feature = "bench-internals",
+        feature = "alloc-xthread"
+    ))]
+    pub fn dbg_large_sidecar_slot_inspections() -> u64 {
+        crate::alloc_core::AllocCore::dbg_large_sidecar_slot_inspections()
     }
 
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to

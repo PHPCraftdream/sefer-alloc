@@ -88,6 +88,21 @@ impl AllocCore {
         self.table.count()
     }
 
+    /// Cold independent slot census plus exact-index agreement.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_active_kind_census(&self) -> (usize, usize, bool) {
+        self.table.active_kind_census()
+    }
+
+    /// Counts attempted hot Large route-slot probes before `base_at`.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "alloc-xthread"))]
+    pub fn dbg_large_sidecar_slot_inspections() -> u64 {
+        crate::alloc_core::alloc_core::sidecar_drain::LARGE_SIDECAR_SLOT_INSPECTIONS
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// TEST-ONLY (task #135): public wrapper over `AllocCore::contains_base`
     /// for integration tests (which cannot see the `pub(crate)` version, nor
     /// the `pub(crate)` `os::segment_base_of_ptr` needed to derive a segment

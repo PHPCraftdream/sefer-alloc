@@ -143,7 +143,7 @@ impl SegmentLayout {
     pub const SMALL_META_END: usize = crate::alloc_core::segment_header::Layout::small_meta_end();
 
     /// The end of the primordial segment's metadata region (page-aligned past
-    /// the free-list top counter). The primordial segment additionally carries
+    /// the active-kind index). The primordial segment additionally carries
     /// the registry array + hash table + free-list stack past the small-segment
     /// metadata, so this is `>=` [`SMALL_META_END`](Self::SMALL_META_END).
     ///
@@ -153,6 +153,11 @@ impl SegmentLayout {
     /// [`primordial_decommit_start`](Self::primordial_decommit_start).
     pub const PRIMORDIAL_META_END: usize =
         crate::alloc_core::segment_header::Layout::primordial_meta_end();
+
+    #[doc(hidden)]
+    #[cfg(feature = "internals")]
+    pub const PRIMORDIAL_ACTIVE_KIND_END: usize =
+        crate::alloc_core::segment_header::Layout::primordial_active_kind_end();
 
     /// R8-6 (task #219): the real, runtime-determined decommit/recommit safe
     /// boundary for a small segment — [`SMALL_META_END`](Self::SMALL_META_END)

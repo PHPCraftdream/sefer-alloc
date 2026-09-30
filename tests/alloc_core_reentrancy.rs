@@ -192,3 +192,34 @@ fn m5_alloc_path_does_not_touch_global_allocator() {
     // Now drop (outside the measured window).
     drop(a);
 }
+
+#[cfg(all(
+    feature = "internals",
+    feature = "bench-internals",
+    feature = "alloc-xthread",
+    feature = "alloc-decommit"
+))]
+#[test]
+fn m5_active_kind_churn_stays_off_installed_allocator() {
+    let mut core = AllocCore::dbg_new_routed_for_test().expect("routed primordial");
+    core.dbg_set_large_cache_budget(Some(0));
+    let layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
+    let mut ptrs = [core::ptr::null_mut(); 4];
+    let alloc_before = alloc_count();
+    let dealloc_before = dealloc_count();
+    for _ in 0..3 {
+        for ptr in &mut ptrs {
+            *ptr = core.alloc(layout);
+            assert!(!ptr.is_null());
+        }
+        assert_eq!(core.dbg_active_kind_census(), (1, 4, true));
+        for ptr in &mut ptrs {
+            // SAFETY: each pointer is a distinct current Large issue.
+            unsafe { core.dealloc(*ptr, layout) };
+            *ptr = core::ptr::null_mut();
+        }
+        assert_eq!(core.dbg_active_kind_census(), (1, 0, true));
+    }
+    assert_eq!(alloc_count() - alloc_before, 0);
+    assert_eq!(dealloc_count() - dealloc_before, 0);
+}

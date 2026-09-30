@@ -114,8 +114,15 @@ impl Layout {
     pub(crate) const fn primordial_free_top_off() -> usize {
         Self::primordial_free_list_off() + crate::alloc_core::segment_table::FREE_LIST_FOOTPRINT
     }
-    /// End of the primordial metadata (page-aligned past the free-list top
-    /// counter).
+    /// Owner-only active-kind index, in the existing free-top metadata page.
+    pub(crate) const fn primordial_active_kind_off() -> usize {
+        align_up_const(Self::primordial_free_top_off() + size_of::<u32>(), 8)
+    }
+    pub(crate) const fn primordial_active_kind_end() -> usize {
+        Self::primordial_active_kind_off()
+            + crate::alloc_core::segment_table::ActiveKindIndex::FOOTPRINT
+    }
+    /// End of the primordial metadata (page-aligned past the active-kind index).
     ///
     /// R8-6 (task #219): like [`small_meta_end`], this is the **TIGHT**
     /// metadata boundary — aligned only to `PAGE` (4 KiB). The primordial
@@ -131,7 +138,7 @@ impl Layout {
     /// for symmetry, future-proofing, and the compile-time/runtime sanity
     /// checks.
     pub(crate) const fn primordial_meta_end() -> usize {
-        align_up_const(Self::primordial_free_top_off() + 4, PAGE)
+        align_up_const(Self::primordial_active_kind_end(), PAGE)
     }
     /// R8-6 (task #219): the real, runtime-determined decommit/recommit safe
     /// boundary for a small segment — [`small_meta_end`] rounded UP to the

@@ -45,11 +45,10 @@ pub(crate) static DIRECTORY_FALLBACK_SCANS: AtomicU64 = AtomicU64::new(0);
 /// per-class bitmap scan). Reads 0 until A3 wires the increment.
 pub(crate) static DIRECTORY_WORDS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
-/// Slots examined in the CURRENT linear scan (`find_segment_with_free_impl`).
-/// Incremented once per slot visited (including null/skipped slots) so the
-/// baseline already has the scan-cost counter live. This is the PRIMARY
-/// observability counter for A0: it directly measures the O(S) cost the
-/// directory is meant to eliminate.
+/// Current Small/Primordial candidates probed by the fallback in
+/// `find_segment_with_free_impl`, incremented before each `base_at`.
+/// Historical A0 counted NULL/skipped high-water slots too; the active-kind
+/// index now excludes those slots before a probe.
 pub(crate) static FULL_SCAN_SLOTS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
 /// Genuine directory misses where the directory was TRUSTED (the full

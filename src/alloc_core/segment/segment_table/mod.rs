@@ -26,7 +26,7 @@
 //!   slots are already freed and skipped.
 //! - O(1) `segment_of(ptr) = ptr & ~(SEGMENT-1)` lives in [`crate::alloc_core::os`] and
 //!   yields the segment base; routing then reads the header at offset 0. The
-//!   table is only needed for census/drop, not the hot path.
+//!   active-kind membership also drives owner-only hot candidate scans.
 //!
 //! ## Safety
 //!
@@ -40,13 +40,17 @@
 //! - A **live slot** holds the segment base pointer (non-NULL, SEGMENT-aligned).
 //! - A **recyclable slot** holds `null_mut()`. The corresponding OS reservation
 //!   has already been released; the virtual address is no longer valid.
-//! - [`register`] scans left-to-right for a recyclable slot first, reusing it
-//!   before appending. This keeps `count` at its high-water mark and never
-//!   wastes live slots.
+//! - [`register`] pops a recyclable slot from the free-list before appending.
 //! - [`recycle`] finds the slot for a given base, releases the OS reservation,
 //!   then writes NULL. These two operations happen in `decommit_empty_segment`
 //!   as a unit, so there is never a window where the OS reservation is released
 //!   but the slot is still non-NULL (which would cause `drop` to double-free).
+
+#[path = "active_kind_index.rs"]
+mod active_kind_index;
+pub(crate) use active_kind_index::ActiveKindIndex;
+
+mod active_kind_ops;
 
 #[path = "harness.rs"]
 mod harness;

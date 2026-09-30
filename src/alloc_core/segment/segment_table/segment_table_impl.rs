@@ -179,6 +179,8 @@ pub(crate) struct SegmentTable {
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
+    /// Plain owner-only index in the primordial metadata window.
+    pub(super) active_kind: *mut ActiveKindIndex,
     /// PERF-P2 (Э3) — a tiny fixed-size direct-mapped cache of segment bases
     /// returned by a won `hash_find` probe. It is an
     /// inline struct field (NOT primordial-resident memory), zero-initialised
@@ -225,31 +227,31 @@ pub(crate) struct SegmentTable {
 impl SegmentTable {
     /// Construct the registry view over an already-laid-down array in the
     /// primordial segment. Used by the bootstrap after it has carved the slot
-    /// array and the hash table (the bootstrap writes slot 0 and clears the
-    /// hash array through the `node` seam BEFORE calling this — this
-    /// constructor performs NO memory operation, it just wraps the pointers +
-    /// count).
+    /// array, hash table, and active-kind index. This only wraps pointers.
     ///
     /// # Caller's contract
     ///
     /// `slots` must point to `REGISTRY_FOOTPRINT` bytes inside the primordial
     /// segment, with slot 0 already set to the primordial base. `hash_slots`
     /// must point to `HASH_FOOTPRINT` bytes (all zeroed / `null_mut()`) for the
-    /// open-addressing hash table. `count` is the current live count (1 for
-    /// just the primordial). This method is safe because it does not touch
-    /// memory — it only stores the pointers; the contract is the caller's
-    /// invariant, enforced by the bootstrap being the sole caller.
+    /// open-addressing hash table. `active_kind` must point to initialized
+    /// 1040-byte storage with Small bit 0 set. `count` is the current live
+    /// count (1 for just the primordial). This method does not touch
+    /// memory — it only stores the pointers; bootstrap and the test harness
+    /// establish the contract before calling.
     pub(crate) fn from_primordial(
         slots: *mut *mut u8,
         count: u32,
         hash_slots: *mut *mut u8,
         free_list: *mut u32,
         free_top: *mut u32,
+        active_kind: *mut ActiveKindIndex,
     ) -> Self {
         Self {
             #[cfg(feature = "alloc-global")]
             routes: None,
             slots,
+            active_kind,
             // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
             // slots null). It only ever fills from a won `hash_contains` probe.
             own_cache: [core::ptr::null_mut(); OWN_CACHE_SIZE],
@@ -363,13 +365,16 @@ impl SegmentTable {
         kind: SegmentKind,
         payload: *mut u8,
     ) -> Option<u32> {
+        if !matches!(kind, SegmentKind::Small | SegmentKind::Large) {
+            return None;
+        }
         let key = crate::alloc_core::os::segment_base_of_ptr(payload);
         let has_free = crate::alloc_core::node::Node::read_u32(self.free_top) != 0;
         if !has_free && self.count as usize >= MAX_SEGMENTS {
             return None;
         }
         #[cfg(not(feature = "alloc-global"))]
-        let _ = (len, kind);
+        let _ = len;
         #[cfg(feature = "alloc-global")]
         let route = if let Some(routes) = &mut self.routes {
             let needed = self.count as usize + usize::from(!has_free);
@@ -392,6 +397,7 @@ impl SegmentTable {
                     .unwrap_or_else(|| std::process::abort())
                     .put(i as usize, route);
             }
+            ActiveKindIndex::set(self.active_kind, i as usize, kind);
             return Some(i);
         }
         // No recyclable slot — append.
@@ -411,6 +417,7 @@ impl SegmentTable {
                 .unwrap_or_else(|| std::process::abort())
                 .put(idx, route);
         }
+        ActiveKindIndex::set(self.active_kind, idx, kind);
         Some(idx as u32)
     }
 
@@ -484,6 +491,7 @@ impl SegmentTable {
         if let Some(routes) = &mut self.routes {
             routes.remove(slot_id);
         }
+        ActiveKindIndex::clear(self.active_kind, slot_id, header.kind);
         // NULL the slot — the OS reservation is NOT released here.
         crate::alloc_core::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
         // OPT-B: remove from hash table via backward-shift deletion (R4-8/N3:
@@ -644,6 +652,7 @@ impl SegmentTable {
         if let Some(routes) = &mut self.routes {
             routes.remove(slot_id);
         }
+        ActiveKindIndex::clear(self.active_kind, slot_id, hdr.kind);
         // OPT-B: remove the hash entry (backward-shift deletion) BEFORE
         // releasing the OS reservation.
         self.hash_remove(base);
@@ -845,8 +854,7 @@ impl SegmentTable {
     /// - `AllocCore::drop` to collect every live segment's OS reservation for
     ///   release. NULL slots are already released — skipping them prevents
     ///   double-free.
-    /// - `find_segment_with_free` to scan segments for a free block.
-    /// - `contains_base` (defensive dealloc check).
+    /// - cold census and diagnostics.
     ///
     /// R2-01 (task #2003): `+ '_` binds the returned iterator to `&self`'s
     /// lifetime, closing a real UAF — see `base_at`'s doc comment (below)

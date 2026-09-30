@@ -389,32 +389,10 @@ impl AllocCore {
             }
         }
 
-        // ── Guarded linear-scan fallback (the existing scan) ───────────────
-        //
-        // When the directory feature is OFF, or the sidecar is not
-        // materialised (count < threshold), or R8-2's periodic
-        // re-validation pass fires (every `DIRECTORY_MISS_FULL_SCAN_PERIOD`
-        // consecutive misses), this scan runs. It is byte-for-byte
-        // semantically identical to the pre-A3 scan body; R8-2 only ADDED an
-        // early `return None` branch above for the trusted-miss common case.
-
-        // Index-driven scan (task #126): walk slots `[0, count)` by index via
-        // `SegmentTable::base_at`, instead of pre-collecting every live base
-        // into an 8 KiB `[*mut u8; MAX_SEGMENTS]` stack buffer on every
-        // free-list miss. `base_at` performs a single self-contained pointer
-        // read (no borrow of `self.table` outlives the call), so it can be
-        // freely interleaved with `self.table.recycle(base)` below — unlike
-        // `self.table.bases()`, whose returned `impl Iterator` captures the
-        // elided `&self` lifetime and would keep `self.table` borrowed for the
-        // life of the loop, conflicting with the `&mut self.table.recycle`
-        // call needed when a segment empties out mid-scan.
-        //
-        // This makes recycle UNBOUNDED within a single scan: however many
-        // segments empty out (drained ring → decommit) during this call, each
-        // is recycled the moment it is discovered — there is no fixed-size
-        // buffer to overflow and no deferred/lost recycle (task #126 redo of
-        // the Phase C attempt, which used a CAP=32 deferred-recycle ring that
-        // silently dropped recycles for the 33rd+ emptied segment in one scan).
+        // Guarded fallback covers routed negative-directory and rescue paths,
+        // as well as no-directory mode. Enumerate numeric active-Small slots;
+        // each canonical root is read fresh before a possible recycle. No
+        // iterator, root snapshot, or table borrow survives a drain.
         let n = self.table.count() as usize;
 
         // Phase C (numa-aware): on the first pass we prefer segments whose
@@ -439,33 +417,26 @@ impl AllocCore {
         // this path is never taken — all segments have node_id == my_node (or
         // NO_NODE_RAW, which is treated as "acceptable" / unknown).
         #[cfg(feature = "numa-aware")]
-        let mut fallback: Option<*mut u8> = None;
+        let mut fallback: Option<usize> = None;
 
-        for i in 0..n {
-            // R7-A0: count every slot visited by the linear scan (including
-            // null/skipped slots) so the baseline has a live scan-cost counter.
-            // Gated behind `alloc-stats` so feature-OFF builds are unchanged.
+        let mut from = 0;
+        while let Some(i) = self.table.next_active(SegmentKind::Small, from) {
+            if i >= n {
+                break;
+            }
+            // Advance before a sidecar drain can recycle this candidate.
+            from = i + 1;
             #[cfg(feature = "alloc-stats")]
             crate::alloc_core::directory_stats::FULL_SCAN_SLOTS_EXAMINED
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             let base = self.table.base_at(i);
-            if base.is_null() {
-                // Recycled (NULL) slot — skip. `base_at` also returns NULL for
-                // an out-of-range index, but `i < n == self.table.count()`
-                // here, so a NULL here always means "recycled slot", never
-                // "out of range".
-                continue;
-            }
-            // Skip large/huge segments: they have no BinTable. Field-specific
-            // `kind` read (task #33): this is the Owner's alloc path,
-            // concurrent with a Remote's `dealloc_routing` field reads — a
-            // full-struct `read_at` here would race them. `kind_at` reads only
-            // the `kind` byte, disjoint from any writer.
-            if !matches!(
-                SegmentHeader::kind_at(base),
-                SegmentKind::Small | SegmentKind::Primordial
-            ) {
-                continue;
+            if base.is_null()
+                || !matches!(
+                    SegmentHeader::kind_at(base),
+                    SegmentKind::Small | SegmentKind::Primordial
+                )
+            {
+                std::process::abort();
             }
             // Consume only this canonical candidate before inspecting its bins.
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -500,8 +471,8 @@ impl AllocCore {
                     {
                         // Foreign-node segment with a free block.  Remember as
                         // fallback if we find nothing local, then keep scanning.
-                        if fallback.is_none_or(|fb| !self.table.contains_base_ro(fb)) {
-                            fallback = Some(base);
+                        if fallback.is_none_or(|slot| self.table.base_at(slot).is_null()) {
+                            fallback = Some(i);
                         }
                         continue;
                     }
@@ -538,7 +509,23 @@ impl AllocCore {
         {
             // Later drains may evict an earlier fully empty pooled candidate.
             // Revalidate without touching its reservation before finalizing it.
-            let fallback = fallback.filter(|&fb| self.table.contains_base_ro(fb));
+            let fallback = fallback.and_then(|slot| {
+                let base = self.table.base_at(slot);
+                if base.is_null()
+                    || !matches!(
+                        SegmentHeader::kind_at(base),
+                        SegmentKind::Small | SegmentKind::Primordial
+                    )
+                {
+                    return None;
+                }
+                let meta = SegmentMeta::new(base);
+                let node = meta.node_id_of();
+                (meta.bin_table().head(class_idx) != FREE_LIST_NULL
+                    && node != my_node
+                    && node != crate::alloc_core::segment_header::NO_NODE_RAW)
+                    .then_some(base)
+            });
             if let Some(fb) = fallback {
                 self.finalize_hit(
                     fb,
