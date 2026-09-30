@@ -3072,9 +3072,12 @@ jobs:
         run: |
           cargo test --release --features "alloc-global alloc-xthread internals tagged-index-stack/loom" \
             --test loom_registry_free_slots \
-            --test loom_r8_maintenance_lease 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
+            --test loom_r8_maintenance_lease \
+            --test loom_active_kind_index 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
           grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test owner_only_membership_survives_late_terminal_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test clean_bit_clear_mutant_is_rejected ... ok" "$RUNNER_TEMP/loom-registry.log"
         shell: bash
 
   tsan:

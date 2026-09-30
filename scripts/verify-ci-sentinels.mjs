@@ -1110,7 +1110,7 @@ function verifyCiSentinels() {
 // unchanged. This is the current exact floor, not a parser exemption.
 // The harness-free installed-Box target replaces four libtest result sentinels
 // with four asserted completion markers; the live count remains 101.
-const MIN_SENTINEL_COUNT = 101;
+const MIN_SENTINEL_COUNT = 103;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

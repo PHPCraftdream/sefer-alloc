@@ -43,7 +43,8 @@ const FEATURES = {
   loom_terminal_large: 'alloc-core,alloc-xthread',
   loom_terminal_owner_drain: 'alloc-core,alloc-xthread',
   loom_registry_free_slots: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
-  loom_r8_maintenance_lease: 'alloc-global,internals,tagged-index-stack/loom',
+  loom_r8_maintenance_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
+  loom_active_kind_index: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };
