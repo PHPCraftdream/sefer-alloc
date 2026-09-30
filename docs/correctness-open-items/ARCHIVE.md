@@ -86,6 +86,31 @@ ambiguity into link targets.
 *(Legacy entries below retain their split-time order and byte-identical
 text. Newer closure narratives are added with their item numbers and dates.)*
 
+156. **Root rustdoc broken links and missing warning-strict CI gate.** (Filed 2026-09-28; CLOSED 2026-09-30, source/gate wiring and local verification only.)
+
+   **Closure:** `1ecb8a55` fixes observed broken/private links with real public
+   targets or plain internal names; no visibility/runtime changes or lint
+   suppressions. `0bc0b691` restores `-D warnings` in the existing root docs
+   CI job and adds the exact docs.rs feature set derived from locked Cargo
+   metadata, rather than a drifting hardcoded feature list. Both commands
+   explicitly select `-p sefer-alloc`, `--locked` and `--no-deps`.
+   Parent reread both diffs. Local exact-production and expanded-production
+   docs passed (`e09dd54f-ab58-4284-9f3b-dd9ee4505850`), all-features docs
+   passed (`6fb4144d-db1f-4495-88f2-def6fa83f415`), and metadata-derived
+   docs.rs docs passed (`8822e0b6-1544-4fb3-a236-7227f9229496`). The executable
+   source/workflow guard passed with all 32 doc guards
+   (`b41900b4-0209-41c4-969d-d3c9df677028`); parent actionlint and all 101 CI
+   sentinels passed. These are Windows/local checks and validated workflow
+   wiring, not evidence that Linux or remote CI ran. Next authorized push
+   still needs actual remote-job observation before a remote-green claim.
+
+   **Historical filing:** At `23e1d9f8`, root all-features rustdoc with
+   `-D warnings` failed on unresolved `LockFreeRegion`, profile/config and
+   segment links plus public links to private items. The root CI docs row
+   deliberately omitted warning denial, while member rows enforced it.
+   The source review round 9 docs acceptance exposed and repaired this
+   pre-existing gap; no release or allocator-soundness certification follows.
+
 148. **R2-09 — loss of legal remote frees after both bounded rings saturated.** (Filed 2026-09-23; CLOSED 2026-09-24.)
 
    **Closure:** The allocator now uses an intrusive third tier in the still-live freed block. An AcqRel swap returns the actual predecessor pointer with its provenance; the producer writes that link and Release-publishes a ready word before the owner may read it. The exclusive owner Acquire-checks readiness and CAS-pops before reclaiming. Pending notes survive owner exit and slot reuse; no new allocation or active owner is needed to publish. Native paused/exited-owner ledgers, smallest-block Miri, and bounded Loom counterfactuals passed. The producer can delay draining if descheduled between swap and ready; a reclaim callback panic aborts rather than letting a surviving allocator lose a popped note. Accepted commits: `6afd09d7`, `f6f3231b`, plus combined-contract/CI fixes `495ede83` and `ccd29c8b`.
