@@ -1012,6 +1012,15 @@ iai-callgrind = "0.14"
 name = "locality"
 harness = false
 
+# Explicit installed-Sefer Box/Drop Miri acceptance without libtest startup.
+# `test = false` keeps ordinary native suites from invoking an empty selector;
+# CI and scripts select this target and one scenario explicitly.
+[[test]]
+name = "miri_global_box_acceptance"
+harness = false
+test = false
+required-features = ["alloc-global", "internals", "bench-internals"]
+
 # Phase 7a: sharded write-scaling bench — `ShardedRegion` vs `SyncRegion` /
 # `Arc<Mutex<Region>>` across thread counts. Quick criterion profile. Requires
 # `experimental` (for `ShardedRegion`) and the default `std` (for `SyncRegion`).
