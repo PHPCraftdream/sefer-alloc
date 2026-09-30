@@ -59,6 +59,67 @@ fn src_dir() -> PathBuf {
 }
 
 #[test]
+fn root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo = fs::read_to_string(manifest.join("Cargo.toml"))
+        .expect("read Cargo.toml")
+        .replace("\r\n", "\n");
+    let docs_rs = cargo
+        .split("[package.metadata.docs.rs]\n")
+        .nth(1)
+        .expect("root docs.rs metadata missing")
+        .split("\n[")
+        .next()
+        .unwrap();
+    assert!(
+        docs_rs
+            .lines()
+            .any(|line| line.trim().starts_with("features = [") && line.contains('"')),
+        "root docs.rs metadata must declare a nonempty feature list"
+    );
+
+    let ci = fs::read_to_string(manifest.join(".github/workflows/ci.yml"))
+        .expect("read .github/workflows/ci.yml")
+        .replace("\r\n", "\n");
+    let docs_job = ci
+        .split("\n  docs:\n")
+        .nth(1)
+        .expect("root docs CI job missing")
+        .split("\n  deny:\n")
+        .next()
+        .unwrap();
+    let executable = docs_job
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect::<Vec<_>>();
+
+    let doc_commands = executable
+        .iter()
+        .copied()
+        .filter(|line| line.contains("cargo doc"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        doc_commands,
+        [
+            "- run: RUSTDOCFLAGS=\"-D warnings\" cargo doc --locked --no-deps -p sefer-alloc --all-features",
+            "RUSTDOCFLAGS=\"-D warnings\" cargo doc --locked --no-deps -p sefer-alloc --features \"$FEATURES\"",
+        ],
+        "docs job must execute both strict root rustdoc configurations"
+    );
+    assert!(
+        executable.windows(5).any(|rows| rows == [
+            "- name: Root docs.rs feature-set rustdoc (warnings as errors)",
+            "run: |",
+            "set -euo pipefail",
+            "FEATURES=$(cargo metadata --locked --no-deps --format-version 1 | jq -er '.packages[] | select(.name == \"sefer-alloc\") | .metadata.docs.rs.features | join(\",\")')",
+            "test -n \"$FEATURES\"",
+        ]),
+        "docs.rs step must derive a nonempty feature set from root Cargo metadata"
+    );
+}
+
+#[test]
 fn strict_rustdoc_links_keep_public_targets_and_private_names_plain() {
     let sites: &[(&str, &[&str], &[&str])] = &[
         (

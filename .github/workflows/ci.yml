@@ -3867,14 +3867,16 @@ jobs:
   docs:
     name: rustdoc
     runs-on: ubuntu-latest
-    # `RUSTDOCFLAGS: "-D warnings"` removed for the same reason as the top-level
-    # `-D warnings` removal — many intra-doc links into `#[doc(hidden)]`
-    # modules produce warnings that are not PR blockers.
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # All-features so every intra-doc link (including the gated tiers) resolves.
-      - run: cargo doc --no-deps --all-features
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p sefer-alloc --all-features
+      - name: Root docs.rs feature-set rustdoc (warnings as errors)
+        run: |
+          set -euo pipefail
+          FEATURES=$(cargo metadata --locked --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "sefer-alloc") | .metadata.docs.rs.features | join(",")')
+          test -n "$FEATURES"
+          RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p sefer-alloc --features "$FEATURES"
 
   deny:
     # SEC-5 (task #202): machine-check RustSec advisories AND license
