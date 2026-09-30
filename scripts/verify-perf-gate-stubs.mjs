@@ -71,7 +71,6 @@ const ALWAYS_ON = new Set([
   'fastbin',
   'alloc-segment-directory',
   'primordial-lazy-commit',
-  'class-aware-dirty',
   // alloc-core is a transitive dependency of alloc-xthread/alloc-decommit
   // (see Cargo.toml's feature graph) — also always on once `production` is.
   'alloc-core',

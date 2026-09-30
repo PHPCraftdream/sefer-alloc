@@ -220,18 +220,10 @@ try {
   );
   console.log(
     '\n  * Commit charge (Windows `PagefileUsage` / Linux `/proc/self/statm` field 0,\n' +
-      '    total VM size) is a SEPARATE axis from RSS, added here — it does NOT\n' +
-      '    replace the RSS numbers above. WHY IT EXISTS (R6-OPT-A1, radical_\n' +
-      '    optimization_review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows,\n' +
-      '    `crates/aligned-vmem` commits the FULL exact size of the Registry + inline\n' +
-      '    `HeapOverflow` array in one `VirtualAlloc(MEM_COMMIT)` call, which is\n' +
-      '    largely demand-zero and therefore invisible to RSS/`WorkingSetSize` until\n' +
-      '    pages are actually touched — RSS alone hides this cost entirely. Expect\n' +
-      '    "Commit Δ 1 heap" to be ~125 MiB LARGER than "RSS Δ 1 heap" (≈29 MiB\n' +
-      '    registry + ≈96 MiB inline `HeapOverflow` across 4096 slots): that gap IS\n' +
-      '    the metric this axis exists to surface, and is the quantity the follow-up\n' +
-      '    task R6-OPT-P0-2 (chunked Registry + lazy HeapOverflow sidecar) is meant\n' +
-      '    to shrink.',
+      '    total VM size) is a SEPARATE axis from RSS. Demand-zero committed\n' +
+      '    pages can remain invisible to RSS until touched. The current registry\n' +
+      '    and terminal sidecars are materialised on demand; use the measured\n' +
+      '    deltas above rather than the retired inline-overflow footprint.',
   );
 
   ok = bootstrapRss.length > 0 || latency.length > 0;

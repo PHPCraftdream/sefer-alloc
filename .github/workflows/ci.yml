@@ -1427,6 +1427,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+      # The reviewed hook-security contract survives protocol/test retirement
+      # as executable repository tooling with stale allowlist checks.
+      - run: node scripts/verify-dbg-hook-safety.mjs
+      - run: node scripts/verify-loom-target-wiring.mjs
       - run: node scripts/run-check-matrix.mjs --kind check --kind test
       # R30-5: the generated "feature ABSENT" compile-check enumeration for
       # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
@@ -1722,6 +1726,47 @@ jobs:
       - name: test (--features production)
         if: ${{ !cancelled() }}
         run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+      # Direct child mode exposes the real ownerless oracle after the final
+      # user frees: no alloc, registry claim or artificial worker wakeup.
+      # Exact single-test isolation keeps nocapture output sentinel-safe.
+      - name: ownerless terminal retirement (minimal alloc-global)
+        run: |
+          SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "alloc-global internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-minimal.log"
+          grep -F "RETIRED_WITHOUT_ALLOCATOR_CALL" "$RUNNER_TEMP/r8-ownerless-minimal.log"
+          grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-ownerless-minimal.log"
+        shell: bash
+      - name: ownerless terminal retirement (production)
+        run: |
+          SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "production internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-production.log"
+          grep -F "RETIRED_WITHOUT_ALLOCATOR_CALL" "$RUNNER_TEMP/r8-ownerless-production.log"
+          grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-ownerless-production.log"
+        shell: bash
+      - name: maintenance startup, busy fallback and terminal worker failures
+        run: |
+          cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-scenarios.log"
+          grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-maintenance-scenarios.log"
+          SEFER_R8_MAINTENANCE_CHILD=fallback cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-fallback.log"
+          grep -F "FALLBACK_RETIRED_AFTER_UNLOCK" "$RUNNER_TEMP/r8-maintenance-fallback.log"
+          SEFER_R8_MAINTENANCE_CHILD=startup cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-startup.log"
+          grep -F "STARTUP_FAILURE_RACE_AND_RETRY" "$RUNNER_TEMP/r8-maintenance-startup.log"
+        shell: bash
+      - name: exact OS release (minimal global and decommit, Linux)
+        if: ${{ !cancelled() }}
+        run: |
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "alloc-global alloc-decommit internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-minimal-linux.log"
+          grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-minimal-linux.log"
+        shell: bash
+      - name: exact OS release (production, Linux)
+        if: ${{ !cancelled() }}
+        run: |
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-production-linux.log"
+          grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-production-linux.log"
+        shell: bash
+      - name: maintenance registry bounded scan
+        run: |
+          cargo test --features "alloc-global internals" --test r8_maintenance_registry 2>&1 | tee "$RUNNER_TEMP/r8-registry-maintenance.log"
+          grep -F "test bounded_scan_skips_uninitialized_busy_and_absent_slots ... ok" "$RUNNER_TEMP/r8-registry-maintenance.log"
+        shell: bash
 
   test-hardened:
     name: test (hardened tier)
@@ -1848,46 +1893,9 @@ jobs:
         shell: bash
 
   test-feature-isolation:
-    # R13-5 (task #275, P1): CI only ever tested `production` and
-    # `--all-features` (plus the handful of single-feature entries in the
-    # jobs above) — narrow opt-in feature COMBINATIONS were never exercised
-    # together, so a bug reachable only under one specific combination could
-    # mask itself indefinitely. Round 13 confirmed the cost twice:
-    #   - task #284: a real lost-wakeup bug in
-    #     `class_aware_dirty_routing.rs` that NEVER ran in CI at the time —
-    #     the file compiled to 0 tests under `--all-features` because
-    #     `--all-features` also turns on `numa-aware`, and the file's
-    #     `#![cfg]` gate was `not(feature = "numa-aware")`. R14-8 (task #293)
-    #     found that gate's STATED REASON was false ("the class-aware-dirty
-    #     drain path is compiled out under NUMA routing" — it is not:
-    #     `AllocCore::drain_dirty_segments` is gated only on `alloc-xthread`,
-    #     verified empirically by `tests/r14_8_numa_dirty_probe.rs`, which
-    #     runs and passes under `production + numa-aware + class-aware-dirty +
-    #     alloc-stats` and confirms both the directory sidecar materialises
-    #     and the drain executes there; what IS `not(numa-aware)`-gated is a
-    #     DIFFERENT, downstream mechanism, the directory-driven LOOKUP fast
-    #     path inside `find_segment_with_free_impl`, `alloc_core_small.rs`).
-    #     R14-8 therefore DROPPED the `not(numa-aware)` restriction from
-    #     `class_aware_dirty_routing.rs` (verified green under
-    #     `production + numa-aware + class-aware-dirty + alloc-stats`), so
-    #     that file now DOES run under `--all-features` too — this
-    #     `test-feature-isolation` job's `production + class-aware-dirty +
-    #     alloc-stats` (WITHOUT `numa-aware`) row is no longer this file's
-    #     ONLY CI coverage, though it remains a useful narrower-combination
-    #     check on its own merits (kept per this job's general rationale
-    #     above).
-    #   - task #285: a compile error (E0599) in `drain_heap_overflow`
-    #     reachable only by combining `alloc-xthread`/`fastbin`/
-    #     `alloc-decommit` WITHOUT `alloc-segment-directory` — a combination
-    #     `production` never exercises (it always turns both on together) and
-    #     `--all-features` never exercises either (it always turns
-    #     `alloc-segment-directory` on).
-    # Consolidated into ONE job (matching this file's established
-    # 2026-07-12 job-count-reduction convention — see the `test-core`/
-    # `test-xthread`/etc. job header comments above): each row below is its
-    # own `cargo test`/`cargo build` step so a failure in one row's step does
-    # NOT skip later rows (`if: ${{ !cancelled() }}`), but all rows share one
-    # checkout + toolchain install.
+    # Exact opt-in combinations complement the generated per-PR matrix.
+    # Terminal/sidecar/service runtime rows live in check-matrix.mjs and run
+    # through run-check-matrix.mjs; do not duplicate their feature strings here.
     name: test (feature isolation)
     runs-on: ubuntu-latest
     steps:
@@ -1900,47 +1908,6 @@ jobs:
       - name: test (--features "production exact-span-large")
         if: ${{ !cancelled() }}
         run: cargo test --features "production exact-span-large internals" --no-fail-fast
-      # R13-5: originally the critical combo that would have caught task
-      # #284's lost-wakeup bug. `class-aware-dirty` + `alloc-stats`,
-      # explicitly WITHOUT `numa-aware` (`production` does not enable
-      # `numa-aware`, so plain `production + class-aware-dirty + alloc-stats`
-      # already satisfies the `not(feature = "numa-aware")` gate on
-      # `class_aware_dirty_routing.rs` / `r9_6_class_aware_dirty_judge.rs`).
-      #
-      # R14-10 (task #295) STALENESS NOTE: since R13-9 promoted
-      # `class-aware-dirty` INTO `production`, spelling it out here alongside
-      # `production` is now a no-op — `production` already contains it, so
-      # this step's resolved feature set is BYTE-IDENTICAL to the plain
-      # `production alloc-stats` row in the `test (gated bodies +
-      # all-features)` job above (verified: set union is idempotent, neither
-      # row adds anything the other lacks). This IS the exact class of stale
-      # CI row `cargo hack check --feature-powerset` would have flagged
-      # structurally (see CLAUDE.md's "cargo-hack feature-powerset CI"
-      # evaluation note, and the `feature-powerset` job at the bottom of this
-      # file) rather than needing a human to notice a promotion made a
-      # feature string redundant. Kept as a single-token
-      # `production alloc-stats` step for continuity with its own commit
-      # history/comment trail rather than deleted outright; the explicit
-      # `class-aware-dirty` token was dropped so this step no longer reads as
-      # testing something `production alloc-stats` does not already cover.
-      #
-      # R14 hotfix (task #299): the `--skip
-      # r9_6_class_aware_dirty_waste_ratio_scales_with_class_count` flag this
-      # step used to carry is gone -- that test function is now compiled out
-      # under `#[cfg(not(feature = "class-aware-dirty"))]` directly (see the
-      # test file's own comment), because a per-step `--skip` only covers
-      # THIS step: once R13-9 promoted `class-aware-dirty` into `production`,
-      # every OTHER step that tests plain `production`/`--all-features` also
-      # started tripping the same expected failure, and none of them carried
-      # the skip. The equivalent measurement WITH the feature on is
-      # `class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`,
-      # which DOES run in this step.
-      # R24-6 (task #384): `bench-internals` added for the same reason as the
-      # sibling step above — keeps `class_aware_dirty_oom_latch.rs` running.
-      # `internals` added (R34-3/task #522) — whole-suite row.
-      - name: test (--features "production alloc-stats bench-internals" — feature-isolation copy)
-        if: ${{ !cancelled() }}
-        run: cargo test --features "production alloc-stats bench-internals internals" --no-fail-fast
       # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
       # (task #273/#285's sibling defect). `alloc-stats` for the
       # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in
@@ -2056,20 +2023,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - name: Production batch and post-release notification
+      - name: Production batch and terminal owner consumption
         shell: bash
         run: |
-          cargo test --locked --features "production batch-api internals bench-internals" --test g1_dirty_resolve_apply_split --test g1_delayed_notification --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-production.log"
-          grep -F "test delayed_notification_survives_actual_segment_release ... ok" "$RUNNER_TEMP/global-production.log"
+          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-production.log"
+          grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-production.log"
+          grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-production.log"
+          grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-production.log"
       - name: Non-fastbin batch reclamation
         shell: bash
         run: |
-          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test g1_dirty_resolve_apply_split --test g1_delayed_notification --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
-          grep -F "test delayed_notification_survives_actual_segment_release ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
+          grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
+          grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
+          grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
-          grep -F "test large_batch_drains_small_overflow_without_fastbin ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
-          grep -F "test small_batch_drains_small_overflow_without_fastbin ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
 
   test-windows:
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
@@ -2090,6 +2059,18 @@ jobs:
           node-version: '22'
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
+      - name: exact OS release (minimal global and decommit, Windows)
+        if: ${{ !cancelled() }}
+        run: |
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "alloc-global alloc-decommit internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-minimal-windows.log"
+          grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-minimal-windows.log"
+        shell: bash
+      - name: exact OS release (production, Windows)
+        if: ${{ !cancelled() }}
+        run: |
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-production-windows.log"
+          grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-production-windows.log"
+        shell: bash
       # Task #1086 (M6): each forced-page row is now self-verifying —
       # without the grep, a typo'd RUSTFLAGS cfg name (e.g. `--cfg
       # aligned_vmem_page_size_overide`) silently compiles the forced
@@ -2229,7 +2210,7 @@ jobs:
       # (no zero-fill guarantee); these tests assert correctness holds regardless.
       # `internals` added (R34-3/task #522): both test files reach
       # `sefer_alloc::alloc_core::AllocCore` directly.
-      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals" --test decommit_soak --test decommit_stale_ring --no-fail-fast
+      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test decommit_soak --test r6_terminal_owner_drain --no-fail-fast
       # Task #856/W14-2: aligned-vmem crate macOS test coverage for the REAL
       # Darwin backend (mmap/madvise/MADV_DONTNEED) on real macOS hardware.
       # NOTE: historically this explicit list had to EXCLUDE `mock` — a
@@ -2830,6 +2811,30 @@ jobs:
       # The core invariants (UB-free slotmap membrane), default features.
       - name: region_invariants
         run: cargo miri test --test region_invariants
+      - name: installed Box narrow-provenance ownership round trip
+        run: |
+          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_narrow_transfer_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-installed-box.log"
+          grep -F "test installed_box_drop_narrow_transfer_and_reissue ... ok" "$RUNNER_TEMP/miri-installed-box.log"
+        shell: bash
+      - name: installed Box narrow-provenance under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+        run: |
+          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_narrow_transfer_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
+          grep -F "test installed_box_drop_narrow_transfer_and_reissue ... ok" "$RUNNER_TEMP/miri-installed-box-tree.log"
+        shell: bash
+      - name: installed Box retirement before terminal producer resumes
+        run: |
+          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_retires_before_terminal_producer_resumes 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+          grep -F "test installed_box_drop_retires_before_terminal_producer_resumes ... ok" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+        shell: bash
+      - name: installed Box terminal producer pause under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows"
+        run: |
+          cargo miri test --features "alloc-global internals bench-internals" --test r8_global_box_provenance -- --exact installed_box_drop_retires_before_terminal_producer_resumes 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+          grep -F "test installed_box_drop_retires_before_terminal_producer_resumes ... ok" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+        shell: bash
       # Tagged-index-stack Miri automation: the package-specific unchecked-storage oracle for
       # `tagged-index-stack`. Keep this as an explicit Miri invocation under
       # the same strict-provenance flags as the root invariants above; a plain
@@ -2842,30 +2847,6 @@ jobs:
       # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
       - name: decommit_miri_cycle
         run: cargo miri test --features "alloc-core alloc-decommit internals" --test decommit_miri_cycle
-      # Phase 9–11 reclaim-offset arithmetic (cross-thread free placement)
-      # under miri's strict provenance — UB-free pointer math in the
-      # ring/reclaim path.
-      # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
-      - name: reclaim_offset_unit
-        run: cargo miri test --features "alloc-global alloc-xthread internals" --test reclaim_offset_unit
-      # `remote_fanin_miri_minimal_retry_ub_check` (task #606/K11): a
-      # purpose-built minimal miri UB-detection harness for
-      # `push_with_overflow_retry`'s retry path (see remote_fanin.rs's own
-      # "Harness 3" doc comment). Existed and already passed; was never
-      # wired into any CI job before this. Deliberately its OWN step, not
-      # combined with reclaim_offset_unit above: `remote_fanin.rs`'s other
-      # 3 harnesses are `#[cfg(not(miri))]` so nothing else in that binary
-      # compiles here, but `cargo test`'s positional filter argument (if one
-      # were added to disambiguate) applies GLOBALLY across every `--test`
-      # target in the SAME invocation, not per-binary — a prior incident in
-      # this exact job (`miri-core`'s own header comment above) already
-      # documents a bare positional filter silently matching zero tests
-      # while still reporting green; combining these two steps and adding a
-      # name filter here would have silently zeroed reclaim_offset_unit's
-      # own test out of its run (verified locally: it did, before this was
-      # split into two separate steps — "0 passed ... 1 filtered out").
-      - name: remote_fanin_miri
-        run: cargo miri test --features "alloc-global alloc-xthread internals" --test remote_fanin
       # R7-A5's own miri target (task #606/K11 — item 17: alloc_core::sidecar
       # had NO miri coverage at all; this file exists and passes but was never
       # wired into any CI job). Below-threshold only (the directory sidecar's
@@ -2937,125 +2918,38 @@ jobs:
           --test regression_bump_direct_refill
 
   miri-plain:
-    # W6: PLAIN-provenance miri for the exposed-provenance intrusive stacks.
-    # `src/alloc_core/large/deferred_large/mod.rs` (Provenance model, ~lines 19-28)
-    # documents that the A1
-    # `deferred_large` push/drain stack and the `abandoned_segs` stack pack a
-    # real pointer's address via `expose_provenance` and re-derive it via
-    # `with_exposed_provenance_mut` BY DESIGN. That wildcard-provenance shape is
-    # rejected by `-Zmiri-strict-provenance` (correctly — the documented
-    # structural limit, not a bug), so the strict `miri` job above gives the
-    # `push.rs` / `drain.rs` / `heap_registry.rs` / `node.rs` pairs ZERO
-    # coverage. This job runs the tests that exercise those stacks under PLAIN
-    # miri (Stacked Borrows, miri's default non-strict provenance model) — the
-    # ONLY mode in which the re-derivations validate. It DROPS
-    # `-Zmiri-strict-provenance` and keeps only `-Zmiri-disable-isolation`.
-    # Kept SEPARATE from the strict `miri` job (whose tests stay strict-clean);
-    # no test is shared between the two jobs. Small N per test (Large allocs,
-    # <=100 iterations) keeps each run miri-affordable.
-    # Consolidated (2026-07-12, CI job-count reduction) from 2 matrix jobs
-    # into 1 job. Both entries share the SAME features AND the SAME
-    # MIRIFLAGS (below), so they run as one `cargo miri test` invocation with
-    # two `--test` flags — one compile, one job, instead of two of each.
+    # Real cross-thread allocator regressions use the sidecar terminal protocol.
+    # Keep non-strict provenance coverage separate from strict core invariants.
     name: miri-plain
     runs-on: ubuntu-latest
     env:
-      # Elevated preemption rate: the task H1 aliasing guard
-      # (`regression_xthread_thread_free_alias_miri`) and the R34-5 multi-
-      # producer small-ring test (`regression_xthread_small_ring_miri`) both
-      # need the scheduler to interleave a remote cross-thread-free CAS INSIDE
-      # a live owner `alloc(&mut self)` frame. The remaining plain test is
-      # phase-serialised and indifferent to the rate.
+      # Exercise producer publication overlapping an owner's allocator frame.
       MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      # The A1 deferred-large / abandoned-seg exposed-provenance stacks over
-      # the GLOBAL-singleton `SeferAlloc`/`HeapCore` face. The three test fns
-      # (double-free-no-double-reclaim, counter-advances-again, reclaims-
-      # segments-no-leak) drive the `push.rs` / `drain.rs` / `heap_registry.rs`
-      # / `node.rs` re-derivations; under plain miri they show up as
-      # integer-to-pointer cast WARNINGS (validated, not errors — strict miri
-      # would hard-ERROR on exactly those casts, which is why this must run
-      # non-strict). Verified locally: 3 passed, 0 failed (~156s).
-      #
-      # NOT included — the two explicit-`Heap`-face tests
-      # (`regression_heap_xthread_large_free_no_leak`,
-      # `regression_xthread_large_free_layout_mismatch`): both call
-      # `Heap::new()` on a SPAWNED thread, whose per-thread primordial 4 MiB
-      # segment becomes unreachable when that thread exits, so miri's leak
-      # checker reports it (a genuine miri artifact of the per-thread `Heap`
-      # face, NOT the exposed-provenance path — the p2i re-derivations warn
-      # cleanly there too). Silencing it needs `-Zmiri-ignore-leaks`, which
-      # would defeat these "no_leak" oracles. Their cross-thread reclaim IS
-      # covered on REAL threads by the TSan `tsan` job instead.
-      #
-      # The second test (H1 aliasing guard) needs the elevated preemption
-      # rate set in this job's `env` above; both share it (harmless for the
-      # first test, which is phase-serialised and indifferent to the rate).
-      # `internals` added (R34-3/task #522): both test files reach
-      # `sefer_alloc::registry::{bootstrap, HeapRegistry, ...}` directly.
-      #
-      # R34-5 (task #524, audit finding G1): adds
-      # `regression_xthread_small_ring_miri` — the multi-producer SMALL-block
-      # `RemoteFreeRing` push/drain path (2 producer threads + owner-consumer),
-      # the one `unsafe` seam that had ZERO concurrent miri coverage (the two
-      # tests above cover only the LARGE cross-thread path). Same features,
-      # same MIRIFLAGS (the elevated preemption rate creates the real overlap
-      # between producer ring-pushes and owner `&mut HeapCore` alloc frames).
-      # Verified locally: 1 passed (~49s).
+      # Retained concurrent allocator regressions. Full owner and sidecar-miss
+      # workloads stay native; the tiny owner-credit invariant runs separately.
       - run: >-
-          cargo miri test --features "alloc-global alloc-xthread internals"
+          cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals"
           --test regression_xthread_large_free_no_leak
           --test regression_xthread_thread_free_alias_miri
           --test regression_xthread_small_ring_miri
+      - name: tiny terminal owner invariant
+        run: |
+          cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test r6_terminal_owner_drain -- --exact requested_sizes_one_through_seven_retire_once_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-terminal-owner-tiny.log"
+          grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/miri-terminal-owner-tiny.log"
+        shell: bash
 
-  # Loom model-checking of every concurrency protocol in the crate: the
-  # bootstrap-CAS state-machine (Registry lazy init), the adopt protocol
-  # (HeapRegistry.owner_state), cross-thread protocol (xthread / remote_ring
-  # / thread_free), and the deprecated experimental tier (sharded / epoch).
-  # Every protocol's loom file ships with a `should_panic` counterfactual
-  # that proves the harness is non-vacuous.
-  #
-  # Loom does NOT compose with the real allocator (it replaces atomics +
-  # threads + the global allocator), so these tests model each protocol's
-  # atomics in isolation against loom's harness — they are NOT integration
-  # tests that run the production code paths.
-  #
-  # Consolidated (2026-07-12, CI job-count reduction) from 11 single-test
-  # matrix jobs into 4 jobs, grouped by feature string exactly like the
-  # `miri`/`miri-plain` jobs above: same-feature tests share one `cargo
-  # test --test A --test B ...` invocation (one compile); the one job below
-  # with two genuinely different feature strings runs them as two
-  # sequential steps instead.
+  # Loom checks terminal publication/cuts, owner credits, registry free slots,
+  # and the maintenance lease separately from actual allocator runtime tests.
   kani:
-    # R15 (gap-audit item 18, task #611/K16): `src/kani_proofs.rs`'s bounded
-    # proof harnesses (`node_proofs`, `hand_proofs`, `pack_proofs`,
-    # `ring_wrap_proofs`, `ring_entry_pack_proofs` — 19 harnesses total as of
-    # this job's addition) had NEVER been wired into CI — verified by `grep
-    # -n kani .github/workflows/ci.yml` returning nothing before this job.
-    # They existed, and (re-verified locally via WSL before adding this job,
-    # since Kani does not support Windows — `kani-verifier` fails to even
-    # COMPILE under `x86_64-pc-windows-msvc`, `std::os::unix` does not
-    # exist there) all 19 pass, but nothing had re-checked them since
-    # whenever each was last run by hand at authoring time.
-    #
-    # Kani requires its own toolchain + CBMC backend, installed via
-    # `cargo install kani-verifier` + `cargo kani setup` (no dedicated
-    # first-party GitHub Action is referenced here — the manual two-step
-    # install is what was directly verified end-to-end this session, kept
-    # deliberately explicit rather than trusting an unverified third-party
-    # Action reference). Measured locally: the full 19-harness suite
-    # verifies in ~30s once installed — comparable to this workflow's
-    # existing miri jobs — so this runs per-PR, not scheduled-only.
-    #
-    # `--features` covers every cfg gate the existing + new proof modules
-    # use: `alloc-core` (node_proofs, ring_wrap_proofs, ring_entry_pack_proofs),
-    # `experimental` (hand_proofs), `alloc-global` (pack_proofs), `hardened`
-    # (ring_entry_pack_proofs::hardened) — one invocation covers all of them
-    # since Kani only compiles harnesses whose `#[cfg]` is satisfied.
+    # Retained bounded proofs cover node arithmetic, epoch-hand transitions
+    # and registry pointer packing. Ring cursor/ENTRY packing proofs are
+    # retired with that protocol; sidecar/owner lifetime models run under Loom.
+    # Feature gates: alloc-core (node), experimental (hand), alloc-global (pack).
     name: kani proofs
     runs-on: ubuntu-latest
     steps:
@@ -3066,7 +2960,7 @@ jobs:
       - name: cargo kani setup
         run: cargo kani setup
       - name: cargo kani (all harnesses)
-        run: cargo kani --features "alloc-core experimental alloc-global hardened"
+        run: cargo kani --features "alloc-core experimental alloc-global"
 
   loom-alloc-global:
     name: loom (alloc-global)
@@ -3117,84 +3011,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # #141: loom_deferred_large — A1 deferred_large push/drain Treiber-stack
-      # model (the double-push guard + DEFERRED_LARGE_TAIL/ABANDONED_TAIL
-      # sentinel split from `src/alloc_core/large/deferred_large/push.rs`/`drain.rs`).
-      #
-      # R13-5 (task #275): loom_class_aware_dirty (added R12-7 stage 2, task
-      # #258) was never wired into ANY loom job — a second forgotten loom
-      # file after task #204's original miss. The file's own `#![cfg(loom)]`
-      # gate carries no Cargo-feature predicate (it re-models the
-      # `class-aware-dirty` protocol on its own hand-rolled `loom::sync`
-      # atomics, not the real `PerClassDirty`/`OncePtrCell` types — see its
-      # module doc), so it compiles and runs under this job's EXISTING
-      # `alloc-core alloc-xthread` feature string with no change needed to
-      # that string. Verified locally (both debug and this job's real
-      # `--release` invocation): 7 passed (3 positive R12-7 tests + the R13-1
-      # latch-pair positive tests + 2 `#[should_panic]` counterfactuals),
-      # 0 failed.
-      # `--release` invocation): 7 passed (3 positive R12-7 tests + the R13-1
-      # latch-pair positive tests + 2 `#[should_panic]` counterfactuals),
-      # 0 failed.
-      #
-      # Task #1110: tee + grep postconditions (task #1086 shape) — ONE
-      # sentinel per `--test` target in this single multi-target cargo
-      # invocation, exactly #1101's per-FILE solution for a row that runs
-      # several cfg-gated files in one compile: the targets share the
-      # job-level `--cfg loom` (any sentinel catches a typo'd flag), but each
-      # file's drift is independent. `shell: bash` for `-eo pipefail`.
-      #
-      # Task #1146: four original sentinels name `#[should_panic]`
-      # counterfactual tests (loom_deferred_large's
-      # counterfactual_no_ready_check_reads_publishing_marker,
-      # loom_remote_ring_drain_guard's
-      # counterfactual_stale_cache_not_reset_across_segment_reuse,
-      # loom_dirty_publish's counterfactual_non_atomic_push_loses_entry,
-      # loom_dirty_multi_segment's counterfactual_relaxed_dirty_loses_entry).
-      # libtest prints a passing should_panic test as
-      # "test NAME - should panic ... ok", not "test NAME ... ok" — the
-      # plain-`ok` form only ever matches a NON-should_panic test. A
-      # sentinel copy-pasted from the plain-test pattern therefore never
-      # matches a passing should_panic test's actual output, so the step
-      # failed even though every loom test in the binary passed (verified:
-      # `cargo test`'s own `test result: ok` for the binary, alongside a
-      # `grep -F` exit 1 on the mismatched sentinel under `shell: bash`'s
-      # `-o pipefail`). Fixed by including the `- should panic` infix in
-      # the four affected sentinels below — NOT by dropping the ` ... ok`
-      # tail, which would make the sentinel match a FAILING test's own
-      # name-only echo too and defeat the postcondition's whole purpose.
       - run: |
           cargo test --release --features "alloc-core alloc-xthread" \
-            --test loom_xthread_protocol \
-            --test loom_remote_ring \
-            --test loom_overflow_spill \
-            --test loom_deferred_large \
-            --test loom_remote_ring_drain_guard \
-            --test loom_remote_ring_tail_aba \
-            --test loom_dirty_publish \
-            --test loom_dirty_multi_segment \
-            --test loom_class_aware_dirty \
             --test loom_sidecar_bitmap \
-            --test loom_terminal_inbox \
+            --test loom_terminal_owner_drain \
             --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test protocol_single_owner_never_resurrects ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test correct_ring_never_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test concurrent_prepend_and_pop_are_lossless ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test unpublished_swap_blocks_pop_until_link_ready ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test swap_return_keeps_reused_address_provenance ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_address_aba_publishes_old_provenance - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_unconditional_clear_loses_a_prepend - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_no_ready_check_reads_publishing_marker - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_stale_cache_not_reset_across_segment_reuse - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_narrow_tail_stale_cas_violates_capacity_invariant - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_narrow_tail_stale_cas_overwrites_live_undrained_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test fixed_tail_stale_cas_rejects_after_same_finite_script ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test fixed_protocol_paused_producer_cannot_reserve_after_exhaustion ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_non_atomic_push_loses_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_relaxed_dirty_loses_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test class_a_triggered_visit_recovers_class_b_entry ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test concurrent_prepend_and_whole_chain_cut ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test unpublished_and_detached_instances_hold_the_reservation_credit ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test negative_producer_retirement_allows_premature_release - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
         shell: bash
 
@@ -3225,17 +3050,8 @@ jobs:
         shell: bash
 
   loom-misc:
-    # Two distinct feature strings share one job (still one checkout /
-    # toolchain) rather than each justifying its own job: the empty-feature
-    # `loom_thread_free` model, and the `alloc-global,alloc-xthread` group
-    # (`loom_magazine_ring_compose` + task #204's three shipping HeapOverflow
-    # / overflow-composition models + the Registry `free_slots` binding model —
-    # these in-tree files are the real
-    # coverage of those protocols; the standalone `ring-mpsc` crate that
-    # once shipped a parallel real-type suite for the same protocol shape
-    # was removed from the workspace, task #655 — it had zero production
-    # consumers, the in-tree swap having been investigated and found NO-GO,
-    # see docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md).
+    # Root registry models enable the dependency's loom feature explicitly:
+    # cfg loom alone is insufficient when alloc-global pulls tagged-index-stack.
     name: loom (misc)
     runs-on: ubuntu-latest
     env:
@@ -3243,58 +3059,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # task #204: the `alloc` Cargo feature (and the `Heap` type it gated)
-      # was removed; this file's synthetic `Node` model never actually
-      # depended on it (verified: compiles and passes with an empty feature
-      # set) — the CI matrix simply hadn't been updated when the feature was
-      # deleted.
-      - name: loom_thread_free
-        # Task #1110: tee + grep postcondition (task #1086 shape).
+      - name: registry free slots and maintenance lease
         run: |
-          cargo test --release --test loom_thread_free 2>&1 | tee "$RUNNER_TEMP/loom-thread-free.log"
-          grep -F "test correct_push_never_loses_blocks ... ok" "$RUNNER_TEMP/loom-thread-free.log"
-        shell: bash
-      # R2 (#154): magazine↔RemoteFreeRing composition shadow model. The
-      # primary test is a `#[should_panic]` counterfactual PINNING the #164
-      # residual hole — it stays green exactly while the hole exists, and
-      # goes red the moment a fix (or a regression) changes the composition,
-      # forcing the model to be updated alongside #164.
-      # task #204: the three shipping HeapOverflow / overflow-composition
-      # models (loom_overflow_first_retry, loom_heap_overflow,
-      # loom_heap_overflow_drain_guard) share this step's `alloc-global
-      # alloc-xthread` feature string, so they fold into this same `cargo
-      # test` invocation (one compile) per the file's consolidation
-      # convention — they are the real coverage of the shipping HeapOverflow
-      # ring + overflow-first composition referenced in the CRATE-P4 note
-      # above. The fifth target below is the root `Registry::free_slots`
-      # binding model; it uses the same feature/cfg composition and must stay
-      # explicit so a missing file or target cannot pass by absence.
-      # `alloc-global` pulls in `tagged-index-stack` as a path dependency. With
-      # this job's `--cfg loom`, its optional dependency feature must also be
-      # enabled explicitly via `tagged-index-stack/loom`; the cfg alone is not
-      # sufficient.
-      - name: loom_magazine_ring_compose
-        # Task #1110: tee + grep postconditions (task #1086 shape) — one
-        # sentinel per `--test` target in this five-target invocation (#1101
-        # per-FILE granularity); `shell: bash` for `-eo pipefail`.
-        run: |
-          cargo test --release --features "alloc-global alloc-xthread tagged-index-stack/loom" \
-            --test loom_magazine_ring_compose \
-            --test loom_overflow_first_retry \
-            --test loom_heap_overflow \
-            --test loom_heap_overflow_drain_guard \
-            --test loom_registry_free_slots 2>&1 | tee "$RUNNER_TEMP/loom-misc-compose.log"
-          grep -F "test compose_gen_guard_holds ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
-          grep -F "test overflow_first_composed_never_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
-          grep -F "test correct_overflow_never_tears_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
-          grep -F "test guard_reclaims_entry_despite_unpublished_slot_gap ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
-          grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
+          cargo test --release --features "alloc-global alloc-xthread internals tagged-index-stack/loom" \
+            --test loom_registry_free_slots \
+            --test loom_r8_maintenance_lease 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok" "$RUNNER_TEMP/loom-registry.log"
         shell: bash
 
   tsan:
     # ThreadSanitizer (weak-memory / data-race detector) gate for the
     # cross-thread allocator path. TSan catches missing-synchronization /
-    # data-race bugs in the ring/reclaim/owner-stamp protocol (Phases 9–11)
+    # data-race bugs in terminal publication and owner consumption
     # that pure functional tests on x86_64 can hide. Requires nightly +
     # rust-src (for `-Zbuild-std`, since TSan must instrument the std/core it
     # links against). Linux-only; not runnable on the Windows dev host.
@@ -3320,7 +3097,7 @@ jobs:
           cargo +nightly test
           -Zbuild-std
           --target x86_64-unknown-linux-gnu
-          --features "alloc-global alloc-xthread"
+          --features "alloc-global alloc-xthread internals bench-internals"
           --test race_repro
           --test race_norecycle
           --test global_alloc_mt
@@ -3339,7 +3116,7 @@ jobs:
       #
       # S3 (#168): the concurrent boundary-stress hammer (S1,
       # `stress_concurrent_boundaries`) is added to THIS production step — the
-      # magazine / RemoteFreeRing / Э5-counter race surface under boundary
+      # magazine / terminal sidecar / Э5-counter race surface under boundary
       # pressure is the highest-value TSan combination. Its per-thread op budget
       # and thread cap are slashed for the sanitizer via the env below
       # (`SEFER_STRESS_OPS` overrides the absolute budget; `SEFER_STRESS_MAX_THREADS`
@@ -3347,17 +3124,8 @@ jobs:
       # ~sub-second. These env vars are read ONLY by that test and are UNSET in
       # the native suite, so native behavior is byte-identical to before.
       #
-      # W6: the Large cross-thread FREE path (the A1 deferred-large /
-      # abandoned-seg exposed-provenance stacks) was UNINSTRUMENTED — every test
-      # above frees small blocks cross-thread. `regression_realloc_xthread_stamp`
-      # (the W4/MUST-1 realloc → cross-thread-free path) is a genuine MT test
-      # (spawns a non-owner thread that remotely frees a Large segment) and
-      # compiles under `production`, so it's added to this step. (task #204:
-      # `regression_heap_xthread_large_free_no_leak`, which covered the same
-      # A1 Large cross-thread reclaim over the removed `Heap` face, was
-      # deleted along with `Heap` — `HeapCore` has no public
-      # `dealloc_any_thread` to give it a faithful substitute; the
-      # `regression_realloc_xthread_stamp` coverage above remains.)
+      # The realloc-to-remote-free regression also exercises Large terminal
+      # publication and owner consumption under the production feature set.
       # `internals` added (R34-3/task #522):
       # `regression_percounter_perheap_aggregation.rs` and
       # `regression_realloc_xthread_stamp.rs` reach
@@ -3370,7 +3138,7 @@ jobs:
           cargo +nightly test
           -Zbuild-std
           --target x86_64-unknown-linux-gnu
-          --features "production internals"
+          --features "production internals bench-internals"
           --test global_alloc_mt
           --test tls_heap_teardown_ordering_stress
           --test regression_percounter_perheap_aggregation

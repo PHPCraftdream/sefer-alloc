@@ -53,21 +53,12 @@ const PROD_TESTS = [
   // job comment).
   'tls_heap_teardown_ordering_stress',
   'regression_percounter_perheap_aggregation',
-  // W6: the Large cross-thread FREE path (A1 deferred-large / abandoned-seg
-  // exposed-provenance stacks) had no TSan coverage — the two production steps
-  // above only exercise the small-block cross-thread races and the Э5 counter
-  // reads. Both of these are genuine MT tests (each spawns a non-owner thread
-  // that remotely frees a Large segment, then joins): `regression_realloc_
-  // xthread_stamp` drives the W4/MUST-1 realloc → cross-thread-free path, and
-  // `regression_xthread_large_free_no_leak` drives the A1 Large cross-thread
-  // reclaim over the `HeapCore` face (task #204 renamed it from
-  // `regression_heap_xthread_large_free_no_leak` when the `Heap` type it
-  // originally referenced was removed). Both compile under the `production`
-  // set (production ⊇ alloc-global ⊇ alloc, + alloc-xthread).
+  // Actual realloc-to-remote-free and Large descriptor/cache-incarnation
+  // regressions exercise terminal publication and owner consumption.
   'regression_realloc_xthread_stamp',
   'regression_xthread_large_free_no_leak',
   // S3 (#168): the concurrent boundary-stress hammer (S1) under TSan — the
-  // highest-value race surface (magazine / RemoteFreeRing / Э5 counters under
+  // highest-value race surface (magazine / terminal sidecar / counters under
   // boundary pressure). Its per-thread op budget and thread cap are slashed for
   // the sanitizer via SEFER_STRESS_OPS / SEFER_STRESS_MAX_THREADS (see
   // STRESS_ENV) so the run stays ~sub-second; native behavior is unchanged.
@@ -122,16 +113,12 @@ function bashCmd(features, testList, extraEnv = []) {
 // out — a silent "0 tests, PASS" that validated no TSan coverage for those
 // three tests since R34-3 landed (same class of bug fixed in
 // scripts/miri.mjs by this same follow-up; discovered auditing the sibling
-// sanitizer scripts for the identical omission). The custom-test-names
-// override branch (`process.argv.slice(2).length`) is left as-is — an
-// explicit test-name override is the caller's responsibility to pair with a
-// matching `--features` invocation; this script has no way to know which
-// features an arbitrary caller-supplied test name needs.
+// Custom test names use the same cross-thread feature set as the default pass.
 const passes = process.argv.slice(2).length
-  ? [['alloc-global alloc-xthread alloc-decommit', tests, []]]
+  ? [['alloc-global alloc-xthread alloc-decommit internals bench-internals', tests, []]]
   : [
-      ['alloc-global alloc-xthread alloc-decommit internals', tests, []],
-      ['production internals', PROD_TESTS, STRESS_ENV],
+      ['alloc-global alloc-xthread alloc-decommit internals bench-internals', tests, []],
+      ['production internals bench-internals', PROD_TESTS, STRESS_ENV],
     ];
 
 console.log(`[tsan] wsl: ${wslRoot}\n`);
