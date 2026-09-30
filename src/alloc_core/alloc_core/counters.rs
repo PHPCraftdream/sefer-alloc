@@ -6,6 +6,11 @@
 //! live at their call sites and are feature-gated there. The path-parity
 //! re-exports for cross-module consumers live in the parent `mod.rs`.
 
+/// Completed Large terminal obligations, including cache admission or release.
+#[cfg(feature = "alloc-global")]
+pub(crate) static LARGE_REMOTE_RETIREMENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
 /// `decommit_empty_segment_impl` (the shared decommit body); read by the soak
 /// test via [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).

@@ -16,9 +16,6 @@
 
 use core::alloc::Layout;
 
-#[cfg(feature = "alloc-global")]
-use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentHeader, SEGMENT_MAGIC};
 use crate::alloc_core::{node::Node, AllocCore};
 
 use crate::registry::heap_core::HeapCore;
@@ -166,7 +163,7 @@ impl HeapCore {
                         old_layout.align(),
                     );
                     if class.is_none() {
-                        self.drain_large_deferred_free();
+                        self.drain_large_sidecar_ingress();
                     }
                 }
                 //   (2) In-place attempt — try OPT-F (Small same-class) and
@@ -370,55 +367,15 @@ impl HeapCore {
                 return new_ptr;
             }
         }
-        // Foreign pointer (not one of our segments). Before copying from it,
-        // the pointer MUST resolve to a live sefer segment of sufficient
-        // committed span; otherwise a caller violating this `unsafe fn`'s
-        // contract with a bogus/foreign pointer triggers an out-of-bounds
-        // read (R2-1, gap 1; oxx R2-07 — this guard is defence-in-depth
-        // against a contract violation, not a safety requirement of a safe
-        // caller).
-        //
-        // This leg is the deliberately-designed cross-heap path (a pointer
-        // from ANOTHER live heap is legitimate, and `self.dealloc` routes its
-        // free cross-thread — `alloc-global`, this module's gate,
-        // unconditionally implies `alloc-xthread`, R5-01). The membership
-        // barrier is the segment-header magic check (mirrors
-        // `dealloc_foreign_slow`'s first guard): a pointer whose computed
-        // base is not a live sefer segment — stack, foreign allocator,
-        // dangling — is rejected (null) before any copy, guarding against
-        // exactly the contract violation oxx R2-07 discusses (`realloc` is a
-        // `pub unsafe fn`; this is defence-in-depth against a caller
-        // violating that contract, not a safety requirement of a safe
-        // caller). A REAL cross-heap sefer segment passes magic, then the
-        // same R2-1 span bound as the own-seg leg applies.
+        // A foreign allocation is validated without reading another owner's
+        // header or commit frontier. The caller's Layout bounds the actual
+        // payload read; the stable descriptor adds a capacity check.
         {
-            let base = os::segment_base_of_ptr(ptr);
-            // R4-2 (memory_safety_review, R4-MS-1/MS-2): guard the degenerate
-            // base BEFORE the raw `magic_at` read. `segment_base_of_ptr` masks
-            // the address down to the SEGMENT boundary; a garbage pointer like
-            // `1 as *mut u8` masks to `base == 0` (null), and `magic_at(0)`
-            // would then dereference address `offset_of!(SegmentHeader, magic)`
-            // with no guard — an immediate read of a structurally-impossible
-            // "segment". Reject null (and anything that masks to null) as a
-            // foreign pointer. This does NOT attempt cross-heap staleness
-            // detection (case (a) vs (b) in `dealloc_foreign_slow`); it closes
-            // only the narrower class where `base` cannot be a real segment by
-            // construction.
-            if base.is_null() {
+            let Some(route) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr)
+            else {
                 return core::ptr::null_mut();
-            }
-            if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
-                return core::ptr::null_mut();
-            }
-            // `own_segment = false`: `base` belongs to ANOTHER heap's owning
-            // thread (this is the cross-heap foreign leg) — reading its
-            // owner-only commit frontier here would race that thread's plain
-            // (non-atomic) writes to the same field. `safe_payload_read_span`
-            // falls back to the coarse, always-sound `SEGMENT`-wide bound for
-            // `own_segment == false` (see its doc, R2-02): still correct, not
-            // commit-precise for a lazily-committed foreign segment — this
-            // leg continues to rely on the `old_layout` contract for that.
-            if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, false) {
+            };
+            if !route.contains_payload(ptr, old_layout.size()) {
                 return core::ptr::null_mut();
             }
             let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
@@ -431,12 +388,8 @@ impl HeapCore {
             }
             let copy = old_layout.size().min(new_size);
             Node::copy_nonoverlapping(ptr, new_ptr, copy);
-            // SAFETY: foreign move leg (alloc-xthread) — `ptr`'s base passed
-            // the segment-header magic check (live sefer segment) and the read
-            // was bounded by `safe_payload_read_span`; `new_ptr` holds the
-            // copied prefix, and `self.dealloc` routes the old block's free
-            // cross-thread. Freeing once completes the contract-honouring
-            // realloc.
+            // SAFETY: the current source remains uniquely owned through the
+            // copy; only successful destination allocation transfers its free.
             unsafe { self.dealloc(ptr, old_layout) };
             new_ptr
         }
@@ -590,11 +543,7 @@ impl HeapCore {
         // hazard this file's `realloc` doc comment warns about at length).
         #[cfg(feature = "alloc-xthread")]
         {
-            self.drain_large_deferred_free();
-        }
-        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
-        {
-            self.drain_heap_overflow();
+            self.drain_large_sidecar_ingress();
         }
         let (new_ptr, _is_fresh) = self.core.alloc_large(new_size, old_layout.align());
         if new_ptr.is_null() {

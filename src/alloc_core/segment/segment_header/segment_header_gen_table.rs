@@ -5,7 +5,7 @@
 //! alloc bitmap), NOT a `SegmentHeader` field, so its accessors are free
 //! functions (not `offset_of!`-on-header field reads). Each cell is an
 //! `AtomicU8` obtained through the `node` seam (`Node::atomic_u8_at`), mirroring
-//! how the atomic-view accessors (`owner_state_atomic` / `deferred_next_atomic`)
+//! how `owner_state_atomic`
 //! obtain `&AtomicU64` views over header fields.
 //!
 //! Memory model (X7 plan §2): owner writes Relaxed (single-writer at block issue

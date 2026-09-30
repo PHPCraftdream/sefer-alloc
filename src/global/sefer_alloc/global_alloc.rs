@@ -5,10 +5,10 @@
 // is `unsafe`) plus the `// SAFETY:`-annotated pointer handoff to HeapCore.
 #![allow(unsafe_code)]
 
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+use crate::global::fallback;
 use core::alloc::{GlobalAlloc, Layout};
 
-use crate::alloc_core::segment_header::{SegmentHeader, OWNER_ID_FALLBACK};
-use crate::global::fallback;
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
 
 use crate::global::tls_heap::CurrentHeap;
@@ -60,40 +60,9 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 unsafe { (*heap).dealloc(ptr, layout) };
             }
             CurrentHeapForDealloc::ForeignNoBind => {
-                // This thread has no live own heap; inspect ownership without
-                // relying on TLS teardown state.
-                let base = crate::alloc_core::os::segment_base_of_ptr(ptr);
-                // Caller contract guarantees this live segment remains
-                // mapped; the accessor validates magic and reads only its
-                // atomic owner field, not the full header racing with `bump`.
-                let fallback_owned = SegmentHeader::owner_id_at(base) == Some(OWNER_ID_FALLBACK);
-                if fallback_owned {
-                    // Lock order: atomic owner stamp, then fallback LOCK.
-                    // This try-lock never waits, including on recursive entry;
-                    // on failure no fallback guard is held for remote routing.
-                    // SAFETY: `ptr`/`layout` are the caller's live allocation
-                    // pair, and `try_with_heap` grants exclusive fallback access.
-                    if fallback::try_with_heap(|h| unsafe { h.dealloc(ptr, layout) }).is_some() {
-                        return;
-                    }
-                    // A busy lock falls through to the existing valid remote
-                    // route, which does not reacquire the fallback lock.
-                }
-                //
-                // SAFETY: `ptr`/`layout` are the caller-bound
-                // `GlobalAlloc::dealloc` contract pair (this whole fn is
-                // `unsafe fn dealloc`); `dealloc_foreign_routing` applies
-                // the SAME null-base and magic-mismatch guards
-                // `dealloc_foreign_slow` already uses before touching any
-                // segment memory, so a LIVE-but-foreign `ptr` (the case
-                // this arm exists for) is routed or rejected without
-                // faulting. This is NOT a blanket "safe on any
-                // dangling/garbage pointer" claim: a pointer into an
-                // already-RELEASED, unmapped segment faults on the header
-                // read, and excluding that case is the caller's baseline
-                // `GlobalAlloc` obligation, not something these guards
-                // relax.
-                crate::registry::HeapCore::dealloc_foreign_routing(ptr, base, layout, None);
+                // SAFETY: the GlobalAlloc caller transfers its unique current
+                // allocation. Lookup and publication use only independent sidecars.
+                unsafe { crate::registry::HeapCore::publish_foreign(ptr, layout) };
             }
         }
     }

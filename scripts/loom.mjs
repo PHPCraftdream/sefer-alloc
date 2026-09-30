@@ -1,11 +1,11 @@
-// loom sweep — model-checks the concurrency protocols (registry claim/recycle,
-// remote-free ring, cross-thread free, fallback init, bootstrap CAS, epoch,
-// sharded). Native (no WSL): loom is a pure-Rust dependency gated behind the
-// `--cfg loom` build cfg.
+// Loom sweep of sidecar terminal publication, owner drain, registry leases,
+// and the independent workspace concurrency types. Every root model has an
+// exact feature set; cfg loom additionally requires tagged-index-stack/loom
+// whenever alloc-global brings that dependency into the build.
 //
 // Usage (from repo root):
-//   node scripts/loom.mjs           # all loom_* test files
-//   node scripts/loom.mjs loom_fallback_init   # a subset
+//   node scripts/loom.mjs
+//   node scripts/loom.mjs loom_terminal_owner_drain
 //   npm run loom
 
 import { REPO_ROOT, run, verdict } from './lib.mjs';
@@ -39,40 +39,11 @@ const FEATURES = {
   // crate's real-type suite IS
   // the coverage for the shipping code (the shadow model is deleted).
   loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
-  loom_xthread_protocol: 'alloc-core,alloc-xthread',
-  loom_remote_ring: 'alloc-core,alloc-xthread',
-  // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard model.
-  loom_remote_ring_drain_guard: 'alloc-core,alloc-xthread',
-  // R2-10 (task #2012): the tail-CAS ABA hazard reduced-width reproduction
-  // (narrow-model counterfactuals) + the wide-model closure demonstration.
-  loom_remote_ring_tail_aba: 'alloc-core,alloc-xthread',
-  loom_overflow_spill: 'alloc-core,alloc-xthread',
-  // #141: the A1 deferred-large push/drain model (found the #143 push leak).
-  loom_deferred_large: 'alloc-core,alloc-xthread',
-  // R2 (#154) + #164: magazine↔RemoteFreeRing composition shadow model.
-  // `compose_finds_double_issue_hole_pre164` (#[should_panic] counterfactual)
-  // + `compose_drain_sees_magazine_invariant_holds` (GREEN invariant, #164).
-  loom_magazine_ring_compose: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
-  // task #204: the `alloc` Cargo feature (and the `Heap` type it gated) was
-  // REMOVED and renamed to alloc-core/alloc-xthread/alloc-global. This mapping
-  // still pointed at the deleted `alloc` feature, so cargo silently ignored the
-  // unknown feature — but this file's synthetic `Node` model never depended on
-  // it (only `#![cfg(loom)]`, no crate symbols): it compiles + passes with an
-  // EMPTY feature set, which is exactly what the ci.yml `loom` matrix runs
-  // (`- test: loom_thread_free / features: ""`). Mirror CI: empty feature set.
-  loom_thread_free: '',
-  // R7-A4: dirty-segment publish/swap/lost-wakeup model.
-  loom_dirty_publish: 'alloc-core,alloc-xthread',
-  // R7-A5: dirty word with multiple segments — two producers set bits for
-  // different segments in the same u64 word.
-  loom_dirty_multi_segment: 'alloc-core,alloc-xthread',
-  // R6-OPT-P0-4: overflow-first composition (segment ring -> heap overflow ring
-  // -> bounded spin-retry) double-saturation model + its counterfactual.
-  loom_overflow_first_retry: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
-  // RAD-4b: HeapOverflow two-field-entry MPSC ring (torn-read counterfactual).
-  loom_heap_overflow: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
-  // R2-4: HeapOverflow drain-guard (the return-actual-stop-position contract).
-  loom_heap_overflow_drain_guard: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
+  loom_sidecar_bitmap: 'alloc-core,alloc-xthread',
+  loom_terminal_large: 'alloc-core,alloc-xthread',
+  loom_terminal_owner_drain: 'alloc-core,alloc-xthread',
+  loom_registry_free_slots: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
+  loom_r8_maintenance_lease: 'alloc-global,internals,tagged-index-stack/loom',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };
@@ -85,10 +56,7 @@ const tests = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 // rebuilds), preserving each test's correct gate.
 const byFeature = new Map();
 for (const t of tests) {
-  // NB: use `in`/hasOwnProperty, NOT `if (!f)` — a valid feature value can be
-  // the EMPTY string (`loom_thread_free: ''`, mirroring the ci.yml matrix). A
-  // falsy `!f` check would mis-classify that legitimate entry as "unknown test"
-  // and abort — the very stale-name → 0-runs class of bug this script guards.
+  // Use membership, not truthiness: an empty feature set is valid.
   if (!Object.prototype.hasOwnProperty.call(FEATURES, t)) {
     console.error(`[loom] unknown test "${t}" — not in the feature map`);
     process.exit(2);
@@ -100,11 +68,7 @@ for (const t of tests) {
 
 console.log(`[loom] tests: ${tests.join(', ')}\n`);
 
-// Regression-guard against the stale-feature-name → silent-0-runs class of bug
-// (task #29: `loom_thread_free` was mapped to the DELETED `alloc` feature and
-// never actually selected). Log the resolved test count per entry up front, and
-// hard-fail if any entry selected ZERO tests — a mapping should never resolve to
-// an empty group.
+// Reject an empty selected group before launching Cargo.
 for (const [features, group] of byFeature) {
   const label = features === '' ? '(no features)' : `--features ${features}`;
   console.log(`[loom] ${label}: ${group.length} test(s) selected — ${group.join(', ')}`);
@@ -126,16 +90,9 @@ for (const [features, group] of byFeature) {
       : `--features ${features}`;
   console.log(`\n[loom] ${label}: ${group.join(', ')}`);
   const testArgs = group.flatMap((t) => ['--test', t]);
-  // A `crate:<name>` entry runs the extracted crate's own real-type loom suite
-  // via `-p <name>` and NO sefer features (the crate has none) — EXCEPT
-  // `tagged-index-stack`, which made `loom` an optional Cargo feature of its
-  // own (round-3 review P1-1): `--cfg loom` alone no longer resolves it, so
-  // `-p tagged-index-stack` additionally needs `--features loom` (mirrors
-  // ci.yml's `loom-alloc-global` job, `-p tagged-index-stack --features loom
-  // --test loom_aba`). `once-ptr-cell` has no such feature and stays
-  // unchanged. Otherwise: an empty feature set must OMIT `--features`
-  // entirely — cargo rejects an empty `--features ''` argument (mirrors the
-  // ci.yml `loom_thread_free` features: "" entry).
+  // Workspace suites are crate-scoped. tagged-index-stack needs its optional
+  // loom dependency feature as well as cfg loom; root models forward that
+  // feature explicitly in FEATURES whenever they enable alloc-global.
   const scopeArgs = isCrate
     ? crateName === 'tagged-index-stack'
       ? ['-p', crateName, '--features', 'loom']

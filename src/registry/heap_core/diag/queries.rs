@@ -14,7 +14,6 @@
 use core::alloc::Layout;
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::SegmentMeta;
 use core::sync::atomic::Ordering;
 
 use crate::registry::heap_core::HeapCore;
@@ -26,18 +25,13 @@ impl HeapCore {
     /// `tests/heap_core_tcache_stamp.rs` to verify the stamp-hoist wrote
     /// the correct ownership.
     ///
-    /// R2-05 (independent src review round 2, task #2007): reads through the
-    /// STORED (canonical) segment base `segment_bases()` yields, not `ptr`'s
-    /// caller-derived address — matching an address alone does not grant
-    /// provenance to read through it (see `SegmentTable::canonical_base_of`'s
-    /// doc for the full rationale). `.find` (not `.any`) so the matched,
-    /// canonical `*mut u8` survives past the membership check.
+    /// Numeric membership resolves the canonical allocator-origin root, including
+    /// overaligned Large reservations. This observer never mutates owner caches.
     #[doc(hidden)]
     #[cfg(feature = "alloc-global")]
     pub fn dbg_owner_id_for(&self, ptr: *mut u8) -> Option<u32> {
         use crate::alloc_core::segment_header::{unpack_owner_id, SegmentMeta};
-        let candidate = os::segment_base_of_ptr(ptr);
-        let base = self.core.segment_bases().find(|&b| b == candidate)?;
+        let base = self.core.canonical_root_for(ptr)?;
         let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
         let word = owner_atomic.load(Ordering::Relaxed);
         Some(unpack_owner_id(word))
@@ -197,96 +191,6 @@ impl HeapCore {
         crate::registry::heap_core::state::tcache::refill_n_for_class(
             crate::alloc_core::size_classes::SizeClasses::block_size(c),
         )
-    }
-
-    /// TEST-ONLY (task R2/#154): push `ptr`'s segment-relative offset — packed
-    /// with `class_idx` — into its segment's `RemoteFreeRing`, exactly as a
-    /// cross-thread freer's `dealloc_routing` Variant-2 push would. Thin
-    /// delegation to [`AllocCore::dbg_push_to_ring`]; exposed at the `HeapCore`
-    /// level so the ring↔magazine residual-limit pinning test
-    /// (`tests/regression_xthread_double_free_residual.rs`) can simulate a
-    /// remote free while driving the magazine through `HeapCore`. Returns
-    /// `false` if the ring was full or `ptr` is not one of this heap's segments.
-    /// Zero production impact: `#[doc(hidden)]`, test-only, delegates to an
-    /// existing hook.
-    ///
-    /// # Safety
-    ///
-    /// `unsafe fn` (R6-MS-4) for exactly the same reason as
-    /// [`AllocCore::dbg_push_to_ring`]: this thin delegation is the producer
-    /// side of the cross-thread free simulation, and a safe wrapper would leave
-    /// the round5 `memory_safety_review` R5-MS-4 stale-note→double-issue chain
-    /// open through `HeapCore` (the residual tests reach the seam through this
-    /// very wrapper). The caller must honour the identical contract: `ptr` is a
-    /// live block in a segment owned by this heap; this push is at most one
-    /// logical remote free (no `dealloc`/`flush_class`/`alloc`-re-issue of `ptr`
-    /// between this push and the consuming drain); and `class_idx` is the
-    /// block's actual allocated class. See the delegated fn's `# Safety` section
-    /// for the full rationale and the defensive-guard caveats.
-    ///
-    /// R24-6 (task #384) note: this hook's `alloc-xthread` gate is a subset of
-    /// `production`'s feature list, so it IS reachable from a plain
-    /// `--features production` build — deliberately NOT moved behind
-    /// `bench-internals` like its two younger siblings
-    /// (`dbg_dealloc_own_thread_with_base`, `dbg_push_coarse_only_entry`):
-    /// this is the oldest hook in this file (R6-MS-4) and has ~20 existing
-    /// callers across the whole `alloc-xthread` test suite, so re-gating it
-    /// would be a disproportionate diff for a doc-precision concern. See
-    /// README.md's "Where unsafe lives" R24-6 note for the full rationale.
-    /// It remains, like its siblings, `#[doc(hidden)]`, test/measurement-only,
-    /// and excluded from any "changes production behavior" claim.
-    ///
-    /// Sol-F1 (task #563): additionally gated `internals` — this is now a
-    /// HARD compile dependency, not a discretionary re-gate: the delegated
-    /// [`AllocCore::dbg_push_to_ring`] moved behind `internals`
-    /// (`alloc_core_small_reclaim.rs`'s module doc), so this wrapper cannot
-    /// compile without it regardless of the R24-6 `bench-internals`
-    /// decision above (which remains in force — this hook is still NOT
-    /// additionally gated on `bench-internals`).
-    #[doc(hidden)]
-    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
-    #[allow(unsafe_code)] // R6-MS-4: `unsafe fn` boundary (delegation to the unsafe producer).
-    pub unsafe fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
-        // SAFETY (R6-MS-4): this method carries the identical `# Safety`
-        // contract as the delegated `AllocCore::dbg_push_to_ring` and is itself
-        // `unsafe fn`, so the obligation is forwarded to THIS caller verbatim.
-        unsafe { self.core.dbg_push_to_ring(ptr, class_idx) }
-    }
-
-    /// TEST-ONLY (task R2/#154): drain every owned segment's `RemoteFreeRing`
-    /// into its `BinTable`, exactly as the alloc slow path's lazy drain does,
-    /// but unconditionally. Task #164: routes through the same magazine
-    /// predicate as the production drain, so tests exercise the real
-    /// decision path.
-    ///
-    /// Sol-F1 (task #563): additionally gated `internals` — delegates to
-    /// [`AllocCore::dbg_drain_all_rings`]/[`AllocCore::dbg_drain_all_rings_checked`],
-    /// both moved behind `internals` (`alloc_core_small_reclaim.rs`'s module doc).
-    #[doc(hidden)]
-    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
-    pub fn dbg_drain_all_rings(&mut self) {
-        // Task #164: split borrow — `&self.tcache` (read) + `&mut self.core`
-        // (write) are disjoint fields of HeapCore.
-        //
-        // RAD-5 (E4) GO/NO-GO EXPERIMENT: the magazine predicate is now the
-        // O(1) bitmap probe, matching the production `refill_magazine_slow`
-        // predicate — see that function's identical replacement for the
-        // rationale. `class_idx` is unused by the probe (residency is keyed
-        // by offset, not class) but kept in the closure signature to match
-        // the `dbg_drain_all_rings_checked`/`reclaim_offset_checked` `F: Fn(*mut
-        // u8, usize) -> bool` contract.
-        #[cfg(feature = "fastbin")]
-        {
-            self.core.dbg_drain_all_rings_checked(&|ptr, _class_idx| {
-                let pbase = os::segment_base_of_ptr(ptr);
-                let poff = (ptr as usize - pbase as usize) as u32;
-                SegmentMeta::new(pbase)
-                    .magazine_bitmap()
-                    .is_in_magazine(poff)
-            });
-        }
-        #[cfg(not(feature = "fastbin"))]
-        self.core.dbg_drain_all_rings();
     }
 
     /// TEST-ONLY (Mechanism 2, task #51): force-drain this heap's
@@ -740,90 +644,5 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
         self.core.dbg_is_free_for(ptr)
-    }
-
-    /// TEST-ONLY (R13-1, task #271): force-trip this heap's coarse-only
-    /// latch, simulating "a producer already observed sidecar OOM at least
-    /// once for this heap" WITHOUT actually driving the process to OOM. Thin
-    /// delegation to `AllocCore::dbg_force_sidecar_oom_latch` — exposed at
-    /// the `HeapCore` level because `core` is `pub(crate)` and integration
-    /// tests in `tests/` only see `HeapCore`/`HeapRegistry`. Returns `true`
-    /// if the latch handle was bound (this heap has been claimed through the
-    /// registry and `class-aware-dirty` is on), `false` otherwise.
-    ///
-    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_force_sidecar_oom_latch`] moved behind `internals`
-    /// (see that method's file, `alloc_core_core_diag.rs`, module doc).
-    #[doc(hidden)]
-    #[cfg(all(feature = "class-aware-dirty", feature = "internals"))]
-    pub fn dbg_force_sidecar_oom_latch(&mut self) -> bool {
-        self.core.dbg_force_sidecar_oom_latch()
-    }
-
-    /// TEST-ONLY (R13-1, task #271): read this heap's coarse-only latch.
-    /// Thin delegation to `AllocCore::dbg_sidecar_oom_latch` — see that
-    /// function's doc comment. Returns `None` if the latch handle is not
-    /// bound.
-    ///
-    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
-    /// [`AllocCore::dbg_sidecar_oom_latch`] moved behind `internals` (see
-    /// that method's file, `alloc_core_core_diag.rs`, module doc).
-    #[doc(hidden)]
-    #[cfg(all(feature = "class-aware-dirty", feature = "internals"))]
-    #[must_use]
-    pub fn dbg_sidecar_oom_latch(&self) -> Option<bool> {
-        self.core.dbg_sidecar_oom_latch()
-    }
-
-    /// TEST-ONLY (R13-1, task #271): push `ptr`'s segment-relative offset
-    /// into its segment's `RemoteFreeRing` (exactly like
-    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring)) AND set ONLY the coarse
-    /// per-segment dirty bit for that segment, deliberately WITHOUT setting
-    /// any per-class bit — reconstructing the exact on-heap state a real
-    /// sidecar-OOM cross-thread free leaves behind, without needing a real
-    /// OOM. Thin delegation to `AllocCore::dbg_push_to_ring` +
-    /// `AllocCore::dbg_force_coarse_dirty_bit_for` — exposed at the
-    /// `HeapCore` level so a `tests/` integration test can construct a
-    /// "coarse-only entry" scenario through the real production ring/bitmap
-    /// machinery. Returns `true` iff BOTH the ring push and the coarse-bit
-    /// set succeeded.
-    ///
-    /// # Safety
-    ///
-    /// Carries the identical contract as
-    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (this is that same
-    /// producer operation, plus an additional bitmap-only side effect that
-    /// carries no extra memory-safety obligation of its own — the coarse bit
-    /// is read-only metadata to `drain_dirty_segments`, never dereferenced as
-    /// a pointer).
-    // R24-6 (task #384): gated additionally on `bench-internals` so this
-    // `unsafe fn` measurement/test-only hook is NOT reachable from plain
-    // `--features production` (its prior gate — `alloc-xthread` +
-    // `alloc-segment-directory` + `class-aware-dirty` — is fully satisfied by
-    // `production`'s feature list on its own). Its one caller,
-    // `tests/class_aware_dirty_oom_latch.rs`, now requires `bench-internals`
-    // too. See the `bench-internals` feature doc in `Cargo.toml` for the full
-    // rationale and why the sibling `dbg_push_to_ring` (R6-MS-4) was NOT
-    // moved here.
-    //
-    // Sol-F1 (task #563): additionally gated `internals` — delegates to
-    // `AllocCore::dbg_push_to_ring`/`AllocCore::dbg_force_coarse_dirty_bit_for`,
-    // both moved behind `internals` (`alloc_core_small_reclaim.rs` /
-    // `alloc_core_core_diag.rs` module docs).
-    #[doc(hidden)]
-    #[cfg(all(
-        feature = "alloc-xthread",
-        feature = "alloc-segment-directory",
-        feature = "class-aware-dirty",
-        feature = "bench-internals",
-        feature = "internals"
-    ))]
-    #[allow(unsafe_code)] // R13-1: `unsafe fn` boundary, mirrors `dbg_push_to_ring`.
-    pub unsafe fn dbg_push_coarse_only_entry(&self, ptr: *mut u8, class_idx: usize) -> bool {
-        // SAFETY: identical contract to `dbg_push_to_ring`, forwarded to
-        // THIS caller verbatim.
-        let pushed = unsafe { self.core.dbg_push_to_ring(ptr, class_idx) };
-        let coarse = self.core.dbg_force_coarse_dirty_bit_for(ptr);
-        pushed && coarse
     }
 }

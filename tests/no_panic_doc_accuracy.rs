@@ -14,15 +14,17 @@
 //! #1984 (alloc-core perf review P1-2) demoted the realloc ownership
 //! re-check (former site 1) to `debug_assert!`, leaving FOUR release-surviving
 //! tripwires. A later canonical-root change replaced that duplicate probe
-//! with fallible `canonical_base_of(base)?`. This test pins the current
-//! mechanism and the four remaining large-cache tripwires:
+//! with fallible `canonical_base_of(key)?`, where `key` is derived from the
+//! payload address. This test pins the current mechanism and the four
+//! remaining large-cache tripwires:
 //!
 //!   * **Code side:** the four remaining distinctive panic-message strings
 //!     each appear exactly once in their expected source file, AND the
-//!     former realloc site resolves the table-stored canonical root with `?`
-//!     before deriving the block pointer or reading its header, and no
-//!     release-surviving `assert!(` appears in that file. Removing that
-//!     fallible resolution or restoring a panic fails this guard.
+//!     former realloc site resolves the table-stored canonical root with `?`,
+//!     checks the supplied base against that root or the payload-derived key,
+//!     reconstructs the block from the stored root, and validates a Large
+//!     payload's exact header offset before resizing. No release-surviving
+//!     `assert!(` appears in that file.
 //!
 //!   * **Doc side:** `sefer_alloc.rs`'s "No-panic" section contains the
 //!     qualifying language (`rustc_nounwind`, `invariant tripwire`), states
@@ -66,28 +68,37 @@ fn assert_count(haystack: &str, needle: &str, expected: usize, ctx: &str) {
 
 #[test]
 fn four_invariant_tripwires_pinned_by_message() {
-    // Former site 1 now uses the table's stored root as a fallible boundary:
-    // a missing address returns None, and no caller-derived pointer reaches
-    // the block/header reads. A release assert remains forbidden here.
+    // Former site 1 resolves the payload-derived key to the stored root.
+    // Reject an inconsistent supplied base before reconstructing the block;
+    // a Large resize also requires the exact header payload offset.
     let core = read_src("alloc_core/alloc_core/mem/realloc_fastpath.rs");
     let squashed: String = core.split_whitespace().collect::<Vec<_>>().join(" ");
-    let marker = "let base = self.table.canonical_base_of(base)?;";
-    assert_count(&squashed, marker, 1, "fallible known-base root resolution");
     let known_base = squashed
         .split_once("pub(super) fn realloc_inplace_fast_path_known_base(")
         .expect("known-base realloc function")
-        .1;
-    let root = known_base.find(marker).expect("canonical root assignment");
-    let block = known_base
-        .find("let ptr = crate::alloc_core::node::Node::deref(base,")
-        .expect("allocator-root block derivation");
-    let kind = known_base
-        .find("let kind = SegmentHeader::kind_at(base);")
-        .expect("header read");
-    assert!(
-        root < block && block < kind,
-        "canonical root must precede block derivation and header read"
-    );
+        .1
+        .split_once("fn try_grow_large_reserved_capacity(")
+        .expect("end of known-base realloc function")
+        .0;
+    let guards = [
+        "let key = os::segment_base_of_ptr(ptr);",
+        "let canonical = self.table.canonical_base_of(key)?;",
+        "if base.addr() != canonical.addr() && base.addr() != key.addr() { return None; }",
+        "let base = canonical;",
+        "let ptr = crate::alloc_core::node::Node::deref(base, ptr.addr().wrapping_sub(base.addr()));",
+        "let kind = SegmentHeader::kind_at(base);",
+        "let payload_off = SegmentHeader::read_at(base).payload_offset;",
+        "if ptr.addr() != base.addr() + payload_off { return None; }",
+        "let span_usable = SegmentHeader::span_usable_at(base);",
+    ];
+    let mut remainder = known_base;
+    for guard in guards {
+        assert_count(known_base, guard, 1, "fallible realloc root/shape guard");
+        remainder = remainder
+            .split_once(guard)
+            .unwrap_or_else(|| panic!("realloc guard is absent or out of order: {guard}"))
+            .1;
+    }
     assert!(
         !squashed.contains(" assert!("),
         "mem/realloc_fastpath.rs must contain no release-surviving `assert!(` — \
@@ -189,7 +200,10 @@ fn no_panic_doc_is_qualified() {
         "sefer_alloc.rs must preserve the #1984 demotion history"
     );
     assert!(
-        doc.contains("fallible") && doc.contains("`canonical_base_of(base)?`"),
+        doc.contains("fallible")
+            && doc.contains("`canonical_base_of(key)?`")
+            && doc.contains("payload-derived")
+            && doc.contains("payload_offset"),
         "sefer_alloc.rs must describe the current no-panic canonical-root \
          resolution rather than a retained debug assertion"
     );

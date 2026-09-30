@@ -38,3 +38,21 @@ The reviewed artifact is `2ebb6d80be665a0800d4abf50ae70e9c9ff3f354` **plus the u
 **Oracle calibration:** `tests/r8_global_box_provenance.rs:13-74` really installs `SeferAlloc` as `#[global_allocator]`, transfers narrow `Box<u8>` and `Box<Tiny>` values, drops them on a foreign thread, and checks pending-bit consumption plus free/route state. Its actual-Box post-terminal paused-producer case exists at `:77-116`, but is `#[cfg(miri)]`; this review did **not** run Miri and does not claim a passing result. `tests/r8_terminal_global.rs:89-123` pauses an explicit `GlobalAlloc` producer *before* publication and checks the retained route/second cut. `tests/r8_autonomous_maintenance.rs:52-96` uses a real installed allocator and a completed-worker-pass acknowledgement after owner exit, but its no-future-allocation premise is a test comment rather than an allocation/claim counter, and the P2 physical-release gap remains. Loom files are model oracles, not proof that the production code was run under Loom here.
 
 **Boundary of decision:** This review does not certify all feature profiles, OS backends, Miri provenance, Loom interleavings, or performance/RSS. It finds no valid-use P0/P1 source counterexample in the specified delta; absence of such a finding is not a proof of soundness. The inherited dirty integration and test outcomes remain for the parent to accept separately.
+
+## Parent follow-up — Windows native acceptance
+
+The original findings above remain the historical review of its snapshot.
+The P3 current-ingress documentation has been corrected. The P2 oracle was
+strengthened by `tests/r8_os_release_oracle.rs`: capture exact original tokens
+while the allocating owner is live, exit that owner, perform the last remote
+frees, then use passive worker acknowledgements and native mapping queries.
+The negative control unlinks a synthetic route while its reservation remains
+mapped, proving route disappearance alone cannot satisfy the OS oracle.
+
+The production and minimal `alloc-global,alloc-decommit` profiles, both with
+`internals,bench-internals`, passed on Windows. Small, ordinary Large and biased
+Large tokens became unmapped without a subsequent allocation or claimant.
+Linux is wired into CI but was not executed in this acceptance run. This
+closes the specific Windows evidence gap; it is not an all-platform release GO.
+Miri's installed-allocator bootstrap was subsequently found incompatible with
+the old aligned-vmem Miri aperture and is being fixed separately.

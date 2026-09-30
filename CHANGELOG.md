@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Terminal-sidecar cutover snapshot (2026-09-30; acceptance pending)
+
+- Foreign `GlobalAlloc` frees now use numeric directory lookup and pinned,
+  System-backed route sidecars: owner-issued Small/Primordial class plus a
+  terminal bitmap bit, or a Large instance state word. The old segment/heap
+  rings, heap overflow/spill, intrusive inbox and deferred Large stack have
+  been removed as authoritative ingress.
+- Owner trim and TLS teardown make finite per-word cuts; pre-entry
+  publications are covered without waiting for paused or post-cut producers.
+  A process-lifetime ownerless worker is **explicitly** activated by the
+  fallible `SeferAlloc::start_maintenance()` API. Failure does not silently
+  enable an ownerless guarantee; success is subject to fair scheduling and
+  available exclusive leases, not an OS-return latency promise.
+- Large requests aligned at or above `SEGMENT` now have checked biased
+  geometry with distinct OS release token, metadata root and payload key.
+  The byte-per-granule Small sidecar costs 32 KiB bitmap plus 256 KiB class
+  metadata per fully materialized segment before rounding; this is a logical
+  footprint, not measured RSS. No current speedup is claimed.
+- This is an inherited dirty snapshot. Full feature/platform, Miri/Loom,
+  startup-failure and performance acceptance remains with the parent; this
+  entry does not claim a release GO or test completion.
+
+### Terminal route owner-drain stage (2026-09-30)
+
+Historical intermediate stage; the cutover above supersedes its
+"remaining chain" description without erasing its stage-local test record.
+
+- **[correctness fix, consumer stage]** Cold owner trim and TLS teardown now
+  consume already-published Small/Primordial bitmap records and pending Large
+  routes. The bounded pass uses stored reservation roots, owner-issued classes,
+  exact credits and duplicate/magazine guards, and drops every cut/scan before
+  Small reservation finalization. Public trim also exists with minimal
+  `alloc-global`, without requiring cache/decommit features. Behavioral tests
+  cover the public caller and TLS exit, record guards, cache reissue and
+  last-Small release; a Loom credit-lifetime model includes a premature-release
+  negative control. Native owner tests passed under minimal `alloc-global`,
+  fastbin without decommit, `production` and all features; publication/credit
+  Loom models and existing cold-trim regressions passed. A public-API smoke
+  failed before the patch and passed after it. Miri completion remains pending.
+- **[contract boundary]** This completes the consumer stage, not normal foreign
+  producer conversion or autonomous ownerless reclamation. Legacy ring/overflow/
+  spill and deferred Large ingress remain pending the clean integration cutover;
+  R6-01/R6-03 and release remain NO-GO. Exact implemented and remaining contracts
+  are recorded in `docs/REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`.
+
 ### Root allocator `src/` review round 5 (xxs, 2026-09-29)
 
 Findings from `docs/reviews/2026-09-29-091221-src-review-xxs-sol-round-5.md` (`c47df005`; 0 P0/P1, 1 P2, 1 P3, 1 P4). Its IDs are cited as "xxs R5-NN". **The feature graph changes: `alloc-global` now implies `alloc-xthread`.** `production` already enabled both, so its executable code is unchanged; no commit claims a speedup.

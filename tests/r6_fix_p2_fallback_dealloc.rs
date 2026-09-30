@@ -163,17 +163,11 @@ fn real_teardown_case() {
         "the teardown dealloc must acquire the fallback lock exactly once"
     );
 
-    let (free, ring, overflow) = HeapCore::dbg_with_fallback_for_test(|heap| {
+    let free = HeapCore::dbg_with_fallback_for_test(|heap| {
         assert_eq!(heap.dbg_owner_id_for(ptr), Some(OWNER_ID_FALLBACK));
-        (
-            heap.dbg_is_free_for(ptr),
-            heap.dbg_segment_ring_cursors_for_test(ptr),
-            heap.dbg_overflow_cursors_for_test(),
-        )
+        heap.dbg_is_free_for(ptr)
     })
     .expect("fallback remains initialized");
-    assert_eq!(ring, Some((0, 0)), "the free must not take the remote ring");
-    assert_eq!(overflow, (0, 0), "the free must not enter heap overflow");
 
     #[cfg(feature = "fastbin")]
     {
@@ -185,7 +179,7 @@ fn real_teardown_case() {
         assert!(
             in_magazine,
             "direct fallback dealloc did not park the block in its class magazine: \
-             class={class}, free={free}, ring={ring:?}, overflow={overflow:?}"
+             class={class}, free={free}"
         );
         // Magazine-resident blocks remain allocated in the bitmap and live
         // count; the subsequent alloc proves immediate reuse.
@@ -252,7 +246,7 @@ fn busy_lock_case() {
     assert_eq!(
         HeapCore::dbg_with_fallback_for_test(|heap| {
             assert!(!heap.dbg_is_free_for(ptr));
-            heap.dbg_drain_all_rings();
+            heap.dbg_drain_sidecar_ingress();
             heap.dbg_is_free_for(ptr)
         }),
         Some(true),

@@ -210,6 +210,46 @@ export const PER_PR_ROWS = [
       '"-D warnings" cargo check --features "alloc-core alloc-decommit ' +
       'internals"` on the pre-fix tree: 10 errors, one per warning).',
   },
+  // R8 cutover: actual terminal producer/owner/service behavior across the
+  // policy boundaries. bench-internals arms fallback/startup/unwind oracles.
+  // Keep these here so local and CI invocations cannot diverge.
+  {
+    id: 'test-r8-minimal-global',
+    kind: 'test',
+    features: 'alloc-global internals bench-internals',
+    note: 'Terminal global allocation, owner sidecar misses and autonomous maintenance without fastbin/decommit/directory.',
+  },
+  {
+    id: 'test-r8-fastbin-no-decommit',
+    kind: 'test',
+    features: 'fastbin internals bench-internals',
+    note: 'Magazine terminal publication/consumption and ownerless Large retirement without decommit.',
+  },
+  {
+    id: 'test-r8-production',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    note: 'Shipping sidecar/owner/service path, including ownerless Small release without any future alloc or claim.',
+  },
+  {
+    id: 'test-r8-hardened-numa-directory',
+    kind: 'test',
+    features: 'production hardened numa-aware internals bench-internals',
+    note: 'Terminal geometry, owner consumption and maintenance with hardened checks, NUMA and directory routing.',
+  },
+  {
+    id: 'test-r8-large-geometry-policies',
+    kind: 'test',
+    features: 'production exact-span-large large-reserved-capacity internals bench-internals',
+    note: 'Biased Large alignment and retirement with exact spans and reserved-capacity grow/shrink.',
+  },
+  {
+    id: 'test-r8-large-commit-failure',
+    kind: 'test',
+    features: 'alloc-core internals lazy-commit-fault-injection',
+    target: { flag: '--test', name: 'r8_large_alignment' },
+    note: 'Native real commit-failure rollback for biased Large reservations, deliberately without numa-aware: eager NUMA reservation bypasses lazy-commit fault injection.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal

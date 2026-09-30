@@ -8,41 +8,8 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta,
 
 use crate::alloc_core::alloc_core::AllocCore;
 
-/// #1993 (alloc_core review P3-1): the outcome of draining ONE segment's
-/// remote-free ring via [`AllocCore::drain_segment_ring`].
-#[cfg(feature = "alloc-xthread")]
-pub(super) enum RingDrainOutcome {
-    /// The pre-drain guard found nothing new since the cached head — no
-    /// work was done (ring untouched, `ring_drain_head` NOT refreshed).
-    Skipped,
-    /// The ring was drained and, as a side effect, the segment was fully
-    /// emptied and released/pooled by `release_or_pool_empty_segment`. Only
-    /// constructed under `alloc-decommit` (the only feature under which a
-    /// drain can trigger a decommit at all).
-    ///
-    /// `pooled` distinguishes the two dispositions (R1-03, src review round
-    /// 1): `false` means `base` was RELEASED — gone/unmapped, the caller
-    /// MUST NOT read its BinTable or any other metadata. `true` means `base`
-    /// was POOLED — still a live, registered, fully-committed segment whose
-    /// `BinTable` may legitimately have free blocks for the class this scan
-    /// is looking for (every block was just freed), so a caller performing a
-    /// free-block search must keep considering `base` exactly like a
-    /// `Drained` segment instead of skipping it — the pool is a same-class
-    /// free-list reserve, and a segment that empties DURING this very scan
-    /// is reusable in this same pass, not only on a later call.
-    #[cfg(feature = "alloc-decommit")]
-    Decommitted { pooled: bool },
-    /// The ring was drained; the segment is still live and
-    /// `ring_drain_head` has been refreshed. `changed_classes` is the R8-1
-    /// accumulator (bitmask of classes the drain touched) — already used to
-    /// sync the directory (if materialised); callers that need it for their
-    /// own bookkeeping (e.g. the R9-6 wasted-drain diagnostic, the only
-    /// current consumer, and `alloc-stats`-gated) can inspect it too.
-    Drained {
-        #[cfg_attr(not(feature = "alloc-stats"), allow(dead_code))]
-        changed_classes: u64,
-    },
-}
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+use super::sidecar_drain_outcome::SidecarDrainOutcome;
 
 impl AllocCore {
     /// Carve one fresh block of `class_idx` for the caller, plus a refill
@@ -108,89 +75,23 @@ impl AllocCore {
     /// Returns `None` if no owned small segment has a free block of this
     /// class.
     ///
-    /// ## Slot recycle integration (task #60, `alloc-decommit`)
-    ///
-    /// Under `alloc-xthread` + `alloc-decommit`, the ring drain inside this
-    /// function may trigger `dec_live_and_maybe_decommit` (via `reclaim_offset`)
-    /// which decommits an empty segment. Slot recycling — `self.table.recycle(base)`
-    /// — is deferred until AFTER the drain for that `base` is complete. This is
-    /// critical: a partially-drained ring still has ring entries that
-    /// `reclaim_offset` processes by reading the segment's metadata (which stays
-    /// committed). Recycling before the drain ends would release the OS
-    /// reservation prematurely — the metadata read in `magic_at` / `kind_at`
-    /// would UAF. By recycling after the drain, we ensure:
-    ///   a. All ring entries for `base` are processed (or safely skipped via
-    ///      the `off >= bump` guard — bump was reset by decommit).
-    ///   b. The OS release + slot NULL happen atomically in `recycle`, with no
-    ///      window where the slot is non-NULL but the OS segment is gone.
+    /// Each terminal route cut ends before this reservation can be finalized.
+    /// Logical retirement checks physical free/magazine state inside the owner
+    /// primitive; callers do not supply a second residency oracle.
     pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
         self.find_segment_with_free_impl(
             class_idx,
-            #[cfg(feature = "alloc-xthread")]
-            &|_, _| false,
             #[cfg(feature = "alloc-segment-directory")]
             false,
         )
     }
 
-    /// TEST-ONLY (fxx R2-03): direct forwarder to [`find_segment_with_free`]
-    /// (Self::find_segment_with_free), so a test can deterministically drive
-    /// the real linear-scan/`drain_segment_ring` path instead of depending on
-    /// incidental refill-batch timing inside `alloc()` to reach it. No raw
-    /// pointer parameter and no production caller — `internals` +
-    /// `bench-internals`-gated per this repo's dbg-hook convention.
+    /// Test-only entry to the real canonical-root discovery path.
     #[cfg(all(feature = "alloc-xthread", feature = "bench-internals"))]
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn dbg_find_segment_with_free_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
         self.find_segment_with_free(class_idx)
-    }
-
-    /// TEST-ONLY (fxx R2-03): `(cached_head, real_head)` for `ptr`'s
-    /// segment — `cached_head` is the owner-private `ring_drain_head` cache
-    /// stamped in the header, `real_head` is the ring's own live cursor
-    /// (`RemoteFreeRing::dbg_cursors().0`). `None` if `ptr` is foreign / not
-    /// small/primordial. Lets a test assert the cache tracks the ring's real
-    /// head after a `Decommitted { pooled: true }` outcome — the fxx R2-03
-    /// regression this file's fix addresses (before the fix, `cached_head`
-    /// stays at its pre-drain value on that outcome; after, it equals
-    /// `real_head`). Read-only: no raw pointer is dereferenced for anything
-    /// but a header/ring-cursor field read. `internals` + `bench-internals`-gated
-    /// per this repo's dbg-hook convention.
-    #[cfg(all(feature = "alloc-xthread", feature = "bench-internals"))]
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn dbg_ring_drain_head_for_test(&self, ptr: *mut u8) -> Option<(u32, u64)> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
-            return None;
-        }
-        let meta = SegmentMeta::new(base);
-        let cached_head = meta.ring_drain_head_of();
-        let (real_head, _tail) = meta.remote_ring().dbg_cursors();
-        Some((cached_head, real_head))
-    }
-
-    /// Task #164: variant with magazine predicate, called from
-    /// `refill_class_bump` when the magazine is accessible.
-    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-    pub(crate) fn find_segment_with_free_checked<F: Fn(*mut u8, usize) -> bool>(
-        &mut self,
-        class_idx: usize,
-        is_in_magazine: &F,
-    ) -> Option<*mut u8> {
-        self.find_segment_with_free_impl(
-            class_idx,
-            is_in_magazine,
-            #[cfg(feature = "alloc-segment-directory")]
-            false,
-        )
     }
 
     /// R9-8 (task #230): forced "rescue scan" — runs the full O(S) linear
@@ -200,156 +101,50 @@ impl AllocCore {
     /// periodic re-validation path). Called as a last resort from the
     /// small-allocation OOM path (where `reserve_small_segment` returned
     /// `None`) to avoid a spurious OOM a directory bug could otherwise cause.
-    /// Exists only under the directory feature + not-`numa-aware` (under
-    /// `numa-aware` the directory is never trusted for lookups, so there is no
-    /// hazard to rescue from). This unchecked variant is used by `alloc_small`
-    /// (whose step-2 scan is proven magazine-unreachable under `fastbin`).
+    /// Available under the directory feature without NUMA. The explicit rescue
+    /// mode bypasses standalone negative trust and repairs missing directory bits.
     #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
     pub(crate) fn find_segment_with_free_forced(&mut self, class_idx: usize) -> Option<*mut u8> {
-        self.find_segment_with_free_impl(
-            class_idx,
-            #[cfg(feature = "alloc-xthread")]
-            &|_, _| false,
-            true,
-        )
+        self.find_segment_with_free_impl(class_idx, true)
     }
 
-    /// R9-8 (task #230): checked variant of the rescue scan, used by the
-    /// magazine-refill OOM path (`refill_class_bump_impl`'s step-4 `None`
-    /// branch) so a cross-thread-freed magazine-resident block in a drained
-    /// ring is NOT reclaimed (avoiding a double-issue). See
-    /// `find_segment_with_free_forced` for the rescue semantics.
-    #[cfg(all(
-        feature = "alloc-segment-directory",
-        feature = "alloc-xthread",
-        feature = "fastbin",
-        not(feature = "numa-aware")
-    ))]
-    pub(crate) fn find_segment_with_free_checked_forced<F: Fn(*mut u8, usize) -> bool>(
-        &mut self,
-        class_idx: usize,
-        is_in_magazine: &F,
-    ) -> Option<*mut u8> {
-        self.find_segment_with_free_impl(class_idx, is_in_magazine, true)
-    }
-
-    /// #1993 (alloc_core review P3-1): the shared ring-drain body factored
-    /// out of what were three near-identical copies (the linear-scan
-    /// fallback below, [`validate_directory_candidate`](Self::validate_directory_candidate),
-    /// and `directory::drain_dirty_segments`) — "guarded pre-drain check →
-    /// `ring.drain(...)` reclaiming each entry → directory sync →
-    /// decommit/pool hysteresis → `ring_drain_head` refresh". The drift this
-    /// closes was not hypothetical: the R10-3 fix ("gate the class bit on
-    /// `reclaimed`", see the comment inline below) had been reasoned through
-    /// once and mechanically mirrored twice, which is exactly the shape that
-    /// silently diverges on the next edit.
-    ///
-    /// PERF-PASS-4 (G9/C2, task #52): pre-drain empty-guard. Compares a
-    /// cheap Relaxed `tail` load against this segment's owner-cached `head`
-    /// (persisted across calls in the segment's OWN header — see
-    /// `SegmentHeader::ring_drain_head`'s doc comment for why the cache
-    /// lives there and not in `SegmentTable`, and
-    /// `RemoteFreeRing::tail_relaxed`'s doc comment for the full soundness
-    /// argument). If they match, no producer has reserved a slot since the
-    /// last drain (real or guarded) — skip `drain()` entirely, INCLUDING the
-    /// unconditional `head.store(_, Release)` it would otherwise perform,
-    /// for a ring that has nothing new to report ([`RingDrainOutcome::Skipped`]).
-    /// A push landing after this check is exactly as deferred as one landing
-    /// after an unconditional drain finishes — the "later drain picks it
-    /// up" contract (`remote_free_ring.rs` module docs) is unchanged.
-    ///
-    /// Slot recycle integration (task #60, `alloc-decommit`): a decommit
-    /// this call triggers (via `dec_live_and_maybe_decommit`/
-    /// `release_or_pool_empty_segment`) happens AFTER the drain for `base`
-    /// is complete — a partially-drained ring still has entries that
-    /// `reclaim_offset` processes by reading the segment's metadata (which
-    /// stays committed until this call decides to release it).
-    #[cfg(feature = "alloc-xthread")]
+    /// Consume one canonical Small root, dropping every cut and route borrow
+    /// before reclaim finalization can release its reservation. Called only
+    /// on actual free-list/refill misses, never on a magazine hit.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline]
-    pub(super) fn drain_segment_ring<#[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool>(
-        &mut self,
-        base: *mut u8,
-        #[cfg(feature = "fastbin")] is_in_magazine: &F,
-    ) -> RingDrainOutcome {
-        let mut meta_for_ring = SegmentMeta::new(base);
-        let ring = meta_for_ring.remote_ring();
-        let cached_head = meta_for_ring.ring_drain_head_of();
-        if ring.tail_relaxed() == cached_head {
-            return RingDrainOutcome::Skipped;
+    pub(super) fn drain_segment_sidecar(&mut self, base: *mut u8) -> SidecarDrainOutcome {
+        if !self.table.is_routed() {
+            return SidecarDrainOutcome::Skipped;
         }
-        #[cfg(feature = "alloc-decommit")]
-        let small_cur = self.small_cur;
-        #[cfg(feature = "alloc-decommit")]
-        let mut decommit_happened = false;
-        // R8-1 (task #214): accumulate the set of classes this drain pass
-        // touches, for an O(popcount) post-drain directory sync.
-        let mut changed_classes: u64 = 0;
-        let new_head = ring.drain(|off| {
-            // Task #164: when a magazine exists (fastbin), use the checked
-            // variant that consults the magazine predicate before
-            // `write_next`, closing the in-magazine leg of the
-            // ring↔magazine cross-thread double-free residual.
-            #[cfg(feature = "fastbin")]
-            let reclaimed = Self::reclaim_offset_checked(base, off, &is_in_magazine);
-            #[cfg(not(feature = "fastbin"))]
-            let reclaimed = Self::reclaim_offset(base, off);
-            if reclaimed {
-                #[cfg(feature = "alloc-decommit")]
-                if Self::dec_live_and_maybe_decommit(base, small_cur) {
-                    decommit_happened = true;
-                }
-                // R10-3: gate the class bit on `reclaimed` — a rejected
-                // entry never mutated the BinTable for its class (every
-                // early `return false` in `reclaim_offset[_checked]`
-                // precedes `set_head`/`mark_free`), so recording it would
-                // (a) cause a spurious directory sync for an unchanged
-                // class and (b) make the R9-6 `WASTED_DIRTY_DRAINS` metric
-                // under-count: a drain that rejected every entry of the
-                // sought class would still look "not wasted".
-                changed_classes |=
-                    1u64 << crate::alloc_core::remote_free_ring::entry_class_idx(off);
-            }
-        });
-        // R7-A2: sync the directory for this segment after the drain
-        // completed. R8-1: only the classes the drain touched are
-        // inspected (O(popcount(changed_classes))), not all
-        // SMALL_CLASS_COUNT. No-op (and compiled out) without the
-        // directory feature.
-        #[cfg(feature = "alloc-segment-directory")]
+        let index = SegmentHeader::segment_id_at(base) as usize;
+        let high_water = SegmentMeta::new(base).bump_of();
+        let mut changed_classes = 0u64;
         {
-            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-            self.sync_directory_for_segment_classes(base, slot_idx, changed_classes);
+            let Some(mut scan) = self.table.scan_small_route(index, base, high_water) else {
+                std::process::abort();
+            };
+            while let Some(mut cut) = scan.next_cut() {
+                while let Some(record) = cut.pop() {
+                    if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+                        changed_classes |= 1u64 << record.class;
+                    }
+                }
+            }
         }
-        // Refresh the cache with the drain's actual final head — NOT
-        // `ring.tail_relaxed()`'s pre-drain snapshot, so a producer that
-        // reserved (but had not yet published) a slot at drain time is
-        // correctly NOT counted as "seen" (see the module doc's "later
-        // drain picks it up" contract). fxx R2-03: done BEFORE the
-        // pool/release branch below, while the header is still guaranteed
-        // mapped — `Decommitted { pooled: true }` leaves the header live, so
-        // a stale cache would survive to the segment's next visit and cost
-        // one redundant full `ring.drain`; `pooled: false` unmaps the
-        // header right after, but a fresh reservation always rewrites
-        // `ring_drain_head: 0` from scratch (`SegmentHeader::small`), so the
-        // write here is moot, not unsound, on that path.
-        meta_for_ring.set_ring_drain_head(new_head);
-        // Mechanism 2 (task #51): now that the drain is complete, an
-        // emptied segment is routed through the pool/release decision. R1-03
-        // (src review round 1): the caller may still read `base`'s BinTable
-        // this pass iff it was POOLED (still live/registered/committed) —
-        // see `RingDrainOutcome::Decommitted`'s doc.
+        if changed_classes == 0 {
+            return SidecarDrainOutcome::Skipped;
+        }
+        #[cfg(feature = "alloc-segment-directory")]
+        self.sync_directory_for_segment_classes(base, index, changed_classes);
         #[cfg(feature = "alloc-decommit")]
-        if decommit_happened {
+        if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
             let pooled = self.release_or_pool_empty_segment(base);
-            return RingDrainOutcome::Decommitted { pooled };
+            return SidecarDrainOutcome::Decommitted { pooled };
         }
-        RingDrainOutcome::Drained { changed_classes }
+        SidecarDrainOutcome::Drained
     }
 
-    #[cfg_attr(
-        all(feature = "alloc-xthread", not(feature = "fastbin")),
-        allow(unused_variables)
-    )]
     #[inline]
     #[allow(unsafe_code)] // R17-2 (task #319): calls the `unsafe fn`s
                           // `os::read_directory_node_bucket` and
@@ -362,12 +157,9 @@ impl AllocCore {
                           // `Send` nor `Sync`) rules out a concurrent writer. The
                           // reads are by-value; no reference to the sidecar
                           // escapes either call.
-    fn find_segment_with_free_impl<
-        #[cfg(feature = "alloc-xthread")] F: Fn(*mut u8, usize) -> bool,
-    >(
+    fn find_segment_with_free_impl(
         &mut self,
         class_idx: usize,
-        #[cfg(feature = "alloc-xthread")] is_in_magazine: &F,
         // R9-8 (task #230): when `true`, this call is a forced "rescue scan"
         // run as a last resort before the small path surfaces an OOM. It
         // BYPASSES the R8-2 directory-trust fast path (so a stale-negative
@@ -443,22 +235,6 @@ impl AllocCore {
         // used to claim — they are two independently NUMA-aware
         // implementations of the same preference, used depending on whether
         // the directory sidecar is materialised.
-        // ── R7-A4: dirty-segment drain ──────────────────────────────────────
-        //
-        // Before querying the directory, drain ALL dirty segments' rings.
-        // This ensures the directory bits reflect the latest cross-thread
-        // frees: a producer that set a dirty bit after publishing a ring
-        // entry has its entry drained HERE, and the directory is updated
-        // accordingly (sync_directory_for_segment_classes inside drain_dirty_segments).
-        // After this, the directory lookup below can skip the per-candidate
-        // ring drain for segments that were already drained in this pass.
-        #[cfg(all(feature = "alloc-segment-directory", feature = "alloc-xthread"))]
-        {
-            #[cfg(feature = "fastbin")]
-            self.drain_dirty_segments(class_idx, is_in_magazine);
-            #[cfg(not(feature = "fastbin"))]
-            self.drain_dirty_segments(class_idx);
-        }
 
         #[cfg(feature = "alloc-segment-directory")]
         if !self.directory_sidecar.is_null() {
@@ -577,75 +353,35 @@ impl AllocCore {
                         // BinTable head) — the SINGLE choke point shared with
                         // the non-NUMA path so the criteria are byte-for-byte
                         // identical.
-                        if let Some(base) = self.validate_directory_candidate(
-                            class_idx,
-                            slot_idx,
-                            #[cfg(feature = "alloc-xthread")]
-                            is_in_magazine,
-                        ) {
+                        if let Some(base) = self.validate_directory_candidate(class_idx, slot_idx) {
                             return Some(base);
                         }
                     }
                 }
             }
-            // (fall through to the directory-miss handling below — control
-            // only reaches here if no candidate in ANY node bucket validated)
-            // Directory miss: no set bit yielded a valid hit.
-            //
-            // R8-2 (task #215): in the common case, TRUST the directory — the
-            // incremental-sync invariants (task #214, proven by the
-            // `assert_directory_equals_rebuild` oracle across the directory
-            // test suite) mean a genuine miss is authoritative and the O(S)
-            // scan below is unnecessary defense. Every
-            // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses for THIS class, run the
-            // full scan anyway as a periodic re-validation safety net: if it
-            // finds something the directory missed, the success-path self-heal
-            // (below in the linear scan) repairs the bit in-place and bumps
-            // `DIRECTORY_MISS_SELF_HEAL` as a canary counter.
-            //
-            // R9-8 (task #230): the streak is PER-CLASS (indexed by
-            // `class_idx`), so a drift-affected class trips its OWN rescan
-            // independent of how often other (healthy) classes miss — directly
-            // bounding the worst case of a directory-invariant violation to
-            // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses of the drifted class.
-            //
-            // R9-8 rescue mode (`rescue == true`): this call is the forced
-            // last-resort scan before the small path surfaces an OOM. SKIP the
-            // trust-the-miss return entirely (a stale-negative bit is exactly
-            // what we are trying to see past) and fall straight through to the
-            // linear scan with the self-heal armed. The streak is NOT touched
-            // (rescue is a one-shot backstop, orthogonal to the periodic
-            // cadence). The caller bumps `DIRECTORY_RESCUE_OOM_AVOIDED` if the
-            // scan finds something.
-            #[cfg(feature = "alloc-segment-directory")]
-            {
-                if rescue {
-                    // Rescue: force the linear scan + self-heal, bypass trust.
-                    // `rescue` is consulted directly at the heal sites below.
-                } else {
-                    self.directory_miss_streak[class_idx] =
-                        self.directory_miss_streak[class_idx].saturating_add(1);
-                    if u32::from(self.directory_miss_streak[class_idx])
-                        < crate::alloc_core::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
-                    {
-                        // R8-2: trust the directory. Skip the O(S) scan entirely.
-                        #[cfg(feature = "alloc-stats")]
-                        crate::alloc_core::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        return None;
-                    }
-                    // Periodic re-validation: run the full scan below anyway,
-                    // and reset this class's streak regardless of whether it
-                    // finds anything.
-                    self.directory_miss_streak[class_idx] = 0;
-                    periodic_revalidation_active = true;
+            // Only an instance with terminal publication capability must look
+            // past a negative owner directory. Standalone cores retain their
+            // authoritative-negative cadence even in a production build.
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            let trust_negative = !self.table.is_routed();
+            #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
+            let trust_negative = true;
+            if !trust_negative {
+                periodic_revalidation_active = !rescue;
+            } else if !rescue {
+                self.directory_miss_streak[class_idx] =
+                    self.directory_miss_streak[class_idx].saturating_add(1);
+                if u32::from(self.directory_miss_streak[class_idx])
+                    < crate::alloc_core::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
+                {
+                    #[cfg(feature = "alloc-stats")]
+                    crate::alloc_core::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return None;
                 }
+                self.directory_miss_streak[class_idx] = 0;
+                periodic_revalidation_active = true;
             }
-            // `DIRECTORY_FALLBACK_SCANS` still means "the periodic
-            // re-validation pass is about to run the fallback scan" — gated
-            // off the rescue path (R9-8), whose entry is counted separately by
-            // `DIRECTORY_RESCUE_OOM_AVOIDED` at the caller, so the periodic
-            // and rescue entry counts stay distinguishable.
             #[cfg(feature = "alloc-stats")]
             if !rescue {
                 crate::alloc_core::directory_stats::DIRECTORY_FALLBACK_SCANS
@@ -731,20 +467,9 @@ impl AllocCore {
             ) {
                 continue;
             }
-            // Variant-2: lazily drain this segment's remote-free ring before
-            // inspecting its BinTable — see
-            // [`drain_segment_ring`](Self::drain_segment_ring)'s doc for the
-            // guard/drain/sync/decommit mechanism this delegates to.
-            // Cross-thread frees that targeted THIS segment (a segment we
-            // own but are not currently allocating from) are sitting in its
-            // ring; without this drain they would never reach the BinTable
-            // and the scan would miss them.
-            #[cfg(feature = "alloc-xthread")]
-            match self.drain_segment_ring(
-                base,
-                #[cfg(feature = "fastbin")]
-                is_in_magazine,
-            ) {
+            // Consume only this canonical candidate before inspecting its bins.
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            match self.drain_segment_sidecar(base) {
                 // Decommitted+released: `base` is unmapped — skip the
                 // BinTable check for it in THIS scan. Decommitted+pooled:
                 // `base` is still live/registered/committed (R1-03, src
@@ -754,10 +479,10 @@ impl AllocCore {
                 // can be reused as a hit in this very scan, not only on a
                 // later call (see `RingDrainOutcome::Decommitted`'s doc).
                 #[cfg(feature = "alloc-decommit")]
-                RingDrainOutcome::Decommitted { pooled: false } => continue,
+                SidecarDrainOutcome::Decommitted { pooled: false } => continue,
                 #[cfg(feature = "alloc-decommit")]
-                RingDrainOutcome::Decommitted { pooled: true } => {}
-                RingDrainOutcome::Skipped | RingDrainOutcome::Drained { .. } => {}
+                SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
@@ -775,7 +500,7 @@ impl AllocCore {
                     {
                         // Foreign-node segment with a free block.  Remember as
                         // fallback if we find nothing local, then keep scanning.
-                        if fallback.is_none() {
+                        if fallback.is_none_or(|fb| !self.table.contains_base_ro(fb)) {
                             fallback = Some(base);
                         }
                         continue;
@@ -811,6 +536,9 @@ impl AllocCore {
         // empty / all recycled).
         #[cfg(feature = "numa-aware")]
         {
+            // Later drains may evict an earlier fully empty pooled candidate.
+            // Revalidate without touching its reservation before finalizing it.
+            let fallback = fallback.filter(|&fb| self.table.contains_base_ro(fb));
             if let Some(fb) = fallback {
                 self.finalize_hit(
                     fb,
@@ -882,13 +610,10 @@ impl AllocCore {
     /// stale/empty/decommitted, so the caller continues to the next candidate.
     #[cfg(feature = "alloc-segment-directory")]
     #[inline]
-    fn validate_directory_candidate<
-        #[cfg(feature = "alloc-xthread")] F: Fn(*mut u8, usize) -> bool,
-    >(
+    fn validate_directory_candidate(
         &mut self,
         class_idx: usize,
         slot_idx: usize,
-        #[cfg(feature = "alloc-xthread")] is_in_magazine: &F,
     ) -> Option<*mut u8> {
         // Validation step 1: base must be non-null.
         let base = self.table.base_at(slot_idx);
@@ -915,17 +640,10 @@ impl AllocCore {
             return None;
         }
 
-        // P1-a: lazily drain this segment's remote-free ring BEFORE
-        // inspecting BinTable — exactly as the linear scan does, via the
-        // shared [`drain_segment_ring`](Self::drain_segment_ring). Cross-thread
-        // frees sitting in the ring are invisible to the BinTable until
-        // drained.
-        #[cfg(feature = "alloc-xthread")]
-        match self.drain_segment_ring(
-            base,
-            #[cfg(feature = "fastbin")]
-            is_in_magazine,
-        ) {
+        // The route scan and all detached cuts end before this reservation
+        // can be pooled/released or its free-list head can be served.
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        match self.drain_segment_sidecar(base) {
             // P1-b: decommit/pool hysteresis — a RELEASED segment must be
             // skipped (try the next candidate); a POOLED segment (R1-03, src
             // review round 1) is still live/registered/committed, so fall
@@ -933,10 +651,10 @@ impl AllocCore {
             // candidate gets, letting a segment that emptied DURING this
             // drain be recognised as a hit in this very call.
             #[cfg(feature = "alloc-decommit")]
-            RingDrainOutcome::Decommitted { pooled: false } => return None,
+            SidecarDrainOutcome::Decommitted { pooled: false } => return None,
             #[cfg(feature = "alloc-decommit")]
-            RingDrainOutcome::Decommitted { pooled: true } => {}
-            RingDrainOutcome::Skipped | RingDrainOutcome::Drained { .. } => {}
+            SidecarDrainOutcome::Decommitted { pooled: true } => {}
+            SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
         }
 
         // Validation step 3: BinTable head STILL non-null?

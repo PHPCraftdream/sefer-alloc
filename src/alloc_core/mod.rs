@@ -68,8 +68,6 @@ use segment::segment_header_gen_table;
 // module names; the re-exports exist purely to keep the old
 // `alloc_core::segment_header_layout` / `_meta_fields` / `_views` module
 // paths valid (module-path parity with the pre-reorg `mod` declarations).
-#[doc(hidden)]
-pub use segment::remote_free_ring;
 use segment::segment_layout;
 pub(crate) use segment::segment_table;
 #[allow(unused_imports)]
@@ -97,8 +95,6 @@ pub use platform::sidecar_stats::{dbg_sidecar_reservation_stats, SidecarReservat
 // both feature-gated, so under plain `alloc-core` the name would otherwise
 // warn. Same allow-with-explanation discipline as the `internals`-off
 // `mod alloc_core` declaration in `lib.rs`.
-#[cfg(feature = "class-aware-dirty")]
-pub(crate) use platform::dirty_by_class;
 #[allow(unused_imports)]
 pub(crate) use platform::sidecar;
 pub(crate) use platform::size_classes;
@@ -150,8 +146,6 @@ use large::alloc_core_large;
 #[cfg(feature = "alloc-decommit")]
 #[allow(unused_imports)]
 use large::alloc_core_large_cache;
-#[doc(hidden)]
-pub use large::deferred_large;
 #[cfg(feature = "large-cache-extended")]
 pub(crate) use large::large_cache_extended;
 
@@ -162,6 +156,8 @@ pub use alloc_core::AllocCore;
 /// `AllocCore::dbg_foreign_or_unroutable_frees`.
 #[cfg(feature = "alloc-xthread")]
 pub(crate) use alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
+#[cfg(feature = "alloc-global")]
+pub(crate) use alloc_core::LARGE_REMOTE_RETIREMENTS;
 /// R9-1 test seam (task #221 follow-up): the process-wide Large-path explicit
 /// zero-pass counter, re-exported crate-wide so `HeapCore::alloc_zeroed`
 /// (registry) can bump the SAME counter `AllocCore::alloc_zeroed` bumps. Read
