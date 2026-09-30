@@ -94,3 +94,57 @@ Until the directory, issue/free conversion, strict sweep, fallible autonomous
 service and these gates are complete, **R6-01/R6-03 remain open and release is
 NO-GO**. The existing intrusive inbox remains an unconnected experimental
 primitive, not an alternative production ingress.
+
+## Owner-drain stage (2026-09-30)
+
+This stage implements the **consumer of already-published route records**,
+not the complete foreign-deallocation or autonomous-maintenance cutover.
+It does not change the release NO-GO above.
+
+- `HeapCore::trim_for_recycle` runs `drain_sidecar_ingress` before magazine
+  flush, Small pool release and Large cache eviction. Its real callers are
+  public `SeferAlloc::trim_current_thread`, the existing diagnostic trim, and
+  TLS `AbandonGuard::drop` while the exiting thread still owns the slot.
+  Public trim is available in the minimal `alloc-global` build too.
+- The pass fixes the table high-water on entry. Every live Small/Primordial
+  slot fixes its issued bump bound, exchanges each covered bitmap word once,
+  and consumes every detached record. It never drains until globally empty,
+  waits for paused producers, or relies on legacy dirty notifications.
+- Class comes from the owner-issued sidecar record, not requested size or
+  the mixed-class page map. Reservation access derives only from the stored
+  table root and numerical offset. Free-list and magazine guards precede
+  node overwrite; a rejected stale record retires no credit. Accepted records
+  link the physical block, mark it free and retire exactly one owner credit,
+  in every feature set (not only `alloc-decommit`). No user callback is run.
+- Every cut and route scan borrow ends before directory synchronization and
+  Small pool/release finalization. Detached and unpublished valid instances
+  remain credited until actual owner retirement. Primordial is never released
+  by this pass. Current Small release on cold trim is a separate policy step.
+- Large consumes only a successful descriptor `PENDING -> CONSUMING` claim.
+  The existing reservation-state reclaim primitive then retires its instance
+  into cache or OS release and unregisters the old route. Cache reissue gets
+  a fresh descriptor incarnation; an old pin cannot name the new instance.
+  Descriptor retirement does not wait for pins and never releases a reservation.
+
+Behavioral coverage is in `tests/r6_terminal_owner_drain.rs` (minimum requested
+sizes, mixed classes, backlog beyond ring capacity, duplicate/magazine guards,
+Large cache reissue, last-Small finalization, public trim and TLS exit),
+`tests/r6_terminal_owner_drain_model.rs` (post-word-cut publication), and
+`tests/loom_terminal_owner_drain.rs` (unpublished/detached credit lifetime and
+the negative producer-retirement control). These are acceptance commands to
+run after integration, not a claim of verified results from this stage.
+
+**Remaining reachable chain:** `HeapCore::dealloc_foreign_routing` and the
+unbound/TORN/fallback dispatch still send normal foreign frees to the legacy
+segment ring / heap overflow / spill or deferred Large stack. Integration must
+convert *all* of those producers to numeric directory lookup and unique
+terminal sidecar publication, remove the obsolete authoritative ingress,
+connect claim-time and fallback owner sweep under their real exclusive
+capabilities, and provide the fallibly started fair ownerless service using
+maintenance leases. `HeapRegistry::try_maintenance` alone is a capability,
+not a running worker. Strict trim of legacy publications and reclaim of a
+late free after owner exit without further calls are therefore **not**
+guaranteed by this consumer-only stage. Follow the stage-4/5 gates in
+`REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`, especially actual GlobalAlloc,
+fallback, aliasing/Miri, paused-producer, service-failure and feature-matrix
+acceptance; owner-only route tests cannot stand in for them.

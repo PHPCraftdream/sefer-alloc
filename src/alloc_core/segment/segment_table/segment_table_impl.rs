@@ -294,6 +294,23 @@ impl SegmentTable {
         let _ = (base, offset, class_idx);
     }
 
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn scan_small_route(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+    ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
+        self.routes.as_ref()?.scan_small(index, base, high_water)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn claim_large_route(&self, index: usize, base: *mut u8) -> bool {
+        self.routes
+            .as_ref()
+            .is_some_and(|routes| routes.claim_large_pending(index, base))
+    }
+
     /// Register a new segment base. Returns its assigned `segment_id` (the
     /// index it was placed at), or `None` if the table is full or routed
     /// registration fails. In either failure case, no table slot is changed

@@ -61,6 +61,10 @@ mod counters;
 #[path = "lifecycle.rs"]
 mod lifecycle;
 
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+#[path = "sidecar_drain.rs"]
+mod sidecar_drain;
+
 /// Group module: the GlobalAlloc-face entry points (`alloc`, `alloc_zeroed`,
 /// `dealloc`, `realloc`) and the in-place realloc fast-path family.
 #[path = "mem/mod.rs"]
