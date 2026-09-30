@@ -81,3 +81,15 @@ cause is not proven, so these changes are not described as a production leak fix
 CI guards passed for 101 sentinels, seven wired root Loom targets, and the
 reviewed debug-hook safety/gating inventory. This is not a remote CI run or a
 claim that Linux, all feature profiles, or the pending root Miri checks passed.
+
+Final `cargo clippy --all-targets` for that same profile with `-D warnings`
+passed after a helper-only module rename (`20b7e060`); the Windows OS-release
+oracle passed again in the same verification task
+`bb6a0bb7-900e-4d9e-affe-608479bb4631`. No lint was suppressed.
+
+Ten completed task worktrees were removed only after preserving their exact
+worker snapshots as commits on their existing branches. Their older partial
+states were not merged over the integrated main tree. Loose patches and copied
+checkpoints were preserved under `worktrees/accepted-recovery-20260930` rather
+than deleted or committed as production changes. The active Miri worktree and
+unrelated baseline/review worktrees were excluded from cleanup.
