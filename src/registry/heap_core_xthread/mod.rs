@@ -10,4 +10,6 @@ mod drain;
 mod overflow;
 mod ring;
 mod routing;
+#[cfg(feature = "alloc-global")]
+mod sidecar_drain;
 mod stall;

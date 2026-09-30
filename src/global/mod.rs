@@ -23,6 +23,8 @@
 mod alloc_stats;
 mod fallback;
 mod sefer_alloc;
+mod maintenance_service;
+mod maintenance_start_error;
 // `pub` (not private) so the task #129 teardown-ordering test can reach the
 // `#[doc(hidden)]` test hook `tls_heap::dbg_teardown_then_resolve_is_fallback`
 // through `sefer_alloc::global::tls_heap` (this module itself is already
@@ -31,6 +33,9 @@ pub mod tls_heap;
 
 pub use alloc_stats::AllocStats;
 pub use sefer_alloc::SeferAlloc;
+#[doc(hidden)]
+pub use maintenance_service::MaintenanceService;
+pub use maintenance_start_error::MaintenanceStartError;
 
 // `#[doc(hidden)]` test-only hook (task L4): lets the fallback panic-safety
 // regression test (`tests/regression_fallback_panic_lock.rs`) reach the

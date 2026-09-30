@@ -1,9 +1,3 @@
-// #1990: gated to match `trim_current_thread` below — `HeapCore::trim_for_recycle`
-// does real work under `alloc-global + fastbin` too, not only `alloc-decommit`.
-#[cfg(any(
-    feature = "alloc-decommit",
-    all(feature = "alloc-global", feature = "fastbin")
-))]
 use crate::global::tls_heap::current_for_trim;
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::global::tls_heap::CurrentHeap;
@@ -150,10 +144,11 @@ impl SeferAlloc {
     /// **passive** resolver that reports "no live heap yet" instead of
     /// binding one, so a thread with nothing to trim claims nothing.
     ///
-    /// Cost: O(live tcache classes + pooled segments + cached large spans)
-    /// for THIS thread only — no cross-thread coordination, no lock
-    /// contention with any other heap. On a thread with no bound heap the
-    /// cost is a single passive TLS read (no bind, no OS call). Safe to
+    /// Cost: O(table high-water + issued Small bitmap words + detached records
+    /// + live tcache classes + pooled segments + cached large spans) for THIS
+    /// thread only. The sidecar sweep never waits for producer quiescence.
+    /// On a thread with no bound heap, cost is a single passive TLS read (no bind,
+    /// no OS call). Safe to
     /// call from a hot request handler's cold "end of batch" branch; NOT
     /// intended to be called on every allocation (it defeats the
     /// warm-cache/warm-pool amortization this project's whole
@@ -166,29 +161,17 @@ impl SeferAlloc {
     /// `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`. Measured cost
     /// side (trim latency + next-burst cold-start cost): the same report's
     /// later "Cost side" section (task #492).
-    /// # Feature gate (#1990)
+    /// # Terminal route publications
     ///
-    /// Gated on `any(alloc-decommit, all(alloc-global, fastbin))` — the union
-    /// of the configurations in which `HeapCore::trim_for_recycle` actually
-    /// does something, not just the `alloc-decommit` half. Its steps carry
-    /// INDEPENDENT gates (`src/registry/heap_core/state/ownership.rs`): the
-    /// tcache flush is `all(alloc-global, fastbin)`, the small-pool drain and
-    /// large-cache evict are `alloc-decommit`. Before this, the method was
-    /// `alloc-decommit`-only, so a `fastbin`-without-`alloc-decommit` build
-    /// had no public trim API AT ALL — not a degraded one — even though its
-    /// magazines were flushable, and `AbandonGuard::drop`
-    /// (`src/global/tls_heap.rs`) already called `trim_for_recycle` there
-    /// unconditionally at thread exit. R31-10/task #474 established the same
-    /// fact for the `dbg_trim_current_thread` hook below and made it
-    /// unconditional; this brings the public API into line.
+    /// Available with `alloc-global`, including without `fastbin` or
+    /// `alloc-decommit`: terminal sidecar publications completed before entry
+    /// are logically retired before return. Each word is cut once; concurrent
+    /// post-cut publications can wait for the next call. Reservation release
+    /// still follows the build's cache/decommit policy.
     ///
-    /// In a build with only one of the two features, this performs whatever
-    /// subset that build supports — the same "each sub-operation carries its
-    /// own feature gate" contract `trim_for_recycle` documents.
-    #[cfg(any(
-        feature = "alloc-decommit",
-        all(feature = "alloc-global", feature = "fastbin")
-    ))]
+    /// This is the owner-side sidecar contract, not a claim that the legacy
+    /// foreign `dealloc` ring/overflow/stack has already been converted, nor an
+    /// autonomous ownerless-reclamation guarantee. Trim still skips fallback.
     pub fn trim_current_thread(&self) {
         if let Some(heap) = current_for_trim() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
