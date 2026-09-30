@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Independent source-only XS review confirmed one P3 historical-high-water
   hot-scan cost and three P4 doc/proof defects. No new valid-use memory-safety
   counterexample was confirmed; this is not a safety certification.
-- An owner-visible active-index design and contract/doc repairs are in
-  isolated worktrees. No fix acceptance, measured speedup or release GO is
+- The three P4 contract/doc repairs and XXS active-index advice are accepted.
+  Active-kind runtime implementation remains in its isolated worktree.
+  No runtime-fix acceptance, measured speedup or release GO is
   claimed here. Evidence/dispositions belong to
   `docs/perf/round-manifests/SRC_REVIEW_R10_MANIFEST.md`.
 
