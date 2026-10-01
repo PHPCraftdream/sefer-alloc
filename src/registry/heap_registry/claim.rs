@@ -17,7 +17,9 @@ use core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
-use super::stack::{pick_with_saturation, scan_claimable_slot, scan_free_slot};
+use super::stack::{
+    pick_with_saturation, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
+};
 use crate::registry::bootstrap::{ensure, Registry, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
 use crate::registry::heap_slot::{
@@ -152,7 +154,10 @@ impl HeapRegistry {
     /// `HeapCore::new_with_config` for
     /// [`claim_with_config`](Self::claim_with_config). Returning `None`
     /// (OOM) releases the slot to `FREE` (see
-    /// [`push_back_after_oom`]) and this function returns `null`.
+    /// [`push_back_after_oom`]) and this function returns `null`. A chunk
+    /// materialisation OOM happens earlier: it leaves its minted index
+    /// retryable and cold-scans materialised FREE alternatives, preferring
+    /// initialized heaps over constructor retries.
     ///
     /// `on_already_initialised(heap_ptr)` is called exactly once, only on a
     /// RE-claim of an already-materialised slot (the `else` of the same
@@ -173,19 +178,24 @@ impl HeapRegistry {
         M: FnOnce(u32) -> Option<HeapCore>,
         R: FnOnce(*mut HeapCore),
     {
+        let mut failed_chunk = None;
         loop {
-            let idx = match Self::pick_slot() {
+            let reg = ensure();
+            let candidate = match failed_chunk {
+                Some(failed) => scan_claim_recovery_free(reg, failed),
+                None => Self::pick_slot(),
+            };
+            let idx = match candidate {
                 Some(i) => i,
                 None => return core::ptr::null_mut(),
             };
-            let reg = ensure();
-            // A freshly minted index has already advanced `count`, but its
-            // chunk may still fail to materialise. The scan can rediscover
-            // that index on a later claim; no slot-state transition occurred.
+            // A minted index is still below `count` after chunk OOM. Keep it
+            // retryable, but first try an already-materialised FREE heap.
             let Some(slot) = reg.slot_or_none(idx) else {
                 reg.reuse_hint.store(idx as u32, Ordering::Relaxed);
                 reg.saturation.publish_claimable();
-                return core::ptr::null_mut();
+                failed_chunk = Some(idx);
+                continue;
             };
 
             let observed = slot.state.load(Ordering::Acquire);
@@ -309,8 +319,8 @@ impl HeapRegistry {
         }
     }
 
-    /// Pick a candidate index from the hint, scan, or capped high-water bump.
-    /// An unmaterialised index below `count` is recoverable after chunk OOM.
+    /// Pick from the hint, then capped high-water bump, then full scan at cap.
+    /// An unmaterialised index below `count` remains cold-recoverable.
     pub(super) fn pick_slot() -> Option<usize> {
         let reg = ensure();
         pick_with_saturation(
@@ -418,7 +428,9 @@ impl Drop for MaintenanceLease {
         {
             std::process::abort();
         }
-        ensure().saturation.publish_claimable();
+        let reg = ensure();
+        reg.reuse_hint.store(self.index as u32, Ordering::Relaxed);
+        reg.saturation.publish_claimable();
     }
 }
 

@@ -1,4 +1,5 @@
-//! Small deterministic model of the production selector and publication hint.
+//! Small deterministic model of the hint-first, fresh-first selector and
+//! full-capacity publication hint.
 //! No HeapCore or OS segment is created by these saturation cases.
 
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
@@ -29,6 +30,34 @@ fn pick(
         },
         || None,
     )
+}
+
+#[test]
+fn pre_cap_mints_without_scanning_an_older_free_slot() {
+    let hint = AtomicU32::new(CAP as u32);
+    let count = AtomicU32::new(3);
+    let saturation = SaturationHint::new();
+    let states = [const { AtomicU8::new(BUSY) }; CAP];
+    states[1].store(FREE, Ordering::Release);
+    let scans = AtomicU32::new(0);
+    let minted = pick_with_saturation(
+        &hint,
+        &count,
+        &saturation,
+        CAP,
+        || {
+            scans.fetch_add(1, Ordering::Relaxed);
+            Some(1)
+        },
+        || {
+            count.store(4, Ordering::Release);
+            Some(3)
+        },
+    );
+    assert_eq!(minted, Some(3));
+    assert_eq!(scans.load(Ordering::Relaxed), 0);
+    assert_eq!(states[1].load(Ordering::Acquire), FREE);
+    assert!(!saturation.is_saturated());
 }
 
 #[test]

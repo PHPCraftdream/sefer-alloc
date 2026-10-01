@@ -45,6 +45,7 @@ const FEATURES = {
   loom_registry_free_slots: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   loom_r8_maintenance_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_active_kind_index: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
+  loom_r11_registry_claim: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
   loom_r11_epoch_false_full: 'experimental',

@@ -44,13 +44,27 @@ belongs to that source-only review.
   adversarial all-mixed cases. Spill allocation needs fallible preflight before
   any issue/freelist/bitmap/bump/credit/output mutation, not an abort-on-OOM.
   No production promotion or RSS/CPU win is asserted before actual acceptance.
-- P3-3, OPEN: cold claim scans all prior LIVE states before fresh bump,
+- P3-3, ACCEPTED: cold claim previously scanned all prior LIVE states before fresh bump,
   yielding triangular first-touch probes. Accepted advice chooses reuse-hint
   first, capped fresh bump while capacity remains, and full scan only at cap
   or explicit cold materialization-OOM recovery. Preserve failed-materialization
   retry, authoritative slot CAS, saturation invalidation/epoch exhaustion and
   maintenance exclusion; temporary older-FREE deferral is a stated policy,
-  not strict global recycled-first selection. HS implementation unaccepted.
+  not strict global recycled-first selection. Parent inspected all changed
+  source and tests. HS minimal and production runs passed23 each,
+  `beb45c46-b0d3-4967-8682-5f9e991be03a`. Parent isolated integrated controls
+  passed33, `383b2f9a-9906-41f7-aa7c-faf9bf07a25a`; the default target first
+  ran an obsolete selector artifact and failed the new chunk-OOM count,
+  `e1ca5d0a-8bd9-4381-a132-bf5d6d5f541c`. After scoped package cache cleanup,
+  the same23 native cases passed in the default target,
+  `0d519720-7499-4733-b0f5-1a7925645555`. Copied old source timestamps and
+  cached artifacts were the integration hazard; no weakened assertion was
+  used to turn the failed result green. The renamed root Loom model passed1
+  and doc/cap guards passed34, `d9c49bed-a79b-42b4-bed9-7b2a498d7274`;
+  targeted clippy passed in the earlier integrated task. The model composes
+  shadow atomics, not the full shipping registry. CI/local runner wiring has
+  an executable sentinel; static sentinel count/floor/card is106. No latency,
+  commit/RSS or full-registry Miri claim is made.
 - P4-1/2/3: sorted-route update cost, legacy RCU pointer-table copying and
   documented thread-not-region shard binding. Retained as lower-priority
   review observations; no unsafe counterexample or measured benefit inferred.

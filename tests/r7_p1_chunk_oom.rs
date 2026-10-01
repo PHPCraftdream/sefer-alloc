@@ -12,7 +12,10 @@ use core::alloc::{GlobalAlloc, Layout};
 use std::sync::{Arc, Barrier};
 
 use sefer_alloc::registry::bootstrap;
-use sefer_alloc::registry::heap_registry::HeapRegistry;
+use sefer_alloc::registry::heap_registry::{
+    dbg_bump_count_without_materialising, dbg_slot_initialised, HeapRegistry,
+};
+use sefer_alloc::registry::heap_slot::{STATE_EMPTY, STATE_LIVE};
 use sefer_alloc::registry::HeapCore;
 use sefer_alloc::SeferAlloc;
 
@@ -90,35 +93,84 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     }
 
     assert!(!reg.dbg_chunk_is_materialised(1));
-    let minted = bootstrap::count_for_test();
+    let raced_count = bootstrap::count_for_test();
     assert!(
-        (65..=66).contains(&minted),
+        (65..=66).contains(&raced_count),
         "two claimers may share one index"
     );
+
+    // Model one claimant delayed between bump and chunk resolution. This
+    // guarantees an older unhinted OOM index for either worker schedule.
+    let delayed = dbg_bump_count_without_materialising().expect("delayed minted index");
+    assert_eq!(delayed, raced_count);
+    assert!(!bootstrap::dbg_slot_or_none(delayed as usize));
+    let minted = bootstrap::count_for_test();
+    assert_eq!(minted, raced_count + 1);
+    assert!(!reg.dbg_chunk_is_materialised(1));
     bootstrap::dbg_set_inject_chunk_oom(false);
 
-    // Hold each successful claim LIVE. Every index minted during the OOM
-    // race must be recovered before count is allowed to grow again.
-    let mut recovered = Vec::new();
-    for _ in 64..minted {
+    let hinted = HeapRegistry::claim();
+    assert!(!hinted.is_null());
+    // SAFETY: hinted is this test's exclusively owned LIVE claim.
+    let hinted_id = unsafe { (*hinted).id() };
+    assert!((64..raced_count).contains(&hinted_id));
+    assert_eq!(bootstrap::count_for_test(), minted, "hint precedes bump");
+    assert!(reg.dbg_chunk_is_materialised(1));
+
+    // Independent slot census: materializing the chunk did not initialize
+    // or claim the displaced minted indices.
+    let mut pending: Vec<_> = (64..minted).filter(|&idx| idx != hinted_id).collect();
+    assert!(!pending.is_empty());
+    for &idx in &pending {
+        assert_eq!(reg.dbg_slot_state(idx as usize), STATE_EMPTY);
+        assert_eq!(reg.dbg_slot_generation(idx as usize), 0);
+        assert!(!dbg_slot_initialised(idx));
+    }
+
+    let fresh = HeapRegistry::claim();
+    assert!(!fresh.is_null());
+    // SAFETY: fresh is a distinct LIVE claim retained through the cold scan.
+    assert_eq!(unsafe { (*fresh).id() }, minted);
+    assert_eq!(bootstrap::count_for_test(), minted + 1);
+    for &idx in &pending {
+        assert_eq!(reg.dbg_slot_state(idx as usize), STATE_EMPTY);
+        assert!(!dbg_slot_initialised(idx));
+    }
+
+    // Reach the logical cap with numeric indices only. The cold scanner
+    // must recover every displaced index in the already materialized chunk.
+    for expected in minted + 1..bootstrap::MAX_HEAPS as u32 {
+        assert_eq!(dbg_bump_count_without_materialising(), Some(expected));
+    }
+    assert_eq!(dbg_bump_count_without_materialising(), None);
+    assert_eq!(bootstrap::count_for_test(), bootstrap::MAX_HEAPS as u32);
+    let mut recovered = vec![hinted as usize, fresh as usize];
+    let pending_count = pending.len();
+    for _ in 0..pending_count {
         let heap = HeapRegistry::claim();
         assert!(!heap.is_null());
-        // SAFETY: claim returned a LIVE, initialised HeapCore.
+        // SAFETY: each successful claim is retained LIVE until cleanup.
         let idx = unsafe { (*heap).id() };
-        assert!((64..minted).contains(&idx));
+        let position = pending
+            .iter()
+            .position(|&expected| expected == idx)
+            .expect("cold claim must recover a displaced minted index");
+        pending.remove(position);
         recovered.push(heap as usize);
+        assert_eq!(bootstrap::count_for_test(), bootstrap::MAX_HEAPS as u32);
     }
-    assert_eq!(bootstrap::count_for_test(), minted);
-    assert!(reg.dbg_chunk_is_materialised(1));
-    let mut recovered_ids = recovered
-        .iter()
-        .map(|&heap| {
-            // SAFETY: each pointer is a distinct LIVE claim above.
-            unsafe { (*(heap as *mut HeapCore)).id() }
-        })
-        .collect::<Vec<_>>();
-    recovered_ids.sort_unstable();
-    assert_eq!(recovered_ids, (64..minted).collect::<Vec<_>>());
+    assert!(pending.is_empty(), "no minted OOM index was lost");
+    for idx in 64..=minted {
+        assert_eq!(reg.dbg_slot_state(idx as usize), STATE_LIVE);
+        assert_eq!(reg.dbg_slot_generation(idx as usize), 1);
+        assert!(dbg_slot_initialised(idx));
+    }
+    for chunk in 2..bootstrap::dbg_num_chunks() {
+        assert!(
+            !reg.dbg_chunk_is_materialised(chunk),
+            "numeric cap must not allocate chunks"
+        );
+    }
     for heap in recovered {
         // SAFETY: this LIVE pointer has not been recycled yet.
         unsafe { HeapRegistry::recycle(heap as *mut _) };

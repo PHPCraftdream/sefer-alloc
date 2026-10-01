@@ -56,6 +56,34 @@ pub(super) fn scan_free_slot(reg: &Registry) -> Option<(usize, &'static HeapSlot
     None
 }
 
+/// Chunk-OOM recovery prefers a ready FREE heap, but can also retry a
+/// materialised FREE slot whose constructor previously failed. Neither case
+/// reserves a registry chunk; the caller must win FREE→LIVE before use.
+pub(super) fn scan_claim_recovery_free(reg: &Registry, excluded: usize) -> Option<usize> {
+    let count = (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS);
+    if count == 0 {
+        return None;
+    }
+    let start = reg.scan_cursor.fetch_add(1, Ordering::Relaxed) as usize % count;
+    let mut uninitialised = None;
+    for offset in 0..count {
+        let idx = (start + offset) % count;
+        if idx == excluded {
+            continue;
+        }
+        let Some(slot) = reg.slot_if_materialised(idx) else {
+            continue;
+        };
+        if slot.state.load(Ordering::Acquire) == STATE_FREE {
+            if slot.initialised.load(Ordering::Acquire) {
+                return Some(idx);
+            }
+            uninitialised.get_or_insert(idx);
+        }
+    }
+    uninitialised
+}
+
 /// Reserve a fresh numeric index without ever overshooting the hard cap.
 /// The slot remains EMPTY until its claimant wins EMPTY→INITIALIZING.
 pub(super) fn bump_count(reg: &Registry) -> Option<usize> {
@@ -93,11 +121,14 @@ pub fn pick_with_saturation(
     if before == max && saturation.is_saturated() {
         return None;
     }
-    let version = saturation.snapshot();
-    if let Some(index) = scan() {
+    if let Some(index) = bump() {
         return Some(index);
     }
-    if let Some(index) = bump() {
+    // A negative scan can only be certified when it started at capacity.
+    // Before capacity, even a concurrently minted EMPTY slot may have been
+    // outside the scanned prefix. Older FREE hints may be deferred until here.
+    let version = saturation.snapshot();
+    if let Some(index) = scan() {
         return Some(index);
     }
     // A scan begun below the cap might have missed a concurrently minted

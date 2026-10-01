@@ -4,7 +4,7 @@
 //! - `claim` hands out distinct slots.
 //! - `recycle` → `claim` reuses a slot and BUMPS its generation.
 //! - bootstrap is idempotent (a second `ensure` does NOT re-initialise).
-//! - `free_slots` LIFO order is correct.
+//! - The latest reuse hint precedes fresh claims; older FREE slots are deferred.
 //!
 //! NON-VACUOUS: every assertion is built so that flipping the implementation
 //! (e.g. claim not bumping generation, recycle not pushing, pop returning the
@@ -30,7 +30,11 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::registry::{bootstrap, heap_slot::STATE_LIVE, HeapRegistry, HeapSlot};
+use sefer_alloc::registry::{
+    bootstrap,
+    heap_slot::{STATE_FREE, STATE_LIVE},
+    HeapRegistry, HeapSlot,
+};
 
 // The registry is a process-global static; tests that touch it MUST run
 // serially (a parallel claim race makes absolute-slot-index assertions
@@ -170,36 +174,63 @@ fn recycle_then_claim_reuses_slot_and_bumps_generation() {
     );
 }
 
-/// `free_slots` LIFO order: recycle A then B, the next two claims pop B then A.
+/// The latest hint wins once, then fresh capacity precedes an older FREE heap.
 #[test]
-fn free_slots_is_lifo() {
+fn latest_hint_then_fresh_defers_older_free() {
     serial!();
     let _base = count_at_entry();
     let a = HeapRegistry::claim();
     let b = HeapRegistry::claim();
+    assert!(!a.is_null() && !b.is_null());
+    // SAFETY: both pointers are distinct LIVE claims owned by this test.
     let id_a = unsafe { (*a).id() } as usize;
+    // SAFETY: b remains this test's LIVE claim until recycle below.
     let id_b = unsafe { (*b).id() } as usize;
     assert_ne!(id_a, id_b);
+    let generation_a = slot_generation(id_a);
+    let generation_b = slot_generation(id_b);
+    let next_fresh = count_at_entry();
 
-    // Recycle A then B → stack top is B.
+    // B overwrites A's advisory hint; A's slot state remains authoritative.
     // SAFETY: `a` and `b` were returned by `claim` and not yet recycled.
     unsafe { HeapRegistry::recycle(a) };
+    // SAFETY: b was returned by claim and has not yet been recycled.
     unsafe { HeapRegistry::recycle(b) };
+    assert_eq!(slot_state(id_a), STATE_FREE);
+    assert_eq!(slot_state(id_b), STATE_FREE);
 
-    // Next claim must pop B (LIFO), then A.
     let c = HeapRegistry::claim();
-    let d = HeapRegistry::claim();
-    assert!(!c.is_null() && !d.is_null());
+    assert!(!c.is_null());
+    // SAFETY: c is this test's newly acquired LIVE claim.
     let id_c = unsafe { (*c).id() } as usize;
+    assert_eq!(id_c, id_b, "latest hint must reuse B");
+    assert_eq!(count_at_entry(), next_fresh);
+    assert_eq!(slot_generation(id_b), generation_b + 1);
+
+    let d = HeapRegistry::claim();
+    assert!(!d.is_null());
+    // SAFETY: d is a distinct LIVE claim owned by this test.
     let id_d = unsafe { (*d).id() } as usize;
     assert_eq!(
-        id_c, id_b,
-        "LIFO: first re-claim must pop the last recycled (B)"
+        id_d, next_fresh as usize,
+        "fresh capacity precedes older FREE"
     );
-    assert_eq!(
-        id_d, id_a,
-        "LIFO: second re-claim must pop the earlier recycled (A)"
-    );
+    assert_eq!(count_at_entry(), next_fresh + 1);
+    assert_eq!(slot_state(id_c), STATE_LIVE);
+    assert_eq!(slot_state(id_d), STATE_LIVE);
+    assert_eq!(slot_state(id_a), STATE_FREE, "older A remains claimable");
+    assert_eq!(slot_generation(id_a), generation_a, "A was not reclaimed");
+
+    let lease = HeapRegistry::try_maintenance().expect("older FREE A remains discoverable");
+    assert_eq!(lease.slot_index(), id_a);
+    drop(lease);
+    let recovered = HeapRegistry::claim();
+    assert!(!recovered.is_null());
+    // SAFETY: recovered is this test's newly acquired LIVE claim.
+    assert_eq!(unsafe { (*recovered).id() } as usize, id_a);
+    assert_eq!(slot_state(id_a), STATE_LIVE);
+    assert_eq!(slot_generation(id_a), generation_a + 1);
+    assert_eq!(count_at_entry(), next_fresh + 1);
 }
 
 /// Bootstrap idempotency: every call to `ensure` returns the SAME pointer and

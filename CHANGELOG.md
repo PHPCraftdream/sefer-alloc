@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallback, now accepted with native and weak-negative-hint model controls.
   XXS advice is accepted. Small refill now bounds Large checks with a persistent
   numeric cursor, retaining a full rescue/retry on zero refill. Native controls
-  and clippy passed; sidecar and registry implementations remain in acceptance.
+  and clippy passed. Registry selection now uses hint, fresh capacity, then
+  cold scan with chunk-OOM recovery; native/model/doc controls passed.
+  Adaptive Small sidecar remains in acceptance.
 - No measured speedup is claimed. See
   `docs/perf/round-manifests/SRC_REVIEW_R11_MANIFEST.md`; R10's successful
   checks are not a certificate for these future changes or release GO.
