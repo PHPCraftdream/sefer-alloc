@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc-core")]
+
 // Compile the actual primitive in this integration crate. These aliases are
 // pinned to the production geometry, not independent test constants.
 mod alloc_core {

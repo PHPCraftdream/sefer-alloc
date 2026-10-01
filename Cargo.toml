@@ -1333,6 +1333,11 @@ name = "r31_8_large_cache_scan_isolation_on"
 # `dbg_large_cache_extension_materialised`/`dbg_large_cache_total_slots`.
 required-features = ["alloc-core", "large-cache-extended", "alloc-decommit", "internals"]
 
+[[example]]
+name = "r9_observer_smoke"
+# Calls the doc-hidden `AllocCore::dbg_is_free_for` observer.
+required-features = ["alloc-core", "internals"]
+
 # R32-12 (task #503, F8 sub-change (2)): free-slot-search isolation
 # microjudge — a decomposed complement to R31-8's best-fit-scan microjudge
 # above, isolating the OTHER large-cache linear scan
