@@ -52,3 +52,12 @@ Do not promote the terminal-sidecar allocator to release-ready until the
 mechanism and its relevant configurations pass. Pending broader platform and
 performance gates remain distinct. The independent XS12 round follows
 accepted repairs; it has not started at this finding's filing.
+
+## Model reference boundary
+
+The maintained [Stacked Borrows reference](https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md)
+distinguishes Box weak protectors from reference strong protectors and treats
+ordinary writes separately from deallocation. The [Tree Borrows reference](https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/tree-borrows.md)
+also distinguishes protection and per-byte access. Both documents explicitly
+describe non-normative models. A passing deallocation example therefore cannot
+by itself justify the failed intrusive payload write or early reuse.
