@@ -1033,6 +1033,18 @@ harness = false
 test = false
 required-features = ["std"]
 
+[[test]]
+name = "r11_box_cap_gate_w3"
+harness = false
+test = false
+required-features = ["std"]
+
+[[test]]
+name = "r11_box_cap_gate_va"
+harness = false
+test = false
+required-features = ["std"]
+
 # Phase 7a: sharded write-scaling bench — `ShardedRegion` vs `SyncRegion` /
 # `Arc<Mutex<Region>>` across thread counts. Quick criterion profile. Requires
 # `experimental` (for `ShardedRegion`) and the default `std` (for `SyncRegion`).
