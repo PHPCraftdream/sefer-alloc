@@ -435,6 +435,13 @@ impl AllocCore {
             base,
             SegLayout::magazine_bitmap_off(),
         ));
+        // PG-2 spike: same virgin-skip discipline for the off-body freelist
+        // `next` table — the target init state is ALL-NULL.
+        #[cfg(miri)]
+        crate::alloc_core::segment::next_table::NextTable::init_in_place(base_add(
+            base,
+            SegLayout::next_table_off(),
+        ));
         // X7 Ф3 (task #191): zero the per-segment generation table under
         // `hardened`. Compiled ONLY under `hardened`; under any other feature
         // the table does not exist and this call is absent (byte-identical to

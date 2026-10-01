@@ -71,6 +71,10 @@ impl Node {
     /// not handed to the user). The block MUST lie within a segment owned by
     /// this allocator. `next` is either null (tail) or another such free
     /// block's address.
+    // PG-2 spike: free blocks are accounted off-body (segment alloc_bitmap);
+    // kept for the PG-2 mutant cell (re-adding a `write_next` in
+    // `reclaim_sidecar_record` must redden the paused witness).
+    #[allow(dead_code)]
     #[inline(always)]
     pub(crate) fn write_next(block: NonNull<u8>, next: *mut u8) {
         let ptr = block.as_ptr() as *mut *mut u8;
@@ -96,6 +100,7 @@ impl Node {
     /// Returns the address previously stored by [`write_next`](Self::write_next),
     /// or null if none. The block MUST currently be a free-list node (caller's
     /// invariant).
+    #[allow(dead_code)]
     #[inline(always)]
     pub(crate) fn read_next(block: NonNull<u8>) -> *mut u8 {
         let ptr = block.as_ptr() as *mut *mut u8;

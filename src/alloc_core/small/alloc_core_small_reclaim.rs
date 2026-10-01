@@ -3,15 +3,13 @@
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::node::Node;
+use crate::alloc_core::segment::next_table::NextTable;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::size_classes::SizeClasses;
-#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use core::ptr::NonNull;
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 impl AllocCore {
@@ -51,16 +49,21 @@ impl AllocCore {
         if meta.magazine_bitmap().is_in_magazine(offset) {
             return false;
         }
-        let ptr = Node::deref(base, off);
+        // PG-2 spike: retire WITHOUT touching the block body. The block is
+        // marked free only in the off-body `alloc_bitmap`; `bin_table.head`
+        // is kept as the non-empty flag.
+        // PG-2 spike: the LIFO push writes `next` into the segment's
+        // off-body NextTable metadata — the block body is never touched.
         let mut bins = meta.bin_table();
         let old_head = bins.head(class_idx);
-        let next = if old_head == FREE_LIST_NULL {
-            core::ptr::null_mut()
-        } else {
-            Node::deref(base, old_head as usize)
-        };
-        let block = NonNull::new(ptr).unwrap_or_else(|| std::process::abort());
-        Node::write_next(block, next);
+        meta.next_table().set_next(
+            offset,
+            if old_head == FREE_LIST_NULL {
+                NextTable::NULL
+            } else {
+                old_head
+            },
+        );
         bins.set_head(class_idx, offset);
         bitmap.mark_free(offset);
         meta.dec_live();

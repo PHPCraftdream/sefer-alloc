@@ -2,9 +2,7 @@
 //! double-free guard + segment metadata resets; mechanical split of the
 //! former flat `alloc_core_small.rs`; pure code movement, no behavior changed).
 
-use core::ptr::NonNull;
-
-use crate::alloc_core::node::Node;
+use crate::alloc_core::segment::next_table::NextTable;
 use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
@@ -103,19 +101,22 @@ impl AllocCore {
             return; // Already on a free list (M2 double-free): no-op.
         }
         // The user pointer supplied only the numeric offset. The table-owned
-        // root covers the physical block, including its free-list word even
-        // when the caller's reborrow covered fewer bytes.
-        let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
-            Some(nn) => nn,
-            None => return,
-        };
+        // root covers the physical block, so metadata updates are
+        // address-based; the block BODY is never touched (PG-2 spike: the
+        // intrusive freelist `next` push is gone — the free set is the
+        // segment's off-body `alloc_bitmap`).
+        // PG-2 spike: the LIFO push writes `next` into the segment's
+        // off-body NextTable metadata — the block body is never touched.
         let old_head = bt.head(class_idx);
-        let old_head_ptr = if old_head == FREE_LIST_NULL {
-            core::ptr::null_mut()
-        } else {
-            Node::deref(base, old_head as usize)
-        };
-        Node::write_next(block_nn, old_head_ptr);
+        meta.next_table().set_next(
+            off,
+            if old_head == FREE_LIST_NULL {
+                NextTable::NULL
+            } else {
+                old_head
+            },
+        );
+        bm.mark_free(off);
         bt.set_head(class_idx, off);
         bm.mark_free(off);
         SegmentMeta::new(base).dec_live();

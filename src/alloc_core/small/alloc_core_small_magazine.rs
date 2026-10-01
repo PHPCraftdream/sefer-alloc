@@ -5,10 +5,9 @@
 //! and flush batch APIs (`refill_class*`, `flush_class`, `flush_run`).
 //! Pure code-movement sibling of `alloc_core_small.rs`; no behavior changed.
 
-use core::ptr::NonNull;
-
-use crate::alloc_core::node::{Node, NODE_SIZE};
+use crate::alloc_core::node::NODE_SIZE;
 use crate::alloc_core::os;
+use crate::alloc_core::segment::next_table::NextTable;
 use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
@@ -566,19 +565,19 @@ impl AllocCore {
             SegLayout::small_meta_end()
         };
 
-        // Capture the segment's CURRENT freelist head ONCE — the first accepted
-        // block links to this (matching the first sequential `dealloc_small`,
-        // whose `old_head` is exactly this value).
-        let old_head = bt.head(class_idx);
-        let mut prev_off = old_head; // next-target for the next accepted block
+        // PG-2 spike: retire WITHOUT touching the block body. Each accepted
+        // block is only marked free in the off-body `alloc_bitmap`; the head
+        // is set once to the last accepted offset (non-empty flag semantics —
+        // the intrusive LIFO chain is gone; pops re-enumerate via the bitmap).
         let mut last_accepted: Option<u32> = None;
+        let old_head = bt.head(class_idx);
         // Count accepted blocks for one owner-side credit retirement after `set_head`.
         let mut accepted_count: usize = 0;
 
         for &ptr in run {
             let off = (ptr as usize - base as usize) as u32;
             // Guard 0 (per-block): H-1 payload lower bound (`payload_start`
-            // hoisted above — run-invariant). A `write_next` on an
+            // hoisted above — run-invariant). A metadata write on an
             // in-metadata offset would clobber this segment's own header/
             // page-map/bin-table in place.
             if (off as usize) < payload_start {
@@ -597,24 +596,19 @@ impl AllocCore {
             if bm.is_free(off) {
                 continue;
             }
-            // `ptr` identifies the offset only. Link through the stored
-            // reservation root, which covers the entire free-list word.
-            let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
-                Some(nn) => nn,
-                None => continue,
-            };
-            // Link this accepted block at the head of the run-local chain: its
-            // `next` is the PRIOR accepted block's off (or the captured
-            // `old_head` for the first accepted). Byte-identical to the LIFO
-            // push each sequential `dealloc_small` performs.
-            let next_ptr = if prev_off == FREE_LIST_NULL {
-                core::ptr::null_mut()
-            } else {
-                Node::deref(base, prev_off as usize)
-            };
-            Node::write_next(block_nn, next_ptr);
+            // PG-2 spike: link through the off-body NextTable — `next` is
+            // the PRIOR accepted block's off (or the captured `old_head` for
+            // the first accepted), byte-identical to the intrusive LIFO push.
+            let prev = last_accepted.unwrap_or(old_head);
+            meta.next_table().set_next(
+                off,
+                if prev == FREE_LIST_NULL {
+                    NextTable::NULL
+                } else {
+                    prev
+                },
+            );
             bm.mark_free(off);
-            prev_off = off;
             last_accepted = Some(off);
             accepted_count += 1;
         }
@@ -623,9 +617,8 @@ impl AllocCore {
         // final `set_head` of the last sequential `dealloc_small` in the run.
         if let Some(off) = last_accepted {
             bt.set_head(class_idx, off);
-            // R7-A2: directory bitmap maintenance — the new head is always
-            // non-null (`off`), so the only transition is empty→non-empty
-            // when old_head was FREE_LIST_NULL.
+            // R7-A2: directory bitmap maintenance — the head is non-null
+            // (`off`), so the only transition of interest is empty→non-empty.
             #[cfg(feature = "alloc-segment-directory")]
             if old_head == FREE_LIST_NULL {
                 let slot_idx = SegmentHeader::segment_id_at(base) as usize;

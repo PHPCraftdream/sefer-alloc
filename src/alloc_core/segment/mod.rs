@@ -14,6 +14,8 @@
 /// `alloc-segment-directory` (experimental, off by default). The module
 /// defines the `SegmentDirectory` struct, the materialisation threshold
 /// constant, and the one-time rebuild routine. Lookup wiring is A3 scope.
+/// PG-2 spike: per-slot off-body freelist `next` table (see the module doc).
+pub(crate) mod next_table;
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) mod segment_directory;
 /// Group module: the per-segment metadata family — `SegmentHeader`/

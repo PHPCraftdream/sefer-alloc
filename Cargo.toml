@@ -1034,6 +1034,16 @@ harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
 
+# PG-2 MODEL-LIMIT cells: paused-producer witnesses for owner segment
+# release / reissue / Large release at pause. Selector = first argument, one
+# scenario per process; `test = false` keeps ordinary native suites from
+# invoking an empty selector.
+[[test]]
+name = "r11_pg2_model_limit"
+harness = false
+test = false
+required-features = ["production", "internals", "bench-internals"]
+
 # Ph1b exact-object prototype witness: one scenario per process, selected by
 # name (installed SeferAlloc, no libtest).
 [[test]]

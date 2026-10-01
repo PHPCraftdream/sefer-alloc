@@ -18,9 +18,6 @@
 //! sibling file needed a split because three of its methods DO have a
 //! stable-API caller — none of this file's methods do).
 
-#[cfg(feature = "hardened")]
-use core::ptr::NonNull;
-
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
 use crate::alloc_core::segment_header::{
@@ -156,11 +153,11 @@ impl AllocCore {
         if head_off == FREE_LIST_NULL {
             return false;
         }
-        let block_ptr = Node::deref(base, head_off as usize);
-        let Some(block_nn) = NonNull::new(block_ptr) else {
-            return false;
-        };
-        Node::write_next(block_nn, next_raw);
+        // PG-2 spike: the intrusive `next` word no longer exists (free blocks
+        // are accounted off-body in the segment's alloc_bitmap); there is no
+        // chain node left to corrupt, so this seam is a no-op that only
+        // reports whether the class currently has a free block.
+        let _ = next_raw;
         true
     }
 

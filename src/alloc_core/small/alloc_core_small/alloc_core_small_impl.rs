@@ -1,18 +1,9 @@
-use core::ptr::NonNull;
-
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os::{self, SEGMENT};
-// R7-A2: `SegmentHeader::segment_id_at` is consulted here only by the
-// `alloc-segment-directory`-gated directory-bitmap maintenance arms of
-// `pop_free`/`drain_freelist_batch` — gate the import identically so
-// non-directory builds stay warning-clean.
+use crate::alloc_core::segment::next_table::NextTable;
+use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
 #[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::segment_header::SegmentHeader;
-use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
-// `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
-// decommit-recommit arms of `carve_block`/`carve_batch` (and only on their
-// eager `not(small-segment-lazy-commit)` leg) — gate the import identically
-// so non-decommit builds stay warning-clean.
 #[cfg(all(feature = "alloc-decommit", not(feature = "small-segment-lazy-commit")))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
 use crate::alloc_core::size_classes::SizeClasses;
@@ -368,6 +359,11 @@ impl AllocCore {
     }
 
     /// Pop a free block; `Err` is an uncommitted class-spill OOM.
+    ///
+    /// PG-2 spike: the per-class LIFO chain lives OFF-BODY — the head in
+    /// `BinTable[class]`, each `next` in the segment's `NextTable`
+    /// metadata (one `u32` per `MIN_BLOCK` slot). The popped block's body is
+    /// never read or written here.
     #[inline(always)]
     fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
         let mut meta = SegmentMeta::new(segment);
@@ -376,80 +372,32 @@ impl AllocCore {
         if head_off == FREE_LIST_NULL {
             return Ok(None);
         }
-        let block_ptr = Node::deref(segment, head_off as usize);
-        let Some(block_nn) = NonNull::new(block_ptr) else {
-            return Ok(None);
-        };
-        let next = Node::read_next(block_nn);
-        // UBFIX-7 (M-3, `docs/reviews/2026-07-10-ub-audit-final-synthesis.md`):
-        // the intrusive freelist `next` word lives INSIDE the block itself, so
-        // it is writable by the user for as long as the block is (legitimately
-        // or via a use-after-free) in their hands. Before this guard, a
-        // corrupted `next` — e.g. left over from a UAF write into an
-        // already-freed block — was trusted unconditionally: the very next
-        // line turned it into a segment-relative offset via raw pointer
-        // subtraction, which is only sound if `next` actually lies inside
-        // `segment`. A `next` pointing outside the segment produces a garbage
-        // `u32` offset (wrapping/overflowing arithmetic), and the NEXT
-        // `pop_free`/`drain_freelist_batch` call derefs THAT offset via
-        // `Node::deref` (`segment.add(off)`), an out-of-bounds `add` — UB per
-        // `node.rs`'s SAFETY contract — and hands the caller a wild pointer
-        // dressed up as a legitimate block.
-        //
-        // `hardened`-gated (mimalloc `MI_SECURE`-style): validate `next` is
-        // either null or resolves to THIS segment's base before trusting it as
-        // a chain continuation; a mismatch TRUNCATES the chain here (treated
-        // as `FREE_LIST_NULL`) rather than being dereferenced. This never runs
-        // on the production (non-hardened) hot path — zero added instructions
-        // there, byte-identical to the pre-fix code under `cfg(not(hardened))`.
-        #[cfg(feature = "hardened")]
-        let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-            next
-        } else {
-            core::ptr::null_mut()
-        };
-        let new_head = if next.is_null() {
+        let nt = meta.next_table();
+        let next_raw = nt.next(head_off);
+        let next_head = if next_raw == NextTable::NULL {
             FREE_LIST_NULL
         } else {
-            // Compute the offset of `next` relative to this segment. `next`
-            // is an absolute pointer into the same segment (free lists are
-            // per-segment), so offset = next - segment.
-            (next as usize - segment as usize) as u32
+            next_raw
         };
         if !self.table.prepare_small_issue(segment, head_off, class_idx) {
             return Err(());
         }
-        bt.set_head(class_idx, new_head);
-        // R7-A2: directory bitmap maintenance — the old head was non-null
-        // (we passed the FREE_LIST_NULL guard above), so the only transition
-        // is non-empty→empty when new_head is FREE_LIST_NULL.
+        bt.set_head(class_idx, next_head);
+        // R7-A2: directory bitmap maintenance — non-empty→empty transition.
         #[cfg(feature = "alloc-segment-directory")]
-        if new_head == FREE_LIST_NULL {
+        if next_head == FREE_LIST_NULL {
             let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
             self.publish_empty(segment, class_idx, slot_idx);
         }
-        // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
-        // and is handed to the caller, so a subsequent free must NOT see it as
-        // already-free (and the next legitimate free must be able to re-mark it).
+        // Phase 13.4a: the block leaves the free list and is handed to the
+        // caller — clear its bitmap bit (unchanged invariant).
         meta.alloc_bitmap().mark_alloc(head_off);
-        // Phase 35 (M6): a block left the free list and is handed to the caller
-        // → one more live block in this segment. Owner-only counter. A popped
-        // block always comes from a COMMITTED payload (a decommitted segment was
-        // reset to an empty free list, so `pop_free` finds nothing there), so no
-        // recommit is needed on this path — only `carve_block` writes fresh
-        // payload and thus recommits.
-        meta.inc_live();
         self.table.issue_small(segment, head_off, class_idx);
-        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
-        // hands a block directly to the caller (it is the non-magazine substrate
-        // pop, reachable from `alloc_small`). Under `hardened` (which implies
-        // `fastbin`), `HeapCore::alloc` routes small blocks through the magazine
-        // and never reaches here — but a direct `AllocCore` consumer (or a future
-        // config change) could, so the bump is placed at this issue point for
-        // correctness and defense-in-depth. The magazine refill path uses
-        // `drain_freelist_batch` (which fills `out`, NOT issuing to a caller), so
-        // blocks pulled into the magazine are NOT bumped here — they are bumped
-        // on their later magazine pop. Compiled ONLY under `hardened`.
+        // Phase 35 (M6): a block left the free list and is handed to the
+        // caller → one more live block in this segment. Owner-only counter.
+        meta.inc_live();
+        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE
+        // (hardened-only; see the git history for the rationale).
         #[cfg(feature = "hardened")]
         {
             // SAFETY: `segment` is a live, exclusively-owned segment;
@@ -459,57 +407,16 @@ impl AllocCore {
                 crate::alloc_core::segment_header::bump_gen(segment, head_off as usize)
             };
         }
-        Ok(Some(block_ptr))
+        Ok(Some(Node::deref(segment, head_off as usize)))
     }
 
     /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
-    /// blocks of class `class_idx` from `segment`'s `BinTable[class_idx]` in ONE
-    /// walk, writing them into `out[..k]` and returning `k` (the number popped,
-    /// `0` if the free list was empty). Byte-identical end-state to calling
-    /// [`pop_free`] `k` times, but with the per-block round-trip HOISTED:
-    ///
-    ///   - `head` is read ONCE (not re-read from the `BinTable` per block).
-    ///   - `set_head` is written ONCE at the end, to the first UN-popped node
-    ///     (or `FREE_LIST_NULL` if the chain was exhausted before `out` filled).
-    ///   - `inc_live` is applied ONCE by `k` (under `alloc-decommit`), exactly
-    ///     equalling `k` individual `inc_live`s.
-    ///
-    /// The two per-block costs that MUST stay per-block are kept per-block:
-    ///
-    ///   - `read_next(block)` — the dependent load that walks the intrusive
-    ///     chain. mimalloc pays this too; there is no way to hoist it (each
-    ///     `next` lives in the previous block's body). We never WRITE the block
-    ///     body on this path (pop doesn't), so reading `next` before advancing
-    ///     is hazard-free: nothing overwrites a block between our read of its
-    ///     `next` and our recording it.
-    ///   - `mark_alloc(off)` — cleared per-block. **Decision: per-block, NOT
-    ///     merged.** A freelist is a LIFO push chain, so consecutive popped
-    ///     offsets are in general SCATTERED across the bitmap (they do not share
-    ///     a byte the way a flush batch of consecutive carves would). Merging
-    ///     the RMWs across blocks would only be byte-identical for offsets that
-    ///     share a bitmap byte, which is not guaranteed here — so we keep the
-    ///     per-block `mark_alloc`, which is trivially identical to `pop_free`'s.
-    ///     The batch win is the hoisted `set_head` / `head`-read / `inc_live`,
-    ///     NOT the bitmap RMW (which was never the expensive part).
-    ///
-    /// ## D1 / M2 / set_head correctness
-    ///
-    ///   - **D1:** exactly `k` blocks leave the free list and are handed out, so
-    ///     `inc_live` by `k` == `k` per-block `inc_live`s. No double, no
-    ///     under-count.
-    ///   - **M2:** every recorded block ends bitmap-ALLOCATED (bit cleared) via
-    ///     its own `mark_alloc`, exactly as `pop_free` leaves it. A later
-    ///     double-free still hits `is_free` correctly.
-    ///   - **set_head:** after the walk, `head` holds either the offset of the
-    ///     first un-popped node (chain longer than `out`) or `FREE_LIST_NULL`
-    ///     (chain exhausted). We `set_head` to that once. A subsequent
-    ///     `pop_free`/drain therefore yields exactly the remaining blocks in the
-    ///     same order.
-    ///
-    /// R7-A2: `&mut self` (upgraded from `&self`) so the directory bitmap can
-    /// be maintained at the single choke point. Touches only `segment` metadata
-    /// via `SegmentMeta` for the freelist walk, then calls `publish_empty` on
-    /// the directory sidecar (if materialised) when the drain empties the list.
+    /// blocks of class `class_idx` in ONE walk, writing them into `out[..k]`
+    /// and returning `k`. PG-2 spike: the chain walk reads `next` from the
+    /// segment's off-body `NextTable` metadata — no block body is ever
+    /// touched. Ordering/head/live-count semantics are identical to the
+    /// intrusive-era drain (per-block `mark_alloc`, one `set_head`, one
+    /// `add_live(k)`; OOM before any commit of the still-probed batch).
     #[inline]
     pub(in crate::alloc_core) fn drain_freelist_batch(
         &mut self,
@@ -532,99 +439,53 @@ impl AllocCore {
         }
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
-
-        {
-            // Read the head ONCE.
-            let mut head_off = bt.head(class_idx);
-            if head_off == FREE_LIST_NULL {
-                return Ok(0);
-            }
-            // Prepare every spill on the still-owned chain. On OOM the head,
-            // bitmap, live count and output remain unchanged; promoted leaves
-            // are valid uniform copies and may be reused by a later retry.
-            let mut probe = head_off;
-            let mut probed = 0usize;
-            while probed < out.len() && probe != FREE_LIST_NULL {
-                let block = Node::deref(segment, probe as usize);
-                let Some(nn) = NonNull::new(block) else {
-                    break;
-                };
-                if !self.table.prepare_small_issue(segment, probe, class_idx) {
-                    return Err(());
-                }
-                let next = Node::read_next(nn);
-                #[cfg(feature = "hardened")]
-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-                    next
-                } else {
-                    core::ptr::null_mut()
-                };
-                probe = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    (next as usize - segment as usize) as u32
-                };
-                probed += 1;
-            }
-            let mut bm = meta.alloc_bitmap();
-            let mut k = 0usize;
-            while k < out.len() && head_off != FREE_LIST_NULL {
-                let block_ptr = Node::deref(segment, head_off as usize);
-                let block_nn = match NonNull::new(block_ptr) {
-                    Some(nn) => nn,
-                    // A null-deref would only arise from a corrupt offset; stop the
-                    // walk here and commit what we have (defence-in-depth). `head`
-                    // is left pointing at this node so nothing is lost.
-                    None => break,
-                };
-                // Dependent load: read this block's `next` BEFORE recording it. The
-                // block body is never written on the pop path, so this is race-free
-                // against ourselves.
-                let next = Node::read_next(block_nn);
-                // UBFIX-7 (M-3): validate `next` before trusting it as a chain
-                // continuation — see `pop_free`'s identical guard for the full
-                // rationale. `hardened`-gated; a mismatch truncates the chain
-                // (this iteration's `head_off` becomes NULL below, which the
-                // loop condition then exits on) instead of being dereferenced.
-                #[cfg(feature = "hardened")]
-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-                    next
-                } else {
-                    core::ptr::null_mut()
-                };
-                // Clear this block's bitmap bit — it leaves the free list and is
-                // handed out (per-block, byte-identical to `pop_free`).
-                bm.mark_alloc(head_off);
-                self.table.issue_small(segment, head_off, class_idx);
-                out[k] = block_ptr;
-                k += 1;
-                head_off = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    // `next` is an absolute pointer into the SAME segment (free
-                    // lists are per-segment), so offset = next - segment.
-                    (next as usize - segment as usize) as u32
-                };
-            }
-            // Write the new head ONCE: the first un-popped node, or NULL.
-            bt.set_head(class_idx, head_off);
-            // R7-A2: directory bitmap maintenance — the old head was non-null
-            // (early return above), so the only transition is non-empty→empty
-            // when the drain exhausted the chain (head_off == FREE_LIST_NULL).
-            #[cfg(feature = "alloc-segment-directory")]
-            if head_off == FREE_LIST_NULL {
-                let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
-                self.publish_empty(segment, class_idx, slot_idx);
-            }
-            // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
-            // popped block always comes from a COMMITTED payload (a decommitted
-            // segment was reset to an empty free list, so the drain finds nothing
-            // there), so no recommit is needed on this path. Applied via the
-            // batch `add_live(k)` primitive (byte-identical to `k` per-block
-            // `inc_live`s — see `add_live`'s D1-equivalence note).
-            meta.add_live(k as u32);
-            Ok(k)
+        let head_off = bt.head(class_idx);
+        if head_off == FREE_LIST_NULL {
+            return Ok(0);
         }
+        // Probe first (OOM-atomicity contract: nothing changes on spill OOM).
+        // NextTable uses 0 as the chain-end sentinel (`NextTable::NULL`);
+        // convert to/from `FREE_LIST_NULL` at the head boundary only.
+        let nt = meta.next_table();
+        let mut probe = head_off;
+        let mut probed = 0usize;
+        while probed < out.len() && probe != FREE_LIST_NULL {
+            if !self.table.prepare_small_issue(segment, probe, class_idx) {
+                return Err(());
+            }
+            let nxt = nt.next(probe);
+            probe = if nxt == NextTable::NULL {
+                FREE_LIST_NULL
+            } else {
+                nxt
+            };
+            probed += 1;
+        }
+        let mut bm = meta.alloc_bitmap();
+        let mut k = 0usize;
+        let mut off = head_off;
+        while k < out.len() && off != FREE_LIST_NULL {
+            let nxt = nt.next(off);
+            bm.mark_alloc(off);
+            self.table.issue_small(segment, off, class_idx);
+            out[k] = Node::deref(segment, off as usize);
+            k += 1;
+            off = if nxt == NextTable::NULL {
+                FREE_LIST_NULL
+            } else {
+                nxt
+            };
+        }
+        bt.set_head(class_idx, off);
+        // R7-A2: directory bitmap maintenance — non-empty→empty transition.
+        #[cfg(feature = "alloc-segment-directory")]
+        if off == FREE_LIST_NULL {
+            let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+            self.publish_empty(segment, class_idx, slot_idx);
+        }
+        // D1: exactly `k` blocks were handed out (batched `inc_live`).
+        meta.add_live(k as u32);
+        Ok(k)
     }
 
     /// Carve a fresh `block_size`-aligned block from the current small

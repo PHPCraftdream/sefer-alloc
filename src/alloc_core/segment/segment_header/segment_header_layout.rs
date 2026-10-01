@@ -43,9 +43,19 @@ impl Layout {
             8,
         )
     }
+    /// PG-2 spike — offset of the per-segment off-body freelist
+    /// [`NextTable`](crate::alloc_core::segment::next_table::NextTable) (one `u32`
+    /// `next` per `MIN_BLOCK` slot), placed immediately after the magazine
+    /// bitmap, 4-byte aligned.
+    pub(crate) const fn next_table_off() -> usize {
+        align_up_const(
+            Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT,
+            4,
+        )
+    }
     /// End of mandatory owner-only small metadata.
     const fn owner_metadata_end() -> usize {
-        Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
+        Self::next_table_off() + crate::alloc_core::segment::next_table::NextTable::FOOTPRINT
     }
     /// Offset of the hardened owner generation table.
     #[cfg(feature = "hardened")]

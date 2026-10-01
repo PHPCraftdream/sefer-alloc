@@ -302,6 +302,17 @@ impl SegmentMeta {
         ))
     }
 
+    /// PG-2 spike — the off-body freelist `next` table view. Carved at
+    /// [`Layout::next_table_off`] and zeroed (all-NULL) at bootstrap; see
+    /// [`NextTable`](crate::alloc_core::segment::next_table::NextTable).
+    #[inline(always)]
+    pub(crate) fn next_table(&self) -> crate::alloc_core::segment::next_table::NextTable {
+        crate::alloc_core::segment::next_table::NextTable::new(Node::offset(
+            self.base,
+            Layout::next_table_off(),
+        ) as *mut u32)
+    }
+
     // -------------------------------------------------------------------
     // Atomic view over the owner identity field.
     // return `&AtomicU64` at the field's fixed offset so a cross-thread
