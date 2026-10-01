@@ -486,7 +486,7 @@ do not certify the terminal-sidecar snapshot.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (315 files) |
+| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (318 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri | Selected provenance/aliasing checks; snapshot execution pending | `scripts/miri.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
 | loom | Bounded interleavings; snapshot execution pending | **Root (11 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
