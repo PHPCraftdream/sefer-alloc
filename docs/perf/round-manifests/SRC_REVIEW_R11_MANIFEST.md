@@ -117,7 +117,9 @@ persistent NULL. Parent added a counted diagnostic fault and a double-gated
 persistent test covering both refill attempts, without weakening rollback
 assertions. Combined rollback/OOM controls5 passed
 `ba3112c2-532d-4d62-923d-56ec69a9fc90`; minimal1 and clippy passed
-`62e26c60-bea3-4e0f-85fe-f2ceec166950`. Full post-repair re-run is required.
+`62e26c60-bea3-4e0f-85fe-f2ceec166950`. Full post-repair native re-run
+`21bde8c0-8b09-4dac-b004-1ea86f445a19` completed exit0 in197s. This does
+not include the explicit harness-free Miri Box target or close its failure.
 
 User redirected the workflow to a historical root-cause/architecture study
 before more shipping refactoring. XS fact-ledger and XXS synthesis are active;
