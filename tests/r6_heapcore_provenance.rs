@@ -71,7 +71,16 @@ fn own_scalar_magazine_and_realloc_use_physical_block() {
     unsafe { big.write(0x73) };
     // SAFETY: exact old layout, live block, and no reference survives the reborrow.
     let resized = unsafe { (*heap).realloc(narrow(big), large, large.size() + 1) };
-    assert_eq!(resized.addr(), big.addr());
+    // An exact span (`exact-span-large`) has no slack for +1 byte unless reserved
+    // capacity exists; `numa-aware` reserves exactly, so that grow legitimately moves.
+    if cfg!(not(feature = "exact-span-large"))
+        || cfg!(all(
+            feature = "large-reserved-capacity",
+            not(feature = "numa-aware")
+        ))
+    {
+        assert_eq!(resized.addr(), big.addr());
+    }
     // SAFETY: the preserved byte is initialized; the resized block and heap are released once.
     unsafe {
         assert_eq!(resized.read(), 0x73);
