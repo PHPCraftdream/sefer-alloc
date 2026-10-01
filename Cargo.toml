@@ -1315,8 +1315,9 @@ name = "r31_3_large_cache_extended_narrow_off"
 # H2 (task #572) fallout: the shared workload's
 # `dbg_current_large_cache_total_slots` moved behind `internals`
 # (`alloc_core_large_cache.rs`'s module doc, via `HeapCore`/`SeferAlloc`
-# transitive delegation).
-required-features = ["alloc-global", "internals"]
+# transitive delegation). The `dbg_current_large_cache_*` observers are also
+# gated `alloc-decommit` + `bench-internals` (`src/global/sefer_alloc/diag.rs`).
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 [[example]]
 name = "r31_3_large_cache_extended_narrow_on"
@@ -1328,7 +1329,7 @@ name = "r31_3_large_cache_extended_narrow_on"
 # never actually encoded in `required-features` until now; found by
 # `npm run check`'s own `production alloc-stats bench-internals internals`
 # test row attempting (and failing) to compile this target.
-required-features = ["alloc-global", "alloc-decommit", "large-cache-extended", "internals"]
+required-features = ["alloc-global", "alloc-decommit", "large-cache-extended", "bench-internals", "internals"]
 
 # R31-8 (task #488): deterministic, native (cross-platform) scan-cost
 # isolation microjudge — a decomposed complement to the real-process narrow
