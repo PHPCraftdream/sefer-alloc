@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before issue state changes. Combined native/model/focused-Miri controls and
   persistent-versus-transient OOM witnesses passed; worst-case storage is
   explicitly documented, not a universal memory budget.
+- The three P4 observations are now closed: route-directory shards use
+  64-cell blocks (`perf(runtime)`; moved pointer cells for 1024 same-shard
+  keys fell from 524792 to 49035 on registration, lookup is directionally up
+  to 5-12% costlier at n>=1024), and the experimental `LockFreeRegion` page
+  table and `ShardedRegion` shard binding were reworked (`perf(opt-in)`).
+  Witnesses count moved cells / page-`Arc` clones / claimed shards, not time.
 - No measured speedup is claimed. See
   `docs/perf/round-manifests/SRC_REVIEW_R11_MANIFEST.md`; R10's successful
   checks are not a certificate for these future changes or release GO.

@@ -86,8 +86,11 @@ belongs to that source-only review.
   an executable sentinel; static sentinel count/floor/card is106. No latency,
   commit/RSS or full-registry Miri claim is made.
 - P4-1/2/3: sorted-route update cost, legacy RCU pointer-table copying and
-  documented thread-not-region shard binding. Retained as lower-priority
-  review observations; no unsafe counterexample or measured benefit inferred.
+  documented thread-not-region shard binding. Closed 2026-10-01 in
+  `17ba38ae` (`perf(runtime)`, route directory blocks), `1230ee86` and
+  `0ce2ecd1` (`perf(opt-in)`, experimental types). Witnesses count moved
+  cells, page-`Arc` clones and claimed shards, not time; no unsafe
+  counterexample or measured benefit was inferred.
 
 P2 model wiring accepted separately in
 `f371c5d03ef7864c18d74f5d37bd686dc5bf0ac9`; source inventory300tests/9rootLoom,

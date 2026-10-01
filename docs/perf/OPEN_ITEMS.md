@@ -2972,27 +2972,6 @@ for completeness.
     - **Next trigger:** the next process-level A/B round: pick `production` (or record the feature set per arm as the R26-4 rule requires) before citing a verdict.
     - **Evidence:** `scripts/paired-ab-runner.mjs` `seferConfig()`; R5-01 consultation notes.
 
-75. **[L] xs R11 P4-1 — sorted route arrays make a one-shard registration/removal wave quadratic.** (Filed 2026-10-01.)
-
-    - **Status:** OPEN — confirmed asymptotic cost (source-level), not a measured regression; fix task in progress, nothing landed.
-    - **Current-number-or-verdict:** `src/registry/segment_route/directory.rs:298-316` shifts every later pointer on insert/remove; registration (`:427-457`) and removal (`:496-506`) run under one shard mutex. With n Large routes hashed to one shard and keys registered in descending order (or removed in ascending order) the wave moves n*(n-1)/2 pointer cells under the lock, delaying unrelated foreign frees on that shard. Lookup stays O(log n) (`:266-285`). Worst-case arrangement; the real address distribution is OS-chosen and unmeasured. Scope: `alloc-global` / `internals` route API.
-    - **Next trigger:** the fix task. Gate: count moved pointer cells (not elapsed time) on reverse-key registration of real page-aligned Large roots sharing a shard — must become subquadratic — plus the existing lookup / duplicate-registration / pin-after-unlink / final-free contract cases. A tree/hash/chunked-block index must be A/B'd against the sorted array on a lookup-heavy workload in the same regime before replacing it.
-    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-1.
-
-76. **[L] xs R11 P4-2 — `LockFreeRegion` RCU writes clone the entire page-pointer table.** (Filed 2026-10-01.)
-
-    - **Status:** OPEN — confirmed asymptotic cost, not a measured regression; type is `experimental`, legacy/read-mostly, outside the `production` allocator path; fix task in progress, nothing landed.
-    - **Current-number-or-verdict:** `src/concurrent/lock_free/lock_free_region.rs:107-113` clones `pages: Vec<Arc<Vec<Slot<T>>>>`; successful insert (`:362-366`) and remove (`:408-440`) both clone it under the writer mutex, so each write is Theta(P+64) even when one page is touched (`PAGE`=64, `:37-41`). M writes cost Theta(M*P); growth from empty to N slots costs Theta(N^2/64) table-pointer clones. Same family as item 73 (a)/(f), now with a concrete asymptotic witness.
-    - **Next trigger:** the fix task. Gate: count page-`Arc` clones for one successful insert and remove at P=16 vs P=256 (must become sublinear) with stale-handle and drop-once tests green; do not trade away the lock-free read path without a workload-specific A/B. Alternative: document write-heavy steering and keep the contract.
-    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-2; item 73.
-
-77. **[L] xs R11 P4-3 — `ShardedRegion` shard binding is keyed by thread, not by region instance.** (Filed 2026-10-01.)
-
-    - **Status:** OPEN — confirmed architecture/locality limitation (contention and a skipped remote-removal path), not a memory-safety defect (the mutex/CAS protocol keeps it correct); `experimental`; fix task in progress, nothing landed.
-    - **Current-number-or-verdict:** one `MY_SHARD` TLS cell serves all `ShardedRegion<T>` values (`src/concurrent/sharded/sharded_region.rs:173`); `:310-320` trusts an in-range cached shard id without checking the region, and `:475-480` uses it to pick the owner-removal path. With two two-shard regions, thread A inserting into B reuses id 0 though B's shard 1 is free (two writers share B/0's mutex), and A's removal of a B/0 handle takes the owner path although B/0's token belongs to thread B. The module header's one-region-per-thread-pool assumption documents this but does not enforce it.
-    - **Next trigger:** the fix task: region-keyed TLS binding with bounded per-thread storage, or an explicit binding token / method-level documentation if the single-region topology is kept. Gate: instrument path selection (A claims B's free shard 1; A's removal of a B/0 handle goes remote), not wall-clock; `get`/`remove` correctness alone stays green in both versions.
-    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-3.
-
 78. **[L] xs R11 unconfirmed hypotheses (not P-graded) — maintenance trim latency, Small route sidecar footprint, pending-Large hint.** (Filed 2026-10-01.)
 
     - **Status:** OPEN — hypotheses only; nothing measured, no win claimed, no defect confirmed.
@@ -3007,6 +2986,9 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **xs R11 P4-3 — `ShardedRegion` shard binding keyed by thread, not region instance (ex-item 77).** Closed 2026-10-01, commit `0ce2ecd1` (`perf(opt-in)`, `experimental` only): per-thread table keyed by a never-reused region id (8 entries, FIFO); witness counts the claimed shard and removal path, red on the old code.
+- **xs R11 P4-2 — `LockFreeRegion` RCU writes clone the whole page table (ex-item 76).** Closed 2026-10-01, commit `1230ee86` (`perf(opt-in)`, `experimental` only): persistent 16-ary trie, page-`Arc` clones per write <=16 at P=16/256/4096 (was P); read cost not measured.
+- **xs R11 P4-1 — sorted route arrays make a one-shard wave quadratic (ex-item 75).** Closed 2026-10-01, commit `17ba38ae` (`perf(runtime)`, route directory is on the `alloc-global` path): 64-cell blocks under a block index; moved cells for 1024 same-shard keys 524792 -> 49035 (register) / 523776 -> 17361 (remove); lookup A/B directional up to +5-12% at n>=1024, not a release GO.
 - **R9-9 §5 — warm-batch-on-`SeferAlloc`-heap arm (this index's own item 10).** DONE (task R10-7, 2026-07-21, commit `9611a56`) — built the fourth warm-batch arm plus a realistic tcache-aware design; warm-batch beats warm-scalar by 1.3x-3.3x.
 - **R22-readonly-review §4.6 — batch API real downstream consumer?** DONE — decision recorded, not measured further (task #376/R23-7, 2026-07-27); no in-tree production caller confirmed, falsifiability clause recorded.
 - **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml`/`perf_gate_iai.rs`.** Implemented by R22-15 (task #366), 2026-07-26; corrected by R23-2 (task #371), 2026-07-27 — direction flips on hot-churn (0.896, SeferAlloc cheaper) once the asymmetric bootstrap proxy is removed.
