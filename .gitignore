@@ -82,3 +82,6 @@
 # disk, and this entry — not a transient `??` in `git status` — is now the
 # durable record that it is there on purpose.
 /docs/artifacts/
+
+# Extra Cargo target directories (e.g. integrated worktree builds)
+/target-*/
