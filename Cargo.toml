@@ -196,6 +196,9 @@ alloc-xthread = ["alloc-core"]
 # `src/lib.rs` carries a `compile_error!` guard for a stale manifest;
 # `production` already enabled both.
 alloc-global = ["alloc-core", "alloc-xthread", "dep:tagged-index-stack"]
+# Opt-in prototype (Ph1b): exact System object + out-of-object descriptor for
+# narrow requests. NOT part of `production`.
+exact-object-proto = ["alloc-global", "std"]
 # R10-7 follow-up: the tcache-aware batch allocation API
 # (`SeferAlloc::alloc_batch` / `dealloc_batch` + the underlying
 # `HeapCore::alloc_batch`). EXPERIMENTAL — opt-in, NOT part of `production`
@@ -1030,6 +1033,14 @@ name = "r11_w0_box_reuse"
 harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
+
+# Ph1b exact-object prototype witness: one scenario per process, selected by
+# name (installed SeferAlloc, no libtest).
+[[test]]
+name = "r11_exact_object_proto"
+harness = false
+test = false
+required-features = ["exact-object-proto", "internals", "bench-internals"]
 
 [[test]]
 name = "r11_box_cap_gate_w1"

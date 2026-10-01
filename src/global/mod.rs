@@ -21,6 +21,9 @@
 //! [`tls_heap`]: self::tls_heap
 
 mod alloc_stats;
+#[cfg(feature = "exact-object-proto")]
+#[doc(hidden)]
+pub mod exact_object;
 pub(crate) mod fallback;
 mod maintenance_service;
 mod maintenance_start_error;

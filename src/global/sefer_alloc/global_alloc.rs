@@ -15,6 +15,9 @@ use crate::global::tls_heap::CurrentHeap;
 
 use super::SeferAlloc;
 
+#[cfg(feature = "exact-object-proto")]
+use crate::global::exact_object::ExactNarrow;
+
 // SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/
 // `alloc_zeroed`/`realloc` return valid memory for the requested `Layout`
 // (or null on failure), and that `dealloc` receives a pointer previously
@@ -30,6 +33,10 @@ use super::SeferAlloc;
 unsafe impl GlobalAlloc for SeferAlloc {
     #[inline(always)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        #[cfg(feature = "exact-object-proto")]
+        if ExactNarrow::is_narrow(layout) {
+            return ExactNarrow::alloc(layout, false);
+        }
         match self.current_heap() {
             // Fallback path (TLS torn down, registry exhausted, or true
             // fallback OOM): route through the fallback's spinlock-guarded
@@ -50,6 +57,12 @@ unsafe impl GlobalAlloc for SeferAlloc {
     #[inline(always)]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
+            return;
+        }
+        // Prototype: every pointer is looked up by exact address first.
+        // SAFETY: `ptr`/`layout` are this method's own contract pair.
+        #[cfg(feature = "exact-object-proto")]
+        if unsafe { ExactNarrow::try_dealloc(ptr, layout) } {
             return;
         }
         match current_for_dealloc() {
@@ -79,6 +92,10 @@ unsafe impl GlobalAlloc for SeferAlloc {
     // deliberate.
     #[inline(always)]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        #[cfg(feature = "exact-object-proto")]
+        if ExactNarrow::is_narrow(layout) {
+            return ExactNarrow::alloc(layout, true);
+        }
         match self.current_heap() {
             CurrentHeap::Fallback => self
                 .with_fallback_heap(|h| h.alloc_zeroed(layout))
@@ -95,6 +112,25 @@ unsafe impl GlobalAlloc for SeferAlloc {
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
+        }
+        // Prototype: a narrow old or new class always moves (no in-place promise).
+        #[cfg(feature = "exact-object-proto")]
+        if let Ok(new_layout) = Layout::from_size_align(new_size, old_layout.align()) {
+            if ExactNarrow::is_narrow(old_layout) || ExactNarrow::is_narrow(new_layout) {
+                // SAFETY: this fn's GlobalAlloc contract; the new block is distinct.
+                unsafe {
+                    let new_ptr = self.alloc(new_layout);
+                    if !new_ptr.is_null() {
+                        core::ptr::copy_nonoverlapping(
+                            ptr,
+                            new_ptr,
+                            old_layout.size().min(new_size),
+                        );
+                        self.dealloc(ptr, old_layout);
+                    }
+                    return new_ptr;
+                }
+            }
         }
         match self.current_heap() {
             // SAFETY: `ptr`/`old_layout` are the caller-bound GlobalAlloc

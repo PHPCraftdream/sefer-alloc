@@ -214,6 +214,12 @@
 //                             (under `alloc-global`)
 //      * `global::sefer_alloc::batch` — the `batch-api` `alloc_batch`/`dealloc_batch`
 //                             unsafe-fn boundary pair. (`batch-api` only)
+//      * `global::exact_object::exact_shard` — out-of-object descriptor array in raw
+//                             `System` memory under a shard spinlock.
+//                             (`exact-object-proto` prototype only, not `production`)
+//      * `global::exact_object::narrow` — exact `System` alloc/free of narrow
+//                             requests, original pointer and layout.
+//                             (`exact-object-proto` prototype only, not `production`)
 //      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
 //                             (under `alloc-global`)
 //      * `global::fallback`     — primordial fallback heap seam —
