@@ -100,6 +100,10 @@ pub(super) fn paused_terminal_owner_retirement(global: &SeferAlloc) -> u8 {
         .lookup(ptr)
         .expect("issued real Box route");
     assert!(!marked_free_on_owner(ptr));
+    assert!(
+        !pin.pending_for_test(ptr),
+        "a live Box has no pending publication"
+    );
     Gate::arm(ptr.addr());
     let resume = ResumeProducer;
     let producer = std::thread::spawn(move || {
@@ -112,6 +116,11 @@ pub(super) fn paused_terminal_owner_retirement(global: &SeferAlloc) -> u8 {
     Gate::wait_for_publication();
 
     // Producer is paused after terminal RMW, still in Box Drop/dealloc.
+    // Oracle: the terminal publication is already visible (sidecar-only read).
+    assert!(
+        pin.pending_for_test(ptr),
+        "pause must follow the terminal publication"
+    );
     global.trim_current_thread();
     assert_retired(ptr, &pin);
     drop(resume);
