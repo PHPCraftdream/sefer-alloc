@@ -51,10 +51,20 @@ impl EntryHandle {
     ) -> Result<Self, RouteError> {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: System is independent of the installed global allocator.
-                // AtomicU64/AtomicU8 have their integer representations; zero
-                // is valid for every field of SmallSidecar.
-                unsafe { System.alloc_zeroed(Layout::new::<SmallSidecar>()) }
+                // SAFETY: System is independent of the installed allocator;
+                // the aligned span stays private until every atomic is built.
+                let ptr = unsafe { System.alloc_zeroed(Layout::new::<SmallSidecar>()) };
+                if !ptr.is_null() {
+                    #[cfg(feature = "internals")]
+                    crate::alloc_core::remote_bitmap::ClassLeaves::record_alloc(
+                        Layout::new::<SmallSidecar>().size(),
+                        true,
+                    );
+                    // SAFETY: fresh private storage has SmallSidecar's exact
+                    // layout; in-place construction initializes every atomic.
+                    unsafe { SmallSidecar::initialize_at(ptr.cast()) };
+                }
+                ptr
             }
             RouteKind::Large => {
                 // SAFETY: System returns a properly aligned allocation for
@@ -99,8 +109,15 @@ impl EntryHandle {
     fn free_sidecar(kind: RouteKind, sidecar: *mut u8) {
         match kind {
             RouteKind::Small | RouteKind::Primordial => {
+                // SAFETY: pointer is a fully initialized SmallSidecar from
+                // System; last-pin release ensures no remaining reference.
+                unsafe { ptr::drop_in_place(sidecar.cast::<SmallSidecar>()) };
+                #[cfg(feature = "internals")]
+                crate::alloc_core::remote_bitmap::ClassLeaves::record_free(
+                    Layout::new::<SmallSidecar>().size(),
+                );
                 // SAFETY: pointer came from System.alloc_zeroed with this Layout
-                // and no reference remains at this call site.
+                // and its mixed leaves were released by Drop above.
                 unsafe { System.dealloc(sidecar, Layout::new::<SmallSidecar>()) };
             }
             RouteKind::Large => {
@@ -380,6 +397,24 @@ impl RouteDirectory {
             .iter()
             .map(|shard| shard.lock().unwrap_or_else(|e| e.into_inner()).array.cap)
             .sum()
+    }
+
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn live_route_census_for_test(&self) -> (usize, usize, usize) {
+        let mut counts = (0, 0, 0);
+        for shard in &self.shards {
+            let guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+            for index in 0..guard.array.len {
+                // SAFETY: the shard lock retains the linked owner reference.
+                match unsafe { &*guard.array.get(index) }.kind {
+                    RouteKind::Small => counts.0 += 1,
+                    RouteKind::Primordial => counts.1 += 1,
+                    RouteKind::Large => counts.2 += 1,
+                }
+            }
+        }
+        counts
     }
 
     /// Registration and all System allocations precede user-visible issue.

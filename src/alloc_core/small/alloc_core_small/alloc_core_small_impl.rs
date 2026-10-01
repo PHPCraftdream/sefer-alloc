@@ -105,6 +105,44 @@ const _: () = {
 };
 
 impl AllocCore {
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_r11_scalar_carve_for_test(&mut self, class_idx: usize) -> Option<*mut u8> {
+        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        self.carve_block(class_idx, SizeClasses::block_size(class_idx))
+    }
+
+    /// Current owner state: bump, live credits, class head, commit frontier.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_r11_issue_state_for_test(
+        &self,
+        class_idx: usize,
+    ) -> Option<(usize, u32, u32, usize)> {
+        if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        let meta = SegmentMeta::new(self.small_cur);
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
+        let frontier = meta.committed_payload_end_of();
+        #[cfg(not(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        )))]
+        let frontier = SEGMENT;
+        Some((
+            meta.bump_of(),
+            meta.live_count_of(),
+            meta.bin_table().head(class_idx),
+            frontier,
+        ))
+    }
+
     /// Allocate a small block of the given class. Routes through the current
     /// small segment's free list (pop); on a miss, scans ALL owned segments for
     /// one with a non-empty class free list (Phase 12.1: free state lives in
@@ -125,8 +163,10 @@ impl AllocCore {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         // 1. Try the free list of the current small segment.
-        if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
-            return ptr;
+        match self.pop_free(self.small_cur, class_idx) {
+            Ok(Some(ptr)) => return ptr,
+            Err(()) => return core::ptr::null_mut(),
+            Ok(None) => {}
         }
         // 2. Current segment's class free list is empty: scan the OTHER owned
         //    segments for one with a non-empty class free list. A freed block
@@ -140,7 +180,12 @@ impl AllocCore {
         // Terminal consumption cannot link a free or magazine-resident block
         // onto the substrate a second time.
         if let Some(seg) = self.find_segment_with_free(class_idx) {
-            if let Some(ptr) = self.pop_free(seg, class_idx) {
+            let ptr = match self.pop_free(seg, class_idx) {
+                Ok(Some(ptr)) => ptr,
+                Err(()) => return core::ptr::null_mut(),
+                Ok(None) => core::ptr::null_mut(),
+            };
+            if !ptr.is_null() {
                 debug_assert!(
                     {
                         let base = os::segment_base_of_ptr(ptr);
@@ -160,6 +205,9 @@ impl AllocCore {
         //    — defect A fix: `small_cur` may shift mid-batch when a segment
         //    fills, and a captured pointer would then target the wrong
         //    segment, corrupting its BinTable head.
+        if !self.prepare_current_carve(class_idx, block_size) {
+            return core::ptr::null_mut();
+        }
         if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
             return ptr;
         }
@@ -168,8 +216,10 @@ impl AllocCore {
             Some(_) => {
                 // Retry once on the fresh segment. Recurse-free: a single
                 // direct retry (not a loop that could grow unboundedly).
-                if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
-                    return ptr;
+                match self.pop_free(self.small_cur, class_idx) {
+                    Ok(Some(ptr)) => return ptr,
+                    Err(()) => return core::ptr::null_mut(),
+                    Ok(None) => {}
                 }
                 // no-panic: a fresh small segment is guaranteed by construction
                 // to have room for at least one block of every small class
@@ -198,8 +248,10 @@ impl AllocCore {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        if let Some(ptr) = self.pop_free(seg, class_idx) {
-                            return ptr;
+                        match self.pop_free(seg, class_idx) {
+                            Ok(Some(ptr)) => return ptr,
+                            Err(()) => return core::ptr::null_mut(),
+                            Ok(None) => {}
                         }
                     }
                 }
@@ -241,20 +293,27 @@ impl AllocCore {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         // 1. Current segment's free list — never virgin (dispatch conjunct).
-        if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
-            return (ptr, false);
+        match self.pop_free(self.small_cur, class_idx) {
+            Ok(Some(ptr)) => return (ptr, false),
+            Err(()) => return (core::ptr::null_mut(), false),
+            Ok(None) => {}
         }
         // 2. Other owned segments' free lists — never virgin. Use the same
         // metadata-guarded canonical discovery as ordinary scalar allocation.
         if let Some(seg) = self.find_segment_with_free(class_idx) {
-            if let Some(ptr) = self.pop_free(seg, class_idx) {
-                return (ptr, false);
+            match self.pop_free(seg, class_idx) {
+                Ok(Some(ptr)) => return (ptr, false),
+                Err(()) => return (core::ptr::null_mut(), false),
+                Ok(None) => {}
             }
         }
         // 3. No free block anywhere: carve a FRESH block from the CURRENT
         //    segment. Read the lifetime-virginity bit before carving — the
         //    carve itself never mutates the bit (see this fn's doc).
         let cur_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+        if !self.prepare_current_carve(class_idx, block_size) {
+            return (core::ptr::null_mut(), false);
+        }
         if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
             return (ptr, cur_virgin && cfg!(not(miri)));
         }
@@ -266,8 +325,10 @@ impl AllocCore {
                 // to mirror `alloc_small`'s identical retry shape; it never
                 // actually hits in practice, but if it somehow did, a
                 // free-list-served block is never virgin regardless.
-                if let Some(ptr) = self.pop_free(self.small_cur, class_idx) {
-                    return (ptr, false);
+                match self.pop_free(self.small_cur, class_idx) {
+                    Ok(Some(ptr)) => return (ptr, false),
+                    Err(()) => return (core::ptr::null_mut(), false),
+                    Ok(None) => {}
                 }
                 let fresh_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
                 match self.carve_block_with_refill(class_idx, block_size) {
@@ -285,8 +346,10 @@ impl AllocCore {
                         #[cfg(feature = "alloc-stats")]
                         crate::alloc_core::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        if let Some(ptr) = self.pop_free(seg, class_idx) {
-                            return (ptr, false);
+                        match self.pop_free(seg, class_idx) {
+                            Ok(Some(ptr)) => return (ptr, false),
+                            Err(()) => return (core::ptr::null_mut(), false),
+                            Ok(None) => {}
                         }
                     }
                 }
@@ -295,19 +358,28 @@ impl AllocCore {
         }
     }
 
-    /// Pop a free block of `class_idx` from `segment`'s bin table. Returns
-    /// null if the free list is empty. Writes the block's `next` word to null
-    /// (it becomes the new head) via the node seam.
+    fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
+        let bump = SegmentMeta::new(self.small_cur).bump_of();
+        let aligned = align_up(bump, block_size);
+        aligned + block_size > SEGMENT
+            || self
+                .table
+                .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+    }
+
+    /// Pop a free block; `Err` is an uncommitted class-spill OOM.
     #[inline(always)]
-    fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Option<*mut u8> {
+    fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
         let head_off = bt.head(class_idx);
         if head_off == FREE_LIST_NULL {
-            return None;
+            return Ok(None);
         }
         let block_ptr = Node::deref(segment, head_off as usize);
-        let block_nn = NonNull::new(block_ptr)?;
+        let Some(block_nn) = NonNull::new(block_ptr) else {
+            return Ok(None);
+        };
         let next = Node::read_next(block_nn);
         // UBFIX-7 (M-3, `docs/reviews/2026-07-10-ub-audit-final-synthesis.md`):
         // the intrusive freelist `next` word lives INSIDE the block itself, so
@@ -344,6 +416,9 @@ impl AllocCore {
             // per-segment), so offset = next - segment.
             (next as usize - segment as usize) as u32
         };
+        if !self.table.prepare_small_issue(segment, head_off, class_idx) {
+            return Err(());
+        }
         bt.set_head(class_idx, new_head);
         // R7-A2: directory bitmap maintenance — the old head was non-null
         // (we passed the FREE_LIST_NULL guard above), so the only transition
@@ -384,7 +459,7 @@ impl AllocCore {
                 crate::alloc_core::segment_header::bump_gen(segment, head_off as usize)
             };
         }
-        Some(block_ptr)
+        Ok(Some(block_ptr))
     }
 
     /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
@@ -442,8 +517,18 @@ impl AllocCore {
         class_idx: usize,
         out: &mut [*mut u8],
     ) -> usize {
+        self.try_drain_freelist_batch(segment, class_idx, out)
+            .unwrap_or(0)
+    }
+
+    pub(in crate::alloc_core) fn try_drain_freelist_batch(
+        &mut self,
+        segment: *mut u8,
+        class_idx: usize,
+        out: &mut [*mut u8],
+    ) -> Result<usize, ()> {
         if out.is_empty() {
-            return 0;
+            return Ok(0);
         }
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
@@ -452,7 +537,34 @@ impl AllocCore {
             // Read the head ONCE.
             let mut head_off = bt.head(class_idx);
             if head_off == FREE_LIST_NULL {
-                return 0;
+                return Ok(0);
+            }
+            // Prepare every spill on the still-owned chain. On OOM the head,
+            // bitmap, live count and output remain unchanged; promoted leaves
+            // are valid uniform copies and may be reused by a later retry.
+            let mut probe = head_off;
+            let mut probed = 0usize;
+            while probed < out.len() && probe != FREE_LIST_NULL {
+                let block = Node::deref(segment, probe as usize);
+                let Some(nn) = NonNull::new(block) else {
+                    break;
+                };
+                if !self.table.prepare_small_issue(segment, probe, class_idx) {
+                    return Err(());
+                }
+                let next = Node::read_next(nn);
+                #[cfg(feature = "hardened")]
+                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+                    next
+                } else {
+                    core::ptr::null_mut()
+                };
+                probe = if next.is_null() {
+                    FREE_LIST_NULL
+                } else {
+                    (next as usize - segment as usize) as u32
+                };
+                probed += 1;
             }
             let mut bm = meta.alloc_bitmap();
             let mut k = 0usize;
@@ -511,7 +623,7 @@ impl AllocCore {
             // batch `add_live(k)` primitive (byte-identical to `k` per-block
             // `inc_live`s — see `add_live`'s D1-equivalence note).
             meta.add_live(k as u32);
-            k
+            Ok(k)
         }
     }
 
@@ -541,6 +653,12 @@ impl AllocCore {
         let bump = meta.bump_of();
         let aligned_bump = align_up(bump, block_size);
         if aligned_bump + block_size > SEGMENT {
+            return None;
+        }
+        if !self
+            .table
+            .prepare_small_issue(segment, aligned_bump as u32, class_idx)
+        {
             return None;
         }
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
@@ -715,15 +833,38 @@ impl AllocCore {
         block_size: usize,
         out: &mut [*mut u8],
     ) -> usize {
+        self.try_carve_batch(class_idx, block_size, out)
+            .unwrap_or(0)
+    }
+
+    pub(in crate::alloc_core) fn try_carve_batch(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+        out: &mut [*mut u8],
+    ) -> Result<usize, ()> {
         if out.is_empty() {
-            return 0;
+            return Ok(0);
         }
         let segment = self.small_cur;
         let mut meta = SegmentMeta::new(segment);
         let bump = meta.bump_of();
         let aligned_start = align_up(bump, block_size);
         if aligned_start + block_size > SEGMENT {
-            return 0; // not room for even one block
+            return Ok(0); // not room for even one block
+        }
+        let room = (SEGMENT - aligned_start) / block_size;
+        let n = out.len().min(room);
+        // A successful promotion is retained even if later OS commit fails;
+        // no class code or issue credit changes until the carve commits.
+        for i in 0..n {
+            let off = aligned_start + i * block_size;
+            if !self
+                .table
+                .prepare_small_issue(segment, off as u32, class_idx)
+            {
+                return Err(());
+            }
         }
         // Recommit ONCE at run start if the segment's payload was decommitted
         // (identical to `carve_block`'s per-block check — the flag cannot change
@@ -745,7 +886,7 @@ impl AllocCore {
                     // decommitted, do not advance the bump, and carve nothing
                     // so the caller falls back (fresh segment / null) instead
                     // of writing into a still-reserved page.
-                    return 0;
+                    return Ok(0);
                 }
                 meta.set_decommitted(false);
             }
@@ -765,8 +906,6 @@ impl AllocCore {
         // recomputed a second time, identically, inside the lazy-commit
         // growth check below) — shared by that check's `batch_end` and the
         // final carve's bump advance.
-        let room = (SEGMENT - aligned_start) / block_size;
-        let n = out.len().min(room);
         #[cfg(any(
             feature = "primordial-lazy-commit",
             feature = "small-segment-lazy-commit"
@@ -782,7 +921,7 @@ impl AllocCore {
                     // Commit-charge exhaustion: cannot grow the frontier.
                     // Everything unchanged: bump not moved, live_count
                     // unchanged, page map unwritten, no blocks handed out.
-                    return 0;
+                    return Ok(0);
                 }
                 GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 meta.set_committed_payload_end(new_frontier);
@@ -821,6 +960,6 @@ impl AllocCore {
             self.table.issue_small(segment, off as u32, class_idx);
             *slot = ptr;
         }
-        n
+        Ok(n)
     }
 }

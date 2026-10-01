@@ -16,10 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numeric cursor, retaining a full rescue/retry on zero refill. Native controls
   and clippy passed. Registry selection now uses hint, fresh capacity, then
   cold scan with chunk-OOM recovery; native/model/doc controls passed.
-  Adaptive Small sidecar remains in acceptance.
+  Adaptive Small sidecar now uses uniform/mixed leaves with fallible preflight
+  before issue state changes. Combined native/model/focused-Miri controls and
+  persistent-versus-transient OOM witnesses passed; worst-case storage is
+  explicitly documented, not a universal memory budget.
 - No measured speedup is claimed. See
   `docs/perf/round-manifests/SRC_REVIEW_R11_MANIFEST.md`; R10's successful
   checks are not a certificate for these future changes or release GO.
+- Real installed-allocator paused-Box acceptance failed both Miri borrowing
+  models on owner intrusive payload writes. This additional P1 is under active
+  architectural repair; the storage controls do not close it.
 
 ### Root allocator `src/` review round 10 (2026-09-30; fixes accepted)
 

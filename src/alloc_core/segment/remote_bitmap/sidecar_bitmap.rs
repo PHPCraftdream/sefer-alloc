@@ -9,6 +9,11 @@
 
 use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
+#[path = "sidecar_bitmap/leaf_classes.rs"]
+#[cfg_attr(test, allow(dead_code))]
+mod leaf_classes;
+pub(crate) use leaf_classes::ClassLeaves;
+
 use super::BitmapScan;
 
 use crate::alloc_core::os::SEGMENT;
@@ -28,7 +33,23 @@ const _: () = {
 /// it does not allocate, initialize, or bind a reservation pointer.
 pub(crate) struct SidecarBitmap<'a> {
     pub(super) pending: &'a [AtomicU64],
-    pub(super) classes: &'a [AtomicU8],
+    pub(super) classes: ClassMap<'a>,
+}
+
+#[derive(Clone, Copy)]
+#[cfg_attr(test, allow(dead_code))]
+pub(super) enum ClassMap<'a> {
+    Dense(&'a [AtomicU8]),
+    Leaves(&'a ClassLeaves),
+}
+
+impl ClassMap<'_> {
+    pub(super) fn encoded(self, granule: usize) -> u8 {
+        match self {
+            Self::Dense(classes) => classes[granule].load(Ordering::Acquire),
+            Self::Leaves(leaves) => leaves.encoded(granule),
+        }
+    }
 }
 
 impl<'a> SidecarBitmap<'a> {
@@ -41,7 +62,18 @@ impl<'a> SidecarBitmap<'a> {
         pending: &'a [AtomicU64],
         classes: &'a [AtomicU8],
     ) -> Option<Self> {
-        (pending.len() == WORDS && classes.len() == GRANULES).then_some(Self { pending, classes })
+        (pending.len() == WORDS && classes.len() == GRANULES).then_some(Self {
+            pending,
+            classes: ClassMap::Dense(classes),
+        })
+    }
+
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) fn from_leaves(pending: &'a [AtomicU64], classes: &'a ClassLeaves) -> Option<Self> {
+        (pending.len() == WORDS).then_some(Self {
+            pending,
+            classes: ClassMap::Leaves(classes),
+        })
     }
 
     /// Owner-only issue, before handing the allocation to another thread.
@@ -55,8 +87,13 @@ impl<'a> SidecarBitmap<'a> {
         if usize::from(class) >= SMALL_CLASS_COUNT {
             return false;
         }
-        self.classes[granule].store(class + 1, Ordering::Release);
-        true
+        match self.classes {
+            ClassMap::Dense(classes) => {
+                classes[granule].store(class + 1, Ordering::Release);
+                true
+            }
+            ClassMap::Leaves(leaves) => leaves.issue(granule, class),
+        }
     }
 
     /// Producer terminal AcqRel RMW. No class, header, or reservation access;

@@ -45,13 +45,19 @@ stored entry, never the lookup pointer supplied by the caller.
   `CACHED`, `INITIALIZING`, `RELEASED` hold none. No predecessor link is
   written to a Large reservation by a foreign publisher.
 
-The current prototype uses a byte-per-granule class table for mixed-class
-Small segments. At 4 MiB / 16 bytes this is 32 KiB pending bitmap plus
-256 KiB class metadata per fully materialized segment, before allocator and
-VM rounding overhead. These are logical sizes, **not RSS measurements**.
-Class-homogeneous spans are the target representation if they reduce real
-cost without weakening lifetime or locality guarantees. A denser packed
-class table needs a separate atomicity/aliasing proof.
+The original prototype used a byte-per-granule class table: 32 KiB pending
+bitmap plus 256 KiB class metadata per 4 MiB segment. R11's adaptive candidate
+retains the authoritative bitmap, using uniform class codes and genuine
+System pointers for mixed 4 KiB leaves. On 64-bit targets its base requested
+storage is 41,984 bytes; each mixed leaf adds 256 bytes. All 1,024 mixed leaves
+cost 304,128 bytes, exceeding the old 294,912-byte base and adding allocations.
+These are requested logical sizes, **not RSS or speed measurements**.
+Fallible leaf preparation precedes every issuance transaction; producer
+publication neither reads classes nor allocates. Mixed leaves stay until
+unlink and the last pin. R11 storage/preflight controls have passed, but actual
+installed-Box paused-frame acceptance fails on intrusive payload writes; see
+`docs/reviews/2026-10-01-0945-r11-terminal-box-acceptance-sol-codex.md`.
+No universal small-memory budget or production promotion follows this layout.
 
 ## Directory proof obligations
 

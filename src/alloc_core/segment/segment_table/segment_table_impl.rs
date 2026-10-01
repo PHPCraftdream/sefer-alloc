@@ -308,6 +308,22 @@ impl SegmentTable {
         let _ = (base, offset, class_idx);
     }
 
+    /// Fallible owner-only class spill before any block issue state changes.
+    #[inline]
+    pub(crate) fn prepare_small_issue(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
+        #[cfg(feature = "alloc-global")]
+        if let Some(routes) = &self.routes {
+            let class = u8::try_from(class_idx).unwrap_or_else(|_| std::process::abort());
+            let index = SegmentHeader::segment_id_at(base) as usize;
+            if self.base_at(index) != base {
+                std::process::abort();
+            }
+            return routes.prepare_small_issue(index, base, offset, class);
+        }
+        let _ = (base, offset, class_idx);
+        true
+    }
+
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) fn scan_small_route(
         &self,

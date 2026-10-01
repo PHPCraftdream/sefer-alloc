@@ -670,18 +670,22 @@ hard compile error in every configuration:
 | [`src/registry/heap_registry/counters.rs`](src/registry/heap_registry/counters.rs) | Registry diagnostics: the config-conflict counter, the process-wide hit-total aggregators over slot-resident W3 counters, the minted-slot high-water mark, and the UBFIX-5 test-only introspection hooks | `alloc-global` |
 | [`src/registry/heap_registry/maintenance.rs`](src/registry/heap_registry/maintenance.rs) | Exclusive maintenance lease handoff for finite ownerless sweeps. | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
+| [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
+| [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, atomic initialization and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **fourteen**:
++ primordial-lazy-commit`) the active internal tier-1 seams are **sixteen**:
 `alloc_core::platform::{os, node, sidecar}` and
 `alloc_core::segment::segment_table::route_slots`;
 `global::{sefer_alloc::global_alloc, tls_heap, fallback}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::{claim, counters, maintenance}`, and
-`registry::segment_route::directory`. The `--cfg loom` bootstrap shim is
+`registry::segment_route::{directory, small_sidecar}` and
+`alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
+The `--cfg loom` bootstrap shim is
 additional only in Loom builds; `batch-api`, `large-cache-extended` and
 `experimental` each have separate optional seams. The removed ring, inbox,
 overflow and class-aware-dirty seams are not in this inventory.
@@ -742,7 +746,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **24** tier-1 module-level seams (18 in
+That's the full list (both tiers): **26** tier-1 module-level seams (20 in
 `src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
@@ -1355,8 +1359,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **307 integration test files**,
-**80 example binaries**, **22 benches**, and **10 root Loom models**
+needs its acceptance run. The present tree contains **312 integration test files**,
+**80 example binaries**, **22 benches**, and **11 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1365,11 +1369,11 @@ and support modules. The test tree also contains 9 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (307 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (312 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (80 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (22 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (10 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (11 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri.mjs` includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread races in selected binaries | `scripts/tsan.mjs` / CI; old ring-era results are not cutover acceptance |

@@ -34,7 +34,8 @@ belongs to that source-only review.
   `082b554d-9594-49a9-a2ab-13165f755af1`. Four probes
   is provisional, not a measured latency/RSS optimum. Full zero-refill rescue,
   strict drain and route-reuse/late-publication witnesses are retained.
-- P3-2, OPEN design/optimization: current Small sidecar's 288 KiB footprint
+- P3-2, STORAGE/PREFLIGHT CHANGE ACCEPTED, production promotion blocked by
+  the separate protected-Box P1 below: the old Small sidecar's 288 KiB footprint
   and zeroing cost are factual and documented, not a leak or safety defect.
   Accepted XXS advice chooses a uniform/mixed-leaf prototype without foreign allocation, lost
   class information or pin-lifetime/provenance changes. A sample <=64 KiB
@@ -43,7 +44,26 @@ belongs to that source-only review.
   candidate's41KiB baseline plus mixed leaves can exceed the old288KiB in
   adversarial all-mixed cases. Spill allocation needs fallible preflight before
   any issue/freelist/bitmap/bump/credit/output mutation, not an abort-on-OOM.
-  No production promotion or RSS/CPU win is asserted before actual acceptance.
+  Parent read all changed source, four native targets and the reduced model.
+  Final combined tests passed50 cases including doc/cap guards, and clippy
+  passed, `fb0cf99e-b794-4e73-b4a5-df70fa299c9b`. The earlier combined task
+  `9cc0254e-502f-4448-8169-68ba9945667d` exposed two one-shot OOM oracles
+  incompatible with the accepted rescue retry. HS added persistent fault
+  budgets that cover both attempts, kept NULL/rollback/System-credit assertions,
+  and separately proved transient recovery; rescue was not disabled. New
+  mutation/fault TLS requires internals+bench-internals. Final HS combined49
+  and model3 passed `ee104070-92e5-4d40-b518-c4a4d796d4be`; minimal5 and
+  three clippy rows passed `1926b4f7-f100-4bb2-b719-0032cefd0c58`;
+  focused Miri OOM2 and lifetime/preflight2 passed
+  `232b3b36-2b91-4fe1-9132-38a93533094e` and
+  `e71ae3e8-1ed5-4a66-a874-d716593ca19e`. These small-harness Miri passes
+  do not close the actual installed-Box producer-frame failure below.
+  Parent doc/cap guards34 passed after fixing inventory and the item87 parser
+  anchor, `aedf0332-44d9-42db-9f3f-6b5c1588155e`; renamed model3 passed
+  `a12136eb-7a11-437d-b256-f6d9b994afb5`. Inventory312tests/11rootLoom,
+  sentinel floor/card109, unsafe26tier1 total/20src/16production. Strict docs
+  and fmt passed `4a5bbb38-3d85-40f9-87f6-e6dee2b4b68a`. No RSS/CPU win,
+  universal41KiB bound, other-OS acceptance or release GO is asserted.
 - P3-3, ACCEPTED: cold claim previously scanned all prior LIVE states before fresh bump,
   yielding triangular first-touch probes. Accepted advice chooses reuse-hint
   first, capped fresh bump while capacity remains, and full scan only at cap
@@ -77,6 +97,17 @@ as `efaf828691da02a5d014de867dd80149b4a62229`,
 Production implementations are in three separate, disjoint HS worktrees.
 
 ## Transition obligations for production integration
+
+Parent dynamic acceptance found an additional P1 before production promotion:
+the real installed allocator's paused `Box::drop` frame is rejected by both
+Stacked and Tree Borrows when strict trim writes an intrusive freelist link
+through the reservation root. Both jobs in
+`2ad6e542-852b-481a-97a2-c325fc3d99a6` exited1, not timeout. Evidence is
+`docs/reviews/2026-10-01-0945-r11-terminal-box-acceptance-sol-codex.md`,
+committed separately in `a8074a0e`. XXS architectural advice is active;
+repair and actual frame re-validation are required in this workflow, not
+deferred to a future round. This is separate from the adaptive sidecar's
+two transient-OOM/rescue oracle failures. No production GO.
 
 | Mechanism | Prepare / live state | Retirement / failure obligation |
 |---|---|---|

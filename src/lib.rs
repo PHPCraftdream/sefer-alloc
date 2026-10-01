@@ -250,6 +250,13 @@
 //                             reclamation; numeric foreign lookup pins under
 //                             the shard lock.
 //                             (under `alloc-global`)
+//      * `registry::segment_route::small_sidecar` — in-place construction of
+//                             pending atomics and the owner class map.
+//                             (under `alloc-global`)
+//      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes` —
+//                             genuine System mixed-leaf pointers, initialization,
+//                             and exact deallocation after the last route pin.
+//                             (under `alloc-core`; used by `alloc-global`)
 //      * `alloc_core::segment::segment_table::route_slots` — System-backed,
 //                             owner-only non-Copy registration storage;
 //                             routes close before reservation release.

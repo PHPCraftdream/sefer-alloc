@@ -1,12 +1,10 @@
-use core::sync::atomic::{AtomicU8, Ordering};
-
-use super::BitmapRecord;
+use super::{sidecar_bitmap::ClassMap, BitmapRecord};
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 /// Detached bits must be consumed or persisted before the backing is freed.
 #[must_use = "consume or persist every detached bit before releasing the segment"]
 pub(crate) struct BitmapCut<'a> {
-    pub(super) classes: &'a [AtomicU8],
+    pub(super) classes: ClassMap<'a>,
     pub(super) word: usize,
     pub(super) bits: u64,
 }
@@ -25,7 +23,7 @@ impl BitmapCut<'_> {
         }
         let bit = self.bits.trailing_zeros() as usize;
         let granule = self.word * 64 + bit;
-        let encoded = self.classes[bit].load(Ordering::Relaxed);
+        let encoded = self.classes.encoded(granule);
         if encoded == 0 || usize::from(encoded) > SMALL_CLASS_COUNT {
             std::process::abort();
         }

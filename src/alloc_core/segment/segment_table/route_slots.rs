@@ -110,9 +110,38 @@ impl RouteSlots {
         let route = unsafe { &*self.slots.add(index) }
             .as_ref()
             .unwrap_or_else(|| std::process::abort());
-        if route.root() != base || !route.issue_small(offset, class) {
+        // Commit cannot allocate: the owner completed every fallible prepare.
+        if route.root() != base
+            || !route
+                .small_sidecar()
+                .is_some_and(|sidecar| sidecar.prepared(offset, class))
+            || !route.issue_small(offset, class)
+        {
             std::process::abort();
         }
+    }
+
+    pub(super) fn prepare_small_issue(
+        &self,
+        index: usize,
+        base: *mut u8,
+        offset: u32,
+        class: u8,
+    ) -> bool {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-only access to an initialized live route slot.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route
+            .small_sidecar()
+            .unwrap_or_else(|| std::process::abort())
+            .prepare(offset, class)
     }
 
     pub(super) fn scan_small(
