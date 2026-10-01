@@ -27,18 +27,25 @@
 //! [`ErasedGuard`] whose `Drop` **releases** the shard on thread exit is
 //! installed so a dead thread's shard id can be reused by a new thread.
 //!
-//! ### One region per thread pool (design assumption)
+//! ### Per-region binding (R11 P4-3)
 //!
-//! The router's TLS cells (`MY_SHARD`, `ERASED_GUARD`) are **process-global** —
-//! one binding per thread, shared across every `ShardedRegion` instance (they
-//! cannot be keyed by region without a per-region id). The intended use is a
-//! SINGLE long-lived `ShardedRegion` shared across a thread pool. If one thread
-//! drives two different regions, they share the one TLS binding: this stays
-//! correct (`claim_or_get_shard` re-validates the cached id against the current
-//! region's shard count and re-claims if it is out of range, so a smaller
-//! region never indexes out of bounds), but the two regions may not each get an
-//! exclusive per-thread shard. For the targeted one-region-per-pool topology
-//! this is a non-issue.
+//! The shard cache (`MY_SHARDS`) is a bounded per-thread table keyed by a
+//! never-reused, process-global region id: `(region_id, shard)`. A binding
+//! made against region A is never trusted for region B, so a thread driving
+//! several regions claims (or shares) a shard in each one independently, and
+//! owner/remote removal routing compares against THIS region's binding only.
+//!
+//! The table holds at most `MAX_REMEMBERED_REGIONS` (8) entries per thread;
+//! when full, the OLDEST entry is evicted (FIFO) to admit a new region. A
+//! thread that drives more live regions than that loses the evicted region's
+//! cached binding: its next insert there re-runs the claim scan (a fresh
+//! exclusive claim if one is free, otherwise modulo sharing), and until then
+//! its removals in that region take the remote path. The evicted claim's
+//! `occupied` token is NOT released early — it stays held until thread exit
+//! (the [`ErasedGuard`]) — so such a thread may hold more than one shard of
+//! one region; this is a throughput loss, never a correctness one. Entries of
+//! dropped regions are never matched again (ids are not reused) and age out
+//! by the same FIFO eviction.
 //!
 //! ## Cross-thread removal (7b)
 //!
@@ -99,9 +106,9 @@
 //!
 //! [`EpochRegion<T>`]: crate::concurrent::EpochRegion
 
-use core::cell::{Cell, RefCell};
+use core::cell::RefCell;
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::concurrent::{EpochHandle, EpochRegion, ShardedHandle};
@@ -124,9 +131,8 @@ struct ShardedInner<T> {
 /// region-handling `&self` borrow is gone — the `Arc` keeps the tokens alive.
 ///
 /// A thread may hold MORE than one exclusive claim: e.g. it bound region A's
-/// shard `i`, then (the cached `MY_SHARD` being out of range for region B) re-
-/// scanned region B's `tokens` and won a CAS there — see `claim_or_get_shard`'s
-/// out-of-range fallback and the module note on one thread driving two regions.
+/// shard `i`, then (having no `MY_SHARDS` entry for region B) scanned region
+/// B's `tokens` and won a CAS there — see the module note "Per-region binding".
 /// So the guard tracks ALL of the thread's won claims and releases each on
 /// `Drop`; an empty `claims` vector means the thread only ever degraded to
 /// modulo sharing (nothing to release).
@@ -165,12 +171,49 @@ impl Drop for ErasedGuard {
     }
 }
 
-// The TLS router: `MY_SHARD` caches the claimed shard id for the fast path (a
-// plain integer TLS read); `ERASED_GUARD` holds the type-erased guard whose
+// The TLS router: `MY_SHARDS` caches per-region claimed shard ids for the fast
+// path (a short table scan); `ERASED_GUARD` holds the type-erased guard whose
 // `Drop` releases an exclusively-claimed shard on thread exit. `RefCell`
 // because `Option<ErasedGuard>` is not `Copy` (the guard owns an `Arc`).
 thread_local! {
-    static MY_SHARD: Cell<Option<u16>> = const { Cell::new(None) };
+    static MY_SHARDS: RefCell<Vec<(u64, u16)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Max regions whose shard binding one thread remembers; oldest-first (FIFO)
+/// eviction beyond it. See the module note "Per-region binding".
+const MAX_REMEMBERED_REGIONS: usize = 8;
+
+/// Source of per-instance region ids: process-global, monotonic, never reused.
+static NEXT_SHARDED_REGION_ID: AtomicU64 = AtomicU64::new(0);
+
+/// The calling thread's cached shard for `region_id`, if any. `None` also
+/// during TLS teardown.
+fn cached_shard(region_id: u64) -> Option<u16> {
+    MY_SHARDS
+        .try_with(|t| {
+            t.borrow()
+                .iter()
+                .find(|(id, _)| *id == region_id)
+                .map(|&(_, shard)| shard)
+        })
+        .ok()
+        .flatten()
+}
+
+/// Records `shard` as the calling thread's binding for `region_id`, replacing
+/// any prior entry for that region and FIFO-evicting when the table is full.
+fn remember_shard(region_id: u64, shard: u16) {
+    let _ = MY_SHARDS.try_with(|t| {
+        let mut t = t.borrow_mut();
+        if let Some(e) = t.iter_mut().find(|(id, _)| *id == region_id) {
+            e.1 = shard;
+            return;
+        }
+        if t.len() >= MAX_REMEMBERED_REGIONS {
+            t.remove(0);
+        }
+        t.push((region_id, shard));
+    });
 }
 
 thread_local! {
@@ -197,6 +240,8 @@ const MAX_SHARDS: usize = u16::MAX as usize;
     note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
 )]
 pub struct ShardedRegion<T> {
+    /// Unique instance id keying this region's per-thread shard binding.
+    id: u64,
     inner: Arc<ShardedInner<T>>,
     /// Per-shard `occupied` tokens, `Arc`-shared with every live
     /// [`ErasedGuard`] so a thread's `Drop` can flip its token at exit. Type-
@@ -233,6 +278,7 @@ impl<T> ShardedRegion<T> {
         // CASing false → true.
         let tokens: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
         Self {
+            id: NEXT_SHARDED_REGION_ID.fetch_add(1, Ordering::Relaxed),
             inner: Arc::new(ShardedInner {
                 shards: shards.into_boxed_slice(),
                 next_shard: AtomicUsize::new(0),
@@ -284,10 +330,10 @@ impl<T> ShardedRegion<T> {
         self.inner.shards.iter().all(EpochRegion::is_empty)
     }
 
-    /// Returns the calling thread's claimed shard id, or `None` if it has not
-    /// yet bound. Fast path: a plain TLS read (no atomic).
+    /// Returns the calling thread's shard id bound to THIS region, or `None`
+    /// if it has not bound here. Fast path: a short TLS table scan (no atomic).
     fn my_shard(&self) -> Option<u16> {
-        MY_SHARD.with(|cell| cell.get())
+        cached_shard(self.id)
     }
 
     /// Lazily claims a shard for the calling thread (on first use) and returns
@@ -308,13 +354,8 @@ impl<T> ShardedRegion<T> {
     fn claim_or_get_shard(&self) -> u16 {
         let n = self.inner.shards.len();
         if let Some(id) = self.my_shard() {
-            // Robustness: the TLS binding is process-global (one cell across all
-            // `ShardedRegion` instances — see the module note on one-region-per
-            // -thread-pool). If a thread bound to a shard in a DIFFERENT region
-            // with MORE shards, the cached id can exceed THIS region's shard
-            // count; returning it verbatim would index out of bounds in
-            // `insert`. Only trust the cache when it is in range for this
-            // region; otherwise fall through and (re)claim a valid shard here.
+            // The cache is keyed by region id, so `id` was bound against THIS
+            // region; the range check is a cheap defensive belt only.
             if usize::from(id) < n {
                 return id;
             }
@@ -342,7 +383,7 @@ impl<T> ShardedRegion<T> {
                 .expect("shard id fits u16: ticket%n where n<=u16::MAX cannot exceed u16::MAX")
         });
         // Cache the id (fast path).
-        MY_SHARD.with(|cell| cell.set(Some(id)));
+        remember_shard(self.id, id);
         // Install (once per thread) the type-erased [`ErasedGuard`] whose `Drop`
         // releases every exclusively-claimed shard on thread exit. The guard
         // owns an `Arc::clone(&self.tokens)` per claim so it outlives any
@@ -351,9 +392,9 @@ impl<T> ShardedRegion<T> {
         ERASED_GUARD.with(|slot| {
             // A guard may already exist from an EARLIER claim on this thread —
             // possibly against a DIFFERENT region's `tokens` array (e.g. the
-            // cached `MY_SHARD` was out of range for THIS region, so we just
-            // re-scanned and won a CAS against THIS region's array; see the
-            // module note on one thread driving two regions). We APPEND the
+            // thread had no `MY_SHARDS` entry for THIS region, so we just
+            // scanned and won a CAS against THIS region's array; see the
+            // module note "Per-region binding"). We APPEND the
             // just-won claim rather than overwriting: every won token MUST be
             // tracked, since only this guard's `Drop` can release it (dropping
             // the claim here would leak the token — it would stay `occupied`
@@ -451,6 +492,10 @@ impl<T> ShardedRegion<T> {
     /// A thread that has not yet claimed a
     /// shard is treated as remote for every handle.
     ///
+    /// "The calling thread's claimed shard" is the binding for THIS region
+    /// (per-thread table keyed by region id); a binding in another region
+    /// never selects the owner path here.
+    ///
     /// If `handle.shard` is out of range, this returns `false` rather than
     /// panicking.
     ///
@@ -529,7 +574,7 @@ impl<T> ShardedRegion<T> {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok();
         // Record the routing binding (fast-path TLS cache).
-        MY_SHARD.with(|cell| cell.set(Some(shard)));
+        remember_shard(self.id, shard);
         // Install (once per thread) the type-erased guard whose `Drop` releases
         // every exclusively-claimed shard on thread exit. A guard may already
         // exist from an EARLIER claim (e.g. the thread first bound a DIFFERENT
@@ -553,8 +598,8 @@ impl<T> ShardedRegion<T> {
         true
     }
 
-    /// Resets the calling thread's TLS shard binding to `None`, so its *next*
-    /// [`insert`](Self::insert) claims a fresh shard.
+    /// Clears the calling thread's TLS shard bindings (for every region), so
+    /// its *next* [`insert`](Self::insert) in each region claims a fresh shard.
     ///
     /// **Diagnostics/testing only.** This does NOT release the previously
     /// claimed shard's `occupied` token (that happens on thread exit via the
@@ -563,7 +608,7 @@ impl<T> ShardedRegion<T> {
     /// call this.
     #[doc(hidden)]
     pub fn _reset_my_shard_binding_for_tests() {
-        MY_SHARD.with(|cell| cell.set(None));
+        let _ = MY_SHARDS.try_with(|t| t.borrow_mut().clear());
     }
 
     /// **Diagnostics/testing only** (R2-21): forwards the shard's
