@@ -24,8 +24,19 @@ fn publish_small(ptr: *mut u8) {
     assert!(unsafe { pin.publish_small(offset) });
 }
 
+// Tests share the process-wide route directory and allocator; a block freed by
+// one test can be reissued to another at the same address. Serialize them.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serialize() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[test]
 fn requested_sizes_one_through_seven_retire_once_and_reissue() {
+    let _guard = serialize();
     let heap_ptr = HeapRegistry::claim();
     assert!(!heap_ptr.is_null());
     // SAFETY: this thread exclusively owns the claimed heap until recycle.
@@ -63,6 +74,7 @@ fn requested_sizes_one_through_seven_retire_once_and_reissue() {
 
 #[test]
 fn mixed_class_and_more_than_ring_capacity() {
+    let _guard = serialize();
     let heap_ptr = HeapRegistry::claim();
     assert!(!heap_ptr.is_null());
     // SAFETY: this thread exclusively owns the claimed heap until recycle.
@@ -107,6 +119,7 @@ fn mixed_class_and_more_than_ring_capacity() {
 
 #[test]
 fn large_pending_claim_reclaims_and_cache_reissues() {
+    let _guard = serialize();
     let heap_ptr = HeapRegistry::claim();
     assert!(!heap_ptr.is_null());
     // SAFETY: this thread exclusively owns the claimed heap until recycle.
@@ -152,6 +165,7 @@ fn large_pending_claim_reclaims_and_cache_reissues() {
 #[cfg(feature = "alloc-decommit")]
 #[test]
 fn last_small_node_finalizes_after_route_scan() {
+    let _guard = serialize();
     use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
     let config = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
@@ -213,6 +227,7 @@ fn last_small_node_finalizes_after_route_scan() {
 
 #[test]
 fn duplicate_detached_record_does_not_retire_another_credit() {
+    let _guard = serialize();
     let heap_ptr = HeapRegistry::claim();
     assert!(!heap_ptr.is_null());
     // SAFETY: this thread exclusively owns the claimed heap until recycle.
@@ -238,6 +253,7 @@ fn duplicate_detached_record_does_not_retire_another_credit() {
 #[cfg(feature = "fastbin")]
 #[test]
 fn detached_magazine_record_preserves_the_canonical_copy() {
+    let _guard = serialize();
     let heap_ptr = HeapRegistry::claim();
     assert!(!heap_ptr.is_null());
     // SAFETY: this thread exclusively owns the claimed heap until recycle.
@@ -271,6 +287,7 @@ fn detached_magazine_record_preserves_the_canonical_copy() {
 
 #[test]
 fn public_trim_consumes_small_and_large_terminal_publications() {
+    let _guard = serialize();
     use sefer_alloc::SeferAlloc;
     use std::alloc::GlobalAlloc;
 
@@ -316,6 +333,7 @@ fn public_trim_consumes_small_and_large_terminal_publications() {
 
 #[test]
 fn tls_exit_runs_the_owner_sweep_before_recycle() {
+    let _guard = serialize();
     let address = std::thread::spawn(|| {
         use std::alloc::GlobalAlloc;
         let allocator = sefer_alloc::SeferAlloc::new();
