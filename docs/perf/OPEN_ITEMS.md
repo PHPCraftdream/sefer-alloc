@@ -2972,6 +2972,34 @@ for completeness.
     - **Next trigger:** the next process-level A/B round: pick `production` (or record the feature set per arm as the R26-4 rule requires) before citing a verdict.
     - **Evidence:** `scripts/paired-ab-runner.mjs` `seferConfig()`; R5-01 consultation notes.
 
+75. **[L] xs R11 P4-1 — sorted route arrays make a one-shard registration/removal wave quadratic.** (Filed 2026-10-01.)
+
+    - **Status:** OPEN — confirmed asymptotic cost (source-level), not a measured regression; fix task in progress, nothing landed.
+    - **Current-number-or-verdict:** `src/registry/segment_route/directory.rs:298-316` shifts every later pointer on insert/remove; registration (`:427-457`) and removal (`:496-506`) run under one shard mutex. With n Large routes hashed to one shard and keys registered in descending order (or removed in ascending order) the wave moves n*(n-1)/2 pointer cells under the lock, delaying unrelated foreign frees on that shard. Lookup stays O(log n) (`:266-285`). Worst-case arrangement; the real address distribution is OS-chosen and unmeasured. Scope: `alloc-global` / `internals` route API.
+    - **Next trigger:** the fix task. Gate: count moved pointer cells (not elapsed time) on reverse-key registration of real page-aligned Large roots sharing a shard — must become subquadratic — plus the existing lookup / duplicate-registration / pin-after-unlink / final-free contract cases. A tree/hash/chunked-block index must be A/B'd against the sorted array on a lookup-heavy workload in the same regime before replacing it.
+    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-1.
+
+76. **[L] xs R11 P4-2 — `LockFreeRegion` RCU writes clone the entire page-pointer table.** (Filed 2026-10-01.)
+
+    - **Status:** OPEN — confirmed asymptotic cost, not a measured regression; type is `experimental`, legacy/read-mostly, outside the `production` allocator path; fix task in progress, nothing landed.
+    - **Current-number-or-verdict:** `src/concurrent/lock_free/lock_free_region.rs:107-113` clones `pages: Vec<Arc<Vec<Slot<T>>>>`; successful insert (`:362-366`) and remove (`:408-440`) both clone it under the writer mutex, so each write is Theta(P+64) even when one page is touched (`PAGE`=64, `:37-41`). M writes cost Theta(M*P); growth from empty to N slots costs Theta(N^2/64) table-pointer clones. Same family as item 73 (a)/(f), now with a concrete asymptotic witness.
+    - **Next trigger:** the fix task. Gate: count page-`Arc` clones for one successful insert and remove at P=16 vs P=256 (must become sublinear) with stale-handle and drop-once tests green; do not trade away the lock-free read path without a workload-specific A/B. Alternative: document write-heavy steering and keep the contract.
+    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-2; item 73.
+
+77. **[L] xs R11 P4-3 — `ShardedRegion` shard binding is keyed by thread, not by region instance.** (Filed 2026-10-01.)
+
+    - **Status:** OPEN — confirmed architecture/locality limitation (contention and a skipped remote-removal path), not a memory-safety defect (the mutex/CAS protocol keeps it correct); `experimental`; fix task in progress, nothing landed.
+    - **Current-number-or-verdict:** one `MY_SHARD` TLS cell serves all `ShardedRegion<T>` values (`src/concurrent/sharded/sharded_region.rs:173`); `:310-320` trusts an in-range cached shard id without checking the region, and `:475-480` uses it to pick the owner-removal path. With two two-shard regions, thread A inserting into B reuses id 0 though B's shard 1 is free (two writers share B/0's mutex), and A's removal of a B/0 handle takes the owner path although B/0's token belongs to thread B. The module header's one-region-per-thread-pool assumption documents this but does not enforce it.
+    - **Next trigger:** the fix task: region-keyed TLS binding with bounded per-thread storage, or an explicit binding token / method-level documentation if the single-region topology is kept. Gate: instrument path selection (A claims B's free shard 1; A's removal of a B/0 handle goes remote), not wall-clock; `get`/`remove` correctness alone stays green in both versions.
+    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` P4-3.
+
+78. **[L] xs R11 unconfirmed hypotheses (not P-graded) — maintenance trim latency, Small route sidecar footprint, pending-Large hint.** (Filed 2026-10-01.)
+
+    - **Status:** OPEN — hypotheses only; nothing measured, no win claimed, no defect confirmed.
+    - **Current-number-or-verdict:** (a) `background_maintenance_step` (`src/registry/heap_core/state/ownership.rs:118-142`) bounds only ingress cuts, then runs the full cold-retention trim; in a heavily populated fallback pool one worker visit may perform many OS releases. No maintenance-latency SLA is promised, no pool occupancy or syscall cost measured; the thread-recycle path trims before a FREE-heap lease. A measurement/design question, not a liveness defect. (b) A compact Small route sidecar (current type 288 KiB per route) could trade memory for more atomics, indirections or remote-publication work; the best representation and any throughput/RSS win are unknown. (c) A pending-Large hint/queue replacing the O(L) scan must not lose a paused publisher nor release a reservation before its terminal credit transfers; no safe protocol is proved. Constraint (c) is a correctness precondition on any such perf change, recorded here because this index is its only owner.
+    - **Next trigger:** (a) a maintenance-latency measurement on a populated fallback pool with release-syscall counts; (b) a memory-versus-CPU A/B with a per-route byte budget in an `internals` diagnostic; (c) a publication/retirement proof before any lossy hint replaces the sweep. Each gate: same workload regime plus path-activation evidence (R30-8 rule).
+    - **Evidence:** `docs/reviews/2026-09-30-232702-src-review-xs-sol-round-11.md` "Unconfirmed hypotheses and unmeasured ideas".
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
