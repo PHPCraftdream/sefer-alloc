@@ -30,6 +30,11 @@ fn default_fallback_can_cache_a_freed_large_span() {
         (h.dbg_large_cache_budget(), h.dbg_large_cache_used())
     })
     .expect("fallback initialized");
-    assert_eq!(budget, None);
+    // `large-cache-extended` resolves the default to a finite budget.
+    if cfg!(feature = "large-cache-extended") {
+        assert!(budget.is_some_and(|b| b >= layout.size()));
+    } else {
+        assert_eq!(budget, None);
+    }
     assert!(used > 0, "default policy should retain the freed span");
 }
