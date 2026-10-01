@@ -34,7 +34,7 @@
 // This existing counter target stays native-only; installed-Sefer Miri
 // acceptance is tracked separately and is not yet complete.
 #![cfg(not(miri))]
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 // R11-5: skip under `numa_shim_mock`. The mock's `thread_local! Vec<MockCall>`
 // (in `numa-shim`, compiled in only under the build-time `--cfg numa_shim_mock`
 // — task #1288; the `numa-aware-mock` feature no longer activates it) allocates

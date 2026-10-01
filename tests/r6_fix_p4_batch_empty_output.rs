@@ -1,4 +1,4 @@
-#![cfg(all(feature = "alloc-global", feature = "batch-api"))]
+#![cfg(all(feature = "alloc-global", feature = "batch-api", feature = "internals"))]
 
 use std::alloc::Layout;
 

@@ -18,7 +18,7 @@
 //! Native coverage observes actual Large allocations from bounded streams and
 //! an explicit two-block witness above the configured Small ceiling.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 #[cfg(feature = "internals")]

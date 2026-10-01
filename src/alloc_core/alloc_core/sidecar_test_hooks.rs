@@ -5,6 +5,7 @@ use super::AllocCore;
 impl AllocCore {
     /// Construct a real descriptor-backed test core before its first issue.
     /// It is not a registry slot; controlled probes publish through RoutePin.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn dbg_new_routed_for_test() -> Option<Self> {
         Self::new_with_owner(crate::alloc_core::segment_header::OWNER_ID_NONE)
@@ -12,6 +13,7 @@ impl AllocCore {
 
     /// Configured counterpart for real terminal publication/pool probes.
     #[cfg(feature = "alloc-decommit")]
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn dbg_new_routed_with_config_for_test(
         config: crate::alloc_core::large_cache_config::LargeCacheConfig,
@@ -24,6 +26,7 @@ impl AllocCore {
     /// # Safety
     /// `ptr` is a live Small/Primordial allocation issued by this core. This
     /// transfers its unique ownership once; do not use or free it afterward.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[allow(unsafe_code)] // Test producer has the same unique-transfer contract as RoutePin.
     pub unsafe fn dbg_publish_small_sidecar_free(&mut self, ptr: *mut u8) -> bool {
@@ -39,16 +42,19 @@ impl AllocCore {
         unsafe { pin.publish_small(offset) }
     }
 
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn dbg_drain_sidecar_ingress(&mut self) -> usize {
         self.drain_sidecar_ingress()
     }
 
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn dbg_drain_large_sidecar_ingress(&mut self) -> usize {
         self.drain_large_sidecar_ingress()
     }
 
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn dbg_bounded_sidecar_step(
         &mut self,
