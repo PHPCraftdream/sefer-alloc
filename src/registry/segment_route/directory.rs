@@ -8,10 +8,10 @@ use core::mem;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::Mutex;
 
 use crate::alloc_core::os::SEGMENT;
 
+use super::shard_lock::ShardLock;
 use super::{LargeState, RouteError, RouteKind, RoutePin, RouteRegistration, SmallSidecar};
 
 const SHARDS: usize = 64;
@@ -696,14 +696,14 @@ impl Drop for Shard {
 /// Process-stable directory; route count is limited by System memory, not
 /// a fixed slot table. Lookup is O(log routes-in-shard) under one mutex.
 pub struct RouteDirectory {
-    shards: [Mutex<Shard>; SHARDS],
+    shards: [ShardLock<Shard>; SHARDS],
     next_incarnation: AtomicU64,
 }
 
 impl RouteDirectory {
     pub const fn new() -> Self {
         Self {
-            shards: [const { Mutex::new(Shard::empty()) }; SHARDS],
+            shards: [const { ShardLock::new(Shard::empty()) }; SHARDS],
             next_incarnation: AtomicU64::new(0),
         }
     }
@@ -740,7 +740,7 @@ impl RouteDirectory {
         self.shards
             .iter()
             .map(|shard| {
-                let guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+                let guard = shard.lock();
                 let spare = usize::from(!guard.spare.load(Ordering::Relaxed).is_null());
                 guard.index.cap + (guard.index.len + spare) * BLOCK_CAP
             })
@@ -754,7 +754,7 @@ impl RouteDirectory {
     pub fn moved_pointer_cells_for_test(&self) -> u64 {
         self.shards
             .iter()
-            .map(|shard| shard.lock().unwrap_or_else(|e| e.into_inner()).moved)
+            .map(|shard| shard.lock().moved)
             .sum()
     }
 
@@ -769,7 +769,7 @@ impl RouteDirectory {
     pub fn live_route_census_for_test(&self) -> (usize, usize, usize) {
         let mut counts = (0, 0, 0);
         for shard in &self.shards {
-            let guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = shard.lock();
             for b in 0..guard.index.len {
                 let block = guard.block(b);
                 for index in 0..block.len {
@@ -833,7 +833,7 @@ impl RouteDirectory {
         let entry = EntryHandle::new(root, key, end, route_addr, owner, kind, incarnation)?;
         let shard = &self.shards[Self::shard_index(key)];
         loop {
-            let mut guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = shard.lock();
             let (need_block, index_cap) = match guard.insert(key, entry.ptr()) {
                 Insert::Done => {
                     drop(guard);
@@ -860,7 +860,7 @@ impl RouteDirectory {
             } else {
                 None
             };
-            let mut guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = shard.lock();
             let surplus = guard.install(block, enlarged);
             drop(guard);
             drop(surplus);
@@ -871,9 +871,7 @@ impl RouteDirectory {
     pub fn lookup(&self, ptr: *mut u8) -> Option<RoutePin> {
         let addr = ptr.addr();
         let key = addr & !(SEGMENT - 1);
-        let guard = self.shards[Self::shard_index(key)]
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let guard = self.shards[Self::shard_index(key)].lock();
         let raw = guard.find(key)?;
         // SAFETY: the shard lock excludes unlink and final release; the
         // indexed entry is fully initialized and still owner-referenced.
@@ -896,7 +894,7 @@ impl RouteDirectory {
     pub(super) fn remove(&self, entry: &EntryHandle) {
         let key = entry.key();
         let shard = &self.shards[Self::shard_index(key)];
-        let mut guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = shard.lock();
         guard.remove(key, entry.ptr());
         // The caller drops the owner reference after this lock is released.
     }

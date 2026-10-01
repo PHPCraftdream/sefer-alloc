@@ -20,6 +20,7 @@ mod registration;
 mod route_cut;
 mod route_record;
 mod route_scan;
+mod shard_lock;
 mod small_sidecar;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
 mod terminal_publication_gate;

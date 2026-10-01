@@ -267,6 +267,10 @@
 //                             owner-only non-Copy registration storage;
 //                             routes close before reservation release.
 //                             (under `alloc-global`)
+//      * `registry::segment_route::shard_lock` — non-allocating spin lock
+//                             for route-directory shards (std `Mutex` boxes
+//                             on first lock on some targets and would re-enter
+//                             the global allocator). (under `alloc-global`)
 //
 //    Optional `numa-aware` path: no new unsafe seams — `alloc_core::platform::numa`
 //    is pure safe delegation to numa-shim (its test-only `bind_segment`
