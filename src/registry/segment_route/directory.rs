@@ -752,10 +752,7 @@ impl RouteDirectory {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn moved_pointer_cells_for_test(&self) -> u64 {
-        self.shards
-            .iter()
-            .map(|shard| shard.lock().moved)
-            .sum()
+        self.shards.iter().map(|shard| shard.lock().moved).sum()
     }
 
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
