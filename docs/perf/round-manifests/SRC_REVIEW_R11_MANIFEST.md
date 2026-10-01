@@ -20,12 +20,20 @@ belongs to that source-only review.
   by both internals and bench-internals; final capacity/doc/cap checks36,
   targeted clippy and strict all-feature docs passed,
   `39846b51-00eb-4910-b9c0-09bf83650e59`. No new unsafe site or Miri claim.
-- P3-1, OPEN: every Small refill currently scans all live Large candidates;
+- P3-1, ACCEPTED: Small refill previously scanned all live Large candidates;
   current active-index improvement removed historical NULL candidates, not
   the K*L clean-live-route work. Accepted XXS advice chooses separate numeric
   bounded hot checks for Small refill and one full cold rescue on zero refill,
   retaining Large-request full cuts, strict trim and terminal-last-access.
-  HS implementation is still unaccepted.
+  The numeric cursor implementation is integrated locally. Parent hardened/
+  virgin-zero-skip tests passed6 cases in the worker tree, task
+  `ecd71ba6-6107-4e84-a69d-df9b4ac44ecf`; integrated native controls passed26
+  plus1 ignored, task `7af99850-1ae1-4e94-9cb4-39c6a662971b`. The R10 hot
+  counter target was gated out in that run and is not counted as coverage;
+  its alloc-stats re-run passed6 cases and targeted clippy passed,
+  `082b554d-9594-49a9-a2ab-13165f755af1`. Four probes
+  is provisional, not a measured latency/RSS optimum. Full zero-refill rescue,
+  strict drain and route-reuse/late-publication witnesses are retained.
 - P3-2, OPEN design/optimization: current Small sidecar's 288 KiB footprint
   and zeroing cost are factual and documented, not a leak or safety defect.
   Accepted XXS advice chooses a uniform/mixed-leaf prototype without foreign allocation, lost

@@ -14,6 +14,37 @@ impl HeapCore {
         self.core.drain_large_sidecar_ingress()
     }
 
+    #[cfg(feature = "fastbin")]
+    pub(crate) fn drain_large_sidecar_ingress_hot_bounded(&mut self) -> usize {
+        self.core
+            .drain_large_sidecar_ingress_hot_bounded(&mut self.large_hot_cursor)
+    }
+
+    #[cfg(feature = "fastbin")]
+    pub(crate) fn drain_large_sidecar_ingress_rescue(&mut self) -> usize {
+        self.core.drain_large_sidecar_ingress_rescue()
+    }
+
+    #[cfg(all(
+        feature = "fastbin",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[doc(hidden)]
+    pub fn dbg_large_sidecar_full_rescues() -> u64 {
+        crate::alloc_core::AllocCore::dbg_large_sidecar_full_rescues()
+    }
+
+    #[cfg(all(
+        feature = "fastbin",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
+    #[doc(hidden)]
+    pub fn dbg_large_hot_budget() -> usize {
+        crate::alloc_core::AllocCore::dbg_large_hot_budget()
+    }
+
     /// Publish a current issued Small block through the real descriptor.
     ///
     /// # Safety

@@ -7,6 +7,13 @@ use crate::alloc_core::size_classes::MIN_BLOCK;
 #[cfg(feature = "bench-internals")]
 pub(crate) static LARGE_SIDECAR_SLOT_INSPECTIONS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+#[cfg(all(feature = "fastbin", feature = "bench-internals"))]
+pub(crate) static LARGE_SIDECAR_FULL_RESCUES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+// Provisional: four probes per miss; real L=8/64 cost and lag are tested.
+#[cfg(feature = "fastbin")]
+pub(crate) const LARGE_HOT_BUDGET: usize = 4;
 
 impl AllocCore {
     /// At most `budget` slot inspections or word cuts. Cursor holds no root.
@@ -195,5 +202,79 @@ impl AllocCore {
             }
         }
         reclaimed
+    }
+
+    /// Inspect at most four active Large routes on a Small magazine miss.
+    /// The owner retains only a numeric next slot, across refills and churn.
+    #[cfg(feature = "fastbin")]
+    pub(crate) fn drain_large_sidecar_ingress_hot_bounded(&mut self, cursor: &mut usize) -> usize {
+        if !self.table.is_routed() {
+            return 0;
+        }
+        let end = self.table.count() as usize;
+        if end == 0 {
+            return 0;
+        }
+        if *cursor >= end {
+            *cursor = 0;
+        }
+        let start = *cursor;
+        let mut from = start;
+        let mut wrapped = false;
+        let mut inspected = 0;
+        let mut reclaimed = 0;
+        while inspected < LARGE_HOT_BUDGET {
+            let Some(index) = self.table.next_active(SegmentKind::Large, from) else {
+                if wrapped {
+                    break;
+                }
+                wrapped = true;
+                from = 0;
+                continue;
+            };
+            if index >= end || (wrapped && index >= start) {
+                break;
+            }
+            // Advance before a successful claim can unregister this slot.
+            from = index + 1;
+            inspected += 1;
+            #[cfg(feature = "bench-internals")]
+            LARGE_SIDECAR_SLOT_INSPECTIONS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            let base = self.table.base_at(index);
+            if base.is_null() || SegmentHeader::kind_at(base) != SegmentKind::Large {
+                std::process::abort();
+            }
+            if self.table.claim_large_route(index, base) {
+                self.reclaim_large_segment(base);
+                LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                reclaimed += 1;
+            }
+        }
+        *cursor = if inspected == 0 {
+            start
+        } else if from == end {
+            0
+        } else {
+            from
+        };
+        reclaimed
+    }
+
+    /// Full cold retry after a Small refill yielded no block.
+    #[cfg(feature = "fastbin")]
+    pub(crate) fn drain_large_sidecar_ingress_rescue(&mut self) -> usize {
+        #[cfg(feature = "bench-internals")]
+        LARGE_SIDECAR_FULL_RESCUES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        self.drain_large_sidecar_ingress()
+    }
+
+    #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
+    pub(crate) fn dbg_large_sidecar_full_rescues() -> u64 {
+        LARGE_SIDECAR_FULL_RESCUES.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
+    pub(crate) const fn dbg_large_hot_budget() -> usize {
+        LARGE_HOT_BUDGET
     }
 }

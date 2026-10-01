@@ -117,6 +117,13 @@ pub struct HeapCore {
     /// Owner-only numeric background position; never retains a route or root.
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) background_cursor: (usize, usize),
+    /// Owner-only next active Large slot for bounded Small refill ingress.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "alloc-xthread",
+        feature = "fastbin"
+    ))]
+    pub(crate) large_hot_cursor: usize,
 
     /// Per-thread, per-class magazine cache (Phase P2 — fastbin).
     /// Gated on `alloc-global + fastbin`. Owner-private (single-writer):
@@ -296,6 +303,12 @@ impl HeapCore {
             core,
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
             background_cursor: (0, 0),
+            #[cfg(all(
+                feature = "alloc-global",
+                feature = "alloc-xthread",
+                feature = "fastbin"
+            ))]
+            large_hot_cursor: 0,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
@@ -327,6 +340,12 @@ impl HeapCore {
             core,
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
             background_cursor: (0, 0),
+            #[cfg(all(
+                feature = "alloc-global",
+                feature = "alloc-xthread",
+                feature = "fastbin"
+            ))]
+            large_hot_cursor: 0,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle

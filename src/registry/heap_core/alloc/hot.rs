@@ -541,7 +541,7 @@ impl HeapCore {
     /// [`refill_magazine_slow`](Self::refill_magazine_slow), consumed ONLY by
     /// [`alloc_small_zeroed_via_magazine`](Self::alloc_small_zeroed_via_magazine).
     /// Identical drain/refill/stamp/issue shape (see that function's doc for
-    /// the cold Large-only sweep) plus: calls
+    /// the bounded Large-only probe) plus: calls
     /// [`AllocCore::refill_class_bump_virgin`] instead of the ordinary refill,
     /// stores the resulting per-slot virgin mask into
     /// `PerClass::virgin_mask` for the `n-1` blocks retained in the magazine,
@@ -572,18 +572,19 @@ impl HeapCore {
 
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
         // rationale — identical placement, identical cheap-when-empty shape).
-        self.drain_large_sidecar_ingress();
+        self.drain_large_sidecar_ingress_hot_bounded();
 
         let want = crate::registry::heap_core::state::tcache::refill_n_for_class(
             SizeClasses::block_size(c),
         );
-        let cur = &mut self.tcache.classes[c];
         let mut virgin_mask: u16 = 0;
-        let n = self
-            .core
-            .refill_class_bump_virgin(c, &mut cur.slots[0..want], &mut virgin_mask);
+        let n = self.refill_with_large_rescue(|heap| {
+            let cur = &mut heap.tcache.classes[c];
+            heap.core
+                .refill_class_bump_virgin(c, &mut cur.slots[0..want], &mut virgin_mask)
+        });
         if n == 0 {
-            return (::core::ptr::null_mut(), false); // true OOM
+            return (::core::ptr::null_mut(), false);
         }
         // Store the retained blocks' virgin bits (indices `0..new_cnt`); the
         // popped block (index `new_cnt`) is reported via the return value and
@@ -746,30 +747,62 @@ impl HeapCore {
     /// (the block to hand out), or null on true OOM.
     ///
     /// On a genuine magazine miss, consume pending Large descriptor obligations
-    /// too, so Small-only churn can retire them. The scan visits table slots
-    /// but never Small sidecar words; magazine hits pay none of this work.
+    /// too, so Small-only churn can retire them. Each miss probes at most four
+    /// active Large slots, never Small sidecar words; hits pay none of this work.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         use crate::alloc_core::size_classes::SizeClasses;
 
-        // Cold Large-only descriptor scan; Small discovery occurs in the refill.
-        self.drain_large_sidecar_ingress();
+        // Bounded Large-only probe; Small discovery occurs in the refill.
+        self.drain_large_sidecar_ingress_hot_bounded();
 
         let want = crate::registry::heap_core::state::tcache::refill_n_for_class(
             SizeClasses::block_size(c),
         );
         // Write directly into this class's empty magazine. Residency checks
         // belong to the owner retirement primitive, not a caller closure.
-        let cur = &mut self.tcache.classes[c];
-        let n = self.core.refill_class_bump(c, &mut cur.slots[0..want]);
+        let n = self.refill_with_large_rescue(|heap| {
+            let cur = &mut heap.tcache.classes[c];
+            heap.core.refill_class_bump(c, &mut cur.slots[0..want])
+        });
         if n == 0 {
-            return ::core::ptr::null_mut(); // true OOM
+            return ::core::ptr::null_mut();
         }
         // Task #2002: stamp-dedupe / mark_magazine / count / hardened
         // bump_gen tail, shared verbatim with `refill_magazine_slow_virgin`
         // — see `finish_magazine_refill`'s own doc for the full rationale.
         self.finish_magazine_refill(c, n)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cold]
+    fn refill_with_large_rescue(&mut self, mut refill: impl FnMut(&mut Self) -> usize) -> usize {
+        let n = refill(self);
+        if n != 0 {
+            return n;
+        }
+        self.drain_large_sidecar_ingress_rescue();
+        refill(self)
+    }
+
+    /// Logical full-table model: a refill succeeds only after an active Large
+    /// route retires. The sweep and retry are the production helper above.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    #[doc(hidden)]
+    pub fn dbg_large_rescue_refill_model(&mut self) -> (usize, usize) {
+        let live_before = self.core.dbg_active_kind_census().1;
+        let mut attempts = 0;
+        let n = self.refill_with_large_rescue(|heap| {
+            attempts += 1;
+            usize::from(heap.core.dbg_active_kind_census().1 < live_before)
+        });
+        (n, attempts)
     }
 }
