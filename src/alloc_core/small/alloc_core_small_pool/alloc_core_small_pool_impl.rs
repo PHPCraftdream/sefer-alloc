@@ -652,7 +652,7 @@ impl AllocCore {
     /// Cold trim may retire an empty carve cursor without waiting for a new
     /// allocation to replace it. A zero outstanding credit excludes issued,
     /// unpublished and pending remote-free blocks alike.
-    #[cfg(feature = "alloc-decommit")]
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
     pub(crate) fn release_empty_current_small_for_trim(&mut self) {
         let base = self.small_cur;
         if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {

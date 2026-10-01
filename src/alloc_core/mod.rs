@@ -40,7 +40,9 @@ mod segment;
 /// + decommit machinery, and the measurement-only `ReservedSmallSegment`
 /// handle.
 mod small;
+#[cfg(feature = "alloc-global")]
 pub(crate) use large::reservation_state;
+#[cfg(feature = "alloc-global")]
 pub(crate) use segment::remote_bitmap;
 // The former flat segment-substrate child modules now live in the `segment/`
 // group module and are re-exported here (at their original
