@@ -137,7 +137,9 @@ static SERIAL: AtomicBool = AtomicBool::new(false);
 //
 // `DEADLINE_SECS` is overridable via the `RACE_REPRO_DEADLINE_SECS` env var so
 // an overloaded runner can raise the budget without editing code.
-const DEFAULT_DEADLINE_SECS: u64 = 20;
+// Normal runtime is ~10 s in debug, so 20 s left only 2x headroom: one full-check run
+// hit it (exit 124). 120 s still fails fast on a real deadlock.
+const DEFAULT_DEADLINE_SECS: u64 = 120;
 
 fn deadline_secs() -> u64 {
     std::env::var("RACE_REPRO_DEADLINE_SECS")
