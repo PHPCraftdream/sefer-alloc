@@ -1734,11 +1734,7 @@ mod platform {
     extern "C" {
         fn sched_getcpu() -> core::ffi::c_int;
         fn open(path: *const core::ffi::c_char, flags: core::ffi::c_int, ...) -> core::ffi::c_int;
-        fn read(
-            fd: core::ffi::c_int,
-            buf: *mut core::ffi::c_void,
-            count: usize,
-        ) -> core::ffi::c_long;
+        fn read(fd: core::ffi::c_int, buf: *mut core::ffi::c_void, count: usize) -> isize;
         fn close(fd: core::ffi::c_int) -> core::ffi::c_int;
     }
 
@@ -1754,11 +1750,7 @@ mod platform {
         // SAFETY: caller must supply a valid nul-terminated path.
         open(path, flags)
     }
-    unsafe fn libc_read(
-        fd: core::ffi::c_int,
-        buf: *mut core::ffi::c_void,
-        count: usize,
-    ) -> core::ffi::c_long {
+    unsafe fn libc_read(fd: core::ffi::c_int, buf: *mut core::ffi::c_void, count: usize) -> isize {
         // SAFETY: caller must supply a valid fd and a writable buffer of `count` bytes.
         read(fd, buf, count)
     }

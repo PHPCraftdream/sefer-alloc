@@ -107,6 +107,7 @@ impl From<RegionIdExhaustedError> for TryReserveError {
 /// value — all future calls will fail with `RegionIdExhaustedError`. This ensures
 /// that no region_id is ever reused, even after exhaustion.
 #[inline]
+#[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
 fn try_mint_region_id(counter: &AtomicUsize) -> Result<NonZeroUsize, RegionIdExhaustedError> {
     use core::sync::atomic::Ordering;
 

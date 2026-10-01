@@ -596,6 +596,43 @@ const GRANDFATHERED = new Map([
       'Durable record: docs/correctness-open-items/' +
       'TRACKED_process_record.md item 78, sub-card 17.',
   ],
+  [
+    'e884337',
+    'perf: bare prefix on a PRODUCTION change (adaptive class leaves ' +
+      'with fallible pre-issue preparation, the R11 P3-2 Small route ' +
+      'storage); the honest slot is perf(runtime). Pushed, so not ' +
+      'amended.' +
+      'Durable record: docs/correctness-open-items/TRACKED_process_record.md item 78, sub-card 18.',
+  ],
+  [
+    'fe65746',
+    'perf: bare prefix on a PRODUCTION change (hint-first registry ' +
+      'claims with capped fresh bump and cold OOM recovery, R11 P3-3); ' +
+      'the honest slot is perf(runtime). Pushed, so not amended. ' +
+      'Durable record: docs/correctness-open-items/TRACKED_process_record.md item 78, sub-card 18.',
+  ],
+  [
+    '4a0c0bc',
+    'perf: bare prefix on a PRODUCTION change (persistent numeric Large ' +
+      'cursor bounding Small-refill Large checks, R11 P3-1); the honest ' +
+      'slot is perf(runtime). Pushed, so not amended. ' +
+      'Durable record: docs/correctness-open-items/TRACKED_process_record.md item 78, sub-card 18.',
+  ],
+  [
+    'acfe201',
+    'perf: bare prefix on a PRODUCTION change (bounded repeated ' +
+      'saturated registry claim scans); the honest slot is perf(runtime). ' +
+      'Pushed, so not amended. ' +
+      'Durable record: docs/correctness-open-items/TRACKED_process_record.md item 78, sub-card 18.',
+  ],
+  [
+    'e37d6e7',
+    'docs: prefix on a commit whose src/ delta changes executable code ' +
+      '(alloc_core/platform/node.rs, numa.rs, global core.rs, heap_core ' +
+      'batch.rs) together with doc corrections; the honest slot is fix:. ' +
+      'Pushed, so not amended. ' +
+      'Durable record: docs/correctness-open-items/TRACKED_process_record.md item 78, sub-card 18.',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back

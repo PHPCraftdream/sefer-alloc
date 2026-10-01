@@ -43,6 +43,7 @@ impl SaturationHint {
     }
 
     /// Called after making a slot claimable, including maintenance release.
+    #[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
     pub fn publish_claimable(&self) {
         // One RMW both changes the version and clears saturation. Before the
         // next version would collide with the terminal word, disable the

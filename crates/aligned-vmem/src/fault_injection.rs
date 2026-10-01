@@ -145,6 +145,7 @@ pub fn arm_fail_at(k: u32) {
     ),
     allow(dead_code)
 )]
+#[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
 pub(crate) fn should_fail_commit() -> bool {
     // task #718: `fetch_update` performs the load-check-decrement as one
     // atomic read-modify-write, closing the race a separate `load` then
@@ -234,6 +235,7 @@ pub fn arm_fail_next_decommit(n: u32) {
 // `dispatch_try_decommit` is not feature-gated (decommit is core API), so the
 // mock cfg is the only combination that orphans this function.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
+#[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
 pub(crate) fn should_fail_decommit() -> bool {
     // Same `fetch_update` shape and task #718 rationale as `should_fail_commit`:
     // one atomic read-modify-write, so concurrent callers can neither both

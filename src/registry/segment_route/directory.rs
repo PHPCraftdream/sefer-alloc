@@ -138,6 +138,7 @@ impl EntryHandle {
         self.ptr.load(Ordering::Relaxed)
     }
 
+    #[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
     fn pin_from_array(ptr: *mut Entry) -> Self {
         // SAFETY: caller holds the shard lock, which excludes unlink and
         // release of the owner reference while the count is incremented.
@@ -787,6 +788,7 @@ impl RouteDirectory {
     /// Registration and all System allocations precede user-visible issue.
     /// `root` must be the allocator-origin usable pointer. Every pointer
     /// issued under this registration must have `route_ptr`'s segment key.
+    #[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
     pub fn register(
         &self,
         root: *mut u8,
