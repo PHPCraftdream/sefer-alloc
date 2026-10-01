@@ -1,9 +1,12 @@
 //! Actual Box Drop calls through installed SeferAlloc, including narrow
 //! typed provenance. The custom Miri target invokes this same support body.
+// The slab-route witness: `exact-object-proto` serves narrow Boxes from exact System
+// objects, which have no slab route.
 #![cfg(all(
     feature = "alloc-global",
     feature = "internals",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    not(feature = "exact-object-proto")
 ))]
 
 #[path = "support/r8_global_box_witness.rs"]

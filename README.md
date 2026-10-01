@@ -661,6 +661,8 @@ hard compile error in every configuration:
 | [`src/global/sefer_alloc/global_alloc.rs`](src/global/sefer_alloc/global_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `batch-api` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse); and the `bench-internals`-gated `unsafe fn dbg_restore_local_for_test` test hook (R29-7, task #438) — covered by this module's tier-1 allow, with no separate item-level allow (so it adds no tier-2 site). | `alloc-global` |
+| [`src/global/exact_object/exact_shard.rs`](src/global/exact_object/exact_shard.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): out-of-object descriptor array in raw `System` memory under a shard spinlock. |
+| [`src/global/exact_object/narrow.rs`](src/global/exact_object/narrow.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): exact `System` alloc/free of narrow requests with the original pointer and Layout. |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
 | [`src/registry/bootstrap/registry.rs`](src/registry/bootstrap/registry.rs) | The `Registry` struct: `MAX_HEAPS`, per-chunk slot resolution, and process-global metadata. New claims use fallible `slot_or_none` and can reach fallback on chunk OOM; infallible `slot` retains an abort only as an invariant tripwire for already-materialised chunks. | `alloc-global` |
 | [`src/registry/bootstrap/ensure.rs`](src/registry/bootstrap/ensure.rs) | The process-global `ensure()` accessor, the per-chunk materialisation slow path (`ensure_chunk_slow`), and the test-only dbg hooks (OOM injection, sentinel-rollback probe, slot introspection) | `alloc-global` |
@@ -746,7 +748,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **26** tier-1 module-level seams (20 in
+That's the full list (both tiers): **28** tier-1 module-level seams (22 in
 `src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
@@ -1359,7 +1361,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **322 integration test files**,
+needs its acceptance run. The present tree contains **323 integration test files**,
 **80 example binaries**, **22 benches**, and **11 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1369,7 +1371,7 @@ and support modules. The test tree also contains 9 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (322 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (323 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (80 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (22 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
