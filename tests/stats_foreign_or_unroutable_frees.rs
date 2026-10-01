@@ -50,8 +50,10 @@ fn checked_foreign_span_and_valid_cross_thread_free() {
         .expect("routed allocation");
     assert_eq!(route.kind(), RouteKind::Large);
     assert!(route.contains_payload(p, SIZE));
+    // Beyond any reserved span: `large-reserved-capacity` reserves up to 4x the
+    // payload (capped at 64 MiB), so a 4x probe would still be inside the route.
     assert!(
-        !route.contains_payload(p, SIZE * 4),
+        !route.contains_payload(p, SIZE * 64),
         "oversized span must fail the checked descriptor oracle"
     );
 
