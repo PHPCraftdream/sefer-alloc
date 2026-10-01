@@ -30,8 +30,11 @@ fn directory_counts() -> (u64, u64) {
 #[test]
 fn cold_trim_drops_owner_directory_with_live_small_and_rebuilds() {
     let a = SeferAlloc::new();
-    let layout = Layout::from_size_align(SegmentLayout::SMALL_MAX, 8).unwrap();
-    let class = SegmentLayout::class_for(SegmentLayout::SMALL_MAX, 8).unwrap();
+    // Capped: under `medium-classes-wide` SMALL_MAX is 1.75 MiB and a segment holds
+    // one block, so the peer could not share the sentinel's segment.
+    let size = SegmentLayout::SMALL_MAX.min(240 * 1024);
+    let layout = Layout::from_size_align(size, 8).unwrap();
+    let class = SegmentLayout::class_for(size, 8).unwrap();
     let mut ptrs = Vec::new();
     let primordial = loop {
         // SAFETY: layout is valid; all returned pointers are freed below.
