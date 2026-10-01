@@ -237,7 +237,8 @@ fn repeated_churn_reuses_pointer_array_capacity() {
         drop(route);
         drop(pin);
     }
-    assert_eq!(directory.retained_pointer_capacity_for_test(), 8);
+    // Block index (8 cells) plus one retained spare block (64 cells).
+    assert_eq!(directory.retained_pointer_capacity_for_test(), 8 + 64);
 }
 
 #[test]

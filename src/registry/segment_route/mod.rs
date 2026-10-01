@@ -2,11 +2,13 @@
 //! foreign-free ingress remains on the existing path.
 //!
 //! Blocking progress: lookup takes one shard mutex and binary-searches a
-//! sorted pointer array. Registration alone grows arrays using `System`;
-//! insertion/removal shift O(routes-in-shard) pointers under the mutex.
-//! Removal and pin release never allocate. Pointer-array capacity is retained
-//! at its high-water mark, while unlinked entries and sidecars are reclaimed
-//! on the last pin. Pins do not keep reservation memory alive: an independent
+//! sorted block index, then one fixed-capacity sorted block. Registration
+//! alone allocates (blocks, block index) from `System`, outside the lock;
+//! insertion/removal shift at most one block (plus the short block index on
+//! split/merge) under the mutex, never the whole shard. Removal and pin
+//! release never allocate. Block-index capacity is retained at its high-water
+//! mark, plus one spare block, while unlinked entries and sidecars are
+//! reclaimed on the last pin. Pins do not keep reservation memory alive: an independent
 //! owner ledger must do that until every unpublished free is accounted for.
 
 mod directory;
