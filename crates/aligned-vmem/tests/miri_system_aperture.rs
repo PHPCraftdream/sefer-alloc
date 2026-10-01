@@ -86,6 +86,7 @@ fn lazy_reservation_falls_back_to_fully_usable_system_backing() {
     use aligned_vmem::{lazy_commit_is_honored, reserve_aligned_lazy};
 
     assert!(!lazy_commit_is_honored());
+    // pageguard:allow — Miri-only System backend: its page size is the fixed PAGE constant, not the host page size.
     let r = reserve_aligned_lazy(2 * PAGE, PAGE, PAGE).expect("lazy fallback");
     // SAFETY: Under Miri the whole span, including the nominally lazy tail,
     // is backed by the original two-page System allocation.
