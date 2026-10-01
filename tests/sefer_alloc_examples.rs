@@ -38,8 +38,8 @@ fn report() {
 
 #[test]
 fn stats_doc_example_matches_runnable_form() {
-    let doc = include_str!("../src/global/sefer_alloc/diag.rs");
-    let source = include_str!("sefer_alloc_examples.rs");
+    let doc = include_str!("../src/global/sefer_alloc/diag.rs").replace("\r\n", "\n");
+    let source = include_str!("sefer_alloc_examples.rs").replace("\r\n", "\n");
     assert!(doc.contains("    /// static GLOBAL: SeferAlloc = SeferAlloc::new();"));
     let doc_tail = doc
         .split_once("    /// fn report() {")

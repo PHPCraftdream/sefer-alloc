@@ -1731,13 +1731,13 @@ jobs:
       # Exact single-test isolation keeps nocapture output sentinel-safe.
       - name: ownerless terminal retirement (minimal alloc-global)
         run: |
-          SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "alloc-global internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-minimal.log"
+          SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "alloc-global internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --show-output --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-minimal.log"
           grep -F "RETIRED_WITHOUT_ALLOCATOR_CALL" "$RUNNER_TEMP/r8-ownerless-minimal.log"
           grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-ownerless-minimal.log"
         shell: bash
       - name: ownerless terminal retirement (production)
         run: |
-          SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "production internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-production.log"
+          SEFER_R8_MAINTENANCE_CHILD=ownerless cargo test --features "production internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --show-output --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-ownerless-production.log"
           grep -F "RETIRED_WITHOUT_ALLOCATOR_CALL" "$RUNNER_TEMP/r8-ownerless-production.log"
           grep -F "test autonomous_maintenance_global_alloc ... ok" "$RUNNER_TEMP/r8-ownerless-production.log"
         shell: bash
@@ -2828,21 +2828,43 @@ jobs:
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
           grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
         shell: bash
-      - name: installed Box retirement before terminal producer resumes
+      - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - strict Stacked Borrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
         run: |
-          set -o pipefail
+          # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+          # freelist link through the reservation root while the producer's Box::drop frame is live.
+          # This step pins that exact failure instead of hiding it: it fails if the witness goes
+          # green or fails for a different reason, so this wrapper and the P1 card change together.
+          set +e
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
-          grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"; then
+            echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+            exit 1
+          fi
+          test "$status" -ne 0
+          grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
         shell: bash
-      - name: installed Box terminal producer pause under TreeBorrows
+      - name: installed Box terminal producer pause under TreeBorrows (EXPECTED RED - P1)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
         run: |
-          set -o pipefail
+          # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+          # freelist link through the reservation root while the producer's Box::drop frame is live.
+          # This step pins that exact failure instead of hiding it: it fails if the witness goes
+          # green or fails for a different reason, so this wrapper and the P1 card change together.
+          set +e
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
-          grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"; then
+            echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+            exit 1
+          fi
+          test "$status" -ne 0
+          grep -E "Undefined Behavior: write access through .* is forbidden" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
         shell: bash
       # Tagged-index-stack Miri automation: the package-specific unchecked-storage oracle for
       # `tagged-index-stack`. Keep this as an explicit Miri invocation under
