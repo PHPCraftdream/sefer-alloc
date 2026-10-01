@@ -9,6 +9,7 @@ const LIVE: u8 = 1;
 const FREE: u8 = 2;
 const MAINTENANCE: u8 = 3;
 
+#[allow(deprecated)] // fetch_update is deprecated for try_update, which needs a newer MSRV.
 fn select(
     hint: &AtomicU32,
     count: &AtomicU32,

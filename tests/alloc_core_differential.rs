@@ -36,6 +36,16 @@ use proptest::strategy::ValueTree;
 use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
 use sefer_alloc::AllocCore;
 
+/// `segment_bases` exists only under `alloc-global`/`alloc-xthread`; the
+/// diagnostic line must still compile under plain `alloc-core internals`.
+#[cfg(feature = "internals")]
+fn live_segments(core: &AllocCore) -> String {
+    #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+    return core.segment_bases().count().to_string();
+    #[cfg(not(any(feature = "alloc-global", feature = "alloc-xthread")))]
+    return "n/a".to_string();
+}
+
 /// The allocator-under-test adapter: `AllocCore`'s methods take `&mut self`, so
 /// wrap it in a `RefCell` to present the shared harness's `&self` `RawAllocator`
 /// surface. Single-threaded, no reentrancy — the borrow never overlaps.
@@ -78,7 +88,7 @@ impl CoreUnderTest {
             eprintln!(
                 "NULL size={} align={} slots={}/{} live_segments={} reserve_delta={} release_delta={} constructor_failure_delta={}",
                 layout.size(), layout.align(), core.dbg_table_count(),
-                AllocCore::dbg_max_segments(), core.segment_bases().count(),
+                AllocCore::dbg_max_segments(), live_segments(&core),
                 AllocCore::dbg_segments_reserved_total() - before.0,
                 AllocCore::dbg_segments_released_total() - before.1,
                 AllocCore::dbg_segments_reserve_failed_total() - before.2,
@@ -216,7 +226,7 @@ fn replay_native_seed(seed: &[u8; 32], label: &str) {
     {
         let core = alloc.core.borrow();
         eprintln!("replay end: slots={}/{} live_segments={} reserve_delta={} release_delta={} constructor_failure_delta={}",
-            core.dbg_table_count(), AllocCore::dbg_max_segments(), core.segment_bases().count(),
+            core.dbg_table_count(), AllocCore::dbg_max_segments(), live_segments(&core),
             AllocCore::dbg_segments_reserved_total() - before.0,
             AllocCore::dbg_segments_released_total() - before.1,
             AllocCore::dbg_segments_reserve_failed_total() - before.2);
