@@ -9,8 +9,18 @@
 use sefer_alloc::alloc_core::AllocCore;
 use sefer_alloc::alloc_core::SegmentHashHarness;
 
+// The tier-1 hit/miss counters are process-wide; serialize the tests.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serialize() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[test]
 fn cache_fill_hit_evict_and_reuse_keep_stored_provenance() {
+    let _guard = serialize();
     let mut bytes = Box::new([0x12_u8, 0x34]);
     let root = bytes.as_mut_ptr();
     let mut table = SegmentHashHarness::new();
@@ -57,6 +67,7 @@ fn cache_fill_hit_evict_and_reuse_keep_stored_provenance() {
 
 #[test]
 fn hash_identity_without_a_stored_root_is_not_a_live_member() {
+    let _guard = serialize();
     let mut bytes = Box::new([0x12_u8, 0x34]);
     let root = bytes.as_mut_ptr();
     let key = SegmentHashHarness::base_for_index(13);
