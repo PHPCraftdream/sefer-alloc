@@ -478,7 +478,10 @@ impl Node {
     /// contract — the same segment-lifetime + alignment-by-construction
     /// reasoning applies, only the field width is 4 bytes and the alignment
     /// requirement is 4 (not 8).
-    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "bench-internals")),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub(crate) fn atomic_u32_at(
         base: *mut u8,

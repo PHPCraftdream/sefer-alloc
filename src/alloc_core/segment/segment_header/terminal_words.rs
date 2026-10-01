@@ -1,8 +1,11 @@
 //! Atomic terminal-publication words outside the plain `SegmentHeader` copy.
 
 use core::mem::{align_of, offset_of, size_of};
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+#[cfg(any(feature = "alloc-decommit", feature = "bench-internals"))]
+use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU32, AtomicU64};
 
+#[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 
@@ -83,6 +86,7 @@ pub(crate) const fn next_large_generation_bounded(generation: u64, limit: u64) -
 
 /// A value-only diagnostic view; its two loads are not one atomic transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(feature = "alloc-decommit", feature = "bench-internals"))]
 pub(crate) struct TerminalSnapshot {
     pub remote_head: u32,
     pub large_state: u64,
@@ -113,6 +117,7 @@ impl SegmentMeta {
     /// Requires a live reservation and an initialized terminal-word region.
     /// The caller must not retain or access this reference after release.
     #[inline(always)]
+    #[cfg(any(feature = "alloc-decommit", feature = "bench-internals"))]
     pub(crate) fn remote_head_atomic(&self) -> &AtomicU32 {
         Node::atomic_u32_at(self.base, REMOTE_HEAD_OFF)
     }
@@ -126,6 +131,7 @@ impl SegmentMeta {
 
     /// Atomic loads only; never copies bytes of either atomic object.
     #[inline(always)]
+    #[cfg(any(feature = "alloc-decommit", feature = "bench-internals"))]
     pub(crate) fn terminal_snapshot(&self) -> TerminalSnapshot {
         TerminalSnapshot {
             remote_head: self.remote_head_atomic().load(Ordering::Acquire),
