@@ -656,7 +656,7 @@ fn randomised_bitmask_scan_equivalence_shadow() {
         if op == 0 || live.is_empty() {
             // ── alloc ─────────────────────────────────────────────────────
             // `v` = the usable span a FRESH segment for this request gets
-            // (needed = 4096 + (v - 4096) = v exactly, per the calibration).
+            // (needed = PAGE + (v - PAGE) = v exactly, per the calibration).
             let v = k as usize * 4 * MIB;
             // Old best-fit semantics: ascending index, compatibility window
             // [v, v * LARGE_CACHE_SIZE_FACTOR (= 2v)], STRICT `<` on the
@@ -678,7 +678,7 @@ fn randomised_bitmask_scan_equivalence_shadow() {
             } else {
                 v
             };
-            let req = v - 4096;
+            let req = v - aligned_vmem::page_size();
             let p = ac.alloc(layout_bytes(req));
             if p.is_null() {
                 eprintln!("OOM allocating {req} bytes — skip test (machine too small)");
