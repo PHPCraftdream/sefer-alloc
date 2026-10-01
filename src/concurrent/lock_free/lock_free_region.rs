@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use arc_swap::ArcSwap;
 
 use crate::concurrent::lock_free::lock_free_capacity::checked_total_slots;
+use crate::concurrent::lock_free::lock_free_page_table::PageTable;
 use crate::concurrent::LockFreeHandle;
 
 /// Source of [`LockFreeRegion::region_id`]: a process-global, monotonically
@@ -83,16 +84,34 @@ impl<T> Clone for Slot<T> {
     }
 }
 
+/// One page: a `CoW`-shared slot array. Its `Clone` is the page-`Arc` refcount
+/// bump a writer pays per page-table copy; under `bench-internals` each clone is
+/// counted (per-thread) so tests can witness the cost of one write.
+struct Page<T>(Arc<Vec<Slot<T>>>);
+
+#[cfg(feature = "bench-internals")]
+thread_local! {
+    static PAGE_ARC_CLONES: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+impl<T> Clone for Page<T> {
+    fn clone(&self) -> Self {
+        #[cfg(feature = "bench-internals")]
+        PAGE_ARC_CLONES.with(|c| c.set(c.get() + 1));
+        Self(Arc::clone(&self.0))
+    }
+}
+
 /// An immutable snapshot of the whole region, published atomically by writers.
 ///
-/// `pages` is a table of `Arc`-shared pages; cloning a `Snapshot` (which a
-/// writer does to begin a mutation) clones only the `Arc` pointers and the two
+/// `pages` is a persistent 16-ary trie of `Arc`-shared pages; cloning a `Snapshot` (which a
+/// writer does to begin a mutation) bumps one root `Arc` and copies the two
 /// scalars, never the values. A writer then performs a page copy-on-write
 /// (`CoW`) on exactly the one page it touches and swaps the `Arc` in
-/// `pages[p]`; every other page stays shared with the prior snapshot (and
+/// the table path to page `p` (O(log P) nodes, each at most 16 entries); every other page stays shared with the prior snapshot (and
 /// therefore with any reader still holding it).
 struct Snapshot<T> {
-    pages: Vec<Arc<Vec<Slot<T>>>>,
+    pages: PageTable<Page<T>>,
     /// Head of the vacant free list, as a global slot index. `None` when there
     /// is no vacant slot (the next insert must grow a fresh page).
     free_head: Option<u32>,
@@ -100,7 +119,7 @@ struct Snapshot<T> {
     len: usize,
 }
 
-// Hand-written `Clone`: cloning clones the page-table `Arc`s (cheap refcount
+// Hand-written `Clone`: cloning bumps the page-table root `Arc` (cheap refcount
 // bumps) and copies the two scalars — never the values — so it holds for every
 // `T`. This is what makes writer copy-on-write cheap (only the touched page is
 // actually duplicated, later).
@@ -120,7 +139,7 @@ impl<T> Snapshot<T> {
     /// nothing, and touches no page refcount (R2-20).
     fn slot(&self, index: u32) -> Option<&Slot<T>> {
         let page = self.pages.get((index >> PAGE_BITS) as usize)?;
-        Some(&page[(index as usize) & (PAGE - 1)])
+        Some(&page.0[(index as usize) & (PAGE - 1)])
     }
 }
 
@@ -143,8 +162,9 @@ impl<T> Snapshot<T> {
 ///   `Arc` refcounting once the last reader of that version releases it.
 /// - **Writes** ([`insert`](Self::insert), [`remove`](Self::remove)) take a
 ///   `Mutex` that serialises *writers only* — readers are never blocked. A
-///   writer clones the current snapshot (cheap: just the page-table `Arc`s),
-///   copies **only the one page** it mutates, and atomically publishes the new
+///   writer clones the current snapshot (cheap: one root `Arc`),
+///   copies **only the one page** it mutates plus the O(log P) page-table nodes on
+///   its path (never all P page pointers), and atomically publishes the new
 ///   snapshot with a single `store` (Release).
 ///
 /// ## Invariants upheld
@@ -216,7 +236,7 @@ impl<T> LockFreeRegion<T> {
         Self {
             region_id: NEXT_LOCK_FREE_REGION_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             state: ArcSwap::new(Arc::new(Snapshot {
-                pages: Vec::new(),
+                pages: PageTable::new(),
                 free_head: None,
                 len: 0,
             })),
@@ -242,7 +262,7 @@ impl<T> LockFreeRegion<T> {
         let total_slots = checked_total_slots(page_count, PAGE).expect(
             "with_pages: page_count * PAGE (indexable slot count) overflows u32; reduce page_count",
         );
-        let mut pages: Vec<Arc<Vec<Slot<T>>>> = Vec::with_capacity(page_count);
+        let mut pages: Vec<Page<T>> = Vec::with_capacity(page_count);
         // Thread every slot of every pre-allocated page into a single free list
         // in ASCENDING global-index order: slot[i].next_free = i+1 (or None at
         // the very last slot). free_head then points at the smallest index.
@@ -274,12 +294,12 @@ impl<T> LockFreeRegion<T> {
             if page_idx == 0 {
                 free_head = Some(base);
             }
-            pages.push(Arc::new(slots));
+            pages.push(Page(Arc::new(slots)));
         }
         Self {
             region_id: NEXT_LOCK_FREE_REGION_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             state: ArcSwap::new(Arc::new(Snapshot {
-                pages,
+                pages: PageTable::from_vec(pages),
                 free_head,
                 len: 0,
             })),
@@ -439,7 +459,8 @@ impl<T> LockFreeRegion<T> {
         let mut next: Snapshot<T> = snapshot.clone();
         // The page provably exists: `next` is a clone of the snapshot we just
         // validated against (writers are serialised; readers never store).
-        let mut new_page: Vec<Slot<T>> = (*next.pages[page_idx]).clone();
+        let mut new_page: Vec<Slot<T>> =
+            (*next.pages.get(page_idx).expect("page exists").0).clone();
         let slot = &mut new_page[off];
         let value = match core::mem::replace(&mut slot.state, SlotState::Vacant { next_free: None })
         {
@@ -465,7 +486,7 @@ impl<T> LockFreeRegion<T> {
         // list. Old handles still go stale (generation stays at MAX, slot is
         // Vacant), and no fresh handle is ever minted at MAX for a reused slot.
 
-        next.pages[page_idx] = Arc::new(new_page);
+        next.pages.set(page_idx, Page(Arc::new(new_page)));
         next.len -= 1;
         self.state.store(Arc::new(next));
         Some(value)
@@ -492,6 +513,23 @@ impl<T> LockFreeRegion<T> {
         LockFreeHandle::new(self.region_id, index, generation)
     }
 
+    /// Test-only: resets this thread's page-`Arc` clone counter.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn _reset_page_arc_clones_for_tests() {
+        PAGE_ARC_CLONES.with(|c| c.set(0));
+    }
+
+    /// Test-only: number of page-`Arc` clones made on this thread since the
+    /// last reset (writers clone page `Arc`s when copying part of the page
+    /// table). Reads a thread-local; touches no region state.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _page_arc_clones_for_tests() -> usize {
+        PAGE_ARC_CLONES.with(core::cell::Cell::get)
+    }
+
     /// Test-only forwarder to the pure `checked_total_slots` check, so tests
     /// can probe `with_pages`'s boundary without allocating.
     #[cfg(feature = "bench-internals")]
@@ -516,7 +554,7 @@ impl<T> Default for LockFreeRegion<T> {
 fn insert_reusing<T>(next: &mut Snapshot<T>, head: u32, value: Arc<T>) -> (u32, u32) {
     let page_idx = (head >> PAGE_BITS) as usize;
     let off = (head as usize) & (PAGE - 1);
-    let mut new_page: Vec<Slot<T>> = (*next.pages[page_idx]).clone();
+    let mut new_page: Vec<Slot<T>> = (*next.pages.get(page_idx).expect("page exists").0).clone();
     let slot = &mut new_page[off];
     // Generation is unchanged on reuse — the slot was Vacant with this
     // generation, and a handle minted now carries it.
@@ -531,7 +569,7 @@ fn insert_reusing<T>(next: &mut Snapshot<T>, head: u32, value: Arc<T>) -> (u32, 
         unreachable!("free_head pointed at an Occupied slot — free list corrupted")
     };
     slot.state = SlotState::Occupied(value);
-    next.pages[page_idx] = Arc::new(new_page);
+    next.pages.set(page_idx, Page(Arc::new(new_page)));
     next.free_head = advanced_head;
     (head, gen)
 }
@@ -577,7 +615,7 @@ fn insert_growing<T>(next: &mut Snapshot<T>, value: Arc<T>) -> (u32, u32) {
     }
     let claimed = base;
     new_page[0].state = SlotState::Occupied(value);
-    next.pages.push(Arc::new(new_page));
+    next.pages.push(Page(Arc::new(new_page)));
     // New free head = slot 1 (if the page has room beyond slot 0).
     next.free_head = (page_len > 1).then_some(base + 1);
     (claimed, 0)

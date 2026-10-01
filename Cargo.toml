@@ -2306,6 +2306,12 @@ name = "xxs_r5_03_lock_free_with_pages_overflow"
 path = "tests/xxs_r5_03_lock_free_with_pages_overflow.rs"
 required-features = ["experimental", "bench-internals"]
 
+# R11 P4-2: counts page-`Arc` clones via the `bench-internals` test hook.
+[[test]]
+name = "r11_p4_2_lock_free_write_clone_count"
+path = "tests/r11_p4_2_lock_free_write_clone_count.rs"
+required-features = ["experimental", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

@@ -7,4 +7,5 @@
 
 pub(crate) mod lock_free_capacity;
 pub(crate) mod lock_free_handle;
+pub(crate) mod lock_free_page_table;
 pub(crate) mod lock_free_region;
