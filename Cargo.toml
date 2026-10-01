@@ -1021,6 +1021,16 @@ harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
 
+# PG-1 W0: MODEL-LIMIT probe — Box tcache reuse while the freeing by-value
+# frame is still live, vs after return, vs a same-frame control. Selector =
+# first argument, one scenario per process; `test = false` keeps ordinary
+# native suites from invoking an empty selector.
+[[test]]
+name = "r11_w0_box_reuse"
+harness = false
+test = false
+required-features = ["alloc-global", "internals", "bench-internals"]
+
 [[test]]
 name = "r11_box_cap_gate_w1"
 harness = false
