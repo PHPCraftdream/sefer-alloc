@@ -281,7 +281,7 @@ fn best_fit_hit_returns_array_predicted_segment() {
     ac0.dbg_set_large_cache_budget(None);
     ac0.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
-    let usable_req = |k: usize| k * 4 * MIB - 4096;
+    let usable_req = |k: usize| k * 4 * MIB - aligned_vmem::page_size();
 
     let cal_layout = layout_bytes(usable_req(2)); // → 8 MiB usable segment
     let cal_ptr = ac0.alloc(cal_layout);
@@ -420,7 +420,7 @@ fn fifo_oldest_eviction_victim_is_seq_zero_first_deposit() {
     ac.dbg_set_large_cache_budget(None);
     ac.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
-    let usable_req = |k: usize| k * 4 * MIB - 4096;
+    let usable_req = |k: usize| k * 4 * MIB - aligned_vmem::page_size();
 
     // Three distinct sizes, allocated and freed IN ORDER: the deposits land
     // at combined slots 0/1/2 holding {16, 32, 48} MiB with seqs 0/1/2 (the
@@ -608,7 +608,7 @@ fn randomised_bitmask_scan_equivalence_shadow() {
     ac0.dbg_set_large_cache_budget(None);
     ac0.dbg_set_decay_config(0, u64::MAX, usize::MAX); // deterministically disable background decay
 
-    let usable_req = |k: usize| k * 4 * MIB - 4096;
+    let usable_req = |k: usize| k * 4 * MIB - aligned_vmem::page_size();
 
     let cal_layout = layout_bytes(usable_req(2)); // → 8 MiB usable segment
     let cal_ptr = ac0.alloc(cal_layout);
