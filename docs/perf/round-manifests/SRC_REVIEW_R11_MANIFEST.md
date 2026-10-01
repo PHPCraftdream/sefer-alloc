@@ -109,6 +109,21 @@ repair and actual frame re-validation are required in this workflow, not
 deferred to a future round. This is separate from the adaptive sidecar's
 two transient-OOM/rescue oracle failures. No production GO.
 
+Full integrated native task `db013fb0-bb7c-4522-9980-4658ac5c2a11` completed
+exit1 after328s; the300s inline transport timeout did not cancel or duplicate
+it. Only `r6_route_lifecycle_oom` failed: its one-shot registration fault was
+recovered by the new rescue retry, so its loop never reached the required
+persistent NULL. Parent added a counted diagnostic fault and a double-gated
+persistent test covering both refill attempts, without weakening rollback
+assertions. Combined rollback/OOM controls5 passed
+`ba3112c2-532d-4d62-923d-56ec69a9fc90`; minimal1 and clippy passed
+`62e26c60-bea3-4e0f-85fe-f2ceec166950`. Full post-repair re-run is required.
+
+User redirected the workflow to a historical root-cause/architecture study
+before more shipping refactoring. XS fact-ledger and XXS synthesis are active;
+one already-started bounded HS capability proof gate continues as research,
+not a production backend replacement or a new independent XS round.
+
 | Mechanism | Prepare / live state | Retirement / failure obligation |
 |---|---|---|
 | Small issue | Prepare every needed leaf/spill before freelist, bitmap, bump, live-credit or output change; class write precedes handoff | OOM preserves ownership/retry or valid partial batch; pending cut consumes exact credit; unlink closes admission, last pin frees exact System layouts |

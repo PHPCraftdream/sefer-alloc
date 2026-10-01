@@ -1,4 +1,8 @@
-#![cfg(all(feature = "alloc-global", feature = "internals"))]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::registry::segment_route::RouteDirectory;
@@ -33,7 +37,8 @@ fn registration_oom_rolls_back_primordial_small_and_large_before_issue() {
 
     let small = Layout::from_size_align(SegmentLayout::SMALL_MAX, 16).unwrap();
     let mut blocks = Vec::new();
-    RouteDirectory::fail_next_registration_for_test();
+    // A magazine miss may retry after its full Large rescue.
+    RouteDirectory::fail_next_registrations_for_test(if cfg!(feature = "fastbin") { 2 } else { 1 });
     loop {
         assert!(blocks.len() < SegmentLayout::SEGMENT / SegmentLayout::SMALL_MAX + 128);
         let before = heap.dbg_table_count();

@@ -18,7 +18,7 @@ const SHARDS: usize = 64;
 
 #[cfg(feature = "internals")]
 std::thread_local! {
-    static FAIL_NEXT_REGISTRATION: Cell<bool> = const { Cell::new(false) };
+    static FAIL_NEXT_REGISTRATION: Cell<usize> = const { Cell::new(0) };
 }
 
 struct Entry {
@@ -379,7 +379,13 @@ impl RouteDirectory {
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn fail_next_registration_for_test() {
-        let _ = FAIL_NEXT_REGISTRATION.try_with(|flag| flag.set(true));
+        let _ = FAIL_NEXT_REGISTRATION.try_with(|left| left.set(1));
+    }
+
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn fail_next_registrations_for_test(count: usize) {
+        let _ = FAIL_NEXT_REGISTRATION.try_with(|left| left.set(count));
     }
 
     #[cfg(feature = "internals")]
@@ -430,7 +436,11 @@ impl RouteDirectory {
     ) -> Result<RouteRegistration<'_>, RouteError> {
         #[cfg(feature = "internals")]
         if FAIL_NEXT_REGISTRATION
-            .try_with(|flag| flag.replace(false))
+            .try_with(|left| {
+                let remaining = left.get();
+                left.set(remaining.saturating_sub(1));
+                remaining != 0
+            })
             .unwrap_or(false)
         {
             return Err(RouteError::OutOfMemory);
