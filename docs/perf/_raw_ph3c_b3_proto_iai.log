@@ -1,0 +1,460 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling zmij v1.0.21
+   Compiling zerocopy v0.8.52
+   Compiling serde_core v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling getrandom v0.3.4
+   Compiling serde v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-epoch v0.9.20
+   Compiling rustix v1.1.4
+   Compiling num-traits v0.2.19
+   Compiling syn v2.0.118
+   Compiling getrandom v0.4.3
+   Compiling rand_core v0.9.5
+   Compiling version_check v0.9.5
+   Compiling regex-syntax v0.8.11
+   Compiling once_cell v1.21.4
+   Compiling find-msvc-tools v0.1.9
+   Compiling linux-raw-sys v0.12.1
+   Compiling shlex v2.0.1
+   Compiling bitflags v2.13.0
+   Compiling cc v1.2.65
+   Compiling slotmap v1.1.1
+   Compiling fastrand v2.4.1
+   Compiling rayon-core v1.13.0
+   Compiling either v1.16.0
+   Compiling libmimalloc-sys v0.1.49
+   Compiling crossbeam-deque v0.8.6
+   Compiling tempfile v3.27.0
+   Compiling wait-timeout v0.2.1
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling plotters-backend v0.3.7
+   Compiling fnv v1.0.7
+   Compiling ciborium-io v0.2.2
+   Compiling itoa v1.0.18
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling quick-error v1.2.3
+   Compiling bit-vec v0.8.0
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.52
+   Compiling derive_more-impl v2.1.1
+   Compiling clap_lex v1.1.0
+   Compiling memchr v2.8.2
+   Compiling anstyle v1.0.14
+   Compiling clap_builder v4.6.0
+   Compiling derive_more v2.1.1
+   Compiling bit-set v0.8.0
+   Compiling proc-macro-error2 v2.0.1
+   Compiling rusty-fork v0.3.1
+   Compiling plotters-svg v0.3.7
+   Compiling itertools v0.10.5
+   Compiling regex-automata v0.4.14
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling same-file v1.0.6
+   Compiling unarray v0.1.4
+   Compiling iai-callgrind v0.14.2
+   Compiling cast v0.3.0
+   Compiling criterion-plot v0.5.0
+   Compiling walkdir v2.5.0
+   Compiling tinytemplate v1.2.1
+   Compiling bincode v1.3.3
+   Compiling regex v1.12.4
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling rand_chacha v0.9.0
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling ciborium-ll v0.2.2
+   Compiling proptest v1.11.0
+   Compiling ciborium v0.2.2
+   Compiling clap v4.6.1
+   Compiling sefer-region v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/sefer-region)
+   Compiling rayon v1.12.0
+   Compiling plotters v0.3.7
+   Compiling tokio-macros v2.7.0
+   Compiling is-terminal v0.4.17
+   Compiling aligned-vmem v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/aligned-vmem)
+   Compiling anes v0.1.6
+   Compiling proc-memstat v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/proc-memstat)
+   Compiling once-ptr-cell v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/once-ptr-cell)
+   Compiling pin-project-lite v0.2.17
+   Compiling size-classes v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/size-classes)
+   Compiling tagged-index-stack v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/tagged-index-stack)
+   Compiling oorandom v11.1.5
+   Compiling tokio v1.52.3
+   Compiling proc-probe v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/proc-probe)
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3)
+   Compiling mimalloc v0.1.52
+   Compiling malloc-bench-rs v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/malloc-bench-rs)
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3/crates/globalalloc-model)
+    Finished `bench` profile [optimized] target(s) in 51.98s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/ph3c_leaf_proto.rs (/tmp/sefer-iai-b3-private/release/deps/ph3c_leaf_proto-eb3485bdc7ad5e6f)
+ph3c_leaf_proto::ph3c_leaf_proto::identity_check identity_only:0u8
+  Instructions:                    85612287|N/A                  (*********)
+  L1 Hits:                        164068919|N/A                  (*********)
+  L2 Hits:                          1146389|N/A                  (*********)
+  RAM Hits:                           89568|N/A                  (*********)
+  Total read+write:               165304876|N/A                  (*********)
+  Estimated Cycles:               172935744|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class intrusive:Model :: Intrusive
+  Instructions:                      120258|N/A                  (*********)
+  L1 Hits:                           173742|N/A                  (*********)
+  L2 Hits:                               54|N/A                  (*********)
+  RAM Hits:                             822|N/A                  (*********)
+  Total read+write:                  174618|N/A                  (*********)
+  Estimated Cycles:                  202782|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class next_table:Model :: NextTable
+  Instructions:                      123067|N/A                  (*********)
+  L1 Hits:                           179380|N/A                  (*********)
+  L2 Hits:                               60|N/A                  (*********)
+  RAM Hits:                             781|N/A                  (*********)
+  Total read+write:                  180221|N/A                  (*********)
+  Estimated Cycles:                  207015|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class leaf_table:Model :: LeafTable
+  Instructions:                      177330|N/A                  (*********)
+  L1 Hits:                           252006|N/A                  (*********)
+  L2 Hits:                               61|N/A                  (*********)
+  RAM Hits:                             748|N/A                  (*********)
+  Total read+write:                  252815|N/A                  (*********)
+  Estimated Cycles:                  278491|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      159007|N/A                  (*********)
+  L1 Hits:                           224168|N/A                  (*********)
+  L2 Hits:                               53|N/A                  (*********)
+  RAM Hits:                             759|N/A                  (*********)
+  Total read+write:                  224980|N/A                  (*********)
+  Estimated Cycles:                  250998|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class leaf_table_3:Model :: LeafTable3
+  Instructions:                      138698|N/A                  (*********)
+  L1 Hits:                           215462|N/A                  (*********)
+  L2 Hits:                               59|N/A                  (*********)
+  RAM Hits:                            1116|N/A                  (*********)
+  Total read+write:                  216637|N/A                  (*********)
+  Estimated Cycles:                  254817|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense intrusive:Model :: Intrusive
+  Instructions:                      163558|N/A                  (*********)
+  L1 Hits:                           227714|N/A                  (*********)
+  L2 Hits:                              724|N/A                  (*********)
+  RAM Hits:                            1923|N/A                  (*********)
+  Total read+write:                  230361|N/A                  (*********)
+  Estimated Cycles:                  298639|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense next_table:Model :: NextTable
+  Instructions:                      188566|N/A                  (*********)
+  L1 Hits:                           262497|N/A                  (*********)
+  L2 Hits:                               85|N/A                  (*********)
+  RAM Hits:                            1162|N/A                  (*********)
+  Total read+write:                  263744|N/A                  (*********)
+  Estimated Cycles:                  303592|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense leaf_table:Model :: LeafTable
+  Instructions:                      205802|N/A                  (*********)
+  L1 Hits:                           276858|N/A                  (*********)
+  L2 Hits:                               40|N/A                  (*********)
+  RAM Hits:                             877|N/A                  (*********)
+  Total read+write:                  277775|N/A                  (*********)
+  Estimated Cycles:                  307753|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      190232|N/A                  (*********)
+  L1 Hits:                           278017|N/A                  (*********)
+  L2 Hits:                               43|N/A                  (*********)
+  RAM Hits:                             903|N/A                  (*********)
+  Total read+write:                  278963|N/A                  (*********)
+  Estimated Cycles:                  309837|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense leaf_table_3:Model :: LeafTable3
+  Instructions:                      211265|N/A                  (*********)
+  L1 Hits:                           318533|N/A                  (*********)
+  L2 Hits:                               46|N/A                  (*********)
+  RAM Hits:                            1241|N/A                  (*********)
+  Total read+write:                  319820|N/A                  (*********)
+  Estimated Cycles:                  362198|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 intrusive:Model :: Intrusive
+  Instructions:                       34317|N/A                  (*********)
+  L1 Hits:                            67088|N/A                  (*********)
+  L2 Hits:                               34|N/A                  (*********)
+  RAM Hits:                             558|N/A                  (*********)
+  Total read+write:                   67680|N/A                  (*********)
+  Estimated Cycles:                   86788|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 next_table:Model :: NextTable
+  Instructions:                       34749|N/A                  (*********)
+  L1 Hits:                            67692|N/A                  (*********)
+  L2 Hits:                               40|N/A                  (*********)
+  RAM Hits:                             564|N/A                  (*********)
+  Total read+write:                   68296|N/A                  (*********)
+  Estimated Cycles:                   87632|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 leaf_table:Model :: LeafTable
+  Instructions:                       34452|N/A                  (*********)
+  L1 Hits:                            67241|N/A                  (*********)
+  L2 Hits:                               38|N/A                  (*********)
+  RAM Hits:                             547|N/A                  (*********)
+  Total read+write:                   67826|N/A                  (*********)
+  Estimated Cycles:                   86576|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       34293|N/A                  (*********)
+  L1 Hits:                            67071|N/A                  (*********)
+  L2 Hits:                               36|N/A                  (*********)
+  RAM Hits:                             558|N/A                  (*********)
+  Total read+write:                   67665|N/A                  (*********)
+  Estimated Cycles:                   86781|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 leaf_table_3:Model :: LeafTable3
+  Instructions:                       57542|N/A                  (*********)
+  L1 Hits:                           112879|N/A                  (*********)
+  L2 Hits:                               38|N/A                  (*********)
+  RAM Hits:                             909|N/A                  (*********)
+  Total read+write:                  113826|N/A                  (*********)
+  Estimated Cycles:                  144884|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 intrusive:Model :: Intrusive
+  Instructions:                       34460|N/A                  (*********)
+  L1 Hits:                            67246|N/A                  (*********)
+  L2 Hits:                               35|N/A                  (*********)
+  RAM Hits:                             567|N/A                  (*********)
+  Total read+write:                   67848|N/A                  (*********)
+  Estimated Cycles:                   87266|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 next_table:Model :: NextTable
+  Instructions:                       34878|N/A                  (*********)
+  L1 Hits:                            67849|N/A                  (*********)
+  L2 Hits:                               41|N/A                  (*********)
+  RAM Hits:                             574|N/A                  (*********)
+  Total read+write:                   68464|N/A                  (*********)
+  Estimated Cycles:                   88144|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 leaf_table:Model :: LeafTable
+  Instructions:                       34931|N/A                  (*********)
+  L1 Hits:                            67826|N/A                  (*********)
+  L2 Hits:                               39|N/A                  (*********)
+  RAM Hits:                             549|N/A                  (*********)
+  Total read+write:                   68414|N/A                  (*********)
+  Estimated Cycles:                   87236|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       34664|N/A                  (*********)
+  L1 Hits:                            67548|N/A                  (*********)
+  L2 Hits:                               41|N/A                  (*********)
+  RAM Hits:                             560|N/A                  (*********)
+  Total read+write:                   68149|N/A                  (*********)
+  Estimated Cycles:                   87353|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 leaf_table_3:Model :: LeafTable3
+  Instructions:                       58339|N/A                  (*********)
+  L1 Hits:                           114022|N/A                  (*********)
+  L2 Hits:                               47|N/A                  (*********)
+  RAM Hits:                             915|N/A                  (*********)
+  Total read+write:                  114984|N/A                  (*********)
+  Estimated Cycles:                  146282|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 intrusive:Model :: Intrusive
+  Instructions:                       37018|N/A                  (*********)
+  L1 Hits:                            70296|N/A                  (*********)
+  L2 Hits:                               75|N/A                  (*********)
+  RAM Hits:                             643|N/A                  (*********)
+  Total read+write:                   71014|N/A                  (*********)
+  Estimated Cycles:                   93176|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 next_table:Model :: NextTable
+  Instructions:                       37324|N/A                  (*********)
+  L1 Hits:                            70934|N/A                  (*********)
+  L2 Hits:                               47|N/A                  (*********)
+  RAM Hits:                             649|N/A                  (*********)
+  Total read+write:                   71630|N/A                  (*********)
+  Estimated Cycles:                   93884|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 leaf_table:Model :: LeafTable
+  Instructions:                       38906|N/A                  (*********)
+  L1 Hits:                            72837|N/A                  (*********)
+  L2 Hits:                               41|N/A                  (*********)
+  RAM Hits:                             570|N/A                  (*********)
+  Total read+write:                   73448|N/A                  (*********)
+  Estimated Cycles:                   92992|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       39010|N/A                  (*********)
+  L1 Hits:                            73144|N/A                  (*********)
+  L2 Hits:                               46|N/A                  (*********)
+  RAM Hits:                             581|N/A                  (*********)
+  Total read+write:                   73771|N/A                  (*********)
+  Estimated Cycles:                   93709|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 leaf_table_3:Model :: LeafTable3
+  Instructions:                       63258|N/A                  (*********)
+  L1 Hits:                           120845|N/A                  (*********)
+  L2 Hits:                               48|N/A                  (*********)
+  RAM Hits:                             932|N/A                  (*********)
+  Total read+write:                  121825|N/A                  (*********)
+  Estimated Cycles:                  153705|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 intrusive:Model :: Intrusive
+  Instructions:                      124702|N/A                  (*********)
+  L1 Hits:                           186699|N/A                  (*********)
+  L2 Hits:                               83|N/A                  (*********)
+  RAM Hits:                            1050|N/A                  (*********)
+  Total read+write:                  187832|N/A                  (*********)
+  Estimated Cycles:                  223864|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 next_table:Model :: NextTable
+  Instructions:                      127188|N/A                  (*********)
+  L1 Hits:                           195710|N/A                  (*********)
+  L2 Hits:                               69|N/A                  (*********)
+  RAM Hits:                             862|N/A                  (*********)
+  Total read+write:                  196641|N/A                  (*********)
+  Estimated Cycles:                  226225|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 leaf_table:Model :: LeafTable
+  Instructions:                      161159|N/A                  (*********)
+  L1 Hits:                           229892|N/A                  (*********)
+  L2 Hits:                               88|N/A                  (*********)
+  RAM Hits:                             753|N/A                  (*********)
+  Total read+write:                  230733|N/A                  (*********)
+  Estimated Cycles:                  256687|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      154023|N/A                  (*********)
+  L1 Hits:                           220715|N/A                  (*********)
+  L2 Hits:                               61|N/A                  (*********)
+  RAM Hits:                             766|N/A                  (*********)
+  Total read+write:                  221542|N/A                  (*********)
+  Estimated Cycles:                  247830|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 leaf_table_3:Model :: LeafTable3
+  Instructions:                      134017|N/A                  (*********)
+  L1 Hits:                           209682|N/A                  (*********)
+  L2 Hits:                               69|N/A                  (*********)
+  RAM Hits:                            1148|N/A                  (*********)
+  Total read+write:                  210899|N/A                  (*********)
+  Estimated Cycles:                  250207|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 intrusive:Model :: Intrusive
+  Instructions:                      124702|N/A                  (*********)
+  L1 Hits:                           186698|N/A                  (*********)
+  L2 Hits:                               83|N/A                  (*********)
+  RAM Hits:                            1051|N/A                  (*********)
+  Total read+write:                  187832|N/A                  (*********)
+  Estimated Cycles:                  223898|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 next_table:Model :: NextTable
+  Instructions:                      127188|N/A                  (*********)
+  L1 Hits:                           195709|N/A                  (*********)
+  L2 Hits:                               69|N/A                  (*********)
+  RAM Hits:                             863|N/A                  (*********)
+  Total read+write:                  196641|N/A                  (*********)
+  Estimated Cycles:                  226259|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 leaf_table:Model :: LeafTable
+  Instructions:                      161159|N/A                  (*********)
+  L1 Hits:                           229891|N/A                  (*********)
+  L2 Hits:                               88|N/A                  (*********)
+  RAM Hits:                             754|N/A                  (*********)
+  Total read+write:                  230733|N/A                  (*********)
+  Estimated Cycles:                  256721|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      154023|N/A                  (*********)
+  L1 Hits:                           220714|N/A                  (*********)
+  L2 Hits:                               61|N/A                  (*********)
+  RAM Hits:                             767|N/A                  (*********)
+  Total read+write:                  221542|N/A                  (*********)
+  Estimated Cycles:                  247864|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 leaf_table_3:Model :: LeafTable3
+  Instructions:                      134017|N/A                  (*********)
+  L1 Hits:                           209681|N/A                  (*********)
+  L2 Hits:                               69|N/A                  (*********)
+  RAM Hits:                            1149|N/A                  (*********)
+  Total read+write:                  210899|N/A                  (*********)
+  Estimated Cycles:                  250241|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed intrusive:Model :: Intrusive
+  Instructions:                      421219|N/A                  (*********)
+  L1 Hits:                           563060|N/A                  (*********)
+  L2 Hits:                             2301|N/A                  (*********)
+  RAM Hits:                            2357|N/A                  (*********)
+  Total read+write:                  567718|N/A                  (*********)
+  Estimated Cycles:                  657060|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed next_table:Model :: NextTable
+  Instructions:                      461660|N/A                  (*********)
+  L1 Hits:                           638746|N/A                  (*********)
+  L2 Hits:                             1392|N/A                  (*********)
+  RAM Hits:                            1784|N/A                  (*********)
+  Total read+write:                  641922|N/A                  (*********)
+  Estimated Cycles:                  708146|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed leaf_table:Model :: LeafTable
+  Instructions:                      520043|N/A                  (*********)
+  L1 Hits:                           684088|N/A                  (*********)
+  L2 Hits:                              794|N/A                  (*********)
+  RAM Hits:                            1522|N/A                  (*********)
+  Total read+write:                  686404|N/A                  (*********)
+  Estimated Cycles:                  741328|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      525647|N/A                  (*********)
+  L1 Hits:                           694243|N/A                  (*********)
+  L2 Hits:                              806|N/A                  (*********)
+  RAM Hits:                            1541|N/A                  (*********)
+  Total read+write:                  696590|N/A                  (*********)
+  Estimated Cycles:                  752208|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed leaf_table_3:Model :: LeafTable3
+  Instructions:                      454194|N/A                  (*********)
+  L1 Hits:                           632745|N/A                  (*********)
+  L2 Hits:                              880|N/A                  (*********)
+  RAM Hits:                            1910|N/A                  (*********)
+  Total read+write:                  635535|N/A                  (*********)
+  Estimated Cycles:                  703995|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge intrusive:Model :: Intrusive
+  Instructions:                       36039|N/A                  (*********)
+  L1 Hits:                            69270|N/A                  (*********)
+  L2 Hits:                               59|N/A                  (*********)
+  RAM Hits:                             652|N/A                  (*********)
+  Total read+write:                   69981|N/A                  (*********)
+  Estimated Cycles:                   92385|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge next_table:Model :: NextTable
+  Instructions:                       36461|N/A                  (*********)
+  L1 Hits:                            69864|N/A                  (*********)
+  L2 Hits:                               63|N/A                  (*********)
+  RAM Hits:                             645|N/A                  (*********)
+  Total read+write:                   70572|N/A                  (*********)
+  Estimated Cycles:                   92754|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge leaf_table:Model :: LeafTable
+  Instructions:                       70653|N/A                  (*********)
+  L1 Hits:                           136460|N/A                  (*********)
+  L2 Hits:                              115|N/A                  (*********)
+  RAM Hits:                            1148|N/A                  (*********)
+  Total read+write:                  137723|N/A                  (*********)
+  Estimated Cycles:                  177215|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       70907|N/A                  (*********)
+  L1 Hits:                           136866|N/A                  (*********)
+  L2 Hits:                              117|N/A                  (*********)
+  RAM Hits:                            1177|N/A                  (*********)
+  Total read+write:                  138160|N/A                  (*********)
+  Estimated Cycles:                  178646|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge leaf_table_3:Model :: LeafTable3
+  Instructions:                      116659|N/A                  (*********)
+  L1 Hits:                           227766|N/A                  (*********)
+  L2 Hits:                               92|N/A                  (*********)
+  RAM Hits:                            1854|N/A                  (*********)
+  Total read+write:                  229712|N/A                  (*********)
+  Estimated Cycles:                  293116|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge_setup intrusive:remote_merge_setup_intrusive()
+  Instructions:                        3033|N/A                  (*********)
+  L1 Hits:                             3955|N/A                  (*********)
+  L2 Hits:                               36|N/A                  (*********)
+  RAM Hits:                              85|N/A                  (*********)
+  Total read+write:                    4076|N/A                  (*********)
+  Estimated Cycles:                    7110|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge_setup next_table:remote_merge_setup_next_table()
+  Instructions:                        2981|N/A                  (*********)
+  L1 Hits:                             3939|N/A                  (*********)
+  L2 Hits:                               34|N/A                  (*********)
+  RAM Hits:                              87|N/A                  (*********)
+  Total read+write:                    4060|N/A                  (*********)
+  Estimated Cycles:                    7154|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge_setup leaf_table:remote_merge_setup_leaf()
+  Instructions:                        5341|N/A                  (*********)
+  L1 Hits:                             6980|N/A                  (*********)
+  L2 Hits:                               46|N/A                  (*********)
+  RAM Hits:                              83|N/A                  (*********)
+  Total read+write:                    7109|N/A                  (*********)
+  Estimated Cycles:                   10115|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge_setup leaf_table_fast:remote_merge_setup_leaf_fast()
+  Instructions:                        4635|N/A                  (*********)
+  L1 Hits:                             5763|N/A                  (*********)
+  L2 Hits:                               47|N/A                  (*********)
+  RAM Hits:                              88|N/A                  (*********)
+  Total read+write:                    5898|N/A                  (*********)
+  Estimated Cycles:                    9078|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge_setup leaf_table_3:remote_merge_setup_leaf3()
+  Instructions:                        2897|N/A                  (*********)
+  L1 Hits:                             3905|N/A                  (*********)
+  L2 Hits:                               41|N/A                  (*********)
+  RAM Hits:                              88|N/A                  (*********)
+  Total read+write:                    4034|N/A                  (*********)
+  Estimated Cycles:                    7190|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 51 without regressions; 0 regressed; 51 benchmarks finished in 20.1471s
