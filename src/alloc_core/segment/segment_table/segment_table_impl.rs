@@ -294,7 +294,7 @@ impl SegmentTable {
     }
 
     /// Owner-only class publication. Standalone AllocCore has no route.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(crate) fn issue_small(&self, base: *mut u8, offset: u32, class_idx: usize) {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &self.routes {
@@ -312,7 +312,7 @@ impl SegmentTable {
     /// Fallible owner-only class spill before any block issue state changes.
     /// The returned witness is the prepare half of the `prepare -> commit`
     /// protocol; `None` is the uncommitted spill OOM.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(crate) fn prepare_small_issue(
         &self,
         base: *mut u8,

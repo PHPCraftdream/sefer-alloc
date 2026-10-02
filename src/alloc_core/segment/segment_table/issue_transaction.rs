@@ -55,7 +55,7 @@ impl IssueTransaction {
     /// Witness for a routed prepare: `index`/`base`/`offset`/`class` passed
     /// `RouteSlots`' guards (live slot, matching root, materialised sidecar)
     /// and the sidecar promotion for them succeeded.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(super) fn prepared(index: usize, base: *mut u8, offset: u32, class: u8) -> Self {
         Self {
             index,
@@ -69,7 +69,7 @@ impl IssueTransaction {
     /// tautology and `SegmentTable::issue_small` a documented no-op, so only
     /// `base`/`offset` matter — the index is still the segment's real slot,
     /// because a lying one would make `commit`'s witness re-check fire.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(super) fn unrouted(base: *mut u8, offset: u32) -> Self {
         Self {
             index: SegmentHeader::segment_id_at(base) as usize,
@@ -83,7 +83,7 @@ impl IssueTransaction {
     /// from the inline call this replaces: a route root that differs from
     /// `base`, a missing `prepared(offset, class)` bit, or a failed
     /// `issue_small` each abort — a commit cannot silently half-issue.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(crate) fn commit(self, table: &SegmentTable) {
         #[cfg(debug_assertions)]
         debug_assert_eq!(
@@ -104,7 +104,7 @@ impl IssueTransaction {
     ///
     /// `index` must be `base`'s stamped segment id; `commit` re-checks it in
     /// debug builds, and `issue_small` re-derives + re-validates it in all.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(crate) fn commit_prepared(
         table: &SegmentTable,
         index: usize,

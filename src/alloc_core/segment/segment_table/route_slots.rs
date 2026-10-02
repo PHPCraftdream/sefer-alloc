@@ -122,7 +122,7 @@ impl RouteSlots {
         }
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub(super) fn prepare_small_issue(
         &self,
         index: usize,
