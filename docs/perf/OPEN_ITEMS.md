@@ -140,6 +140,16 @@ for completeness.
    > - **Next trigger:** выбор геометрии off-body для Ph3c (ADR предполагает однородные per-class leaves вместо наивной таблицы-слота на MIN_BLOCK); RSS-плечо ADR ≤ 1.05 (в спайке NOT_RUN); закрыть (i)-отклонение (доказать, что seg-release реально освобождает сегмент) и переписать hardened-тесты. Параллельно открытый P1 (установленный `Box` paused-witness красный на shipping `production`) — см. `docs/correctness-open-items/ACTIVE.md` item 162.
    > - **Evidence:** `docs/reviews/2026-10-01-adr-pg2-offbody-spike-receipt.md` (§4 клетки, §5 hardened, §10 отклонения); `docs/perf/PG3_OFFBODY_SPIKE_IAI.md` + `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv` (коммит `7d80d7e1`). Дизайн геометрии: `docs/design/2026-10-02-ph3c-offbody-geometry-design.md` (рекомендован кандидат B, проверка — микро-прототип `PH3C_LEAF_PROTO_IAI`).
 
+   > - **Update 2026-10-02:** B и B2 (микро-прототип, `docs/perf/PH3C_LEAF_PROTO_IAI.md`, `cda836f2`) и B3 (`docs/perf/PH3C_B3_PROTO_IAI.md`, `cbceb311`) провалили пред-регистрированные фильтры — битовое семейство закрыто. Регрессия PG-3 при этом оказалась артефактом скана pending-bitmap (+1024 слова из-за 1 MiB таблицы перед payload), а не ценой off-body учёта. План (решение владельца): шаг 0 PG-3r (патч S, перемер PG-3 на обеих сторонах) → шаг 1 интегрированный спайк B3 с ценой корректности refill/flush (EstCycles ≤1.10 И Ir ≤1.20, hot ≤1.02) → конечная точка (б) (интрузивный slab + принятый известный дефект P1-box). Правила и пределы — `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md`.
+
+80. **Скан pending-bitmap на refill-промахе без пропуска пустых слов (perf(runtime) кандидат, выявлен PG-3 атрибуцией).**
+
+   > **Current state**
+   > - **Status:** OPEN — гипотеза подтверждена косвенно (PG-3: ΔIr = k·≈12 288 на проход), прямой замер — шаг 0 PG-3r.
+   > - **Current number/verdict:** `drain_segment_sidecar` (`src/alloc_core/small/alloc_core_small/find_segment.rs`) и курсор `sidecar_drain.rs` проходят pending-bitmap от слова 0 до `high_water` по одному `swap(0, AcqRel)` на слово (1 слово = 1 KiB payload), включая пустые и слова метаданных: до 4096 атомарных swap (≈49k Ir) на полностью нарезанном сегменте.
+   > - **Next trigger:** результат PG-3r (патч S: начинать скан с первого слова payload). Если ΔIr hot ≤ +0.5% и refill в пределах ADR — оформить как отдельный `perf(runtime)` с iai-гейтом; с Ph3c не смешивать.
+   > - **Evidence:** `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md` §1.1, §3, §6; `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**

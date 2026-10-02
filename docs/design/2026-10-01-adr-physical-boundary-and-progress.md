@@ -114,3 +114,4 @@
 - 2026-10-02: решения по фазам Ph4a/Ph4b/Ph4c (lease, G3+ не принят, порядок слотов, сужение legacy `pub` API, накопительный perf-якорь B0) — `docs/design/2026-10-02-adr-addendum-ph4-decisions.md`.
 - 2026-10-02: геометрия off-body структуры для Ph3c (после PG-3) — `docs/design/2026-10-02-ph3c-offbody-geometry-design.md`.
 - 2026-10-02: Ph3c после микро-прототипа (B/B2 NO-GO по плотному drain; B3 — последняя итерация битового семейства; решающий вердикт — интегрированный гейт; правила пред-регистрированы) — `docs/design/2026-10-02-adr-addendum-ph3c-decisions.md`.
+- 2026-10-02: эскалация Ph3c после провала B3 (шаг 0 PG-3r → путь (а) интегрированный B3 с ценой корректности refill/flush; конечная точка (б)) — `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md`.
