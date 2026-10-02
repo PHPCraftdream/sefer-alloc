@@ -1734,6 +1734,18 @@ name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
+# Ph3c step-1 one-shot micro-prototype, docs/perf/PH3C_LEAF_PROTO_IAI.md
+# (design: docs/design/2026-10-02-ph3c-offbody-geometry-design.md §2.2/§3.3):
+# falsifies candidate B "per-leaf bit leaves" against emulations of the
+# intrusive base and the NextTable spike — 37 iai-callgrind arms, pure models
+# that import nothing from sefer-alloc. Same Linux-only shape as
+# `perf_gate_iai` above; the feature set just mirrors that established
+# invocation. Run on Linux only (valgrind/iai-callgrind-runner).
+[[bench]]
+name = "ph3c_leaf_proto"
+harness = false
+required-features = ["alloc-global", "bench-internals", "internals"]
+
 # R32-9 (task #500) — the missing >=64-live-segment macro-bench artifact
 # `docs/perf/OPEN_ITEMS.md` item 34 / survey finding F3 both name. NOT the
 # per-commit gate (`perf_gate_iai` above stays that) — a SEPARATE, wider,

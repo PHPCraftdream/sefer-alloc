@@ -1,0 +1,266 @@
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-proto)
+    Finished `bench` profile [optimized] target(s) in 10.06s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/ph3c_leaf_proto.rs (/tmp/sefer-iai-ph3c-PRIVATE/release/deps/ph3c_leaf_proto-eb3485bdc7ad5e6f)
+ph3c_leaf_proto::ph3c_leaf_proto::identity_check identity_only:0u8
+  Instructions:                    83410889|81214165             (+2.70485%) [+1.02705x]
+  L1 Hits:                        160755631|157604645            (+1.99930%) [+1.01999x]
+  L2 Hits:                          1132941|1122115              (+0.96479%) [+1.00965x]
+  RAM Hits:                           88200|87167                (+1.18508%) [+1.01185x]
+  Total read+write:               161976772|158813927            (+1.99154%) [+1.01992x]
+  Estimated Cycles:               169507336|166266065            (+1.94945%) [+1.01949x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class intrusive:Model :: Intrusive
+  Instructions:                      120258|120255               (+0.00249%) [+1.00002x]
+  L1 Hits:                           173739|173736               (+0.00173%) [+1.00002x]
+  L2 Hits:                               57|58                   (-1.72414%) [-1.01754x]
+  RAM Hits:                             822|820                  (+0.24390%) [+1.00244x]
+  Total read+write:                  174618|174614               (+0.00229%) [+1.00002x]
+  Estimated Cycles:                  202794|202726               (+0.03354%) [+1.00034x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class next_table:Model :: NextTable
+  Instructions:                      123067|123068               (-0.00081%) [-1.00001x]
+  L1 Hits:                           179378|179379               (-0.00056%) [-1.00001x]
+  L2 Hits:                               63|63                   (No change)
+  RAM Hits:                             780|779                  (+0.12837%) [+1.00128x]
+  Total read+write:                  180221|180221               (No change)
+  Estimated Cycles:                  206993|206959               (+0.01643%) [+1.00016x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class leaf_table:Model :: LeafTable
+  Instructions:                      177330|177329               (+0.00056%) [+1.00001x]
+  L1 Hits:                           252003|252003               (No change)
+  L2 Hits:                               64|63                   (+1.58730%) [+1.01587x]
+  RAM Hits:                             748|747                  (+0.13387%) [+1.00134x]
+  Total read+write:                  252815|252813               (+0.00079%) [+1.00001x]
+  Estimated Cycles:                  278503|278463               (+0.01436%) [+1.00014x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_one_class leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      159007|N/A                  (*********)
+  L1 Hits:                           224166|N/A                  (*********)
+  L2 Hits:                               55|N/A                  (*********)
+  RAM Hits:                             759|N/A                  (*********)
+  Total read+write:                  224980|N/A                  (*********)
+  Estimated Cycles:                  251006|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense intrusive:Model :: Intrusive
+  Instructions:                      163558|163555               (+0.00183%) [+1.00002x]
+  L1 Hits:                           227712|227706               (+0.00263%) [+1.00003x]
+  L2 Hits:                              726|728                  (-0.27473%) [-1.00275x]
+  RAM Hits:                            1923|1923                 (No change)
+  Total read+write:                  230361|230357               (+0.00174%) [+1.00002x]
+  Estimated Cycles:                  298647|298651               (-0.00134%) [-1.00001x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense next_table:Model :: NextTable
+  Instructions:                      188566|188567               (-0.00053%) [-1.00001x]
+  L1 Hits:                           262494|262494               (No change)
+  L2 Hits:                               88|89                   (-1.12360%) [-1.01136x]
+  RAM Hits:                            1162|1161                 (+0.08613%) [+1.00086x]
+  Total read+write:                  263744|263744               (No change)
+  Estimated Cycles:                  303604|303574               (+0.00988%) [+1.00010x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense leaf_table:Model :: LeafTable
+  Instructions:                      205802|205801               (+0.00049%) [+1.00000x]
+  L1 Hits:                           276857|276856               (+0.00036%) [+1.00000x]
+  L2 Hits:                               42|41                   (+2.43902%) [+1.02439x]
+  RAM Hits:                             876|876                  (No change)
+  Total read+write:                  277775|277773               (+0.00072%) [+1.00001x]
+  Estimated Cycles:                  307727|307721               (+0.00195%) [+1.00002x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_dense leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      190232|N/A                  (*********)
+  L1 Hits:                           278016|N/A                  (*********)
+  L2 Hits:                               45|N/A                  (*********)
+  RAM Hits:                             902|N/A                  (*********)
+  Total read+write:                  278963|N/A                  (*********)
+  Estimated Cycles:                  309811|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 intrusive:Model :: Intrusive
+  Instructions:                       34317|34314                (+0.00874%) [+1.00009x]
+  L1 Hits:                            67085|67080                (+0.00745%) [+1.00007x]
+  L2 Hits:                               38|39                   (-2.56410%) [-1.02632x]
+  RAM Hits:                             557|557                  (No change)
+  Total read+write:                   67680|67676                (+0.00591%) [+1.00006x]
+  Estimated Cycles:                   86770|86770                (No change)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 next_table:Model :: NextTable
+  Instructions:                       34749|34750                (-0.00288%) [-1.00003x]
+  L1 Hits:                            67690|67690                (No change)
+  L2 Hits:                               43|43                   (No change)
+  RAM Hits:                             563|563                  (No change)
+  Total read+write:                   68296|68296                (No change)
+  Estimated Cycles:                   87610|87610                (No change)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 leaf_table:Model :: LeafTable
+  Instructions:                       34452|34451                (+0.00290%) [+1.00003x]
+  L1 Hits:                            67238|67236                (+0.00297%) [+1.00003x]
+  L2 Hits:                               42|41                   (+2.43902%) [+1.02439x]
+  RAM Hits:                             546|547                  (-0.18282%) [-1.00183x]
+  Total read+write:                   67826|67824                (+0.00295%) [+1.00003x]
+  Estimated Cycles:                   86558|86586                (-0.03234%) [-1.00032x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_1 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       34293|N/A                  (*********)
+  L1 Hits:                            67068|N/A                  (*********)
+  L2 Hits:                               39|N/A                  (*********)
+  RAM Hits:                             558|N/A                  (*********)
+  Total read+write:                   67665|N/A                  (*********)
+  Estimated Cycles:                   86793|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 intrusive:Model :: Intrusive
+  Instructions:                       34460|34457                (+0.00871%) [+1.00009x]
+  L1 Hits:                            67242|67237                (+0.00744%) [+1.00007x]
+  L2 Hits:                               39|40                   (-2.50000%) [-1.02564x]
+  RAM Hits:                             567|567                  (No change)
+  Total read+write:                   67848|67844                (+0.00590%) [+1.00006x]
+  Estimated Cycles:                   87282|87282                (No change)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 next_table:Model :: NextTable
+  Instructions:                       34878|34879                (-0.00287%) [-1.00003x]
+  L1 Hits:                            67847|67847                (No change)
+  L2 Hits:                               44|44                   (No change)
+  RAM Hits:                             573|573                  (No change)
+  Total read+write:                   68464|68464                (No change)
+  Estimated Cycles:                   88122|88122                (No change)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 leaf_table:Model :: LeafTable
+  Instructions:                       34931|34930                (+0.00286%) [+1.00003x]
+  L1 Hits:                            67824|67822                (+0.00295%) [+1.00003x]
+  L2 Hits:                               42|41                   (+2.43902%) [+1.02439x]
+  RAM Hits:                             548|549                  (-0.18215%) [-1.00182x]
+  Total read+write:                   68414|68412                (+0.00292%) [+1.00003x]
+  Estimated Cycles:                   87214|87242                (-0.03209%) [-1.00032x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_8 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       34664|N/A                  (*********)
+  L1 Hits:                            67545|N/A                  (*********)
+  L2 Hits:                               44|N/A                  (*********)
+  RAM Hits:                             560|N/A                  (*********)
+  Total read+write:                   68149|N/A                  (*********)
+  Estimated Cycles:                   87365|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 intrusive:Model :: Intrusive
+  Instructions:                       37018|37015                (+0.00810%) [+1.00008x]
+  L1 Hits:                            70293|70289                (+0.00569%) [+1.00006x]
+  L2 Hits:                               79|80                   (-1.25000%) [-1.01266x]
+  RAM Hits:                             642|641                  (+0.15601%) [+1.00156x]
+  Total read+write:                   71014|71010                (+0.00563%) [+1.00006x]
+  Estimated Cycles:                   93158|93124                (+0.03651%) [+1.00037x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 next_table:Model :: NextTable
+  Instructions:                       37324|37325                (-0.00268%) [-1.00003x]
+  L1 Hits:                            70933|70933                (No change)
+  L2 Hits:                               50|50                   (No change)
+  RAM Hits:                             647|647                  (No change)
+  Total read+write:                   71630|71630                (No change)
+  Estimated Cycles:                   93828|93828                (No change)
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 leaf_table:Model :: LeafTable
+  Instructions:                       38906|38905                (+0.00257%) [+1.00003x]
+  L1 Hits:                            72835|72834                (+0.00137%) [+1.00001x]
+  L2 Hits:                               44|43                   (+2.32558%) [+1.02326x]
+  RAM Hits:                             569|569                  (No change)
+  Total read+write:                   73448|73446                (+0.00272%) [+1.00003x]
+  Estimated Cycles:                   92970|92964                (+0.00645%) [+1.00006x]
+ph3c_leaf_proto::ph3c_leaf_proto::drain_sparse_64 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       39010|N/A                  (*********)
+  L1 Hits:                            73141|N/A                  (*********)
+  L2 Hits:                               49|N/A                  (*********)
+  RAM Hits:                             581|N/A                  (*********)
+  Total read+write:                   73771|N/A                  (*********)
+  Estimated Cycles:                   93721|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 intrusive:Model :: Intrusive
+  Instructions:                      124700|124697               (+0.00241%) [+1.00002x]
+  L1 Hits:                           186691|186690               (+0.00054%) [+1.00001x]
+  L2 Hits:                               88|88                   (No change)
+  RAM Hits:                            1051|1048                 (+0.28626%) [+1.00286x]
+  Total read+write:                  187830|187826               (+0.00213%) [+1.00002x]
+  Estimated Cycles:                  223916|223810               (+0.04736%) [+1.00047x]
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 next_table:Model :: NextTable
+  Instructions:                      129237|129238               (-0.00077%) [-1.00001x]
+  L1 Hits:                           197746|197750               (-0.00202%) [-1.00002x]
+  L2 Hits:                               82|81                   (+1.23457%) [+1.01235x]
+  RAM Hits:                             862|859                  (+0.34924%) [+1.00349x]
+  Total read+write:                  198690|198690               (No change)
+  Estimated Cycles:                  228326|228220               (+0.04645%) [+1.00046x]
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 leaf_table:Model :: LeafTable
+  Instructions:                      161146|161145               (+0.00062%) [+1.00001x]
+  L1 Hits:                           229849|229851               (-0.00087%) [-1.00001x]
+  L2 Hits:                               90|89                   (+1.12360%) [+1.01124x]
+  RAM Hits:                             785|782                  (+0.38363%) [+1.00384x]
+  Total read+write:                  230724|230722               (+0.00087%) [+1.00001x]
+  Estimated Cycles:                  257774|257666               (+0.04191%) [+1.00042x]
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_16 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      151933|N/A                  (*********)
+  L1 Hits:                           218621|N/A                  (*********)
+  L2 Hits:                               60|N/A                  (*********)
+  RAM Hits:                             794|N/A                  (*********)
+  Total read+write:                  219475|N/A                  (*********)
+  Estimated Cycles:                  246711|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 intrusive:Model :: Intrusive
+  Instructions:                      124700|124697               (+0.00241%) [+1.00002x]
+  L1 Hits:                           186692|186689               (+0.00161%) [+1.00002x]
+  L2 Hits:                               87|88                   (-1.13636%) [-1.01149x]
+  RAM Hits:                            1051|1049                 (+0.19066%) [+1.00191x]
+  Total read+write:                  187830|187826               (+0.00213%) [+1.00002x]
+  Estimated Cycles:                  223912|223844               (+0.03038%) [+1.00030x]
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 next_table:Model :: NextTable
+  Instructions:                      129237|129238               (-0.00077%) [-1.00001x]
+  L1 Hits:                           197747|197749               (-0.00101%) [-1.00001x]
+  L2 Hits:                               81|81                   (No change)
+  RAM Hits:                             862|860                  (+0.23256%) [+1.00233x]
+  Total read+write:                  198690|198690               (No change)
+  Estimated Cycles:                  228322|228254               (+0.02979%) [+1.00030x]
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 leaf_table:Model :: LeafTable
+  Instructions:                      161146|161145               (+0.00062%) [+1.00001x]
+  L1 Hits:                           229849|229850               (-0.00044%) [-1.00000x]
+  L2 Hits:                               90|89                   (+1.12360%) [+1.01124x]
+  RAM Hits:                             785|783                  (+0.25543%) [+1.00255x]
+  Total read+write:                  230724|230722               (+0.00087%) [+1.00001x]
+  Estimated Cycles:                  257774|257700               (+0.02872%) [+1.00029x]
+ph3c_leaf_proto::ph3c_leaf_proto::refill_cold_64 leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      151933|N/A                  (*********)
+  L1 Hits:                           218621|N/A                  (*********)
+  L2 Hits:                               60|N/A                  (*********)
+  RAM Hits:                             794|N/A                  (*********)
+  Total read+write:                  219475|N/A                  (*********)
+  Estimated Cycles:                  246711|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed intrusive:Model :: Intrusive
+  Instructions:                      421207|421204               (+0.00071%) [+1.00001x]
+  L1 Hits:                           562922|563043               (-0.02149%) [-1.00021x]
+  L2 Hits:                             2423|2303                 (+5.21059%) [+1.05211x]
+  RAM Hits:                            2361|2356                 (+0.21222%) [+1.00212x]
+  Total read+write:                  567706|567702               (+0.00070%) [+1.00001x]
+  Estimated Cycles:                  657672|657018               (+0.09954%) [+1.00100x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed next_table:Model :: NextTable
+  Instructions:                      461648|461649               (-0.00022%) [-1.00000x]
+  L1 Hits:                           638696|638700               (-0.00063%) [-1.00001x]
+  L2 Hits:                             1425|1426                 (-0.07013%) [-1.00070x]
+  RAM Hits:                            1789|1784                 (+0.28027%) [+1.00280x]
+  Total read+write:                  641910|641910               (No change)
+  Estimated Cycles:                  708436|708270               (+0.02344%) [+1.00023x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed leaf_table:Model :: LeafTable
+  Instructions:                      520055|520054               (+0.00019%) [+1.00000x]
+  L1 Hits:                           684097|684100               (-0.00044%) [-1.00000x]
+  L2 Hits:                              788|788                  (No change)
+  RAM Hits:                            1531|1526                 (+0.32765%) [+1.00328x]
+  Total read+write:                  686416|686414               (+0.00029%) [+1.00000x]
+  Estimated Cycles:                  741622|741450               (+0.02320%) [+1.00023x]
+ph3c_leaf_proto::ph3c_leaf_proto::churn_mixed leaf_table_fast:Model :: LeafTableFast
+  Instructions:                      525635|N/A                  (*********)
+  L1 Hits:                           694229|N/A                  (*********)
+  L2 Hits:                              801|N/A                  (*********)
+  RAM Hits:                            1548|N/A                  (*********)
+  Total read+write:                  696578|N/A                  (*********)
+  Estimated Cycles:                  752414|N/A                  (*********)
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge intrusive:Model :: Intrusive
+  Instructions:                       36039|36036                (+0.00833%) [+1.00008x]
+  L1 Hits:                            69261|69263                (-0.00289%) [-1.00003x]
+  L2 Hits:                               60|61                   (-1.63934%) [-1.01667x]
+  RAM Hits:                             660|653                  (+1.07198%) [+1.01072x]
+  Total read+write:                   69981|69977                (+0.00572%) [+1.00006x]
+  Estimated Cycles:                   92661|92423                (+0.25751%) [+1.00258x]
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge next_table:Model :: NextTable
+  Instructions:                       36461|36461                (No change)
+  L1 Hits:                            69856|69861                (-0.00716%) [-1.00007x]
+  L2 Hits:                               65|65                   (No change)
+  RAM Hits:                             651|645                  (+0.93023%) [+1.00930x]
+  Total read+write:                   70572|70571                (+0.00142%) [+1.00001x]
+  Estimated Cycles:                   92966|92761                (+0.22100%) [+1.00221x]
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge leaf_table:Model :: LeafTable
+  Instructions:                       70652|70650                (+0.00283%) [+1.00003x]
+  L1 Hits:                           136451|136457               (-0.00440%) [-1.00004x]
+  L2 Hits:                              116|115                  (+0.86957%) [+1.00870x]
+  RAM Hits:                            1155|1147                 (+0.69747%) [+1.00697x]
+  Total read+write:                  137722|137719               (+0.00218%) [+1.00002x]
+  Estimated Cycles:                  177456|177177               (+0.15747%) [+1.00157x]
+ph3c_leaf_proto::ph3c_leaf_proto::remote_merge leaf_table_fast:Model :: LeafTableFast
+  Instructions:                       70906|N/A                  (*********)
+  L1 Hits:                           136857|N/A                  (*********)
+  L2 Hits:                              118|N/A                  (*********)
+  RAM Hits:                            1184|N/A                  (*********)
+  Total read+write:                  138159|N/A                  (*********)
+  Estimated Cycles:                  178887|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 37 without regressions; 0 regressed; 37 benchmarks finished in 14.3090s
