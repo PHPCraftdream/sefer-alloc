@@ -35,6 +35,18 @@ use super::dealloc::medium_promotion_reachable;
     )
 ))]
 use super::dealloc::MEDIUM_REALLOC_PROMOTION_THRESHOLD;
+// Ph3b: the promotion gate asks the PHYSICAL kind, not the layout's
+// classification — a block that already lives in a Large segment must not be
+// promoted (and is already served by the Large leg). Gated exactly like the
+// threshold const above, since it is used only inside that call site.
+#[cfg(all(
+    feature = "medium-classes",
+    any(
+        not(feature = "exact-span-large"),
+        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+    )
+))]
+use crate::alloc_core::segment_header::BlockKind;
 
 impl HeapCore {
     /// Shrink/grow an allocation. Returns null on OOM (leaving the old
@@ -203,8 +215,9 @@ impl HeapCore {
                 //       FROM — see the R15-3 paragraph below for the second,
                 //       narrower condition that actually gates the `#[cfg]`
                 //       on this call site). Diverts a GROWING
-                //       realloc of a currently-Small/medium-classified block,
-                //       once `new_size` crosses `MEDIUM_REALLOC_PROMOTION_THRESHOLD`,
+                //       realloc of a block that PHYSICALLY still sits in a
+                //       Small/Primordial segment, once `new_size` crosses
+                //       `MEDIUM_REALLOC_PROMOTION_THRESHOLD`,
                 //       directly to a Large allocation instead of walking the
                 //       medium ladder one class at a time — turning N
                 //       ladder-crossing move-legs into 1 promotion copy, with
@@ -255,16 +268,32 @@ impl HeapCore {
                 //       done; no functionality is lost, only a
                 //       counterproductive promotion in this one triple
                 //       combination.
+                // Ph3b: the THIRD conjunct used to be a plain
+                // `class_for(old_layout).is_some()` — a derivation of "this
+                // block is Small" from the caller's layout, exactly the
+                // second source of truth this step removes. A block that
+                // PHYSICALLY lives in a Large segment (e.g. one grown
+                // in-place by OPT-G, whose layout can still classify Small)
+                // must skip the Small/medium->Large promotion entirely: the
+                // in-place attempt above already declined it and the Large
+                // leg is the correct next stop. `BlockKind::of` reads the
+                // header's `kind` byte; the layout is only re-used, as
+                // always, to resolve the `class` payload.
                 medium_promotion_reachable! {
                 if new_size > old_layout.size()
                     && new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD
-                    && crate::alloc_core::size_classes::SizeClasses::class_for(
-                        old_layout
-                            .size()
-                            .max(crate::alloc_core::size_classes::MIN_BLOCK),
-                        old_layout.align(),
+                    && matches!(
+                        BlockKind::of(
+                            base,
+                            crate::alloc_core::size_classes::SizeClasses::class_for(
+                                old_layout
+                                    .size()
+                                    .max(crate::alloc_core::size_classes::MIN_BLOCK),
+                                old_layout.align(),
+                            ),
+                        ),
+                        BlockKind::Small { .. } | BlockKind::Primordial
                     )
-                    .is_some()
                 {
                     if let Some(p) = self.try_promote_to_large(base, block, old_layout, new_size) {
                         return p;
@@ -398,12 +427,13 @@ impl HeapCore {
     medium_promotion_reachable! {
     /// R14-4 (task #289), Stage 2 of `docs/perf/
     /// R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`: attempt to promote a
-    /// currently-Small/medium-classified, own-segment block directly to a
+    /// physically-Small/Primordial, own-segment block directly to a
     /// Large allocation, instead of letting the caller's growing `realloc`
     /// fall through to the ladder-walk move leg. Called from `realloc`'s
     /// own-segment branch, between the in-place attempt (OPT-F/OPT-G) and the
     /// unconditional move leg, only when `medium-classes` is compiled in, the
-    /// resize is a GROW, `old_layout` currently classifies Small, and
+    /// resize is a GROW, the block's segment header still says Small (the
+    /// caller's `old_layout` resolves its class — Ph3b's kind witness), and
     /// `new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD` (see the call site
     /// and the constant's own doc).
     ///

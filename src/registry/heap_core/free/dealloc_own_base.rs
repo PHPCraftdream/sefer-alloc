@@ -11,36 +11,37 @@ use core::alloc::Layout;
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
+// Ph3b: the physical-kind witness is needed in EVERY configuration — the
+// Large pre-route below is what gives plain `production` the same routing
+// the `medium-classes` promotion builds always had — so this import carries
+// the module's own gate, not a feature predicate.
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+use crate::alloc_core::segment_header::BlockKind;
+// R18-3: `SegmentHeader` is now used ONLY in branch (A)'s `hardened`
+// layout-consistency check (`large_size_at`/`large_align_at`), which lives
+// inside `medium_promotion_reachable!`'s gated block — Ph3b replaced the two
+// `kind_at`-based comparisons with `BlockKind`, which the header itself does
+// not name. So this import carries exactly the promotion predicate below,
+// and under any build where promotion is compiled out (plain `production`,
+// or `hardened` without `medium-classes`) it compiles out with it.
+//
+// R19-8 (task #344): the `all(medium-classes, any(...))` term here is the
+// SAME promotion-reachable predicate canonicalized into the
+// `medium_promotion_reachable!` macro (defined in `free/dealloc.rs`) — it
+// must stay hand-written and in sync by inspection, because `#[cfg(...)]`
+// cannot accept a macro invocation as its argument.
 #[cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
-    // R18-3: `SegmentKind` and `SegmentHeader::kind_at` are used ONLY in
-    // branch (A) (promotion predicate) and branch (B) (`hardened &&
-    // !promotion`) of the Large-kind routing below, so this import must
-    // compile out exactly when both do, or it becomes an unused-import
-    // warning. The union simplifies to `promotion || hardened`
-    // (absorption: a || (b && !a) == a || b). Under plain `production`
-    // neither term is true → import compiles out.
-    //
-    // R19-8 (task #344): the inner `all(medium-classes, any(...))` term here
-    // is the SAME promotion-reachable predicate canonicalized into the
-    // `medium_promotion_reachable!` macro (defined in `free/dealloc.rs`) —
-    // it must stay hand-written and in sync by inspection, because
-    // `#[cfg(...)]` cannot accept a macro invocation as its argument (this
-    // term is COMBINED with `hardened` via `any(...)`, not the bare
-    // predicate the macro wraps).
-    any(
-        feature = "hardened",
-        all(
-            feature = "medium-classes",
-            any(
-                not(feature = "exact-span-large"),
-                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-            )
+    all(
+        feature = "medium-classes",
+        any(
+            not(feature = "exact-span-large"),
+            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
         )
     )
 ))]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+use crate::alloc_core::segment_header::SegmentHeader;
 
 use crate::registry::heap_core::HeapCore;
 
@@ -66,19 +67,21 @@ pub(super) enum SmallFreeGuard {
     /// hardened Large-kind contract violation) — already fully handled; the
     /// caller does nothing further for this pointer.
     RejectNoOp,
-    /// F7 branch (A): `ptr` is a LEGITIMATE promoted-and-grown Large block
-    /// (`medium-classes` promotion). The caller MUST route `ptr`/`layout`
-    /// to the REAL substrate free (`self.core.dealloc` / the scalar
-    /// `self.dealloc` fallback) — this is a correctness requirement, not a
+    /// F7 branch (A) / the Ph3b pre-route: `ptr` is a LEGITIMATE
+    /// promoted-and-grown Large block (`medium-classes` promotion). The
+    /// caller MUST route `ptr`/`layout` to the REAL substrate free
+    /// (`self.core.dealloc` — the SAME call the scalar
+    /// `dealloc_own_thread_with_base` makes, per the Ph3b note in
+    /// `dealloc_batch_small`) — this is a correctness requirement, not a
     /// defensive guard; treating it as a no-op leaks the segment (see this
     /// module's doc comment history, F7/R14-4/R17-4/R18-3/R19-1).
     ///
-    /// `#[cfg_attr]`: only ever constructed inside
-    /// `medium_promotion_reachable!`'s gated block, so under a build where
-    /// that predicate is false (e.g. `--all-features`, where `numa-aware`
-    /// defeats `large-reserved-capacity`) this variant is legitimately
-    /// unconstructed — same negated predicate F7 branch (B) below already
-    /// spells out by hand.
+    /// `#[cfg_attr]`: Ph3b added a pre-route (see the function body) that
+    /// constructs this variant under EVERY non-`hardened` build in which the
+    /// F7 branches (A)/(B) both compile out — `medium-classes` promotion AND
+    /// plain `production` alike. So the only genuinely unconstructing
+    /// configuration left is `hardened` without the promotion predicate,
+    /// which is branch (B)'s (already hand-written) reject shape.
     #[cfg_attr(
         not(all(
             feature = "medium-classes",
@@ -126,14 +129,15 @@ pub(super) enum SmallFreeGuard {
 ///    (B) uses, instead of really freeing a pointer a contract-violating
 ///    caller fabricated. Non-hardened builds make no such defence promise
 ///    and skip the consistency check (unmeasured perf/behavior change risk
-///    on the production hot path). The `cfg!(feature = "hardened")` term
-///    inside the `if` additionally widens the check from "size ≥ promotion
-///    threshold" (non-hardened: a legit Large-via-small-layout requires
-///    that) to unconditional under `hardened` (a contract violation can use
-///    ANY small layout) — verified RED without this widening by
-///    `regression_hardened_large_kind_own_free` (2 MiB Large freed with a
-///    64-byte layout aliased via the magazine when the size gate skipped
-///    `kind_at`).
+///    on the production hot path). Ph3b dropped the `layout.size() >=
+///    MEDIUM_REALLOC_PROMOTION_THRESHOLD` term that used to ride inside this
+///    `if`: the physical kind alone decides now, because a
+///    promoted-and-grown block can be freed with a layout BELOW the
+///    threshold. The `cfg!(feature = "hardened")` widening itself (a contract
+///    violation can use ANY small layout, not just a >= threshold one) stays,
+///    and stays pinned RED by `regression_hardened_large_kind_own_free`
+///    (2 MiB Large freed with a 64-byte layout aliased via the magazine when
+///    the size gate skipped `kind_at`).
 /// 2. **F7 branch (B)** (`hardened && !promotion-reachable`, R18-3 task
 ///    #330): when promotion is compiled OUT, a legitimate
 ///    Large-with-small-layout is structurally unreachable, but the
@@ -142,8 +146,9 @@ pub(super) enum SmallFreeGuard {
 ///    is a counted no-op. Mutually exclusive with branch (A) by
 ///    construction (branch (A) requires promotion ON; branch (B) requires
 ///    promotion OFF) — together they cover every `hardened` build and every
-///    promotion build; under plain `production` (neither `hardened` nor
-///    promotion) NEITHER branch compiles: no `kind_at` load, no cost.
+///    promotion build. Under plain `production` (neither `hardened` nor
+///    promotion) BOTH compile out and the Ph3b pre-route above takes over
+///    instead, paying the single `BlockKind`/`kind_at` read it needs.
 ///    R22-12 (task #363) shares ONE counter (`HARDENED_LARGE_NOOP_COUNT`)
 ///    between both branches' rejection paths.
 /// 3. **H1** (task #167, `hardened`): a block start of class `c` always
@@ -196,15 +201,43 @@ pub(super) fn small_free_guard(
     #[cfg(feature = "hardened")]
     use crate::alloc_core::size_classes::SizeClasses;
 
+    // ── Ph3b: physical-Large routing when the F7 branches do not ─────────
+    // The segment header's `kind` byte — not the caller's layout, and not a
+    // layout-size threshold — decides. Branches (A)/(B) below are
+    // `medium_promotion_reachable!` / `hardened` gated, so under plain
+    // `production` (neither `hardened` nor promotion) BOTH compile out and a
+    // Large-segment block freed with a small-classified layout fell straight
+    // through to the M2 oracles and the magazine push, reading and writing
+    // the Large block's own PAYLOAD as bitmap state. This ONE extra arm
+    // closes that gap with the SAME `BlockKind` read the F7 branches use,
+    // and is compiled in exactly when neither of them is — no duplicated
+    // `kind_at` read, and no second answer to "is this block Large".
+    //
+    // The predicate is the NEGATION of the F7 gate union
+    // (`hardened || promotion`) and must stay hand-written for the same
+    // R19-8 reason that union does.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        not(feature = "hardened"),
+        not(all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+            )
+        ))
+    ))]
+    if matches!(BlockKind::of(base, Some(c)), BlockKind::Large) {
+        return SmallFreeGuard::RouteToLargeFree;
+    }
+
     // ── F7 branch (A): promoted-Large routing (correctness-required) ──
     // See this function's own doc comment above (point 1) for the full
     // case-split rationale.
     medium_promotion_reachable! {
     {
-        if (cfg!(feature = "hardened")
-            || layout.size() >= MEDIUM_REALLOC_PROMOTION_THRESHOLD)
-            && SegmentHeader::kind_at(base) == SegmentKind::Large
-        {
+        if matches!(BlockKind::of(base, Some(c)), BlockKind::Large) {
             if !cfg!(feature = "hardened")
                 || (SegmentHeader::large_size_at(base) == layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK)
                     && SegmentHeader::large_align_at(base) == layout.align())
@@ -230,7 +263,7 @@ pub(super) fn small_free_guard(
         ))
     ))]
     {
-        if SegmentHeader::kind_at(base) == SegmentKind::Large {
+        if matches!(BlockKind::of(base, Some(c)), BlockKind::Large) {
             #[cfg(feature = "alloc-stats")]
             HARDENED_LARGE_NOOP_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return SmallFreeGuard::RejectNoOp;
@@ -267,13 +300,14 @@ pub(super) fn small_free_guard(
     SmallFreeGuard::Accept { off }
 }
 
-// `medium_promotion_reachable!` / `MEDIUM_REALLOC_PROMOTION_THRESHOLD` /
-// `HARDENED_LARGE_NOOP_COUNT` stayed in the sibling `dealloc` module with
-// the rest of the former file head. The macro is invoked unconditionally
-// below (its `#[cfg]` arms gate the expansion itself); the const is used
-// only inside branch (A)'s gated block, and the counter only at the two
-// `alloc-stats`-gated `fetch_add` sites (branch (A) / branch (B)), so those
-// two imports carry exactly the predicates gating their use sites.
+// `medium_promotion_reachable!` / `HARDENED_LARGE_NOOP_COUNT` stayed in the
+// sibling `dealloc` module with the rest of the former file head. The macro
+// is invoked unconditionally below (its `#[cfg]` arms gate the expansion
+// itself); the counter is used only at the two `alloc-stats`-gated
+// `fetch_add` sites (branch (A) / branch (B)), so those two imports carry
+// exactly the predicates gating their use sites. Ph3b removed this file's
+// last use of `MEDIUM_REALLOC_PROMOTION_THRESHOLD` (branch (A)'s layout-size
+// term — the physical kind replaced it), so its import went away with it.
 use super::dealloc::medium_promotion_reachable;
 #[cfg(all(
     feature = "alloc-stats",
@@ -289,14 +323,6 @@ use super::dealloc::medium_promotion_reachable;
     )
 ))]
 use super::dealloc::HARDENED_LARGE_NOOP_COUNT;
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
-use super::dealloc::MEDIUM_REALLOC_PROMOTION_THRESHOLD;
 
 impl HeapCore {
     /// Э9 (P7.1, task #160): own-thread dealloc body, taking a pre-computed
@@ -334,6 +360,11 @@ impl HeapCore {
             // (`class_for` guarantees `block_size % align == 0` for any
             // `Some(c)` it returns, so keying the magazine by class alone is
             // sound for any align it accepted, not just align<=16).
+            //
+            // Ph3b: the class is computed first because the magazine push
+            // below needs it, but it NO LONGER decides Small-vs-Large —
+            // `small_free_guard` does, from the segment header's `kind` byte
+            // via `BlockKind` (see its F7 branch and the pre-route above it).
             {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.classes[c].count as usize;

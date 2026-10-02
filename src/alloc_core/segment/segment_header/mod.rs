@@ -50,6 +50,11 @@ mod layout_asserts;
 mod segment_header_impl;
 pub use segment_header_impl::*;
 
+/// Ph3b: the private physical-kind witness shared by the free entries.
+#[path = "block_kind.rs"]
+mod block_kind;
+pub(crate) use block_kind::BlockKind;
+
 #[path = "terminal_words.rs"]
 mod terminal_words;
 pub(crate) use terminal_words::*;

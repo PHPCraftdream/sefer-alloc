@@ -66,8 +66,9 @@ impl HeapCore {
     /// For the owned Small subset, this reuses the SAME FIVE guards, in the
     /// SAME order,
     /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
-    /// applies per block — (1) [`hardened`] F7 Large-segment-kind guard
-    /// (`SegmentHeader::kind_at(base) == SegmentKind::Large`), (2)
+    /// applies per block — (1) the F7 Large-segment-kind guard (a physical
+    /// `BlockKind`/`SegmentHeader::kind_at(base) == SegmentKind::Large`
+    /// check, plus its `hardened` layout-consistency defence), (2)
     /// [`hardened`] H1 interior-pointer guard (`off % block_size(c) != 0`),
     /// (3) in-magazine-residency bitmap, (4) [under `alloc-decommit`]
     /// stale-free `off >= bump`, (5) flushed alloc-bitmap `is_free` —
@@ -85,6 +86,13 @@ impl HeapCore {
     /// the M2 oracles and read/write the Large block's own payload bytes as
     /// if they were a Small segment's bitmap, exactly the corruption F7's
     /// own doc comment (`free/dealloc_own_base.rs`) warns against.
+    ///
+    /// Ph3b: F7 is no longer `hardened`-only — `small_free_guard` routes a
+    /// physically-Large block in EVERY configuration (under `production`
+    /// neither of its F7 branches used to compile at all), and the
+    /// `RouteToLargeFree` outcome now goes to the SAME substrate call the
+    /// scalar path makes (`self.core.dealloc`), so batch and scalar cannot
+    /// drift apart again (fix B1).
     ///
     /// Accepted blocks are pushed into the magazine array DIRECTLY (batched
     /// slot writes instead of the scalar path's one-push-then-maybe-flush
@@ -292,16 +300,32 @@ impl HeapCore {
             // oracles, corrupting the Large block's own payload. Routing to
             // the real substrate free on `RouteToLargeFree` (mirroring the
             // "not owned" fallback immediately above) closes that gap.
+            //
+            // Ph3b (fix B1): that substrate free is now
+            // `self.core.dealloc(block, layout)` — the SAME call the scalar
+            // `dealloc_own_thread_with_base` makes on this exact guard
+            // outcome (see `free/dealloc_own_base.rs`), not the scalar
+            // `HeapCore::dealloc`. The scalar call re-runs the ownership
+            // routing (`canonical_block_of` + `contains_base`), which is
+            // redundant here (the gate above already resolved `base`/`block`
+            // from the same table entry) and, under `fastbin`, funnels the
+            // block back into THIS method's own guard chain — a second pass
+            // whose `small_free_guard` now routes it to the substrate free
+            // anyway. Handing it to `AllocCore` directly keeps the batch and
+            // scalar outcomes byte-identical and one hop shorter.
             let (off, meta) = match small_free_guard(base, p, c, layout) {
                 SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
                 SmallFreeGuard::RejectNoOp => continue,
                 SmallFreeGuard::RouteToLargeFree => {
                     // SAFETY: caller upholds the dealloc-batch contract for
-                    // `p`; `dealloc` performs its own Large-segment free via
-                    // the substrate.
-                    #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into scalar `dealloc`.
+                    // `p`; `base`/`block` were just resolved from THIS heap's
+                    // canonical table entry by the ownership gate above, and
+                    // `AllocCore::dealloc` routes by the segment's `kind`,
+                    // freeing the segment through its header — no layout
+                    // re-classification.
+                    #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
                     unsafe {
-                        self.dealloc(block, layout)
+                        self.core.dealloc(block, layout)
                     };
                     continue;
                 }

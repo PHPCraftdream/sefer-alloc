@@ -249,7 +249,13 @@ impl HeapCore {
 
         let mut filled = 0usize;
         for slot in out.iter_mut() {
-            let p = self.core.alloc(layout);
+            // Ph3b: the class was classified ONCE at the top of this method
+            // (and the Large case already left through `alloc_batch_large`),
+            // so hand it down instead of letting `AllocCore::alloc`
+            // re-derive it from the same `layout`. `alloc_with_class` is the
+            // twin the scalar non-`fastbin` `alloc` uses for exactly this
+            // purpose (`alloc/hot.rs`).
+            let p = self.core.alloc_with_class(layout, class);
             if p.is_null() {
                 break;
             }

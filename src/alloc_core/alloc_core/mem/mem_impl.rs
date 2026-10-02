@@ -16,7 +16,7 @@ use super::super::CachedLarge;
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::AllocKind;
 
 impl AllocCore {
@@ -495,15 +495,30 @@ impl AllocCore {
                     .size()
                     .max(crate::alloc_core::size_classes::MIN_BLOCK);
                 let align = layout.align();
-                let kind = Self::classify(size, align);
-                let class_idx = match kind {
-                    AllocKind::Small { class_idx } => class_idx,
-                    // Layout mismatch: the original allocation was small but
-                    // the dealloc layout classifies as large. This is a
-                    // contract violation; no-op (do not corrupt).
-                    AllocKind::Large => return,
-                };
-                self.dealloc_small(base, ptr, class_idx);
+                let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
+                // Ph3b: the physical-kind witness resolves this arm from the
+                // header's `kind` byte — the same read the enclosing `match`
+                // just made, so no second authority — while the caller's
+                // layout only fills `class`. An unresolvable class on a
+                // Small/Primordial segment degrades to `Unknown` (the same
+                // no-op reject the former `classify`-based `AllocKind::Large`
+                // arm produced) instead of guessing.
+                match BlockKind::of(base, class) {
+                    BlockKind::Small { class_idx } => self.dealloc_small(base, ptr, class_idx),
+                    // Primordial carries no class of its own: the BinTable
+                    // free that serves it is the Small segment's.
+                    BlockKind::Primordial => {
+                        let Some(class_idx) = class else {
+                            return;
+                        };
+                        self.dealloc_small(base, ptr, class_idx);
+                    }
+                    // Unreachable inside this arm — the witness can only
+                    // report Large/Unknown for a kind the enclosing match
+                    // already excluded — but the no-op is the sound answer
+                    // for either.
+                    BlockKind::Large | BlockKind::Unknown => {}
+                }
             }
             // L-5 (UBFIX-11): table lookup already proved `base` is one of
             // OUR registered segments, but the `kind` BYTE at that base has
