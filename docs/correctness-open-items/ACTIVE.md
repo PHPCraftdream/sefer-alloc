@@ -165,6 +165,8 @@ the reversal record.)
     - **Next trigger:** parent acceptance of actual `GlobalAlloc` Box/narrow-reborrow paths, paused-producer strict trim, last free after owner exit without further calls, fallback, startup failure/retry and worker-failure policy, Miri/Loom, feature/OS matrix and measured RSS/latency. Do not close from source inspection or owner-only tests.
     - **Evidence:** `src/registry/heap_core_xthread/routing.rs`, `src/alloc_core/alloc_core/sidecar_drain.rs`, `src/global/sefer_alloc/maintenance.rs`; `docs/REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`; `docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`. This doc pass did not run tests.
 
+    > **Dated update (2026-10-02, Ph3a/Ph3b/PG-2/PG-3).** P1 остаётся красным: установленный `Box` paused-witness красный на shipping `production` (UB в `Node::write_next`, `src/alloc_core/platform/node.rs:90`) — закрытие запланировано на Ph3c. Ph3a (commit `faf253e9`) и Ph3b (commit `fa88c95f`) влиты и Miri-красный НЕ сдвинули (зафиксировано в обеих записках). Спайк off-body NextTable (`8a028616`, ветка `ph2-pg2`) зелёнит paused-witness в обеих моделях, но PG-3 забраковал его геометрию по iai (см. `docs/perf/OPEN_ITEMS.md` item 79). Два CI miri-шага запинены как известные красные с точной сигнатурой: «EXPECTED RED - P1 - strict Stacked Borrows» (`.github/workflows/ci.yml:2831`) и «EXPECTED RED - P1» (`.github/workflows/ci.yml:2850`).
+
 163. **[A] Root src R7 P3-2 / R8-02 — implement Large alignment at or above segment granularity.**
 
     - **Status:** OPEN — biased high-alignment geometry is implemented in the dirty snapshot; end-to-end acceptance remains.
