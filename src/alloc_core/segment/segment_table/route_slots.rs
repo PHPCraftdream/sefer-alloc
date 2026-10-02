@@ -7,6 +7,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use crate::alloc_core::segment_header::SegmentKind;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
+use super::issue_transaction::IssueTransaction;
 use super::MAX_SEGMENTS;
 
 pub(super) struct RouteSlots {
@@ -121,13 +122,14 @@ impl RouteSlots {
         }
     }
 
+    #[inline(always)]
     pub(super) fn prepare_small_issue(
         &self,
         index: usize,
         base: *mut u8,
         offset: u32,
         class: u8,
-    ) -> bool {
+    ) -> Option<IssueTransaction> {
         if index >= self.cap {
             std::process::abort();
         }
@@ -142,6 +144,7 @@ impl RouteSlots {
             .small_sidecar()
             .unwrap_or_else(|| std::process::abort())
             .prepare(offset, class)
+            .then_some(IssueTransaction::prepared(index, base, offset, class))
     }
 
     pub(super) fn scan_small(

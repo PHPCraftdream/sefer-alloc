@@ -2,11 +2,11 @@ use core::ptr::NonNull;
 
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os::{self, SEGMENT};
-// R7-A2: `SegmentHeader::segment_id_at` is consulted here only by the
+// R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
 // `alloc-segment-directory`-gated directory-bitmap maintenance arms of
-// `pop_free`/`drain_freelist_batch` — gate the import identically so
-// non-directory builds stay warning-clean.
-#[cfg(feature = "alloc-segment-directory")]
+// `pop_free`/`drain_freelist_batch` and, unconditionally, by the Ph3a batch
+// commit witnesses (`IssueTransaction::commit_prepared`'s registry index),
+// so the import itself is unconditional.
 use crate::alloc_core::segment_header::SegmentHeader;
 use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
 // `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
@@ -18,6 +18,7 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::segment::segment_table::IssueTransaction;
 
 /// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
 /// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
@@ -365,6 +366,7 @@ impl AllocCore {
             || self
                 .table
                 .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+                .is_some()
     }
 
     /// Pop a free block; `Err` is an uncommitted class-spill OOM.
@@ -416,9 +418,9 @@ impl AllocCore {
             // per-segment), so offset = next - segment.
             (next as usize - segment as usize) as u32
         };
-        if !self.table.prepare_small_issue(segment, head_off, class_idx) {
+        let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
             return Err(());
-        }
+        };
         bt.set_head(class_idx, new_head);
         // R7-A2: directory bitmap maintenance — the old head was non-null
         // (we passed the FREE_LIST_NULL guard above), so the only transition
@@ -439,7 +441,7 @@ impl AllocCore {
         // recommit is needed on this path — only `carve_block` writes fresh
         // payload and thus recommits.
         meta.inc_live();
-        self.table.issue_small(segment, head_off, class_idx);
+        tx.commit(&self.table);
         // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
         // hands a block directly to the caller (it is the non-magazine substrate
         // pop, reachable from `alloc_small`). Under `hardened` (which implies
@@ -532,6 +534,9 @@ impl AllocCore {
         }
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
+        // The commit half re-validates this index against `segment`'s stamped
+        // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
+        let index = SegmentHeader::segment_id_at(segment) as usize;
 
         {
             // Read the head ONCE.
@@ -549,7 +554,11 @@ impl AllocCore {
                 let Some(nn) = NonNull::new(block) else {
                     break;
                 };
-                if !self.table.prepare_small_issue(segment, probe, class_idx) {
+                if self
+                    .table
+                    .prepare_small_issue(segment, probe, class_idx)
+                    .is_none()
+                {
                     return Err(());
                 }
                 let next = Node::read_next(nn);
@@ -595,7 +604,7 @@ impl AllocCore {
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);
-                self.table.issue_small(segment, head_off, class_idx);
+                IssueTransaction::commit_prepared(&self.table, index, segment, head_off, class_idx);
                 out[k] = block_ptr;
                 k += 1;
                 head_off = if next.is_null() {
@@ -655,12 +664,11 @@ impl AllocCore {
         if aligned_bump + block_size > SEGMENT {
             return None;
         }
-        if !self
+        // Fallible prepare before any mutation: `?` is the `return None` the
+        // old inline guard performed — "segment full" so the caller reserves.
+        let tx = self
             .table
-            .prepare_small_issue(segment, aligned_bump as u32, class_idx)
-        {
-            return None;
-        }
+            .prepare_small_issue(segment, aligned_bump as u32, class_idx)?;
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
         // emptied and we returned its pages to the OS), we are about to write
         // into the payload — recommit and clear the flag BEFORE the bump cursor
@@ -773,8 +781,7 @@ impl AllocCore {
             }
         }
         let ptr = Node::deref(segment, aligned_bump);
-        self.table
-            .issue_small(segment, aligned_bump as u32, class_idx);
+        tx.commit(&self.table);
         Some(ptr)
     }
 
@@ -855,13 +862,17 @@ impl AllocCore {
         }
         let room = (SEGMENT - aligned_start) / block_size;
         let n = out.len().min(room);
+        // The commit half re-validates this index against `segment`'s stamped
+        // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
+        let index = SegmentHeader::segment_id_at(segment) as usize;
         // A successful promotion is retained even if later OS commit fails;
         // no class code or issue credit changes until the carve commits.
         for i in 0..n {
             let off = aligned_start + i * block_size;
-            if !self
+            if self
                 .table
                 .prepare_small_issue(segment, off as u32, class_idx)
+                .is_none()
             {
                 return Err(());
             }
@@ -957,7 +968,7 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
-            self.table.issue_small(segment, off as u32, class_idx);
+            IssueTransaction::commit_prepared(&self.table, index, segment, off as u32, class_idx);
             *slot = ptr;
         }
         Ok(n)

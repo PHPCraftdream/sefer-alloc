@@ -58,6 +58,10 @@ mod harness;
 #[path = "hash.rs"]
 mod hash;
 
+#[path = "issue_transaction.rs"]
+mod issue_transaction;
+pub(crate) use issue_transaction::IssueTransaction;
+
 #[cfg(feature = "alloc-global")]
 #[path = "route_slots.rs"]
 mod route_slots;

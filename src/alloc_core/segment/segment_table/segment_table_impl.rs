@@ -1,3 +1,4 @@
+use super::issue_transaction::IssueTransaction;
 #[cfg(feature = "alloc-global")]
 use super::route_slots::RouteSlots;
 use super::*;
@@ -293,7 +294,7 @@ impl SegmentTable {
     }
 
     /// Owner-only class publication. Standalone AllocCore has no route.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn issue_small(&self, base: *mut u8, offset: u32, class_idx: usize) {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &self.routes {
@@ -309,8 +310,15 @@ impl SegmentTable {
     }
 
     /// Fallible owner-only class spill before any block issue state changes.
-    #[inline]
-    pub(crate) fn prepare_small_issue(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
+    /// The returned witness is the prepare half of the `prepare -> commit`
+    /// protocol; `None` is the uncommitted spill OOM.
+    #[inline(always)]
+    pub(crate) fn prepare_small_issue(
+        &self,
+        base: *mut u8,
+        offset: u32,
+        class_idx: usize,
+    ) -> Option<IssueTransaction> {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &self.routes {
             let class = u8::try_from(class_idx).unwrap_or_else(|_| std::process::abort());
@@ -321,7 +329,7 @@ impl SegmentTable {
             return routes.prepare_small_issue(index, base, offset, class);
         }
         let _ = (base, offset, class_idx);
-        true
+        Some(IssueTransaction::unrouted(base, offset))
     }
 
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
