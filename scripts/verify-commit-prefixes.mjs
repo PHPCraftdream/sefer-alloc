@@ -633,6 +633,16 @@ const GRANDFATHERED = new Map([
       'Pushed, so not amended. ' +
       'Durable record: docs/correctness-open-items/TRACKED_process_record.md item 78, sub-card 18.',
   ],
+  [
+    '3962933',
+    'fix(perf) prefix on a commit whose src/ delta is attribute-only: ' +
+      '#[inline(always)] -> #[cfg_attr(not(debug_assertions), inline(always))] ' +
+      '(debug-only codegen change keeping the 64 KiB-stack drop test from ' +
+      'overflowing; release codegen and the iai-gated hot path unchanged). ' +
+      'The lint treats attributes as non-code. Unpushed when caught; not ' +
+      'amended because later commits and docs cite the follow-on SHAs. ' +
+      'Durable record: docs/perf/OPEN_ITEMS.md Ph3a closure (commits faf253e9 + 3962933b).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
