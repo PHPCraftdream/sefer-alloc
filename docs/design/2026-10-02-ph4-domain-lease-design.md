@@ -140,6 +140,8 @@ impl Drop for HeapLease { /* LIVE → FREE через slot CAS, как recycle �
 
 ### 3.2 TLS становится «предпочтительным доменом / кэшем», а не владельцем
 
+> **ПОПРАВКА 2026-10-02 (решение владельца, `docs/design/2026-10-02-adr-addendum-ph4-decisions.md` §1–§2):** `LOCAL` НЕ хранит `Option<HeapLease>`. TORN-защита (`src/global/tls_heap.rs:54-59`) опирается на то, что `LOCAL` — константный `Cell<*mut HeapCore>` БЕЗ `Drop`; порядок «LOCAL, потом GUARD» нужен из-за повторного входа в аллокатор на std ≤ 1.92 (`tls_heap.rs:440-451`); горячий путь — одна загрузка и сравнение (`:261`), предел ADR ≤ 1.02. Lease принадлежит `GUARD` (`Cell<Option<HeapLease>>`). Публичного `DomainId` нет; «домен» внутри — только носитель lease (привязка потока `GUARD` или визит maintenance-worker'а). Ниже — исходный текст дизайна (остаётся как история).
+
 `LOCAL` перестаёт быть хранилищем права: он кэширует `Option<HeapLease>` (или `Option<(index, generation)>` + ленивый lease) **предпочтительного домена**. Домен — перечислимый идентификатор (main, worker-pool, именованный), и право принадлежит домену. Следствия:
 
 - «Выход владельца» = выход домена (пул переиспользуется, слот не перерабатывается), а не смерть потока.
@@ -206,7 +208,7 @@ impl Drop for HeapLease { /* LIVE → FREE через slot CAS, как recycle �
 |---|---|---|---|
 | A1 | Не более одного `&mut HeapCore` на слот; authority = CAS-winner | `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/r6_terminal_lease_registry.rs` | сохранить; добавить мутант «второй `core()` под тем же lease» |
 | A2 | Проигравший CAS не получает доступ | `loom_r8_maintenance_lease.rs` (сценарии с неудачным CAS), `claim.rs:213`, `claim.rs:224`, `claim.rs:66` | Loom-модель с `HeapLease` вместо payload-модели |
-| A3 | Двойной recycle/двойной `Drop` lease невозможен | `MaintenanceLease::drop` abort при ошибке CAS (`claim.rs:419`–`claim.rs:430`) | `Drop for HeapLease` — идемпотентный no-op при не-LIVE, abort при state-мутанте |
+| A3 | Двойной recycle/двойной `Drop` lease невозможен | `MaintenanceLease::drop` abort при ошибке CAS (`claim.rs:419`–`claim.rs:430`) | `Drop for HeapLease` — abort при неудачном CAS (как `MaintenanceLease::drop`) — поправка 2026-10-02: тихий no-op остаётся только у старого `recycle` (`claim.rs:375-381`, на нём держится `tests/registry_basic.rs:298`) |
 | A4 | Re-claim инвалидирует прежнего владельца (trim + NUMA + config-conflict) | `claim.rs:288`–`claim.rs:316`, `tests/regression_claim_oom_initialised_gate.rs`, `tests/regression_registry_initialised_gate.rs` | тот же путь через lease; мутант «пропустить `trim_for_recycle` при re-claim» |
 | A5 | `initialised` — единственный шлюз материализации | `tests/regression_claim_oom_initialised_gate.rs`, `tests/r6_terminal_lease_registry.rs`, `tests/r8_maintenance_registry.rs` | сохранить; `HeapLease` не создаётся без `initialised` |
 | A6 | Stale-TLS/TORN-указатель не разыменовывается | `tests/tls_heap_teardown_torn_sentinel.rs`, `tests/tls_heap_teardown_ordering_stress.rs` | TORN экстраполируется на «кэш домена», а не «кэш потока» |
@@ -224,7 +226,7 @@ impl Drop for HeapLease { /* LIVE → FREE через slot CAS, как recycle �
 4. **fallback `LOCK`** — захватывается **только** когда lease на registry-слот НЕ держится (см. `routing.rs:33`–`routing.rs:46`: занятый fallback не ждёт и не рекурсивно не берётся).
 5. **`CONTROL` (Mutex) maintenance-сервиса** — никогда вокруг lease и fallback-lock (`maintenance_service.rs:3`–`service.rs:8`).
 
-Жёсткое правило: **слот-lease и fallback-lock взаимно исключающие**; **domain-table RMW и slot CAS** — вложенность только «domain-table снаружи, slot CAS внутри».
+Жёсткое правило (ИСПРАВЛЕНО 2026-10-02, addendum Ph4 §1): прежняя формулировка «слот-lease и fallback-lock взаимно исключающие» неверна уже в текущем коде — `dealloc_routing(&mut self)` вызывает `publish_foreign`, а тот — `fallback::try_with_heap` под живым lease (`src/registry/heap_core_xthread/routing.rs:10-20`, `:35-44`). Верный инвариант: **под любым slot/maintenance lease к fallback — только через неблокирующий `try_with_heap`; блокирующий `with_heap` — только без lease**. `DomainTable` в Ph4a не вводится (решение владельца), поэтому вложенность domain-table/slot CAS неактуальна.
 
 ### 3.7 «Что может пойти не так → какой оракул ловит» (Ph4a)
 
@@ -259,6 +261,8 @@ Scope по плану: `src/global/{tls_heap,fallback,sefer_alloc/maintenance}/`
 | Текущий поток без own-heap | `current_for_dealloc` → `ForeignNoBind` без fallback-lock (`tls_heap.rs:313`–`tls_heap.rs:328`) | сохранить; доказано `dealloc_only_no_bind*.rs` |
 
 ### 4.2 G3+ — «ограниченная помощь перед ростом»
+
+> **СТАТУС 2026-10-02: G3+ НЕ ПРИНЯТ** (решение владельца, addendum Ph4 §2 п.3–4): Ph4b остаётся на G3, P4 = N/A («не обещано»), `HELP_BUDGET` не утверждается; текст ниже — исходный дизайн на случай переоткрытия по измеренному RSS-гейту. Поправка по коду: «один bounded step» ограничивает только ingress (`BACKGROUND_INGRESS_BUDGET` = 64, `ownership.rs:14`); `trim_cold_retention` не ограничен по числу вызовов ОС (`evict_all` — `alloc_core_large_cache_eviction.rs:70-72`, `drain_small_pool` — `alloc_core_small_pool_impl.rs:636-650`), для G3+ потребовался бы отдельный шаг «не более одного освобождения ОС».
 
 Формулировка ADR: при уходе владельца и отсутствии worker'а, **прежде чем резервировать новый сегмент или минтить слот**, выполнить ограниченную помощь на уже существующих FREE-heap'ах (`...adr...:43`). Сегодня эта помощь есть только в трёх местах: при re-claim (однократный `trim_for_recycle`, `claim.rs:298`), в worker-проходе (`maintenance.rs:20`–`maintenance.rs:53`) и в `trim_current_thread()` (`diag.rs:195`–`diag.rs:210`).
 
@@ -323,7 +327,7 @@ Scope по плану: `src/global/{tls_heap,fallback,sefer_alloc/maintenance}/`
 | ID | Инвариант | Проверка |
 |---|---|---|
 | B1 | `start_maintenance` до `Ok` не даёт автономной гарантии | native: `r8_autonomous_maintenance.rs` (дочерние процессы, ack по PASSES); ревью diff |
-| B2 | Отказ spawn ретраебельен, активация не «залипает» | `maintenance_start_error.rs:11`–`:15`, `StartingGuard` `service.rs:54`–`service.rs:59`; тест — нужен (см. §5) |
+| B2 | Отказ spawn ретраебельен, активация не «залипает» | `maintenance_start_error.rs:11`–`:15`, `StartingGuard` `service.rs:54`–`service.rs:59`; тест УЖЕ ЕСТЬ: `tests/r8_autonomous_maintenance.rs:137-167` (`startup_failure_and_race`) — поправка 2026-10-02 |
 | B3 | Смерть worker'а = abort, не silent degradation | `service.rs:63`–`service.rs:68`; тест FAIL_WORKER |
 | B4 | Один проход ≤ 32 слотов, один bounded step на слот, один `try_with_heap` на проход | `service.rs:29`, `maintenance.rs:20`–`maintenance.rs:53`; `tests/r8_maintenance_registry.rs`, `tests/r9_bounded_background_maintenance.rs` |
 | B5 | G3: без worker pending остаётся до повторного claim | **отрицательный контроль** (P2) — нужен новый оракул |
@@ -344,7 +348,7 @@ Scope по плану: `src/global/{tls_heap,fallback,sefer_alloc/maintenance}/`
 | 4 | fallback `LOCK` | `with_heap`, `try_with_heap` (`fallback.rs:331`, `fallback.rs:379`) | рекурсивно входить в `with_heap`; держать slot-lease |
 | 5 | `CONTROL` (Mutex) | startup + тест-ack (`service.rs:123`) | держать lease или fallback-лок; spawn'ить |
 
-Пере-становка 2 и 4 (fallback-lock под slot-lease) — deadlock risk; пере-становка 3 и 4 — блокировка холодного пути на fallback'е, которым в это время может владеть тот же поток через `publish_foreign` (`routing.rs:36`).
+Поправка 2026-10-02: «fallback-lock под slot-lease» допустим ТОЛЬКО как неблокирующий `try_with_heap` (так уже работает `publish_foreign` под lease); блокирующий `with_heap` под lease — deadlock risk. Пере-становка 2 и 4 (блокирующий fallback-lock под slot-lease) — deadlock risk; пере-становка 3 и 4 — блокировка холодного пути на fallback'е, которым в это время может владеть тот же поток через `publish_foreign` (`routing.rs:36`).
 
 ### 4.7 «Что может пойти не так → какой оракул» (Ph4b)
 
@@ -428,3 +432,7 @@ Scope по плану: `src/global/{tls_heap,fallback,sefer_alloc/maintenance}/`
 - Плотность тестового покрытия (что именно зелёное) не запускалась: запрещено запускать сборки/тесты в этом окружении.
 - Оценки стоимости help на холодном пути (§4.2) — рассуждение, не измерение; perf-гейт ADR определяет пригодность.
 - Побочные эффекты domain-модели на `MAX_HEAPS`/насыщение — не анализировались количественно.
+
+## 7. Поправки 2026-10-02 (сводка)
+
+Расхождения записки с кодом (addendum Ph4 §1) внесены в §3.2, §3.6, §3.5 (A3), §4.2, §4.5 (B2), §4.6. Дополнительно: счёт тестов — `HeapRegistry::claim()` в 69 файлах, `recycle(` в 70, `claim_with_config` в 20 (всего `HeapRegistry` упоминают 114 файлов tests/benches/examples) — масштаб миграции Ph4c; `generation` в production нигде не читается (`heap_slot.rs:12-15`, `:163-169`) — в lease только числовой наблюдатель, без проверок на горячем пути. Порядок фаз после эскалации Ph3c: runtime-код Ph4a — после вердикта интегрированного спайка B3 (`docs/design/2026-10-02-adr-addendum-ph3c-escalation.md` §6); если Ph3c отменяется (путь (б)), Ph4a стартует сразу на текущем API drain sidecar.
