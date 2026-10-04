@@ -2828,14 +2828,16 @@ jobs:
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
           grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
         shell: bash
-      - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - strict Stacked Borrows)
+      - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
         run: |
           # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
           # freelist link through the reservation root while the producer's Box::drop frame is live.
-          # This step pins that exact failure instead of hiding it: it fails if the witness goes
-          # green or fails for a different reason, so this wrapper and the P1 card change together.
+          # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+          # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+          # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+          # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
           set +e
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
           status=${PIPESTATUS[0]}
@@ -2845,16 +2847,24 @@ jobs:
             exit 1
           fi
           test "$status" -ne 0
-          grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+          log="$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
+          grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+          bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+            exit 1
+          fi
         shell: bash
-      - name: installed Box terminal producer pause under TreeBorrows (EXPECTED RED - P1)
+      - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - TreeBorrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
         run: |
           # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
           # freelist link through the reservation root while the producer's Box::drop frame is live.
-          # This step pins that exact failure instead of hiding it: it fails if the witness goes
-          # green or fails for a different reason, so this wrapper and the P1 card change together.
+          # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+          # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+          # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+          # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
           set +e
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
           status=${PIPESTATUS[0]}
@@ -2864,7 +2874,69 @@ jobs:
             exit 1
           fi
           test "$status" -ne 0
-          grep -E "Undefined Behavior: write access through .* is forbidden" "$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+          log="$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
+          grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+          bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+            exit 1
+          fi
+        shell: bash
+      - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - production - strict Stacked Borrows)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: |
+          # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+          # freelist link through the reservation root while the producer's Box::drop frame is live.
+          # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+          # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+          # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+          # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
+          # Production variant mirrors PG-1's witness run: --features "production internals bench-internals".
+          set +e
+          cargo miri test --features "production internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"; then
+            echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+            exit 1
+          fi
+          test "$status" -ne 0
+          log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"
+          grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+          bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+            exit 1
+          fi
+        shell: bash
+      - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - production - TreeBorrows)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: |
+          # KNOWN RED (P1, docs/correctness-open-items/ACTIVE.md): strict trim writes the intrusive
+          # freelist link through the reservation root while the producer's Box::drop frame is live.
+          # Pins the failure site, not just the message (docs/design/2026-10-02-adr-addendum-ph3c-escalation.md
+          # §5-§6): green witness, different error text, or UB outside Node::write_next called from
+          # reclaim_sidecar_record/flush_run/dealloc_small all fail this step. Frame format per
+          # docs/perf/_raw_ph3c_b3s_miri_mutant.log and docs/reviews/2026-10-01-adr-pg1-w0-receipt.md §6.
+          # Production variant mirrors PG-1's witness run: --features "production internals bench-internals".
+          set +e
+          cargo miri test --features "production internals bench-internals" --test miri_global_box_acceptance -- paused 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -F "[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement" "$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"; then
+            echo "::error::the P1 witness is green: remove this expected-red wrapper and close the P1 card"
+            exit 1
+          fi
+          test "$status" -ne 0
+          log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"
+          grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
+          bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
+            exit 1
+          fi
         shell: bash
       # Tagged-index-stack Miri automation: the package-specific unchecked-storage oracle for
       # `tagged-index-stack`. Keep this as an explicit Miri invocation under

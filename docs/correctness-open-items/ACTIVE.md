@@ -167,6 +167,8 @@ the reversal record.)
 
     > **Dated update (2026-10-02, Ph3a/Ph3b/PG-2/PG-3).** P1 остаётся красным: установленный `Box` paused-witness красный на shipping `production` (UB в `Node::write_next`, `src/alloc_core/platform/node.rs:90`) — закрытие запланировано на Ph3c. Ph3a (commit `faf253e9`) и Ph3b (commit `fa88c95f`) влиты и Miri-красный НЕ сдвинули (зафиксировано в обеих записках). Спайк off-body NextTable (`8a028616`, ветка `ph2-pg2`) зелёнит paused-witness в обеих моделях, но PG-3 забраковал его геометрию по iai (см. `docs/perf/OPEN_ITEMS.md` item 79). Два CI miri-шага запинены как известные красные с точной сигнатурой: «EXPECTED RED - P1 - strict Stacked Borrows» (`.github/workflows/ci.yml:2831`) и «EXPECTED RED - P1» (`.github/workflows/ci.yml:2850`).
 
+    > **Dated update (2026-10-04, Ph3c).** Решение владельца (`docs/design/2026-10-02-adr-addendum-ph3c-escalation.md`, `...-ph3c-step1prime.md`): P1 закрывается интегрированной геометрией B3 (спайк `ph3c-b3s`: paused-witness зелёный на 4 клетках production/alloc-global × SB/TB, мутант `write_next` красный в `node.rs:94`) только после шага 1′ и приёмки гейтов; при провале — путь (б), P1-box как принятый известный дефект. До этого ожидаемо-красные miri-шаги CI теперь пинят МЕСТО: `Node::write_next` (`node.rs`) с вызывающим `reclaim_sidecar_record`/`flush_run`/`dealloc_small`, 4 шага {production, alloc-global} × {SB, TB}; красный в другом месте или зелёный роняет шаг.
+
 163. **[A] Root src R7 P3-2 / R8-02 — implement Large alignment at or above segment granularity.**
 
     - **Status:** OPEN — biased high-alignment geometry is implemented in the dirty snapshot; end-to-end acceptance remains.
