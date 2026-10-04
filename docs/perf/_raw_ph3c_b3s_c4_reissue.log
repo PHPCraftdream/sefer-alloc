@@ -1,0 +1,147 @@
+warning: unused attribute
+  --> src/alloc_core/segment/segment_header/b3_free.rs:93:5
+   |
+93 |     #[inline(always)]
+   |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+   |
+note: attribute also specified here
+  --> src/alloc_core/segment/segment_header/b3_free.rs:92:5
+   |
+92 |     #[inline(always)]
+   |     ^^^^^^^^^^^^^^^^^
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:102:5
+    |
+102 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:101:5
+    |
+101 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:110:5
+    |
+110 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:109:5
+    |
+109 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:119:5
+    |
+119 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:118:5
+    |
+118 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:130:5
+    |
+130 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:129:5
+    |
+129 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:139:5
+    |
+139 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:138:5
+    |
+138 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:148:5
+    |
+148 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:147:5
+    |
+147 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:164:5
+    |
+164 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:163:5
+    |
+163 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: `sefer-alloc` (lib) generated 8 warnings (run `cargo fix --lib -p sefer-alloc` to apply 8 suggestions)
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3s)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.17s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r11_pg3c_b3s_model_limit.rs (/tmp/b3s-miri/miri/x86_64-unknown-linux-gnu/debug/deps/r11_pg3c_b3s_model_limit-60e8888dbc80b6da)
+error: Undefined Behavior: not granting access to tag <1070> because that would remove [Unique for <311554>] which is weakly protected
+  --> tests/r11_pg3c_b3s_model_limit.rs:94:21
+   |
+94 |         let mut c = Box::new(i);
+   |                     ^^^^^^^^^^^ Undefined Behavior occurred here
+   |
+   = help: this indicates a potential bug in the program: it performed an invalid operation, but the Stacked Borrows rules it violated are still experimental
+   = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md for further information
+help: <1070> was created here, as the root tag for alloc909
+  --> crates/aligned-vmem/src/os/miri.rs:21:24
+   |
+21 |     let ptr = unsafe { System.alloc(layout) };
+   |                        ^^^^^^^^^^^^^^^^^^^^
+help: <311554> is this argument
+  --> tests/r11_pg3c_b3s_model_limit.rs:84:68
+   |
+84 |       let (resume, producer) = pause_producer_after_publication(ptr, move || {
+   |  ____________________________________________________________________^
+85 | |         assert_eq!(*{ byte }, 0x70);
+86 | |     });
+   | |_____^
+   = note: this is on thread `main`
+   = note: stack backtrace:
+           0: run_reissue
+               at tests/r11_pg3c_b3s_model_limit.rs:94:21: 94:32
+           1: main
+               at tests/r11_pg3c_b3s_model_limit.rs:147:28: 147:41
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+error: test failed, to rerun pass `--test r11_pg3c_b3s_model_limit`
+
+Caused by:
+  process didn't exit successfully: `/home/user/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo-miri runner /tmp/b3s-miri/miri/x86_64-unknown-linux-gnu/debug/deps/r11_pg3c_b3s_model_limit-60e8888dbc80b6da reissue` (exit status: 1)

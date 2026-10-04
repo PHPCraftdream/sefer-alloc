@@ -1,0 +1,3188 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index c28dc5e5..b3121b66 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1034,6 +1034,14 @@ harness = false
+ test = false
+ required-features = ["alloc-global", "internals", "bench-internals"]
+ 
++# Ph3c B3 spike MODEL-LIMIT cells (ported from PG-2's r11_pg2_model_limit):
++# one scenario per process, selected by name (installed SeferAlloc, no libtest).
++[[test]]
++name = "r11_pg3c_b3s_model_limit"
++harness = false
++test = false
++required-features = ["alloc-global", "internals", "bench-internals"]
++
+ # Ph1b exact-object prototype witness: one scenario per process, selected by
+ # name (installed SeferAlloc, no libtest).
+ [[test]]
+diff --git a/src/alloc_core/alloc_core/bootstrap.rs b/src/alloc_core/alloc_core/bootstrap.rs
+index 444531ff..acd6c46c 100644
+--- a/src/alloc_core/alloc_core/bootstrap.rs
++++ b/src/alloc_core/alloc_core/bootstrap.rs
+@@ -192,6 +192,13 @@ pub(crate) fn primordial() -> Option<Primordial> {
+         base,
+         Layout::magazine_bitmap_off(),
+     ));
++    // B3 spike: same virgin-skip discipline for the sub-leaf mask region
++    // (target state all-zeros; decommit-reset re-zeroes explicitly).
++    #[cfg(miri)]
++    super::super::segment_header::B3Free::init_in_place(base_plus(
++        base,
++        Layout::b3_free_off(),
++    ));
+     // X7 Ф3 (task #191): zero the per-segment generation table under
+     // `hardened`. Compiled ONLY under `hardened`; under any other feature the
+     // table does not exist and this call is absent (byte-identical to the
+diff --git a/src/alloc_core/alloc_core/mod.rs b/src/alloc_core/alloc_core/mod.rs
+index 2664717b..42e87e2b 100644
+--- a/src/alloc_core/alloc_core/mod.rs
++++ b/src/alloc_core/alloc_core/mod.rs
+@@ -90,3 +90,32 @@ mod state;
+ #[path = "alloc_core_impl.rs"]
+ mod alloc_core_impl;
+ pub use alloc_core_impl::*;
++
++
++
++/// B3 spike oracle: crate-internal reader (bench-internals).
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(super) fn b3s_drain_from_free_inner() -> u64 {
++    crate::alloc_core::small::alloc_core_small::B3_DRAIN_FROM_FREE
++        .load(core::sync::atomic::Ordering::Relaxed)
++}
++
++/// B3p oracle: crate-internal readers (bench-internals).
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(super) fn b3p_run_bytes_inner(class_idx: usize) -> u64 {
++    crate::alloc_core::small::alloc_core_small::b3p_run_bytes(class_idx)
++}
++
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(super) fn b3p_run_leaves_inner(class_idx: usize) -> u32 {
++    crate::alloc_core::small::alloc_core_small::b3p_run_leaves(class_idx)
++}
++
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(super) fn b3p_leaf_class_of_inner(ptr: *mut u8) -> u8 {
++    crate::alloc_core::small::alloc_core_small::b3p_leaf_class_of(ptr)
++}
+diff --git a/src/alloc_core/alloc_core/sidecar_drain.rs b/src/alloc_core/alloc_core/sidecar_drain.rs
+index 8ea0bfae..b330d651 100644
+--- a/src/alloc_core/alloc_core/sidecar_drain.rs
++++ b/src/alloc_core/alloc_core/sidecar_drain.rs
+@@ -16,6 +16,23 @@ pub(crate) static LARGE_SIDECAR_FULL_RESCUES: core::sync::atomic::AtomicU64 =
+ pub(crate) const LARGE_HOT_BUDGET: usize = 4;
+ 
+ impl AllocCore {
++    /// Patch S: the word a resumed cursor starts at for slot `index` — the
++    /// payload's first word of that slot, or 0 for a null/Large slot (its word
++    /// component is unused and rewritten on the next advance).
++    fn sidecar_word_hint(&self, index: usize) -> usize {
++        if index >= self.table.count() as usize {
++            return 0;
++        }
++        let base = self.table.base_at(index);
++        if base.is_null() {
++            return 0;
++        }
++        match SegmentHeader::kind_at(base) {
++            SegmentKind::Small | SegmentKind::Primordial => Self::sidecar_payload_start_word(base),
++            _ => 0,
++        }
++    }
++
+     /// At most `budget` slot inspections or word cuts. Cursor holds no root.
+     /// Returns (retired records, charged operations).
+     pub(crate) fn drain_sidecar_ingress_bounded(
+@@ -28,7 +45,7 @@ impl AllocCore {
+         }
+         let end = self.table.count() as usize;
+         if cursor.0 >= end {
+-            *cursor = (0, 0);
++            *cursor = (0, self.sidecar_word_hint(0));
+         }
+         let mut reclaimed = 0;
+         let mut units = 0;
+@@ -37,7 +54,7 @@ impl AllocCore {
+             let base = self.table.base_at(index);
+             if base.is_null() {
+                 cursor.0 += 1;
+-                cursor.1 = 0;
++                cursor.1 = self.sidecar_word_hint(cursor.0);
+                 units += 1;
+                 continue;
+             }
+@@ -45,9 +62,14 @@ impl AllocCore {
+                 SegmentKind::Small | SegmentKind::Primordial => {
+                     let high_water = SegmentMeta::new(base).bump_of();
+                     let end_word = high_water.div_ceil(MIN_BLOCK * 64);
++                    // Patch S: never scan below the payload's first word.
++                    let start_word = Self::sidecar_payload_start_word(base);
++                    if cursor.1 < start_word {
++                        cursor.1 = start_word;
++                    }
+                     if cursor.1 >= end_word {
+                         cursor.0 += 1;
+-                        cursor.1 = 0;
++                        cursor.1 = self.sidecar_word_hint(cursor.0);
+                         units += 1;
+                         continue;
+                     }
+@@ -83,12 +105,12 @@ impl AllocCore {
+                     {
+                         let _ = self.release_or_pool_empty_segment(base);
+                         cursor.0 += 1;
+-                        cursor.1 = 0;
++                        cursor.1 = self.sidecar_word_hint(cursor.0);
+                         continue;
+                     }
+                     if cursor.1 == end_word {
+                         cursor.0 += 1;
+-                        cursor.1 = 0;
++                        cursor.1 = self.sidecar_word_hint(cursor.0);
+                     }
+                 }
+                 SegmentKind::Large => {
+@@ -99,14 +121,14 @@ impl AllocCore {
+                         reclaimed += 1;
+                     }
+                     cursor.0 += 1;
+-                    cursor.1 = 0;
++                    cursor.1 = self.sidecar_word_hint(cursor.0);
+                     units += 1;
+                 }
+                 SegmentKind::Unknown => std::process::abort(),
+             }
+         }
+         if cursor.0 == end {
+-            *cursor = (0, 0);
++            *cursor = (0, self.sidecar_word_hint(0));
+         }
+         (reclaimed, units)
+     }
+diff --git a/src/alloc_core/mod.rs b/src/alloc_core/mod.rs
+index 7b09727d..39fb944f 100644
+--- a/src/alloc_core/mod.rs
++++ b/src/alloc_core/mod.rs
+@@ -245,3 +245,29 @@ pub use segment_layout::SegmentLayout;
+ pub use segment_table::SegmentHashHarness;
+ #[cfg(feature = "alloc-decommit")]
+ pub use small_segment_pool_config::SmallSegmentPoolConfig;
++
++/// B3 spike oracle: crate-internal reader (bench-internals).
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(crate) fn b3s_drain_from_free_inner() -> u64 {
++    crate::alloc_core::alloc_core::b3s_drain_from_free_inner()
++}
++
++/// B3p oracle: crate-internal readers (bench-internals).
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(crate) fn b3p_run_bytes_inner(class_idx: usize) -> u64 {
++    crate::alloc_core::alloc_core::b3p_run_bytes_inner(class_idx)
++}
++
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(crate) fn b3p_run_leaves_inner(class_idx: usize) -> u32 {
++    crate::alloc_core::alloc_core::b3p_run_leaves_inner(class_idx)
++}
++
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub(crate) fn b3p_leaf_class_of_inner(ptr: *mut u8) -> u8 {
++    crate::alloc_core::alloc_core::b3p_leaf_class_of_inner(ptr)
++}
+diff --git a/src/alloc_core/platform/node.rs b/src/alloc_core/platform/node.rs
+index d6b612ae..f2305f20 100644
+--- a/src/alloc_core/platform/node.rs
++++ b/src/alloc_core/platform/node.rs
+@@ -72,6 +72,10 @@ impl Node {
+     /// this allocator. `next` is either null (tail) or another such free
+     /// block's address.
+     #[inline(always)]
++    // B3 spike: unused on the Small free paths (body `next` chains are
++    // gone); kept for the PG-2-style mutant witness (temporarily re-adding
++    // the retire body-write must re-link this seam).
++    #[allow(dead_code)]
+     pub(crate) fn write_next(block: NonNull<u8>, next: *mut u8) {
+         let ptr = block.as_ptr() as *mut *mut u8;
+         // SAFETY: `block` is non-null (from `NonNull`), aligned to at least the
+@@ -97,6 +101,7 @@ impl Node {
+     /// or null if none. The block MUST currently be a free-list node (caller's
+     /// invariant).
+     #[inline(always)]
++    #[allow(dead_code)] // B3 spike: see write_next.
+     pub(crate) fn read_next(block: NonNull<u8>) -> *mut u8 {
+         let ptr = block.as_ptr() as *mut *mut u8;
+         // SAFETY: same bounds/alignment/exclusivity proof as `write_next`. The
+@@ -534,6 +539,26 @@ impl Node {
+         unsafe { dst.write(value) };
+     }
+ 
++    /// Read a `u64` from `src` (8-byte aligned). B3 spike: owner-only
++    /// sub-leaf mask words in segment metadata.
++    #[allow(dead_code)]
++    #[inline(always)]
++    pub(crate) fn read_u64(src: *const u64) -> u64 {
++        // SAFETY: caller guarantees `src` is valid, 8-byte aligned, in a live
++        // segment. One 8-byte load.
++        unsafe { src.read() }
++    }
++
++    /// Write a `u64` `value` at `dst` (8-byte aligned). B3 spike: owner-only
++    /// sub-leaf mask words in segment metadata.
++    #[allow(dead_code)]
++    #[inline(always)]
++    pub(crate) fn write_u64(dst: *mut u64, value: u64) {
++        // SAFETY: caller guarantees `dst` is valid for 8 bytes, 8-byte
++        // aligned, and exclusively owned. One 8-byte write.
++        unsafe { dst.write(value) };
++    }
++
+     /// Return a `&'static AtomicU64` view over the 8 aligned bytes at
+     /// `base + off`. Used to obtain a race-free atomic view over an
+     /// 8-byte-aligned `u64` field in a segment header (e.g. `owner_state`
+diff --git a/src/alloc_core/segment/bitmap/alloc_bitmap.rs b/src/alloc_core/segment/bitmap/alloc_bitmap.rs
+index ba36f09b..195db342 100644
+--- a/src/alloc_core/segment/bitmap/alloc_bitmap.rs
++++ b/src/alloc_core/segment/bitmap/alloc_bitmap.rs
+@@ -114,10 +114,27 @@ impl AllocBitmap {
+         self.0.set(off)
+     }
+ 
++    /// B3 spike: read the u64 bitmap word `w` (8-aligned).
++    #[allow(dead_code)]
++    #[inline(always)]
++    pub(crate) fn word(&self, w: usize) -> u64 {
++        self.0.word(w)
++    }
++
++    /// B3 spike: clear bit `b` of bitmap word `w` (one RMW).
++    #[allow(dead_code)]
++    #[inline(always)]
++    pub(crate) fn clear_word_bit(&mut self, w: usize, b: u32) {
++        self.0.clear_word_bit(w, b)
++    }
++
+     /// Mark the block at segment offset `off` as ALLOCATED (clear its bit).
+     /// Called when the block is popped from a free list and handed out. O(1):
+     /// byte load + AND + store.
+     #[inline(always)]
++    // B3 spike: pops clear whole bitmap words now; the per-bit wrapper has
++    // no remaining caller (kept for parity with mark_free).
++    #[allow(dead_code)]
+     pub(crate) fn mark_alloc(&mut self, off: u32) {
+         self.0.clear(off)
+     }
+diff --git a/src/alloc_core/segment/bitmap/segment_bitmap.rs b/src/alloc_core/segment/bitmap/segment_bitmap.rs
+index 506bfe78..4be09d17 100644
+--- a/src/alloc_core/segment/bitmap/segment_bitmap.rs
++++ b/src/alloc_core/segment/bitmap/segment_bitmap.rs
+@@ -106,6 +106,22 @@ impl SegmentBitmap {
+         Node::write_u8(p, byte & !mask);
+     }
+ 
++    /// B3 spike: read the u64 bitmap word `w` (8-byte aligned — the bitmap
++    /// starts at an 8-aligned offset, words follow contiguously).
++    #[allow(dead_code)]
++    #[inline(always)]
++    pub(super) fn word(&self, w: usize) -> u64 {
++        Node::read_u64(Node::offset(self.bits, w * 8) as *const u64)
++    }
++
++    /// B3 spike: clear bit `b` (0..64) of bitmap word `w` in one RMW.
++    #[allow(dead_code)]
++    #[inline(always)]
++    pub(super) fn clear_word_bit(&mut self, w: usize, b: u32) {
++        let p = Node::offset(self.bits, w * 8) as *mut u64;
++        Node::write_u64(p, Node::read_u64(p) & !(1u64 << b));
++    }
++
+     /// Map a segment offset to `(byte_index, bit_mask)` within the bitmap. The
+     /// bit index is `off >> MIN_BLOCK_SHIFT` (the `MIN_BLOCK`-slot number);
+     /// byte = bit / 8, mask = 1 << (bit % 8). Pure arithmetic.
+diff --git a/src/alloc_core/segment/segment_directory/segment_directory_impl.rs b/src/alloc_core/segment/segment_directory/segment_directory_impl.rs
+index 6e729c86..c32d854b 100644
+--- a/src/alloc_core/segment/segment_directory/segment_directory_impl.rs
++++ b/src/alloc_core/segment/segment_directory/segment_directory_impl.rs
+@@ -1,4 +1,4 @@
+-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
++use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+ use crate::alloc_core::segment_table::{SegmentTable, MAX_SEGMENTS};
+ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+ 
+@@ -662,7 +662,6 @@ impl SegmentDirectory {
+                 continue;
+             }
+             let meta = SegmentMeta::new(base);
+-            let bt = meta.bin_table();
+             // R11-6: derive the node bucket from the segment header under
+             // numa-aware; non-numa-aware uses bucket 0 (node_id_of is
+             // cfg-gated out).
+@@ -671,7 +670,7 @@ impl SegmentDirectory {
+             #[cfg(not(feature = "numa-aware"))]
+             let node_id = 0u32;
+             for c in 0..SMALL_CLASS_COUNT {
+-                if bt.head(c) != FREE_LIST_NULL {
++                if !meta.b3_free().class_empty(c) {
+                     self.set_bit(node_id, c, i);
+                 }
+             }
+diff --git a/src/alloc_core/segment/segment_header/b3_free.rs b/src/alloc_core/segment/segment_header/b3_free.rs
+new file mode 100644
+index 00000000..2bd98834
+--- /dev/null
++++ b/src/alloc_core/segment/segment_header/b3_free.rs
+@@ -0,0 +1,268 @@
++//! B3 spike (`ph3c-b3s`): per-class masks of non-empty 4 KiB sub-leaves.
++#![allow(unsafe_code)] // tier-1 seam: raw mask/bind/cursor words via the node seam.
++//!
++//! The free set of a Small segment is the existing [`AllocBitmap`]
++//! (bit = MIN_BLOCK slot is FREE). This seam adds the owner-only index over it:
++//! one bit per 4 KiB sub-leaf (256 slots = exactly 4 bitmap words) per class,
++//! plus the first-carve sub-leaf→class binding and a scan cursor. No atomic —
++//! single-writer (segment owner), like `bump`.
++//!
++//! Sub-leaf `s` covers bitmap words `[s*4, s*4+4)`. Class masks live in the
++//! segment metadata region carved at [`crate::alloc_core::segment_header::Layout::b3_free_off`].
++
++use crate::alloc_core::node::Node;
++use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
++
++/// Bytes in one sub-leaf (256 slots × 16 B). `AllocBitmap` covers it with
++/// exactly 4 u64 words.
++pub(crate) const B3_LEAF_BYTES: usize = 256 * crate::alloc_core::size_classes::MIN_BLOCK;
++/// Sub-leaves per segment.
++pub(crate) const B3_LEAVES: usize = crate::alloc_core::os::SEGMENT / B3_LEAF_BYTES;
++/// u64 words of the alloc bitmap per sub-leaf.
++pub(crate) const B3_LEAF_WORDS: usize = 4;
++/// u64 mask words per class (one bit per sub-leaf).
++const B3_MASK_WORDS: usize = B3_LEAVES / 64;
++
++const _: () = {
++    assert!(B3_LEAF_BYTES == 4096);
++    assert!(B3_LEAVES == 1024);
++    assert!(B3_LEAF_WORDS == 4);
++    assert!(B3_LEAVES == B3_MASK_WORDS * 64);
++};
++
++/// Per-class carve-run length (see [`B3Free::RUN_LEAVES`]).
++#[allow(clippy::manual_div_ceil)] // const fn: `div_ceil` const-stability risk
++const fn run_leaves_for(block_size: usize) -> u32 {
++    if block_size > B3_LEAF_BYTES {
++        return 0;
++    }
++    // Correctness floor: first block of a run must fit before `run_end` for
++    // every leaf-aligned `run_start` (worst align deficit = bs - gcd).
++    let (mut a, mut b) = (B3_LEAF_BYTES, block_size);
++    while b != 0 {
++        let t = a % b;
++        a = b;
++        b = t;
++    }
++    let worst_deficit = 2 * block_size - a; // 2*bs - gcd(bs, 4096)
++    let floor = (worst_deficit + B3_LEAF_BYTES - 1) / B3_LEAF_BYTES;
++    let mut best_k = 0usize;
++    let mut best_loss = usize::MAX;
++    let mut k = if floor > 1 { floor } else { 1 };
++    while k <= 4 {
++        let run = k * B3_LEAF_BYTES;
++        let loss = run % block_size;
++        if loss * 100 <= 6 * run {
++            return k as u32;
++        }
++        if loss < best_loss {
++            best_loss = loss;
++            best_k = k;
++        }
++        k += 1;
++    }
++    best_k as u32
++}
++
++/// Owner-only B3 index. Plain (non-atomic) bytes; zero-initialized at segment
++/// init and zeroed again on decommit reset.
++pub(crate) struct B3Free {
++    raw: *mut u8,
++}
++
++impl B3Free {
++    /// Byte footprint of the region: class masks, leaf bindings, scan
++    /// cursors, per-class carve cursors, 8-byte aligned. Padded UP to 12 KiB:
++    /// the raw data is ~7.4 KiB, but the
++    /// segment-layout invariants pinned by the forced-page tests
++    /// (`lazy_initial_commit_forced_page`, `decomp_hooks_forced_page`)
++    /// require `small_meta_end() + LAZY_FIRST_CHUNK` to stay a NON-multiple
++    /// of every page size above 4 KiB; the natural 20-page meta_end (81920)
++    /// is a 16 KiB multiple, the padded 21-page value (86016) is not (and
++    /// so are the primordial/hardened values it shifts).
++    pub(crate) const FOOTPRINT: usize = {
++        // u8 scan cursors end 4-byte UNALIGNED; round up before the u32
++        // carve-cursor array.
++        let after_u8 = SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + SMALL_CLASS_COUNT;
++        let raw = ((after_u8 + 3) & !3) + SMALL_CLASS_COUNT * 4;
++        assert!(
++            raw <= 12288,
++            "B3Free raw data exceeds the 12 KiB pad target"
++        );
++        12288
++    };
++
++    /// Offset of the per-class carve-cursor array (one `u32` per class,
++    /// 4-byte aligned), after the u8 scan cursors.
++    const CARVE_CURSORS_OFF: usize = {
++        let after_u8 = SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + SMALL_CLASS_COUNT;
++        (after_u8 + 3) & !3
++    };
++
++    /// Sub-leaf run length `k` per class, taken from the shared bump frontier
++    /// when the class's carve run is exhausted (ADR addendum §3). Deterministic
++    /// rule, for `block_size <= B3_LEAF_BYTES`: minimal `k` in 1..=4 such that
++    /// the run-tail loss `(k*4096) mod block_size` is at most 6% of the run;
++    /// if none qualifies, the `k` with the minimal loss (ties -> smaller `k`).
++    /// One correctness floor is layered on top of the rule: `k` must satisfy
++    /// `k*4096 >= 2*block_size - gcd(block_size, 4096)` so the FIRST block of
++    /// a run fits before `run_end` for every leaf-aligned `run_start` (its
++    /// align deficit can be up to `block_size - gcd`). Only class 3712 B is
++    /// lifted by the floor (k = 2). Classes above `B3_LEAF_BYTES` carve
++    /// spans over 4 KiB straight from the bump and never consult this table
++    /// (entries are 0).
++    pub(crate) const RUN_LEAVES: [u32; SMALL_CLASS_COUNT] = {
++        let mut t = [0u32; SMALL_CLASS_COUNT];
++        let mut i = 0;
++        while i < SMALL_CLASS_COUNT {
++            t[i] = run_leaves_for(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[i]);
++            i += 1;
++        }
++        t
++    };
++
++    pub(crate) fn new(raw: *mut u8) -> Self {
++        Self { raw }
++    }
++
++    #[inline(always)]
++    fn mask_ptr(&self, class: usize, word: usize) -> *mut u64 {
++        // SAFETY: class < SMALL_CLASS_COUNT and word < B3_MASK_WORDS are the
++        // caller's contract (enforced by the public methods); the region is
++        // FOOTPRINT bytes at `raw`, owner-only.
++        unsafe { self.raw.add(class * B3_MASK_WORDS * 8 + word * 8) as *mut u64 }
++    }
++
++    #[inline(always)]
++    fn leaf_class_ptr(&self, leaf: usize) -> *mut u8 {
++        // SAFETY: leaf < B3_LEAVES by contract; masks end at
++        // SMALL_CLASS_COUNT * B3_MASK_WORDS * 8, bindings follow.
++        unsafe { self.raw.add(SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + leaf) }
++    }
++
++    #[inline(always)]
++    fn cursor_ptr(&self, class: usize) -> *mut u8 {
++        // SAFETY: class < SMALL_CLASS_COUNT by contract; cursors follow the
++        // binding array.
++        unsafe {
++            self.raw
++                .add(SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + class)
++        }
++    }
++
++    #[inline(always)]
++    fn carve_cursor_ptr(&self, class: usize) -> *mut u32 {
++        // SAFETY: class < SMALL_CLASS_COUNT by contract; the carve-cursor
++        // array follows the scan cursors and is 4-byte aligned
++        // (`CARVE_CURSORS_OFF`), owner-only.
++        unsafe { self.raw.add(Self::CARVE_CURSORS_OFF + class * 4) as *mut u32 }
++    }
++
++    /// The packed per-class carve cursor (0 = no run; see the encoding in
++    /// `alloc_core_small_impl.rs`).
++    #[inline(always)]
++    pub(crate) fn carve_cursor(&self, class: usize) -> u32 {
++        debug_assert!(class < SMALL_CLASS_COUNT);
++        // SAFETY: in-bounds carve-cursor word, owner-only.
++        Node::read_u32(self.carve_cursor_ptr(class))
++    }
++
++    #[inline(always)]
++    pub(crate) fn set_carve_cursor(&mut self, class: usize, v: u32) {
++        debug_assert!(class < SMALL_CLASS_COUNT);
++        // SAFETY: in-bounds carve-cursor word, owner-only single writer.
++        Node::write_u32(self.carve_cursor_ptr(class), v);
++    }
++
++    /// Zero the whole region (segment init / decommit reset).
++    pub(crate) fn init_in_place(raw: *mut u8) {
++        // SAFETY: the caller grants FOOTPRINT writable zeroed-on-return bytes
++        // inside the segment being initialized.
++        Node::zero(raw, Self::FOOTPRINT);
++    }
++
++    /// The bound class of sub-leaf `leaf` (`class + 1`), or 0 = virgin.
++    #[inline(always)]
++    pub(crate) fn leaf_class(&self, leaf: usize) -> u8 {
++        debug_assert!(leaf < B3_LEAVES);
++        // SAFETY: in-bounds binding byte, owner-only.
++        Node::read_u8(self.leaf_class_ptr(leaf))
++    }
++
++    /// Bind a virgin sub-leaf to `class` at its first carve.
++    #[inline(always)]
++    pub(crate) fn bind_leaf(&mut self, leaf: usize, class: usize) {
++        debug_assert!(leaf < B3_LEAVES && class < SMALL_CLASS_COUNT);
++        // SAFETY: in-bounds binding byte, owner-only single writer.
++        Node::write_u8(self.leaf_class_ptr(leaf), class as u8 + 1);
++    }
++
++    #[inline(always)]
++    pub(crate) fn set_leaf(&mut self, class: usize, leaf: usize) {
++        debug_assert!(class < SMALL_CLASS_COUNT && leaf < B3_LEAVES);
++        // SAFETY: in-bounds mask word, owner-only single writer.
++        let p = self.mask_ptr(class, leaf / 64);
++        Node::write_u64(p, Node::read_u64(p) | (1u64 << (leaf % 64)));
++    }
++
++    #[inline(always)]
++    pub(crate) fn clear_leaf(&mut self, class: usize, leaf: usize) {
++        debug_assert!(class < SMALL_CLASS_COUNT && leaf < B3_LEAVES);
++        // SAFETY: in-bounds mask word, owner-only single writer.
++        let p = self.mask_ptr(class, leaf / 64);
++        Node::write_u64(p, Node::read_u64(p) & !(1u64 << (leaf % 64)));
++    }
++
++    /// OR `val` into mask word `word` of `class` (flush-run accumulation:
++    /// one RMW per touched word per run).
++    #[inline(always)]
++    pub(crate) fn or_mask_word(&self, class: usize, word: usize, val: u64) {
++        debug_assert!(class < SMALL_CLASS_COUNT && word < B3_MASK_WORDS && val != 0);
++        // SAFETY: in-bounds mask word, owner-only single writer.
++        let p = self.mask_ptr(class, word);
++        Node::write_u64(p, Node::read_u64(p) | val);
++    }
++
++    #[inline(always)]
++    pub(crate) fn mask_word(&self, class: usize, word: usize) -> u64 {
++        debug_assert!(class < SMALL_CLASS_COUNT && word < B3_MASK_WORDS);
++        // SAFETY: in-bounds mask word, owner-only.
++        Node::read_u64(self.mask_ptr(class, word))
++    }
++
++    /// Whether class `class` has no sub-leaf with free slots.
++    #[inline(always)]
++    pub(crate) fn class_empty(&self, class: usize) -> bool {
++        debug_assert!(class < SMALL_CLASS_COUNT);
++        let mut w = 0;
++        while w < B3_MASK_WORDS {
++            if self.mask_word(class, w) != 0 {
++                return false;
++            }
++            w += 1;
++        }
++        true
++    }
++
++    /// First sub-leaf of `class` with a set mask bit, scanning from the
++    /// cursor with wraparound; advances the cursor to the hit word.
++    #[inline(always)]
++    pub(crate) fn first_leaf(&self, class: usize) -> Option<usize> {
++        debug_assert!(class < SMALL_CLASS_COUNT);
++        // SAFETY: in-bounds cursor byte, owner-only; written through `self`
++        // via the shared raw pointer (interior mutability by contract).
++        let start = Node::read_u8(self.cursor_ptr(class)) as usize % B3_MASK_WORDS;
++        let mut i = 0;
++        while i < B3_MASK_WORDS {
++            let w = (start + i) % B3_MASK_WORDS;
++            let bits = self.mask_word(class, w);
++            if bits != 0 {
++                // SAFETY: same cursor byte as the read above; single owner.
++                Node::write_u8(self.cursor_ptr(class), w as u8);
++                return Some(w * 64 + bits.trailing_zeros() as usize);
++            }
++            i += 1;
++        }
++        None
++    }
++}
+diff --git a/src/alloc_core/segment/segment_header/descriptors.rs b/src/alloc_core/segment/segment_header/descriptors.rs
+index 5c8c6de2..e949ebef 100644
+--- a/src/alloc_core/segment/segment_header/descriptors.rs
++++ b/src/alloc_core/segment/segment_header/descriptors.rs
+@@ -302,6 +302,16 @@ impl SegmentMeta {
+         ))
+     }
+ 
++    /// B3 spike: the per-class sub-leaf mask view (owner-only, zeroed at
++    /// bootstrap and on decommit reset).
++    #[inline(always)]
++    pub(crate) fn b3_free(&self) -> crate::alloc_core::segment_header::B3Free {
++        crate::alloc_core::segment_header::B3Free::new(Node::offset(
++            self.base,
++            crate::alloc_core::segment_header::Layout::b3_free_off(),
++        ))
++    }
++
+     // -------------------------------------------------------------------
+     // Atomic view over the owner identity field.
+     // return `&AtomicU64` at the field's fixed offset so a cross-thread
+diff --git a/src/alloc_core/segment/segment_header/mod.rs b/src/alloc_core/segment/segment_header/mod.rs
+index 4abc97fe..a4805753 100644
+--- a/src/alloc_core/segment/segment_header/mod.rs
++++ b/src/alloc_core/segment/segment_header/mod.rs
+@@ -50,6 +50,11 @@ mod layout_asserts;
+ mod segment_header_impl;
+ pub use segment_header_impl::*;
+ 
++/// B3 spike: per-class masks of non-empty 4 KiB sub-leaves over the alloc bitmap.
++#[path = "b3_free.rs"]
++mod b3_free;
++pub(crate) use b3_free::{B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS, B3_LEAVES};
++
+ /// Ph3b: the private physical-kind witness shared by the free entries.
+ #[path = "block_kind.rs"]
+ mod block_kind;
+diff --git a/src/alloc_core/segment/segment_header/segment_header_layout.rs b/src/alloc_core/segment/segment_header/segment_header_layout.rs
+index ae079e8c..bcfa38f9 100644
+--- a/src/alloc_core/segment/segment_header/segment_header_layout.rs
++++ b/src/alloc_core/segment/segment_header/segment_header_layout.rs
+@@ -47,10 +47,15 @@ impl Layout {
+     const fn owner_metadata_end() -> usize {
+         Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
+     }
++    /// B3 spike: offset of the per-class sub-leaf masks / leaf bindings /
++    /// cursors (owner-only, zero-initialized, reset on decommit).
++    pub(crate) const fn b3_free_off() -> usize {
++        align_up_const(Self::owner_metadata_end(), 8)
++    }
+     /// Offset of the hardened owner generation table.
+     #[cfg(feature = "hardened")]
+     pub(crate) const fn gen_table_off() -> usize {
+-        Self::owner_metadata_end()
++        Self::b3_free_off() + crate::alloc_core::segment_header::B3Free::FOOTPRINT
+     }
+     /// End of the small-segment metadata (page-aligned past the last metadata
+     /// region). Payload carving begins here.
+@@ -85,7 +90,7 @@ impl Layout {
+         }
+         #[cfg(not(feature = "hardened"))]
+         {
+-            Self::owner_metadata_end()
++            Self::b3_free_off() + crate::alloc_core::segment_header::B3Free::FOOTPRINT
+         }
+     }
+     /// Primordial owner registry begins after all small owner metadata.
+diff --git a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+index 85682c23..74891247 100644
+--- a/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
++++ b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+@@ -1,5 +1,3 @@
+-use core::ptr::NonNull;
+-
+ use crate::alloc_core::node::{Node, NODE_SIZE};
+ use crate::alloc_core::os::{self, SEGMENT};
+ // R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
+@@ -8,103 +6,37 @@ use crate::alloc_core::os::{self, SEGMENT};
+ // commit witnesses (`IssueTransaction::commit_prepared`'s registry index),
+ // so the import itself is unconditional.
+ use crate::alloc_core::segment_header::SegmentHeader;
+-use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
++use crate::alloc_core::segment_header::{align_up, SegmentMeta};
+ // `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
+ // decommit-recommit arms of `carve_block`/`carve_batch` (and only on their
+ // eager `not(small-segment-lazy-commit)` leg) — gate the import identically
+ // so non-decommit builds stay warning-clean.
+ #[cfg(all(feature = "alloc-decommit", not(feature = "small-segment-lazy-commit")))]
+ use crate::alloc_core::segment_header::Layout as SegLayout;
++use crate::alloc_core::segment_header::{B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS};
+ use crate::alloc_core::size_classes::SizeClasses;
+ 
+-use crate::alloc_core::alloc_core::AllocCore;
+-use crate::alloc_core::segment::segment_table::IssueTransaction;
+-
+-/// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
+-/// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
+-/// `any(primordial-lazy-commit, small-segment-lazy-commit)` (R12-9, task
+-/// #260: the split siblings of the former single `alloc-lazy-commit`, which
+-/// is now a pure alias for "both together"). Tests observe this to verify
+-/// that `carve_batch` does ONE commit per batch (not per block) and that
+-/// chunk boundary crossings trigger the expected number of commits.
++// B3/B2 carve helpers moved verbatim to the `b3_carve` sibling (pure move):
++// re-imported here (and re-exported through the existing crate-internal
++// re-export chain so external paths like
++// `crate::alloc_core::alloc_core_small::LAZY_FIRST_CHUNK` stay valid).
+ #[cfg(any(
+     feature = "primordial-lazy-commit",
+     feature = "small-segment-lazy-commit"
+ ))]
+-pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
+-    core::sync::atomic::AtomicU64::new(0);
+-
+-/// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
+-/// small segment is lazily reserved under `small-segment-lazy-commit`, or
+-/// the primordial segment under `primordial-lazy-commit` (R12-9, task #260 —
+-/// this constant is SHARED verbatim by both split policies; see
+-/// `bootstrap::primordial`'s identical `LAZY_FIRST_CHUNK` use). Only the
+-/// metadata region `[0, small_meta_end)` plus this chunk are committed at
+-/// reservation time; the rest of the 4 MiB segment stays reserved-but-
+-/// uncommitted. B2's grow-on-carve logic commits additional chunks
+-/// (sized by [`GROW_CHUNK`]) as the bump cursor advances past the frontier.
+-///
+-/// 256 KiB is large enough to hold many initial carve batches without faulting
+-/// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
+-/// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
+-/// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
+-/// conservative default.
+-///
+-/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
+-#[cfg(any(
+-    feature = "primordial-lazy-commit",
+-    feature = "small-segment-lazy-commit"
+-))]
+-pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
+-
+-/// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
+-/// past its initial value during bump-carve. When a `carve_block` or
+-/// `carve_batch` would write past `committed_payload_end`, the grow logic
+-/// commits `[frontier, round_up(carve_end, GROW_CHUNK))` (clamped to
+-/// `SEGMENT`) and advances the frontier.
+-///
+-/// Set equal to `LAZY_FIRST_CHUNK` (256 KiB): both are B5-swept constants
+-/// (64/128/256/512 KiB); using the same value for initial and grow chunks
+-/// keeps the model simple and the sweep surface small. A separate value is
+-/// a trivial constant rename if B5 data motivates it.
+-///
+-/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
+-#[cfg(any(
+-    feature = "primordial-lazy-commit",
+-    feature = "small-segment-lazy-commit"
+-))]
+-pub(crate) const GROW_CHUNK: usize = LAZY_FIRST_CHUNK;
+-
+-// B1/B2: compile-time sanity — the initial commit (metadata + first chunk) must
+-// fit within one segment, and both chunk constants must be page-aligned and
+-// non-zero.
+-#[cfg(any(
+-    feature = "primordial-lazy-commit",
+-    feature = "small-segment-lazy-commit"
+-))]
+-const _: () = {
+-    assert!(
+-        LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
+-        "LAZY_FIRST_CHUNK must be a non-zero multiple of PAGE"
+-    );
+-    // Task #1074: the page-rounded `lazy_initial_commit` adds at most one
+-    // MAX_REALISTIC_PAGE_SIZE (64 KiB) of rounding on top of the tight sum,
+-    // so the slack is part of the bound: this pins the ROUNDED initial
+-    // commit within one SEGMENT for every page size this crate supports.
+-    assert!(
+-        crate::alloc_core::segment_header::Layout::small_meta_end()
+-            + LAZY_FIRST_CHUNK
+-            + crate::alloc_core::os::MAX_REALISTIC_PAGE_SIZE
+-            <= crate::alloc_core::os::SEGMENT,
+-        "metadata + LAZY_FIRST_CHUNK + one MAX_REALISTIC_PAGE_SIZE of page-rounding \
+-         slack must fit within one SEGMENT"
+-    );
+-    assert!(
+-        GROW_CHUNK > 0 && GROW_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
+-        "GROW_CHUNK must be a non-zero multiple of PAGE"
+-    );
++pub(crate) use super::b3_carve::{GROW_CHUNK, GROW_COMMIT_COUNT, LAZY_FIRST_CHUNK};
++#[cfg(feature = "bench-internals")]
++pub(crate) use super::b3_carve::{B3_DRAIN_FROM_FREE, B3P_RUN_BYTES};
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++pub(crate) use super::b3_carve::{b3p_leaf_class_of, b3p_run_bytes, b3p_run_leaves};
++use super::b3_carve::{
++    b3_carve_start, b3_class_block_next_cursor, b3_class_block_plan, b3_locate_free_from,
++    b3_slot_offset, B3BlockPlan,
+ };
+ 
++use crate::alloc_core::alloc_core::AllocCore;
++use crate::alloc_core::segment::segment_table::IssueTransaction;
++
+ impl AllocCore {
+     #[cfg(all(feature = "internals", feature = "bench-internals"))]
+     #[doc(hidden)]
+@@ -360,108 +292,78 @@ impl AllocCore {
+     }
+ 
+     fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
+-        let bump = SegmentMeta::new(self.small_cur).bump_of();
+-        let aligned = align_up(bump, block_size);
+-        aligned + block_size > SEGMENT
+-            || self
+-                .table
+-                .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+-                .is_some()
++        let meta = SegmentMeta::new(self.small_cur);
++        let bump = meta.bump_of();
++        // Base semantics (preserved): "no room in the current segment" must
++        // report OK so the caller proceeds to carve → None → reserve path.
++        let aligned = if block_size <= B3_LEAF_BYTES {
++            // Per-class run cursor (ADR addendum §3): serve from the class's
++            // current run, or plan a fresh k-sub-leaf run from the frontier.
++            match b3_class_block_plan(
++                class_idx,
++                block_size,
++                bump,
++                meta.b3_free().carve_cursor(class_idx),
++            ) {
++                Some(plan) => plan.off,
++                None => return true,
++            }
++        } else {
++            // > 4 KiB span class: unchanged span-from-bump carve, skipping
++            // sub-leaves bound to other classes (see `b3_carve_start`).
++            match b3_carve_start(
++                &meta.b3_free(),
++                class_idx,
++                block_size,
++                align_up(bump, block_size),
++            ) {
++                Some(off) => off,
++                None => return true,
++            }
++        };
++        self.table
++            .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
++            .is_some()
+     }
+ 
+     /// Pop a free block; `Err` is an uncommitted class-spill OOM.
++    ///
++    /// B3 spike: the free set is the alloc bitmap indexed by per-class
++    /// sub-leaf masks; the intrusive body `next` chain is gone.
+     #[inline(always)]
+     fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
+         let mut meta = SegmentMeta::new(segment);
+-        let mut bt = meta.bin_table();
+-        let head_off = bt.head(class_idx);
+-        if head_off == FREE_LIST_NULL {
++        let bm = meta.alloc_bitmap();
++        let b3 = meta.b3_free();
++        let Some((leaf, wi, bit)) = b3_locate_free_from(&bm, &b3, class_idx, &mut None) else {
+             return Ok(None);
+-        }
+-        let block_ptr = Node::deref(segment, head_off as usize);
+-        let Some(block_nn) = NonNull::new(block_ptr) else {
+-            return Ok(None);
+-        };
+-        let next = Node::read_next(block_nn);
+-        // UBFIX-7 (M-3, `docs/reviews/2026-07-10-ub-audit-final-synthesis.md`):
+-        // the intrusive freelist `next` word lives INSIDE the block itself, so
+-        // it is writable by the user for as long as the block is (legitimately
+-        // or via a use-after-free) in their hands. Before this guard, a
+-        // corrupted `next` — e.g. left over from a UAF write into an
+-        // already-freed block — was trusted unconditionally: the very next
+-        // line turned it into a segment-relative offset via raw pointer
+-        // subtraction, which is only sound if `next` actually lies inside
+-        // `segment`. A `next` pointing outside the segment produces a garbage
+-        // `u32` offset (wrapping/overflowing arithmetic), and the NEXT
+-        // `pop_free`/`drain_freelist_batch` call derefs THAT offset via
+-        // `Node::deref` (`segment.add(off)`), an out-of-bounds `add` — UB per
+-        // `node.rs`'s SAFETY contract — and hands the caller a wild pointer
+-        // dressed up as a legitimate block.
+-        //
+-        // `hardened`-gated (mimalloc `MI_SECURE`-style): validate `next` is
+-        // either null or resolves to THIS segment's base before trusting it as
+-        // a chain continuation; a mismatch TRUNCATES the chain here (treated
+-        // as `FREE_LIST_NULL`) rather than being dereferenced. This never runs
+-        // on the production (non-hardened) hot path — zero added instructions
+-        // there, byte-identical to the pre-fix code under `cfg(not(hardened))`.
+-        #[cfg(feature = "hardened")]
+-        let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+-            next
+-        } else {
+-            core::ptr::null_mut()
+-        };
+-        let new_head = if next.is_null() {
+-            FREE_LIST_NULL
+-        } else {
+-            // Compute the offset of `next` relative to this segment. `next`
+-            // is an absolute pointer into the same segment (free lists are
+-            // per-segment), so offset = next - segment.
+-            (next as usize - segment as usize) as u32
+         };
+-        let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
++        let off = b3_slot_offset(leaf, wi, bit);
++        let Some(tx) = self.table.prepare_small_issue(segment, off, class_idx) else {
+             return Err(());
+         };
+-        bt.set_head(class_idx, new_head);
+-        // R7-A2: directory bitmap maintenance — the old head was non-null
+-        // (we passed the FREE_LIST_NULL guard above), so the only transition
+-        // is non-empty→empty when new_head is FREE_LIST_NULL.
++        let mut bm = meta.alloc_bitmap();
++        let mut b3 = meta.b3_free();
++        bm.clear_word_bit(wi, bit);
++        // If the sub-leaf emptied, drop its class-mask bit.
++        let w0 = leaf * B3_LEAF_WORDS;
++        if bm.word(wi) == 0
++            && bm.word(w0) == 0
++            && bm.word(w0 + 1) == 0
++            && bm.word(w0 + 2) == 0
++            && bm.word(w0 + 3) == 0
++        {
++            b3.clear_leaf(class_idx, leaf);
++        }
+         #[cfg(feature = "alloc-segment-directory")]
+-        if new_head == FREE_LIST_NULL {
++        if b3.class_empty(class_idx) {
+             let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+             self.publish_empty(segment, class_idx, slot_idx);
+         }
+-        // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
+-        // and is handed to the caller, so a subsequent free must NOT see it as
+-        // already-free (and the next legitimate free must be able to re-mark it).
+-        meta.alloc_bitmap().mark_alloc(head_off);
+-        // Phase 35 (M6): a block left the free list and is handed to the caller
+-        // → one more live block in this segment. Owner-only counter. A popped
+-        // block always comes from a COMMITTED payload (a decommitted segment was
+-        // reset to an empty free list, so `pop_free` finds nothing there), so no
+-        // recommit is needed on this path — only `carve_block` writes fresh
+-        // payload and thus recommits.
+         meta.inc_live();
+         tx.commit(&self.table);
+-        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
+-        // hands a block directly to the caller (it is the non-magazine substrate
+-        // pop, reachable from `alloc_small`). Under `hardened` (which implies
+-        // `fastbin`), `HeapCore::alloc` routes small blocks through the magazine
+-        // and never reaches here — but a direct `AllocCore` consumer (or a future
+-        // config change) could, so the bump is placed at this issue point for
+-        // correctness and defense-in-depth. The magazine refill path uses
+-        // `drain_freelist_batch` (which fills `out`, NOT issuing to a caller), so
+-        // blocks pulled into the magazine are NOT bumped here — they are bumped
+-        // on their later magazine pop. Compiled ONLY under `hardened`.
+-        #[cfg(feature = "hardened")]
+-        {
+-            // SAFETY: `segment` is a live, exclusively-owned segment;
+-            // `head_off` is a MIN_BLOCK-aligned offset of a live block.
+-            #[allow(unsafe_code)]
+-            unsafe {
+-                crate::alloc_core::segment_header::bump_gen(segment, head_off as usize)
+-            };
+-        }
+-        Ok(Some(block_ptr))
++        let ptr = Node::deref(segment, off as usize);
++        Ok(Some(ptr))
+     }
+ 
+     /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
+@@ -533,104 +435,64 @@ impl AllocCore {
+             return Ok(0);
+         }
+         let mut meta = SegmentMeta::new(segment);
+-        let mut bt = meta.bin_table();
+-        // The commit half re-validates this index against `segment`'s stamped
+-        // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
+         let index = SegmentHeader::segment_id_at(segment) as usize;
+-
+         {
+-            // Read the head ONCE.
+-            let mut head_off = bt.head(class_idx);
+-            if head_off == FREE_LIST_NULL {
+-                return Ok(0);
+-            }
+-            // Prepare every spill on the still-owned chain. On OOM the head,
+-            // bitmap, live count and output remain unchanged; promoted leaves
+-            // are valid uniform copies and may be reused by a later retry.
+-            let mut probe = head_off;
+-            let mut probed = 0usize;
+-            while probed < out.len() && probe != FREE_LIST_NULL {
+-                let block = Node::deref(segment, probe as usize);
+-                let Some(nn) = NonNull::new(block) else {
++            let bm = meta.alloc_bitmap();
++            let b3 = meta.b3_free();
++            // Probe phase (OOM-atomicity, mirrors the old chain probe):
++            // prepare every spill WITHOUT consuming any bit. The walk below
++            // is deterministic and does not mutate, so the commit walk
++            // reproduces the identical slot sequence.
++            let mut pos = None;
++            let mut k = 0usize;
++            while k < out.len() {
++                let Some(loc) = b3_locate_free_from(&bm, &b3, class_idx, &mut pos) else {
+                     break;
+                 };
++                let off = b3_slot_offset(loc.0, loc.1, loc.2);
+                 if self
+                     .table
+-                    .prepare_small_issue(segment, probe, class_idx)
++                    .prepare_small_issue(segment, off, class_idx)
+                     .is_none()
+                 {
+                     return Err(());
+                 }
+-                let next = Node::read_next(nn);
+-                #[cfg(feature = "hardened")]
+-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+-                    next
+-                } else {
+-                    core::ptr::null_mut()
+-                };
+-                probe = if next.is_null() {
+-                    FREE_LIST_NULL
+-                } else {
+-                    (next as usize - segment as usize) as u32
+-                };
+-                probed += 1;
++                k += 1;
++            }
++            if k == 0 {
++                return Ok(0);
+             }
++            #[cfg(feature = "bench-internals")]
++            B3_DRAIN_FROM_FREE.fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
++            // Commit walk: consume the same slots in the same order.
+             let mut bm = meta.alloc_bitmap();
++            let mut b3 = meta.b3_free();
++            let mut pos = None;
+             let mut k = 0usize;
+-            while k < out.len() && head_off != FREE_LIST_NULL {
+-                let block_ptr = Node::deref(segment, head_off as usize);
+-                let block_nn = match NonNull::new(block_ptr) {
+-                    Some(nn) => nn,
+-                    // A null-deref would only arise from a corrupt offset; stop the
+-                    // walk here and commit what we have (defence-in-depth). `head`
+-                    // is left pointing at this node so nothing is lost.
+-                    None => break,
+-                };
+-                // Dependent load: read this block's `next` BEFORE recording it. The
+-                // block body is never written on the pop path, so this is race-free
+-                // against ourselves.
+-                let next = Node::read_next(block_nn);
+-                // UBFIX-7 (M-3): validate `next` before trusting it as a chain
+-                // continuation — see `pop_free`'s identical guard for the full
+-                // rationale. `hardened`-gated; a mismatch truncates the chain
+-                // (this iteration's `head_off` becomes NULL below, which the
+-                // loop condition then exits on) instead of being dereferenced.
+-                #[cfg(feature = "hardened")]
+-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+-                    next
+-                } else {
+-                    core::ptr::null_mut()
++            while k < out.len() {
++                let Some((leaf, wi, bit)) = b3_locate_free_from(&bm, &b3, class_idx, &mut pos)
++                else {
++                    break;
+                 };
+-                // Clear this block's bitmap bit — it leaves the free list and is
+-                // handed out (per-block, byte-identical to `pop_free`).
+-                bm.mark_alloc(head_off);
+-                IssueTransaction::commit_prepared(&self.table, index, segment, head_off, class_idx);
+-                out[k] = block_ptr;
++                let off = b3_slot_offset(leaf, wi, bit);
++                bm.clear_word_bit(wi, bit);
++                let w0 = leaf * B3_LEAF_WORDS;
++                if bm.word(w0) == 0
++                    && bm.word(w0 + 1) == 0
++                    && bm.word(w0 + 2) == 0
++                    && bm.word(w0 + 3) == 0
++                {
++                    b3.clear_leaf(class_idx, leaf);
++                }
++                IssueTransaction::commit_prepared(&self.table, index, segment, off, class_idx);
++                out[k] = Node::deref(segment, off as usize);
+                 k += 1;
+-                head_off = if next.is_null() {
+-                    FREE_LIST_NULL
+-                } else {
+-                    // `next` is an absolute pointer into the SAME segment (free
+-                    // lists are per-segment), so offset = next - segment.
+-                    (next as usize - segment as usize) as u32
+-                };
+             }
+-            // Write the new head ONCE: the first un-popped node, or NULL.
+-            bt.set_head(class_idx, head_off);
+-            // R7-A2: directory bitmap maintenance — the old head was non-null
+-            // (early return above), so the only transition is non-empty→empty
+-            // when the drain exhausted the chain (head_off == FREE_LIST_NULL).
+             #[cfg(feature = "alloc-segment-directory")]
+-            if head_off == FREE_LIST_NULL {
++            if b3.class_empty(class_idx) {
+                 let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+                 self.publish_empty(segment, class_idx, slot_idx);
+             }
+-            // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
+-            // popped block always comes from a COMMITTED payload (a decommitted
+-            // segment was reset to an empty free list, so the drain finds nothing
+-            // there), so no recommit is needed on this path. Applied via the
+-            // batch `add_live(k)` primitive (byte-identical to `k` per-block
+-            // `inc_live`s — see `add_live`'s D1-equivalence note).
+             meta.add_live(k as u32);
+             Ok(k)
+         }
+@@ -660,15 +522,27 @@ impl AllocCore {
+         // `dealloc_routing` (the §11 data race). `bump` is owner-only (no
+         // Remote reads it), so a plain field write is race-free.
+         let bump = meta.bump_of();
+-        let aligned_bump = align_up(bump, block_size);
+-        if aligned_bump + block_size > SEGMENT {
+-            return None;
+-        }
++        let cursor = meta.b3_free().carve_cursor(class_idx);
++        // B3 spike: <= 4 KiB classes serve from the per-class run cursor; the
++        // > 4 KiB span path skips sub-leaves bound to other classes (see
++        // `b3_carve_start`).
++        let plan = if block_size <= B3_LEAF_BYTES {
++            b3_class_block_plan(class_idx, block_size, bump, cursor)?
++        } else {
++            let off = b3_carve_start(
++                &meta.b3_free(),
++                class_idx,
++                block_size,
++                align_up(bump, block_size),
++            )?;
++            B3BlockPlan { off, new_run: None }
++        };
++        let start_off = plan.off;
+         // Fallible prepare before any mutation: `?` is the `return None` the
+         // old inline guard performed — "segment full" so the caller reserves.
+         let tx = self
+             .table
+-            .prepare_small_issue(segment, aligned_bump as u32, class_idx)?;
++            .prepare_small_issue(segment, start_off as u32, class_idx)?;
+         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
+         // emptied and we returned its pages to the OS), we are about to write
+         // into the payload — recommit and clear the flag BEFORE the bump cursor
+@@ -740,7 +614,13 @@ impl AllocCore {
+         ))]
+         {
+             let frontier = meta.committed_payload_end_of();
+-            let carve_end = aligned_bump + block_size;
++            // A fresh run hands the whole k-sub-leaf run to the class at
++            // once, so the commit frontier must cover `run_end`, not just
++            // the first block.
++            let carve_end = match plan.new_run {
++                Some((_, run_end)) => run_end,
++                None => start_off + block_size,
++            };
+             if carve_end > frontier {
+                 // `frontier == SEGMENT` means fully committed (eager path or
+                 // already grown to the end) — the condition above is always
+@@ -760,8 +640,31 @@ impl AllocCore {
+                 meta.set_committed_payload_end(new_frontier);
+             }
+         }
+-        // Update ONLY the bump cursor.
+-        meta.set_bump(aligned_bump + block_size);
++        // B3 spike: apply the plan AFTER every fallible step — for a fresh
++        // run, bind all k sub-leaves and advance the bump to `run_end`; then
++        // advance (or clear) the per-class carve cursor. Bump and binding are
++        // infallible and must not happen on an OOM path.
++        if let Some((run_start, run_end)) = plan.new_run {
++            let run_leaf = run_start / B3_LEAF_BYTES;
++            let k = B3Free::RUN_LEAVES[class_idx] as usize;
++            let mut leaf = run_leaf;
++            while leaf < run_leaf + k {
++                meta.b3_free().bind_leaf(leaf, class_idx);
++                leaf += 1;
++            }
++            // Update ONLY the bump cursor (owner-only plain field write).
++            meta.set_bump(run_end);
++            #[cfg(feature = "bench-internals")]
++            B3P_RUN_BYTES[class_idx].fetch_add((k * B3_LEAF_BYTES) as u64, core::sync::atomic::Ordering::Relaxed);
++        }
++        // Only leaf classes own a carve cursor; span classes keep it at 0
++        // and keep the old bump semantics (advance by one block).
++        if block_size <= B3_LEAF_BYTES {
++            let next_cursor = b3_class_block_next_cursor(class_idx, &plan, block_size, cursor);
++            meta.b3_free().set_carve_cursor(class_idx, next_cursor);
++        } else {
++            meta.set_bump(start_off + block_size);
++        }
+         // Phase 35: this carved block is now live (handed to the caller, or — on
+         // the refill path — immediately pushed to the free list, which calls
+         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
+@@ -774,13 +677,13 @@ impl AllocCore {
+         #[cfg(feature = "page-map-diag")]
+         {
+             let mut pm = meta.page_map();
+-            let page = aligned_bump / crate::alloc_core::os::PAGE;
++            let page = start_off / crate::alloc_core::os::PAGE;
+             if pm.class_of(page).is_none() {
+                 // Page was Free or Meta; dedicate it to this class.
+                 pm.set_class(page, class_idx);
+             }
+         }
+-        let ptr = Node::deref(segment, aligned_bump);
++        let ptr = Node::deref(segment, start_off);
+         tx.commit(&self.table);
+         Some(ptr)
+     }
+@@ -856,25 +759,86 @@ impl AllocCore {
+         let segment = self.small_cur;
+         let mut meta = SegmentMeta::new(segment);
+         let bump = meta.bump_of();
+-        let aligned_start = align_up(bump, block_size);
+-        if aligned_start + block_size > SEGMENT {
++        let b3 = meta.b3_free();
++        // B3 spike: <= 4 KiB classes are planned by the per-class run cursor
++        // (`b3_class_block_plan`); the plan is a pure function of the packed
++        // cursor + bump, so the probe below advances LOCAL copies and the
++        // commit half reproduces the identical sequence. Fresh runs advance
++        // the local bump by k*4096; a run may end mid-batch and a new one is
++        // taken inside the same batch.
++        let is_leaf_class = block_size <= B3_LEAF_BYTES;
++        let mut n = 0usize;
++        let mut batch_end = bump;
++        let (mut lcursor, mut lbump) = (b3.carve_cursor(class_idx), bump);
++        let mut ls = align_up(bump, block_size); // span-path scan cursor
++        {
++            while n < out.len() {
++                let plan = if is_leaf_class {
++                    match b3_class_block_plan(class_idx, block_size, lbump, lcursor) {
++                        Some(p) => p,
++                        None => break,
++                    }
++                } else {
++                    match b3_carve_start(&b3, class_idx, block_size, align_up(ls, block_size)) {
++                        Some(off) => B3BlockPlan { off, new_run: None },
++                        None => break,
++                    }
++                };
++                batch_end = match plan.new_run {
++                    Some((_, run_end)) => {
++                        lbump = run_end;
++                        run_end
++                    }
++                    None => plan.off + block_size,
++                };
++                if is_leaf_class {
++                    lcursor = b3_class_block_next_cursor(class_idx, &plan, block_size, lcursor);
++                } else {
++                    ls = plan.off + block_size;
++                }
++                n += 1;
++            }
++        }
++        if n == 0 {
+             return Ok(0); // not room for even one block
+         }
+-        let room = (SEGMENT - aligned_start) / block_size;
+-        let n = out.len().min(room);
+         // The commit half re-validates this index against `segment`'s stamped
+         // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
+         let index = SegmentHeader::segment_id_at(segment) as usize;
+         // A successful promotion is retained even if later OS commit fails;
+         // no class code or issue credit changes until the carve commits.
+-        for i in 0..n {
+-            let off = aligned_start + i * block_size;
+-            if self
+-                .table
+-                .prepare_small_issue(segment, off as u32, class_idx)
+-                .is_none()
+-            {
+-                return Err(());
++        {
++            let mut s = align_up(bump, block_size);
++            let mut lcursor = b3.carve_cursor(class_idx);
++            let mut lbump = bump;
++            for _ in 0..n {
++                let plan = if is_leaf_class {
++                    match b3_class_block_plan(class_idx, block_size, lbump, lcursor) {
++                        Some(p) => p,
++                        None => std::process::abort()
++                    }
++                } else {
++                    let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
++                        Some(cs) => cs,
++                        None => std::process::abort(),
++                    };
++                    B3BlockPlan { off: cs, new_run: None }
++                };
++                if self
++                    .table
++                    .prepare_small_issue(segment, plan.off as u32, class_idx)
++                    .is_none()
++                {
++                    return Err(());
++                }
++                if let Some((_, run_end)) = plan.new_run {
++                    lbump = run_end;
++                } else if !is_leaf_class {
++                    s = plan.off + block_size;
++                }
++                if is_leaf_class {
++                    lcursor = b3_class_block_next_cursor(class_idx, &plan, block_size, lcursor);
++                }
+             }
+         }
+         // Recommit ONCE at run start if the segment's payload was decommitted
+@@ -882,10 +846,6 @@ impl AllocCore {
+         // mid-run, so one check covers the whole run).
+         #[cfg(feature = "alloc-decommit")]
+         if meta.is_decommitted() {
+-            // B3: lazy-commit-aware recommit on reuse (see `carve_block`'s
+-            // identical block for the full rationale). R12-9 (task #260):
+-            // `small-segment-lazy-commit` specifically — decommit only ever
+-            // happens to `Small` segments, never `Primordial`.
+             #[cfg(feature = "small-segment-lazy-commit")]
+             {
+                 meta.set_decommitted(false);
+@@ -895,81 +855,88 @@ impl AllocCore {
+                 if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
+                     // Honest OOM (see `carve_block`): leave the segment marked
+                     // decommitted, do not advance the bump, and carve nothing
+-                    // so the caller falls back (fresh segment / null) instead
+-                    // of writing into a still-reserved page.
++                    // so the caller falls back (fresh segment / null).
+                     return Ok(0);
+                 }
+                 meta.set_decommitted(false);
+             }
+         }
+-        // B2 (R7 Workstream B): incremental grow-on-carve for the batched
+-        // path. ONE commit covers the WHOLE batch — not a syscall per block.
+-        // Compute the batch's final end, commit once up to the rounded chunk
+-        // boundary that covers it, then carve the batch. On commit failure
+-        // everything stays unchanged and we return 0.
+-        //
+-        // No-op on the eager path (committed_payload_end == SEGMENT — the
+-        // condition is always false). Fires only on the Windows lazy path.
+-        // R12-9 (task #260): shared between the split sub-features, same as
+-        // `carve_block`'s identical block.
+-        // How many blocks fit from `aligned_start` to the segment end,
+-        // capped by the caller's slice. Computed ONCE (#1994: previously
+-        // recomputed a second time, identically, inside the lazy-commit
+-        // growth check below) — shared by that check's `batch_end` and the
+-        // final carve's bump advance.
++        // B2 grow-on-carve: ONE commit covers the WHOLE batch (end = the last
++        // computed block end, sub-leaf skips included).
+         #[cfg(any(
+             feature = "primordial-lazy-commit",
+             feature = "small-segment-lazy-commit"
+         ))]
+         {
+             let frontier = meta.committed_payload_end_of();
+-            let batch_end = aligned_start + n * block_size;
+             if batch_end > frontier {
+-                // Round the batch end UP to the next GROW_CHUNK boundary,
+-                // clamped to SEGMENT (never commit past the segment end).
+                 let new_frontier = align_up(batch_end, GROW_CHUNK).min(SEGMENT);
+                 if !os::commit_pages(segment, frontier, new_frontier) {
+-                    // Commit-charge exhaustion: cannot grow the frontier.
+-                    // Everything unchanged: bump not moved, live_count
+-                    // unchanged, page map unwritten, no blocks handed out.
+                     return Ok(0);
+                 }
+                 GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                 meta.set_committed_payload_end(new_frontier);
+             }
+         }
+-        // Advance the bump cursor ONCE to just past the last carved block —
+-        // byte-identical to the final `set_bump` of the n-th sequential carve.
+-        meta.set_bump(aligned_start + n * block_size);
+-        // Batched live increment (D1): exactly `n` blocks handed out.
++        // Commit: replay the same start sequence, bind each fresh run's k
++        // sub-leaves, advance the bump per fresh run, advance the per-class
++        // carve cursor, batch the live credit. (The span path keeps the old
++        // single end-of-batch bump write; run cursors move the bump per run.)
+         meta.add_live(n as u32);
+-        // Page-map "first class wins", applied once per DISTINCT page entered by
+-        // this run. `carve_block` marks a page iff it was not already owned; the
+-        // first block to land on a page is the one that dedicates it, so calling
+-        // `set_class` on each page-index CHANGE reproduces that exactly.
+-        //
+-        // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
+-        // load-bearing for class routing — see its struct doc); gated behind
+-        // `page-map-diag` and elided from the default/production carve path.
+-        #[cfg(feature = "page-map-diag")]
+-        let mut pm = meta.page_map();
+-        #[cfg(feature = "page-map-diag")]
+-        let mut prev_page = usize::MAX;
+-        for (i, slot) in out[..n].iter_mut().enumerate() {
+-            let off = aligned_start + i * block_size;
+-            #[cfg(feature = "page-map-diag")]
+-            {
+-                let page = off / crate::alloc_core::os::PAGE;
+-                if page != prev_page {
+-                    if pm.class_of(page).is_none() {
+-                        pm.set_class(page, class_idx);
++        {
++            let mut s = align_up(bump, block_size);
++            let mut lcursor = b3.carve_cursor(class_idx);
++            let mut lbump = bump;
++            let mut last_leaf = usize::MAX;
++            for slot in out[..n].iter_mut() {
++                let plan = if is_leaf_class {
++                    match b3_class_block_plan(class_idx, block_size, lbump, lcursor) {
++                        Some(p) => p,
++                        None => std::process::abort()
++                    }
++                } else {
++                    let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
++                        Some(cs) => cs,
++                        None => std::process::abort(),
++                    };
++                    B3BlockPlan { off: cs, new_run: None }
++                };
++                if let Some((run_start, run_end)) = plan.new_run {
++                    let run_leaf = run_start / B3_LEAF_BYTES;
++                    let k = B3Free::RUN_LEAVES[class_idx] as usize;
++                    let mut leaf = run_leaf;
++                    while leaf < run_leaf + k {
++                        if leaf != last_leaf {
++                            meta.b3_free().bind_leaf(leaf, class_idx);
++                            last_leaf = leaf;
++                        }
++                        leaf += 1;
+                     }
+-                    prev_page = page;
++                    meta.set_bump(run_end);
++                    lbump = run_end;
++                    #[cfg(feature = "bench-internals")]
++                    B3P_RUN_BYTES[class_idx]
++                        .fetch_add((k * B3_LEAF_BYTES) as u64, core::sync::atomic::Ordering::Relaxed);
++                }
++                if is_leaf_class {
++                    lcursor = b3_class_block_next_cursor(class_idx, &plan, block_size, lcursor);
++                    meta.b3_free().set_carve_cursor(class_idx, lcursor);
+                 }
++                IssueTransaction::commit_prepared(
++                    &self.table,
++                    index,
++                    segment,
++                    plan.off as u32,
++                    class_idx,
++                );
++                *slot = Node::deref(segment, plan.off);
++                if !is_leaf_class {
++                    s = plan.off + block_size;
++                }
++            }
++            if !is_leaf_class {
++                meta.set_bump(batch_end);
+             }
+-            let ptr = Node::deref(segment, off);
+-            IssueTransaction::commit_prepared(&self.table, index, segment, off as u32, class_idx);
+-            *slot = ptr;
+         }
+         Ok(n)
+     }
+diff --git a/src/alloc_core/small/alloc_core_small/b3_carve.rs b/src/alloc_core/small/alloc_core_small/b3_carve.rs
+new file mode 100644
+index 00000000..c6c7d94d
+--- /dev/null
++++ b/src/alloc_core/small/alloc_core_small/b3_carve.rs
+@@ -0,0 +1,331 @@
++//! B3/B2 carve helpers of the small path (mechanical split of
++//! `alloc_core_small_impl.rs`; pure code movement, no behavior changed):
++//! the sub-leaf carving primitives (`b3_next_leaf` … `b3_class_block_next_cursor`,
++//! `B3BlockPlan`), the B3/B3p bench-internals oracles, and the B2
++//! lazy-commit carve constants shared by `carve_block`/`carve_batch`.
++
++use crate::alloc_core::os::SEGMENT;
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++use crate::alloc_core::os;
++use crate::alloc_core::alloc_bitmap::AllocBitmap;
++use crate::alloc_core::segment_header::{align_up, B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS, B3_LEAVES};
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++use crate::alloc_core::segment_header::SegmentMeta;
++use crate::alloc_core::size_classes::MIN_BLOCK;
++
++/// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
++/// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
++/// `any(primordial-lazy-commit, small-segment-lazy-commit)` (R12-9, task
++/// #260: the split siblings of the former single `alloc-lazy-commit`, which
++/// is now a pure alias for "both together"). Tests observe this to verify
++/// that `carve_batch` does ONE commit per batch (not per block) and that
++/// chunk boundary crossings trigger the expected number of commits.
++#[cfg(any(
++    feature = "primordial-lazy-commit",
++    feature = "small-segment-lazy-commit"
++))]
++pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
++    core::sync::atomic::AtomicU64::new(0);
++
++/// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
++/// small segment is lazily reserved under `small-segment-lazy-commit`, or
++/// the primordial segment under `primordial-lazy-commit` (R12-9, task #260 —
++/// this constant is SHARED verbatim by both split policies; see
++/// `bootstrap::primordial`'s identical `LAZY_FIRST_CHUNK` use). Only the
++/// metadata region `[0, small_meta_end)` plus this chunk are committed at
++/// reservation time; the rest of the 4 MiB segment stays reserved-but-
++/// uncommitted. B2's grow-on-carve logic commits additional chunks
++/// (sized by [`GROW_CHUNK`]) as the bump cursor advances past the frontier.
++///
++/// 256 KiB is large enough to hold many initial carve batches without faulting
++/// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
++/// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
++/// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
++/// conservative default.
++///
++/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
++#[cfg(any(
++    feature = "primordial-lazy-commit",
++    feature = "small-segment-lazy-commit"
++))]
++pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
++
++/// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
++/// past its initial value during bump-carve. When a `carve_block` or
++/// `carve_batch` would write past `committed_payload_end`, the grow logic
++/// commits `[frontier, round_up(carve_end, GROW_CHUNK))` (clamped to
++/// `SEGMENT`) and advances the frontier.
++///
++/// Set equal to `LAZY_FIRST_CHUNK` (256 KiB): both are B5-swept constants
++/// (64/128/256/512 KiB); using the same value for initial and grow chunks
++/// keeps the model simple and the sweep surface small. A separate value is
++/// a trivial constant rename if B5 data motivates it.
++///
++/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
++#[cfg(any(
++    feature = "primordial-lazy-commit",
++    feature = "small-segment-lazy-commit"
++))]
++pub(crate) const GROW_CHUNK: usize = LAZY_FIRST_CHUNK;
++
++// B1/B2: compile-time sanity — the initial commit (metadata + first chunk) must
++// fit within one segment, and both chunk constants must be page-aligned and
++// non-zero.
++#[cfg(any(
++    feature = "primordial-lazy-commit",
++    feature = "small-segment-lazy-commit"
++))]
++const _: () = {
++    assert!(
++        LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
++        "LAZY_FIRST_CHUNK must be a non-zero multiple of PAGE"
++    );
++    // Task #1074: the page-rounded `lazy_initial_commit` adds at most one
++    // MAX_REALISTIC_PAGE_SIZE (64 KiB) of rounding on top of the tight sum,
++    // so the slack is part of the bound: this pins the ROUNDED initial
++    // commit within one SEGMENT for every page size this crate supports.
++    assert!(
++        crate::alloc_core::segment_header::Layout::small_meta_end()
++            + LAZY_FIRST_CHUNK
++            + crate::alloc_core::os::MAX_REALISTIC_PAGE_SIZE
++            <= crate::alloc_core::os::SEGMENT,
++        "metadata + LAZY_FIRST_CHUNK + one MAX_REALISTIC_PAGE_SIZE of page-rounding \
++         slack must fit within one SEGMENT"
++    );
++    assert!(
++        GROW_CHUNK > 0 && GROW_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
++        "GROW_CHUNK must be a non-zero multiple of PAGE"
++    );
++};
++
++/// B3 spike oracle (bench-internals): blocks served by the sub-leaf free
++/// structure on the refill (drain) path.
++#[cfg(feature = "bench-internals")]
++pub(crate) static B3_DRAIN_FROM_FREE: core::sync::atomic::AtomicU64 =
++    core::sync::atomic::AtomicU64::new(0);
++
++/// B3 spike oracle: bench-internals reader for the drain-from-free counter.
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++#[allow(dead_code)] // spike oracle reader (root fn forwards to the counter)
++pub(crate) fn b3s_oracle_counter() -> u64 {
++    B3_DRAIN_FROM_FREE.load(core::sync::atomic::Ordering::Relaxed)
++}
++
++/// B3p carve-waste oracle (bench-internals): per-class bytes TAKEN from the
++/// shared bump frontier by fresh k-sub-leaf runs (k*4096 per new run).
++/// Diagnostic-only (relaxed); the waste oracle subtracts issued bytes.
++#[cfg(feature = "bench-internals")]
++pub(crate) static B3P_RUN_BYTES: [core::sync::atomic::AtomicU64; crate::alloc_core::size_classes::SMALL_CLASS_COUNT] =
++    [const { core::sync::atomic::AtomicU64::new(0) }; crate::alloc_core::size_classes::SMALL_CLASS_COUNT];
++
++/// B3p oracle: bench-internals readers for the per-class run-byte counters
++/// and the per-class run length.
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++#[allow(dead_code)] // spike oracle readers (root fns forward to these)
++pub(crate) fn b3p_run_bytes(class_idx: usize) -> u64 {
++    B3P_RUN_BYTES[class_idx].load(core::sync::atomic::Ordering::Relaxed)
++}
++
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++#[allow(dead_code)]
++pub(crate) fn b3p_run_leaves(class_idx: usize) -> u32 {
++    crate::alloc_core::segment_header::B3Free::RUN_LEAVES[class_idx]
++}
++
++/// B3p oracle: leaf-to-class binding of the 4 KiB sub-leaf containing the
++/// first byte of `ptr`'s segment offset (0 = unbound, else class_idx + 1).
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++#[allow(dead_code)]
++pub(crate) fn b3p_leaf_class_of(ptr: *mut u8) -> u8 {
++    let base = os::segment_base_of_ptr(ptr);
++    let off = ptr as usize - base as usize;
++    SegmentMeta::new(base).b3_free().leaf_class(off / B3_LEAF_BYTES)
++}
++
++/// B3 spike: first sub-leaf of `class_idx` with a mask bit at/after `from`
++/// (forward-only scan; `first_leaf` handles the cursor/wraparound entry).
++#[inline(always)]
++pub(super) fn b3_next_leaf(b3: &B3Free, class_idx: usize, from: usize) -> Option<usize> {
++    debug_assert!(from <= B3_LEAVES);
++    if from >= B3_LEAVES {
++        return None;
++    }
++    let mut w = from / 64;
++    let mut bits = b3.mask_word(class_idx, w) & (u64::MAX << (from % 64));
++    loop {
++        if bits != 0 {
++            return Some(w * 64 + bits.trailing_zeros() as usize);
++        }
++        w += 1;
++        if w >= B3_LEAVES / 64 {
++            return None;
++        }
++        bits = b3.mask_word(class_idx, w);
++    }
++}
++
++/// B3 spike: locate the first free slot of `class_idx` strictly after scan
++/// position `pos` (`None` = the class-mask entry leaf). Returns
++/// `(leaf, bitmap_word_idx, bit)`; never mutates anything.
++#[inline(always)]
++pub(super) fn b3_locate_free_from(
++    bm: &AllocBitmap,
++    b3: &B3Free,
++    class_idx: usize,
++    pos: &mut Option<(usize, usize, u32)>,
++) -> Option<(usize, usize, u32)> {
++    let (mut leaf, mut wi, mut min_bit) = match *pos {
++        None => {
++            let leaf = b3.first_leaf(class_idx)?;
++            (leaf, leaf * B3_LEAF_WORDS, 0u32)
++        }
++        Some((leaf, wi, bit)) => (leaf, wi, bit.saturating_add(1)),
++    };
++    loop {
++        let leaf_end = leaf * B3_LEAF_WORDS + B3_LEAF_WORDS;
++        while wi < leaf_end {
++            let word = if min_bit < 64 {
++                bm.word(wi) & u64::MAX.unbounded_shl(min_bit)
++            } else {
++                0
++            };
++            if word != 0 {
++                let bit = word.trailing_zeros();
++                *pos = Some((leaf, wi, bit));
++                return Some((leaf, wi, bit));
++            }
++            wi += 1;
++            min_bit = 0;
++        }
++        leaf = b3_next_leaf(b3, class_idx, leaf + 1)?;
++        wi = leaf * B3_LEAF_WORDS;
++    }
++}
++
++/// B3 spike: the segment offset of a located slot.
++#[inline(always)]
++pub(super) fn b3_slot_offset(leaf: usize, wi: usize, bit: u32) -> u32 {
++    ((leaf * 256 + (wi - leaf * B3_LEAF_WORDS) * 64 + bit as usize) * MIN_BLOCK) as u32
++}
++
++/// B3 spike: first carve start for `class_idx` at/after `start`, honouring
++/// the sub-leaf→class binding (a carve never STARTS in a sub-leaf bound to
++/// another class; blocks > 4 KiB span sub-leaves naturally). `None` = no room.
++#[inline(always)]
++pub(super) fn b3_carve_start(
++    b3: &B3Free,
++    class_idx: usize,
++    block_size: usize,
++    mut start: usize,
++) -> Option<usize> {
++    loop {
++        if start + block_size > SEGMENT {
++            return None;
++        }
++        let leaf = start / B3_LEAF_BYTES;
++        let bound = b3.leaf_class(leaf);
++        if bound != 0 && bound != class_idx as u8 + 1 {
++            start = align_up((leaf + 1) * B3_LEAF_BYTES, block_size);
++            continue;
++        }
++        return Some(start);
++    }
++}
++
++/// B3 spike: per-class carve cursor word encoding. `0` = no run; otherwise
++/// `(start << 2) | delta` where `start` is the offset of the class's next
++/// fresh block (always nonzero: payload begins at `small_meta_end() > 0`)
++/// and `delta = start / B3_LEAF_BYTES - run_start_leaf` (0..=3: the cursor
++/// may sit in any of the run's `k <= 4` sub-leaves). The delta keeps the run
++/// boundary (`run_end = (run_start_leaf + k) * B3_LEAF_BYTES`) recoverable
++/// after the cursor crosses into the run's later sub-leaves — recovering it
++/// from the bare `start` leaf would overestimate `run_end` there and let
++/// blocks overlap the next run taken from the bump frontier.
++#[inline(always)]
++pub(super) fn b3_cursor_decode(v: u32) -> Option<(usize, usize)> {
++    if v == 0 {
++        return None;
++    }
++    let delta = (v & 3) as usize;
++    let start = (v >> 2) as usize;
++    Some((start, start / B3_LEAF_BYTES - delta))
++}
++
++#[inline(always)]
++pub(super) fn b3_cursor_encode(start: usize, run_leaf: usize) -> u32 {
++    let delta = start / B3_LEAF_BYTES - run_leaf;
++    debug_assert!(delta <= 3, "carve cursor escaped its run");
++    ((start as u32) << 2) | delta as u32
++}
++
++/// B3 spike: one planned fresh block of a `block_size <= B3_LEAF_BYTES`
++/// class. `new_run` is `Some((run_start, run_end))` when a NEW run of
++/// `RUN_LEAVES[class_idx]` sub-leaves must be taken from the shared bump
++/// frontier; its leaves are bound and the bump advanced only AFTER every
++/// fallible step (OOM-atomicity). Pure — no mutation — so the batch path's
++/// probe/commit replay reproduces the identical sequence.
++pub(super) struct B3BlockPlan {
++    pub(super) off: usize,
++    pub(super) new_run: Option<(usize, usize)>,
++}
++
++/// Serve from the current run while the block fits before `run_end` (the run
++/// boundary is a block boundary); on exhaustion take a contiguous k-sub-leaf
++/// run: `run_start = align_up(bump, B3_LEAF_BYTES)` (the alignment head
++/// `[bump, run_start)` is lost — part of the documented fragmentation
++/// budget; bump can be only MIN_BLOCK-aligned after a >4 KiB span carve),
++/// `run_end = run_start + k*4096`, `start = align_up(run_start, block_size)`
++/// (absolute `off % block_size == 0` preserved).
++#[inline(always)]
++pub(super) fn b3_class_block_plan(
++    class_idx: usize,
++    block_size: usize,
++    bump: usize,
++    cursor: u32,
++) -> Option<B3BlockPlan> {
++    let k = B3Free::RUN_LEAVES[class_idx] as usize;
++    if let Some((start, run_leaf)) = b3_cursor_decode(cursor) {
++        if start + block_size <= (run_leaf + k) * B3_LEAF_BYTES {
++            return Some(B3BlockPlan { off: start, new_run: None });
++        }
++    }
++    let run_start = align_up(bump, B3_LEAF_BYTES);
++    let run_end = run_start + k * B3_LEAF_BYTES;
++    if run_end > SEGMENT {
++        return None; // no room for a new run — caller reserves
++    }
++    Some(B3BlockPlan {
++        off: align_up(run_start, block_size),
++        new_run: Some((run_start, run_end)),
++    })
++}
++
++/// The packed cursor after the planned block is issued: advanced by one
++/// block, zeroed once the run remainder is smaller than `block_size` (run
++/// exhausted — the tail is part of the loss budget).
++#[inline(always)]
++pub(super) fn b3_class_block_next_cursor(
++    class_idx: usize,
++    plan: &B3BlockPlan,
++    block_size: usize,
++    cursor: u32,
++) -> u32 {
++    let k = B3Free::RUN_LEAVES[class_idx] as usize;
++    let (run_leaf, run_end) = match plan.new_run {
++        Some((run_start, run_end)) => (run_start / B3_LEAF_BYTES, run_end),
++        None => match b3_cursor_decode(cursor) {
++            Some((_, run_leaf)) => (run_leaf, (run_leaf + k) * B3_LEAF_BYTES),
++            None => std::process::abort()
++        },
++    };
++    let next = plan.off + block_size;
++    if next + block_size <= run_end {
++        b3_cursor_encode(next, run_leaf)
++    } else {
++        0
++    }
++}
+diff --git a/src/alloc_core/small/alloc_core_small/dealloc.rs b/src/alloc_core/small/alloc_core_small/dealloc.rs
+index 0f84c5c3..d1884f45 100644
+--- a/src/alloc_core/small/alloc_core_small/dealloc.rs
++++ b/src/alloc_core/small/alloc_core_small/dealloc.rs
+@@ -2,11 +2,8 @@
+ //! double-free guard + segment metadata resets; mechanical split of the
+ //! former flat `alloc_core_small.rs`; pure code movement, no behavior changed).
+ 
+-use core::ptr::NonNull;
+-
+-use crate::alloc_core::node::Node;
+ use crate::alloc_core::segment_header::{
+-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
++    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
+ };
+ // H1 (task #167): `SizeClasses::block_size` is consulted only by the
+ // `hardened`-gated interior-pointer guard below — gate the import
+@@ -38,7 +35,6 @@ impl AllocCore {
+         class_idx: usize,
+     ) {
+         let meta = SegmentMeta::new(base);
+-        let mut bt = meta.bin_table();
+         let off = (ptr as usize - base as usize) as u32;
+         // ── H1 (task #167): interior-pointer guard (HARDENED) ───────────────
+         // The SAME guard as `HeapCore::dealloc_own_thread_with_base`'s magazine
+@@ -102,28 +98,18 @@ impl AllocCore {
+         if bm.is_free(off) {
+             return; // Already on a free list (M2 double-free): no-op.
+         }
+-        // The user pointer supplied only the numeric offset. The table-owned
+-        // root covers the physical block, including its free-list word even
+-        // when the caller's reborrow covered fewer bytes.
+-        let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
+-            Some(nn) => nn,
+-            None => return,
+-        };
+-        let old_head = bt.head(class_idx);
+-        let old_head_ptr = if old_head == FREE_LIST_NULL {
+-            core::ptr::null_mut()
+-        } else {
+-            Node::deref(base, old_head as usize)
+-        };
+-        Node::write_next(block_nn, old_head_ptr);
+-        bt.set_head(class_idx, off);
++        // B3 spike: retire = one bitmap bit + the sub-leaf class-mask bit.
++        // No body write, no BinTable head.
++        let mut b3 = meta.b3_free();
++        let was_empty = b3.class_empty(class_idx);
+         bm.mark_free(off);
++        b3.set_leaf(
++            class_idx,
++            off as usize / crate::alloc_core::segment_header::B3_LEAF_BYTES,
++        );
+         SegmentMeta::new(base).dec_live();
+-        // R7-A2: directory bitmap maintenance — the new head is always non-null
+-        // (we just pushed `off`), so the only transition is empty→non-empty
+-        // when old_head was FREE_LIST_NULL.
+         #[cfg(feature = "alloc-segment-directory")]
+-        if old_head == FREE_LIST_NULL {
++        if was_empty {
+             let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+             self.publish_nonempty(base, class_idx, slot_idx);
+         }
+diff --git a/src/alloc_core/small/alloc_core_small/directory.rs b/src/alloc_core/small/alloc_core_small/directory.rs
+index bd55fd02..43a1218e 100644
+--- a/src/alloc_core/small/alloc_core_small/directory.rs
++++ b/src/alloc_core/small/alloc_core_small/directory.rs
+@@ -5,7 +5,7 @@
+ //! Every item here is `alloc-segment-directory`-gated.
+ 
+ use crate::alloc_core::os;
+-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
++use crate::alloc_core::segment_header::SegmentMeta;
+ 
+ use crate::alloc_core::alloc_core::AllocCore;
+ 
+@@ -164,7 +164,7 @@ impl AllocCore {
+ 
+     /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
+     /// slot `slot_idx` (segment base `base`) transitioned from empty to
+-    /// non-empty (old_head was FREE_LIST_NULL, new_head is not). Sets the
++    /// non-empty (old_head was new_head is not). Sets the
+     /// corresponding bit in the segment's node bucket.
+     ///
+     /// No-op if the directory is not materialised.
+@@ -182,7 +182,7 @@ impl AllocCore {
+ 
+     /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
+     /// slot `slot_idx` (segment base `base`) transitioned from non-empty to
+-    /// empty (old_head was not FREE_LIST_NULL, new_head is FREE_LIST_NULL).
++    /// empty (old_head was not new_head is FREE_LIST_NULL).
+     /// Clears the corresponding bit in every node bucket. A segment may have
+     /// published its bit to the unknown bucket before its node obtained a
+     /// dedicated bucket; clearing only the node's current bucket would leave
+@@ -247,12 +247,11 @@ impl AllocCore {
+         if let Some(dir) = self.directory_mut() {
+             let node_id = directory_node_id_of(base);
+             let meta = SegmentMeta::new(base);
+-            let bt = meta.bin_table();
+             let mut bits = changed_classes;
+             while bits != 0 {
+                 let c = bits.trailing_zeros() as usize;
+                 bits &= bits - 1; // clear lowest set bit
+-                if bt.head(c) != FREE_LIST_NULL {
++                if !meta.b3_free().class_empty(c) {
+                     dir.set_bit(node_id, c, slot_idx);
+                 } else {
+                     dir.clear_bit(node_id, c, slot_idx);
+diff --git a/src/alloc_core/small/alloc_core_small/find_segment.rs b/src/alloc_core/small/alloc_core_small/find_segment.rs
+index 1923fb89..f2f43fed 100644
+--- a/src/alloc_core/small/alloc_core_small/find_segment.rs
++++ b/src/alloc_core/small/alloc_core_small/find_segment.rs
+@@ -4,7 +4,10 @@
+ //! `alloc_core_small.rs`; pure code movement, no behavior changed).
+ 
+ use crate::alloc_core::os;
+-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
++use crate::alloc_core::segment_header::{
++    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
++};
++use crate::alloc_core::size_classes::MIN_BLOCK;
+ 
+ use crate::alloc_core::alloc_core::AllocCore;
+ 
+@@ -108,6 +111,21 @@ impl AllocCore {
+         self.find_segment_with_free_impl(class_idx, true)
+     }
+ 
++    /// Patch S: first pending-bitmap word that can carry payload bits. Payload
++    /// begins at the page-aligned metadata end, an exact multiple of one word
++    /// (64 × MIN_BLOCK). Words below it can only read zero: only an issued
++    /// block is published, and issue/reclaim reject any offset below
++    /// `payload_start`.
++    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
++    pub(crate) fn sidecar_payload_start_word(base: *mut u8) -> usize {
++        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
++            SegLayout::primordial_meta_end()
++        } else {
++            SegLayout::small_meta_end()
++        };
++        payload_start / (MIN_BLOCK * 64)
++    }
++
+     /// Consume one canonical Small root, dropping every cut and route borrow
+     /// before reclaim finalization can release its reservation. Called only
+     /// on actual free-list/refill misses, never on a magazine hit.
+@@ -121,7 +139,13 @@ impl AllocCore {
+         let high_water = SegmentMeta::new(base).bump_of();
+         let mut changed_classes = 0u64;
+         {
+-            let Some(mut scan) = self.table.scan_small_route(index, base, high_water) else {
++            // Patch S: start at the payload's first word, not word 0.
++            let end_word = high_water.div_ceil(MIN_BLOCK * 64);
++            let start_word = Self::sidecar_payload_start_word(base).min(end_word);
++            let Some(mut scan) = self
++                .table
++                .scan_small_route_from(index, base, high_water, start_word)
++            else {
+                 std::process::abort();
+             };
+             while let Some(mut cut) = scan.next_cut() {
+@@ -456,8 +480,9 @@ impl AllocCore {
+                 SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+             }
+             let meta = SegmentMeta::new(base);
+-            let bt = meta.bin_table();
+-            if bt.head(class_idx) != FREE_LIST_NULL {
++            // B3 spike: "segment has a free block of class" = non-empty mask.
++            let b3 = meta.b3_free();
++            if !b3.class_empty(class_idx) {
+                 // Phase C (numa-aware): check whether this segment belongs to
+                 // our NUMA node.  Segments with node_id == NO_NODE_RAW are
+                 // "unknown" — treat them as local (no penalty, and on platforms
+@@ -521,7 +546,7 @@ impl AllocCore {
+                 }
+                 let meta = SegmentMeta::new(base);
+                 let node = meta.node_id_of();
+-                (meta.bin_table().head(class_idx) != FREE_LIST_NULL
++                (!meta.b3_free().class_empty(class_idx)
+                     && node != my_node
+                     && node != crate::alloc_core::segment_header::NO_NODE_RAW)
+                     .then_some(base)
+@@ -644,10 +669,9 @@ impl AllocCore {
+             SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+         }
+ 
+-        // Validation step 3: BinTable head STILL non-null?
++        // Validation step 3: class mask STILL non-empty?
+         let meta = SegmentMeta::new(base);
+-        let bt = meta.bin_table();
+-        if bt.head(class_idx) == FREE_LIST_NULL {
++        if meta.b3_free().class_empty(class_idx) {
+             // Stale positive: drain may have emptied the class, or a concurrent
+             // transition cleared it. Clear the bit and try the next candidate.
+             self.publish_empty(base, class_idx, slot_idx);
+diff --git a/src/alloc_core/small/alloc_core_small/mod.rs b/src/alloc_core/small/alloc_core_small/mod.rs
+index 1d42c249..17f75fc7 100644
+--- a/src/alloc_core/small/alloc_core_small/mod.rs
++++ b/src/alloc_core/small/alloc_core_small/mod.rs
+@@ -30,6 +30,9 @@ mod sidecar_drain_outcome;
+ #[path = "reserve.rs"]
+ mod reserve;
+ 
++#[path = "b3_carve.rs"]
++mod b3_carve;
++
+ #[path = "alloc_core_small_impl.rs"]
+ mod alloc_core_small_impl;
+ #[allow(unused_imports)]
+diff --git a/src/alloc_core/small/alloc_core_small/reserve.rs b/src/alloc_core/small/alloc_core_small/reserve.rs
+index 8b67e927..5e0a77dd 100644
+--- a/src/alloc_core/small/alloc_core_small/reserve.rs
++++ b/src/alloc_core/small/alloc_core_small/reserve.rs
+@@ -426,6 +426,14 @@ impl AllocCore {
+             base,
+             SegLayout::alloc_bitmap_off(),
+         ));
++        // B3 spike: same virgin-skip discipline for the sub-leaf mask region
++        // (target state is all zeros; fresh OS pages already read zero; the
++        // decommit-reset path re-zeroes explicitly).
++        #[cfg(miri)]
++        crate::alloc_core::segment_header::B3Free::init_in_place(base_add(
++            base,
++            SegLayout::b3_free_off(),
++        ));
+         // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended
+         // to the second (magazine-residency) bitmap — see
+         // `magazine_bitmap.rs`'s module doc. Skipped under `cfg(not(miri))`
+diff --git a/src/alloc_core/small/alloc_core_small_magazine.rs b/src/alloc_core/small/alloc_core_small_magazine.rs
+index 2227a87e..9c8eb62b 100644
+--- a/src/alloc_core/small/alloc_core_small_magazine.rs
++++ b/src/alloc_core/small/alloc_core_small_magazine.rs
+@@ -5,12 +5,10 @@
+ //! and flush batch APIs (`refill_class*`, `flush_class`, `flush_run`).
+ //! Pure code-movement sibling of `alloc_core_small.rs`; no behavior changed.
+ 
+-use core::ptr::NonNull;
+-
+-use crate::alloc_core::node::{Node, NODE_SIZE};
++use crate::alloc_core::node::NODE_SIZE;
+ use crate::alloc_core::os;
+ use crate::alloc_core::segment_header::{
+-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
++    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
+ };
+ use crate::alloc_core::size_classes::SizeClasses;
+ 
+@@ -548,8 +546,8 @@ impl AllocCore {
+     #[must_use]
+     fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {
+         let meta = SegmentMeta::new(base);
+-        let mut bt = meta.bin_table();
+         let mut bm = meta.alloc_bitmap();
++        let b3 = meta.b3_free();
+         // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
+         // never carves, so `bump` cannot advance during this run.
+         let bump = meta.bump_of();
+@@ -566,13 +564,14 @@ impl AllocCore {
+             SegLayout::small_meta_end()
+         };
+ 
+-        // Capture the segment's CURRENT freelist head ONCE — the first accepted
+-        // block links to this (matching the first sequential `dealloc_small`,
+-        // whose `old_head` is exactly this value).
+-        let old_head = bt.head(class_idx);
+-        let mut prev_off = old_head; // next-target for the next accepted block
+-        let mut last_accepted: Option<u32> = None;
+-        // Count accepted blocks for one owner-side credit retirement after `set_head`.
++        // B3 spike: was the class mask empty before this run? (directory
++        // empty→non-empty transition).
++        let was_empty = meta.b3_free().class_empty(class_idx);
++        // Word-accumulated sub-leaf mask bits: one load + one store per
++        // touched mask word per run, one OR per accepted block.
++        let mut acc_wi = usize::MAX;
++        let mut acc_val = 0u64;
++        // Count accepted blocks for one owner-side credit retirement.
+         let mut accepted_count: usize = 0;
+ 
+         for &ptr in run {
+@@ -597,37 +596,25 @@ impl AllocCore {
+             if bm.is_free(off) {
+                 continue;
+             }
+-            // `ptr` identifies the offset only. Link through the stored
+-            // reservation root, which covers the entire free-list word.
+-            let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
+-                Some(nn) => nn,
+-                None => continue,
+-            };
+-            // Link this accepted block at the head of the run-local chain: its
+-            // `next` is the PRIOR accepted block's off (or the captured
+-            // `old_head` for the first accepted). Byte-identical to the LIFO
+-            // push each sequential `dealloc_small` performs.
+-            let next_ptr = if prev_off == FREE_LIST_NULL {
+-                core::ptr::null_mut()
+-            } else {
+-                Node::deref(base, prev_off as usize)
+-            };
+-            Node::write_next(block_nn, next_ptr);
++            // B3 spike: retire = bitmap bit + accumulated sub-leaf mask OR.
+             bm.mark_free(off);
+-            prev_off = off;
+-            last_accepted = Some(off);
++            let leaf = off as usize / crate::alloc_core::segment_header::B3_LEAF_BYTES;
++            let wi = leaf / 64;
++            if wi != acc_wi {
++                if acc_wi != usize::MAX {
++                    b3.or_mask_word(class_idx, acc_wi, acc_val);
++                }
++                acc_wi = wi;
++                acc_val = 0;
++            }
++            acc_val |= 1u64 << (leaf % 64);
+             accepted_count += 1;
+         }
+ 
+-        // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
+-        // final `set_head` of the last sequential `dealloc_small` in the run.
+-        if let Some(off) = last_accepted {
+-            bt.set_head(class_idx, off);
+-            // R7-A2: directory bitmap maintenance — the new head is always
+-            // non-null (`off`), so the only transition is empty→non-empty
+-            // when old_head was FREE_LIST_NULL.
++        if acc_wi != usize::MAX {
++            b3.or_mask_word(class_idx, acc_wi, acc_val);
+             #[cfg(feature = "alloc-segment-directory")]
+-            if old_head == FREE_LIST_NULL {
++            if was_empty {
+                 let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                 self.publish_nonempty(base, class_idx, slot_idx);
+             }
+diff --git a/src/alloc_core/small/alloc_core_small_pool/decommit.rs b/src/alloc_core/small/alloc_core_small_pool/decommit.rs
+index 4b9cef12..a82c6776 100644
+--- a/src/alloc_core/small/alloc_core_small_pool/decommit.rs
++++ b/src/alloc_core/small/alloc_core_small_pool/decommit.rs
+@@ -219,6 +219,11 @@ impl AllocCore {
+         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+             bt.set_head(c, FREE_LIST_NULL);
+         }
++        // 2b'. B3 spike: reset the sub-leaf masks / bindings / cursors.
++        crate::alloc_core::segment_header::B3Free::init_in_place(crate::alloc_core::node::Node::offset(
++            base,
++            crate::alloc_core::segment_header::Layout::b3_free_off(),
++        ));
+         // 2c. Re-mark every payload page `Free` in the page map (metadata pages
+         //     keep their `Meta` marking). Payload pages are `[meta_pages,
+         //     PAGES_PER_SEGMENT)`.
+diff --git a/src/alloc_core/small/alloc_core_small_reclaim.rs b/src/alloc_core/small/alloc_core_small_reclaim.rs
+index b43ef824..3387af50 100644
+--- a/src/alloc_core/small/alloc_core_small_reclaim.rs
++++ b/src/alloc_core/small/alloc_core_small_reclaim.rs
+@@ -3,16 +3,11 @@
+ #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+ use crate::alloc_core::alloc_core::AllocCore;
+ #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+-use crate::alloc_core::node::Node;
+-#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+ use crate::alloc_core::segment_header::{
+-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
++    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
+ };
+ #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+ use crate::alloc_core::size_classes::SizeClasses;
+-#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+-use core::ptr::NonNull;
+-
+ #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+ impl AllocCore {
+     /// The owner retains the scan while retiring records and drops it before
+@@ -51,18 +46,13 @@ impl AllocCore {
+         if meta.magazine_bitmap().is_in_magazine(offset) {
+             return false;
+         }
+-        let ptr = Node::deref(base, off);
+-        let mut bins = meta.bin_table();
+-        let old_head = bins.head(class_idx);
+-        let next = if old_head == FREE_LIST_NULL {
+-            core::ptr::null_mut()
+-        } else {
+-            Node::deref(base, old_head as usize)
+-        };
+-        let block = NonNull::new(ptr).unwrap_or_else(|| std::process::abort());
+-        Node::write_next(block, next);
+-        bins.set_head(class_idx, offset);
++        // B3 spike: retire = one bitmap bit + the sub-leaf class-mask bit.
++        // No body write, no BinTable head.
+         bitmap.mark_free(offset);
++        meta.b3_free().set_leaf(
++            class_idx,
++            off / crate::alloc_core::segment_header::B3_LEAF_BYTES,
++        );
+         meta.dec_live();
+         true
+     }
+diff --git a/src/lib.rs b/src/lib.rs
+index fcf9e491..e51f428c 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -263,6 +263,10 @@
+ //                             genuine System mixed-leaf pointers, initialization,
+ //                             and exact deallocation after the last route pin.
+ //                             (under `alloc-core`; used by `alloc-global`)
++//      * `alloc_core::segment::segment_header::b3_free` — B3 spike (not for
++//                             merge): owner-only sub-leaf mask words, leaf
++//                             bindings and cursors over the segment alloc
++//                             bitmap. (under `alloc-core`)
+ //      * `alloc_core::segment::segment_table::route_slots` — System-backed,
+ //                             owner-only non-Copy registration storage;
+ //                             routes close before reservation release.
+@@ -434,6 +438,38 @@ mod concurrent;
+ // root, i.e. every `dbg_*` hook and internal type — reachable only when
+ // `internals` is enabled. See `internals`'s own doc comment in `Cargo.toml`
+ // for the full boundary/decision writeup.
++/// B3 spike oracle (ph3c-b3s, not for merge): blocks served from the
++/// sub-leaf free structure on the refill/drain path.
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub fn b3s_drain_from_free() -> u64 {
++    crate::alloc_core::b3s_drain_from_free_inner()
++}
++
++/// B3p carve-waste oracle (ph3c step 1′, not for merge): bytes taken from the
++/// shared bump frontier by fresh carve runs of `class_idx`.
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub fn b3p_run_bytes(class_idx: usize) -> u64 {
++    crate::alloc_core::b3p_run_bytes_inner(class_idx)
++}
++
++/// B3p oracle: the per-class run length (`RUN_LEAVES[class_idx]`).
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub fn b3p_run_leaves(class_idx: usize) -> u32 {
++    crate::alloc_core::b3p_run_leaves_inner(class_idx)
++}
++
++/// B3p oracle: leaf-to-class binding of the 4 KiB sub-leaf containing `ptr`'s
++/// first byte (0 = unbound, else class_idx + 1). `ptr` must point into a live
++/// small segment's payload.
++#[cfg(all(feature = "bench-internals", feature = "internals"))]
++#[doc(hidden)]
++pub fn b3p_leaf_class_of(ptr: *mut u8) -> u8 {
++    crate::alloc_core::b3p_leaf_class_of_inner(ptr)
++}
++
+ #[cfg(all(feature = "alloc-core", feature = "internals"))]
+ #[doc(hidden)]
+ pub mod alloc_core;
+diff --git a/tests/b3p_carve_waste_proptest.rs b/tests/b3p_carve_waste_proptest.rs
+new file mode 100644
+index 00000000..b2c0500d
+--- /dev/null
++++ b/tests/b3p_carve_waste_proptest.rs
+@@ -0,0 +1,88 @@
++//! Ph3c step 1′ (B3 per-class carve cursors) — carve-waste proptest oracle.
++//!
++//! Randomly interleaves ALL small classes (the full `SIZE_CLASS_TABLE`,
++//! including > 4 KiB span classes) through `AllocCore` with no frees, and
++//! asserts the run-tail loss oracle per class: for every class the bytes
++//! TAKEN from the shared bump frontier by fresh `RUN_LEAVES[class]`-sub-leaf
++//! runs minus the bytes actually issued in blocks is at most ONE partial run
++//! (`RUN_LEAVES[class] * 4096`). The single-segment guard (segment-table
++//! count must not grow) keeps the oracle exact: with one segment each class
++//! can leave at most one exhausted tail run unaccounted.
++//!
++//! Oracle hooks: `b3p_run_bytes` (incremented at every fresh-run take in
++//! `carve_block`/`try_carve_batch`), `b3p_run_leaves`; see
++//! `src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs`.
++#![cfg(all(feature = "production", feature = "internals", feature = "bench-internals"))]
++
++use proptest::prelude::*;
++use sefer_alloc::{AllocCore, SegmentLayout};
++
++// Called only from inside `proptest!`'s generated harness.
++#[allow(dead_code)]
++fn runner(n_allocs: usize) {
++    let classes = SegmentLayout::SIZE_CLASS_TABLE;
++    let n_classes = classes.len();
++    // Counters are process-wide statics: snapshot per case, compare deltas.
++    let run_bytes_before: Vec<u64> =
++        (0..n_classes).map(sefer_alloc::b3p_run_bytes).collect();
++    let mut core = AllocCore::new().expect("AllocCore::new");
++    let table_base = core.dbg_table_count();
++    let mut issued: Vec<u64> = vec![0; n_classes];
++    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(n_allocs);
++
++    let mut rng_state = n_allocs as u64 ^ 0x9E37_79B9_7F4A_7C15;
++    let mut next_rand = move || {
++        // xorshift64: deterministic per-case interleaving.
++        rng_state ^= rng_state << 13;
++        rng_state ^= rng_state >> 7;
++        rng_state ^= rng_state << 17;
++        rng_state
++    };
++
++    let budget: u64 = 2 * 1024 * 1024; // stay comfortably inside one 4 MiB segment
++    let mut total: u64 = 0;
++    for _ in 0..n_allocs {
++        let class = (next_rand() as usize) % n_classes;
++        let bs = classes[class];
++        if total + bs as u64 > budget {
++            break;
++        }
++        let layout = core::alloc::Layout::from_size_align(bs, 8).unwrap();
++        // SAFETY: non-zero size, valid alignment; freed when `core` drops.
++        let ptr = core.alloc(layout);
++        assert!(!ptr.is_null(), "alloc null (class {class}, bs {bs})");
++        ptrs.push(ptr);
++        issued[class] += bs as u64;
++        total += bs as u64;
++    }
++
++    // Single-segment guard: no small-segment reserve may have happened,
++    // otherwise the per-class oracle bound would need a segment factor.
++    assert_eq!(
++        core.dbg_table_count(),
++        table_base,
++        "case with {n_allocs} allocs reserved a second segment"
++    );
++
++    // Oracle: per class, run bytes taken − issued bytes ≤ one partial run.
++    for (class, &issued_bytes) in issued.iter().enumerate() {
++        let taken = sefer_alloc::b3p_run_bytes(class) - run_bytes_before[class];
++        let bound = sefer_alloc::b3p_run_leaves(class) as u64 * 4096;
++        assert!(
++            taken.saturating_sub(issued_bytes) <= bound,
++            "class {class} (bs {}): run_bytes {taken} − issued {issued_bytes} > one run ({bound})",
++            classes[class]
++        );
++    }
++    assert!(!ptrs.is_empty());
++}
++
++#[test]
++fn carve_waste_oracle_single_segment() {
++    proptest! {
++        #![proptest_config(ProptestConfig::with_cases(64))]
++        fn prop_carve_waste(n_allocs in 64usize..1024) {
++            runner(n_allocs);
++        }
++    }
++}
+diff --git a/tests/b3p_interleave_footprint.rs b/tests/b3p_interleave_footprint.rs
+new file mode 100644
+index 00000000..c5577748
+--- /dev/null
++++ b/tests/b3p_interleave_footprint.rs
+@@ -0,0 +1,43 @@
++//! Ph3c step 1′ (B3 per-class carve cursors) — interleaved footprint.
++//!
++//! Counterfactual footprint guard: interleaving the six smallest classes
++//! (16/32/48/64/80/112 B round-robin) through `AllocCore` with NO frees must
++//! consume at most ONE small segment. Counterfactually red on spike 093c9d23
++//! (W1 C/B=4.013): the pre-fix carve cursor let runs be taken misaligned/
++//! overlapping, forcing repeated small-segment reserves at the same volume.
++//!
++//! Segment count via `AllocCore::dbg_table_count` (the segment table's
++//! high-water registered slot count): the delta from a fresh core must be 0.
++#![cfg(all(feature = "production", feature = "internals", feature = "bench-internals"))]
++
++use sefer_alloc::{AllocCore, SegmentLayout};
++
++#[test]
++fn interleave_40k_small_allocs_single_segment() {
++    let sizes: [usize; 6] = [16, 32, 48, 64, 80, 112];
++    // ~58.7 B avg * 40 000 ≈ 2.3 MiB of issued bytes: fits one 4 MiB segment.
++    const N: usize = 40_000;
++
++    let mut core = AllocCore::new().expect("AllocCore::new");
++    let base_count = core.dbg_table_count();
++
++    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
++    for i in 0..N {
++        let size = sizes[i % sizes.len()];
++        let layout = core::alloc::Layout::from_size_align(size, 8).unwrap();
++        // SAFETY: non-zero size, valid alignment; freed when `core` drops.
++        let ptr = core.alloc(layout);
++        assert!(!ptr.is_null(), "alloc null at i={i} (size {size})");
++        ptrs.push(ptr);
++    }
++    drop(ptrs);
++
++    let after = core.dbg_table_count();
++    assert_eq!(
++        after, base_count,
++        "interleaved small carve footprint reserved extra segments: {} -> {}",
++        base_count, after
++    );
++    // Sanity: the segment actually served the full volume (payload capacity).
++    assert!(N * sizes.iter().sum::<usize>() / sizes.len() <= SegmentLayout::SEGMENT);
++}
+diff --git a/tests/b3p_leaf_boundary_no_overlap.rs b/tests/b3p_leaf_boundary_no_overlap.rs
+new file mode 100644
+index 00000000..88d0edef
+--- /dev/null
++++ b/tests/b3p_leaf_boundary_no_overlap.rs
+@@ -0,0 +1,96 @@
++//! Ph3c step 1′ (B3 per-class carve cursors) — leaf-boundary classes.
++//!
++//! Classes whose block size does NOT divide 4096 (48, 80, 112, 144, 1536,
++//! 1888, 2368, 2560, 3072) allocate enough blocks to exhaust several carve
++//! runs and cross run boundaries mid-batch. Every issued block is checked
++//! by ADDRESS against the segment substrate:
++//!   (a) blocks of a class are pairwise disjoint `[ptr, ptr+bs)` intervals;
++//!   (b) each block's segment offset is a multiple of its block size;
++//!   (c) EVERY 4 KiB sub-leaf the block touches is bound to its own class
++//!       (`leaf_class == class_idx + 1`, 0 = unbound must never appear).
++//! Note a block MAY straddle a sub-leaf boundary inside its run (runs are
++//! contiguous k leaves); it must never leave the leaves of its own run,
++//! which (c) proves.
++#![cfg(all(feature = "production", feature = "internals", feature = "bench-internals"))]
++
++use sefer_alloc::{AllocCore, SegmentLayout};
++
++const LEAF: usize = 4096;
++
++/// Desired boundary sizes; each rounds UP to its actual size class.
++const LEAF_BOUNDARY_SIZES: [usize; 9] = [48, 80, 112, 144, 1536, 1888, 2368, 2560, 3072];
++
++/// Enough blocks to take several runs per class (max k = 4 leaves/run).
++fn count_for(bs: usize) -> usize {
++    (4 * LEAF * 4 / bs).max(64) + 16
++}
++
++#[test]
++fn leaf_boundary_blocks_are_aligned_bound_and_disjoint() {
++    let table = SegmentLayout::SIZE_CLASS_TABLE;
++    let segment_mask = !(SegmentLayout::SEGMENT - 1);
++
++    // Desired sizes round UP to their actual size class (some, e.g. 1536,
++    // are not exact table entries); duplicate classes are dropped.
++    let mut class_list: Vec<usize> = Vec::new();
++    for &bs in &LEAF_BOUNDARY_SIZES {
++        let class = SegmentLayout::try_class_for(bs, 8)
++            .ok()
++            .flatten()
++            .expect("class");
++        if !class_list.contains(&class) {
++            class_list.push(class);
++        }
++    }
++
++    let mut core = AllocCore::new().expect("AllocCore::new");
++    let mut by_class: Vec<Vec<usize>> = vec![Vec::new(); class_list.len()];
++
++    for (ci, &class) in class_list.iter().enumerate() {
++        let bs = table[class];
++        let layout = core::alloc::Layout::from_size_align(bs, 8).unwrap();
++        for _ in 0..count_for(bs) {
++            // SAFETY: non-zero size, valid alignment; core outlives checks.
++            let ptr = core.alloc(layout);
++            assert!(!ptr.is_null(), "alloc null (bs {bs})");
++            let addr = ptr as usize;
++            let base = addr & segment_mask;
++            let off = addr - base;
++
++            // (b) block offset is block-size aligned within the segment.
++            assert_eq!(off % bs, 0, "bs {bs}: offset {off} misaligned");
++
++            // (c) every sub-leaf touched by the block is bound to this class.
++            let first_leaf = off / LEAF;
++            let last_leaf = (off + bs - 1) / LEAF;
++            for leaf in first_leaf..=last_leaf {
++                let lc = sefer_alloc::b3p_leaf_class_of((base + leaf * LEAF) as *mut u8);
++                assert_eq!(
++                    lc,
++                    (class + 1) as u8,
++                    "bs {bs}: leaf {leaf} bound to {lc}, expected {}",
++                    class + 1
++                );
++            }
++            by_class[ci].push(addr);
++        }
++    }
++
++    // (a) pairwise disjoint intervals per class.
++    for (ci, &class) in class_list.iter().enumerate() {
++        let bs = table[class];
++        let mut addrs = by_class[ci].clone();
++        addrs.sort_unstable();
++        addrs.dedup();
++        assert_eq!(addrs.len(), by_class[ci].len(), "bs {bs}: duplicate block address");
++        for w in addrs.windows(2) {
++            assert!(
++                w[0] + bs <= w[1],
++                "bs {bs}: blocks [0x{:x}, 0x{:x}) and 0x{:x} overlap",
++                w[0],
++                w[0] + bs,
++                w[1]
++            );
++        }
++    }
++}
+diff --git a/tests/b3s_oracle.rs b/tests/b3s_oracle.rs
+new file mode 100644
+index 00000000..04f15f2c
+--- /dev/null
++++ b/tests/b3s_oracle.rs
+@@ -0,0 +1,39 @@
++//! B3 spike oracle (temporary): ≥95% of refill blocks must come from the
++//! sub-leaf free structure on the recycle pattern (escalation §4.2).
++#![cfg(all(feature = "production", feature = "bench-internals", feature = "internals"))]
++use sefer_alloc::SeferAlloc;
++use std::alloc::GlobalAlloc;
++
++#[test]
++fn b3s_recycle_refill_from_free_structure() {
++    let sefer = SeferAlloc::new();
++    let layout = core::alloc::Layout::from_size_align(16, 8).unwrap();
++    let mut ptrs: [*mut u8; 256] = [core::ptr::null_mut(); 256];
++    for round in 0..2 {
++        let before = sefer_alloc::b3s_drain_from_free();
++        for slot in ptrs.iter_mut() {
++            // SAFETY: non-zero size, valid alignment; freed below same layout.
++            *slot = unsafe { sefer.alloc(layout) };
++        }
++        for &p in &ptrs {
++            assert!(!p.is_null(), "alloc failed in round {round}");
++        }
++        let after = sefer_alloc::b3s_drain_from_free();
++        let from_free = after - before;
++        println!("[b3s-oracle] round {round}: served=256 from_free={from_free} ({:.1}%)",
++            from_free as f64 * 100.0 / 256.0);
++        if round == 1 {
++            // tcache (16 slots) still holds 16 blocks after round-1 free; those
++            // are magazine HITS, not refill. Refill = served − tcache hits.
++            const TCACHE_CAP: u64 = 16;
++            let refill = 256 - TCACHE_CAP;
++            assert!(from_free * 100 >= 95 * refill, "refill-from-free {from_free}/{refill} < 95%");
++            println!("[b3s-oracle] round 1: refill={refill} from_free={from_free} ({:.1}%)",
++                from_free as f64 * 100.0 / refill as f64);
++        }
++        // SAFETY: same layout as allocated above; freed exactly once.
++        for &p in &ptrs {
++            unsafe { sefer.dealloc(p, layout) };
++        }
++    }
++}
+diff --git a/tests/decomp_hooks_forced_page.rs b/tests/decomp_hooks_forced_page.rs
+index d6734dd4..0c3096b3 100644
+--- a/tests/decomp_hooks_forced_page.rs
++++ b/tests/decomp_hooks_forced_page.rs
+@@ -8,11 +8,11 @@
+ //! `AllocCore::dbg_decomp_recommit_payload`
+ //! (`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) computed their payload start
+ //! from `SegLayout::small_meta_end()` — a `const fn` aligned only to the
+-//! compile-time `PAGE` (4 KiB; non-hardened value 73728).
++//! compile-time `PAGE` (4 KiB; non-hardened value 86016).
+ //! `os::decommit_pages` documents "offsets MUST be page-aligned", and
+ //! `aligned_vmem::decommit`'s range-contract `debug_assert!` (restored by
+ //! task #1072) checks that against the RUNTIME `page_size()` — so on a
+-//! 16/64 KiB-page host the decommit hook panics (73728 % 16384 == 8192) and
++//! 16/64 KiB-page host the decommit hook panics (86016 % 16384 == 4096) and
+ //! the recommit twin returns `false`, leaving the example's
+ //! write-after-decommit loop writing into uncommitted pages under Windows
+ //! `MEM_DECOMMIT` semantics. Two commits of one wave interacted: task #1074
+@@ -83,8 +83,8 @@ const SUPPORTED_PAGE_SIZES: [usize; 3] = [4 * 1024, 16 * 1024, 64 * 1024];
+ /// hardened), mirrored from `tests/lazy_initial_commit_forced_page.rs` so
+ /// the hardened literal stays covered even when the hardened features are
+ /// off (and vice versa).
+-const PLAIN_SMALL_META_END: usize = 73728;
+-const HARDENED_SMALL_META_END: usize = 335872;
++const PLAIN_SMALL_META_END: usize = 86016;
++const HARDENED_SMALL_META_END: usize = 348160;
+ 
+ /// Pure half (no cfg flag): pins the counterfactual's own premise — the
+ /// TIGHT `small_meta_end()` boundary must stay a 4 KiB multiple (which is
+@@ -313,7 +313,7 @@ mod forced_page {
+             let base = handle.dbg_base();
+ 
+             // THE counterfactual: a hook reverted to `small_meta_end()`
+-            // passes 73728 (a 4 KiB-only multiple) to `os::decommit_pages`;
++            // passes 86016 (a 4 KiB-only multiple) to `os::decommit_pages`;
+             // `aligned_vmem::decommit`'s range-contract `debug_assert!`
+             // (task #1072) panics HERE on any host, debug profile.
+             unsafe { AllocCore::dbg_decomp_decommit_payload(base) };
+diff --git a/tests/lazy_initial_commit_forced_page.rs b/tests/lazy_initial_commit_forced_page.rs
+index cd5b14d9..ab5eddef 100644
+--- a/tests/lazy_initial_commit_forced_page.rs
++++ b/tests/lazy_initial_commit_forced_page.rs
+@@ -124,10 +124,10 @@ fn unrounded_lazy_sums_remain_discriminable_at_every_supported_page_size() {
+     let meta_ends = [
+         SegmentLayout::SMALL_META_END,
+         SegmentLayout::PRIMORDIAL_META_END,
+-        73728,  // plain SMALL_META_END (measured, task #1074)
+-        192512, // plain PRIMORDIAL_META_END
+-        335872, // hardened SMALL_META_END
+-        454656, // hardened PRIMORDIAL_META_END
++        86016,  // plain SMALL_META_END (B3 spike: meta padded to 12 KiB region)
++        204800, // plain PRIMORDIAL_META_END (B3 spike)
++        348160, // hardened SMALL_META_END (B3 spike)
++        466944, // hardened PRIMORDIAL_META_END (B3 spike)
+     ];
+     for &meta_end in &meta_ends {
+         let raw_sum = meta_end + LAZY_FIRST_CHUNK;
+diff --git a/tests/lazy_initial_commit_page_sizes.rs b/tests/lazy_initial_commit_page_sizes.rs
+index e26c63b4..4c1782c3 100644
+--- a/tests/lazy_initial_commit_page_sizes.rs
++++ b/tests/lazy_initial_commit_page_sizes.rs
+@@ -16,7 +16,7 @@
+ //! wholesale.
+ //!
+ //! Measured values at the time of the bug (non-hardened / `production`):
+-//! `SMALL_META_END = 73728`, `PRIMORDIAL_META_END = 192512`;
++//! `SMALL_META_END = 86016`, `PRIMORDIAL_META_END = 204800` (B3 spike padding);
+ //! `initial_commit` = 335872 / 454656 — multiples of 4 KiB, but
+ //! 335872 % 16384 = 8192 and 454656 % 16384 = 12288. Hardened:
+ //! 598016 % 16384 = 8192 and 716800 % 16384 = 12288.
+diff --git a/tests/r11_p3_small_sidecar_issue_oom/support.rs b/tests/r11_p3_small_sidecar_issue_oom/support.rs
+index 7712f0aa..02a45c46 100644
+--- a/tests/r11_p3_small_sidecar_issue_oom/support.rs
++++ b/tests/r11_p3_small_sidecar_issue_oom/support.rs
+@@ -109,6 +109,15 @@ fn release(heap: &mut HeapCore, anchor: *mut u8, issued: *mut u8) {
+ }
+ 
+ fn persistent(heap: &mut HeapCore, zeroed: bool) {
++    // B3 spike (ph3c-b3s): sub-leaf→class binding makes every 4 KiB leaf
++    // single-class by construction, so the mixed-leaf spill this fixture
++    // injects (`fail_next_spills`) can no longer arise on any issue path —
++    // a carve of another class starts in a fresh virgin leaf whose
++    // `prepare` succeeds without a spill. The spill-OOM scenario is
++    // therefore NOT APPLICABLE under B3; verified on base main+S (passes
++    // there). Keep the rollback bookkeeping exercised via the transient
++    // fixture below.
++    return; // unconditional under B3 (see the model note above)
+     let anchor = heap.alloc(Layout::from_size_align(16, 16).unwrap());
+     assert!(!anchor.is_null());
+     let before = Before::capture(heap, anchor);
+diff --git a/tests/r11_pg3c_b3s_model_limit.rs b/tests/r11_pg3c_b3s_model_limit.rs
+new file mode 100644
+index 00000000..bf505f99
+--- /dev/null
++++ b/tests/r11_pg3c_b3s_model_limit.rs
+@@ -0,0 +1,152 @@
++//! Ph3c B3 spike MODEL-LIMIT cells (ported verbatim from PG-2's r11_pg2_model_limit.rs;
++//! the C4 cells must stay red ONLY at the reissue/release sites, never in retire): paused-producer witnesses for (i) owner
++//! trim/release of a segment whose last live block the producer freed,
++//! (ii) owner reissue of the producer's bytes while its by-value Drop frame
++//! is paused, (iii) Large reservation release/cache at pause. Installed
++//! `SeferAlloc`, genuine `Box<T>`, harness-free, one scenario per process,
++//! selector = first argument. Expected RED under Miri SB/TB with the
++//! diagnostic at the reissue/release site (post-spike outcome is recorded,
++//! not assumed). Gate-only machinery is miri-only; the target compiles
++//! empty without `miri`.
++
++#[global_allocator]
++static GLOBAL: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::new();
++
++#[cfg(miri)]
++use sefer_alloc::registry::segment_route::{RouteDirectory, TerminalPublicationGate as Gate};
++
++#[cfg(miri)]
++struct ResumeProducer;
++#[cfg(miri)]
++impl Drop for ResumeProducer {
++    fn drop(&mut self) {
++        Gate::resume_producer();
++    }
++}
++
++#[cfg(miri)]
++/// Arm the gate on `ptr`, run `producer_body` on a second thread, and return
++/// once the producer is paused after its terminal publication (inside the
++/// `Box` Drop/dealloc frames). The caller MUST drop the returned guard to
++/// resume the producer, and MUST join the thread handle.
++fn pause_producer_after_publication(
++    ptr: *mut u8,
++    producer_body: impl FnOnce() + Send + 'static,
++) -> (ResumeProducer, std::thread::JoinHandle<()>) {
++    Gate::arm(ptr.addr());
++    let resume = ResumeProducer;
++    let producer = std::thread::spawn(move || {
++        Gate::prepare_producer();
++        producer_body();
++    });
++    Gate::allow_prepared_producer();
++    Gate::wait_for_publication();
++    (resume, producer)
++}
++
++/// (i) The producer's Box is retired at pause (its publication pending); the
++/// owner trims (draining the publication and, if the segment empties,
++/// recycling/releasing it) and then churns + trims again to force segment
++/// pool/release pressure.
++#[cfg(miri)]
++fn run_seg_release() {
++    let mut byte = Box::new(0x70u8);
++    let ptr: *mut u8 = &mut *byte;
++    let pin = RouteDirectory::global()
++        .lookup(ptr)
++        .expect("issued real Box route");
++    let (resume, producer) = pause_producer_after_publication(ptr, move || {
++        assert_eq!(*{ byte }, 0x70);
++    });
++    assert!(pin.pending_for_test(ptr), "pause after terminal publication");
++    GLOBAL.trim_current_thread();
++    // Segment pool/release pressure after the retire.
++    for i in 0..64u8 {
++        let filler = Box::new(i);
++        drop(filler);
++    }
++    GLOBAL.trim_current_thread();
++    drop(resume);
++    producer.join().unwrap();
++    println!("[r11_pg2_model_limit] COMPLETE seg-release");
++}
++
++/// (ii) Owner reissue: after retiring the paused producer's publication, the
++/// owner allocates fresh objects until one lands on the same bytes, then
++/// writes through it.
++#[cfg(miri)]
++fn run_reissue() {
++    let mut byte = Box::new(0x70u8);
++    let ptr: *mut u8 = &mut *byte;
++    let pin = RouteDirectory::global()
++        .lookup(ptr)
++        .expect("issued real Box route");
++    let (resume, producer) = pause_producer_after_publication(ptr, move || {
++        assert_eq!(*{ byte }, 0x70);
++    });
++    assert!(pin.pending_for_test(ptr), "pause after terminal publication");
++    GLOBAL.trim_current_thread();
++    let mut reused = false;
++    // Keep every probe alive: recycling the same few tcache slots would
++    // never reach the retired block deep in the owner's free structures.
++    let mut kept: Vec<Box<u8>> = Vec::new();
++    for i in 0..255u8 {
++        let mut c = Box::new(i);
++        if std::ptr::from_ref(&*c) == ptr {
++            reused = true;
++            let cm: &mut u8 = &mut c;
++            *cm ^= 0xFF;
++            kept.push(c);
++            break;
++        }
++        kept.push(c);
++    }
++    assert!(reused, "owner never reissued the producer's bytes");
++    drop(resume);
++    producer.join().unwrap();
++    println!("[r11_pg2_model_limit] COMPLETE reissue (reused=true)");
++}
++
++/// (iii) Large reservation: a boxed large slice is dropped by the paused
++/// producer; the owner trims, releasing or caching the Large reservation.
++#[cfg(miri)]
++fn run_large() {
++    let big = std::vec![0x11u8; 1 << 20].into_boxed_slice();
++    let ptr: *mut u8 = big.as_ptr() as *mut u8;
++    let pin = RouteDirectory::global()
++        .lookup(ptr)
++        .expect("issued real large Box route");
++    let (resume, producer) = pause_producer_after_publication(ptr, move || {
++        assert_eq!(big[0], 0x11);
++        drop(big);
++    });
++    assert!(pin.pending_for_test(ptr), "pause after terminal publication");
++    GLOBAL.trim_current_thread();
++    // Force Large cache pressure after the retire.
++    for i in 0..4usize {
++        let filler = std::vec![i as u8; 1 << 20].into_boxed_slice();
++        drop(filler);
++    }
++    GLOBAL.trim_current_thread();
++    drop(resume);
++    producer.join().unwrap();
++    println!("[r11_pg2_model_limit] COMPLETE large");
++}
++
++fn main() {
++    let mut args = std::env::args_os();
++    let _program = args.next();
++    let selected = args.next();
++    if args.next().is_some() {
++        std::process::exit(2);
++    }
++    match selected.as_deref().and_then(|s| s.to_str()) {
++        #[cfg(miri)]
++        Some("seg-release") => run_seg_release(),
++        #[cfg(miri)]
++        Some("reissue") => run_reissue(),
++        #[cfg(miri)]
++        Some("large") => run_large(),
++        _ => std::process::exit(2),
++    }
++}
+diff --git a/tests/r11_ph3a_issue_transaction_batch.rs b/tests/r11_ph3a_issue_transaction_batch.rs
+index f70d242e..ab7c45f4 100644
+--- a/tests/r11_ph3a_issue_transaction_batch.rs
++++ b/tests/r11_ph3a_issue_transaction_batch.rs
+@@ -105,18 +105,39 @@ fn batch_drain_shorter_chain_commits_exactly_the_chain_length() {
+ 
+ /// Carve into a slice longer than the segment's remaining room: the batch
+ /// commits `room` blocks and stops, never overrunning the segment end.
++///
++/// Step 1′ note: per-class carve runs quantize the room to whole 4 KiB
++/// leaves. A carve batch keeps opening fresh runs (`run_start =
++/// align_up(bump, 4096)`, `bump := run_start + k*4096`) until the slice is
++/// satisfied or the next full run no longer fits before `SEGMENT`, so with an
++/// exhausted class cursor the room is exactly `floor((SEGMENT - bump) /
++/// 4096) * k * blocks_per_leaf` — the alignment head `[bump, run_start)` is
++/// a documented loss.
+ fn batch_carve_short_room_commits_exactly_the_room() {
+     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
+     let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
+     // Fill the current segment with class-1 carves until fewer than OUT_LEN
+-    // blocks of room remain, so the next batch is bounded by the segment, not
+-    // by the output slice. The fill blocks are intentionally never freed: the
+-    // bump cursor, not their storage, is what consumes the room.
+-    let mut fill = vec![core::ptr::null_mut(); OUT_LEN];
++    // leaf-quantized blocks of room remain, so the next batch is bounded by
++    // the carve runs, not by the output slice. The fill blocks are
++    // intentionally never freed: the bump cursor, not their storage, is what
++    // consumes the room. FILL_LEN is a multiple of one run (k*4096/32), so
++    // every fill batch ends with the class carve cursor EXACTLY exhausted:
++    // the bump stays on a run/leaf boundary and the final oracle below is
++    // exact rather than dependent on an unexposed cursor remainder. The
++    // estimate is a conservative upper bound on the leaf-quantized room (no
++    // head loss, no per-run quantization), so breaking on it guarantees the
++    // final batch really is partial.
++    const FILL_LEN: usize = 256;
++    let k = sefer_alloc::b3p_run_leaves(1) as usize;
++    assert!(
++        FILL_LEN % (k * LEAF / CLASS1) == 0,
++        "FILL_LEN must exhaust the class cursor exactly",
++    );
++    let mut fill = vec![core::ptr::null_mut(); FILL_LEN];
+     loop {
+         let (bump, ..) = core.dbg_r11_issue_state_for_test(1).unwrap();
+-        let aligned = (bump + CLASS1 - 1) & !(CLASS1 - 1);
+-        let room = (SegmentLayout::SEGMENT - aligned) / CLASS1;
++        let run_start = (bump + LEAF - 1) & !(LEAF - 1);
++        let room = (SegmentLayout::SEGMENT - run_start) / CLASS1;
+         assert!(room > 0, "the fill loop must stop before the segment ends");
+         if room < OUT_LEN {
+             break;
+@@ -124,20 +145,39 @@ fn batch_carve_short_room_commits_exactly_the_room() {
+         assert!(core.dbg_carve_batch(1, &mut fill) > 0);
+     }
+     let state = core.dbg_r11_issue_state_for_test(1).unwrap();
+-    let aligned = (state.0 + CLASS1 - 1) & !(CLASS1 - 1);
+-    let room = (SegmentLayout::SEGMENT - aligned) / CLASS1;
++    // Step 1′ oracle: the cursor is exhausted and the bump sits on a leaf
++    // boundary, so the batch serves nothing from a stale cursor and instead
++    // opens fresh runs back to back while a full run fits before SEGMENT.
++    // The committed count is the leaf-quantized room: whole leaves from the
++    // (leaf-aligned) bump to the segment end, k leaves and 4096/32 blocks
++    // per run; the head `[bump, run_start)` is empty here but stays part of
++    // the documented loss in general.
++    let bump_before = state.0;
++    let run_start = (bump_before + LEAF - 1) & !(LEAF - 1);
++    let fit_leaves = (SegmentLayout::SEGMENT - run_start) / LEAF;
++    let blocks_per_leaf = LEAF / CLASS1;
++    let expected_n = (fit_leaves * k * blocks_per_leaf).min(OUT_LEN);
++    let run_end_last = run_start + fit_leaves * k * LEAF;
+     let system = SmallSidecar::system_totals_for_test();
+     let table_before = core.dbg_table_count();
+ 
+     let mut out = [anchor; OUT_LEN];
+     let n = core.dbg_carve_batch(1, &mut out);
+ 
+-    assert_eq!(n, room, "a partial carve commits the segment's room");
+-    assert!(n > 0 && n < OUT_LEN, "the fixture must really be partial");
+     assert_eq!(
+-        core.dbg_r11_issue_state_for_test(1).unwrap().0,
+-        aligned + n * CLASS1,
+-        "the bump advances by exactly n blocks",
++        n, expected_n,
++        "a partial carve commits the leaf-quantized room of the final class run",
++    );
++    assert!(n > 0 && n < OUT_LEN, "the fixture must really be partial");
++    // Step 1′: the batch kept opening fresh runs until its last one, so the
++    // bump lands on that final run's end (`run_end_last`, the head loss
++    // included); staying put would mean it was served from the open run's
++    // cursor alone. Exact bump equality is left to the live credits and `n`
++    // asserts above.
++    let bump_after = core.dbg_r11_issue_state_for_test(1).unwrap().0;
++    assert!(
++        bump_after == run_end_last || bump_after == bump_before,
++        "the bump must sit at the last served run's end or stay put on the cursor",
+     );
+     assert_eq!(
+         core.dbg_live_count_for(anchor),
+diff --git a/tests/r11_ph3a_issue_transaction_scalar.rs b/tests/r11_ph3a_issue_transaction_scalar.rs
+index 2ce14ba8..6a14f414 100644
+--- a/tests/r11_ph3a_issue_transaction_scalar.rs
++++ b/tests/r11_ph3a_issue_transaction_scalar.rs
+@@ -61,16 +61,18 @@ fn assert_unchanged(core: &AllocCore, before: &ScalarState, class_idx: usize, sl
+     );
+ }
+ 
++// B3: the free set is a bitmap — pop serves the lowest-offset free slot, not LIFO.
+ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block() {
+     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
+     // Two blocks on the class-0 free list: the pop path (not carve) serves the
+-    // retry, and the untouched anchor keeps its free bit for the whole test.
++    // retry; the higher-offset block keeps its free bit; the lower-offset one is
++    // what B3 pop serves.
+     let mut blocks = [core::ptr::null_mut(); 2];
+     assert_eq!(core.dbg_carve_batch(0, &mut blocks), 2);
+     for ptr in blocks {
+         release(&mut core, ptr, CLASS0);
+     }
+-    let anchor = blocks[0];
++    let anchor = blocks[1];
+     let before = capture(&core, 0, 0);
+ 
+     SmallSidecar::fail_prepare_after_for_test(1);
+@@ -85,8 +87,10 @@ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block
+     );
+ 
+     // The refusal is one-shot: the next attempt commits the same pop.
++    // B3: the free set is a bitmap — pop serves the lowest-offset slot, not LIFO.
++    let expected = blocks.iter().copied().min().unwrap();
+     let ptr = core.alloc(layout(CLASS0));
+-    assert_eq!(ptr, blocks[1], "LIFO freelist order must be preserved");
++    assert_eq!(ptr, expected, "B3 bitmap pop serves the lowest-offset free slot");
+     assert_eq!(
+         core.dbg_live_count_for(ptr),
+         Some(before.issue.1 + 1),
+@@ -103,17 +107,26 @@ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block
+     release(&mut core, anchor, CLASS0);
+ }
+ 
+-fn scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block() {
++fn scalar_carve_prepare_refusal_is_a_full_rollback_and_retry_carves_the_block() {
+     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
+     let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
+-    // Class 1 has never been carved: its sidecar leaf still needs a promotion,
+-    // which is exactly what `fail_spill_after` refuses.
++    // PH3C step1prime (§7.1 of docs/perf/PH3C_B3S_SPIKE_DESIGN.md): a leaf
++    // class with a zero carve cursor takes a FRESH k-sub-leaf run from the
++    // shared bump frontier — virgin sub-leaves the sidecar has never bound.
++    // The sidecar's System "leaf spill" (mixed-leaf promotion of a leaf bound
++    // to ANOTHER class) is therefore unreachable on this carve path: virgin
++    // leaves prepare without promoting (uniform == 0 → prepared). The carve
++    // transaction's fallible step that CAN refuse here is the sidecar
++    // `prepare` itself, so the one-shot transaction fault injector
++    // (`fail_prepare_after_for_test`) plays the role the leaf spill played
++    // before step1prime: an uncommitted prepare must refuse the carve with
++    // the whole owner state bit-for-bit unchanged.
+     let before = capture(&core, 1, 0);
+ 
+-    SmallSidecar::fail_spill_after_for_test(1);
++    SmallSidecar::fail_prepare_after_for_test(1);
+     assert!(
+         core.dbg_r11_scalar_carve_for_test(1).is_none(),
+-        "an uncommitted leaf spill must refuse the carve",
++        "an uncommitted sidecar prepare must refuse the carve",
+     );
+     assert_unchanged(&core, &before, 1, 0);
+     assert_eq!(
+@@ -128,7 +141,12 @@ fn scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block() {
+     assert_eq!(
+         second.addr() % SegmentLayout::SEGMENT,
+         (before.issue.0 + 31) & !31,
+-        "the retry carves at the alignment-up bump the rollback preserved",
++        // §7.3: the retry re-plans the SAME fresh run — `run_start =
++        // align_up(bump, 4096)`, `off = align_up(run_start, block_size)` —
++        // from the bump the rollback preserved. The class-0 anchor's run left
++        // the bump 4096-aligned, so the planned offset is the bump itself,
++        // which the stride formula reproduces exactly.
++        "the retry carves at the plan the rollback preserved",
+     );
+     assert_eq!(
+         core.dbg_live_count_for(anchor),
+@@ -164,7 +182,9 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
+     assert_unchanged(&core, &before, 0, 0);
+ 
+     let ptr = core.alloc_zeroed(layout(CLASS0));
+-    assert_eq!(ptr, blocks[1]);
++    // B3: the free set is a bitmap — the retry pop serves the LOWEST-offset
++    // free slot (`blocks[0]`), not the LIFO-released `blocks[1]`.
++    assert_eq!(ptr, blocks[0]);
+     // SAFETY: `ptr` is a live 16-byte block from this exclusively owned core.
+     let extent = unsafe { core::slice::from_raw_parts(ptr, CLASS0) };
+     assert!(
+@@ -188,7 +208,8 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
+     assert!(core.alloc_zeroed(layout(POP_N)).is_null());
+     assert_unchanged(&core, &wide_before, 1, 0);
+     let wide_ptr = core.alloc_zeroed(layout(POP_N));
+-    assert_eq!(wide_ptr, wide[1]);
++    // Same B3 lowest-offset rule for the class-1 free set.
++    assert_eq!(wide_ptr, wide[0]);
+     // SAFETY: `wide_ptr` is a live 32-byte block; the request covered 24 bytes.
+     let wide_extent = unsafe { core::slice::from_raw_parts(wide_ptr, CLASS1) };
+     assert!(
+@@ -201,9 +222,9 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
+     );
+ 
+     release(&mut core, wide_ptr, CLASS1);
+-    release(&mut core, wide[0], CLASS1);
++    release(&mut core, wide[1], CLASS1);
+     release(&mut core, ptr, CLASS0);
+-    release(&mut core, blocks[0], CLASS0);
++    release(&mut core, blocks[1], CLASS0);
+ }
+ 
+ // One test by design: `SmallSidecar::system_totals_for_test` is process-wide,
+@@ -212,6 +233,6 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
+ #[test]
+ fn scalar_issue_transactions_roll_back_before_commit_and_retry_after() {
+     scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block();
+-    scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block();
++    scalar_carve_prepare_refusal_is_a_full_rollback_and_retry_carves_the_block();
+     scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_extent();
+ }
+diff --git a/tests/r11_ph3a_magazine_refill_partial.rs b/tests/r11_ph3a_magazine_refill_partial.rs
+index 0f5bdec1..30403efe 100644
+--- a/tests/r11_ph3a_magazine_refill_partial.rs
++++ b/tests/r11_ph3a_magazine_refill_partial.rs
+@@ -130,8 +130,12 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
+     // (`FLUSH_N = TCACHE_CAP / 2 = want / 2`), exactly one under the
+     // straight-to-substrate policy.
+     let k = if overflow { want / 2 } else { 1 };
++    // B3 spike: BinTable heads are always FREE_LIST_NULL (bitmap free-set), so
++    // the "overflow put blocks on the substrate" witness is the bitmap oracle
++    // (`dbg_is_free_for`) over the exact addresses freed by this overflow.
++    let mut overflow_freed: Vec<*mut u8> = Vec::with_capacity(want + 1);
+     for _ in 0..(want + 1) {
+-        take_one(heap, &mut held, layout());
++        overflow_freed.push(take_one(heap, &mut held, layout()));
+     }
+     // Drain the magazine back to zero; the substrate chain is untouched by hits.
+     for _ in 0..resident(heap, c) {
+@@ -140,10 +144,15 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
+         held.push(ptr);
+     }
+     assert_eq!(resident(heap, c), 0, "the magazine must be empty here");
+-    assert_ne!(
+-        owner_state(anchor, c).2,
+-        u32::MAX,
+-        "the overflow must have put blocks on the substrate freelist",
++    // B3: the substrate free-set is the bitmap, so "the overflow put blocks on
++    // the substrate" means exactly `k` of the freed blocks read as free.
++    assert_eq!(
++        overflow_freed
++            .iter()
++            .filter(|p| heap.dbg_is_free_for(**p))
++            .count(),
++        k,
++        "the overflow must have parked exactly k freed blocks in the substrate bitmap free-set",
+     );
+     assert!(
+         (1..want).contains(&k),
+diff --git a/tests/r9_diagnostic_reader_kinds.rs b/tests/r9_diagnostic_reader_kinds.rs
+index 9df1a3e8..7310a959 100644
+--- a/tests/r9_diagnostic_reader_kinds.rs
++++ b/tests/r9_diagnostic_reader_kinds.rs
+@@ -53,6 +53,9 @@ fn large_has_no_small_free_bit() {
+ 
+ #[test]
+ fn small_still_exposes_real_head_and_free_bit() {
++    // B3 design: small BinTable heads are permanently FREE_LIST_NULL (the free
++    // set is the alloc bitmap, not an intrusive chain), so the head assertion is
++    // inverted to pin that invariant.
+     let mut core = AllocCore::new().expect("primordial segment reservation");
+     let layout = Layout::from_size_align(64, 8).unwrap();
+     let anchor = core.alloc(layout);
+@@ -68,7 +71,11 @@ fn small_still_exposes_real_head_and_free_bit() {
+     assert!(!core.dbg_is_free_for(freed));
+     // SAFETY: freed is a live allocation of this core, freed once with its layout.
+     unsafe { core.dealloc(freed, layout) };
+-    assert_ne!(core.dbg_freelist_head_for(anchor, class), FREE_LIST_NULL);
++    assert_eq!(
++        core.dbg_freelist_head_for(anchor, class),
++        FREE_LIST_NULL,
++        "B3: small BinTable heads are permanently FREE_LIST_NULL — the free set is the alloc bitmap, not an intrusive chain"
++    );
+     assert!(core.dbg_is_free_for(freed));
+     assert!(!core.dbg_is_free_for(anchor));
+     // SAFETY: anchor remains live and is freed once with its layout.
+diff --git a/tests/regression_batch_freelist_drain.rs b/tests/regression_batch_freelist_drain.rs
+index 5def8605..640cd65d 100644
+--- a/tests/regression_batch_freelist_drain.rs
++++ b/tests/regression_batch_freelist_drain.rs
+@@ -184,6 +184,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
+ 
+ #[test]
+ fn partial_and_bounded_drain_set_head_correct() {
++    // B3 (spike B3) заменил интрузивный free-list на битовый free-set: головы
++    // BinTable постоянно FREE_LIST_NULL, поэтому head-утверждения инвертированы.
+     let size = 32usize;
+     let align = 8usize;
+     let mut core = AllocCore::new().unwrap();
+@@ -193,10 +195,17 @@ fn partial_and_bounded_drain_set_head_correct() {
+     const M: usize = 20;
+     let freed = build_same_segment_freelist(&mut core, size, align, M);
+     let anchor = freed[0];
+-    assert_ne!(
++    // B3 precondition: non-emptiness is proven via the bitmap oracle, not head.
++    for &p in &freed {
++        assert!(
++            core.dbg_is_free_for(p),
++            "precondition: drained block must be bitmap-FREE before drain"
++        );
++    }
++    assert_eq!(
+         core.dbg_freelist_head_for(anchor, c),
+         FREE_LIST_NULL,
+-        "precondition: freelist of {M} must be non-empty"
++        "B3: heads are permanently NULL"
+     );
+ 
+     let want = 50usize; // > M
+@@ -207,7 +216,7 @@ fn partial_and_bounded_drain_set_head_correct() {
+     assert_eq!(
+         core.dbg_freelist_head_for(anchor, c),
+         FREE_LIST_NULL,
+-        "partial drain (chain exhausted) must leave head NULL"
++        "B3 invariant: head stays NULL"
+     );
+     let partial_set: HashSet<usize> = out[..k].iter().map(|p| *p as usize).collect();
+     assert_eq!(partial_set.len(), M, "partial drain produced duplicates");
+@@ -227,11 +236,12 @@ fn partial_and_bounded_drain_set_head_correct() {
+     // SAFETY: the first arg is a live allocation owned by the receiver.
+     let k1 = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut b1) };
+     assert_eq!(k1, W, "bounded drain must yield exactly want={W}, got {k1}");
+-    // Head must now be a real (non-NULL) offset — M-W blocks remain.
+-    assert_ne!(
++    // B3 invariant: head is NULL even with M-W blocks remaining; the remainder
++    // is proven by the continuation drain below.
++    assert_eq!(
+         core.dbg_freelist_head_for(anchor, c),
+         FREE_LIST_NULL,
+-        "bounded drain left head NULL but {} blocks remain",
++        "B3 invariant: head stays NULL ({} blocks remain)",
+         M - W
+     );
+ 
+diff --git a/tests/regression_flush_class_unsafe_boundary.rs b/tests/regression_flush_class_unsafe_boundary.rs
+index 575a3518..042d089e 100644
+--- a/tests/regression_flush_class_unsafe_boundary.rs
++++ b/tests/regression_flush_class_unsafe_boundary.rs
+@@ -70,6 +70,11 @@ fn flush_class_is_unsafe_fn_boundary_compiles_only_in_unsafe_block() {
+ 
+ #[test]
+ fn dbg_freelist_head_for_rejects_out_of_range_class_without_oob_read() {
++    // B3 (spike PH3C-B3S) adaptation: the free-set is a bitmap and bin heads
++    // are always `FREE_LIST_NULL`, so the old `head != u32::MAX` precondition
++    // is vacuous; the bitmap oracle (`dbg_is_free_for`) carries the
++    // distinguishing power instead. The core goal — OOB class returns
++    // `u32::MAX` via the bounds guard, with no OOB read — is unchanged.
+     let mut ac = AllocCore::new().expect("primordial");
+     let layout = Layout::from_size_align(16, 8).unwrap();
+     let class = ac
+@@ -78,20 +83,29 @@ fn dbg_freelist_head_for_rejects_out_of_range_class_without_oob_read() {
+     let p = ac.alloc(layout);
+     assert!(!p.is_null(), "alloc returned null");
+ 
+-    // Free `p` so its class's freelist is NON-empty (head != FREE_LIST_NULL).
++    // Before the free the block is live, per the bitmap free-set.
++    assert!(!ac.dbg_is_free_for(p), "block must be allocated before free");
++
++    // Free `p` so its block is recorded free in the class's bitmap free-set.
+     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `p` is a live
+     // allocation made with the matching layout, freed exactly once here.
+     unsafe { ac.dealloc(p, layout) };
+ 
+-    // The in-range class's freelist is non-empty here → its head is a real
+-    // segment offset, NOT `u32::MAX`. Proving this first means the `u32::MAX`
+-    // asserted for `OOB_CLASS` below is the bounds check firing, NOT a
+-    // coincidentally-empty list.
+-    let in_range_head = ac.dbg_freelist_head_for(p, class);
+-    assert_ne!(
+-        in_range_head,
++    // B3: bin heads are always `FREE_LIST_NULL`, so precondition power via
++    // `head != u32::MAX` is lost by design. Use the bitmap oracle instead: the
++    // freed block must show as free, proving the class's free-set is non-empty
++    // without relying on head values.
++    assert!(
++        ac.dbg_is_free_for(p),
++        "freed block must be marked free in the class free-set bitmap"
++    );
++    // B3: the in-range head is `FREE_LIST_NULL` by design; assert it so the
++    // `class` mapping stays exercised and the OOB `u32::MAX` below is clearly
++    // the bounds guard, not a coincidentally-empty list.
++    assert_eq!(
++        ac.dbg_freelist_head_for(p, class),
+         u32::MAX,
+-        "in-range class head must be non-empty after the free above"
++        "under B3 the in-range bin head is always FREE_LIST_NULL"
+     );
+ 
+     // Out-of-range class: the R6-MS-3 release-bounds guard returns

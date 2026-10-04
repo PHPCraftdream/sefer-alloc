@@ -1,0 +1,49 @@
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc\worktrees\ph3c-b3p)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.05s
+     Running tests\miri_global_box_acceptance.rs (target-miri\miri\x86_64-pc-windows-msvc\debug\deps\miri_global_box_acceptance-68716b64824f62b0.exe)
+error: Undefined Behavior: not granting access to tag <1263> because that would remove [Unique for <355556>] which is weakly protected
+   --> src\alloc_core\platform\node.rs:94:18
+    |
+ 94 |         unsafe { ptr.write_unaligned(next) };
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+    |
+    = help: this indicates a potential bug in the program: it performed an invalid operation, but the Stacked Borrows rules it violated are still experimental
+    = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md for further information
+help: <1263> was created here, as the root tag for alloc1059
+   --> crates\aligned-vmem\src\os\miri.rs:21:24
+    |
+ 21 |     let ptr = unsafe { System.alloc(layout) };
+    |                        ^^^^^^^^^^^^^^^^^^^^
+help: <355556> is this argument
+   --> tests\support\r8_global_box_witness.rs:113:9
+    |
+113 |         drop(byte);
+    |         ^^^^^^^^^^
+    = note: this is on thread `main`
+    = note: stack backtrace:
+            0: sefer_alloc::alloc_core::platform::node::Node::write_next
+                at src\alloc_core\platform\node.rs:94:18: 94:43
+            1: sefer_alloc::alloc_core::small::alloc_core_small_reclaim::<impl sefer_alloc::AllocCore>::reclaim_sidecar_record
+                at src\alloc_core\small\alloc_core_small_reclaim.rs:56:9: 66:10
+            2: sefer_alloc::alloc_core::alloc_core::sidecar_drain::<impl sefer_alloc::AllocCore>::drain_sidecar_ingress
+                at src\alloc_core\alloc_core\sidecar_drain.rs:163:36: 163:99
+            3: sefer_alloc::registry::heap_core_xthread::sidecar_drain::<impl sefer_alloc::registry::HeapCore>::drain_sidecar_ingress
+                at src\registry\heap_core_xthread\sidecar_drain.rs:9:9: 9:42
+            4: sefer_alloc::registry::heap_core::state::ownership::<impl sefer_alloc::registry::HeapCore>::trim_for_recycle
+                at src\registry\heap_core\state\ownership.rs:112:17: 112:45
+            5: sefer_alloc::global::sefer_alloc::diag::<impl sefer_alloc::SeferAlloc>::trim_current_thread
+                at src\global\sefer_alloc\diag.rs:208:17: 208:43
+            6: witness::paused_terminal_owner_retirement
+                at tests\support\r8_global_box_witness.rs:124:5: 124:33
+            7: main
+                at tests\miri_global_box_acceptance.rs:28:36: 28:86
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+error: test failed, to rerun pass `--test miri_global_box_acceptance`
+
+Caused by:
+  process didn't exit successfully: `D:\system_artefact\rustup\toolchains\nightly-x86_64-pc-windows-msvc\bin\cargo-miri.exe runner 'D:/dev/rust/sefer-alloc/worktrees/ph3c-b3p/target-miri\miri\x86_64-pc-windows-msvc\debug\deps\miri_global_box_acceptance-68716b64824f62b0.exe' paused` (exit code: 1)

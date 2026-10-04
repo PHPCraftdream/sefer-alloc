@@ -1,0 +1,31 @@
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc\worktrees\ph3c-b3p)
+warning: unused variable: `was_empty`
+   --> src\alloc_core\small\alloc_core_small\dealloc.rs:104:13
+    |
+104 |         let was_empty = b3.class_empty(class_idx);
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_was_empty`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `was_empty`
+   --> src\alloc_core\small\alloc_core_small_magazine.rs:569:13
+    |
+569 |         let was_empty = meta.b3_free().class_empty(class_idx);
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_was_empty`
+
+warning: method `set_head` is never used
+   --> src\alloc_core\segment\segment_header\descriptors.rs:198:19
+    |
+149 | impl BinTable {
+    | ------------- method in this implementation
+...
+198 |     pub(crate) fn set_head(&mut self, c: usize, off: u32) {
+    |                   ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `sefer-alloc` (lib) generated 3 warnings (run `cargo fix --lib -p sefer-alloc` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.37s
+     Running tests\miri_global_box_acceptance.rs (target-miri\miri\x86_64-pc-windows-msvc\debug\deps\miri_global_box_acceptance-c0cc32b012888b28.exe)
+[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement

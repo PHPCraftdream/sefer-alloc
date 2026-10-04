@@ -1,0 +1,156 @@
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3s)
+warning: unused attribute
+  --> src/alloc_core/segment/segment_header/b3_free.rs:93:5
+   |
+93 |     #[inline(always)]
+   |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+   |
+note: attribute also specified here
+  --> src/alloc_core/segment/segment_header/b3_free.rs:92:5
+   |
+92 |     #[inline(always)]
+   |     ^^^^^^^^^^^^^^^^^
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:102:5
+    |
+102 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:101:5
+    |
+101 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:110:5
+    |
+110 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:109:5
+    |
+109 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:119:5
+    |
+119 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:118:5
+    |
+118 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:130:5
+    |
+130 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:129:5
+    |
+129 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:139:5
+    |
+139 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:138:5
+    |
+138 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:148:5
+    |
+148 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:147:5
+    |
+147 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:164:5
+    |
+164 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:163:5
+    |
+163 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: `sefer-alloc` (lib) generated 8 warnings (run `cargo fix --lib -p sefer-alloc` to apply 8 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.24s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/miri_global_box_acceptance.rs (/tmp/b3s-miri/miri/x86_64-unknown-linux-gnu/debug/deps/miri_global_box_acceptance-905a7cad7bbd0b63)
+error: Undefined Behavior: not granting access to tag <1160> because that would remove [Unique for <312234>] which is weakly protected
+   --> src/alloc_core/platform/node.rs:94:18
+    |
+ 94 |         unsafe { ptr.write_unaligned(next) };
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+    |
+    = help: this indicates a potential bug in the program: it performed an invalid operation, but the Stacked Borrows rules it violated are still experimental
+    = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md for further information
+help: <1160> was created here, as the root tag for alloc993
+   --> crates/aligned-vmem/src/os/miri.rs:21:24
+    |
+ 21 |     let ptr = unsafe { System.alloc(layout) };
+    |                        ^^^^^^^^^^^^^^^^^^^^
+help: <312234> is this argument
+   --> tests/support/r8_global_box_witness.rs:113:9
+    |
+113 |         drop(byte);
+    |         ^^^^^^^^^^
+    = note: this is on thread `main`
+    = note: stack backtrace:
+            0: sefer_alloc::alloc_core::platform::node::Node::write_next
+                at src/alloc_core/platform/node.rs:94:18: 94:43
+            1: sefer_alloc::alloc_core::small::alloc_core_small_reclaim::<impl sefer_alloc::AllocCore>::reclaim_sidecar_record
+                at src/alloc_core/small/alloc_core_small_reclaim.rs:63:17: 63:67
+            2: sefer_alloc::alloc_core::alloc_core::sidecar_drain::<impl sefer_alloc::AllocCore>::drain_sidecar_ingress
+                at src/alloc_core/alloc_core/sidecar_drain.rs:163:36: 163:99
+            3: sefer_alloc::registry::heap_core_xthread::sidecar_drain::<impl sefer_alloc::registry::HeapCore>::drain_sidecar_ingress
+                at src/registry/heap_core_xthread/sidecar_drain.rs:9:9: 9:42
+            4: sefer_alloc::registry::heap_core::state::ownership::<impl sefer_alloc::registry::HeapCore>::trim_for_recycle
+                at src/registry/heap_core/state/ownership.rs:112:17: 112:45
+            5: sefer_alloc::global::sefer_alloc::diag::<impl sefer_alloc::SeferAlloc>::trim_current_thread
+                at src/global/sefer_alloc/diag.rs:208:17: 208:43
+            6: witness::paused_terminal_owner_retirement
+                at tests/support/r8_global_box_witness.rs:124:5: 124:33
+            7: main
+                at tests/miri_global_box_acceptance.rs:28:36: 28:86
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+error: test failed, to rerun pass `--test miri_global_box_acceptance`
+
+Caused by:
+  process didn't exit successfully: `/home/user/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo-miri runner /tmp/b3s-miri/miri/x86_64-unknown-linux-gnu/debug/deps/miri_global_box_acceptance-905a7cad7bbd0b63 paused` (exit status: 1)

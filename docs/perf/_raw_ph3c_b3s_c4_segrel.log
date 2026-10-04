@@ -1,0 +1,111 @@
+warning: unused attribute
+  --> src/alloc_core/segment/segment_header/b3_free.rs:93:5
+   |
+93 |     #[inline(always)]
+   |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+   |
+note: attribute also specified here
+  --> src/alloc_core/segment/segment_header/b3_free.rs:92:5
+   |
+92 |     #[inline(always)]
+   |     ^^^^^^^^^^^^^^^^^
+   = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+   = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:102:5
+    |
+102 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:101:5
+    |
+101 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:110:5
+    |
+110 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:109:5
+    |
+109 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:119:5
+    |
+119 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:118:5
+    |
+118 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:130:5
+    |
+130 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:129:5
+    |
+129 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:139:5
+    |
+139 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:138:5
+    |
+138 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:148:5
+    |
+148 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:147:5
+    |
+147 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: unused attribute
+   --> src/alloc_core/segment/segment_header/b3_free.rs:164:5
+    |
+164 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^ help: remove this attribute
+    |
+note: attribute also specified here
+   --> src/alloc_core/segment/segment_header/b3_free.rs:163:5
+    |
+163 |     #[inline(always)]
+    |     ^^^^^^^^^^^^^^^^^
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: `sefer-alloc` (lib) generated 8 warnings (run `cargo fix --lib -p sefer-alloc` to apply 8 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.85s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r11_pg3c_b3s_model_limit.rs (/tmp/b3s-miri/miri/x86_64-unknown-linux-gnu/debug/deps/r11_pg3c_b3s_model_limit-60e8888dbc80b6da)
+[r11_pg2_model_limit] COMPLETE seg-release
