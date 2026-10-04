@@ -106,6 +106,18 @@ use crate::global::tls_heap::CurrentHeap;
 /// // Unsafe: allocating/freeing through SeferAlloc in the child before exec,
 /// // from a multi-threaded parent — do not do this.
 /// ```
+///
+/// # Known defect (P1-box)
+///
+/// Free-list links live inside freed small blocks. If a block is freed through
+/// a by-value `Box` whose receiving frame is still executing when the allocator
+/// links it into a free list (owner reclaim of a cross-thread free, or a later
+/// magazine flush), Miri's Stacked Borrows and Tree Borrows report undefined
+/// behaviour (protector violation). No native crash or miscompilation is known;
+/// the aliasing models are experimental, and this is not a guarantee that none
+/// exists. Re-issuing those bytes while the freeing frame is live is a separate
+/// model limit shared by any allocator on a shared reservation. See
+/// `docs/CORRECTNESS_OPEN_ITEMS.md` item 164.
 pub struct SeferAlloc {
     /// Large-cache configuration stored at static-init time. Plumbed into
     /// each per-thread `AllocCore` on the first TLS bind for that thread.

@@ -45,6 +45,14 @@ the per-thread fast-bin magazine. Without `alloc-decommit` the
 be recycled until they are decommitted; long-running processes with
 many small-segment carve/decay cycles will pin slots and eventually
 hit the `MAX_SEGMENTS` cap (see `## Honest limitations` below for the
+
+**Known defect (P1-box, accepted).** Free-list links live inside freed small blocks. If a block is freed
+through a by-value `Box` whose receiving frame is still executing when the allocator links it into a free
+list (owner reclaim of a cross-thread free, or a later magazine flush), Miri's Stacked Borrows and Tree
+Borrows report undefined behaviour (protector violation). No native crash or miscompilation is known; the
+aliasing models are experimental, and this is not a guarantee that none exists. Re-issuing those bytes while
+the freeing frame is live is a separate model limit shared by any allocator on a shared reservation. Tracked
+as `docs/CORRECTNESS_OPEN_ITEMS.md` item 164; do not describe this allocator as "Miri-clean" without this caveat.
 exact number and the reasoning behind it).
 
 For the bare `no_std` + `alloc` handle-store core, see

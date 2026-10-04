@@ -169,6 +169,8 @@ the reversal record.)
 
     > **Dated update (2026-10-04, Ph3c).** Решение владельца (`docs/design/2026-10-02-adr-addendum-ph3c-escalation.md`, `...-ph3c-step1prime.md`): P1 закрывается интегрированной геометрией B3 (спайк `ph3c-b3s`: paused-witness зелёный на 4 клетках production/alloc-global × SB/TB, мутант `write_next` красный в `node.rs:94`) только после шага 1′ и приёмки гейтов; при провале — путь (б), P1-box как принятый известный дефект. До этого ожидаемо-красные miri-шаги CI теперь пинят МЕСТО: `Node::write_next` (`node.rs`) с вызывающим `reclaim_sidecar_record`/`flush_run`/`dealloc_small`, 4 шага {production, alloc-global} × {SB, TB}; красный в другом месте или зелёный роняет шаг.
 
+    > **Dated update (2026-10-05, Ph3c путь (б)).** B3-спайк провалил пред-регистрированные perf-гейты (шаг 1′), off-body учёт отменён; P1 переименован в P1-box и перенесён в принятый известный дефект — `docs/correctness-open-items/TRACKED_correctness_residuals.md` item 164. Item 162 остаётся про ownerless reclaim / terminal ingress (Ph4+).
+
 163. **[A] Root src R7 P3-2 / R8-02 — implement Large alignment at or above segment granularity.**
 
     - **Status:** OPEN — biased high-alignment geometry is implemented in the dirty snapshot; end-to-end acceptance remains.
