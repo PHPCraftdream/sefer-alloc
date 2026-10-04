@@ -14,6 +14,10 @@ use sefer_alloc::{AllocCore, LargeCacheConfig, SegmentLayout, SmallSegmentPoolCo
 
 const BLOCK: usize = 128 * 1024;
 const WORD_BYTES: usize = 1024;
+/// The sidecar cursor starts at the payload's first word, not word 0 (patch S);
+/// an idle round now wraps back to `(0, START)`.
+const START: usize = SegmentLayout::PRIMORDIAL_PAYLOAD_START_WORD;
+const SMALL_START: usize = SegmentLayout::SMALL_PAYLOAD_START_WORD;
 
 fn word(ptr: *mut u8) -> usize {
     (ptr.addr() & (SegmentLayout::SEGMENT - 1)) / WORD_BYTES
@@ -39,10 +43,10 @@ fn idle_work_is_budgeted_and_strict_drain_stays_full() {
     let mut cursor = (0, 0);
     for expected in 1..=5 {
         assert_eq!(core.dbg_bounded_sidecar_step(&mut cursor, 1), (0, 1));
-        assert_eq!(cursor, (0, expected));
+        assert_eq!(cursor, (0, START + expected));
     }
     assert_eq!(core.dbg_bounded_sidecar_step(&mut cursor, 64), (0, 64));
-    assert_eq!(cursor, (0, 69));
+    assert_eq!(cursor, (0, START + 69));
 
     let victim = pointers[1];
     let before = core.dbg_live_count_for(victim).unwrap();
@@ -67,7 +71,7 @@ fn one_unit_cursor_retires_early_and_late_words_once() {
     // SAFETY: late is a different current issued allocation.
     assert!(unsafe { core.dbg_publish_small_sidecar_free(late) });
     let mut cursor = (0, 0);
-    for index in 0..=late_word {
+    for index in START..=late_word {
         let (retired, units) = core.dbg_bounded_sidecar_step(&mut cursor, 1);
         assert_eq!(units, 1);
         assert_eq!(
@@ -95,13 +99,13 @@ fn heap_worker_hook_uses_persistent_cursor_across_visits() {
     // SAFETY: victim is a unique current issue and is not used after transfer.
     assert!(unsafe { heap.dbg_publish_small_sidecar_free(victim) });
     assert_eq!(heap.dbg_background_maintenance_step(1).1, 1);
-    assert_eq!(heap.dbg_background_cursor(), (0, 1));
+    assert_eq!(heap.dbg_background_cursor(), (0, START + 1));
     assert!(!heap.dbg_is_free_for(victim));
     let mut visits = 1;
     while !heap.dbg_is_free_for(victim) {
         assert_eq!(heap.dbg_background_maintenance_step(1).1, 1);
         visits += 1;
-        assert!(visits <= word(victim) + 2);
+        assert!(visits <= word(victim) - START + 2);
     }
     assert!(!heap.dbg_is_free_for(sentinel));
     // SAFETY: sentinel is the remaining unique issue; recycle retains none.
@@ -123,7 +127,7 @@ fn late_publication_after_idle_round_is_seen_without_a_hint() {
         assert_eq!(retired, 0);
         assert!(units <= 64);
         visits += 1;
-        if cursor == (0, 0) {
+        if cursor == (0, START) {
             break;
         }
         assert!(visits <= 65);
@@ -235,7 +239,7 @@ fn reused_table_index_with_smaller_small_high_water_skips_stale_word() {
     let new_pin = RouteDirectory::global().lookup(new_ptr).unwrap();
     assert_ne!(new_pin.incarnation(), old_incarnation);
     assert_eq!(core.dbg_bounded_sidecar_step(&mut cursor, 1), (0, 1));
-    assert_eq!(cursor, (2, 0));
+    assert_eq!(cursor, (2, SMALL_START));
     // SAFETY: new_ptr is one current issued Small allocation, transferred once.
     assert!(unsafe { core.dbg_publish_small_sidecar_free(new_ptr) });
     let mut retired = 0;
@@ -270,11 +274,11 @@ fn growing_high_water_after_a_round_is_visited_next_round() {
     for _ in 0..=65 {
         let (_, units) = core.dbg_bounded_sidecar_step(&mut cursor, 64);
         assert!(units <= 64);
-        if cursor == (0, 0) {
+        if cursor == (0, START) {
             break;
         }
     }
-    assert_eq!(cursor, (0, 0));
+    assert_eq!(cursor, (0, START));
     let more: Vec<_> = (0..31).map(|_| core.alloc(layout)).collect();
     assert!(more.iter().all(|ptr| !ptr.is_null()));
     let grown = more

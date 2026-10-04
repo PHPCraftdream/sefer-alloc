@@ -20,6 +20,19 @@ impl SegmentLayout {
     /// up by the OS aperture is aligned to a multiple of this value.
     pub const SEGMENT: usize = crate::alloc_core::os::SEGMENT;
 
+    /// First sidecar pending-bitmap word (1 word = `MIN_BLOCK * 64` payload bytes)
+    /// that can carry payload bits in the primordial segment: the scan starts here,
+    /// not at word 0 (the words below hold metadata and always read zero).
+    pub const PRIMORDIAL_PAYLOAD_START_WORD: usize =
+        crate::alloc_core::segment_header::Layout::primordial_meta_end()
+            / (crate::alloc_core::size_classes::MIN_BLOCK * 64);
+
+    /// Same as [`PRIMORDIAL_PAYLOAD_START_WORD`](Self::PRIMORDIAL_PAYLOAD_START_WORD)
+    /// for a Small segment.
+    pub const SMALL_PAYLOAD_START_WORD: usize =
+        crate::alloc_core::segment_header::Layout::small_meta_end()
+            / (crate::alloc_core::size_classes::MIN_BLOCK * 64);
+
     /// The page granularity used by the per-segment `PageMap` (4 KiB).
     pub const PAGE: usize = crate::alloc_core::os::PAGE;
 

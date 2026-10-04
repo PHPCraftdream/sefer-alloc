@@ -16,6 +16,23 @@ pub(crate) static LARGE_SIDECAR_FULL_RESCUES: core::sync::atomic::AtomicU64 =
 pub(crate) const LARGE_HOT_BUDGET: usize = 4;
 
 impl AllocCore {
+    /// Patch S: the word a resumed cursor starts at for slot `index` — the
+    /// payload's first word of that slot, or 0 for a null/Large slot (its word
+    /// component is unused and rewritten on the next advance).
+    fn sidecar_word_hint(&self, index: usize) -> usize {
+        if index >= self.table.count() as usize {
+            return 0;
+        }
+        let base = self.table.base_at(index);
+        if base.is_null() {
+            return 0;
+        }
+        match SegmentHeader::kind_at(base) {
+            SegmentKind::Small | SegmentKind::Primordial => Self::sidecar_payload_start_word(base),
+            _ => 0,
+        }
+    }
+
     /// At most `budget` slot inspections or word cuts. Cursor holds no root.
     /// Returns (retired records, charged operations).
     pub(crate) fn drain_sidecar_ingress_bounded(
@@ -28,7 +45,7 @@ impl AllocCore {
         }
         let end = self.table.count() as usize;
         if cursor.0 >= end {
-            *cursor = (0, 0);
+            *cursor = (0, self.sidecar_word_hint(0));
         }
         let mut reclaimed = 0;
         let mut units = 0;
@@ -37,7 +54,7 @@ impl AllocCore {
             let base = self.table.base_at(index);
             if base.is_null() {
                 cursor.0 += 1;
-                cursor.1 = 0;
+                cursor.1 = self.sidecar_word_hint(cursor.0);
                 units += 1;
                 continue;
             }
@@ -45,9 +62,14 @@ impl AllocCore {
                 SegmentKind::Small | SegmentKind::Primordial => {
                     let high_water = SegmentMeta::new(base).bump_of();
                     let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+                    // Patch S: never scan below the payload's first word.
+                    let start_word = Self::sidecar_payload_start_word(base);
+                    if cursor.1 < start_word {
+                        cursor.1 = start_word;
+                    }
                     if cursor.1 >= end_word {
                         cursor.0 += 1;
-                        cursor.1 = 0;
+                        cursor.1 = self.sidecar_word_hint(cursor.0);
                         units += 1;
                         continue;
                     }
@@ -83,12 +105,12 @@ impl AllocCore {
                     {
                         let _ = self.release_or_pool_empty_segment(base);
                         cursor.0 += 1;
-                        cursor.1 = 0;
+                        cursor.1 = self.sidecar_word_hint(cursor.0);
                         continue;
                     }
                     if cursor.1 == end_word {
                         cursor.0 += 1;
-                        cursor.1 = 0;
+                        cursor.1 = self.sidecar_word_hint(cursor.0);
                     }
                 }
                 SegmentKind::Large => {
@@ -99,14 +121,14 @@ impl AllocCore {
                         reclaimed += 1;
                     }
                     cursor.0 += 1;
-                    cursor.1 = 0;
+                    cursor.1 = self.sidecar_word_hint(cursor.0);
                     units += 1;
                 }
                 SegmentKind::Unknown => std::process::abort(),
             }
         }
         if cursor.0 == end {
-            *cursor = (0, 0);
+            *cursor = (0, self.sidecar_word_hint(0));
         }
         (reclaimed, units)
     }
