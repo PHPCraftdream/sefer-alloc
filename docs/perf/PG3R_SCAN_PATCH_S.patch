@@ -1,0 +1,147 @@
+diff --git a/src/alloc_core/alloc_core/sidecar_drain.rs b/src/alloc_core/alloc_core/sidecar_drain.rs
+index 8ea0bfae..b330d651 100644
+--- a/src/alloc_core/alloc_core/sidecar_drain.rs
++++ b/src/alloc_core/alloc_core/sidecar_drain.rs
+@@ -16,6 +16,23 @@ pub(crate) static LARGE_SIDECAR_FULL_RESCUES: core::sync::atomic::AtomicU64 =
+ pub(crate) const LARGE_HOT_BUDGET: usize = 4;
+ 
+ impl AllocCore {
++    /// Patch S: the word a resumed cursor starts at for slot `index` — the
++    /// payload's first word of that slot, or 0 for a null/Large slot (its word
++    /// component is unused and rewritten on the next advance).
++    fn sidecar_word_hint(&self, index: usize) -> usize {
++        if index >= self.table.count() as usize {
++            return 0;
++        }
++        let base = self.table.base_at(index);
++        if base.is_null() {
++            return 0;
++        }
++        match SegmentHeader::kind_at(base) {
++            SegmentKind::Small | SegmentKind::Primordial => Self::sidecar_payload_start_word(base),
++            _ => 0,
++        }
++    }
++
+     /// At most `budget` slot inspections or word cuts. Cursor holds no root.
+     /// Returns (retired records, charged operations).
+     pub(crate) fn drain_sidecar_ingress_bounded(
+@@ -28,7 +45,7 @@ impl AllocCore {
+         }
+         let end = self.table.count() as usize;
+         if cursor.0 >= end {
+-            *cursor = (0, 0);
++            *cursor = (0, self.sidecar_word_hint(0));
+         }
+         let mut reclaimed = 0;
+         let mut units = 0;
+@@ -37,7 +54,7 @@ impl AllocCore {
+             let base = self.table.base_at(index);
+             if base.is_null() {
+                 cursor.0 += 1;
+-                cursor.1 = 0;
++                cursor.1 = self.sidecar_word_hint(cursor.0);
+                 units += 1;
+                 continue;
+             }
+@@ -45,9 +62,14 @@ impl AllocCore {
+                 SegmentKind::Small | SegmentKind::Primordial => {
+                     let high_water = SegmentMeta::new(base).bump_of();
+                     let end_word = high_water.div_ceil(MIN_BLOCK * 64);
++                    // Patch S: never scan below the payload's first word.
++                    let start_word = Self::sidecar_payload_start_word(base);
++                    if cursor.1 < start_word {
++                        cursor.1 = start_word;
++                    }
+                     if cursor.1 >= end_word {
+                         cursor.0 += 1;
+-                        cursor.1 = 0;
++                        cursor.1 = self.sidecar_word_hint(cursor.0);
+                         units += 1;
+                         continue;
+                     }
+@@ -83,12 +105,12 @@ impl AllocCore {
+                     {
+                         let _ = self.release_or_pool_empty_segment(base);
+                         cursor.0 += 1;
+-                        cursor.1 = 0;
++                        cursor.1 = self.sidecar_word_hint(cursor.0);
+                         continue;
+                     }
+                     if cursor.1 == end_word {
+                         cursor.0 += 1;
+-                        cursor.1 = 0;
++                        cursor.1 = self.sidecar_word_hint(cursor.0);
+                     }
+                 }
+                 SegmentKind::Large => {
+@@ -99,14 +121,14 @@ impl AllocCore {
+                         reclaimed += 1;
+                     }
+                     cursor.0 += 1;
+-                    cursor.1 = 0;
++                    cursor.1 = self.sidecar_word_hint(cursor.0);
+                     units += 1;
+                 }
+                 SegmentKind::Unknown => std::process::abort(),
+             }
+         }
+         if cursor.0 == end {
+-            *cursor = (0, 0);
++            *cursor = (0, self.sidecar_word_hint(0));
+         }
+         (reclaimed, units)
+     }
+diff --git a/src/alloc_core/small/alloc_core_small/find_segment.rs b/src/alloc_core/small/alloc_core_small/find_segment.rs
+index 1923fb89..8054f2a0 100644
+--- a/src/alloc_core/small/alloc_core_small/find_segment.rs
++++ b/src/alloc_core/small/alloc_core_small/find_segment.rs
+@@ -4,7 +4,10 @@
+ //! `alloc_core_small.rs`; pure code movement, no behavior changed).
+ 
+ use crate::alloc_core::os;
+-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
++use crate::alloc_core::segment_header::{
++    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
++};
++use crate::alloc_core::size_classes::MIN_BLOCK;
+ 
+ use crate::alloc_core::alloc_core::AllocCore;
+ 
+@@ -108,6 +111,21 @@ impl AllocCore {
+         self.find_segment_with_free_impl(class_idx, true)
+     }
+ 
++    /// Patch S: first pending-bitmap word that can carry payload bits. Payload
++    /// begins at the page-aligned metadata end, an exact multiple of one word
++    /// (64 × MIN_BLOCK). Words below it can only read zero: only an issued
++    /// block is published, and issue/reclaim reject any offset below
++    /// `payload_start`.
++    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
++    pub(crate) fn sidecar_payload_start_word(base: *mut u8) -> usize {
++        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
++            SegLayout::primordial_meta_end()
++        } else {
++            SegLayout::small_meta_end()
++        };
++        payload_start / (MIN_BLOCK * 64)
++    }
++
+     /// Consume one canonical Small root, dropping every cut and route borrow
+     /// before reclaim finalization can release its reservation. Called only
+     /// on actual free-list/refill misses, never on a magazine hit.
+@@ -121,7 +139,13 @@ impl AllocCore {
+         let high_water = SegmentMeta::new(base).bump_of();
+         let mut changed_classes = 0u64;
+         {
+-            let Some(mut scan) = self.table.scan_small_route(index, base, high_water) else {
++            // Patch S: start at the payload's first word, not word 0.
++            let end_word = high_water.div_ceil(MIN_BLOCK * 64);
++            let start_word = Self::sidecar_payload_start_word(base).min(end_word);
++            let Some(mut scan) = self
++                .table
++                .scan_small_route_from(index, base, high_water, start_word)
++            else {
+                 std::process::abort();
+             };
+             while let Some(mut cut) = scan.next_cut() {
