@@ -1207,6 +1207,12 @@ required-features = ["alloc-global"]
 # §4.1) — no new wrapper script needed for this harness. The shared workload
 # file lives in `examples/_shared/` (NOT auto-discovered as its own binary
 # target — same pattern as `paired_ab_medium_workload.rs` above).
+# Ph3c step-1′ fragmentation diagnostic stand (docs/perf/PH3C_FRAG_STAND.md): installed SeferAlloc,
+# one workload per process; Linux RSS probe.
+[[example]]
+name = "ph3c_frag_stand"
+required-features = ["alloc-global", "internals", "bench-internals"]
+
 [[example]]
 name = "paired_ab_hot_buffer_off"
 required-features = ["alloc-global"]

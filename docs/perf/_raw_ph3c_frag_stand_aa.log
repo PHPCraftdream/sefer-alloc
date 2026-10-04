@@ -1,0 +1,135 @@
+== RUN B1 ==
+RESULT workload=w1
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67108896
+RESULT rss_end_kib=75116
+RESULT commit_end_kib=148160
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B2 ==
+RESULT workload=w1
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67108896
+RESULT rss_end_kib=75116
+RESULT commit_end_kib=148160
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B3 ==
+RESULT workload=w1
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67108896
+RESULT rss_end_kib=75116
+RESULT commit_end_kib=148160
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B1 ==
+RESULT workload=w2
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67109440
+RESULT rss_end_kib=72000
+RESULT commit_end_kib=144756
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B2 ==
+RESULT workload=w2
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67109440
+RESULT rss_end_kib=72000
+RESULT commit_end_kib=144756
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B3 ==
+RESULT workload=w2
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67109440
+RESULT rss_end_kib=72000
+RESULT commit_end_kib=144756
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B1 ==
+RESULT workload=w3
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67454576
+RESULT rss_end_kib=77756
+RESULT commit_end_kib=201640
+RESULT segments_reserved_total=20
+RESULT config_conflicts_after=0
+RESULT ops_w3=10000000
+== RUN B2 ==
+RESULT workload=w3
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67454576
+RESULT rss_end_kib=77756
+RESULT commit_end_kib=201640
+RESULT segments_reserved_total=20
+RESULT config_conflicts_after=0
+RESULT ops_w3=10000000
+== RUN B3 ==
+RESULT workload=w3
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67454576
+RESULT rss_end_kib=77756
+RESULT commit_end_kib=201640
+RESULT segments_reserved_total=20
+RESULT config_conflicts_after=0
+RESULT ops_w3=10000000
+== RUN B1 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69176
+RESULT commit_end_kib=143772
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B2 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69176
+RESULT commit_end_kib=143772
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B3 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69176
+RESULT commit_end_kib=143772
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0

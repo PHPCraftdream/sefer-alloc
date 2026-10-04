@@ -1,0 +1,31 @@
+     Removed 0 files
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling syn v2.0.118
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling proc-macro-error2 v2.0.1
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling derive_more-impl v2.1.1
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling derive_more v2.1.1
+   Compiling zerocopy v0.8.52
+   Compiling serde v1.0.228
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling tinytemplate v1.2.1
+   Compiling bincode v1.3.3
+   Compiling iai-callgrind v0.14.2
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3s-base/crates/globalalloc-model)
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/ph3c-b3s-base)
+    Finished `release` profile [optimized] target(s) in 2m 19s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

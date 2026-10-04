@@ -1,0 +1,5 @@
+workload,b_median_frag,c_median_frag,c_over_b,gate_110,aa_spread_pct,b_segments,c_segments
+w1,1.112243,4.463682,4.013,FAIL,0.000000,17,72
+w2,1.064688,1.201589,1.129,FAIL,0.000000,17,20
+w3,1.146620,1.232056,1.075,PASS,0.000000,20,21
+w4,1.021500,1.023758,1.002,control,0.000000,17,17
