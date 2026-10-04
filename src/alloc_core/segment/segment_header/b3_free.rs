@@ -30,6 +30,40 @@ const _: () = {
     assert!(B3_LEAVES == B3_MASK_WORDS * 64);
 };
 
+/// Per-class carve-run length (see [`B3Free::RUN_LEAVES`]).
+#[allow(clippy::manual_div_ceil)] // const fn: `div_ceil` const-stability risk
+const fn run_leaves_for(block_size: usize) -> u32 {
+    if block_size > B3_LEAF_BYTES {
+        return 0;
+    }
+    // Correctness floor: first block of a run must fit before `run_end` for
+    // every leaf-aligned `run_start` (worst align deficit = bs - gcd).
+    let (mut a, mut b) = (B3_LEAF_BYTES, block_size);
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    let worst_deficit = 2 * block_size - a; // 2*bs - gcd(bs, 4096)
+    let floor = (worst_deficit + B3_LEAF_BYTES - 1) / B3_LEAF_BYTES;
+    let mut best_k = 0usize;
+    let mut best_loss = usize::MAX;
+    let mut k = if floor > 1 { floor } else { 1 };
+    while k <= 4 {
+        let run = k * B3_LEAF_BYTES;
+        let loss = run % block_size;
+        if loss * 100 <= 6 * run {
+            return k as u32;
+        }
+        if loss < best_loss {
+            best_loss = loss;
+            best_k = k;
+        }
+        k += 1;
+    }
+    best_k as u32
+}
+
 /// Owner-only B3 index. Plain (non-atomic) bytes; zero-initialized at segment
 /// init and zeroed again on decommit reset.
 pub(crate) struct B3Free {
@@ -37,8 +71,9 @@ pub(crate) struct B3Free {
 }
 
 impl B3Free {
-    /// Byte footprint of the region: class masks, leaf bindings, cursors,
-    /// 8-byte aligned. Padded UP to 12 KiB: the raw data is ~7.2 KiB, but the
+    /// Byte footprint of the region: class masks, leaf bindings, scan
+    /// cursors, per-class carve cursors, 8-byte aligned. Padded UP to 12 KiB:
+    /// the raw data is ~7.4 KiB, but the
     /// segment-layout invariants pinned by the forced-page tests
     /// (`lazy_initial_commit_forced_page`, `decomp_hooks_forced_page`)
     /// require `small_meta_end() + LAZY_FIRST_CHUNK` to stay a NON-multiple
@@ -46,12 +81,44 @@ impl B3Free {
     /// is a 16 KiB multiple, the padded 21-page value (86016) is not (and
     /// so are the primordial/hardened values it shifts).
     pub(crate) const FOOTPRINT: usize = {
-        let raw = (SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + SMALL_CLASS_COUNT + 7) & !7;
+        // u8 scan cursors end 4-byte UNALIGNED; round up before the u32
+        // carve-cursor array.
+        let after_u8 = SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + SMALL_CLASS_COUNT;
+        let raw = ((after_u8 + 3) & !3) + SMALL_CLASS_COUNT * 4;
         assert!(
             raw <= 12288,
             "B3Free raw data exceeds the 12 KiB pad target"
         );
         12288
+    };
+
+    /// Offset of the per-class carve-cursor array (one `u32` per class,
+    /// 4-byte aligned), after the u8 scan cursors.
+    const CARVE_CURSORS_OFF: usize = {
+        let after_u8 = SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + SMALL_CLASS_COUNT;
+        (after_u8 + 3) & !3
+    };
+
+    /// Sub-leaf run length `k` per class, taken from the shared bump frontier
+    /// when the class's carve run is exhausted (ADR addendum §3). Deterministic
+    /// rule, for `block_size <= B3_LEAF_BYTES`: minimal `k` in 1..=4 such that
+    /// the run-tail loss `(k*4096) mod block_size` is at most 6% of the run;
+    /// if none qualifies, the `k` with the minimal loss (ties -> smaller `k`).
+    /// One correctness floor is layered on top of the rule: `k` must satisfy
+    /// `k*4096 >= 2*block_size - gcd(block_size, 4096)` so the FIRST block of
+    /// a run fits before `run_end` for every leaf-aligned `run_start` (its
+    /// align deficit can be up to `block_size - gcd`). Only class 3712 B is
+    /// lifted by the floor (k = 2). Classes above `B3_LEAF_BYTES` carve
+    /// spans over 4 KiB straight from the bump and never consult this table
+    /// (entries are 0).
+    pub(crate) const RUN_LEAVES: [u32; SMALL_CLASS_COUNT] = {
+        let mut t = [0u32; SMALL_CLASS_COUNT];
+        let mut i = 0;
+        while i < SMALL_CLASS_COUNT {
+            t[i] = run_leaves_for(crate::alloc_core::size_classes::SIZE_CLASS_TABLE[i]);
+            i += 1;
+        }
+        t
     };
 
     pub(crate) fn new(raw: *mut u8) -> Self {
@@ -81,6 +148,30 @@ impl B3Free {
             self.raw
                 .add(SMALL_CLASS_COUNT * B3_MASK_WORDS * 8 + B3_LEAVES + class)
         }
+    }
+
+    #[inline(always)]
+    fn carve_cursor_ptr(&self, class: usize) -> *mut u32 {
+        // SAFETY: class < SMALL_CLASS_COUNT by contract; the carve-cursor
+        // array follows the scan cursors and is 4-byte aligned
+        // (`CARVE_CURSORS_OFF`), owner-only.
+        unsafe { self.raw.add(Self::CARVE_CURSORS_OFF + class * 4) as *mut u32 }
+    }
+
+    /// The packed per-class carve cursor (0 = no run; see the encoding in
+    /// `alloc_core_small_impl.rs`).
+    #[inline(always)]
+    pub(crate) fn carve_cursor(&self, class: usize) -> u32 {
+        debug_assert!(class < SMALL_CLASS_COUNT);
+        // SAFETY: in-bounds carve-cursor word, owner-only.
+        Node::read_u32(self.carve_cursor_ptr(class))
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_carve_cursor(&mut self, class: usize, v: u32) {
+        debug_assert!(class < SMALL_CLASS_COUNT);
+        // SAFETY: in-bounds carve-cursor word, owner-only single writer.
+        Node::write_u32(self.carve_cursor_ptr(class), v);
     }
 
     /// Zero the whole region (segment init / decommit reset).

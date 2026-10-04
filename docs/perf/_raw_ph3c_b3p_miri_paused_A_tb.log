@@ -1,0 +1,4 @@
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+     Running tests\miri_global_box_acceptance.rs (target-miri\miri\x86_64-pc-windows-msvc\debug\deps\miri_global_box_acceptance-68716b64824f62b0.exe)
+[miri_global_box_acceptance] COMPLETE paused_terminal_owner_retirement

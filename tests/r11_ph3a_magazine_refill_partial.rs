@@ -130,8 +130,12 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
     // (`FLUSH_N = TCACHE_CAP / 2 = want / 2`), exactly one under the
     // straight-to-substrate policy.
     let k = if overflow { want / 2 } else { 1 };
+    // B3 spike: BinTable heads are always FREE_LIST_NULL (bitmap free-set), so
+    // the "overflow put blocks on the substrate" witness is the bitmap oracle
+    // (`dbg_is_free_for`) over the exact addresses freed by this overflow.
+    let mut overflow_freed: Vec<*mut u8> = Vec::with_capacity(want + 1);
     for _ in 0..(want + 1) {
-        take_one(heap, &mut held, layout());
+        overflow_freed.push(take_one(heap, &mut held, layout()));
     }
     // Drain the magazine back to zero; the substrate chain is untouched by hits.
     for _ in 0..resident(heap, c) {
@@ -140,10 +144,15 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
         held.push(ptr);
     }
     assert_eq!(resident(heap, c), 0, "the magazine must be empty here");
-    assert_ne!(
-        owner_state(anchor, c).2,
-        u32::MAX,
-        "the overflow must have put blocks on the substrate freelist",
+    // B3: the substrate free-set is the bitmap, so "the overflow put blocks on
+    // the substrate" means exactly `k` of the freed blocks read as free.
+    assert_eq!(
+        overflow_freed
+            .iter()
+            .filter(|p| heap.dbg_is_free_for(**p))
+            .count(),
+        k,
+        "the overflow must have parked exactly k freed blocks in the substrate bitmap free-set",
     );
     assert!(
         (1..want).contains(&k),

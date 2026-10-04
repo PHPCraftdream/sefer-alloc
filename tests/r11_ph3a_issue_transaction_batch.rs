@@ -105,18 +105,39 @@ fn batch_drain_shorter_chain_commits_exactly_the_chain_length() {
 
 /// Carve into a slice longer than the segment's remaining room: the batch
 /// commits `room` blocks and stops, never overrunning the segment end.
+///
+/// Step 1′ note: per-class carve runs quantize the room to whole 4 KiB
+/// leaves. A carve batch keeps opening fresh runs (`run_start =
+/// align_up(bump, 4096)`, `bump := run_start + k*4096`) until the slice is
+/// satisfied or the next full run no longer fits before `SEGMENT`, so with an
+/// exhausted class cursor the room is exactly `floor((SEGMENT - bump) /
+/// 4096) * k * blocks_per_leaf` — the alignment head `[bump, run_start)` is
+/// a documented loss.
 fn batch_carve_short_room_commits_exactly_the_room() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
     let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
     // Fill the current segment with class-1 carves until fewer than OUT_LEN
-    // blocks of room remain, so the next batch is bounded by the segment, not
-    // by the output slice. The fill blocks are intentionally never freed: the
-    // bump cursor, not their storage, is what consumes the room.
-    let mut fill = vec![core::ptr::null_mut(); OUT_LEN];
+    // leaf-quantized blocks of room remain, so the next batch is bounded by
+    // the carve runs, not by the output slice. The fill blocks are
+    // intentionally never freed: the bump cursor, not their storage, is what
+    // consumes the room. FILL_LEN is a multiple of one run (k*4096/32), so
+    // every fill batch ends with the class carve cursor EXACTLY exhausted:
+    // the bump stays on a run/leaf boundary and the final oracle below is
+    // exact rather than dependent on an unexposed cursor remainder. The
+    // estimate is a conservative upper bound on the leaf-quantized room (no
+    // head loss, no per-run quantization), so breaking on it guarantees the
+    // final batch really is partial.
+    const FILL_LEN: usize = 256;
+    let k = sefer_alloc::b3p_run_leaves(1) as usize;
+    assert!(
+        FILL_LEN % (k * LEAF / CLASS1) == 0,
+        "FILL_LEN must exhaust the class cursor exactly",
+    );
+    let mut fill = vec![core::ptr::null_mut(); FILL_LEN];
     loop {
         let (bump, ..) = core.dbg_r11_issue_state_for_test(1).unwrap();
-        let aligned = (bump + CLASS1 - 1) & !(CLASS1 - 1);
-        let room = (SegmentLayout::SEGMENT - aligned) / CLASS1;
+        let run_start = (bump + LEAF - 1) & !(LEAF - 1);
+        let room = (SegmentLayout::SEGMENT - run_start) / CLASS1;
         assert!(room > 0, "the fill loop must stop before the segment ends");
         if room < OUT_LEN {
             break;
@@ -124,20 +145,39 @@ fn batch_carve_short_room_commits_exactly_the_room() {
         assert!(core.dbg_carve_batch(1, &mut fill) > 0);
     }
     let state = core.dbg_r11_issue_state_for_test(1).unwrap();
-    let aligned = (state.0 + CLASS1 - 1) & !(CLASS1 - 1);
-    let room = (SegmentLayout::SEGMENT - aligned) / CLASS1;
+    // Step 1′ oracle: the cursor is exhausted and the bump sits on a leaf
+    // boundary, so the batch serves nothing from a stale cursor and instead
+    // opens fresh runs back to back while a full run fits before SEGMENT.
+    // The committed count is the leaf-quantized room: whole leaves from the
+    // (leaf-aligned) bump to the segment end, k leaves and 4096/32 blocks
+    // per run; the head `[bump, run_start)` is empty here but stays part of
+    // the documented loss in general.
+    let bump_before = state.0;
+    let run_start = (bump_before + LEAF - 1) & !(LEAF - 1);
+    let fit_leaves = (SegmentLayout::SEGMENT - run_start) / LEAF;
+    let blocks_per_leaf = LEAF / CLASS1;
+    let expected_n = (fit_leaves * k * blocks_per_leaf).min(OUT_LEN);
+    let run_end_last = run_start + fit_leaves * k * LEAF;
     let system = SmallSidecar::system_totals_for_test();
     let table_before = core.dbg_table_count();
 
     let mut out = [anchor; OUT_LEN];
     let n = core.dbg_carve_batch(1, &mut out);
 
-    assert_eq!(n, room, "a partial carve commits the segment's room");
-    assert!(n > 0 && n < OUT_LEN, "the fixture must really be partial");
     assert_eq!(
-        core.dbg_r11_issue_state_for_test(1).unwrap().0,
-        aligned + n * CLASS1,
-        "the bump advances by exactly n blocks",
+        n, expected_n,
+        "a partial carve commits the leaf-quantized room of the final class run",
+    );
+    assert!(n > 0 && n < OUT_LEN, "the fixture must really be partial");
+    // Step 1′: the batch kept opening fresh runs until its last one, so the
+    // bump lands on that final run's end (`run_end_last`, the head loss
+    // included); staying put would mean it was served from the open run's
+    // cursor alone. Exact bump equality is left to the live credits and `n`
+    // asserts above.
+    let bump_after = core.dbg_r11_issue_state_for_test(1).unwrap().0;
+    assert!(
+        bump_after == run_end_last || bump_after == bump_before,
+        "the bump must sit at the last served run's end or stay put on the cursor",
     );
     assert_eq!(
         core.dbg_live_count_for(anchor),

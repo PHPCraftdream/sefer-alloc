@@ -100,3 +100,22 @@ pub(super) fn b3s_drain_from_free_inner() -> u64 {
     crate::alloc_core::small::alloc_core_small::B3_DRAIN_FROM_FREE
         .load(core::sync::atomic::Ordering::Relaxed)
 }
+
+/// B3p oracle: crate-internal readers (bench-internals).
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(super) fn b3p_run_bytes_inner(class_idx: usize) -> u64 {
+    crate::alloc_core::small::alloc_core_small::b3p_run_bytes(class_idx)
+}
+
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(super) fn b3p_run_leaves_inner(class_idx: usize) -> u32 {
+    crate::alloc_core::small::alloc_core_small::b3p_run_leaves(class_idx)
+}
+
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(super) fn b3p_leaf_class_of_inner(ptr: *mut u8) -> u8 {
+    crate::alloc_core::small::alloc_core_small::b3p_leaf_class_of(ptr)
+}

@@ -11,203 +11,31 @@ use crate::alloc_core::segment_header::{align_up, SegmentMeta};
 // decommit-recommit arms of `carve_block`/`carve_batch` (and only on their
 // eager `not(small-segment-lazy-commit)` leg) — gate the import identically
 // so non-decommit builds stay warning-clean.
-use crate::alloc_core::alloc_bitmap::AllocBitmap;
 #[cfg(all(feature = "alloc-decommit", not(feature = "small-segment-lazy-commit")))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
-use crate::alloc_core::segment_header::{B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS, B3_LEAVES};
-use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+use crate::alloc_core::segment_header::{B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS};
+use crate::alloc_core::size_classes::SizeClasses;
+
+// B3/B2 carve helpers moved verbatim to the `b3_carve` sibling (pure move):
+// re-imported here (and re-exported through the existing crate-internal
+// re-export chain so external paths like
+// `crate::alloc_core::alloc_core_small::LAZY_FIRST_CHUNK` stay valid).
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
+pub(crate) use super::b3_carve::{GROW_CHUNK, GROW_COMMIT_COUNT, LAZY_FIRST_CHUNK};
+#[cfg(feature = "bench-internals")]
+pub(crate) use super::b3_carve::{B3_DRAIN_FROM_FREE, B3P_RUN_BYTES};
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+pub(crate) use super::b3_carve::{b3p_leaf_class_of, b3p_run_bytes, b3p_run_leaves};
+use super::b3_carve::{
+    b3_carve_start, b3_class_block_next_cursor, b3_class_block_plan, b3_locate_free_from,
+    b3_slot_offset, B3BlockPlan,
+};
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::segment::segment_table::IssueTransaction;
-
-/// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
-/// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
-/// `any(primordial-lazy-commit, small-segment-lazy-commit)` (R12-9, task
-/// #260: the split siblings of the former single `alloc-lazy-commit`, which
-/// is now a pure alias for "both together"). Tests observe this to verify
-/// that `carve_batch` does ONE commit per batch (not per block) and that
-/// chunk boundary crossings trigger the expected number of commits.
-#[cfg(any(
-    feature = "primordial-lazy-commit",
-    feature = "small-segment-lazy-commit"
-))]
-pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
-
-/// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
-/// small segment is lazily reserved under `small-segment-lazy-commit`, or
-/// the primordial segment under `primordial-lazy-commit` (R12-9, task #260 —
-/// this constant is SHARED verbatim by both split policies; see
-/// `bootstrap::primordial`'s identical `LAZY_FIRST_CHUNK` use). Only the
-/// metadata region `[0, small_meta_end)` plus this chunk are committed at
-/// reservation time; the rest of the 4 MiB segment stays reserved-but-
-/// uncommitted. B2's grow-on-carve logic commits additional chunks
-/// (sized by [`GROW_CHUNK`]) as the bump cursor advances past the frontier.
-///
-/// 256 KiB is large enough to hold many initial carve batches without faulting
-/// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
-/// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
-/// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
-/// conservative default.
-///
-/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
-#[cfg(any(
-    feature = "primordial-lazy-commit",
-    feature = "small-segment-lazy-commit"
-))]
-pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
-
-/// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
-/// past its initial value during bump-carve. When a `carve_block` or
-/// `carve_batch` would write past `committed_payload_end`, the grow logic
-/// commits `[frontier, round_up(carve_end, GROW_CHUNK))` (clamped to
-/// `SEGMENT`) and advances the frontier.
-///
-/// Set equal to `LAZY_FIRST_CHUNK` (256 KiB): both are B5-swept constants
-/// (64/128/256/512 KiB); using the same value for initial and grow chunks
-/// keeps the model simple and the sweep surface small. A separate value is
-/// a trivial constant rename if B5 data motivates it.
-///
-/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
-#[cfg(any(
-    feature = "primordial-lazy-commit",
-    feature = "small-segment-lazy-commit"
-))]
-pub(crate) const GROW_CHUNK: usize = LAZY_FIRST_CHUNK;
-
-// B1/B2: compile-time sanity — the initial commit (metadata + first chunk) must
-// fit within one segment, and both chunk constants must be page-aligned and
-// non-zero.
-#[cfg(any(
-    feature = "primordial-lazy-commit",
-    feature = "small-segment-lazy-commit"
-))]
-const _: () = {
-    assert!(
-        LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
-        "LAZY_FIRST_CHUNK must be a non-zero multiple of PAGE"
-    );
-    // Task #1074: the page-rounded `lazy_initial_commit` adds at most one
-    // MAX_REALISTIC_PAGE_SIZE (64 KiB) of rounding on top of the tight sum,
-    // so the slack is part of the bound: this pins the ROUNDED initial
-    // commit within one SEGMENT for every page size this crate supports.
-    assert!(
-        crate::alloc_core::segment_header::Layout::small_meta_end()
-            + LAZY_FIRST_CHUNK
-            + crate::alloc_core::os::MAX_REALISTIC_PAGE_SIZE
-            <= crate::alloc_core::os::SEGMENT,
-        "metadata + LAZY_FIRST_CHUNK + one MAX_REALISTIC_PAGE_SIZE of page-rounding \
-         slack must fit within one SEGMENT"
-    );
-    assert!(
-        GROW_CHUNK > 0 && GROW_CHUNK.is_multiple_of(crate::alloc_core::os::PAGE),
-        "GROW_CHUNK must be a non-zero multiple of PAGE"
-    );
-};
-
-/// B3 spike oracle (bench-internals): blocks served by the sub-leaf free
-/// structure on the refill (drain) path.
-#[cfg(feature = "bench-internals")]
-pub(crate) static B3_DRAIN_FROM_FREE: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
-
-/// B3 spike oracle: bench-internals reader for the drain-from-free counter.
-#[cfg(all(feature = "bench-internals", feature = "internals"))]
-#[doc(hidden)]
-#[allow(dead_code)] // spike oracle reader (root fn forwards to the counter)
-pub(crate) fn b3s_oracle_counter() -> u64 {
-    B3_DRAIN_FROM_FREE.load(core::sync::atomic::Ordering::Relaxed)
-}
-
-/// B3 spike: first sub-leaf of `class_idx` with a mask bit at/after `from`
-/// (forward-only scan; `first_leaf` handles the cursor/wraparound entry).
-#[inline(always)]
-fn b3_next_leaf(b3: &B3Free, class_idx: usize, from: usize) -> Option<usize> {
-    debug_assert!(from <= B3_LEAVES);
-    if from >= B3_LEAVES {
-        return None;
-    }
-    let mut w = from / 64;
-    let mut bits = b3.mask_word(class_idx, w) & (u64::MAX << (from % 64));
-    loop {
-        if bits != 0 {
-            return Some(w * 64 + bits.trailing_zeros() as usize);
-        }
-        w += 1;
-        if w >= B3_LEAVES / 64 {
-            return None;
-        }
-        bits = b3.mask_word(class_idx, w);
-    }
-}
-
-/// B3 spike: locate the first free slot of `class_idx` strictly after scan
-/// position `pos` (`None` = the class-mask entry leaf). Returns
-/// `(leaf, bitmap_word_idx, bit)`; never mutates anything.
-#[inline(always)]
-fn b3_locate_free_from(
-    bm: &AllocBitmap,
-    b3: &B3Free,
-    class_idx: usize,
-    pos: &mut Option<(usize, usize, u32)>,
-) -> Option<(usize, usize, u32)> {
-    let (mut leaf, mut wi, mut min_bit) = match *pos {
-        None => {
-            let leaf = b3.first_leaf(class_idx)?;
-            (leaf, leaf * B3_LEAF_WORDS, 0u32)
-        }
-        Some((leaf, wi, bit)) => (leaf, wi, bit.saturating_add(1)),
-    };
-    loop {
-        let leaf_end = leaf * B3_LEAF_WORDS + B3_LEAF_WORDS;
-        while wi < leaf_end {
-            let word = if min_bit < 64 {
-                bm.word(wi) & u64::MAX.unbounded_shl(min_bit)
-            } else {
-                0
-            };
-            if word != 0 {
-                let bit = word.trailing_zeros();
-                *pos = Some((leaf, wi, bit));
-                return Some((leaf, wi, bit));
-            }
-            wi += 1;
-            min_bit = 0;
-        }
-        leaf = b3_next_leaf(b3, class_idx, leaf + 1)?;
-        wi = leaf * B3_LEAF_WORDS;
-    }
-}
-
-/// B3 spike: the segment offset of a located slot.
-#[inline(always)]
-fn b3_slot_offset(leaf: usize, wi: usize, bit: u32) -> u32 {
-    ((leaf * 256 + (wi - leaf * B3_LEAF_WORDS) * 64 + bit as usize) * MIN_BLOCK) as u32
-}
-
-/// B3 spike: first carve start for `class_idx` at/after `start`, honouring
-/// the sub-leaf→class binding (a carve never STARTS in a sub-leaf bound to
-/// another class; blocks > 4 KiB span sub-leaves naturally). `None` = no room.
-#[inline(always)]
-fn b3_carve_start(
-    b3: &B3Free,
-    class_idx: usize,
-    block_size: usize,
-    mut start: usize,
-) -> Option<usize> {
-    loop {
-        if start + block_size > SEGMENT {
-            return None;
-        }
-        let leaf = start / B3_LEAF_BYTES;
-        let bound = b3.leaf_class(leaf);
-        if bound != 0 && bound != class_idx as u8 + 1 {
-            start = align_up((leaf + 1) * B3_LEAF_BYTES, block_size);
-            continue;
-        }
-        return Some(start);
-    }
-}
 
 impl AllocCore {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -468,13 +296,30 @@ impl AllocCore {
         let bump = meta.bump_of();
         // Base semantics (preserved): "no room in the current segment" must
         // report OK so the caller proceeds to carve → None → reserve path.
-        let Some(aligned) = b3_carve_start(
-            &meta.b3_free(),
-            class_idx,
-            block_size,
-            align_up(bump, block_size),
-        ) else {
-            return true;
+        let aligned = if block_size <= B3_LEAF_BYTES {
+            // Per-class run cursor (ADR addendum §3): serve from the class's
+            // current run, or plan a fresh k-sub-leaf run from the frontier.
+            match b3_class_block_plan(
+                class_idx,
+                block_size,
+                bump,
+                meta.b3_free().carve_cursor(class_idx),
+            ) {
+                Some(plan) => plan.off,
+                None => return true,
+            }
+        } else {
+            // > 4 KiB span class: unchanged span-from-bump carve, skipping
+            // sub-leaves bound to other classes (see `b3_carve_start`).
+            match b3_carve_start(
+                &meta.b3_free(),
+                class_idx,
+                block_size,
+                align_up(bump, block_size),
+            ) {
+                Some(off) => off,
+                None => return true,
+            }
         };
         self.table
             .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
@@ -677,21 +522,27 @@ impl AllocCore {
         // `dealloc_routing` (the §11 data race). `bump` is owner-only (no
         // Remote reads it), so a plain field write is race-free.
         let bump = meta.bump_of();
-        // B3 spike: the start additionally skips sub-leaves bound to other
-        // classes (see `b3_carve_start`).
-        let Some(aligned_bump) = b3_carve_start(
-            &meta.b3_free(),
-            class_idx,
-            block_size,
-            align_up(bump, block_size),
-        ) else {
-            return None;
+        let cursor = meta.b3_free().carve_cursor(class_idx);
+        // B3 spike: <= 4 KiB classes serve from the per-class run cursor; the
+        // > 4 KiB span path skips sub-leaves bound to other classes (see
+        // `b3_carve_start`).
+        let plan = if block_size <= B3_LEAF_BYTES {
+            b3_class_block_plan(class_idx, block_size, bump, cursor)?
+        } else {
+            let off = b3_carve_start(
+                &meta.b3_free(),
+                class_idx,
+                block_size,
+                align_up(bump, block_size),
+            )?;
+            B3BlockPlan { off, new_run: None }
         };
+        let start_off = plan.off;
         // Fallible prepare before any mutation: `?` is the `return None` the
         // old inline guard performed — "segment full" so the caller reserves.
         let tx = self
             .table
-            .prepare_small_issue(segment, aligned_bump as u32, class_idx)?;
+            .prepare_small_issue(segment, start_off as u32, class_idx)?;
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
         // emptied and we returned its pages to the OS), we are about to write
         // into the payload — recommit and clear the flag BEFORE the bump cursor
@@ -763,7 +614,13 @@ impl AllocCore {
         ))]
         {
             let frontier = meta.committed_payload_end_of();
-            let carve_end = aligned_bump + block_size;
+            // A fresh run hands the whole k-sub-leaf run to the class at
+            // once, so the commit frontier must cover `run_end`, not just
+            // the first block.
+            let carve_end = match plan.new_run {
+                Some((_, run_end)) => run_end,
+                None => start_off + block_size,
+            };
             if carve_end > frontier {
                 // `frontier == SEGMENT` means fully committed (eager path or
                 // already grown to the end) — the condition above is always
@@ -783,13 +640,31 @@ impl AllocCore {
                 meta.set_committed_payload_end(new_frontier);
             }
         }
-        // B3 spike: bind the start sub-leaf to this class at first carve
-        // (after every fallible step — binding is infallible and must not
-        // happen on an OOM path).
-        let start_leaf = aligned_bump / B3_LEAF_BYTES;
-        meta.b3_free().bind_leaf(start_leaf, class_idx);
-        // Update ONLY the bump cursor.
-        meta.set_bump(aligned_bump + block_size);
+        // B3 spike: apply the plan AFTER every fallible step — for a fresh
+        // run, bind all k sub-leaves and advance the bump to `run_end`; then
+        // advance (or clear) the per-class carve cursor. Bump and binding are
+        // infallible and must not happen on an OOM path.
+        if let Some((run_start, run_end)) = plan.new_run {
+            let run_leaf = run_start / B3_LEAF_BYTES;
+            let k = B3Free::RUN_LEAVES[class_idx] as usize;
+            let mut leaf = run_leaf;
+            while leaf < run_leaf + k {
+                meta.b3_free().bind_leaf(leaf, class_idx);
+                leaf += 1;
+            }
+            // Update ONLY the bump cursor (owner-only plain field write).
+            meta.set_bump(run_end);
+            #[cfg(feature = "bench-internals")]
+            B3P_RUN_BYTES[class_idx].fetch_add((k * B3_LEAF_BYTES) as u64, core::sync::atomic::Ordering::Relaxed);
+        }
+        // Only leaf classes own a carve cursor; span classes keep it at 0
+        // and keep the old bump semantics (advance by one block).
+        if block_size <= B3_LEAF_BYTES {
+            let next_cursor = b3_class_block_next_cursor(class_idx, &plan, block_size, cursor);
+            meta.b3_free().set_carve_cursor(class_idx, next_cursor);
+        } else {
+            meta.set_bump(start_off + block_size);
+        }
         // Phase 35: this carved block is now live (handed to the caller, or — on
         // the refill path — immediately pushed to the free list, which calls
         // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
@@ -802,13 +677,13 @@ impl AllocCore {
         #[cfg(feature = "page-map-diag")]
         {
             let mut pm = meta.page_map();
-            let page = aligned_bump / crate::alloc_core::os::PAGE;
+            let page = start_off / crate::alloc_core::os::PAGE;
             if pm.class_of(page).is_none() {
                 // Page was Free or Meta; dedicate it to this class.
                 pm.set_class(page, class_idx);
             }
         }
-        let ptr = Node::deref(segment, aligned_bump);
+        let ptr = Node::deref(segment, start_off);
         tx.commit(&self.table);
         Some(ptr)
     }
@@ -885,22 +760,43 @@ impl AllocCore {
         let mut meta = SegmentMeta::new(segment);
         let bump = meta.bump_of();
         let b3 = meta.b3_free();
-        // B3 spike: the start sequence skips sub-leaves bound to other
-        // classes, so it is computed by `b3_carve_start` per block. The
-        // sequence is a pure function of (bump, leaf_class bindings) —
-        // bindings only ever mark leaves the sequence itself starts in —
-        // so the bounds / prepare / commit passes reproduce it identically.
+        // B3 spike: <= 4 KiB classes are planned by the per-class run cursor
+        // (`b3_class_block_plan`); the plan is a pure function of the packed
+        // cursor + bump, so the probe below advances LOCAL copies and the
+        // commit half reproduces the identical sequence. Fresh runs advance
+        // the local bump by k*4096; a run may end mid-batch and a new one is
+        // taken inside the same batch.
+        let is_leaf_class = block_size <= B3_LEAF_BYTES;
         let mut n = 0usize;
         let mut batch_end = bump;
+        let (mut lcursor, mut lbump) = (b3.carve_cursor(class_idx), bump);
+        let mut ls = align_up(bump, block_size); // span-path scan cursor
         {
-            let mut s = align_up(bump, block_size);
             while n < out.len() {
-                let Some(cs) = b3_carve_start(&b3, class_idx, block_size, s) else {
-                    break;
+                let plan = if is_leaf_class {
+                    match b3_class_block_plan(class_idx, block_size, lbump, lcursor) {
+                        Some(p) => p,
+                        None => break,
+                    }
+                } else {
+                    match b3_carve_start(&b3, class_idx, block_size, align_up(ls, block_size)) {
+                        Some(off) => B3BlockPlan { off, new_run: None },
+                        None => break,
+                    }
                 };
-                batch_end = cs + block_size;
+                batch_end = match plan.new_run {
+                    Some((_, run_end)) => {
+                        lbump = run_end;
+                        run_end
+                    }
+                    None => plan.off + block_size,
+                };
+                if is_leaf_class {
+                    lcursor = b3_class_block_next_cursor(class_idx, &plan, block_size, lcursor);
+                } else {
+                    ls = plan.off + block_size;
+                }
                 n += 1;
-                s = cs + block_size;
             }
         }
         if n == 0 {
@@ -913,19 +809,36 @@ impl AllocCore {
         // no class code or issue credit changes until the carve commits.
         {
             let mut s = align_up(bump, block_size);
+            let mut lcursor = b3.carve_cursor(class_idx);
+            let mut lbump = bump;
             for _ in 0..n {
-                let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
-                    Some(cs) => cs,
-                    None => std::process::abort(),
+                let plan = if is_leaf_class {
+                    match b3_class_block_plan(class_idx, block_size, lbump, lcursor) {
+                        Some(p) => p,
+                        None => std::process::abort()
+                    }
+                } else {
+                    let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
+                        Some(cs) => cs,
+                        None => std::process::abort(),
+                    };
+                    B3BlockPlan { off: cs, new_run: None }
                 };
                 if self
                     .table
-                    .prepare_small_issue(segment, cs as u32, class_idx)
+                    .prepare_small_issue(segment, plan.off as u32, class_idx)
                     .is_none()
                 {
                     return Err(());
                 }
-                s = cs + block_size;
+                if let Some((_, run_end)) = plan.new_run {
+                    lbump = run_end;
+                } else if !is_leaf_class {
+                    s = plan.off + block_size;
+                }
+                if is_leaf_class {
+                    lcursor = b3_class_block_next_cursor(class_idx, &plan, block_size, lcursor);
+                }
             }
         }
         // Recommit ONCE at run start if the segment's payload was decommitted
@@ -965,32 +878,64 @@ impl AllocCore {
                 meta.set_committed_payload_end(new_frontier);
             }
         }
-        // Commit: replay the same start sequence, bind each start sub-leaf
-        // (first carve), advance the bump once, batch the live credit.
-        meta.set_bump(batch_end);
+        // Commit: replay the same start sequence, bind each fresh run's k
+        // sub-leaves, advance the bump per fresh run, advance the per-class
+        // carve cursor, batch the live credit. (The span path keeps the old
+        // single end-of-batch bump write; run cursors move the bump per run.)
         meta.add_live(n as u32);
         {
             let mut s = align_up(bump, block_size);
+            let mut lcursor = b3.carve_cursor(class_idx);
+            let mut lbump = bump;
             let mut last_leaf = usize::MAX;
             for slot in out[..n].iter_mut() {
-                let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
-                    Some(cs) => cs,
-                    None => std::process::abort(),
+                let plan = if is_leaf_class {
+                    match b3_class_block_plan(class_idx, block_size, lbump, lcursor) {
+                        Some(p) => p,
+                        None => std::process::abort()
+                    }
+                } else {
+                    let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
+                        Some(cs) => cs,
+                        None => std::process::abort(),
+                    };
+                    B3BlockPlan { off: cs, new_run: None }
                 };
-                let leaf = cs / B3_LEAF_BYTES;
-                if leaf != last_leaf {
-                    meta.b3_free().bind_leaf(leaf, class_idx);
-                    last_leaf = leaf;
+                if let Some((run_start, run_end)) = plan.new_run {
+                    let run_leaf = run_start / B3_LEAF_BYTES;
+                    let k = B3Free::RUN_LEAVES[class_idx] as usize;
+                    let mut leaf = run_leaf;
+                    while leaf < run_leaf + k {
+                        if leaf != last_leaf {
+                            meta.b3_free().bind_leaf(leaf, class_idx);
+                            last_leaf = leaf;
+                        }
+                        leaf += 1;
+                    }
+                    meta.set_bump(run_end);
+                    lbump = run_end;
+                    #[cfg(feature = "bench-internals")]
+                    B3P_RUN_BYTES[class_idx]
+                        .fetch_add((k * B3_LEAF_BYTES) as u64, core::sync::atomic::Ordering::Relaxed);
+                }
+                if is_leaf_class {
+                    lcursor = b3_class_block_next_cursor(class_idx, &plan, block_size, lcursor);
+                    meta.b3_free().set_carve_cursor(class_idx, lcursor);
                 }
                 IssueTransaction::commit_prepared(
                     &self.table,
                     index,
                     segment,
-                    cs as u32,
+                    plan.off as u32,
                     class_idx,
                 );
-                *slot = Node::deref(segment, cs);
-                s = cs + block_size;
+                *slot = Node::deref(segment, plan.off);
+                if !is_leaf_class {
+                    s = plan.off + block_size;
+                }
+            }
+            if !is_leaf_class {
+                meta.set_bump(batch_end);
             }
         }
         Ok(n)

@@ -446,6 +446,30 @@ pub fn b3s_drain_from_free() -> u64 {
     crate::alloc_core::b3s_drain_from_free_inner()
 }
 
+/// B3p carve-waste oracle (ph3c step 1′, not for merge): bytes taken from the
+/// shared bump frontier by fresh carve runs of `class_idx`.
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub fn b3p_run_bytes(class_idx: usize) -> u64 {
+    crate::alloc_core::b3p_run_bytes_inner(class_idx)
+}
+
+/// B3p oracle: the per-class run length (`RUN_LEAVES[class_idx]`).
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub fn b3p_run_leaves(class_idx: usize) -> u32 {
+    crate::alloc_core::b3p_run_leaves_inner(class_idx)
+}
+
+/// B3p oracle: leaf-to-class binding of the 4 KiB sub-leaf containing `ptr`'s
+/// first byte (0 = unbound, else class_idx + 1). `ptr` must point into a live
+/// small segment's payload.
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub fn b3p_leaf_class_of(ptr: *mut u8) -> u8 {
+    crate::alloc_core::b3p_leaf_class_of_inner(ptr)
+}
+
 #[cfg(all(feature = "alloc-core", feature = "internals"))]
 #[doc(hidden)]
 pub mod alloc_core;

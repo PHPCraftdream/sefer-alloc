@@ -61,16 +61,18 @@ fn assert_unchanged(core: &AllocCore, before: &ScalarState, class_idx: usize, sl
     );
 }
 
+// B3: the free set is a bitmap — pop serves the lowest-offset free slot, not LIFO.
 fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
     // Two blocks on the class-0 free list: the pop path (not carve) serves the
-    // retry, and the untouched anchor keeps its free bit for the whole test.
+    // retry; the higher-offset block keeps its free bit; the lower-offset one is
+    // what B3 pop serves.
     let mut blocks = [core::ptr::null_mut(); 2];
     assert_eq!(core.dbg_carve_batch(0, &mut blocks), 2);
     for ptr in blocks {
         release(&mut core, ptr, CLASS0);
     }
-    let anchor = blocks[0];
+    let anchor = blocks[1];
     let before = capture(&core, 0, 0);
 
     SmallSidecar::fail_prepare_after_for_test(1);
@@ -85,8 +87,10 @@ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block
     );
 
     // The refusal is one-shot: the next attempt commits the same pop.
+    // B3: the free set is a bitmap — pop serves the lowest-offset slot, not LIFO.
+    let expected = blocks.iter().copied().min().unwrap();
     let ptr = core.alloc(layout(CLASS0));
-    assert_eq!(ptr, blocks[1], "LIFO freelist order must be preserved");
+    assert_eq!(ptr, expected, "B3 bitmap pop serves the lowest-offset free slot");
     assert_eq!(
         core.dbg_live_count_for(ptr),
         Some(before.issue.1 + 1),
@@ -103,17 +107,26 @@ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block
     release(&mut core, anchor, CLASS0);
 }
 
-fn scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block() {
+fn scalar_carve_prepare_refusal_is_a_full_rollback_and_retry_carves_the_block() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
     let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
-    // Class 1 has never been carved: its sidecar leaf still needs a promotion,
-    // which is exactly what `fail_spill_after` refuses.
+    // PH3C step1prime (§7.1 of docs/perf/PH3C_B3S_SPIKE_DESIGN.md): a leaf
+    // class with a zero carve cursor takes a FRESH k-sub-leaf run from the
+    // shared bump frontier — virgin sub-leaves the sidecar has never bound.
+    // The sidecar's System "leaf spill" (mixed-leaf promotion of a leaf bound
+    // to ANOTHER class) is therefore unreachable on this carve path: virgin
+    // leaves prepare without promoting (uniform == 0 → prepared). The carve
+    // transaction's fallible step that CAN refuse here is the sidecar
+    // `prepare` itself, so the one-shot transaction fault injector
+    // (`fail_prepare_after_for_test`) plays the role the leaf spill played
+    // before step1prime: an uncommitted prepare must refuse the carve with
+    // the whole owner state bit-for-bit unchanged.
     let before = capture(&core, 1, 0);
 
-    SmallSidecar::fail_spill_after_for_test(1);
+    SmallSidecar::fail_prepare_after_for_test(1);
     assert!(
         core.dbg_r11_scalar_carve_for_test(1).is_none(),
-        "an uncommitted leaf spill must refuse the carve",
+        "an uncommitted sidecar prepare must refuse the carve",
     );
     assert_unchanged(&core, &before, 1, 0);
     assert_eq!(
@@ -128,7 +141,12 @@ fn scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block() {
     assert_eq!(
         second.addr() % SegmentLayout::SEGMENT,
         (before.issue.0 + 31) & !31,
-        "the retry carves at the alignment-up bump the rollback preserved",
+        // §7.3: the retry re-plans the SAME fresh run — `run_start =
+        // align_up(bump, 4096)`, `off = align_up(run_start, block_size)` —
+        // from the bump the rollback preserved. The class-0 anchor's run left
+        // the bump 4096-aligned, so the planned offset is the bump itself,
+        // which the stride formula reproduces exactly.
+        "the retry carves at the plan the rollback preserved",
     );
     assert_eq!(
         core.dbg_live_count_for(anchor),
@@ -164,7 +182,9 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
     assert_unchanged(&core, &before, 0, 0);
 
     let ptr = core.alloc_zeroed(layout(CLASS0));
-    assert_eq!(ptr, blocks[1]);
+    // B3: the free set is a bitmap — the retry pop serves the LOWEST-offset
+    // free slot (`blocks[0]`), not the LIFO-released `blocks[1]`.
+    assert_eq!(ptr, blocks[0]);
     // SAFETY: `ptr` is a live 16-byte block from this exclusively owned core.
     let extent = unsafe { core::slice::from_raw_parts(ptr, CLASS0) };
     assert!(
@@ -188,7 +208,8 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
     assert!(core.alloc_zeroed(layout(POP_N)).is_null());
     assert_unchanged(&core, &wide_before, 1, 0);
     let wide_ptr = core.alloc_zeroed(layout(POP_N));
-    assert_eq!(wide_ptr, wide[1]);
+    // Same B3 lowest-offset rule for the class-1 free set.
+    assert_eq!(wide_ptr, wide[0]);
     // SAFETY: `wide_ptr` is a live 32-byte block; the request covered 24 bytes.
     let wide_extent = unsafe { core::slice::from_raw_parts(wide_ptr, CLASS1) };
     assert!(
@@ -201,9 +222,9 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
     );
 
     release(&mut core, wide_ptr, CLASS1);
-    release(&mut core, wide[0], CLASS1);
+    release(&mut core, wide[1], CLASS1);
     release(&mut core, ptr, CLASS0);
-    release(&mut core, blocks[0], CLASS0);
+    release(&mut core, blocks[1], CLASS0);
 }
 
 // One test by design: `SmallSidecar::system_totals_for_test` is process-wide,
@@ -212,6 +233,6 @@ fn scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_exten
 #[test]
 fn scalar_issue_transactions_roll_back_before_commit_and_retry_after() {
     scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block();
-    scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block();
+    scalar_carve_prepare_refusal_is_a_full_rollback_and_retry_carves_the_block();
     scalar_pop_zeroed_refusal_rolls_back_and_the_retry_zeroes_the_requested_extent();
 }

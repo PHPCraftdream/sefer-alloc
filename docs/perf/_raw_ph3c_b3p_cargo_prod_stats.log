@@ -1,0 +1,2677 @@
+warning: unreachable statement
+   --> tests\r11_p3_small_sidecar_issue_oom\support.rs:121:5
+    |
+120 |     return; // unconditional under B3 (see the model note above)
+    |     ------ any code following this expression is unreachable
+121 |     let anchor = heap.alloc(Layout::from_size_align(16, 16).unwrap());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unreachable statement
+    |
+    = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `heap`
+   --> tests\r11_p3_small_sidecar_issue_oom\support.rs:111:15
+    |
+111 | fn persistent(heap: &mut HeapCore, zeroed: bool) {
+    |               ^^^^ help: if this is intentional, prefix it with an underscore: `_heap`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `zeroed`
+   --> tests\r11_p3_small_sidecar_issue_oom\support.rs:111:36
+    |
+111 | fn persistent(heap: &mut HeapCore, zeroed: bool) {
+    |                                    ^^^^^^ help: if this is intentional, prefix it with an underscore: `_zeroed`
+
+warning: `sefer-alloc` (test "r11_p3_small_sidecar_issue_oom") generated 3 warnings (run `cargo fix --test "r11_p3_small_sidecar_issue_oom" -p sefer-alloc` to apply 2 suggestions)
+warning: `sefer-alloc` (test "r11_p3_small_sidecar_zeroed_oom") generated 3 warnings (3 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.53s
+     Running unittests src\lib.rs (target\debug\deps\sefer_alloc-99bd05c2c9328d94.exe)
+
+running 9 tests
+test alloc_core::large::reservation_state::credit_tests::cached_eviction_has_no_outstanding_credit ... ok
+test alloc_core::large::reservation_state::credit_tests::remote_pending_claim_and_rollback_cannot_double_consume ... ok
+test alloc_core::large::reservation_state::credit_tests::owner_release_and_cache_reissue_transfer_credit_once ... ok
+test alloc_core::large::reservation_state::tests::consumed_cache_hit_advances_generation_only_after_reset_phase ... ok
+test alloc_core::large::reservation_state::tests::pending_is_single_admission_and_single_owner_claim ... ok
+test alloc_core::large::reservation_state::tests::release_is_terminal_and_cannot_reenter_cache ... ok
+test registry::segment_route::large_state::tests::adapter_uses_existing_phase_encoding_and_reset_gate ... ok
+test alloc_core::large::reservation_state::tests::negative_control_pointer_stack_aba - should panic ... ok
+test alloc_core::large::reservation_state::tests::reduced_width_exhaustion_retires_without_wrap ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\alloc_core_batch.rs (target\debug\deps\alloc_core_batch-bf3b59bd2721fdc7.exe)
+
+running 15 tests
+test t_flush_double_free_is_noop ... ok
+test t_flush_null_defensive ... ok
+test t_flush_equiv_class0_n16 ... ok
+test t_flush_equiv_medium_n16 ... ok
+test t_refill_bump_equiv_class0_n8 ... ok
+test t_refill_bump_len_bound ... ok
+test t_refill_bump_equiv_medium_n16 ... ok
+test t_refill_bump_equiv_class0_n64 ... ok
+test t_refill_equiv_class0_n16 ... ok
+test t_refill_equiv_medium_n16 ... ok
+test t_refill_equiv_class0_n8 ... ok
+test t_refill_zero ... ok
+test t_refill_equiv_class0_n64 ... ok
+test t_refill_spans_segments ... ok
+test t_flush_decommit ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\alloc_core_differential.rs (target\debug\deps\alloc_core_differential-b235e2b982e0f19b.exe)
+
+running 3 tests
+test replay_native_failure_seed_without_shrinking ... ok
+test bounded_streams_and_small_witness_exercise_large_allocations ... ok
+test alloc_core_matches_reference_model ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.11s
+
+     Running tests\alloc_core_invariants.rs (target\debug\deps\alloc_core_invariants-0a3e34bff3dadb3e.exe)
+
+running 13 tests
+test m1_alloc_zeroed_is_all_zero ... ok
+test m2_foreign_pointer_dealloc_is_noop ... ok
+test m2_double_free_is_noop ... ok
+test m1_large_allocations_are_aligned_and_writable ... ok
+test free_list_reuses_freed_blocks ... ok
+test m4_large_alignment_uses_dedicated_segment ... ok
+test m1_small_allocations_are_aligned_and_writable ... ok
+test m4_size_class_satisfies_size_and_align ... ok
+test m3_simultaneous_allocations_do_not_overlap ... ok
+test segment_of_finds_our_segment_base ... ok
+test realloc_preserves_prefix_bytes ... ok
+test many_large_allocs_then_free ... ok
+test m5_churn_keeps_allocator_consistent ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\alloc_core_reentrancy.rs (target\debug\deps\alloc_core_reentrancy-6c7c065080dda667.exe)
+
+running 2 tests
+test m5_alloc_path_does_not_touch_global_allocator ... ok
+test m5_active_kind_churn_stays_off_installed_allocator ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\alloc_zeroed_fresh_large_skip.rs (target\debug\deps\alloc_zeroed_fresh_large_skip-9567c376e8cb3dd1.exe)
+
+running 4 tests
+test cache_hit_large_alloc_zeroed_still_zeroes ... ok
+test fresh_large_alloc_zeroed_is_all_zero ... ok
+test fresh_large_alloc_zeroed_via_heapcore ... ok
+test interleaved_alloc_zeroed_always_zero ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+     Running tests\alloc_zeroed_virgin_small_skip.rs (target\debug\deps\alloc_zeroed_virgin_small_skip-a938cac565494d78.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\asan_alloc_core.rs (target\debug\deps\asan_alloc_core-71a258d9c544779e.exe)
+
+running 7 tests
+test asan_alloc_zeroed_is_zero ... ok
+test asan_large_segment_lifecycle ... ok
+test asan_mixed_sizes_aligns ... ok
+test asan_churn_reuse ... ok
+test asan_small_alloc_write_realloc_dealloc ... ok
+test asan_many_live_then_reverse_free ... ok
+test asan_realloc_chain_across_classes ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\b3p_carve_waste_proptest.rs (target\debug\deps\b3p_carve_waste_proptest-00a190881c8e0bfc.exe)
+
+running 1 test
+test carve_waste_oracle_single_segment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\b3p_interleave_footprint.rs (target\debug\deps\b3p_interleave_footprint-29725c4f5a64b269.exe)
+
+running 1 test
+test interleave_40k_small_allocs_single_segment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\b3p_leaf_boundary_no_overlap.rs (target\debug\deps\b3p_leaf_boundary_no_overlap-783879a4f847679b.exe)
+
+running 1 test
+test leaf_boundary_blocks_are_aligned_bound_and_disjoint ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\b3s_oracle.rs (target\debug\deps\b3s_oracle-357c4a8338a8dd74.exe)
+
+running 1 test
+test b3s_recycle_refill_from_free_structure ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\batch_large_deferred_reclaim.rs (target\debug\deps\batch_large_deferred_reclaim-6d486ab45282c44f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\batch_tcache.rs (target\debug\deps\batch_tcache-a96f0ca166b8e552.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\ci_clippy_matrix_consistency.rs (target\debug\deps\ci_clippy_matrix_consistency-cfb234296e562d95.exe)
+
+running 1 test
+test ci_clippy_steps_match_manifest_clippy_rows_exactly ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\concurrent_stress.rs (target\debug\deps\concurrent_stress-1032a53667d7c408.exe)
+
+running 1 test
+test concurrent_insert_read_remove_never_corrupts_and_accounting_holds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\dealloc_only_no_bind.rs (target\debug\deps\dealloc_only_no_bind-825b1fd44f17ca82.exe)
+
+running 2 tests
+test unbound_thread_dealloc_only_does_not_claim_a_slot ... ok
+test unbound_thread_many_dealloc_only_does_not_claim_a_slot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dealloc_only_no_bind_torn.rs (target\debug\deps\dealloc_only_no_bind_torn-2fafc9b9bd43c18f.exe)
+
+running 2 tests
+test torn_sentinel_resolves_to_foreign_no_bind ... ok
+test torn_dealloc_of_foreign_pointer_is_correct_and_skips_fallback_lock ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dealloc_sublinear.rs (target\debug\deps\dealloc_sublinear-d4087bc247ca72b7.exe)
+
+running 1 test
+test own_thread_free_is_subquadratic ... ignored, coarse wall-clock; flaky under concurrent test-binary CPU contention (docs/CORRECTNESS_OPEN_ITEMS.md item 3, resolved R23-6/task #375) — no clean deterministic counter replacement exists (the guard it protects is an unconditional O(1) bitmap test with no loop to instrument); run manually with --ignored, or use npm run iai instead
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\decommit_miri_cycle.rs (target\debug\deps\decommit_miri_cycle-4cda80fe1d3f9fe8.exe)
+
+running 1 test
+test decommit_recommit_cycle_bookkeeping ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\decommit_soak.rs (target\debug\deps\decommit_soak-971d3626a6c8f927.exe)
+
+running 2 tests
+test live_count_tracks_alloc_free_exactly ... ok
+test decommit_fires_and_recommit_roundtrips ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests\decomp_hooks_forced_page.rs (target\debug\deps\decomp_hooks_forced_page-6d16636e1ca51d34.exe)
+
+running 2 tests
+test page_size_and_range_hooks_report_the_runtime_page_safe_boundary ... ok
+test tight_meta_end_stays_discriminable_at_every_supported_page_size ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\differential.rs (target\debug\deps\differential-667124ca7f9ac08d.exe)
+
+running 1 test
+test region_matches_reference_model ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\directory_authoritative_miss.rs (target\debug\deps\directory_authoritative_miss-9ba6e25f2b3b6f21.exe)
+
+running 3 tests
+test authoritative_miss_skips_full_scan ... ok
+test periodic_revalidation_runs_every_period_misses ... ok
+test self_heal_repairs_and_finds_segment ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\dirty_directory_incremental_sync.rs (target\debug\deps\dirty_directory_incremental_sync-65f69b6da30feb03.exe)
+
+running 1 test
+test multi_class_drain_sets_all_class_bits ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\double_free_guard.rs (target\debug\deps\double_free_guard-7f8837525573cdfa.exe)
+
+running 3 tests
+test double_free_does_not_double_issue ... ok
+test realloc_same_address_is_refreeable ... ok
+test many_double_frees_keep_free_list_consistent ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\epoch.rs (target\debug\deps\epoch-98e1ce98e93f8a5e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\exact_span_large.rs (target\debug\deps\exact_span_large-bc856d5bdc4a5e7f.exe)
+
+running 1 test
+test without_feature_span_usable_is_always_a_whole_segment_multiple ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\fastbin_requires_xthread.rs (target\debug\deps\fastbin_requires_xthread-b96658d0a6721924.exe)
+
+running 1 test
+test fastbin_implies_xthread ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\freelist_reuse.rs (target\debug\deps\freelist_reuse-bbd99f6ffbeadb1c.exe)
+
+running 3 tests
+test reinsert_reuses_capacity_without_unbounded_growth ... ok
+test surviving_handles_resolve_after_churn ... ok
+test len_matches_iter_after_churn ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\global_alloc.rs (target\debug\deps\global_alloc-4e1d8ca605cbda06.exe)
+
+running 5 tests
+test alloc_zeroed_is_zero ... ok
+test realloc_grows_and_preserves_prefix ... ok
+test alloc_dealloc_roundtrip_is_valid_and_aligned ... ok
+test many_live_allocations_do_not_overlap ... ok
+test churn_reuses_without_growth ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\global_alloc_installed.rs (target\debug\deps\global_alloc_installed-0d372fc3f05ec670.exe)
+
+running 2 tests
+test global_allocator_repeated_churn_reuses_state ... ok
+test global_allocator_serves_single_thread_churn ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\global_alloc_mt.rs (target\debug\deps\global_alloc_mt-caeab20bc2fa1c43.exe)
+
+running 3 tests
+test global_allocator_cross_thread_free ... ok
+test global_allocator_multithreaded_size_class_churn ... ok
+test global_allocator_serves_multithreaded_churn_with_thread_exit ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\heap_core_bulk_bypass.rs (target\debug\deps\heap_core_bulk_bypass-1ebd651c85bfe1c9.exe)
+
+running 4 tests
+test t_bulk_then_drain_then_churn ... ok
+test t_churn_distinct_and_healthy ... ok
+test t_cold_storm_stays_in_magazine ... ok
+test t_cross_thread_unaffected ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\heap_core_dbg_table_count.rs (target\debug\deps\heap_core_dbg_table_count-389cbf7827d31cf6.exe)
+
+running 1 test
+test dbg_table_count_tracks_registered_large_segments ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\heap_core_tcache.rs (target\debug\deps\heap_core_tcache-27b2e053aee93452.exe)
+
+running 3 tests
+test t1_round_trip ... ok
+test t_bulk_overflow ... ok
+test t7_conservation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\heap_core_tcache_decommit.rs (target\debug\deps\heap_core_tcache_decommit-f157c831dc38b525.exe)
+
+running 2 tests
+test t4_decommit_fires_after_flush_not_before ... ok
+test t4_live_count_zero_after_flush ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests\heap_core_tcache_m2.rs (target\debug\deps\heap_core_tcache_m2-cbac5cb08a981f89.exe)
+
+running 7 tests
+test t2_double_free_64b_class ... ok
+test t2_triple_free_still_noop ... ok
+test t3_flushed_double_free_does_not_double_issue ... ok
+test t2_double_free_magazine_block_is_noop ... ok
+test t3_double_free_flushed_block_still_caught_by_bitmap ... ok
+test t_false_positive_handled ... ok
+test t_key_does_not_break_round_trip ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\heap_core_tcache_stamp.rs (target\debug\deps\heap_core_tcache_stamp-6685a6a394313595.exe)
+
+running 4 tests
+test t_large_still_stamps ... ok
+test t_magazine_hit_skips_stamp ... ok
+test t_multi_class_refill_stamps ... ok
+test t_stamp_after_refill ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\heap_cross_segment.rs (target\debug\deps\heap_cross_segment-46ee68435bf017af.exe)
+
+running 1 test
+test cross_segment_free_blocks_are_reused ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests\heap_diag.rs (target\debug\deps\heap_diag-49a002c522392bdc.exe)
+
+running 2 tests
+test churn_with_large ... ok
+test churn_small_only ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.17s
+
+     Running tests\heap_differential.rs (target\debug\deps\heap_differential-4bfe693747913e4d.exe)
+
+running 1 test
+test heap_matches_reference_model ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+
+     Running tests\heap_invariants.rs (target\debug\deps\heap_invariants-8c479cc6edacab2c.exe)
+
+running 11 tests
+test m1_alloc_zeroed_is_all_zero ... ok
+test m2_double_free_does_not_crash ... ok
+test free_list_reuses_freed_blocks ... ok
+test m1_small_allocations_are_aligned_and_writable ... ok
+test m4_various_sizes_and_aligns ... ok
+test m3_simultaneous_allocations_do_not_overlap ... ok
+test m1_large_allocations_are_aligned_and_writable ... ok
+test realloc_preserves_prefix_bytes ... ok
+test refill_works_after_draining_free_list ... ok
+test multi_thread_own_heap_own_dealloc ... ok
+test churn_keeps_heap_consistent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\heap_soak.rs (target\debug\deps\heap_soak-fc889f8eaf5a0178.exe)
+
+running 1 test
+test soak_segment_reuse_bounded ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\kind_at_strict_decode.rs (target\debug\deps\kind_at_strict_decode-960bca3a86c84127.exe)
+
+running 3 tests
+test kind_at_rejects_corrupt_discriminant ... ok
+test dealloc_on_unknown_kind_is_noop_not_crash ... ok
+test baseline_kind_at_decodes_legitimate_bytes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache.rs (target\debug\deps\large_cache-440f160be2b39593.exe)
+
+running 5 tests
+test drop_releases_cached_reservations ... ok
+test alloc_dealloc_alloc_reuses_cached_large ... ok
+test alloc_dealloc_loop_does_not_grow_segment_table ... ok
+test two_sizes_in_cache_no_cross_contamination ... ok
+test alloc_too_large_not_cached ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_budget.rs (target\debug\deps\large_cache_budget-7d0be5e30eae0008.exe)
+
+running 5 tests
+test budget_set_evicts_when_full ... ok
+test config_sets_budget ... ok
+test large_cache_used_bytes_invariant ... ok
+test budget_too_small_releases_immediately ... ok
+test budget_none_caches_any_size ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_config_knobs.rs (target\debug\deps\large_cache_config_knobs-c568fd7b6f644675.exe)
+
+running 7 tests
+test decay_interval_ms_applied ... ok
+test decay_rate_percent_clamped_high ... ok
+test budget_bytes_absent_is_unbounded ... ok
+test decay_rate_percent_clamped_low ... ok
+test headroom_bytes_applied ... ok
+test budget_bytes_zero_disables_cache ... ok
+test default_equals_const_default ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_decay.rs (target\debug\deps\large_cache_decay-a61b43193d7a7347.exe)
+
+running 7 tests
+test config_decay_rate_percent ... ok
+test decay_interval_respected ... ok
+test decay_releases_excess_over_target ... ok
+test decay_skips_when_under_target ... ok
+test decay_respects_headroom ... ok
+test zero_interval_decays_on_first_eligible_op ... ok
+test zero_interval_ticks_on_every_eligible_op ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_budget_before_materialization.rs (target\debug\deps\large_cache_extended_budget_before_materialization-51f78b8087f1fd78.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_budget_still_enforced.rs (target\debug\deps\large_cache_extended_budget_still_enforced-2774f60ee8727a90.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_fresh_slots_are_none.rs (target\debug\deps\large_cache_extended_fresh_slots_are_none-62ee3d0d9aae36a3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_materializes_on_overflow.rs (target\debug\deps\large_cache_extended_materializes_on_overflow-00be3df34c0511ca.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_mixed_size_best_fit_fifo.rs (target\debug\deps\large_cache_extended_mixed_size_best_fit_fifo-df433e81d0fa33f7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_narrow_working_set_after_materialization.rs (target\debug\deps\large_cache_extended_narrow_working_set_after_materialization-0bbcd162a68d65be.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_off_no_overflow_capacity.rs (target\debug\deps\large_cache_extended_off_no_overflow_capacity-8b0cd7ee1c813eac.exe)
+
+running 1 test
+test without_extension_feature_cache_stays_capped_at_eight ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_mode.rs (target\debug\deps\large_cache_mode-b2fa96bae1e29101.exe)
+
+running 3 tests
+test default_mode_is_lazy ... ok
+test lazy_mode_stored_correctly_in_shard ... ok
+test lazy_mode_round_trips ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_occupancy_bitmask_invariant.rs (target\debug\deps\large_cache_occupancy_bitmask_invariant-e2e127c1602b99d9.exe)
+
+running 7 tests
+test fresh_cache_bitmask_is_zero ... ok
+test single_deposit_and_hit_bitmask ... ok
+test best_fit_hit_returns_array_predicted_segment ... ok
+test fifo_oldest_eviction_victim_is_seq_zero_first_deposit ... ok
+test randomised_bitmask_scan_equivalence_shadow ... ok
+test base_slots_fill_sets_all_bits ... ok
+test eviction_clears_bitmask_bit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\large_reserved_capacity.rs (target\debug\deps\large_reserved_capacity-4ae9da0ed1a7f25a.exe)
+
+running 1 test
+test without_feature_reserved_capacity_equals_span_usable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_b2_grow.rs (target\debug\deps\lazy_commit_b2_grow-5ccef553c2c04bcf.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_b3_recycle.rs (target\debug\deps\lazy_commit_b3_recycle-5dae87a3a77bf168.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_b4_matrix.rs (target\debug\deps\lazy_commit_b4_matrix-460c8ac6603aeba9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_frontier.rs (target\debug\deps\lazy_commit_frontier-b8f8554559d2c694.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_r12_9_split.rs (target\debug\deps\lazy_commit_r12_9_split-9d87b7614c8e7025.exe)
+
+running 1 test
+test primordial_only_isolates_from_small_segment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests\lazy_initial_commit_forced_page.rs (target\debug\deps\lazy_initial_commit_forced_page-60ff356f4d2dbf36.exe)
+
+running 1 test
+test unrounded_lazy_sums_remain_discriminable_at_every_supported_page_size ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_initial_commit_page_sizes.rs (target\debug\deps\lazy_initial_commit_page_sizes-aa2f8949747a7ad3.exe)
+
+running 2 tests
+test lazy_initial_commit_is_a_multiple_of_every_supported_page_size ... ok
+test lazy_initial_commit_matches_decommit_start_frontier_at_runtime_page_size ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lock_free.rs (target\debug\deps\lock_free-fffe1afbf2cf898e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_active_kind_index.rs (target\debug\deps\loom_active_kind_index-fd5729117a07eb93.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_epoch.rs (target\debug\deps\loom_epoch-0a8e49e0e49a0dd5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_epoch_false_full.rs (target\debug\deps\loom_r11_epoch_false_full-526d5f2ce870ece3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_registry_claim.rs (target\debug\deps\loom_r11_registry_claim-13f0352fff9b5952.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_small_sidecar.rs (target\debug\deps\loom_r11_small_sidecar-4f070dc081f76347.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r8_maintenance_lease.rs (target\debug\deps\loom_r8_maintenance_lease-4c391c41bc2858e2.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_registry_free_slots.rs (target\debug\deps\loom_registry_free_slots-76b54b87a3403d62.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_sharded.rs (target\debug\deps\loom_sharded-dfa8d57dabf55e4d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_sidecar_bitmap.rs (target\debug\deps\loom_sidecar_bitmap-d38cd3d0cf426557.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_terminal_large.rs (target\debug\deps\loom_terminal_large-5b78cacd58d97561.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_terminal_owner_drain.rs (target\debug\deps\loom_terminal_owner_drain-b423dbb573a1061c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\medium_classes_correctness.rs (target\debug\deps\medium_classes_correctness-edae012db6500bfa.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\medium_classes_wide_correctness.rs (target\debug\deps\medium_classes_wide_correctness-701f48bca2beec76.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\no_panic_doc_accuracy.rs (target\debug\deps\no_panic_doc_accuracy-299120a8c6cdb5c6.exe)
+
+running 2 tests
+test no_panic_doc_is_qualified ... ok
+test four_invariant_tripwires_pinned_by_message ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\no_stale_cross_checkout_artifacts.rs (target\debug\deps\no_stale_cross_checkout_artifacts-bd92cecb998bc9eb.exe)
+
+running 1 test
+test baked_manifest_dir_matches_running_tree ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\no_stale_doc_references.rs (target\debug\deps\no_stale_doc_references-4468fa0c1327356a.exe)
+
+running 33 tests
+test decommit_calls_doc_distinguishes_logical_entries_from_syscalls ... ok
+test allocator_64bit_gate_docs_match_live_metadata_bounds ... ok
+test correctness_item_59a_hugetlb_real_sentinel_count_agrees ... ok
+test correctness_item_87_sentinel_counts_agree ... ok
+test cargo_toml_alloc_global_panic_contract_is_accurate ... ok
+test large_cache_config_doc_matches_budget_and_headroom_behavior ... ok
+test crate_root_stats_blurb_matches_method_level_contract ... ok
+test oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate ... ok
+test lock_free_generation_max_doc_matches_the_final_reuse_policy ... ok
+test epoch_hand_doc_matches_conditional_confinement_and_bounded_impls ... ok
+test perclass_doc_offsets_match_const_asserts ... ok
+test oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate ... ok
+test every_undecided_feature_has_exactly_one_owner_with_a_next_trigger ... ok
+test production_bundle_guard_rejects_non_manifest_suffix ... ok
+test oxx_r2_07_bootstrap_unsafe_block_claim_is_accurate ... ok
+test r9_current_stats_and_unsafe_inventory_docs_use_live_routes ... ok
+test oxx_r2_07_alloc_core_is_not_send_in_doc ... ok
+test root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings ... ok
+test correctness_index_recently_resolved_pointers_carry_verdicts ... ok
+test oxx_r2_07_forbid_unsafe_code_claims_are_accurate ... ok
+test remote_evict_doc_names_the_blocking_bookkeeping ... ok
+test strict_rustdoc_links_keep_public_targets_and_private_names_plain ... ok
+test oxx_r2_07_realloc_unsafe_fn_claims_are_accurate ... ok
+test architecture_test_file_count_matches_reality ... ok
+test production_feature_bundle_doc_sites_match_cargo_toml ... ok
+test verification_inventory_matches_docs ... ok
+test lib_rs_seam_inventory_matches_canonical_grep ... ok
+test no_crate_heap_module_path ... ok
+test honest_reject_sections_are_indexed ... ok
+test no_owned_sidecar_references_anywhere ... ok
+test no_removed_heap_type_doc_mentions ... ok
+test readme_unsafe_inventory_counts_match_reality ... ok
+test no_stale_abandon_adopt_substrate_references ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\numa_alloc.rs (target\debug\deps\numa_alloc-e8e77018590ca13a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_cache_invalidation.rs (target\debug\deps\numa_cache_invalidation-5c5dab0ab9915199.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_periodic_refresh.rs (target\debug\deps\numa_periodic_refresh-0da93eef0960b178.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_seam.rs (target\debug\deps\numa_seam-b5b0be0fcffa1b79.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_segment_id.rs (target\debug\deps\numa_segment_id-22a89db5fa4515c4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\owner_stamp_round_trip.rs (target\debug\deps\owner_stamp_round_trip-05c3d9890530789a.exe)
+
+running 5 tests
+test u32_max_stamp_never_leaks_into_generation_field ... ok
+test fallback_heap_id_is_round_trip_stable_and_slot_distinct ... ok
+test fresh_segment_stamp_word_is_byte_stable ... ok
+test u32_max_clamps_instead_of_leaking ... ok
+test owner_id_round_trips_through_pack_owner ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\oxx_r2_01_orphaned_cursor_finalized.rs (target\debug\deps\oxx_r2_01_orphaned_cursor_finalized-ce6ad3a45b92d6d0.exe)
+
+running 2 tests
+test alloc_core_orphaned_cursor_is_finalized_on_cursor_switch ... ok
+test heap_core_orphaned_cursor_is_finalized_on_cursor_switch ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\oxx_r2_02_realloc_lazy_commit_frontier.rs (target\debug\deps\oxx_r2_02_realloc_lazy_commit_frontier-c0ca709de0052856.exe)
+
+running 2 tests
+test oxx_r2_02_realloc_lazy_commit_frontier_child ... ignored, run only in a fresh subprocess (see run_child)
+test realloc_with_bogus_layout_past_lazy_commit_frontier_rejected_not_crashed ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\oxx_r2_03_dealloc_batch_current_for_dealloc.rs (target\debug\deps\oxx_r2_03_dealloc_batch_current_for_dealloc-b5c080c7e65e64a7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\oxx_r2_05_reserve_failure_accounting.rs (target\debug\deps\oxx_r2_05_reserve_failure_accounting-7ac8272b2feaa686.exe)
+
+running 1 test
+test no_unaccounted_reserve_aligned_calls ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\oxx_r2_07_alloc_core_not_send.rs (target\debug\deps\oxx_r2_07_alloc_core_not_send-b108403ffd72d476.exe)
+
+running 2 tests
+test alloc_core_is_not_send ... ok
+test alloc_core_is_not_sync ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\phase13_3_dealloc_layout_class.rs (target\debug\deps\phase13_3_dealloc_layout_class-00ada7e4598b0578.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\phase13_drain_reclaim_layout_class.rs (target\debug\deps\phase13_drain_reclaim_layout_class-335e33c3c3111996.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\pinning.rs (target\debug\deps\pinning-8ed80c71b5536ee5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\profile.rs (target\debug\deps\profile-bdd635d1df2cba59.exe)
+
+running 8 tests
+test both_axes_together_compose_as_expected ... ok
+test low_headroom_alone_does_not_perturb_small_pool_axis ... ok
+test no_small_pool_policy_reintroduces_the_r27_1_noop_trap ... ok
+test default_profile_matches_seferalloc_new_defaults ... ok
+test throughput_small_pool_alone_does_not_perturb_large_cache_axis ... ok
+test diverse_turnover_without_the_feature_matches_default ... ok
+test profile_default_trait_matches_the_const ... ok
+test all_axis_combinations_resolve_independently ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_7_alloc_batch_xthread_double_free.rs (target\debug\deps\r10_7_alloc_batch_xthread_double_free-f4591c48f7c15b70.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_hot.rs (target\debug\deps\r10_active_kind_hot-3735dd5a382c8070.exe)
+
+running 1 test
+test h128_to_one_large_and_first_small_magazine_miss_probe_one_slot ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\r10_active_kind_late_publish.rs (target\debug\deps\r10_active_kind_late_publish-9280ee9ca867ef22.exe)
+
+running 3 tests
+test small_publication_after_empty_word_cut_keeps_membership ... ok
+test large_publication_after_failed_claim_retires_once ... ok
+test last_small_credit_prevents_prepublication_recycle ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_layout.rs (target\debug\deps\r10_active_kind_layout-e2e7762d8f026776.exe)
+
+running 3 tests
+test heap_slot_and_chunk_geometry_is_measured_not_assumed ... ok
+test lazy_commit_covers_index_on_supported_real_page_geometries ... ok
+test carved_index_is_within_primordial_metadata_and_bootstrap_initializes_it ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_logical.rs (target\debug\deps\r10_active_kind_logical-9ee3ceda2e14f659.exe)
+
+running 3 tests
+test unknown_kind_is_rejected_before_slot_and_index_mutation ... ok
+test oracle_rejects_clean_bit_clear_mutant ... ok
+test word_boundaries_summary_empty_and_kind_reuse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r10_active_kind_negative_directory.rs (target\debug\deps\r10_active_kind_negative_directory-b5fad5098c7d945a.exe)
+
+running 1 test
+test routed_negative_and_forced_rescue_inspect_only_small_roots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r10_active_kind_no_directory.rs (target\debug\deps\r10_active_kind_no_directory-b4f70ce551c3c7fd.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_numa_fallback.rs (target\debug\deps\r10_active_kind_numa_fallback-0912b7d1fe5167bd.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_pool_cache.rs (target\debug\deps\r10_active_kind_pool_cache-f79e2c630f8cf323.exe)
+
+running 2 tests
+test cached_large_is_inactive_and_reissue_gets_fresh_incarnation ... ok
+test pooled_small_stays_registered_until_pool_drain ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_prepare_oom.rs (target\debug\deps\r10_active_kind_prepare_oom-de6b395a5fd532ff.exe)
+
+running 2 tests
+test primordial_attach_failure_retries_with_seed_only ... ok
+test append_and_reuse_prepare_failure_do_not_change_membership ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_small_recycle.rs (target\debug\deps\r10_active_kind_small_recycle-f1b9dcf60b19b977.exe)
+
+running 1 test
+test three_real_small_roots_recycle_middle_and_drop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_4_dealloc_batch_hardened_guards.rs (target\debug\deps\r11_4_dealloc_batch_hardened_guards-46bd6f6fa2d5822e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_4_dealloc_batch_mixed_ownership.rs (target\debug\deps\r11_4_dealloc_batch_mixed_ownership-bc49122f545e1eec.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_4_dealloc_batch_same_segment_double_free.rs (target\debug\deps\r11_4_dealloc_batch_same_segment_double_free-ca4ad299d90c9bd2.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_epoch_false_full.rs (target\debug\deps\r11_epoch_false_full-f7f7b37e22e60ede.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_large_hot_late.rs (target\debug\deps\r11_p3_large_hot_late-5c2caa75a028def6.exe)
+
+running 1 test
+test far_large_publication_after_clean_pass_retires_with_pin_held ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_large_hot_refill.rs (target\debug\deps\r11_p3_large_hot_refill-3f1672e4b4679859.exe)
+
+running 4 tests
+test logical_capacity_failure_gets_one_full_rescue_and_one_retry ... ok
+test real_heap_refills_charge_fixed_large_probe_budget_at_l8_and_l64 ... ok
+test recycled_table_slot_behind_cursor_is_revisited ... ok
+test strict_drain_still_retires_far_terminal_large_in_one_pass ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p3_registry_claim_chunk_oom.rs (target\debug\deps\r11_p3_registry_claim_chunk_oom-4508c6aa1ce84a8c.exe)
+
+running 1 test
+test failed_new_chunk_recovers_older_free_then_retries_minted_index ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p3_registry_claim_first_bind.rs (target\debug\deps\r11_p3_registry_claim_first_bind-8e6a7f50b238bb46.exe)
+
+running 1 test
+test simultaneous_first_binds_take_distinct_fresh_slots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_registry_claim_selector.rs (target\debug\deps\r11_p3_registry_claim_selector-bc6ff41707e6f246.exe)
+
+running 5 tests
+test delayed_stale_hint_cannot_grant_a_second_owner ... ok
+test overwritten_free_hint_is_deferred_until_cap_not_lost ... ok
+test overwritten_unmaterialized_retry_is_cold_recoverable ... ok
+test live_first_touch_is_linear_in_selector_probes ... ok
+test logical_last_index_and_independent_cold_census ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_registry_claim_uninit_oom.rs (target\debug\deps\r11_p3_registry_claim_uninit_oom-869bba59c53dc180.exe)
+
+running 1 test
+test chunk_oom_retries_materialised_uninitialised_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p3_small_sidecar_issue_oom.rs (target\debug\deps\r11_p3_small_sidecar_issue_oom-a94ffded89e5af3d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_small_sidecar_preflight.rs (target\debug\deps\r11_p3_small_sidecar_preflight-8b8fee165aa0b82a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_small_sidecar_routes.rs (target\debug\deps\r11_p3_small_sidecar_routes-1d10dea47858b352.exe)
+
+running 2 tests
+test actual_system_requests_spills_failure_retry_and_last_pin_release ... ok
+test adversarial_all_mixed_real_route_has_no_universal_small_budget ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p3_small_sidecar_zeroed_oom.rs (target\debug\deps\r11_p3_small_sidecar_zeroed_oom-2f49a1c8da8e6929.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\r11_p4_1_route_lookup_ab.rs (target\debug\deps\r11_p4_1_route_lookup_ab-b0d4a21b03e21210.exe)
+
+running 1 test
+test lookup_cost_one_shard ... ignored, directional timing probe
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p4_1_route_shard_model.rs (target\debug\deps\r11_p4_1_route_shard_model-fa0f29e7955eb137.exe)
+
+running 2 tests
+test old_pin_survives_unlink_and_final_free_after_block_merge ... ok
+test chunked_shard_matches_set_model_under_random_churn ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\r11_p4_1_route_shard_moves.rs (target\debug\deps\r11_p4_1_route_shard_moves-c998ae8547c115ff.exe)
+
+running 1 test
+test one_shard_reverse_wave_moves_subquadratic_cells ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p4_3_sharded_per_region_binding.rs (target\debug\deps\r11_p4_3_sharded_per_region_binding-eccaf263a480be75.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_issue_transaction_batch.rs (target\debug\deps\r11_ph3a_issue_transaction_batch-1bdcb418b560ba9d.exe)
+
+running 1 test
+test batch_issue_transactions_commit_only_the_prepared_run ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\r11_ph3a_issue_transaction_scalar.rs (target\debug\deps\r11_ph3a_issue_transaction_scalar-fe9e650648010f97.exe)
+
+running 1 test
+test scalar_issue_transactions_roll_back_before_commit_and_retry_after ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_magazine_refill_partial.rs (target\debug\deps\r11_ph3a_magazine_refill_partial-5d4408262ce2d007.exe)
+
+running 1 test
+test magazine_refill_prepare_refusal_commits_only_the_drained_blocks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_reserve_promotion_fault.rs (target\debug\deps\r11_ph3a_reserve_promotion_fault-2b670fd5fc3bbf22.exe)
+
+running 1 test
+test promotion_faults_roll_back_the_exhausted_segment_and_retry_promotes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\r11_ph3b_kind_aware_entries.rs (target\debug\deps\r11_ph3b_kind_aware_entries-e4bf767de1440358.exe)
+
+running 5 tests
+test fallback_served_blocks_freed_by_another_thread_keep_their_kind ... ok
+test realloc_crosses_the_boundary_in_step_with_the_header_kind ... ok
+test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
+test realloc_oom_returns_null_and_leaves_the_old_block_intact ... ok
+test alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\r12_1_directory_scan_no_aliasing.rs (target\debug\deps\r12_1_directory_scan_no_aliasing-102d5134504fc23f.exe)
+
+running 1 test
+test directory_hit_triggers_mutation_during_scan_stays_consistent ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\r13_3_magazine_virgin_hit_skips_zero.rs (target\debug\deps\r13_3_magazine_virgin_hit_skips_zero-f768c3b78ee3edeb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_feature_off_non_disturbance.rs (target\debug\deps\r14_4_promotion_feature_off_non_disturbance-ce4cbd4a01f26411.exe)
+
+running 2 tests
+test small_to_large_growth_without_medium_classes_is_the_ordinary_move_leg ... ok
+test growth_across_the_would_be_medium_threshold_is_ordinary_large_realloc ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_free_correctness.rs (target\debug\deps\r14_4_promotion_free_correctness-6c406453967d71d0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_move_leg_reduction.rs (target\debug\deps\r14_4_promotion_move_leg_reduction-6550cb957861243f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_shrink_uses_move_leg.rs (target\debug\deps\r14_4_promotion_shrink_uses_move_leg-d4f8d82d71219e67.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_7_max_segments_ceiling.rs (target\debug\deps\r14_7_max_segments_ceiling-6140b81f12b6a2a3.exe)
+
+running 2 tests
+test ceiling_is_not_permanent_after_freeing_everything ... ok
+test live_large_objects_ceiling_is_exactly_max_segments_minus_one ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests\r17_4_inplace_grown_large_dealloc_routes_by_kind.rs (target\debug\deps\r17_4_inplace_grown_large_dealloc_routes_by_kind-5057234e39417b1a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r17_8_deterministic_trim_releases_cached_large_span.rs (target\debug\deps\r17_8_deterministic_trim_releases_cached_large_span-c4aaae71f8862633.exe)
+
+running 1 test
+test dbg_trim_current_thread_releases_cached_large_span_deterministically ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r1_03_pool_docs_contract.rs (target\debug\deps\r1_03_pool_docs_contract-99f4d186a40fa8dc.exe)
+
+running 3 tests
+test pool_config_doc_states_pool_is_free_list_reserve_not_carve_reserve ... ok
+test stale_carve_reuse_promise_is_gone ... ok
+test readme_states_pool_is_free_list_reserve_not_carve_reserve ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target\debug\deps\r1_04_alloc_core_drop_stack_pressure-06522e559ac7b540.exe)
+
+running 1 test
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\r1_10_fallback_hits_counted_in_stats.rs (target\debug\deps\r1_10_fallback_hits_counted_in_stats-800f9308e0d1c829.exe)
+
+running 1 test
+test fallback_hits_are_folded_into_process_wide_stats ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r21_2_opt_h_stage1_precondition_probe.rs (target\debug\deps\r21_2_opt_h_stage1_precondition_probe-c92d9d4c2ec1ce5a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r24_8_dealloc_batch_multi_flush.rs (target\debug\deps\r24_8_dealloc_batch_multi_flush-8654426a62107e18.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r25_4_dealloc_batch_multi_flush_oracle.rs (target\debug\deps\r25_4_dealloc_batch_multi_flush_oracle-b84c55118d983e48.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r26_5_dealloc_batch_per_block_partition.rs (target\debug\deps\r26_5_dealloc_batch_per_block_partition-3ca031aa416b70cc.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r30_1_decomp_full_cycle_cursor_safety.rs (target\debug\deps\r30_1_decomp_full_cycle_cursor_safety-5b68c5dc534a9fdc.exe)
+
+running 2 tests
+test reserve_and_keep_release_pair_leaves_small_cur_valid_for_ordinary_alloc ... ok
+test full_cycle_hook_leaves_small_cur_valid_for_ordinary_alloc ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r31_10_trim_current_thread_api.rs (target\debug\deps\r31_10_trim_current_thread_api-4cc23baf2b91b95f.exe)
+
+running 6 tests
+test ac1_trim_empties_pool_and_evicts_large_cache ... ok
+test ac2_thread_continues_working_after_trim ... ok
+test ac3_trim_does_not_affect_other_thread_heap ... ok
+test ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe ... ok
+test ac4b_trim_on_genuinely_torn_tls_is_safe_noop ... ok
+test ac4c_trim_on_never_allocated_thread_claims_no_slot ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r31_15_reserved_small_segment_cross_core_release.rs (target\debug\deps\r31_15_reserved_small_segment_cross_core_release-eb6aa545fc0d6f62.exe)
+
+running 3 tests
+test heap_core_delegation_is_a_pure_forward_to_alloc_core ... ok
+test same_core_release_still_succeeds ... ok
+test cross_core_release_panics_on_owner_mismatch - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r31_4_reserved_small_segment_handle.rs (target\debug\deps\r31_4_reserved_small_segment_handle-8cc1930bea3c45ca.exe)
+
+running 3 tests
+test reserved_small_segment_needs_drop_so_it_cannot_be_copy ... ok
+test reserve_read_base_release_once_succeeds ... ok
+test repeated_reserve_release_cycles_stay_healthy ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r34_18_heap_core_stack_pressure_pin.rs (target\debug\deps\r34_18_heap_core_stack_pressure_pin-3f667c057b756cbf.exe)
+
+running 1 test
+test heap_core_size_within_stack_pressure_budget ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r34_3_internals_boundary_api.rs (target\debug\deps\r34_3_internals_boundary_api-e99d5e087120c433.exe)
+
+running 2 tests
+test sefer_alloc_stable_methods_are_callable_without_internals ... ok
+test stable_surface_resolves_at_crate_root_without_internals ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r3_1_fallback_remote_free.rs (target\debug\deps\r3_1_fallback_remote_free-2ccca3c4916d0968.exe)
+
+running 1 test
+test fallback_owner_consumes_all_remote_terminal_publications ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_canonical_root_cache.rs (target\debug\deps\r6_canonical_root_cache-b0d1e87534970507.exe)
+
+running 2 tests
+test cache_fill_hit_evict_and_reuse_keep_stored_provenance ... ok
+test hash_identity_without_a_stored_root_is_not_a_live_member ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_class_issue.rs (target\debug\deps\r6_class_issue-1580ce0cabeb4680.exe)
+
+running 4 tests
+test magazine_hit_keeps_one_outstanding_credit ... ok
+test scalar_issue_reissue_and_narrow_reborrow_have_class ... ok
+test realloc_move_issues_new_class_and_inplace_keeps_class ... ok
+test later_small_segment_is_registered_before_issue ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_drop_large_credit.rs (target\debug\deps\r6_drop_large_credit-d849d385a522550d.exe)
+
+running 2 tests
+test drop_uses_phase_credit_protocol ... ok
+test standalone_drop_releases_live_and_cached_large_once ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_fix_p2_fallback_dealloc.rs (target\debug\deps\r6_fix_p2_fallback_dealloc-15e01df99e29a0b0.exe)
+
+running 3 tests
+test fallback_child ... ignored, run only in an isolated child process
+test actual_tls_teardown_fallback_free_is_reclaimed ... ok
+test busy_fallback_lock_uses_remote_route_without_losing_free ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target\debug\deps\r6_fix_p3_numa_unknown_bucket-ee5d7f37f70fb9f3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_fix_p4_batch_empty_output.rs (target\debug\deps\r6_fix_p4_batch_empty_output-7378c52033acbb20.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_heapcore_provenance.rs (target\debug\deps\r6_heapcore_provenance-c511b9ecf26a5e9f.exe)
+
+running 1 test
+test own_scalar_magazine_and_realloc_use_physical_block ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_large_credit.rs (target\debug\deps\r6_large_credit-e068db88b1479786.exe)
+
+running 2 tests
+test cache_hit_creates_new_instance_credit ... ok
+test own_free_releases_registered_large_without_cache ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_own_provenance.rs (target\debug\deps\r6_own_provenance-f3be5b4b29bef3b1.exe)
+
+running 4 tests
+test batch_flush_links_blocks_from_canonical_root ... ok
+test large_one_byte_reborrow_can_be_freed ... ok
+test one_byte_reborrows_can_be_freed_and_reused ... ok
+test narrow_reborrow_realloc_returns_full_physical_block ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_directory.rs (target\debug\deps\r6_route_directory-28d19dd2ff326d22.exe)
+
+running 9 tests
+test owner_registration_can_move_between_lease_threads ... ok
+test large_route_key_and_invalid_span ... ok
+test sorted_shard_keeps_neighbors_after_middle_unlink ... ok
+test incarnation_exhaustion_never_wraps ... ok
+test duplicate_key_and_same_address_reuse_preserve_old_pin_identity ... ok
+test published_pin_cleanup_survives_reservation_unmap ... ok
+test paused_published_pin_survives_removal_and_same_address_registration ... ok
+test repeated_churn_reuses_pointer_array_capacity ... ok
+test more_than_4096_active_routes_and_same_shard_collision ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_route_directory_global.rs (target\debug\deps\r6_route_directory_global-eb08c583c83f5515.exe)
+
+running 1 test
+test system_backed_route_metadata_does_not_reenter_global_allocator ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_directory_model.rs (target\debug\deps\r6_route_directory_model-29840142a0467464.exe)
+
+running 3 tests
+test cached_instance_cannot_be_claimed_before_owner_reset ... ok
+test all_owner_and_two_pin_release_orders_reclaim_slot ... ok
+test terminal_publication_signatures_consume_the_pin ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests\r6_route_lifecycle_basic.rs (target\debug\deps\r6_route_lifecycle_basic-e3b17757893e94ab.exe)
+
+running 1 test
+test heap_routes_primordial_before_issue_and_each_new_segment_before_return ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_decommit.rs (target\debug\deps\r6_route_lifecycle_decommit-c94d75ee777abe34.exe)
+
+running 1 test
+test pool_release_and_large_cache_reissue_balance_routes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_diag_provenance.rs (target\debug\deps\r6_route_lifecycle_diag_provenance-69b26f11e4dc9fd1.exe)
+
+running 1 test
+test safe_live_count_diagnostic_uses_stored_root_for_address_only_key ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_fallback.rs (target\debug\deps\r6_route_lifecycle_fallback-0eb69c62c4254943.exe)
+
+running 1 test
+test fallback_bootstrap_rolls_back_route_oom_then_publishes_primordial ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_oom.rs (target\debug\deps\r6_route_lifecycle_oom-58a58660c3dab2c1.exe)
+
+running 1 test
+test registration_oom_rolls_back_primordial_small_and_large_before_issue ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_pool.rs (target\debug\deps\r6_route_lifecycle_pool-5f8a11f34655293e.exe)
+
+running 1 test
+test pooled_small_keeps_route_until_pool_drain ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_route_lifecycle_release.rs (target\debug\deps\r6_route_lifecycle_release-3d7991c2079c7f82.exe)
+
+running 1 test
+test uncached_large_removes_route_before_os_release ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_sidecar_bitmap.rs (target\debug\deps\r6_sidecar_bitmap-0d30756866305608.exe)
+
+running 4 tests
+test tests::r6_paused_before_and_after_terminal_publish ... ok
+test tests::r6_reuse_bit_and_republish_class ... ok
+test tests::r6_geometry_and_fixed_high_water ... ok
+
+running 1 test
+
+running 1 test
+test tests::r6_invalid_class_aborts_without_unwind ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.36s
+
+     Running tests\r6_terminal_header_atomic.rs (target\debug\deps\r6_terminal_header_atomic-76dfd51731ae5549.exe)
+
+running 4 tests
+test terminal_words_are_outside_the_copy_header_and_before_the_page_map ... ok
+test large_generation_exhaustion_never_wraps ... ok
+test fresh_small_and_large_have_independent_atomic_snapshots ... ok
+test large_cache_hit_resets_atomic_phase_and_advances_generation ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_lease_registry.rs (target\debug\deps\r6_terminal_lease_registry-ec9cbf3eab5576ba.exe)
+
+running 1 test
+test failed_init_claim_maintenance_recycle_handoff ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_ledger_small.rs (target\debug\deps\r6_terminal_ledger_small-e50c9c46537ed1e0.exe)
+
+running 3 tests
+test refill_and_flush_hold_exactly_one_credit_per_block ... ok
+test realloc_keeps_one_credit_across_in_place_move_and_failure ... ok
+test primordial_credit_survives_publication_until_owner_reclaim ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_owner_drain.rs (target\debug\deps\r6_terminal_owner_drain-f2dffb556b7755d8.exe)
+
+running 8 tests
+test detached_magazine_record_preserves_the_canonical_copy ... ok
+test large_pending_claim_reclaims_and_cache_reissues ... ok
+test last_small_node_finalizes_after_route_scan ... ok
+test duplicate_detached_record_does_not_retire_another_credit ... ok
+test mixed_class_and_more_than_ring_capacity ... ok
+test public_trim_consumes_small_and_large_terminal_publications ... ok
+test requested_sizes_one_through_seven_retire_once_and_reissue ... ok
+test tls_exit_runs_the_owner_sweep_before_recycle ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_terminal_owner_drain_model.rs (target\debug\deps\r6_terminal_owner_drain_model-ce2fc861c1916b70.exe)
+
+running 1 test
+test publication_after_word_cut_waits_for_next_bounded_scan ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_cold_small_trim_current.rs (target\debug\deps\r7_cold_small_trim_current-e95960d2fb5c9e5f.exe)
+
+running 3 tests
+test live_current_small_is_not_released ... ok
+test recycled_slot_can_be_claimed_and_allocated_again ... ok
+test empty_current_small_releases_and_next_allocation_is_safe ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_cold_small_trim_directory.rs (target\debug\deps\r7_cold_small_trim_directory-a06968fdf25eae27.exe)
+
+running 1 test
+test cold_trim_drops_owner_directory_with_live_small_and_rebuilds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r7_p1_chunk_oom.rs (target\debug\deps\r7_p1_chunk_oom-3a7454754d6d771a.exe)
+
+running 1 test
+test claim_chunk_oom_falls_back_and_preserves_minted_indices ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r7_p3_claim_scan.rs (target\debug\deps\r7_p3_claim_scan-45a750fc191aa634.exe)
+
+running 7 tests
+test consumed_reuse_hint_does_not_repeat_full_scan_after_resaturation ... ok
+test full_registry_scans_once_until_availability_changes ... ok
+test near_max_publication_during_scan_cannot_restore_saturation ... ok
+test newly_minted_last_index_cannot_be_hidden_by_older_scan ... ok
+test version_exhaustion_disables_hint_and_keeps_scan_backstop ... ok
+test publication_during_negative_scan_prevents_stale_saturation ... ok
+test pre_cap_mints_without_scanning_an_older_free_slot ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_p3_fallback_config_default.rs (target\debug\deps\r7_p3_fallback_config_default-6ea9571148e09182.exe)
+
+running 1 test
+test default_fallback_can_cache_a_freed_large_span ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_p3_fallback_config_zero.rs (target\debug\deps\r7_p3_fallback_config_zero-2861222f4b937f17.exe)
+
+running 1 test
+test configured_fallback_keeps_zero_budget_and_signals_later_conflicts ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_6_decommit_boundary.rs (target\debug\deps\r8_6_decommit_boundary-2005396619d1fa92.exe)
+
+running 3 tests
+test primordial_meta_end_recovers_payload_vs_old_over_alignment ... ok
+test small_meta_end_recovers_payload_vs_old_over_alignment ... ok
+test decommit_recommit_round_trip_near_payload_start ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\r8_autonomous_maintenance.rs (target\debug\deps\r8_autonomous_maintenance-1dfa92c7a24b6b33.exe)
+
+running 1 test
+test autonomous_maintenance_global_alloc ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.57s
+
+     Running tests\r8_global_box_provenance.rs (target\debug\deps\r8_global_box_provenance-68aa0b172dc2c593.exe)
+
+running 1 test
+test installed_box_drop_narrow_transfer_and_reissue ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_large_alignment.rs (target\debug\deps\r8_large_alignment-60c1ffb927979ed6.exe)
+
+running 2 tests
+test narrow_payload_pointer_uses_owner_canonical_root ... ok
+test oversegment_alignment_preserves_geometry_and_realloc_prefix ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_maintenance_registry.rs (target\debug\deps\r8_maintenance_registry-2fc1a75c3b3dea65.exe)
+
+running 1 test
+test bounded_scan_skips_uninitialized_busy_and_absent_slots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_os_release_oracle.rs (target\debug\deps\r8_os_release_oracle-03387a7139018b9d.exe)
+
+running 1 test
+test owner_exit_last_remote_free_returns_exact_os_tokens ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+     Running tests\r8_owner_sidecar_miss.rs (target\debug\deps\r8_owner_sidecar_miss-ce059d21a3de0ef7.exe)
+
+running 4 tests
+test magazine_hit_does_not_sweep_sidecar_words ... ok
+test magazine_refill_miss_consumes_terminal_small_once ... ok
+test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok
+test zeroed_large_cold_path_consumes_terminal_obligation_before_cache_reuse ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_standalone_alloc_core.rs (target\debug\deps\r8_standalone_alloc_core-c5640140dee78d3c.exe)
+
+running 1 test
+test ordinary_standalone_core_allocates_frees_and_reissues_with_production_features ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_terminal_global.rs (target\debug\deps\r8_terminal_global-5ae9956145b95cba.exe)
+
+running 5 tests
+test foreign_overaligned_realloc_preserves_prefix_and_failure_source ... ok
+test overalign_registration_failure_rolls_back_without_consuming_source ... ok
+test paused_foreign_producer_does_not_block_strict_trim ... ok
+test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok
+
+running 1 test
+test fallback_direct_free_before_service_and_busy_terminal_publication ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+test fallback_direct_free_before_service_and_busy_terminal_publication ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r9_8_directory_drift_recovery.rs (target\debug\deps\r9_8_directory_drift_recovery-941024aaa8ee00ac.exe)
+
+running 2 tests
+test per_class_streak_decouples_rescans_across_classes ... ok
+test rescue_scan_finds_drifted_block_and_avoids_oom ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r9_bounded_background_maintenance.rs (target\debug\deps\r9_bounded_background_maintenance-65a039c3f96454b7.exe)
+
+running 4 tests
+test negative_control_preterminal_hint_loses_the_late_publication ... ok
+test one_real_small_word_cut_retires_once ... ok
+test null_slot_and_reused_large_route_charge_one_unit_each ... ok
+test busy_fallback_skips_then_keeps_its_numeric_progress ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests\r9_diagnostic_reader_kinds.rs (target\debug\deps\r9_diagnostic_reader_kinds-71dcec7ffa19059e.exe)
+
+running 3 tests
+test small_still_exposes_real_head_and_free_bit ... ok
+test large_has_no_small_free_bit ... ok
+test large_has_no_small_freelist_head ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\race_norecycle.rs (target\debug\deps\race_norecycle-acd61594c99ac258.exe)
+
+running 1 test
+test cross_thread_reclaim_no_recycle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\race_repro.rs (target\debug\deps\race_repro-9c0a4071a14e90f0.exe)
+
+running 3 tests
+test drain_reclaim_uaf_repro_direct_api ... ok
+test drain_reclaim_uaf_repro_long_lived_consumer ... ok
+test drain_reclaim_uaf_repro_tight_handoff ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests\realloc_in_place.rs (target\debug\deps\realloc_in_place-06d1bf7ed5350b81.exe)
+
+running 5 tests
+test realloc_shrink_within_same_class_returns_same_ptr ... ok
+test realloc_same_size_returns_same_ptr ... ok
+test realloc_large_to_large_preserves_data ... ok
+test realloc_cross_class_up_moves_and_preserves_data ... ok
+test realloc_shrink_cross_class_down_relocates_and_preserves_data ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\region_invariants.rs (target\debug\deps\region_invariants-1fb830ea3d88d1f0.exe)
+
+running 6 tests
+test drops_each_value_exactly_once ... ok
+test clear_invalidates_all_handles ... ok
+test get_mut_mutates_in_place ... ok
+test handle_from_different_region_is_rejected_on_every_accessor ... ok
+test insert_get_remove_keeps_others_valid ... ok
+test stale_handle_after_reuse_is_none ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\registry_basic.rs (target\debug\deps\registry_basic-6c1f98b4e5a86823.exe)
+
+running 7 tests
+test heap_slot_is_sync ... ok
+test bootstrap_is_idempotent ... ok
+test recycle_null_is_noop ... ok
+test recycle_then_claim_reuses_slot_and_bumps_generation ... ok
+test double_recycle_is_safe_noop ... ok
+test claim_yields_distinct_live_slots ... ok
+test latest_hint_then_fresh_defers_older_free ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_alloc_zeroed_fresh.rs (target\debug\deps\regression_alloc_zeroed_fresh-c13ccb1670e577c8.exe)
+
+running 2 tests
+test alloc_zeroed_is_all_zero_after_reuse ... ok
+test alloc_zeroed_is_all_zero_fresh ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_batch_flush.rs (target\debug\deps\regression_batch_flush-55f55942c282b93d.exe)
+
+running 5 tests
+test a_ring_df_block_is_skipped_by_flush ... ok
+test b_multi_segment_flush_routes_per_segment ... ok
+test d_second_run_after_mid_batch_recycle_is_skipped_not_uaf ... ok
+test c_decommit_fires_once_per_emptied_segment ... ok
+test c_partial_flush_live_count_exact ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\regression_batch_freelist_drain.rs (target\debug\deps\regression_batch_freelist_drain-0cd9dd267074ec95.exe)
+
+running 4 tests
+test partial_and_bounded_drain_set_head_correct ... ok
+test drained_blocks_are_allocated_and_double_free_noop_16b ... ok
+test drained_blocks_are_allocated_and_double_free_noop_256b ... ok
+test d1_batch_drain_exact_cold_free_recycle ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_bootstrap_oom_sentinel_rollback.rs (target\debug\deps\regression_bootstrap_oom_sentinel_rollback-9ceb805664e0c39d.exe)
+
+running 1 test
+test oom_bailout_rollback_clears_chunk_sentinel_not_stuck ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_bump_direct_refill.rs (target\debug\deps\regression_bump_direct_refill-20e8e6988ae9d716.exe)
+
+running 3 tests
+test d1_cold_storm_then_free_decommits ... ok
+test cold_storm_free_storm_churn_256b ... ok
+test cold_storm_free_storm_churn_16b ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_c3_unbounded_recycle.rs (target\debug\deps\regression_c3_unbounded_recycle-37b6846f42396cc1.exe)
+
+running 1 test
+test unbounded_recycle_within_single_scan ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+     Running tests\regression_carve_batch.rs (target\debug\deps\regression_carve_batch-8a118b7cd226a756.exe)
+
+running 6 tests
+test carve_batch_len_bound ... ok
+test mixed_drain_then_carve_refill_roundtrips ... ok
+test carve_batch_wellformed_16b_n16 ... ok
+test carve_batch_wellformed_medium_n8 ... ok
+test carve_batch_wellformed_64b_n64 ... ok
+test carve_batch_wellformed_16b_n256 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_claim_oom_initialised_gate.rs (target\debug\deps\regression_claim_oom_initialised_gate-2941b984adb0bfb5.exe)
+
+running 3 tests
+test reclaim_after_simulated_oom_still_materialises ... ok
+test simulated_oom_leaves_initialised_false ... ok
+test simulated_oom_does_not_leak_the_slot ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_counter_wrap.rs (target\debug\deps\regression_counter_wrap-9386845acf4e54ce.exe)
+
+running 1 test
+test generation_crosses_u32_boundary_as_u64 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_dealloc_batch_promoted_large_free.rs (target\debug\deps\regression_dealloc_batch_promoted_large_free-98f9092db0c05870.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_dealloc_metadata_region_guard.rs (target\debug\deps\regression_dealloc_metadata_region_guard-4608aba6fe9e0624.exe)
+
+running 1 test
+test dealloc_metadata_region_offsets_are_noop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_exact_256_class.rs (target\debug\deps\regression_exact_256_class-5f415e94a7953306.exe)
+
+running 2 tests
+test class_for_256_resolves_to_block_size_256 ... ok
+test alloc_256_roundtrips_and_frees ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_fallback_init_unwind_guard.rs (target\debug\deps\regression_fallback_init_unwind_guard-4bd7131958e23fbd.exe)
+
+running 1 test
+test fallback_init_panic_rolls_back_state_not_wedged ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_fallback_panic_lock.rs (target\debug\deps\regression_fallback_panic_lock-0fcf040b64d399b4.exe)
+
+running 1 test
+test fallback_lock_not_wedged_by_panic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_fastbin_aligned_roundtrip.rs (target\debug\deps\regression_fastbin_aligned_roundtrip-3adfe2afbd48406a.exe)
+
+running 2 tests
+test c1_align_over_16_correctness ... ok
+test c1_align_over_16_hits_magazine ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_flush_class_unsafe_boundary.rs (target\debug\deps\regression_flush_class_unsafe_boundary-267a08003a424cc2.exe)
+
+running 2 tests
+test dbg_freelist_head_for_rejects_out_of_range_class_without_oob_read ... ok
+test flush_class_is_unsafe_fn_boundary_compiles_only_in_unsafe_block ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_free_path_chunk_oom_graceful.rs (target\debug\deps\regression_free_path_chunk_oom_graceful-f66c11dd086d1d2c.exe)
+
+running 2 tests
+test chunk_oom_on_free_path_returns_gracefully_not_abort ... ok
+test oom_injection_flag_is_clean_after_test ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_freelist_next_validation.rs (target\debug\deps\regression_freelist_next_validation-80d024367c035d44.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_gen_table_layout.rs (target\debug\deps\regression_gen_table_layout-f4937c75fdc4744b.exe)
+
+running 1 test
+test non_hardened_build_compiles_and_layout_is_unchanged ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_gen_table_lifecycle_seams.rs (target\debug\deps\regression_gen_table_lifecycle_seams-27d26d423e2fa9d8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_hardened_interior_ptr.rs (target\debug\deps\regression_hardened_interior_ptr-9c1b54a621033318.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_hardened_large_kind_own_free.rs (target\debug\deps\regression_hardened_large_kind_own_free-8a84921a40aa9d74.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_inplace_large_realloc.rs (target\debug\deps\regression_inplace_large_realloc-85c3bc5922cd8d2e.exe)
+
+running 7 tests
+test inplace_grow_stores_clamped_large_size_for_tiny_huge_aligned ... ok
+test grow_within_span_returns_same_ptr ... ok
+test same_size_large_realloc_returns_same_ptr ... ok
+test dealloc_after_inplace_grow_then_reuse ... ok
+test shrink_large_does_not_pin ... ok
+test grow_beyond_span_relocates_and_preserves ... ok
+test shrink_large_to_smaller_large_relocates_and_preserves ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_large_align_no_segment_exhaustion.rs (target\debug\deps\regression_large_align_no_segment_exhaustion-371503a1adf03894.exe)
+
+running 2 tests
+test many_align128_allocations_do_not_exhaust_segment_table ... ok
+test align64_and_align256_also_resolve_to_small_path ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_large_cache_multi_size_cycle.rs (target\debug\deps\regression_large_cache_multi_size_cycle-1a41896985ef46dc.exe)
+
+running 1 test
+test multi_size_cycle_produces_cache_hits ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_large_cache_span_usable_stable.rs (target\debug\deps\regression_large_cache_span_usable_stable-8ccfc97c75132d4f.exe)
+
+running 1 test
+test cache_hit_reuse_preserves_physical_span_usable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_magazine_bump_guard.rs (target\debug\deps\regression_magazine_bump_guard-786fb0219d71f972.exe)
+
+running 1 test
+test bogus_uncarved_free_is_noop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_magazine_oracles.rs (target\debug\deps\regression_magazine_oracles-1eec213057a930aa.exe)
+
+running 4 tests
+test flushed_double_free_is_noop ... ok
+test in_magazine_double_free_is_noop ... ok
+test legit_free_after_pop_is_not_swallowed ... ok
+test flushed_double_free_with_garbage_word1_is_noop ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_magazine_scan_bounds.rs (target\debug\deps\regression_magazine_scan_bounds-9a951a93528d47d4.exe)
+
+running 1 test
+test legit_free_with_stale_copy_at_index_ge_cnt_is_not_swallowed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_magic_at_atomic_load.rs (target\debug\deps\regression_magic_at_atomic_load-efa111b8621e7d96.exe)
+
+running 1 test
+test magic_at_atomic_load_survives_recycle_xthread_race ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_own_segment_cache_invalidation.rs (target\debug\deps\regression_own_segment_cache_invalidation-bd4e12e0c883554a.exe)
+
+running 1 test
+test recycle_evicts_own_segment_cache_no_stale_hit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\regression_own_thread_large_no_leak.rs (target\debug\deps\regression_own_thread_large_no_leak-aebc4f0224a7c329.exe)
+
+running 1 test
+test own_thread_large_dealloc_no_leak_with_decommit_admission_reject ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests\regression_page_aligned_no_segment_exhaustion.rs (target\debug\deps\regression_page_aligned_no_segment_exhaustion-65f203fed04fbe21.exe)
+
+running 2 tests
+test small_page_aligned_shapes_resolve_to_small_class_not_large ... ok
+test page_aligned_allocations_do_not_exhaust_segment_table ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\regression_paused_owner_multisegment.rs (target\debug\deps\regression_paused_owner_multisegment-c5501e337440b9b3.exe)
+
+running 1 test
+test paused_owner_multisegment_interleave_completes_fast ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests\regression_paused_owner_wallclock.rs (target\debug\deps\regression_paused_owner_wallclock-7d7c263e4080814f.exe)
+
+running 1 test
+test paused_owner_sustained_saturation_completes_fast ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_percounter_perheap_aggregation.rs (target\debug\deps\regression_percounter_perheap_aggregation-2d6d913eb5037986.exe)
+
+running 2 tests
+test tcache_hits_aggregate_across_multiple_heaps ... ok
+test tcache_hits_single_heap_matches_local_and_global ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r1_01_magazine_free_budget.rs (target\debug\deps\regression_r1_01_magazine_free_budget-456c34dd5097004f.exe)
+
+running 2 tests
+test large_small_class_free_side_park_is_bounded_by_byte_budget ... ok
+test small_class_free_side_park_unaffected_still_fills_tcache_cap ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_01_segment_bases_lifetime.rs (target\debug\deps\regression_r2_01_segment_bases_lifetime-01d85c4ee9f23313.exe)
+
+running 1 test
+test segment_bases_iterator_outliving_owner_must_not_compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+     Running tests\regression_r2_02_epoch_region_non_send_value.rs (target\debug\deps\regression_r2_02_epoch_region_non_send_value-99da3b7cd003ab84.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_03_cross_instance_identity.rs (target\debug\deps\regression_r2_03_cross_instance_identity-d1c7f3255c70b796.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_04_generation_setter_lockdown.rs (target\debug\deps\regression_r2_04_generation_setter_lockdown-d6cb23378e110866.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_05_diag_provenance.rs (target\debug\deps\regression_r2_05_diag_provenance-7f3847c6d593a54d.exe)
+
+running 3 tests
+test dbg_committed_payload_end_for_sound_under_provenance_less_input ... ok
+test dbg_owner_id_for_sound_under_provenance_less_input ... ok
+test dbg_directory_bit_for_ptr_sound_under_provenance_less_input ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_05_diag_provenance_miri.rs (target\debug\deps\regression_r2_05_diag_provenance_miri-5d3f97f9a26bdeab.exe)
+
+running 9 tests
+test dbg_kind_at_tag_sound_under_provenance_less_input ... ok
+test dbg_freelist_head_for_sound_under_provenance_less_input ... ok
+test dbg_is_free_for_sound_under_provenance_less_input ... ok
+test dbg_kind_byte_of_sound_under_provenance_less_input ... ok
+test dbg_large_size_of_sound_under_provenance_less_input ... ok
+test dbg_span_usable_of_sound_under_provenance_less_input ... ok
+test dbg_reserved_capacity_of_sound_under_provenance_less_input ... ok
+test dbg_segment_id_of_sound_under_provenance_less_input ... ok
+test dbg_kind_byte_of_panics_cleanly_on_a_genuinely_foreign_address ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_06_header_race_miri.rs (target\debug\deps\regression_r2_06_header_race_miri-f77b549c393935e4.exe)
+
+running 1 test
+test owner_reconciliation_walk_overlaps_remote_large_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_08_global_allocator_path_no_unwind.rs (target\debug\deps\regression_r2_08_global_allocator_path_no_unwind-3f2bad505fc5901e.exe)
+
+running 1 test
+test global_allocator_bind_on_config_conflict_does_not_panic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_r2_08_globalalloc_no_unwind.rs (target\debug\deps\regression_r2_08_globalalloc_no_unwind-6fce0e3a818522f2.exe)
+
+running 5 tests
+test direct_alloc_on_config_conflict_bind_does_not_unwind ... ok
+test direct_alloc_zeroed_on_config_conflict_bind_does_not_unwind ... ok
+test extreme_valid_layouts_never_unwind_steady_state ... ok
+test registry_claim_with_config_conflict_returns_normally ... ok
+test direct_realloc_on_config_conflict_bind_does_not_unwind ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_r2_11_stats_no_materialize.rs (target\debug\deps\regression_r2_11_stats_no_materialize-1d72dc54e7e13a14.exe)
+
+running 1 test
+test stats_does_not_materialise_a_not_yet_claimed_chunk ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_12_sidecar_leak.rs (target\debug\deps\regression_r2_12_sidecar_leak-1b4690397047b813.exe)
+
+running 1 test
+test standalone_directory_sidecar_churn_releases_every_span ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_r2_15_virgin_mask_zeroed_and_bounded.rs (target\debug\deps\regression_r2_15_virgin_mask_zeroed_and_bounded-27959b06dfe77eda.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_17_64bit_target_gate.rs (target\debug\deps\regression_r2_17_64bit_target_gate-9153dcdb7f7cabbd.exe)
+
+running 2 tests
+test unsupported_32bit_target_region_only_surface_still_compiles ... ok
+test unsupported_32bit_target_with_alloc_features_is_rejected_by_gate ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s
+
+     Running tests\regression_r2_21_epoch_drain_buffer_reuse.rs (target\debug\deps\regression_r2_21_epoch_drain_buffer_reuse-3319e200a17247a9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_3_dbg_accessors_membership_guard.rs (target\debug\deps\regression_r2_3_dbg_accessors_membership_guard-976f4b31aa887569.exe)
+
+running 1 test
+test dbg_accessors_reject_foreign_segment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_3_gen_table_index_guard.rs (target\debug\deps\regression_r2_3_gen_table_index_guard-7bf5e0e85f2c1b4a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r3a_stats_walk_compiled_out.rs (target\debug\deps\regression_r3a_stats_walk_compiled_out-13b2b9c814168483.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_2_null_base_foreign_guard.rs (target\debug\deps\regression_r4_2_null_base_foreign_guard-b07b6e3cbae90621.exe)
+
+running 2 tests
+test dealloc_foreign_garbage_null_base_is_safe_noop ... ok
+test realloc_foreign_garbage_null_base_returns_null ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_2_refill_return_clamp.rs (target\debug\deps\regression_r4_2_refill_return_clamp-37a21534822f13dc.exe)
+
+running 1 test
+test t_refill_return_never_exceeds_outlen_contracted ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_3_config_conflict.rs (target\debug\deps\regression_r4_3_config_conflict-5f8ae9110558e0ee.exe)
+
+running 3 tests
+test config_conflict_detected_on_recycled_slot ... ok
+test matching_config_does_not_trigger_conflict_signal ... ok
+test slot_not_leaked_after_config_conflict_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_3_teardown_trim.rs (target\debug\deps\regression_r4_3_teardown_trim-216b071fb16d0c8a.exe)
+
+running 1 test
+test teardown_trim_releases_retained_large_cache_spans ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r5_01_alloc_global_cross_thread.rs (target\debug\deps\regression_r5_01_alloc_global_cross_thread-23a257f89032c233.exe)
+
+running 5 tests
+test alloc_global_implies_alloc_xthread ... ok
+test cross_thread_large_free_reclaims_segments ... ok
+test cross_thread_small_free_does_not_hit_foreign_or_unroutable_frees ... ok
+test cross_thread_small_free_bounds_segment_growth ... ok
+test cross_thread_realloc_succeeds_and_preserves_prefix ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\regression_realloc_cross_class_shrink.rs (target\debug\deps\regression_realloc_cross_class_shrink-d770194c86dfa599.exe)
+
+running 1 test
+test realloc_cross_class_shrink_relocates_not_aliases ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_foreign_pointer_null.rs (target\debug\deps\regression_realloc_foreign_pointer_null-ac936b74dadb1ac8.exe)
+
+running 2 tests
+test realloc_of_foreign_pointer_returns_null ... ok
+test realloc_of_foreign_pointer_does_not_touch_foreign_memory_or_allocator_state ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_heap_oob.rs (target\debug\deps\regression_realloc_heap_oob-c6f3cec82f733ea5.exe)
+
+running 3 tests
+test heap_realloc_foreign_sefer_ptr_correct_layout_succeeds ... ok
+test heap_realloc_own_seg_oversized_layout_returns_null ... ok
+test heap_realloc_foreign_sefer_ptr_oversized_layout_returns_null ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_inplace_global.rs (target\debug\deps\regression_realloc_inplace_global-0eee3d8c20bb6e73.exe)
+
+running 2 tests
+test c2_cross_class_shrink_relocates_and_preserves_data ... ok
+test c2_same_class_realloc_is_inplace ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_oob_old_layout.rs (target\debug\deps\regression_realloc_oob_old_layout-bdc7bd9e75afa240.exe)
+
+running 3 tests
+test realloc_with_oversized_old_layout_returns_null_not_oob ... ok
+test legit_realloc_still_succeeds_under_the_bound ... ok
+test realloc_large_block_filling_span_is_not_falsely_rejected ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_xthread_stamp.rs (target\debug\deps\regression_realloc_xthread_stamp-b65919f290464b44.exe)
+
+running 1 test
+test realloc_grown_large_routes_remote_free_to_its_owner ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_registry_chunking.rs (target\debug\deps\regression_registry_chunking-16766874ac52770b.exe)
+
+running 3 tests
+test claiming_one_heap_does_not_materialise_unrelated_chunks ... ok
+test slot_address_is_stable_across_recycle_from_different_thread ... ok
+test slot_address_is_stable_across_recycle_under_chunking ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_registry_initialised_gate.rs (target\debug\deps\regression_registry_initialised_gate-78c9717155329113.exe)
+
+running 1 test
+test concurrent_claim_and_aggregate_no_uninit_read ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_resolver_branch_collapse.rs (target\debug\deps\regression_resolver_branch_collapse-728e3ff53e35371d.exe)
+
+running 2 tests
+test torn_sentinel_resolves_to_fallback_after_branch_collapse ... ok
+test fresh_thread_null_local_binds_a_real_slot_not_fallback ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_segment_table_tombstone_rebuild.rs (target\debug\deps\regression_segment_table_tombstone_rebuild-d3e5e56c4320ab85.exe)
+
+running 2 tests
+test backshift_no_latency_spike_at_threshold_boundary ... ignored, coarse wall-clock; flaky under concurrent test-binary CPU contention (docs/CORRECTNESS_OPEN_ITEMS.md item 3, resolved R23-6/task #375) — run manually with --ignored, or use npm run iai / the deterministic backshift_max_scan_steps_bounded_at_threshold_boundary test instead
+test backshift_max_scan_steps_bounded_at_threshold_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\regression_stamp_metadata_unsafe_boundary.rs (target\debug\deps\regression_stamp_metadata_unsafe_boundary-782c3f1cf0b6292b.exe)
+
+running 2 tests
+test dbg_stamp_segment_id_is_unsafe_fn_boundary_and_restore_honoring_path_works ... ok
+test dbg_stamp_kind_byte_is_unsafe_fn_boundary_and_restore_honoring_path_works ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_t10_find_segment_multiseg_recovery.rs (target\debug\deps\regression_t10_find_segment_multiseg_recovery-3bb915b19e5aeaad.exe)
+
+running 2 tests
+test find_segment_recovers_frees_across_segments_without_missed_segment ... ok
+test find_segment_recovers_frees_through_segment_drain_transitions ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_tcache_byte_budget.rs (target\debug\deps\regression_tcache_byte_budget-1257050baa4f054a.exe)
+
+running 2 tests
+test large_small_class_refill_bounded_by_byte_budget ... ok
+test small_class_refill_unaffected_by_byte_budget ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_virgin_bitmap_skip.rs (target\debug\deps\regression_virgin_bitmap_skip-70bcfd408ba37eb6.exe)
+
+running 3 tests
+test t3_double_free_guard_still_correct_on_freshly_reserved_segment ... ok
+test t1_primordial_bitmap_reads_zero_before_any_traffic ... ok
+test t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_w3_stats_aliasing_miri.rs (target\debug\deps\regression_w3_stats_aliasing_miri-43998c6d87dff6b3.exe)
+
+running 2 tests
+test old_pattern_is_sb_ub ... ignored, counterfactual: intentionally Stacked-Borrows UB (the pre-W3 shape)
+test w3_pattern_is_sb_clean ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_xthread_large_free_no_leak.rs (target\debug\deps\regression_xthread_large_free_no_leak-af3624820ebee77c.exe)
+
+running 1 test
+test large_owner_slow_path_consumes_descriptor_obligation_before_cache_reuse ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_xthread_small_ring_miri.rs (target\debug\deps\regression_xthread_small_ring_miri-1c07b128fca5fecf.exe)
+
+running 1 test
+test xthread_small_ring_two_producers_push_owner_drains ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_xthread_thread_free_alias_miri.rs (target\debug\deps\regression_xthread_thread_free_alias_miri-16c94746360cae3a.exe)
+
+running 1 test
+test xthread_thread_free_write_overlaps_owner_alloc_mut ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\release_graph_no_fault_injection.rs (target\debug\deps\release_graph_no_fault_injection-a6a4a05339cc539a.exe)
+
+running 2 tests
+test commit_path_fault_hook_call_site_is_cfg_gated ... ok
+test release_graph_has_no_fault_injection_and_test_graph_keeps_it ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests\remote_fanin.rs (target\debug\deps\remote_fanin-11b09957f4d14f7b.exe)
+
+running 1 test
+test paused_owner_fanin_retires_every_publication_exactly_once ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\sefer_alloc_examples.rs (target\debug\deps\sefer_alloc_examples-fb87cd9102dfc7b8.exe)
+
+running 3 tests
+test new_global_allocator_serves_allocs ... ok
+test stats_snapshot_fields_are_readable ... ok
+test stats_doc_example_matches_runnable_form ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\sefer_alloc_with_config.rs (target\debug\deps\sefer_alloc_with_config-7667a613354befdd.exe)
+
+running 4 tests
+test small_allocs_work ... ok
+test single_instance_config_consistent_across_threads ... ok
+test large_alloc_through_configured_global ... ok
+test multiple_allocs_and_frees ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\segment_directory_a1.rs (target\debug\deps\segment_directory_a1-93c052f581804ee3.exe)
+
+running 5 tests
+test threshold_is_32 ... ok
+test directory_get_bit_returns_none_when_not_materialised ... ok
+test directory_does_not_materialise_below_threshold ... ok
+test directory_bit_accessor_returns_some_when_materialised ... ok
+test directory_rebuild_matches_bintable_after_frees ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\segment_directory_a2.rs (target\debug\deps\segment_directory_a2-89bd48479e6fbde9.exe)
+
+running 9 tests
+test multiple_classes_one_segment ... ok
+test randomized_workload_incremental_equals_rebuild ... ok
+test single_free_sets_bit ... ok
+test flush_class_maintains_directory ... ok
+test drain_freelist_batch_maintains_directory ... ok
+test last_pop_clears_bit ... ok
+test recycled_segment_no_stale_bits ... ok
+test pool_unpool_maintains_directory ... ok
+test randomized_workload_periodic_assertions ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\segment_directory_a3.rs (target\debug\deps\segment_directory_a3-4883d2e10ddf75ce.exe)
+
+running 6 tests
+test below_threshold_uses_linear_scan ... ok
+test stale_positive_cleared_and_correct_fallback ... ok
+test no_false_negative_after_local_free ... ok
+test directory_lookup_finds_correct_segment ... ok
+test multi_class_same_segment_directory_tracking ... ok
+test mixed_workload_directory_consistency ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\segment_directory_a5.rs (target\debug\deps\segment_directory_a5-2d053832d3dd628e.exe)
+
+running 4 tests
+test below_threshold_fallback_scan_functional ... ok
+test recycle_reuse_different_class ... ok
+test decommit_recommit_directory_consistency ... ok
+test periodic_assertions_multiclass_workload ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\segment_directory_a5_miri.rs (target\debug\deps\segment_directory_a5_miri-7afb06581313626d.exe)
+
+running 1 test
+test below_threshold_alloc_dealloc_provenance_clean ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_a5_proptest.rs (target\debug\deps\segment_directory_a5_proptest-92f461c94676cfef.exe)
+
+running 1 test
+test directory_bits_match_bintable_under_random_ops ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+     Running tests\segment_directory_clear_bit_no_register.rs (target\debug\deps\segment_directory_clear_bit_no_register-bd47efa055041904.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_numa.rs (target\debug\deps\segment_directory_numa-5258b11beac108b7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_numa_bucket_reuse.rs (target\debug\deps\segment_directory_numa_bucket_reuse-b4969cef1efca8e4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target\debug\deps\segment_directory_numa_high_node_ids-fc375755dda3c8e4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_meta_page_alignment.rs (target\debug\deps\segment_meta_page_alignment-9a17ce7a2c53d5ca.exe)
+
+running 3 tests
+test both_decommit_boundaries_fit_within_segment_with_payload_room ... ok
+test small_decommit_start_is_real_page_aligned ... ok
+test primordial_decommit_start_is_real_page_aligned ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_state_reconciliation_dual_enumeration.rs (target\debug\deps\segment_state_reconciliation_dual_enumeration-9ea69bfa8c0d4f90.exe)
+
+running 3 tests
+test primordial_committed_bytes_are_the_lazy_frontier ... ok
+test cached_large_is_enumerated_with_usable_and_reservation_bytes ... ok
+test recycled_hole_leaves_high_water_and_a_counted_null_slot ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_state_reconciliation_oracle.rs (target\debug\deps\segment_state_reconciliation_oracle-8c7e0266fef599ee.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_table_backshift_proptest.rs (target\debug\deps\segment_table_backshift_proptest-2fdad096ae5c8fa2.exe)
+
+running 5 tests
+test backshift_remove_absent_is_noop ... ok
+test backshift_wraparound_cluster_removal ... ok
+test backshift_dense_cluster_mid_removal ... ok
+test backshift_churn_fixed_universe_all_orders ... ok
+test backshift_hash_matches_oracle_model ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.48s
+
+     Running tests\segment_table_contains_base_tier1_counters.rs (target\debug\deps\segment_table_contains_base_tier1_counters-3808bb93324c083e.exe)
+
+running 2 tests
+test repeated_same_segment_frees_are_observed_as_tier1_hits ... ok
+test hash_contains_only_bypass_hook_does_not_move_the_new_counters ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_table_hash.rs (target\debug\deps\segment_table_hash-16a3a6f7a26eb17e.exe)
+
+running 3 tests
+test dealloc_foreign_pointer_is_noop ... ok
+test register_many_then_contains_each ... ok
+test recycle_then_register_uses_hash_correctly ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\segment_table_o1.rs (target\debug\deps\segment_table_o1-186c5cb41e28d7e0.exe)
+
+running 4 tests
+test realloc_own_segment_still_works_after_o1_swap ... ok
+test unregister_defends_against_mismatched_segment_id ... ok
+test free_list_many_cycles_no_duplicate_or_lost_slots ... ok
+test free_list_cycle_reuses_slots_without_growing_count ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\segment_table_recycle.rs (target\debug\deps\segment_table_recycle-0fff6bec4a76e4e0.exe)
+
+running 3 tests
+test recycle_defensive_tail_evicts_hash_and_cache ... ok
+test slot_recycle_lifts_cap ... ok
+test recycled_slot_is_reused ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.40s
+
+     Running tests\sharded.rs (target\debug\deps\sharded-d641827fbc7b84bd.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\sharded_remote.rs (target\debug\deps\sharded_remote-a5f171727ca6b05d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\size_classes_lookup.rs (target\debug\deps\size_classes_lookup-0f09ded7f87365a5.exe)
+
+running 15 tests
+test boundary_align_above_small_align_max_resolves_to_divisible_class ... ok
+test boundary_size_above_small_max_is_large ... ok
+test min_block_shift_is_log2_of_min_block ... ok
+test boundary_size_min_block_returns_class_zero ... ok
+test boundary_size_one_returns_class_zero ... ok
+test try_class_for_rejects_non_power_of_two_align ... ok
+test boundary_size_small_max_is_small_not_large ... ok
+test small_max_is_a_multiple_of_min_block_so_top_index_is_in_bounds ... ok
+test tokio_task_cell_shape_resolves_to_small_class_not_large ... ok
+test counterfactual_naive_shift_without_minus_one_would_be_wrong ... ok
+test try_class_for_rejects_zero_align_without_panicking ... ok
+test boundary_size_just_above_a_class_uses_next_class ... ok
+test size2class_table_matches_linear_scan_for_every_bucket ... ok
+test try_class_for_matches_class_for_on_every_valid_small_input ... ok
+test o1_lookup_matches_linear_scan_for_every_small_size_and_align ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests\size_classes_proptest.rs (target\debug\deps\size_classes_proptest-1810bd0e7afba1e7.exe)
+
+running 2 tests
+test page_aligned_small_requests_never_fall_through_to_large ... ok
+test class_for_resolution_is_always_fidelity_correct ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\size_classes_slow_path_equivalence.rs (target\debug\deps\size_classes_slow_path_equivalence-f3cc7b7fa2b821fe.exe)
+
+running 3 tests
+test slow_path_align_set_covers_the_slow_path_range ... ok
+test jump_skips_non_divisible_run_for_align_128 ... ok
+test class_for_slow_path_matches_walk ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests\small_segment_pool.rs (target\debug\deps\small_segment_pool-ac36272e6cc296e1.exe)
+
+running 11 tests
+test byte_cap_clamps_segment_count ... ok
+test default_pool_cap_is_four ... ok
+test pool_byte_cap_zero_disables ... ok
+test paired_knob_promotion_is_not_a_noop ... ok
+test disabled_pool_never_retains ... ok
+test pool_fills_to_cap_and_no_more ... ok
+test pool_segments_above_old_hard_cap_is_honoured ... ok
+test pool_segments_zero_disables ... ok
+test pooled_segment_emptied_mid_scan_is_reused_in_same_call ... ok
+test reuse_invariant_under_pool_churn ... ok
+test reuse_pooled_segment_skips_os_reservation ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.01s
+
+     Running tests\src_file_size_cap.rs (target\debug\deps\src_file_size_cap-18edfea26fac2eda.exe)
+
+running 1 test
+test no_source_file_exceeds_the_line_cap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\stamp_cache.rs (target\debug\deps\stamp_cache-a36e00bb7361d028.exe)
+
+running 3 tests
+test alloc_across_classes_works ... ok
+test stamp_cache_writes_owner_thread_free ... ok
+test alloc_loop_in_one_segment_does_not_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\stats_foreign_or_unroutable_frees.rs (target\debug\deps\stats_foreign_or_unroutable_frees-4c8426b7f9f92bf1.exe)
+
+running 1 test
+test checked_foreign_span_and_valid_cross_thread_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\stats_reflects_activity.rs (target\debug\deps\stats_reflects_activity-e38babc79bf3d640.exe)
+
+running 3 tests
+test stats_is_cheap_and_never_panics ... ok
+test tcache_hits_counter_does_not_drop_counts_under_load_store ... ok
+test stats_reflects_activity ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\stress_boundary_sweep.rs (target\debug\deps\stress_boundary_sweep-d45c4b28fb009eae.exe)
+
+running 3 tests
+test over_small_max_align_routes_to_segment ... ok
+test sweep2_realloc_matrix ... ok
+test sweep1_size_align_grid ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests\stress_concurrent_boundaries.rs (target\debug\deps\stress_concurrent_boundaries-fde3e228b86d6b79.exe)
+
+running 1 test
+test concurrent_boundary_stress ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+     Running tests\stress_safe_surface_no_aliasing.rs (target\debug\deps\stress_safe_surface_no_aliasing-d1f83935aa1a30d6.exe)
+
+running 1 test
+test safe_surface_never_aliases_live_allocations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\tagged_index_stack_ab_runner_scratch_guard.rs (target\debug\deps\tagged_index_stack_ab_runner_scratch_guard-a7383f596740aad2.exe)
+
+running 14 tests
+test evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatible ... ok
+test unsupported_codegen_target_is_rejected_before_scratch ... ok
+test target_dot_and_dotdot_are_rejected_and_scratch_canary_survives ... ok
+test cargo_config_ancestor_chain_fails_closed_and_cleans_external_cwd ... ok
+test unexpected_post_mkdtemp_error_leaves_no_scratch_root ... ok
+test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok
+test summary_target_is_required_before_artifacts ... ok
+test mode_specific_options_are_rejected_before_scratch ... ok
+test cargo_temp_root_must_be_disjoint_from_repo ... ok
+test build_check_fatal_failure_leaves_no_scratch_root ... ok
+test keep_scratch_fatal_failure_keeps_exactly_one_owned_root ... ok
+test out_dir_rejection_is_value_independent ... ok
+test wallclock_host_mismatch_is_rejected_before_scratch_or_build ... ok
+test build_check_success_leaves_no_scratch_root ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.61s
+
+     Running tests\tagged_index_stack_compile_fail.rs (target\debug\deps\tagged_index_stack_compile_fail-f93c8f6c7234dd0a.exe)
+
+running 10 tests
+test loom_cfg_without_feature_fails_with_only_the_named_error ... ok
+test index_bits_seventeen_must_not_compile ... ok
+test index_bits_zero_must_not_compile ... ok
+test plain_impl_of_unsafe_stack_storage_must_not_compile ... ok
+test hook_call_requires_unsafe_block ... ok
+test array_index_stack_capacity_default_above_index_mask_must_not_compile ... ok
+test array_index_stack_capacity_new_above_index_mask_must_not_compile ... ok
+test push_index_requires_unsafe_block ... ok
+test competing_binding_around_array_index_stack_head_must_not_compile ... ok
+test two_arraylinks_backings_against_one_stackhead_must_not_compile ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests\tls_heap_teardown_ordering_stress.rs (target\debug\deps\tls_heap_teardown_ordering_stress-6531d4d442a6a0f3.exe)
+
+running 1 test
+test teardown_ordering_stress_no_crash ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\tls_heap_teardown_torn_sentinel.rs (target\debug\deps\tls_heap_teardown_torn_sentinel-79c0667f7ff84d48.exe)
+
+running 1 test
+test teardown_then_resolve_is_fallback ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\unsafe_allow_placement.rs (target\debug\deps\unsafe_allow_placement-300a946f6deca8c2.exe)
+
+running 2 tests
+test no_mod_rs_carries_module_level_allow ... ok
+test every_file_with_unsafe_carries_its_own_allow ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\xs_r3_02_sharded_region_len_docs.rs (target\debug\deps\xs_r3_02_sharded_region_len_docs-e9940060b22500a9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\xs_r3_03_dealloc_foreign_pointer_docs.rs (target\debug\deps\xs_r3_03_dealloc_foreign_pointer_docs-b27d8d4a58bbeb11.exe)
+
+running 2 tests
+test old_blanket_foreign_no_op_claim_is_gone ... ok
+test summary_states_null_only_safe_no_op_contract ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\xxs_r5_02_epoch_generation_setter_gated.rs (target\debug\deps\xxs_r5_02_epoch_generation_setter_gated-1afd17544cb050e7.exe)
+
+running 2 tests
+test atomic_slot_generation_setter_is_internals_gated ... ok
+test epoch_region_generation_setter_is_internals_gated ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests sefer_alloc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

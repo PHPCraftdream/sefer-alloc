@@ -30,6 +30,9 @@ mod sidecar_drain_outcome;
 #[path = "reserve.rs"]
 mod reserve;
 
+#[path = "b3_carve.rs"]
+mod b3_carve;
+
 #[path = "alloc_core_small_impl.rs"]
 mod alloc_core_small_impl;
 #[allow(unused_imports)]

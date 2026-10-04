@@ -53,6 +53,9 @@ fn large_has_no_small_free_bit() {
 
 #[test]
 fn small_still_exposes_real_head_and_free_bit() {
+    // B3 design: small BinTable heads are permanently FREE_LIST_NULL (the free
+    // set is the alloc bitmap, not an intrusive chain), so the head assertion is
+    // inverted to pin that invariant.
     let mut core = AllocCore::new().expect("primordial segment reservation");
     let layout = Layout::from_size_align(64, 8).unwrap();
     let anchor = core.alloc(layout);
@@ -68,7 +71,11 @@ fn small_still_exposes_real_head_and_free_bit() {
     assert!(!core.dbg_is_free_for(freed));
     // SAFETY: freed is a live allocation of this core, freed once with its layout.
     unsafe { core.dealloc(freed, layout) };
-    assert_ne!(core.dbg_freelist_head_for(anchor, class), FREE_LIST_NULL);
+    assert_eq!(
+        core.dbg_freelist_head_for(anchor, class),
+        FREE_LIST_NULL,
+        "B3: small BinTable heads are permanently FREE_LIST_NULL — the free set is the alloc bitmap, not an intrusive chain"
+    );
     assert!(core.dbg_is_free_for(freed));
     assert!(!core.dbg_is_free_for(anchor));
     // SAFETY: anchor remains live and is freed once with its layout.

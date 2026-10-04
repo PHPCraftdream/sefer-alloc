@@ -254,10 +254,7 @@ impl AllocCore {
     #[inline]
     fn new_inner(owner: Option<u32>) -> Option<Self> {
         #[cfg_attr(not(feature = "alloc-global"), allow(unused_mut))]
-        let mut prim = {
-            let r = bootstrap::primordial();
-            r
-        }?;
+        let mut prim = bootstrap::primordial()?;
         let primordial_base = prim.segment.as_ptr();
         // The primordial segment hosts the registry AND serves as the first
         // small segment (its remaining payload is free for small allocs).

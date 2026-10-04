@@ -252,3 +252,22 @@ pub use small_segment_pool_config::SmallSegmentPoolConfig;
 pub(crate) fn b3s_drain_from_free_inner() -> u64 {
     crate::alloc_core::alloc_core::b3s_drain_from_free_inner()
 }
+
+/// B3p oracle: crate-internal readers (bench-internals).
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(crate) fn b3p_run_bytes_inner(class_idx: usize) -> u64 {
+    crate::alloc_core::alloc_core::b3p_run_bytes_inner(class_idx)
+}
+
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(crate) fn b3p_run_leaves_inner(class_idx: usize) -> u32 {
+    crate::alloc_core::alloc_core::b3p_run_leaves_inner(class_idx)
+}
+
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(crate) fn b3p_leaf_class_of_inner(ptr: *mut u8) -> u8 {
+    crate::alloc_core::alloc_core::b3p_leaf_class_of_inner(ptr)
+}

@@ -70,6 +70,11 @@ fn flush_class_is_unsafe_fn_boundary_compiles_only_in_unsafe_block() {
 
 #[test]
 fn dbg_freelist_head_for_rejects_out_of_range_class_without_oob_read() {
+    // B3 (spike PH3C-B3S) adaptation: the free-set is a bitmap and bin heads
+    // are always `FREE_LIST_NULL`, so the old `head != u32::MAX` precondition
+    // is vacuous; the bitmap oracle (`dbg_is_free_for`) carries the
+    // distinguishing power instead. The core goal — OOB class returns
+    // `u32::MAX` via the bounds guard, with no OOB read — is unchanged.
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(16, 8).unwrap();
     let class = ac
@@ -78,20 +83,29 @@ fn dbg_freelist_head_for_rejects_out_of_range_class_without_oob_read() {
     let p = ac.alloc(layout);
     assert!(!p.is_null(), "alloc returned null");
 
-    // Free `p` so its class's freelist is NON-empty (head != FREE_LIST_NULL).
+    // Before the free the block is live, per the bitmap free-set.
+    assert!(!ac.dbg_is_free_for(p), "block must be allocated before free");
+
+    // Free `p` so its block is recorded free in the class's bitmap free-set.
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `p` is a live
     // allocation made with the matching layout, freed exactly once here.
     unsafe { ac.dealloc(p, layout) };
 
-    // The in-range class's freelist is non-empty here → its head is a real
-    // segment offset, NOT `u32::MAX`. Proving this first means the `u32::MAX`
-    // asserted for `OOB_CLASS` below is the bounds check firing, NOT a
-    // coincidentally-empty list.
-    let in_range_head = ac.dbg_freelist_head_for(p, class);
-    assert_ne!(
-        in_range_head,
+    // B3: bin heads are always `FREE_LIST_NULL`, so precondition power via
+    // `head != u32::MAX` is lost by design. Use the bitmap oracle instead: the
+    // freed block must show as free, proving the class's free-set is non-empty
+    // without relying on head values.
+    assert!(
+        ac.dbg_is_free_for(p),
+        "freed block must be marked free in the class free-set bitmap"
+    );
+    // B3: the in-range head is `FREE_LIST_NULL` by design; assert it so the
+    // `class` mapping stays exercised and the OOB `u32::MAX` below is clearly
+    // the bounds guard, not a coincidentally-empty list.
+    assert_eq!(
+        ac.dbg_freelist_head_for(p, class),
         u32::MAX,
-        "in-range class head must be non-empty after the free above"
+        "under B3 the in-range bin head is always FREE_LIST_NULL"
     );
 
     // Out-of-range class: the R6-MS-3 release-bounds guard returns

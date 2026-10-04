@@ -184,6 +184,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
 
 #[test]
 fn partial_and_bounded_drain_set_head_correct() {
+    // B3 (spike B3) заменил интрузивный free-list на битовый free-set: головы
+    // BinTable постоянно FREE_LIST_NULL, поэтому head-утверждения инвертированы.
     let size = 32usize;
     let align = 8usize;
     let mut core = AllocCore::new().unwrap();
@@ -193,10 +195,17 @@ fn partial_and_bounded_drain_set_head_correct() {
     const M: usize = 20;
     let freed = build_same_segment_freelist(&mut core, size, align, M);
     let anchor = freed[0];
-    assert_ne!(
+    // B3 precondition: non-emptiness is proven via the bitmap oracle, not head.
+    for &p in &freed {
+        assert!(
+            core.dbg_is_free_for(p),
+            "precondition: drained block must be bitmap-FREE before drain"
+        );
+    }
+    assert_eq!(
         core.dbg_freelist_head_for(anchor, c),
         FREE_LIST_NULL,
-        "precondition: freelist of {M} must be non-empty"
+        "B3: heads are permanently NULL"
     );
 
     let want = 50usize; // > M
@@ -207,7 +216,7 @@ fn partial_and_bounded_drain_set_head_correct() {
     assert_eq!(
         core.dbg_freelist_head_for(anchor, c),
         FREE_LIST_NULL,
-        "partial drain (chain exhausted) must leave head NULL"
+        "B3 invariant: head stays NULL"
     );
     let partial_set: HashSet<usize> = out[..k].iter().map(|p| *p as usize).collect();
     assert_eq!(partial_set.len(), M, "partial drain produced duplicates");
@@ -227,11 +236,12 @@ fn partial_and_bounded_drain_set_head_correct() {
     // SAFETY: the first arg is a live allocation owned by the receiver.
     let k1 = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut b1) };
     assert_eq!(k1, W, "bounded drain must yield exactly want={W}, got {k1}");
-    // Head must now be a real (non-NULL) offset — M-W blocks remain.
-    assert_ne!(
+    // B3 invariant: head is NULL even with M-W blocks remaining; the remainder
+    // is proven by the continuation drain below.
+    assert_eq!(
         core.dbg_freelist_head_for(anchor, c),
         FREE_LIST_NULL,
-        "bounded drain left head NULL but {} blocks remain",
+        "B3 invariant: head stays NULL ({} blocks remain)",
         M - W
     );
 
