@@ -2,11 +2,8 @@
 //! double-free guard + segment metadata resets; mechanical split of the
 //! former flat `alloc_core_small.rs`; pure code movement, no behavior changed).
 
-use core::ptr::NonNull;
-
-use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
+    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
 };
 // H1 (task #167): `SizeClasses::block_size` is consulted only by the
 // `hardened`-gated interior-pointer guard below — gate the import
@@ -38,7 +35,6 @@ impl AllocCore {
         class_idx: usize,
     ) {
         let meta = SegmentMeta::new(base);
-        let mut bt = meta.bin_table();
         let off = (ptr as usize - base as usize) as u32;
         // ── H1 (task #167): interior-pointer guard (HARDENED) ───────────────
         // The SAME guard as `HeapCore::dealloc_own_thread_with_base`'s magazine
@@ -102,28 +98,18 @@ impl AllocCore {
         if bm.is_free(off) {
             return; // Already on a free list (M2 double-free): no-op.
         }
-        // The user pointer supplied only the numeric offset. The table-owned
-        // root covers the physical block, including its free-list word even
-        // when the caller's reborrow covered fewer bytes.
-        let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
-            Some(nn) => nn,
-            None => return,
-        };
-        let old_head = bt.head(class_idx);
-        let old_head_ptr = if old_head == FREE_LIST_NULL {
-            core::ptr::null_mut()
-        } else {
-            Node::deref(base, old_head as usize)
-        };
-        Node::write_next(block_nn, old_head_ptr);
-        bt.set_head(class_idx, off);
+        // B3 spike: retire = one bitmap bit + the sub-leaf class-mask bit.
+        // No body write, no BinTable head.
+        let mut b3 = meta.b3_free();
+        let was_empty = b3.class_empty(class_idx);
         bm.mark_free(off);
+        b3.set_leaf(
+            class_idx,
+            off as usize / crate::alloc_core::segment_header::B3_LEAF_BYTES,
+        );
         SegmentMeta::new(base).dec_live();
-        // R7-A2: directory bitmap maintenance — the new head is always non-null
-        // (we just pushed `off`), so the only transition is empty→non-empty
-        // when old_head was FREE_LIST_NULL.
         #[cfg(feature = "alloc-segment-directory")]
-        if old_head == FREE_LIST_NULL {
+        if was_empty {
             let slot_idx = SegmentHeader::segment_id_at(base) as usize;
             self.publish_nonempty(base, class_idx, slot_idx);
         }

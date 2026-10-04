@@ -16,7 +16,7 @@
 //! wholesale.
 //!
 //! Measured values at the time of the bug (non-hardened / `production`):
-//! `SMALL_META_END = 73728`, `PRIMORDIAL_META_END = 192512`;
+//! `SMALL_META_END = 86016`, `PRIMORDIAL_META_END = 204800` (B3 spike padding);
 //! `initial_commit` = 335872 / 454656 — multiples of 4 KiB, but
 //! 335872 % 16384 = 8192 and 454656 % 16384 = 12288. Hardened:
 //! 598016 % 16384 = 8192 and 716800 % 16384 = 12288.

@@ -245,3 +245,10 @@ pub use segment_layout::SegmentLayout;
 pub use segment_table::SegmentHashHarness;
 #[cfg(feature = "alloc-decommit")]
 pub use small_segment_pool_config::SmallSegmentPoolConfig;
+
+/// B3 spike oracle: crate-internal reader (bench-internals).
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(crate) fn b3s_drain_from_free_inner() -> u64 {
+    crate::alloc_core::alloc_core::b3s_drain_from_free_inner()
+}

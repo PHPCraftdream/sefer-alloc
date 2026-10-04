@@ -1034,6 +1034,14 @@ harness = false
 test = false
 required-features = ["alloc-global", "internals", "bench-internals"]
 
+# Ph3c B3 spike MODEL-LIMIT cells (ported from PG-2's r11_pg2_model_limit):
+# one scenario per process, selected by name (installed SeferAlloc, no libtest).
+[[test]]
+name = "r11_pg3c_b3s_model_limit"
+harness = false
+test = false
+required-features = ["alloc-global", "internals", "bench-internals"]
+
 # Ph1b exact-object prototype witness: one scenario per process, selected by
 # name (installed SeferAlloc, no libtest).
 [[test]]

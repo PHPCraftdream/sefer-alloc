@@ -5,7 +5,7 @@
 //! Every item here is `alloc-segment-directory`-gated.
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::SegmentMeta;
 
 use crate::alloc_core::alloc_core::AllocCore;
 
@@ -164,7 +164,7 @@ impl AllocCore {
 
     /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
     /// slot `slot_idx` (segment base `base`) transitioned from empty to
-    /// non-empty (old_head was FREE_LIST_NULL, new_head is not). Sets the
+    /// non-empty (old_head was new_head is not). Sets the
     /// corresponding bit in the segment's node bucket.
     ///
     /// No-op if the directory is not materialised.
@@ -182,7 +182,7 @@ impl AllocCore {
 
     /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
     /// slot `slot_idx` (segment base `base`) transitioned from non-empty to
-    /// empty (old_head was not FREE_LIST_NULL, new_head is FREE_LIST_NULL).
+    /// empty (old_head was not new_head is FREE_LIST_NULL).
     /// Clears the corresponding bit in every node bucket. A segment may have
     /// published its bit to the unknown bucket before its node obtained a
     /// dedicated bucket; clearing only the node's current bucket would leave
@@ -247,12 +247,11 @@ impl AllocCore {
         if let Some(dir) = self.directory_mut() {
             let node_id = directory_node_id_of(base);
             let meta = SegmentMeta::new(base);
-            let bt = meta.bin_table();
             let mut bits = changed_classes;
             while bits != 0 {
                 let c = bits.trailing_zeros() as usize;
                 bits &= bits - 1; // clear lowest set bit
-                if bt.head(c) != FREE_LIST_NULL {
+                if !meta.b3_free().class_empty(c) {
                     dir.set_bit(node_id, c, slot_idx);
                 } else {
                     dir.clear_bit(node_id, c, slot_idx);

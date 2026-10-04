@@ -4,7 +4,10 @@
 //! `alloc_core_small.rs`; pure code movement, no behavior changed).
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{
+    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
+};
+use crate::alloc_core::size_classes::MIN_BLOCK;
 
 use crate::alloc_core::alloc_core::AllocCore;
 
@@ -108,6 +111,21 @@ impl AllocCore {
         self.find_segment_with_free_impl(class_idx, true)
     }
 
+    /// Patch S: first pending-bitmap word that can carry payload bits. Payload
+    /// begins at the page-aligned metadata end, an exact multiple of one word
+    /// (64 × MIN_BLOCK). Words below it can only read zero: only an issued
+    /// block is published, and issue/reclaim reject any offset below
+    /// `payload_start`.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn sidecar_payload_start_word(base: *mut u8) -> usize {
+        let payload_start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
+            SegLayout::primordial_meta_end()
+        } else {
+            SegLayout::small_meta_end()
+        };
+        payload_start / (MIN_BLOCK * 64)
+    }
+
     /// Consume one canonical Small root, dropping every cut and route borrow
     /// before reclaim finalization can release its reservation. Called only
     /// on actual free-list/refill misses, never on a magazine hit.
@@ -121,7 +139,13 @@ impl AllocCore {
         let high_water = SegmentMeta::new(base).bump_of();
         let mut changed_classes = 0u64;
         {
-            let Some(mut scan) = self.table.scan_small_route(index, base, high_water) else {
+            // Patch S: start at the payload's first word, not word 0.
+            let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+            let start_word = Self::sidecar_payload_start_word(base).min(end_word);
+            let Some(mut scan) = self
+                .table
+                .scan_small_route_from(index, base, high_water, start_word)
+            else {
                 std::process::abort();
             };
             while let Some(mut cut) = scan.next_cut() {
@@ -456,8 +480,9 @@ impl AllocCore {
                 SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
             }
             let meta = SegmentMeta::new(base);
-            let bt = meta.bin_table();
-            if bt.head(class_idx) != FREE_LIST_NULL {
+            // B3 spike: "segment has a free block of class" = non-empty mask.
+            let b3 = meta.b3_free();
+            if !b3.class_empty(class_idx) {
                 // Phase C (numa-aware): check whether this segment belongs to
                 // our NUMA node.  Segments with node_id == NO_NODE_RAW are
                 // "unknown" — treat them as local (no penalty, and on platforms
@@ -521,7 +546,7 @@ impl AllocCore {
                 }
                 let meta = SegmentMeta::new(base);
                 let node = meta.node_id_of();
-                (meta.bin_table().head(class_idx) != FREE_LIST_NULL
+                (!meta.b3_free().class_empty(class_idx)
                     && node != my_node
                     && node != crate::alloc_core::segment_header::NO_NODE_RAW)
                     .then_some(base)
@@ -644,10 +669,9 @@ impl AllocCore {
             SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
         }
 
-        // Validation step 3: BinTable head STILL non-null?
+        // Validation step 3: class mask STILL non-empty?
         let meta = SegmentMeta::new(base);
-        let bt = meta.bin_table();
-        if bt.head(class_idx) == FREE_LIST_NULL {
+        if meta.b3_free().class_empty(class_idx) {
             // Stale positive: drain may have emptied the class, or a concurrent
             // transition cleared it. Clear the bit and try the next candidate.
             self.publish_empty(base, class_idx, slot_idx);

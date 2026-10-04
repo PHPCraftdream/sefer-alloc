@@ -114,10 +114,27 @@ impl AllocBitmap {
         self.0.set(off)
     }
 
+    /// B3 spike: read the u64 bitmap word `w` (8-aligned).
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn word(&self, w: usize) -> u64 {
+        self.0.word(w)
+    }
+
+    /// B3 spike: clear bit `b` of bitmap word `w` (one RMW).
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn clear_word_bit(&mut self, w: usize, b: u32) {
+        self.0.clear_word_bit(w, b)
+    }
+
     /// Mark the block at segment offset `off` as ALLOCATED (clear its bit).
     /// Called when the block is popped from a free list and handed out. O(1):
     /// byte load + AND + store.
     #[inline(always)]
+    // B3 spike: pops clear whole bitmap words now; the per-bit wrapper has
+    // no remaining caller (kept for parity with mark_free).
+    #[allow(dead_code)]
     pub(crate) fn mark_alloc(&mut self, off: u32) {
         self.0.clear(off)
     }

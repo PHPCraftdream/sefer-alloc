@@ -263,6 +263,10 @@
 //                             genuine System mixed-leaf pointers, initialization,
 //                             and exact deallocation after the last route pin.
 //                             (under `alloc-core`; used by `alloc-global`)
+//      * `alloc_core::segment::segment_header::b3_free` — B3 spike (not for
+//                             merge): owner-only sub-leaf mask words, leaf
+//                             bindings and cursors over the segment alloc
+//                             bitmap. (under `alloc-core`)
 //      * `alloc_core::segment::segment_table::route_slots` — System-backed,
 //                             owner-only non-Copy registration storage;
 //                             routes close before reservation release.
@@ -434,6 +438,14 @@ mod concurrent;
 // root, i.e. every `dbg_*` hook and internal type — reachable only when
 // `internals` is enabled. See `internals`'s own doc comment in `Cargo.toml`
 // for the full boundary/decision writeup.
+/// B3 spike oracle (ph3c-b3s, not for merge): blocks served from the
+/// sub-leaf free structure on the refill/drain path.
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub fn b3s_drain_from_free() -> u64 {
+    crate::alloc_core::b3s_drain_from_free_inner()
+}
+
 #[cfg(all(feature = "alloc-core", feature = "internals"))]
 #[doc(hidden)]
 pub mod alloc_core;

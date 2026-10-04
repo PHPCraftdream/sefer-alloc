@@ -1,5 +1,3 @@
-use core::ptr::NonNull;
-
 use crate::alloc_core::node::{Node, NODE_SIZE};
 use crate::alloc_core::os::{self, SEGMENT};
 // R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
@@ -8,14 +6,16 @@ use crate::alloc_core::os::{self, SEGMENT};
 // commit witnesses (`IssueTransaction::commit_prepared`'s registry index),
 // so the import itself is unconditional.
 use crate::alloc_core::segment_header::SegmentHeader;
-use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{align_up, SegmentMeta};
 // `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
 // decommit-recommit arms of `carve_block`/`carve_batch` (and only on their
 // eager `not(small-segment-lazy-commit)` leg) — gate the import identically
 // so non-decommit builds stay warning-clean.
+use crate::alloc_core::alloc_bitmap::AllocBitmap;
 #[cfg(all(feature = "alloc-decommit", not(feature = "small-segment-lazy-commit")))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
-use crate::alloc_core::size_classes::SizeClasses;
+use crate::alloc_core::segment_header::{B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS, B3_LEAVES};
+use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::segment::segment_table::IssueTransaction;
@@ -104,6 +104,110 @@ const _: () = {
         "GROW_CHUNK must be a non-zero multiple of PAGE"
     );
 };
+
+/// B3 spike oracle (bench-internals): blocks served by the sub-leaf free
+/// structure on the refill (drain) path.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B3_DRAIN_FROM_FREE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B3 spike oracle: bench-internals reader for the drain-from-free counter.
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+#[allow(dead_code)] // spike oracle reader (root fn forwards to the counter)
+pub(crate) fn b3s_oracle_counter() -> u64 {
+    B3_DRAIN_FROM_FREE.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// B3 spike: first sub-leaf of `class_idx` with a mask bit at/after `from`
+/// (forward-only scan; `first_leaf` handles the cursor/wraparound entry).
+#[inline(always)]
+fn b3_next_leaf(b3: &B3Free, class_idx: usize, from: usize) -> Option<usize> {
+    debug_assert!(from <= B3_LEAVES);
+    if from >= B3_LEAVES {
+        return None;
+    }
+    let mut w = from / 64;
+    let mut bits = b3.mask_word(class_idx, w) & (u64::MAX << (from % 64));
+    loop {
+        if bits != 0 {
+            return Some(w * 64 + bits.trailing_zeros() as usize);
+        }
+        w += 1;
+        if w >= B3_LEAVES / 64 {
+            return None;
+        }
+        bits = b3.mask_word(class_idx, w);
+    }
+}
+
+/// B3 spike: locate the first free slot of `class_idx` strictly after scan
+/// position `pos` (`None` = the class-mask entry leaf). Returns
+/// `(leaf, bitmap_word_idx, bit)`; never mutates anything.
+#[inline(always)]
+fn b3_locate_free_from(
+    bm: &AllocBitmap,
+    b3: &B3Free,
+    class_idx: usize,
+    pos: &mut Option<(usize, usize, u32)>,
+) -> Option<(usize, usize, u32)> {
+    let (mut leaf, mut wi, mut min_bit) = match *pos {
+        None => {
+            let leaf = b3.first_leaf(class_idx)?;
+            (leaf, leaf * B3_LEAF_WORDS, 0u32)
+        }
+        Some((leaf, wi, bit)) => (leaf, wi, bit.saturating_add(1)),
+    };
+    loop {
+        let leaf_end = leaf * B3_LEAF_WORDS + B3_LEAF_WORDS;
+        while wi < leaf_end {
+            let word = if min_bit < 64 {
+                bm.word(wi) & u64::MAX.unbounded_shl(min_bit)
+            } else {
+                0
+            };
+            if word != 0 {
+                let bit = word.trailing_zeros();
+                *pos = Some((leaf, wi, bit));
+                return Some((leaf, wi, bit));
+            }
+            wi += 1;
+            min_bit = 0;
+        }
+        leaf = b3_next_leaf(b3, class_idx, leaf + 1)?;
+        wi = leaf * B3_LEAF_WORDS;
+    }
+}
+
+/// B3 spike: the segment offset of a located slot.
+#[inline(always)]
+fn b3_slot_offset(leaf: usize, wi: usize, bit: u32) -> u32 {
+    ((leaf * 256 + (wi - leaf * B3_LEAF_WORDS) * 64 + bit as usize) * MIN_BLOCK) as u32
+}
+
+/// B3 spike: first carve start for `class_idx` at/after `start`, honouring
+/// the sub-leaf→class binding (a carve never STARTS in a sub-leaf bound to
+/// another class; blocks > 4 KiB span sub-leaves naturally). `None` = no room.
+#[inline(always)]
+fn b3_carve_start(
+    b3: &B3Free,
+    class_idx: usize,
+    block_size: usize,
+    mut start: usize,
+) -> Option<usize> {
+    loop {
+        if start + block_size > SEGMENT {
+            return None;
+        }
+        let leaf = start / B3_LEAF_BYTES;
+        let bound = b3.leaf_class(leaf);
+        if bound != 0 && bound != class_idx as u8 + 1 {
+            start = align_up((leaf + 1) * B3_LEAF_BYTES, block_size);
+            continue;
+        }
+        return Some(start);
+    }
+}
 
 impl AllocCore {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -360,108 +464,61 @@ impl AllocCore {
     }
 
     fn prepare_current_carve(&self, class_idx: usize, block_size: usize) -> bool {
-        let bump = SegmentMeta::new(self.small_cur).bump_of();
-        let aligned = align_up(bump, block_size);
-        aligned + block_size > SEGMENT
-            || self
-                .table
-                .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
-                .is_some()
+        let meta = SegmentMeta::new(self.small_cur);
+        let bump = meta.bump_of();
+        // Base semantics (preserved): "no room in the current segment" must
+        // report OK so the caller proceeds to carve → None → reserve path.
+        let Some(aligned) = b3_carve_start(
+            &meta.b3_free(),
+            class_idx,
+            block_size,
+            align_up(bump, block_size),
+        ) else {
+            return true;
+        };
+        self.table
+            .prepare_small_issue(self.small_cur, aligned as u32, class_idx)
+            .is_some()
     }
 
     /// Pop a free block; `Err` is an uncommitted class-spill OOM.
+    ///
+    /// B3 spike: the free set is the alloc bitmap indexed by per-class
+    /// sub-leaf masks; the intrusive body `next` chain is gone.
     #[inline(always)]
     fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
         let mut meta = SegmentMeta::new(segment);
-        let mut bt = meta.bin_table();
-        let head_off = bt.head(class_idx);
-        if head_off == FREE_LIST_NULL {
-            return Ok(None);
-        }
-        let block_ptr = Node::deref(segment, head_off as usize);
-        let Some(block_nn) = NonNull::new(block_ptr) else {
+        let bm = meta.alloc_bitmap();
+        let b3 = meta.b3_free();
+        let Some((leaf, wi, bit)) = b3_locate_free_from(&bm, &b3, class_idx, &mut None) else {
             return Ok(None);
         };
-        let next = Node::read_next(block_nn);
-        // UBFIX-7 (M-3, `docs/reviews/2026-07-10-ub-audit-final-synthesis.md`):
-        // the intrusive freelist `next` word lives INSIDE the block itself, so
-        // it is writable by the user for as long as the block is (legitimately
-        // or via a use-after-free) in their hands. Before this guard, a
-        // corrupted `next` — e.g. left over from a UAF write into an
-        // already-freed block — was trusted unconditionally: the very next
-        // line turned it into a segment-relative offset via raw pointer
-        // subtraction, which is only sound if `next` actually lies inside
-        // `segment`. A `next` pointing outside the segment produces a garbage
-        // `u32` offset (wrapping/overflowing arithmetic), and the NEXT
-        // `pop_free`/`drain_freelist_batch` call derefs THAT offset via
-        // `Node::deref` (`segment.add(off)`), an out-of-bounds `add` — UB per
-        // `node.rs`'s SAFETY contract — and hands the caller a wild pointer
-        // dressed up as a legitimate block.
-        //
-        // `hardened`-gated (mimalloc `MI_SECURE`-style): validate `next` is
-        // either null or resolves to THIS segment's base before trusting it as
-        // a chain continuation; a mismatch TRUNCATES the chain here (treated
-        // as `FREE_LIST_NULL`) rather than being dereferenced. This never runs
-        // on the production (non-hardened) hot path — zero added instructions
-        // there, byte-identical to the pre-fix code under `cfg(not(hardened))`.
-        #[cfg(feature = "hardened")]
-        let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-            next
-        } else {
-            core::ptr::null_mut()
-        };
-        let new_head = if next.is_null() {
-            FREE_LIST_NULL
-        } else {
-            // Compute the offset of `next` relative to this segment. `next`
-            // is an absolute pointer into the same segment (free lists are
-            // per-segment), so offset = next - segment.
-            (next as usize - segment as usize) as u32
-        };
-        let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
+        let off = b3_slot_offset(leaf, wi, bit);
+        let Some(tx) = self.table.prepare_small_issue(segment, off, class_idx) else {
             return Err(());
         };
-        bt.set_head(class_idx, new_head);
-        // R7-A2: directory bitmap maintenance — the old head was non-null
-        // (we passed the FREE_LIST_NULL guard above), so the only transition
-        // is non-empty→empty when new_head is FREE_LIST_NULL.
+        let mut bm = meta.alloc_bitmap();
+        let mut b3 = meta.b3_free();
+        bm.clear_word_bit(wi, bit);
+        // If the sub-leaf emptied, drop its class-mask bit.
+        let w0 = leaf * B3_LEAF_WORDS;
+        if bm.word(wi) == 0
+            && bm.word(w0) == 0
+            && bm.word(w0 + 1) == 0
+            && bm.word(w0 + 2) == 0
+            && bm.word(w0 + 3) == 0
+        {
+            b3.clear_leaf(class_idx, leaf);
+        }
         #[cfg(feature = "alloc-segment-directory")]
-        if new_head == FREE_LIST_NULL {
+        if b3.class_empty(class_idx) {
             let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
             self.publish_empty(segment, class_idx, slot_idx);
         }
-        // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
-        // and is handed to the caller, so a subsequent free must NOT see it as
-        // already-free (and the next legitimate free must be able to re-mark it).
-        meta.alloc_bitmap().mark_alloc(head_off);
-        // Phase 35 (M6): a block left the free list and is handed to the caller
-        // → one more live block in this segment. Owner-only counter. A popped
-        // block always comes from a COMMITTED payload (a decommitted segment was
-        // reset to an empty free list, so `pop_free` finds nothing there), so no
-        // recommit is needed on this path — only `carve_block` writes fresh
-        // payload and thus recommits.
         meta.inc_live();
         tx.commit(&self.table);
-        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
-        // hands a block directly to the caller (it is the non-magazine substrate
-        // pop, reachable from `alloc_small`). Under `hardened` (which implies
-        // `fastbin`), `HeapCore::alloc` routes small blocks through the magazine
-        // and never reaches here — but a direct `AllocCore` consumer (or a future
-        // config change) could, so the bump is placed at this issue point for
-        // correctness and defense-in-depth. The magazine refill path uses
-        // `drain_freelist_batch` (which fills `out`, NOT issuing to a caller), so
-        // blocks pulled into the magazine are NOT bumped here — they are bumped
-        // on their later magazine pop. Compiled ONLY under `hardened`.
-        #[cfg(feature = "hardened")]
-        {
-            // SAFETY: `segment` is a live, exclusively-owned segment;
-            // `head_off` is a MIN_BLOCK-aligned offset of a live block.
-            #[allow(unsafe_code)]
-            unsafe {
-                crate::alloc_core::segment_header::bump_gen(segment, head_off as usize)
-            };
-        }
-        Ok(Some(block_ptr))
+        let ptr = Node::deref(segment, off as usize);
+        Ok(Some(ptr))
     }
 
     /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
@@ -533,104 +590,64 @@ impl AllocCore {
             return Ok(0);
         }
         let mut meta = SegmentMeta::new(segment);
-        let mut bt = meta.bin_table();
-        // The commit half re-validates this index against `segment`'s stamped
-        // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
         let index = SegmentHeader::segment_id_at(segment) as usize;
-
         {
-            // Read the head ONCE.
-            let mut head_off = bt.head(class_idx);
-            if head_off == FREE_LIST_NULL {
-                return Ok(0);
-            }
-            // Prepare every spill on the still-owned chain. On OOM the head,
-            // bitmap, live count and output remain unchanged; promoted leaves
-            // are valid uniform copies and may be reused by a later retry.
-            let mut probe = head_off;
-            let mut probed = 0usize;
-            while probed < out.len() && probe != FREE_LIST_NULL {
-                let block = Node::deref(segment, probe as usize);
-                let Some(nn) = NonNull::new(block) else {
+            let bm = meta.alloc_bitmap();
+            let b3 = meta.b3_free();
+            // Probe phase (OOM-atomicity, mirrors the old chain probe):
+            // prepare every spill WITHOUT consuming any bit. The walk below
+            // is deterministic and does not mutate, so the commit walk
+            // reproduces the identical slot sequence.
+            let mut pos = None;
+            let mut k = 0usize;
+            while k < out.len() {
+                let Some(loc) = b3_locate_free_from(&bm, &b3, class_idx, &mut pos) else {
                     break;
                 };
+                let off = b3_slot_offset(loc.0, loc.1, loc.2);
                 if self
                     .table
-                    .prepare_small_issue(segment, probe, class_idx)
+                    .prepare_small_issue(segment, off, class_idx)
                     .is_none()
                 {
                     return Err(());
                 }
-                let next = Node::read_next(nn);
-                #[cfg(feature = "hardened")]
-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-                    next
-                } else {
-                    core::ptr::null_mut()
-                };
-                probe = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    (next as usize - segment as usize) as u32
-                };
-                probed += 1;
-            }
-            let mut bm = meta.alloc_bitmap();
-            let mut k = 0usize;
-            while k < out.len() && head_off != FREE_LIST_NULL {
-                let block_ptr = Node::deref(segment, head_off as usize);
-                let block_nn = match NonNull::new(block_ptr) {
-                    Some(nn) => nn,
-                    // A null-deref would only arise from a corrupt offset; stop the
-                    // walk here and commit what we have (defence-in-depth). `head`
-                    // is left pointing at this node so nothing is lost.
-                    None => break,
-                };
-                // Dependent load: read this block's `next` BEFORE recording it. The
-                // block body is never written on the pop path, so this is race-free
-                // against ourselves.
-                let next = Node::read_next(block_nn);
-                // UBFIX-7 (M-3): validate `next` before trusting it as a chain
-                // continuation — see `pop_free`'s identical guard for the full
-                // rationale. `hardened`-gated; a mismatch truncates the chain
-                // (this iteration's `head_off` becomes NULL below, which the
-                // loop condition then exits on) instead of being dereferenced.
-                #[cfg(feature = "hardened")]
-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-                    next
-                } else {
-                    core::ptr::null_mut()
-                };
-                // Clear this block's bitmap bit — it leaves the free list and is
-                // handed out (per-block, byte-identical to `pop_free`).
-                bm.mark_alloc(head_off);
-                IssueTransaction::commit_prepared(&self.table, index, segment, head_off, class_idx);
-                out[k] = block_ptr;
                 k += 1;
-                head_off = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    // `next` is an absolute pointer into the SAME segment (free
-                    // lists are per-segment), so offset = next - segment.
-                    (next as usize - segment as usize) as u32
-                };
             }
-            // Write the new head ONCE: the first un-popped node, or NULL.
-            bt.set_head(class_idx, head_off);
-            // R7-A2: directory bitmap maintenance — the old head was non-null
-            // (early return above), so the only transition is non-empty→empty
-            // when the drain exhausted the chain (head_off == FREE_LIST_NULL).
+            if k == 0 {
+                return Ok(0);
+            }
+            #[cfg(feature = "bench-internals")]
+            B3_DRAIN_FROM_FREE.fetch_add(k as u64, core::sync::atomic::Ordering::Relaxed);
+            // Commit walk: consume the same slots in the same order.
+            let mut bm = meta.alloc_bitmap();
+            let mut b3 = meta.b3_free();
+            let mut pos = None;
+            let mut k = 0usize;
+            while k < out.len() {
+                let Some((leaf, wi, bit)) = b3_locate_free_from(&bm, &b3, class_idx, &mut pos)
+                else {
+                    break;
+                };
+                let off = b3_slot_offset(leaf, wi, bit);
+                bm.clear_word_bit(wi, bit);
+                let w0 = leaf * B3_LEAF_WORDS;
+                if bm.word(w0) == 0
+                    && bm.word(w0 + 1) == 0
+                    && bm.word(w0 + 2) == 0
+                    && bm.word(w0 + 3) == 0
+                {
+                    b3.clear_leaf(class_idx, leaf);
+                }
+                IssueTransaction::commit_prepared(&self.table, index, segment, off, class_idx);
+                out[k] = Node::deref(segment, off as usize);
+                k += 1;
+            }
             #[cfg(feature = "alloc-segment-directory")]
-            if head_off == FREE_LIST_NULL {
+            if b3.class_empty(class_idx) {
                 let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
                 self.publish_empty(segment, class_idx, slot_idx);
             }
-            // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
-            // popped block always comes from a COMMITTED payload (a decommitted
-            // segment was reset to an empty free list, so the drain finds nothing
-            // there), so no recommit is needed on this path. Applied via the
-            // batch `add_live(k)` primitive (byte-identical to `k` per-block
-            // `inc_live`s — see `add_live`'s D1-equivalence note).
             meta.add_live(k as u32);
             Ok(k)
         }
@@ -660,10 +677,16 @@ impl AllocCore {
         // `dealloc_routing` (the §11 data race). `bump` is owner-only (no
         // Remote reads it), so a plain field write is race-free.
         let bump = meta.bump_of();
-        let aligned_bump = align_up(bump, block_size);
-        if aligned_bump + block_size > SEGMENT {
+        // B3 spike: the start additionally skips sub-leaves bound to other
+        // classes (see `b3_carve_start`).
+        let Some(aligned_bump) = b3_carve_start(
+            &meta.b3_free(),
+            class_idx,
+            block_size,
+            align_up(bump, block_size),
+        ) else {
             return None;
-        }
+        };
         // Fallible prepare before any mutation: `?` is the `return None` the
         // old inline guard performed — "segment full" so the caller reserves.
         let tx = self
@@ -760,6 +783,11 @@ impl AllocCore {
                 meta.set_committed_payload_end(new_frontier);
             }
         }
+        // B3 spike: bind the start sub-leaf to this class at first carve
+        // (after every fallible step — binding is infallible and must not
+        // happen on an OOM path).
+        let start_leaf = aligned_bump / B3_LEAF_BYTES;
+        meta.b3_free().bind_leaf(start_leaf, class_idx);
         // Update ONLY the bump cursor.
         meta.set_bump(aligned_bump + block_size);
         // Phase 35: this carved block is now live (handed to the caller, or — on
@@ -856,25 +884,48 @@ impl AllocCore {
         let segment = self.small_cur;
         let mut meta = SegmentMeta::new(segment);
         let bump = meta.bump_of();
-        let aligned_start = align_up(bump, block_size);
-        if aligned_start + block_size > SEGMENT {
+        let b3 = meta.b3_free();
+        // B3 spike: the start sequence skips sub-leaves bound to other
+        // classes, so it is computed by `b3_carve_start` per block. The
+        // sequence is a pure function of (bump, leaf_class bindings) —
+        // bindings only ever mark leaves the sequence itself starts in —
+        // so the bounds / prepare / commit passes reproduce it identically.
+        let mut n = 0usize;
+        let mut batch_end = bump;
+        {
+            let mut s = align_up(bump, block_size);
+            while n < out.len() {
+                let Some(cs) = b3_carve_start(&b3, class_idx, block_size, s) else {
+                    break;
+                };
+                batch_end = cs + block_size;
+                n += 1;
+                s = cs + block_size;
+            }
+        }
+        if n == 0 {
             return Ok(0); // not room for even one block
         }
-        let room = (SEGMENT - aligned_start) / block_size;
-        let n = out.len().min(room);
         // The commit half re-validates this index against `segment`'s stamped
         // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
         let index = SegmentHeader::segment_id_at(segment) as usize;
         // A successful promotion is retained even if later OS commit fails;
         // no class code or issue credit changes until the carve commits.
-        for i in 0..n {
-            let off = aligned_start + i * block_size;
-            if self
-                .table
-                .prepare_small_issue(segment, off as u32, class_idx)
-                .is_none()
-            {
-                return Err(());
+        {
+            let mut s = align_up(bump, block_size);
+            for _ in 0..n {
+                let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
+                    Some(cs) => cs,
+                    None => std::process::abort(),
+                };
+                if self
+                    .table
+                    .prepare_small_issue(segment, cs as u32, class_idx)
+                    .is_none()
+                {
+                    return Err(());
+                }
+                s = cs + block_size;
             }
         }
         // Recommit ONCE at run start if the segment's payload was decommitted
@@ -882,10 +933,6 @@ impl AllocCore {
         // mid-run, so one check covers the whole run).
         #[cfg(feature = "alloc-decommit")]
         if meta.is_decommitted() {
-            // B3: lazy-commit-aware recommit on reuse (see `carve_block`'s
-            // identical block for the full rationale). R12-9 (task #260):
-            // `small-segment-lazy-commit` specifically — decommit only ever
-            // happens to `Small` segments, never `Primordial`.
             #[cfg(feature = "small-segment-lazy-commit")]
             {
                 meta.set_decommitted(false);
@@ -895,81 +942,56 @@ impl AllocCore {
                 if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
                     // Honest OOM (see `carve_block`): leave the segment marked
                     // decommitted, do not advance the bump, and carve nothing
-                    // so the caller falls back (fresh segment / null) instead
-                    // of writing into a still-reserved page.
+                    // so the caller falls back (fresh segment / null).
                     return Ok(0);
                 }
                 meta.set_decommitted(false);
             }
         }
-        // B2 (R7 Workstream B): incremental grow-on-carve for the batched
-        // path. ONE commit covers the WHOLE batch — not a syscall per block.
-        // Compute the batch's final end, commit once up to the rounded chunk
-        // boundary that covers it, then carve the batch. On commit failure
-        // everything stays unchanged and we return 0.
-        //
-        // No-op on the eager path (committed_payload_end == SEGMENT — the
-        // condition is always false). Fires only on the Windows lazy path.
-        // R12-9 (task #260): shared between the split sub-features, same as
-        // `carve_block`'s identical block.
-        // How many blocks fit from `aligned_start` to the segment end,
-        // capped by the caller's slice. Computed ONCE (#1994: previously
-        // recomputed a second time, identically, inside the lazy-commit
-        // growth check below) — shared by that check's `batch_end` and the
-        // final carve's bump advance.
+        // B2 grow-on-carve: ONE commit covers the WHOLE batch (end = the last
+        // computed block end, sub-leaf skips included).
         #[cfg(any(
             feature = "primordial-lazy-commit",
             feature = "small-segment-lazy-commit"
         ))]
         {
             let frontier = meta.committed_payload_end_of();
-            let batch_end = aligned_start + n * block_size;
             if batch_end > frontier {
-                // Round the batch end UP to the next GROW_CHUNK boundary,
-                // clamped to SEGMENT (never commit past the segment end).
                 let new_frontier = align_up(batch_end, GROW_CHUNK).min(SEGMENT);
                 if !os::commit_pages(segment, frontier, new_frontier) {
-                    // Commit-charge exhaustion: cannot grow the frontier.
-                    // Everything unchanged: bump not moved, live_count
-                    // unchanged, page map unwritten, no blocks handed out.
                     return Ok(0);
                 }
                 GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 meta.set_committed_payload_end(new_frontier);
             }
         }
-        // Advance the bump cursor ONCE to just past the last carved block —
-        // byte-identical to the final `set_bump` of the n-th sequential carve.
-        meta.set_bump(aligned_start + n * block_size);
-        // Batched live increment (D1): exactly `n` blocks handed out.
+        // Commit: replay the same start sequence, bind each start sub-leaf
+        // (first carve), advance the bump once, batch the live credit.
+        meta.set_bump(batch_end);
         meta.add_live(n as u32);
-        // Page-map "first class wins", applied once per DISTINCT page entered by
-        // this run. `carve_block` marks a page iff it was not already owned; the
-        // first block to land on a page is the one that dedicates it, so calling
-        // `set_class` on each page-index CHANGE reproduces that exactly.
-        //
-        // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
-        // load-bearing for class routing — see its struct doc); gated behind
-        // `page-map-diag` and elided from the default/production carve path.
-        #[cfg(feature = "page-map-diag")]
-        let mut pm = meta.page_map();
-        #[cfg(feature = "page-map-diag")]
-        let mut prev_page = usize::MAX;
-        for (i, slot) in out[..n].iter_mut().enumerate() {
-            let off = aligned_start + i * block_size;
-            #[cfg(feature = "page-map-diag")]
-            {
-                let page = off / crate::alloc_core::os::PAGE;
-                if page != prev_page {
-                    if pm.class_of(page).is_none() {
-                        pm.set_class(page, class_idx);
-                    }
-                    prev_page = page;
+        {
+            let mut s = align_up(bump, block_size);
+            let mut last_leaf = usize::MAX;
+            for slot in out[..n].iter_mut() {
+                let cs = match b3_carve_start(&b3, class_idx, block_size, s) {
+                    Some(cs) => cs,
+                    None => std::process::abort(),
+                };
+                let leaf = cs / B3_LEAF_BYTES;
+                if leaf != last_leaf {
+                    meta.b3_free().bind_leaf(leaf, class_idx);
+                    last_leaf = leaf;
                 }
+                IssueTransaction::commit_prepared(
+                    &self.table,
+                    index,
+                    segment,
+                    cs as u32,
+                    class_idx,
+                );
+                *slot = Node::deref(segment, cs);
+                s = cs + block_size;
             }
-            let ptr = Node::deref(segment, off);
-            IssueTransaction::commit_prepared(&self.table, index, segment, off as u32, class_idx);
-            *slot = ptr;
         }
         Ok(n)
     }

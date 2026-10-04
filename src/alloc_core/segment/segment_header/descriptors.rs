@@ -302,6 +302,16 @@ impl SegmentMeta {
         ))
     }
 
+    /// B3 spike: the per-class sub-leaf mask view (owner-only, zeroed at
+    /// bootstrap and on decommit reset).
+    #[inline(always)]
+    pub(crate) fn b3_free(&self) -> crate::alloc_core::segment_header::B3Free {
+        crate::alloc_core::segment_header::B3Free::new(Node::offset(
+            self.base,
+            crate::alloc_core::segment_header::Layout::b3_free_off(),
+        ))
+    }
+
     // -------------------------------------------------------------------
     // Atomic view over the owner identity field.
     // return `&AtomicU64` at the field's fixed offset so a cross-thread

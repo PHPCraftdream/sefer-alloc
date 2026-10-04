@@ -426,6 +426,14 @@ impl AllocCore {
             base,
             SegLayout::alloc_bitmap_off(),
         ));
+        // B3 spike: same virgin-skip discipline for the sub-leaf mask region
+        // (target state is all zeros; fresh OS pages already read zero; the
+        // decommit-reset path re-zeroes explicitly).
+        #[cfg(miri)]
+        crate::alloc_core::segment_header::B3Free::init_in_place(base_add(
+            base,
+            SegLayout::b3_free_off(),
+        ));
         // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended
         // to the second (magazine-residency) bitmap — see
         // `magazine_bitmap.rs`'s module doc. Skipped under `cfg(not(miri))`

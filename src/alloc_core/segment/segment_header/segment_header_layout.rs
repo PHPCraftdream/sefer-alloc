@@ -47,10 +47,15 @@ impl Layout {
     const fn owner_metadata_end() -> usize {
         Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
     }
+    /// B3 spike: offset of the per-class sub-leaf masks / leaf bindings /
+    /// cursors (owner-only, zero-initialized, reset on decommit).
+    pub(crate) const fn b3_free_off() -> usize {
+        align_up_const(Self::owner_metadata_end(), 8)
+    }
     /// Offset of the hardened owner generation table.
     #[cfg(feature = "hardened")]
     pub(crate) const fn gen_table_off() -> usize {
-        Self::owner_metadata_end()
+        Self::b3_free_off() + crate::alloc_core::segment_header::B3Free::FOOTPRINT
     }
     /// End of the small-segment metadata (page-aligned past the last metadata
     /// region). Payload carving begins here.
@@ -85,7 +90,7 @@ impl Layout {
         }
         #[cfg(not(feature = "hardened"))]
         {
-            Self::owner_metadata_end()
+            Self::b3_free_off() + crate::alloc_core::segment_header::B3Free::FOOTPRINT
         }
     }
     /// Primordial owner registry begins after all small owner metadata.

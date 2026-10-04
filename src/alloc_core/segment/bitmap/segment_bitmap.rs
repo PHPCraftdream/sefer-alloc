@@ -106,6 +106,22 @@ impl SegmentBitmap {
         Node::write_u8(p, byte & !mask);
     }
 
+    /// B3 spike: read the u64 bitmap word `w` (8-byte aligned — the bitmap
+    /// starts at an 8-aligned offset, words follow contiguously).
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(super) fn word(&self, w: usize) -> u64 {
+        Node::read_u64(Node::offset(self.bits, w * 8) as *const u64)
+    }
+
+    /// B3 spike: clear bit `b` (0..64) of bitmap word `w` in one RMW.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(super) fn clear_word_bit(&mut self, w: usize, b: u32) {
+        let p = Node::offset(self.bits, w * 8) as *mut u64;
+        Node::write_u64(p, Node::read_u64(p) & !(1u64 << b));
+    }
+
     /// Map a segment offset to `(byte_index, bit_mask)` within the bitmap. The
     /// bit index is `off >> MIN_BLOCK_SHIFT` (the `MIN_BLOCK`-slot number);
     /// byte = bit / 8, mask = 1 << (bit % 8). Pure arithmetic.

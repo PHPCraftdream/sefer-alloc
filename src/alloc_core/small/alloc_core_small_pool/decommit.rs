@@ -219,6 +219,11 @@ impl AllocCore {
         for c in 0..crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
             bt.set_head(c, FREE_LIST_NULL);
         }
+        // 2b'. B3 spike: reset the sub-leaf masks / bindings / cursors.
+        crate::alloc_core::segment_header::B3Free::init_in_place(crate::alloc_core::node::Node::offset(
+            base,
+            crate::alloc_core::segment_header::Layout::b3_free_off(),
+        ));
         // 2c. Re-mark every payload page `Free` in the page map (metadata pages
         //     keep their `Meta` marking). Payload pages are `[meta_pages,
         //     PAGES_PER_SEGMENT)`.

@@ -192,6 +192,13 @@ pub(crate) fn primordial() -> Option<Primordial> {
         base,
         Layout::magazine_bitmap_off(),
     ));
+    // B3 spike: same virgin-skip discipline for the sub-leaf mask region
+    // (target state all-zeros; decommit-reset re-zeroes explicitly).
+    #[cfg(miri)]
+    super::super::segment_header::B3Free::init_in_place(base_plus(
+        base,
+        Layout::b3_free_off(),
+    ));
     // X7 Ф3 (task #191): zero the per-segment generation table under
     // `hardened`. Compiled ONLY under `hardened`; under any other feature the
     // table does not exist and this call is absent (byte-identical to the

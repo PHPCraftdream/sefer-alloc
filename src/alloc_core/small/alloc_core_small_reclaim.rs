@@ -3,16 +3,11 @@
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::node::Node;
-#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
+    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
 };
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::size_classes::SizeClasses;
-#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use core::ptr::NonNull;
-
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 impl AllocCore {
     /// The owner retains the scan while retiring records and drops it before
@@ -51,18 +46,13 @@ impl AllocCore {
         if meta.magazine_bitmap().is_in_magazine(offset) {
             return false;
         }
-        let ptr = Node::deref(base, off);
-        let mut bins = meta.bin_table();
-        let old_head = bins.head(class_idx);
-        let next = if old_head == FREE_LIST_NULL {
-            core::ptr::null_mut()
-        } else {
-            Node::deref(base, old_head as usize)
-        };
-        let block = NonNull::new(ptr).unwrap_or_else(|| std::process::abort());
-        Node::write_next(block, next);
-        bins.set_head(class_idx, offset);
+        // B3 spike: retire = one bitmap bit + the sub-leaf class-mask bit.
+        // No body write, no BinTable head.
         bitmap.mark_free(offset);
+        meta.b3_free().set_leaf(
+            class_idx,
+            off / crate::alloc_core::segment_header::B3_LEAF_BYTES,
+        );
         meta.dec_live();
         true
     }

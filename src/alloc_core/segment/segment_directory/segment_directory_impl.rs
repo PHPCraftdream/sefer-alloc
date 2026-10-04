@@ -1,4 +1,4 @@
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::segment_table::{SegmentTable, MAX_SEGMENTS};
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
@@ -662,7 +662,6 @@ impl SegmentDirectory {
                 continue;
             }
             let meta = SegmentMeta::new(base);
-            let bt = meta.bin_table();
             // R11-6: derive the node bucket from the segment header under
             // numa-aware; non-numa-aware uses bucket 0 (node_id_of is
             // cfg-gated out).
@@ -671,7 +670,7 @@ impl SegmentDirectory {
             #[cfg(not(feature = "numa-aware"))]
             let node_id = 0u32;
             for c in 0..SMALL_CLASS_COUNT {
-                if bt.head(c) != FREE_LIST_NULL {
+                if !meta.b3_free().class_empty(c) {
                     self.set_bit(node_id, c, i);
                 }
             }

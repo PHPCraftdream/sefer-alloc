@@ -5,12 +5,10 @@
 //! and flush batch APIs (`refill_class*`, `flush_class`, `flush_run`).
 //! Pure code-movement sibling of `alloc_core_small.rs`; no behavior changed.
 
-use core::ptr::NonNull;
-
-use crate::alloc_core::node::{Node, NODE_SIZE};
+use crate::alloc_core::node::NODE_SIZE;
 use crate::alloc_core::os;
 use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
+    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
 };
 use crate::alloc_core::size_classes::SizeClasses;
 
@@ -548,8 +546,8 @@ impl AllocCore {
     #[must_use]
     fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {
         let meta = SegmentMeta::new(base);
-        let mut bt = meta.bin_table();
         let mut bm = meta.alloc_bitmap();
+        let b3 = meta.b3_free();
         // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
         // never carves, so `bump` cannot advance during this run.
         let bump = meta.bump_of();
@@ -566,13 +564,14 @@ impl AllocCore {
             SegLayout::small_meta_end()
         };
 
-        // Capture the segment's CURRENT freelist head ONCE — the first accepted
-        // block links to this (matching the first sequential `dealloc_small`,
-        // whose `old_head` is exactly this value).
-        let old_head = bt.head(class_idx);
-        let mut prev_off = old_head; // next-target for the next accepted block
-        let mut last_accepted: Option<u32> = None;
-        // Count accepted blocks for one owner-side credit retirement after `set_head`.
+        // B3 spike: was the class mask empty before this run? (directory
+        // empty→non-empty transition).
+        let was_empty = meta.b3_free().class_empty(class_idx);
+        // Word-accumulated sub-leaf mask bits: one load + one store per
+        // touched mask word per run, one OR per accepted block.
+        let mut acc_wi = usize::MAX;
+        let mut acc_val = 0u64;
+        // Count accepted blocks for one owner-side credit retirement.
         let mut accepted_count: usize = 0;
 
         for &ptr in run {
@@ -597,37 +596,25 @@ impl AllocCore {
             if bm.is_free(off) {
                 continue;
             }
-            // `ptr` identifies the offset only. Link through the stored
-            // reservation root, which covers the entire free-list word.
-            let block_nn = match NonNull::new(Node::deref(base, off as usize)) {
-                Some(nn) => nn,
-                None => continue,
-            };
-            // Link this accepted block at the head of the run-local chain: its
-            // `next` is the PRIOR accepted block's off (or the captured
-            // `old_head` for the first accepted). Byte-identical to the LIFO
-            // push each sequential `dealloc_small` performs.
-            let next_ptr = if prev_off == FREE_LIST_NULL {
-                core::ptr::null_mut()
-            } else {
-                Node::deref(base, prev_off as usize)
-            };
-            Node::write_next(block_nn, next_ptr);
+            // B3 spike: retire = bitmap bit + accumulated sub-leaf mask OR.
             bm.mark_free(off);
-            prev_off = off;
-            last_accepted = Some(off);
+            let leaf = off as usize / crate::alloc_core::segment_header::B3_LEAF_BYTES;
+            let wi = leaf / 64;
+            if wi != acc_wi {
+                if acc_wi != usize::MAX {
+                    b3.or_mask_word(class_idx, acc_wi, acc_val);
+                }
+                acc_wi = wi;
+                acc_val = 0;
+            }
+            acc_val |= 1u64 << (leaf % 64);
             accepted_count += 1;
         }
 
-        // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
-        // final `set_head` of the last sequential `dealloc_small` in the run.
-        if let Some(off) = last_accepted {
-            bt.set_head(class_idx, off);
-            // R7-A2: directory bitmap maintenance — the new head is always
-            // non-null (`off`), so the only transition is empty→non-empty
-            // when old_head was FREE_LIST_NULL.
+        if acc_wi != usize::MAX {
+            b3.or_mask_word(class_idx, acc_wi, acc_val);
             #[cfg(feature = "alloc-segment-directory")]
-            if old_head == FREE_LIST_NULL {
+            if was_empty {
                 let slot_idx = SegmentHeader::segment_id_at(base) as usize;
                 self.publish_nonempty(base, class_idx, slot_idx);
             }

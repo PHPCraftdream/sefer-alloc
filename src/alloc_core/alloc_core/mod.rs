@@ -90,3 +90,13 @@ mod state;
 #[path = "alloc_core_impl.rs"]
 mod alloc_core_impl;
 pub use alloc_core_impl::*;
+
+
+
+/// B3 spike oracle: crate-internal reader (bench-internals).
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+#[doc(hidden)]
+pub(super) fn b3s_drain_from_free_inner() -> u64 {
+    crate::alloc_core::small::alloc_core_small::B3_DRAIN_FROM_FREE
+        .load(core::sync::atomic::Ordering::Relaxed)
+}

@@ -72,6 +72,10 @@ impl Node {
     /// this allocator. `next` is either null (tail) or another such free
     /// block's address.
     #[inline(always)]
+    // B3 spike: unused on the Small free paths (body `next` chains are
+    // gone); kept for the PG-2-style mutant witness (temporarily re-adding
+    // the retire body-write must re-link this seam).
+    #[allow(dead_code)]
     pub(crate) fn write_next(block: NonNull<u8>, next: *mut u8) {
         let ptr = block.as_ptr() as *mut *mut u8;
         // SAFETY: `block` is non-null (from `NonNull`), aligned to at least the
@@ -97,6 +101,7 @@ impl Node {
     /// or null if none. The block MUST currently be a free-list node (caller's
     /// invariant).
     #[inline(always)]
+    #[allow(dead_code)] // B3 spike: see write_next.
     pub(crate) fn read_next(block: NonNull<u8>) -> *mut u8 {
         let ptr = block.as_ptr() as *mut *mut u8;
         // SAFETY: same bounds/alignment/exclusivity proof as `write_next`. The
@@ -531,6 +536,26 @@ impl Node {
     pub(crate) fn write_u32(dst: *mut u32, value: u32) {
         // SAFETY: caller guarantees `dst` is valid for 4 bytes, 4-byte aligned,
         // and exclusively owned (bootstrap-time init). One 4-byte write.
+        unsafe { dst.write(value) };
+    }
+
+    /// Read a `u64` from `src` (8-byte aligned). B3 spike: owner-only
+    /// sub-leaf mask words in segment metadata.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn read_u64(src: *const u64) -> u64 {
+        // SAFETY: caller guarantees `src` is valid, 8-byte aligned, in a live
+        // segment. One 8-byte load.
+        unsafe { src.read() }
+    }
+
+    /// Write a `u64` `value` at `dst` (8-byte aligned). B3 spike: owner-only
+    /// sub-leaf mask words in segment metadata.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn write_u64(dst: *mut u64, value: u64) {
+        // SAFETY: caller guarantees `dst` is valid for 8 bytes, 8-byte
+        // aligned, and exclusively owned. One 8-byte write.
         unsafe { dst.write(value) };
     }
 

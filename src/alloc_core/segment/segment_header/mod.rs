@@ -50,6 +50,11 @@ mod layout_asserts;
 mod segment_header_impl;
 pub use segment_header_impl::*;
 
+/// B3 spike: per-class masks of non-empty 4 KiB sub-leaves over the alloc bitmap.
+#[path = "b3_free.rs"]
+mod b3_free;
+pub(crate) use b3_free::{B3Free, B3_LEAF_BYTES, B3_LEAF_WORDS, B3_LEAVES};
+
 /// Ph3b: the private physical-kind witness shared by the free entries.
 #[path = "block_kind.rs"]
 mod block_kind;

@@ -674,6 +674,7 @@ hard compile error in every configuration:
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
 | [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
 | [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, atomic initialization and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
+| [`src/alloc_core/segment/segment_header/b3_free.rs`](src/alloc_core/segment/segment_header/b3_free.rs) | B3 spike (`ph3c-b3s`, not for merge): owner-only per-class masks of non-empty 4 KiB sub-leaves, leaf→class bindings and cursors over the segment alloc bitmap; raw words via the node seam. | `alloc-core`; used by `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/registry/segment_route/shard_lock.rs`](src/registry/segment_route/shard_lock.rs) | Non-allocating spin lock guarding route-directory shards; std `Mutex` boxes a pthread mutex on first lock on macOS, which would re-enter the installed global allocator during heap construction. | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
@@ -749,8 +750,8 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **29** tier-1 module-level seams (23 in
-`src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **34**
+That's the full list (both tiers): **30** tier-1 module-level seams (24 in
+`src/`, 6 in `crates/`) plus **102** tier-2 item-scoped allows across **33**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1362,8 +1363,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **328 integration test files**,
-**80 example binaries**, **22 benches**, and **11 root Loom models**
+needs its acceptance run. The present tree contains **329 integration test files**,
+**80 example binaries**, **23 benches**, and **11 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1372,9 +1373,9 @@ and support modules. The test tree also contains 9 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (328 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (329 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (80 files) |
-| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (22 files) |
+| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (23 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (11 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri.mjs` includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |
