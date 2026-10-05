@@ -30,6 +30,11 @@ pub use super::bootstrap::saturation::SaturationHint;
 pub use stack::pick_with_saturation;
 
 pub use claim::{HeapRegistry, MaintenanceLease};
+// Ph4a (task #2091): test-only exposure of the claim lease (`internals`
+// builds only; the struct itself is `pub(crate)` without `internals`).
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use claim::HeapLease;
 // R1-10 (src review round 1): the fallback heap's own process-static
 // magazine/large-cache hit counters, bound by `global::fallback` at init
 // (there is no registry slot to bind for it) — see `counters::

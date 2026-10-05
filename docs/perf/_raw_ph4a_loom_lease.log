@@ -1,0 +1,88 @@
+== loom_r11_ph4a_heap_lease ==
+warning: struct `StackHead` is never constructed
+   --> src\registry\bootstrap\loom_shim.rs:336:19
+    |
+336 | pub(crate) struct StackHead<const INDEX_BITS: u32> {
+    |                   ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated items `new`, `load`, and `compare_exchange` are never used
+   --> src\registry\bootstrap\loom_shim.rs:341:25
+    |
+340 | impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
+    | ------------------------------------------------- associated items in this implementation
+341 |     pub(crate) const fn new() -> Self {
+    |                         ^^^
+...
+357 |     pub(crate) fn load(&self, ordering: Ordering) -> u64 {
+    |                   ^^^^
+...
+364 |     pub(crate) fn compare_exchange(
+    |                   ^^^^^^^^^^^^^^^^
+
+warning: trait `StackStorage` is never used
+   --> src\registry\bootstrap\loom_shim.rs:383:18
+    |
+383 | pub(crate) trait StackStorage<const INDEX_BITS: u32> {
+    |                  ^^^^^^^^^^^^
+
+warning: trait `StackOps` is never used
+   --> src\registry\bootstrap\loom_shim.rs:391:18
+    |
+391 | pub(crate) trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
+    |                  ^^^^^^^^
+
+warning: `sefer-alloc` (lib) generated 4 warnings
+    Finished `release` profile [optimized] target(s) in 0.46s
+     Running tests\loom_r11_ph4a_heap_lease.rs (target-ph4a\release\deps\loom_r11_ph4a_heap_lease-1a7d11ab882106e9.exe)
+
+running 1 test
+test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+== loom_r8_maintenance_lease ==
+warning: struct `StackHead` is never constructed
+   --> src\registry\bootstrap\loom_shim.rs:336:19
+    |
+336 | pub(crate) struct StackHead<const INDEX_BITS: u32> {
+    |                   ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated items `new`, `load`, and `compare_exchange` are never used
+   --> src\registry\bootstrap\loom_shim.rs:341:25
+    |
+340 | impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
+    | ------------------------------------------------- associated items in this implementation
+341 |     pub(crate) const fn new() -> Self {
+    |                         ^^^
+...
+357 |     pub(crate) fn load(&self, ordering: Ordering) -> u64 {
+    |                   ^^^^
+...
+364 |     pub(crate) fn compare_exchange(
+    |                   ^^^^^^^^^^^^^^^^
+
+warning: trait `StackStorage` is never used
+   --> src\registry\bootstrap\loom_shim.rs:383:18
+    |
+383 | pub(crate) trait StackStorage<const INDEX_BITS: u32> {
+    |                  ^^^^^^^^^^^^
+
+warning: trait `StackOps` is never used
+   --> src\registry\bootstrap\loom_shim.rs:391:18
+    |
+391 | pub(crate) trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
+    |                  ^^^^^^^^
+
+warning: `sefer-alloc` (lib) generated 4 warnings
+    Finished `release` profile [optimized] target(s) in 0.42s
+     Running tests\loom_r8_maintenance_lease.rs (target-ph4a\release\deps\loom_r8_maintenance_lease-2aaf1f297d7a90af.exe)
+
+running 1 test
+test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+

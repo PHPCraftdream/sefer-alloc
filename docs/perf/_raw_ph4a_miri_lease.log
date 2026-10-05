@@ -1,0 +1,21 @@
+=== pass 1: MIRIFLAGS=-Zmiri-strict-provenance ===
+=== pass 2: default provenance (SB) ===
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests\r11_ph4a_lease_miri.rs (target-ph4a\miri\x86_64-pc-windows-msvc\debug\deps\r11_ph4a_lease_miri-a7433522d5e09efa.exe)
+
+running 1 test
+test lease_claim_drop_reclaim_across_threads_under_miri ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.94s
+
+=== SB pass (default provenance) ===
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests\r11_ph4a_lease_miri.rs (target-ph4a\miri\x86_64-pc-windows-msvc\debug\deps\r11_ph4a_lease_miri-a7433522d5e09efa.exe)
+
+running 1 test
+test lease_claim_drop_reclaim_across_threads_under_miri ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.94s
+
