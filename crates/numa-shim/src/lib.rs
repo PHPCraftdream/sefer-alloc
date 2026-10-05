@@ -398,7 +398,12 @@ pub mod mock {
         /// touched `CALLS`/`CURRENT_NODE_SLOT` directly. Narrowed to
         /// `pub(crate)`; external consumers keep `drain()`/`set_current_node()`
         /// as the only surface.
-        pub(crate) static CALLS: RefCell<Vec<MockCall>> = const { RefCell::new(Vec::new()) };
+        ///
+        /// Fixed in-place storage, never heap: `record()` runs inside the
+        /// allocator under `numa-aware-mock` (e.g. while the fallback heap's
+        /// lock is held), so a growing `Vec` re-entered the global allocator
+        /// and self-deadlocked on that lock.
+        pub(crate) static CALLS: RefCell<CallLog> = const { RefCell::new(CallLog::new()) };
         /// Value returned by `current_node()` under the mock.  Default 0.
         pub(crate) static CURRENT_NODE_SLOT: Cell<u32> = const { Cell::new(0) };
         /// Scripted policy-installation failure for a specific node id.
@@ -422,7 +427,39 @@ pub mod mock {
     /// than `CALLS_CAP` calls without an intervening `drain()` gets a
     /// silently truncated (oldest-first) prefix here, not the full set.
     pub fn drain() -> Vec<MockCall> {
-        CALLS.with(|c| c.borrow_mut().drain(..).collect())
+        CALLS.with(|c| c.borrow_mut().drain())
+    }
+
+    /// Allocation-free call log: `CALLS_CAP` slots inline in the thread-local.
+    pub(crate) struct CallLog {
+        buf: [Option<MockCall>; CALLS_CAP],
+        len: usize,
+    }
+
+    impl CallLog {
+        const fn new() -> Self {
+            Self {
+                buf: [const { None }; CALLS_CAP],
+                len: 0,
+            }
+        }
+
+        /// Append unless full (oldest entries kept). Never allocates.
+        fn push(&mut self, call: MockCall) {
+            if self.len < CALLS_CAP {
+                self.buf[self.len] = Some(call);
+                self.len += 1;
+            }
+        }
+
+        /// Move the recorded prefix out, oldest first.
+        fn drain(&mut self) -> Vec<MockCall> {
+            let len = core::mem::take(&mut self.len);
+            self.buf[..len]
+                .iter_mut()
+                .filter_map(Option::take)
+                .collect()
+        }
     }
 
     /// Set the value returned by subsequent `current_node()` calls, until
@@ -512,25 +549,18 @@ pub mod mock {
 
     /// Internal: record a call.
     ///
-    /// R11-5: reentrancy-safe. The `Vec::push` inside the borrow guard
-    /// allocates via the global allocator; if the global allocator IS
-    /// sefer-alloc under `numa-aware-mock` (which requires BOTH the feature
-    /// AND `--cfg numa_shim_mock`), that allocation re-enters `current_node()` → `record()`, which would
-    /// deadlock on a plain `borrow_mut()` (already borrowed). `try_with` +
-    /// `try_borrow_mut` silently drops the recording on re-entry — the
-    /// RETURNED value (from `current_node_slot`) is unaffected; only the
-    /// call-log entry for the re-entrant call is lost, which is acceptable
-    /// because tests that inspect the call log never run under a
-    /// sefer-alloc-as-global scenario.
+    /// Never allocates: [`CallLog`] is fixed inline storage. Under
+    /// `numa-aware-mock` (the feature AND `--cfg numa_shim_mock`) with
+    /// sefer-alloc as the global allocator this runs INSIDE the allocator —
+    /// a heap push there re-entered the global allocator and self-deadlocked
+    /// on the fallback heap's lock. `try_with` + `try_borrow_mut` stay as
+    /// defence in depth: a re-entrant call drops only its own log entry.
     pub(crate) fn record(call: MockCall) {
         let _ = CALLS.try_with(|c| {
             if let Ok(mut b) = c.try_borrow_mut() {
-                // task #726 (rust-intel audit §B14): cap the log so an
-                // unbounded numa-aware-mock allocation scenario (see this
-                // fn's own R11-5 note above) cannot grow this Vec forever.
-                if b.len() < CALLS_CAP {
-                    b.push(call);
-                }
+                // task #726 (rust-intel audit §B14): capped at CALLS_CAP;
+                // fixed storage, so recording never allocates.
+                b.push(call);
             }
         });
     }

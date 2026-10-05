@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- `mock` (`--cfg numa_shim_mock` only): the call log is fixed inline
+  thread-local storage (`CALLS_CAP` slots) instead of a growing `Vec`, so
+  recording never allocates. Under `numa-aware-mock` with sefer-alloc as the
+  global allocator, `record()` runs inside the allocator; the `Vec` push
+  re-entered it while the fallback heap's lock was held and spun forever.
+  `drain()` and the `CALLS_CAP` cap are unchanged.
+
 ## 0.2.0 - 2026-08-25
 
 ### NUMA gate verification caveat (owner risk acceptance, 2026-08-23)
