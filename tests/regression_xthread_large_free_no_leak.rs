@@ -13,10 +13,8 @@ use std::alloc::{GlobalAlloc, Layout};
 
 #[test]
 fn large_owner_slow_path_consumes_descriptor_obligation_before_cache_reuse() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: the claim gives this thread exclusive ownership until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(SegmentLayout::SMALL_MAX + 4096, 16).unwrap();
     let first = heap.alloc(layout);
     assert!(!first.is_null());
@@ -47,8 +45,7 @@ fn large_owner_slow_path_consumes_descriptor_obligation_before_cache_reuse() {
     drop(pin);
     drop(next);
     // SAFETY: second is a new current allocation instance, freed exactly once.
-    unsafe {
-        heap.dealloc(second, layout);
-        HeapRegistry::recycle(heap_ptr);
-    }
+    unsafe { heap.dealloc(second, layout) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

@@ -41,7 +41,7 @@
 //! `tests/heap_core_tcache.rs`, `tests/regression_batch_flush.rs`'s sibling
 //! `AllocCore`-level `dbg_live_count_for` idiom, and
 //! `tests/r11_4_dealloc_batch_mixed_ownership.rs`): it obtains a `*mut
-//! HeapCore` directly via `HeapRegistry::claim()` and calls
+//! HeapCore` directly via `dbg_claim_lease` and calls
 //! `HeapCore::alloc`/`HeapCore::dealloc_batch`/`HeapCore::dbg_live_count_for`
 //! DIRECTLY — bypassing `SeferAlloc`/`#[global_allocator]` entirely. This
 //! file never installs `SeferAlloc` as the global allocator, so `live_count`
@@ -143,8 +143,8 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
     let n = 200usize;
@@ -155,7 +155,7 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     let mut blocks: Vec<*mut u8> = Vec::with_capacity(n);
     for i in 0..n {
         // SAFETY: valid non-zero layout; `heap` was just claimed.
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "setup alloc returned null at i={i}");
         blocks.push(p);
     }
@@ -167,7 +167,7 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     // multi-flush stress" framing (mirrors `r24_8`'s own precondition).
     let seg_bases: std::collections::HashSet<usize> = blocks
         .iter()
-        .map(|&p| unsafe { (*heap).dbg_segment_base_of_ptr(p) } as usize)
+        .map(|&p| heap.dbg_segment_base_of_ptr(p) as usize)
         .collect();
     assert_eq!(
         seg_bases.len(),
@@ -189,11 +189,12 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     // documented "first TCACHE_CAP accepted blocks fill the magazine"
     // expectation precisely instead of being perturbed by refill-batch
     // leftovers unrelated to the multi-flush path under test.
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 
     // Authoritative live_count BEFORE the batched free (magazine now empty
     // for this class: live_count == exactly the N=200 blocks in `blocks`).
-    let live_before = unsafe { (*heap).dbg_live_count_for(blocks[0]) }
+    let live_before = heap
+        .dbg_live_count_for(blocks[0])
         .expect("segment must be small/primordial and registered");
     assert_eq!(
         live_before as usize, n,
@@ -208,10 +209,10 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     // flush_class calls at STAGE_CAP=64: 64 + 64 + 56 = 3 flushes total).
     // SAFETY: every entry of `blocks` was allocated by `heap` above with
     // `layout`; freed exactly once here, in a single well-formed call.
-    unsafe { (*heap).dealloc_batch(layout, &blocks) };
+    unsafe { heap.dealloc_batch(layout, &blocks) };
 
     // Authoritative live_count AFTER the batched free.
-    let live_after = unsafe { (*heap).dbg_live_count_for(blocks[0]) }
+    let live_after = heap.dbg_live_count_for(blocks[0])
         .expect("segment must still be registered (small segment; not the sole occupant, so it should not have decommitted/recycled away entirely)");
 
     // The load-bearing assertion this file exists for: the EXACT expected
@@ -239,9 +240,10 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     // fully and ONLY explained by the documented first-warm magazine
     // residency, not by some other accounting error that happens to net out
     // to the same delta.
-    let c =
-        unsafe { (*heap).dbg_class_for(layout) }.expect("16 B @ align 8 must be Small-classified");
-    let tcache_count = unsafe { (*heap).dbg_tcache_count(c) };
+    let c = heap
+        .dbg_class_for(layout)
+        .expect("16 B @ align 8 must be Small-classified");
+    let tcache_count = heap.dbg_tcache_count(c);
     assert_eq!(
         tcache_count as usize, TCACHE_CAP,
         "magazine for class {c} must hold exactly TCACHE_CAP({TCACHE_CAP}) \
@@ -251,9 +253,9 @@ fn dealloc_batch_multi_flush_live_count_transition_is_exact() {
     // Cleanup: drain the magazine (dbg_flush_all forwards to the same
     // flush_class the batched path itself uses) so the heap is left tidy
     // before recycling.
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 
-    // SAFETY: `heap` was claimed above via HeapRegistry::claim; recycled
-    // whole here, matching every other isolated-HeapCore test's teardown.
-    unsafe { HeapRegistry::recycle(heap) };
+    // `heap` was claimed above via dbg_claim_lease; the lease Drop recycles
+    // it whole, matching every other isolated-HeapCore test's teardown.
+    drop(lease);
 }

@@ -39,10 +39,8 @@ fn small_free_list_miss_consumes_terminal_publication_without_explicit_sweep() {
 #[test]
 fn magazine_hit_does_not_sweep_sidecar_words() {
     use sefer_alloc::registry::HeapRegistry;
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed core until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(64, 16).unwrap();
     let victim = heap.alloc(layout);
     assert!(!victim.is_null());
@@ -60,8 +58,8 @@ fn magazine_hit_does_not_sweep_sidecar_words() {
     // SAFETY: hit is the only remaining issued user allocation.
     unsafe {
         heap.dealloc(hit, layout);
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }
 
 #[cfg(feature = "fastbin")]
@@ -69,10 +67,8 @@ fn magazine_hit_does_not_sweep_sidecar_words() {
 fn magazine_refill_miss_consumes_terminal_small_once() {
     use sefer_alloc::registry::HeapRegistry;
 
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(64, 16).unwrap();
     let class = heap.dbg_class_for(layout).unwrap();
     let want = heap.dbg_refill_n_for_class(class);
@@ -118,8 +114,8 @@ fn magazine_refill_miss_consumes_terminal_small_once() {
         for &ptr in &next_refill {
             heap.dealloc(ptr, layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }
 
 #[cfg(all(feature = "fastbin", feature = "virgin-zero-skip"))]
@@ -127,10 +123,8 @@ fn magazine_refill_miss_consumes_terminal_small_once() {
 fn zeroed_only_refill_consumes_terminal_small_and_clears_reused_bytes() {
     use sefer_alloc::registry::HeapRegistry;
 
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(64, 16).unwrap();
     let class = heap.dbg_class_for(layout).unwrap();
     let want = heap.dbg_refill_n_for_class(class);
@@ -175,8 +169,8 @@ fn zeroed_only_refill_consumes_terminal_small_and_clears_reused_bytes() {
         for &ptr in &next_refill {
             heap.dealloc(ptr, layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }
 
 #[cfg(feature = "alloc-decommit")]
@@ -186,10 +180,8 @@ fn zeroed_large_cold_path_consumes_terminal_obligation_before_cache_reuse() {
     use sefer_alloc::registry::HeapRegistry;
     use sefer_alloc::SegmentLayout;
 
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(
         SegmentLayout::SMALL_MAX + SegmentLayout::PAGE,
         SegmentLayout::PAGE,
@@ -216,6 +208,6 @@ fn zeroed_large_cold_path_consumes_terminal_obligation_before_cache_reuse() {
     // SAFETY: second is the only live Large instance and is freed once.
     unsafe {
         heap.dealloc(second, layout);
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }

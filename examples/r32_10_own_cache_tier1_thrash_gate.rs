@@ -165,11 +165,8 @@ fn run_child(k: usize) {
     let _ = bootstrap::ensure();
     let conflicts_before = config_conflicts_total();
 
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim` and is owned by this
-    // thread (this process's only thread) until `recycle` at the end.
-    let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap: &mut HeapCore = lease.core();
 
     let layout = large_layout();
 
@@ -239,9 +236,9 @@ fn run_child(k: usize) {
         // exactly once here.
         unsafe { heap.dealloc(p, layout) };
     }
-    // SAFETY: `heap_ptr` was returned by `claim` above, not yet recycled,
-    // no other thread touches it (single-threaded probe).
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Lease `Drop` recycles the slot (LIVE → FREE Release); dropping it
+    // explicitly here keeps the same phase order the raw-pointer version had.
+    drop(lease);
 
     let conflicts_delta = config_conflicts_total().saturating_sub(conflicts_before);
     assert_eq!(

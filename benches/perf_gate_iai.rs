@@ -72,6 +72,23 @@ use sefer_alloc::SeferAlloc;
 #[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
 use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
 
+/// Ph4c migration shim for the legacy `HeapRegistry::claim()` raw-pointer
+/// API: same semantics (an exclusive heap; the slot is deliberately NEVER
+/// recycled here -- every `#[library_benchmark]` arm runs in its own fresh
+/// process, so the old code just dropped the raw pointer on the floor and
+/// leaked the LIVE slot) expressed through the safe lease API instead.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+fn claim_leaked_heap() -> &'static mut HeapCore {
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    // SAFETY: the slot lives in the `'static` registry array; forgetting the
+    // lease suppresses its LIVE -> FREE `Drop`, so the slot stays LIVE and
+    // the exclusive borrow stays valid for `'static` exactly like the legacy
+    // raw pointer. No other claimant can win while the slot is LIVE.
+    let heap = unsafe { &mut *(lease.core() as *mut HeapCore) };
+    core::mem::forget(lease);
+    heap
+}
+
 /// Number of alloc/dealloc pairs per churn iteration. Kept small relative to
 /// the criterion benches (which use 1024) — callgrind emulation is far
 /// slower than native execution; the instruction *count* is what we compare,
@@ -250,8 +267,7 @@ fn small_churn_16b_2n() {
 #[library_benchmark]
 fn dealloc_prealloc_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -274,8 +290,7 @@ fn dealloc_prealloc_only_16b() {
 #[library_benchmark]
 fn dealloc_free_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -310,8 +325,7 @@ fn dealloc_free_only_16b() {
 #[library_benchmark]
 fn dealloc_contains_base_probe_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -358,8 +372,7 @@ fn dealloc_contains_base_probe_only_16b() {
 #[library_benchmark]
 fn dealloc_segment_base_of_ptr_probe_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -442,8 +455,7 @@ const PREFILL_CYCLES: usize = CHURN_OPS / MAGAZINE_FILL;
 #[library_benchmark]
 fn alloc_magazine_prefill_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
@@ -483,8 +495,7 @@ fn alloc_magazine_prefill_only_16b() {
 #[library_benchmark]
 fn alloc_magazine_hit_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
@@ -540,8 +551,7 @@ fn alloc_magazine_hit_only_16b() {
 #[library_benchmark]
 fn alloc_zeroed_magazine_prefill_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
@@ -590,8 +600,7 @@ fn alloc_zeroed_magazine_prefill_only_16b() {
 #[library_benchmark]
 fn alloc_zeroed_magazine_hit_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
@@ -652,8 +661,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
 #[library_benchmark]
 fn alloc_zeroed_magazine_prefill_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
@@ -708,8 +716,7 @@ fn alloc_zeroed_magazine_prefill_only_16b() {
 #[library_benchmark]
 fn alloc_zeroed_magazine_hit_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
@@ -756,8 +763,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
 #[library_benchmark]
 fn dealloc_hash_contains_only_probe_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -823,8 +829,7 @@ fn dealloc_hash_contains_only_probe_16b() {
 #[library_benchmark]
 fn dealloc_own_thread_body_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -884,8 +889,7 @@ fn dealloc_own_thread_body_only_16b() {
 #[library_benchmark]
 fn dealloc_free_only_16b_n1() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -912,8 +916,7 @@ fn dealloc_free_only_16b_n1() {
 #[library_benchmark]
 fn dealloc_free_only_16b_n8() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -941,8 +944,7 @@ fn dealloc_free_only_16b_n8() {
 #[library_benchmark]
 fn dealloc_free_only_16b_n9() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -969,8 +971,7 @@ fn dealloc_free_only_16b_n9() {
 #[library_benchmark]
 fn dealloc_free_only_16b_n16() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -999,8 +1000,7 @@ fn dealloc_free_only_16b_n16() {
 #[library_benchmark]
 fn dealloc_free_only_16b_n17() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -1027,8 +1027,7 @@ fn dealloc_free_only_16b_n17() {
 #[library_benchmark]
 fn dealloc_free_only_16b_n32() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
@@ -1093,8 +1092,7 @@ fn dealloc_free_only_16b_n32() {
 #[library_benchmark]
 fn dealloc_flush_class_only_16b_prefix() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Pre-fill the magazine to count 8 via 8 REAL alloc+free pairs (cheap
@@ -1137,8 +1135,7 @@ fn dealloc_flush_class_only_16b_prefix() {
 #[library_benchmark]
 fn dealloc_flush_class_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Identical setup to `dealloc_flush_class_only_16b_prefix` (see its doc
@@ -1225,8 +1222,7 @@ fn dealloc_flush_class_only_16b() {
 #[library_benchmark]
 fn alloc_clear_magazine_only_16b_prefix() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Alloc 16, then free all 16 -- 16 cheap pushes into the magazine (count
@@ -1261,8 +1257,7 @@ fn alloc_clear_magazine_only_16b_prefix() {
 #[library_benchmark]
 fn alloc_clear_magazine_only_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Identical setup to `alloc_clear_magazine_only_16b_prefix` (see its doc
@@ -1574,8 +1569,7 @@ const PREFIX_OPS: usize = 1088;
 #[library_benchmark]
 fn dealloc_prealloc_only_1088_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1593,8 +1587,7 @@ fn dealloc_prealloc_only_1088_16b() {
 #[library_benchmark]
 fn dealloc_free_only_1088_16b_n17() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1618,8 +1611,7 @@ fn dealloc_free_only_1088_16b_n17() {
 #[library_benchmark]
 fn dealloc_free_only_1088_16b_n32() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1643,8 +1635,7 @@ fn dealloc_free_only_1088_16b_n32() {
 #[library_benchmark]
 fn dealloc_free_only_1088_16b_n64() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1668,8 +1659,7 @@ fn dealloc_free_only_1088_16b_n64() {
 #[library_benchmark]
 fn dealloc_free_only_1088_16b_n256() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1696,8 +1686,7 @@ fn dealloc_free_only_1088_16b_n256() {
 #[library_benchmark]
 fn dealloc_free_only_1088_16b_n1024() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1731,8 +1720,7 @@ fn dealloc_free_only_1088_16b_n1024() {
 #[library_benchmark]
 fn dealloc_realloc_burst_1088_16b_n17() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
@@ -1774,8 +1762,7 @@ const OSC_ROUNDS: usize = 20;
 #[library_benchmark]
 fn oscillating_live_set_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut live: [*mut u8; 24] = [core::ptr::null_mut(); 24];
@@ -1871,8 +1858,7 @@ fn carve_batch_only_16b_2n() {
 #[library_benchmark]
 fn dealloc_batch_fresh_16_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 16] = [core::ptr::null_mut(); 16];
@@ -1892,8 +1878,7 @@ fn dealloc_batch_fresh_16_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_64_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 64] = [core::ptr::null_mut(); 64];
@@ -1931,8 +1916,7 @@ fn dealloc_batch_fresh_64_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_80_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 80] = [core::ptr::null_mut(); 80];
@@ -1953,8 +1937,7 @@ fn dealloc_batch_fresh_80_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_81_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 81] = [core::ptr::null_mut(); 81];
@@ -1976,8 +1959,7 @@ fn dealloc_batch_fresh_81_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_128_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 128] = [core::ptr::null_mut(); 128];
@@ -1998,8 +1980,7 @@ fn dealloc_batch_fresh_128_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_200_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 200] = [core::ptr::null_mut(); 200];
@@ -2020,8 +2001,7 @@ fn dealloc_batch_fresh_200_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_512_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 512] = [core::ptr::null_mut(); 512];
@@ -2042,8 +2022,7 @@ fn dealloc_batch_fresh_512_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_1024_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 1024] = [core::ptr::null_mut(); 1024];
@@ -2074,8 +2053,7 @@ fn dealloc_batch_fresh_1024_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_0_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let ptrs: [*mut u8; 0] = [];
@@ -2091,8 +2069,7 @@ fn dealloc_batch_fresh_0_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_1_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 1] = [core::ptr::null_mut(); 1];
@@ -2113,8 +2090,7 @@ fn dealloc_batch_fresh_1_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_8_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 8] = [core::ptr::null_mut(); 8];
@@ -2135,8 +2111,7 @@ fn dealloc_batch_fresh_8_16b() {
 #[library_benchmark]
 fn dealloc_batch_fresh_17_16b() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: [*mut u8; 17] = [core::ptr::null_mut(); 17];
@@ -2308,8 +2283,7 @@ const LARGE_HIT_CYCLES: usize = 8;
 #[library_benchmark]
 fn large_cache_prefill_only_4mib() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(LARGE_ALLOC_BYTES, 8).unwrap();
 
     for _ in 0..LARGE_HIT_CYCLES {
@@ -2346,8 +2320,7 @@ fn large_cache_prefill_only_4mib() {
 #[library_benchmark]
 fn large_cache_hit_only_4mib() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let layout = Layout::from_size_align(LARGE_ALLOC_BYTES, 8).unwrap();
 
     for _ in 0..LARGE_HIT_CYCLES {
@@ -2425,8 +2398,7 @@ const FREE_SLOT_SEARCH_CYCLES: usize = 8; // matches LARGE_HIT_CYCLES's shape
 #[library_benchmark]
 fn large_cache_free_slot_search_prefill_only() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
 
     for mult in 1..=FREE_SLOT_SEARCH_DECOY_COUNT {
         let sz = mult * 4 * 1024 * 1024; // SEGMENT-multiple decoy sizes
@@ -2467,8 +2439,7 @@ fn large_cache_free_slot_search_prefill_only() {
 #[library_benchmark]
 fn large_cache_free_slot_search_cycle_only() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
 
     for mult in 1..=FREE_SLOT_SEARCH_DECOY_COUNT {
         let sz = mult * 4 * 1024 * 1024;
@@ -3403,8 +3374,7 @@ fn dealloc_batch_fresh_17_16b() {
 #[library_benchmark]
 fn decomp_full_cycle_8x() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap = claim_leaked_heap();
     let pool_cap = unsafe { (*heap).dbg_pool_cap() };
     // Pre-fill pool so releases take the release path.
     for _ in 0..(pool_cap + 2) {

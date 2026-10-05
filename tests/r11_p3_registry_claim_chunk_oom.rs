@@ -18,57 +18,55 @@ fn failed_new_chunk_recovers_older_free_then_retries_minted_index() {
     let reg = bootstrap::ensure();
     let mut held = Vec::with_capacity(64);
     for expected in 0..64 {
-        let core = HeapRegistry::claim();
-        assert!(!core.is_null());
-        // SAFETY: this thread owns the claim until its later recycle.
-        assert_eq!(unsafe { (*core).id() }, expected);
-        held.push(core);
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        assert_eq!(lease.core().id(), expected);
+        held.push(lease);
     }
     assert!(!reg.dbg_chunk_is_materialised(1));
     // Two releases overwrite the one-entry hint. Reclaim the latest one,
     // leaving an older FREE heap with no hint while fresh capacity remains.
-    for index in [0, 1] {
-        // SAFETY: each pointer is a distinct live claim, used only here.
-        unsafe { HeapRegistry::recycle(held[index]) };
+    let (old0, old1) = (held[0].slot_index(), held[1].slot_index());
+    for _ in 0..2 {
+        // Each lease is a distinct live claim; its Drop recycles the slot.
+        drop(held.remove(0));
     }
-    let latest = HeapRegistry::claim();
-    assert_eq!(latest, held[1]);
+    let latest = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_eq!(latest.slot_index(), old1);
     assert_eq!(reg.dbg_slot_state(0), STATE_FREE);
     assert_eq!(reg.dbg_slot_state(1), STATE_LIVE);
 
     let _reset = OomReset;
     bootstrap::dbg_set_inject_chunk_oom(true);
-    let recovered = HeapRegistry::claim();
-    assert_eq!(recovered, held[0], "cold OOM scan must find older FREE");
+    let recovered = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_eq!(
+        recovered.slot_index(),
+        old0,
+        "cold OOM scan must find older FREE"
+    );
     assert_eq!(bootstrap::count_for_test(), 65);
     assert!(!reg.dbg_chunk_is_materialised(1));
     bootstrap::dbg_set_inject_chunk_oom(false);
 
-    let retried = HeapRegistry::claim();
-    assert!(!retried.is_null());
-    // SAFETY: the successful claim exclusively owns the initialized core.
-    assert_eq!(unsafe { (*retried).id() }, 64);
+    let mut retried = HeapRegistry::dbg_claim_lease().expect("claim");
+    // SAFETY-free core access: the lease exclusively owns the slot.
+    assert_eq!(retried.core().id(), 64);
     assert!(reg.dbg_chunk_is_materialised(1));
     assert_eq!(bootstrap::count_for_test(), 65);
 
-    // SAFETY: these three live claims have not been recycled yet.
-    unsafe {
-        HeapRegistry::recycle(retried);
-        HeapRegistry::recycle(recovered);
-        HeapRegistry::recycle(latest);
-    }
-    for core in held.into_iter().skip(2) {
-        // SAFETY: each remaining pointer is still a distinct live claim.
-        unsafe { HeapRegistry::recycle(core) };
+    // These three live leases have not been dropped yet.
+    drop(retried);
+    drop(recovered);
+    drop(latest);
+    for lease in held.into_iter().skip(2) {
+        // Each remaining lease is still a distinct live claim.
+        drop(lease);
     }
 
-    let lease = HeapRegistry::try_maintenance().expect("materialized FREE heap");
+    let lease = HeapRegistry::dbg_try_maintenance().expect("materialized FREE heap");
     let leased_index = lease.slot_index() as u32;
     drop(lease);
-    let after_lease = HeapRegistry::claim();
-    assert!(!after_lease.is_null());
-    // SAFETY: the returned claim is live until the following recycle.
-    assert_eq!(unsafe { (*after_lease).id() }, leased_index);
-    // SAFETY: this claim has not yet been recycled.
-    unsafe { HeapRegistry::recycle(after_lease) };
+    let mut after_lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_eq!(after_lease.core().id(), leased_index);
+    // The lease Drop recycles the slot; the claim has not been recycled yet.
+    drop(after_lease);
 }

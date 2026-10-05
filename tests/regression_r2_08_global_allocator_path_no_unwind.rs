@@ -57,22 +57,21 @@ fn child_scenario() {
     //    re-claimed one already carrying it. Conflicting (non-B) re-claims
     //    are held and recycled first, so the B slot ends up on top.
     let mut held = Vec::new();
-    let b_heap = loop {
+    let b_lease = loop {
         assert!(held.len() < 64, "could not obtain a CONFIG_B slot");
         let before = config_conflicts_total();
-        let h = HeapRegistry::claim_with_config(CONFIG_B);
-        assert!(!h.is_null(), "registry claim returned null");
+        let lease = HeapRegistry::dbg_claim_lease_with_config(CONFIG_B);
+        assert!(lease.is_some(), "registry claim returned None");
+        let lease = lease.unwrap();
         if config_conflicts_total() == before {
-            break h;
+            break lease;
         }
-        held.push(h);
+        held.push(lease);
     };
-    for h in held {
-        // SAFETY: each `h` came from `claim_with_config` and is recycled once.
-        unsafe { HeapRegistry::recycle(h) };
-    }
-    // SAFETY: from `claim_with_config`, recycled once — now the LIFO top.
-    unsafe { HeapRegistry::recycle(b_heap) };
+    drop(held);
+    // Recycle the CONFIG_B slot LAST: drop the lease LIVE -> FREE (Release),
+    // leaving it the LIFO top of the free stack.
+    drop(b_lease);
 
     // 2. A fresh thread's first global allocation binds through GLOBAL
     //    (CONFIG_G) and re-claims the CONFIG_B slot: a conflict on the

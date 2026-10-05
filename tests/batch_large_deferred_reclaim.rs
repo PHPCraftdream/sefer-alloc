@@ -88,11 +88,8 @@ unsafe impl Send for SendPtr {}
 #[test]
 fn batch_large_cross_thread_free_high_water_bounded() {
     let _ = bootstrap::ensure();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim` and is owned by this
-    // thread until `recycle` at the end of this test.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     // Large-classified: `class_for` returns None for this size, which is the
     // exact configuration that hits the G3 batch path.
@@ -194,7 +191,6 @@ fn batch_large_cross_thread_free_high_water_bounded() {
     // SAFETY: cleanup is a live allocation of this layout, freed exactly once.
     unsafe { heap.dealloc(cleanup, layout) };
 
-    // SAFETY: `heap_ptr` was returned by `claim` above, not yet recycled,
-    // and no other thread touches it.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

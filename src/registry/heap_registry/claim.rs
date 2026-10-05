@@ -46,13 +46,39 @@ impl HeapRegistry {
         Self::claim_impl(HeapCore::new, |_| {})
     }
 
-    /// Acquire one already-materialised FREE heap without allocating chunks.
-    /// A failed CAS, including MAINTENANCE, grants no access.
+    /// Safe test/diagnostic (`internals` + `alloc-decommit`) variant of
+    /// [`dbg_claim_lease`](Self::dbg_claim_lease) with the decommit config
+    /// plumbing of `claim_lease_with_config` (first-materialisation config,
+    /// N2 config-conflict hook). Test-only; never a production API.
+    #[cfg(all(feature = "internals", feature = "alloc-decommit"))]
     #[doc(hidden)]
     #[must_use]
-    pub fn try_maintenance() -> Option<MaintenanceLease> {
+    pub fn dbg_claim_lease_with_config(
+        config: crate::alloc_core::LargeCacheConfig,
+    ) -> Option<HeapLease> {
+        Self::claim_lease_with_config(config)
+    }
+
+    /// Acquire one already-materialised FREE heap without allocating chunks.
+    /// A failed CAS, including MAINTENANCE, grants no access.
+    ///
+    /// Ph4c (ADR addendum §2.6): crate-only after the surface narrowing;
+    /// external tests use the `internals`-gated `dbg_try_maintenance` alias.
+    #[doc(hidden)]
+    #[must_use]
+    pub(crate) fn try_maintenance() -> Option<MaintenanceLease> {
         let (index, _) = scan_free_slot(ensure())?;
         Self::try_maintenance_at(index)
+    }
+
+    /// Test-only alias of [`Self::try_maintenance`] after the Ph4c narrowing
+    /// made it crate-only (ADR addendum §2.6). Gated on `internals` like the
+    /// other `dbg_*` observers.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_try_maintenance() -> Option<MaintenanceLease> {
+        Self::try_maintenance()
     }
 
     /// Acquire exactly this existing initialized slot; never materialize a
@@ -145,8 +171,16 @@ impl HeapRegistry {
     /// Ph4a: the authority is carried by [`HeapLease`] internally; this is a
     /// thin legacy wrapper that drains the lease into the raw `*mut HeapCore`
     /// WITHOUT running its `Drop` (see [`HeapLease::into_raw`]).
+    ///
+    /// Ph4c (ADR addendum §2.6): LEGACY, crate-only after the Ph4c surface
+    /// narrowing — called only by the in-crate `legacy_semantics` unit tests
+    /// and internal wrappers; external code must use [`HeapLease`]
+    /// (`dbg_claim_lease`).
     #[must_use]
-    pub fn claim() -> *mut HeapCore {
+    // crate-only legacy surface (Ph4c, ADR addendum §2.6): unused outside the
+    // in-crate `legacy_semantics` unit tests.
+    #[allow(dead_code)]
+    pub(crate) fn claim() -> *mut HeapCore {
         lease_into_raw(Self::claim_lease())
     }
 
@@ -175,9 +209,14 @@ impl HeapRegistry {
     ///
     /// Ph4a: like [`claim`](Self::claim), a thin legacy wrapper that drains
     /// the internal [`HeapLease`] into a raw pointer without `Drop`.
+    ///
+    /// Ph4c (ADR addendum §2.6): LEGACY, crate-only after the Ph4c surface
+    /// narrowing.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
-    pub fn claim_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
+    // crate-only legacy surface (Ph4c, ADR addendum §2.6).
+    #[allow(dead_code)]
+    pub(crate) fn claim_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
         lease_into_raw(Self::claim_lease_with_config(config))
     }
 
@@ -400,7 +439,13 @@ impl HeapRegistry {
     /// FREE is published; neither this pointer nor aliases derived from it may
     /// be dereferenced afterwards, even if no new claimant has been observed.
     /// Remote terminal publication uses independent sidecars, not this core.
-    pub unsafe fn recycle(heap: *mut HeapCore) {
+    ///
+    /// Ph4c (ADR addendum §2.6): LEGACY, crate-only after the surface
+    /// narrowing; called only by the in-crate `legacy_semantics` unit tests
+    /// and internal wrappers (`HeapLease::drop`).
+    // crate-only legacy surface (Ph4c, ADR addendum §2.6).
+    #[allow(dead_code)]
+    pub(crate) unsafe fn recycle(heap: *mut HeapCore) {
         if heap.is_null() {
             return;
         }
@@ -449,14 +494,43 @@ impl MaintenanceLease {
     pub fn slot_index(&self) -> usize {
         self.index
     }
-    /// # Safety
-    /// No legacy raw `HeapCore` alias may be used after recycle, and the
-    /// callback must not access producer-reachable bytes through `&mut`.
-    pub unsafe fn with_core<R>(&mut self, f: impl FnOnce(&mut HeapCore) -> R) -> R {
-        // SAFETY: the FREE→MAINTENANCE CAS won, initialised is true, and the
-        // caller upholds the raw-pointer/remote-sidecar aliasing contract.
+    /// Safe core access for one maintenance pass (Ph4c: no longer
+    /// `pub unsafe`).
+    ///
+    /// Why safe without a caller obligation: the old `unsafe` contract had a
+    /// single obligation — the callback must not touch producer-reachable
+    /// bytes through `&mut`. Producers never touch this `HeapCore` at all:
+    /// `publish_foreign` and every terminal publisher (`RouteDirectory::lookup`
+    /// → `pin.publish_small`/`pin.publish_large`) write only into
+    /// independently allocated sidecars (`SmallSidecar`/`LargeState` behind
+    /// the route directory), global atomics, or the fallback heap — never
+    /// into the MAINTENANCE slot's `HeapCore` or its reservations (the
+    /// slot-resident atomic sidecar, `HeapSlotRemote`, sits outside the
+    /// `HeapCore` exclusive-borrow range on its own aligned line). Combined
+    /// with the FREE→MAINTENANCE CAS exclusivity (the core's only other
+    /// owners are CAS winners whose authority ended at their own
+    /// Release publication, paired with our Acquire CAS — S2 of addendum
+    /// §2.1), the exclusive `&mut HeapCore` for the callback's duration is
+    /// sound in safe code.
+    ///
+    /// Ph4c (ADR addendum §2.6): crate-only after the surface narrowing;
+    /// external tests use the `internals`-gated [`Self::dbg_with_core`]
+    /// alias.
+    pub(crate) fn with_core<R>(&mut self, f: impl FnOnce(&mut HeapCore) -> R) -> R {
+        // SAFETY: the FREE→MAINTENANCE CAS won and `initialised` was
+        // Acquire-observed; no live alias survives (proof in the doc comment
+        // — remote producers touch only independent sidecars).
         let core = unsafe { &mut *self.slot.heap.get().cast::<HeapCore>() };
         f(core)
+    }
+
+    /// Test-only alias of [`Self::with_core`] after the Ph4c narrowing made
+    /// it crate-only (ADR addendum §2.6). Gated on `internals` like the
+    /// other `dbg_*` observers.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_with_core<R>(&mut self, f: impl FnOnce(&mut HeapCore) -> R) -> R {
+        self.with_core(f)
     }
 }
 
@@ -529,8 +603,14 @@ impl HeapLease {
         self.generation
     }
 
-    /// The ONLY core-access seam. #2091: sole `unsafe` derivation of
-    /// `&mut HeapCore` from the lease.
+    /// Test/diagnostic (`internals`) access seam — the ONLY core-access seam
+    /// (#2091: sole `unsafe` derivation of `&mut HeapCore` from the lease).
+    /// Ph4c (#2107): `#[doc(hidden)] pub` under `internals` so `tests/` probes
+    /// use this instead of the legacy raw-pointer API. Sound in safe code
+    /// because the lease already carries the exclusive authority: the borrow
+    /// is tied to `&mut self`, the lease is `!Send`/`!Sync`, and S3's only
+    /// raw alias is same-thread TLS, dead before any Drop can overlap.
+    /// Not a production API.
     ///
     /// # SAFETY (proof obligations of addendum §2.1)
     ///
@@ -549,7 +629,8 @@ impl HeapLease {
     /// - **S4** slot validity: `&'static HeapSlot` — the registry chunks are
     ///   never freed for the process lifetime, and the lease was formed only
     ///   after `initialised == true` was observed/published.
-    pub(crate) fn core(&mut self) -> &mut HeapCore {
+    #[doc(hidden)]
+    pub fn core(&mut self) -> &mut HeapCore {
         // SAFETY: S1–S4 above — LIVE slot, sole writer by the won CAS,
         // happens-before from the previous owner's Release publication,
         // `'static` slot, `initialised` already true.
@@ -562,6 +643,8 @@ impl HeapLease {
     /// the raw pointer carries the authority out, exactly like the old
     /// `claim` return. No new code in `src/` may call this (tls_heap only,
     /// until Ph4b).
+    // crate-only legacy surface (Ph4c, ADR addendum §2.6): tls_heap only.
+    #[allow(dead_code)]
     pub(crate) fn into_raw(self) -> *mut HeapCore {
         let mut lease = self;
         // SAFETY: same S1–S4 proof as `core`; `forget` suppresses the
@@ -599,6 +682,8 @@ impl Drop for HeapLease {
 /// OOM) maps to null; a lease is converted to the raw TLS pointer without
 /// `Drop`. The raw pointer is Drop-less by design — the legacy TLS protocol
 /// recycles the slot explicitly via `HeapRegistry::recycle`.
+// crate-only legacy drain (Ph4c, ADR addendum §2.6).
+#[allow(dead_code)]
 fn lease_into_raw(lease: Option<HeapLease>) -> *mut HeapCore {
     match lease {
         None => core::ptr::null_mut(),
@@ -662,4 +747,89 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     }
     reg.reuse_hint.store(idx, Ordering::Relaxed);
     reg.saturation.publish_claimable();
+}
+
+// legacy raw-pointer protocol semantics — stays until the legacy surface is
+// removed.
+//
+// These tests pin the LEGACY `HeapRegistry::{claim, recycle}` raw-pointer
+// protocol (null recycle is a silent no-op; double recycle is a silent no-op),
+// which `HeapLease` cannot express (a lease recycles exactly once, by Drop).
+// They run inside the crate, where the Ph4c `pub(crate)` narrowings
+// (`claim_lease`, `into_raw`) are legal, and never use the `dbg_*` observers
+// (gated behind `internals`). The registry is a process-global static: the
+// one-shot `SERIAL` mutex keeps the tests off each other.
+#[cfg(all(test, feature = "alloc-global"))]
+mod legacy_semantics {
+    use std::sync::Mutex;
+
+    use super::HeapRegistry;
+    use crate::registry::bootstrap::count_for_test;
+
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    /// `recycle` of a null pointer is a safe no-op (defensive).
+    #[test]
+    fn recycle_null_is_noop() {
+        let _serial = SERIAL.lock().unwrap();
+        let base = count_for_test();
+        // SAFETY: null is explicitly allowed (a no-op per the contract).
+        unsafe { HeapRegistry::recycle(core::ptr::null_mut()) };
+        // No crash, no state change observable: the next claim mints the next
+        // count index (does not pop a phantom slot from free_slots).
+        let a = HeapRegistry::claim();
+        assert!(!a.is_null());
+        // SAFETY: `a` is a fresh claim's LIVE pointer; `id()` is a read of
+        // the slot index it was minted from.
+        let id_a = unsafe { (*a).id() } as usize;
+        assert_eq!(
+            id_a, base as usize,
+            "after a null recycle, the first real claim mints the next count index"
+        );
+    }
+
+    /// Double-recycle is a safe no-op: recycling the same heap twice does not
+    /// corrupt the free_slots stack (the CAS LIVE→FREE fails on the second
+    /// call). We verify by checking that two claims after a double-recycle
+    /// pop the slot exactly once and then mint a fresh one.
+    #[test]
+    fn double_recycle_is_safe_noop() {
+        let _serial = SERIAL.lock().unwrap();
+        let base = count_for_test();
+        let a = HeapRegistry::claim();
+        assert!(!a.is_null());
+        // SAFETY: `a` is a fresh claim's LIVE pointer; `id()` is a read of
+        // the slot index it was minted from.
+        let id_a = unsafe { (*a).id() } as usize;
+        // SAFETY: `a` was returned by `claim`. The first recycle is valid; the
+        // second is a contract violation (double-recycle) that the registry
+        // handles defensively (CAS LIVE→FREE fails, no-op).
+        unsafe { HeapRegistry::recycle(a) };
+        unsafe { HeapRegistry::recycle(a) }; // defensive: must be a no-op, not a double-push
+
+        // Two claims: the first reuses the recycled slot; the second must NOT
+        // also resolve to the same slot (which would happen if the
+        // double-recycle pushed it twice and corrupted the stack).
+        let b = HeapRegistry::claim();
+        let c = HeapRegistry::claim();
+        assert!(!b.is_null() && !c.is_null());
+        // SAFETY: `b`/`c` are fresh claims' LIVE pointers; `id()` is a read
+        // of the slot index each was minted from.
+        let id_b = unsafe { (*b).id() } as usize;
+        let id_c = unsafe { (*c).id() } as usize;
+        assert_eq!(
+            id_b, id_a,
+            "first re-claim pops the once-pushed recycled slot"
+        );
+        assert_ne!(
+            id_b, id_c,
+            "second claim must mint a DIFFERENT slot (no phantom duplicate from double-recycle)"
+        );
+        // The fresh slot is the next count index.
+        assert_eq!(
+            id_c,
+            base as usize + 1,
+            "the second claim after a double-recycle mints the next count index"
+        );
+    }
 }

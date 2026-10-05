@@ -89,12 +89,12 @@ fn large_small_class_free_side_park_is_bounded_by_byte_budget() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
     // Defensive: start from an empty magazine for every class (a freshly
     // claimed heap already is, but this keeps the test self-contained even
     // if `claim()`'s guarantees ever change).
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 
     // Probe downward for a small class whose D3 refill budget clamps below
     // TCACHE_CAP (same search strategy as
@@ -115,10 +115,10 @@ fn large_small_class_free_side_park_is_bounded_by_byte_budget() {
             Ok(l) => l,
             Err(_) => continue,
         };
-        let Some(class_idx) = (unsafe { (*heap).dbg_class_for(layout) }) else {
+        let Some(class_idx) = heap.dbg_class_for(layout) else {
             continue; // Large/huge path — not a magazine class.
         };
-        let cap = unsafe { (*heap).dbg_refill_n_for_class(class_idx) };
+        let cap = heap.dbg_refill_n_for_class(class_idx);
         if cap < TCACHE_CAP {
             found = Some((class_idx, layout, cap));
             break;
@@ -143,11 +143,13 @@ fn large_small_class_free_side_park_is_bounded_by_byte_budget() {
     // reviewer's scenario ("16 alloc/free класса 206 992 B").
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         if p.is_null() {
             eprintln!("OOM allocating the probed large-small-class layout — skip");
             for &q in &ptrs {
-                unsafe { (*heap).dealloc(q, layout) };
+                // SAFETY: `q` is a live block this heap allocated above;
+                // freed only to keep the early-return path leak-free.
+                unsafe { heap.dealloc(q, layout) };
             }
             return;
         }
@@ -157,7 +159,9 @@ fn large_small_class_free_side_park_is_bounded_by_byte_budget() {
 
     // Free all N — this is the free-side path R1-01 fixes.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: `p` is a live block this heap allocated above; this is the
+        // free-side path R1-01 fixes.
+        unsafe { heap.dealloc(p, layout) };
     }
 
     // Core R1-01 assertion: the magazine parks at most `cap` blocks for this
@@ -165,7 +169,7 @@ fn large_small_class_free_side_park_is_bounded_by_byte_budget() {
     // were freed. Before the fix, `dealloc_own_thread_with_base` pushed
     // unconditionally while `count < TCACHE_CAP`, so this would read
     // `min(N, TCACHE_CAP) == 16`, not `cap`.
-    let mag_cnt = unsafe { (*heap).dbg_tcache_count(class_idx) } as usize;
+    let mag_cnt = heap.dbg_tcache_count(class_idx) as usize;
     assert_eq!(
         mag_cnt, cap,
         "class {class_idx}'s free-side magazine depth must equal its D3 byte \
@@ -189,14 +193,14 @@ fn large_small_class_free_side_park_is_bounded_by_byte_budget() {
     // `mag_cnt` assertion above is what actually catches the regression;
     // this drives the point home end-to-end by confirming the segment(s)
     // genuinely empty out.
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
     assert_eq!(
-        unsafe { (*heap).dbg_tcache_count(class_idx) },
+        heap.dbg_tcache_count(class_idx),
         0,
         "dbg_flush_all must empty class {class_idx}'s magazine"
     );
     for &p in &ptrs {
-        let live = unsafe { (*heap).dbg_live_count_for(p) };
+        let live = heap.dbg_live_count_for(p);
         assert_eq!(
             live,
             Some(0),
@@ -217,13 +221,15 @@ fn small_class_free_side_park_unaffected_still_fills_tcache_cap() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    unsafe { (*heap).dbg_flush_all() };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
+    heap.dbg_flush_all();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
-    let class_idx = unsafe { (*heap).dbg_class_for(layout) }.expect("16B must be a small class");
-    let cap = unsafe { (*heap).dbg_refill_n_for_class(class_idx) };
+    let class_idx = heap
+        .dbg_class_for(layout)
+        .expect("16B must be a small class");
+    let cap = heap.dbg_refill_n_for_class(class_idx);
     assert_eq!(
         cap, TCACHE_CAP,
         "16B class's free-side park cap must equal the full TCACHE_CAP (byte \
@@ -239,22 +245,23 @@ fn small_class_free_side_park_unaffected_still_fills_tcache_cap() {
     // from making the final count path-dependent.
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(TCACHE_CAP);
     for _ in 0..TCACHE_CAP {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc must not fail for a 16B class");
         ptrs.push(p);
     }
     assert_eq!(
-        unsafe { (*heap).dbg_tcache_count(class_idx) },
+        heap.dbg_tcache_count(class_idx),
         0,
         "after exactly TCACHE_CAP allocations off an empty magazine, the \
          single refill's supply must be fully consumed"
     );
 
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: `p` is a live block this heap allocated above.
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    let mag_cnt = unsafe { (*heap).dbg_tcache_count(class_idx) } as usize;
+    let mag_cnt = heap.dbg_tcache_count(class_idx) as usize;
     assert_eq!(
         mag_cnt, TCACHE_CAP,
         "a <= 4 KiB class must still park the full TCACHE_CAP ({TCACHE_CAP}) \
@@ -265,5 +272,5 @@ fn small_class_free_side_park_unaffected_still_fills_tcache_cap() {
 
     // Best-effort drain so this test doesn't leak magazine state into
     // whatever runs next on this thread's heap.
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 }

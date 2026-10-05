@@ -130,8 +130,8 @@ const ATTEMPTS: u32 = 3;
 fn run_burst_once() -> Duration {
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Owner pre-allocates all N blocks up front, then does ZERO further
     // work (no alloc, no dealloc, no drain) until every producer below has
@@ -143,7 +143,7 @@ fn run_burst_once() -> Duration {
     // non-draining-owner harness.
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "owner pre-alloc returned null");
         ptrs.push(p);
     }
@@ -157,12 +157,15 @@ fn run_burst_once() -> Duration {
         let slice = slice.to_vec();
         handles.push(thread::spawn(move || {
             let _ = bootstrap::ensure();
-            let remote_heap = HeapRegistry::claim();
-            assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+            let mut remote_lease =
+                HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+            let remote_heap = remote_lease.core();
             for addr in slice {
-                unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+                // SAFETY: `addr` is a live owner allocation; the deliberate
+                // cross-thread free drives the paused-owner path under test.
+                unsafe { remote_heap.dealloc(addr as *mut u8, layout) };
             }
-            unsafe { HeapRegistry::recycle(remote_heap) };
+            drop(remote_lease);
         }));
     }
     // The owner does NOTHING here — no alloc, no drain — for the entire
@@ -173,7 +176,8 @@ fn run_burst_once() -> Duration {
     }
     let elapsed = t0.elapsed();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the owner's slot (LIVE -> FREE, Release).
+    drop(lease);
     elapsed
 }
 

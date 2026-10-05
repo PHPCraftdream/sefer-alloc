@@ -120,11 +120,10 @@ fn oom_bailout_rollback_clears_chunk_sentinel_not_stuck() {
     // pointer to what it observed on entry, and a subsequent claim must
     // still be able to mint/materialise slots normally.
     let _ = bootstrap::count_for_test();
-    let heap = sefer_alloc::registry::HeapRegistry::claim();
+    let lease = sefer_alloc::registry::HeapRegistry::dbg_claim_lease();
     assert!(
-        !heap.is_null(),
+        lease.is_some(),
         "claim() must still work normally after the chunk rollback hook ran"
     );
-    // SAFETY: `heap` was just returned by `claim` and not yet recycled.
-    unsafe { sefer_alloc::registry::HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
 }

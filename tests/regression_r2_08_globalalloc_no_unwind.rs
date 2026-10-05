@@ -214,44 +214,39 @@ fn registry_claim_with_config_conflict_returns_normally() {
     use sefer_alloc::registry::HeapRegistry;
 
     let _g = serial();
-    let heap_a = HeapRegistry::claim_with_config(CONFIG_A);
-    assert!(!heap_a.is_null());
-    // SAFETY: `heap_a` was just returned by `claim_with_config`.
-    let slot_idx = unsafe { (*heap_a).id() };
-    // SAFETY: returned by `claim_with_config`, not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_a) };
+    let lease_a = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A)
+        .expect("claim_with_config returned None");
+    let slot_idx = lease_a.slot_index();
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_a);
 
     let before = conflicts();
-    let heap_b = match catch_unwind(|| HeapRegistry::claim_with_config(CONFIG_B)) {
-        Ok(h) => h,
+    let lease_b = match catch_unwind(AssertUnwindSafe(|| {
+        HeapRegistry::dbg_claim_lease_with_config(CONFIG_B)
+    })) {
+        Ok(l) => l,
         Err(_) => panic!(
             "R2-08 regression: claim_with_config panicked on a config conflict \
              (the cold bind path behind every GlobalAlloc method)"
         ),
-    };
+    }
+    .expect("conflicting re-claim returned None");
     let after = conflicts();
     assert_eq!(after - before, 1, "conflict not counted exactly once");
-    assert!(!heap_b.is_null(), "conflicting re-claim returned null");
-    // SAFETY: `heap_b` was just returned by `claim_with_config`.
     assert_eq!(
-        unsafe { (*heap_b).id() },
+        lease_b.slot_index(),
         slot_idx,
         "first-wins: the conflicting re-claim must reuse the recycled slot"
     );
-    // SAFETY: returned by `claim_with_config`, not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_b) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_b);
 
     // Still reclaimable as the same slot — the conflict leaked nothing.
-    let heap_c = HeapRegistry::claim_with_config(CONFIG_A);
-    assert!(!heap_c.is_null());
-    // SAFETY: `heap_c` was just returned by `claim_with_config`.
-    assert_eq!(
-        unsafe { (*heap_c).id() },
-        slot_idx,
-        "slot leaked after conflict"
-    );
-    // SAFETY: returned by `claim_with_config`, not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_c) };
+    let lease_c = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A)
+        .expect("claim_with_config returned None");
+    assert_eq!(lease_c.slot_index(), slot_idx, "slot leaked after conflict");
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_c);
 }
 
 /// Steady-state leg (checked separately from the cold config-conflict bind,

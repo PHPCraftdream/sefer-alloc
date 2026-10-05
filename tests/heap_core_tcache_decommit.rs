@@ -66,8 +66,8 @@ impl Drop for SerialGuard {
 fn t4_decommit_fires_after_flush_not_before() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     // 1024 B class: ~4K blocks per 4 MiB segment.
     // 12000 blocks span ~3 segments (primordial + 2 Small).
@@ -76,7 +76,7 @@ fn t4_decommit_fires_after_flush_not_before() {
 
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at i={i}");
         ptrs.push(p);
     }
@@ -125,7 +125,7 @@ fn t4_decommit_fires_after_flush_not_before() {
             continue;
         }
         for &p in block_list {
-            unsafe { (*heap).dealloc(p, layout) };
+            unsafe { heap.dealloc(p, layout) };
         }
     }
 
@@ -136,7 +136,7 @@ fn t4_decommit_fires_after_flush_not_before() {
     // for the target.
     let target_blocks = &by_base[&target_base];
     for &p in target_blocks {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
     let decommit_after_free = AllocCore::dbg_decommit_count();
@@ -153,11 +153,9 @@ fn t4_decommit_fires_after_flush_not_before() {
     // cannot reliably disable it on a reused registry slot, so we drain instead
     // — the invariant under test is "flushing the magazine empties the segment
     // and makes its payload decommittable", which the drain makes observable.)
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
     #[cfg(feature = "alloc-decommit")]
-    unsafe {
-        (*heap).dbg_drain_small_pool()
-    };
+    heap.dbg_drain_small_pool();
 
     let decommit_after_flush = AllocCore::dbg_decommit_count();
 
@@ -174,11 +172,12 @@ fn t4_decommit_fires_after_flush_not_before() {
     );
 
     // Sanity: the allocator is still healthy after flush-triggered decommit.
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null(), "post-flush alloc returned null");
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 /// Complementary: after alloc+free+flush, every non-primordial non-current
@@ -188,32 +187,33 @@ fn t4_decommit_fires_after_flush_not_before() {
 fn t4_live_count_zero_after_flush() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(512, 8).unwrap();
     const N: usize = 8_000;
 
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null());
         ptrs.push(p);
     }
 
     // Free all, then flush.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 
     // After flush, check that the allocator is functional — alloc+free
     // still works (segments that decommitted get recommitted on next carve).
     for _ in 0..100 {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "post-flush alloc returned null");
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

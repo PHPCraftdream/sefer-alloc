@@ -330,14 +330,12 @@ fn fresh_large_alloc_zeroed_via_heapcore() {
     let _guard = serial();
 
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let la = Layout::from_size_align(LARGE, 8).unwrap();
     let zero_passes_before = AllocCore::dbg_large_zero_pass_count();
-    // SAFETY: `heap` is a live, claimed `HeapCore` for this thread; the
-    // returned pointer is handed to `dealloc` immediately after the check.
-    let ptr = unsafe { (*heap).alloc_zeroed(la) };
+    let ptr = heap.alloc_zeroed(la);
     assert!(
         !ptr.is_null(),
         "HeapCore::alloc_zeroed(2 MiB) returned null"
@@ -369,9 +367,8 @@ fn fresh_large_alloc_zeroed_via_heapcore() {
     let _ = (zero_passes_before, zero_delta);
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `ptr` was
     // returned by the matching `alloc_zeroed` above, is live, freed once here.
-    unsafe { (*heap).dealloc(ptr, la) };
+    unsafe { heap.dealloc(ptr, la) };
 
-    // SAFETY: `heap` was obtained from `HeapRegistry::claim` above and is
-    // recycled exactly once here.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

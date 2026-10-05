@@ -11,10 +11,10 @@ use sefer_alloc::{LargeCacheConfig, SegmentLayout};
 
 #[test]
 fn uncached_large_removes_route_before_os_release() {
-    let heap_ptr = HeapRegistry::claim_with_config(LargeCacheConfig::new().budget_bytes(0));
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease =
+        HeapRegistry::dbg_claim_lease_with_config(LargeCacheConfig::new().budget_bytes(0))
+            .expect("claim_with_config");
+    let heap = lease.core();
     let large = Layout::from_size_align(
         SegmentLayout::SMALL_MAX + SegmentLayout::PAGE,
         SegmentLayout::PAGE,
@@ -28,6 +28,5 @@ fn uncached_large_removes_route_before_os_release() {
     assert!(RouteDirectory::global().lookup(p).is_none());
     assert_eq!(pin.kind(), RouteKind::Large);
     drop(pin);
-    // SAFETY: the heap is no longer borrowed or in use.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }

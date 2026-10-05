@@ -70,8 +70,10 @@ const WARM_BATCH: usize = 256;
 
 fn bench_cold_virgin(c: &mut Criterion) {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // Ph4c: safe lease API — owner heap claimed, used and recycled on this
+    // thread (lease `Drop` below = the old explicit `recycle`).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let bs = sefer_alloc::alloc_core::AllocCore::dbg_block_size(TARGET_CLASS);
     let layout = Layout::from_size_align(bs, 8).expect("TARGET_CLASS layout");
@@ -89,7 +91,7 @@ fn bench_cold_virgin(c: &mut Criterion) {
             // regime the virgin-zero-skip optimization targets.
             let mut ptrs = Vec::with_capacity(COLD_BATCH);
             for _ in 0..COLD_BATCH {
-                let p = unsafe { (*heap).alloc_zeroed(layout) };
+                let p = heap.alloc_zeroed(layout);
                 assert!(!p.is_null(), "cold_virgin alloc_zeroed returned null");
                 ptrs.push(p);
             }
@@ -102,29 +104,36 @@ fn bench_cold_virgin(c: &mut Criterion) {
             // individual alloc_zeroed within a batch was virgin at the time
             // it ran, which holds since nothing is freed mid-batch).
             for p in ptrs {
-                unsafe { (*heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by `heap.alloc_zeroed(layout)`
+                // above with the same layout, is still live, freed once,
+                // own-thread via the exclusive lease.
+                unsafe { heap.dealloc(p, layout) };
             }
         });
     });
 
     group.finish();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease); // recycle: LIVE -> FREE
 }
 
 fn bench_warm_reuse(c: &mut Criterion) {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // Ph4c: safe lease API — owner heap claimed, used and recycled on this
+    // thread (lease `Drop` below = the old explicit `recycle`).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let bs = sefer_alloc::alloc_core::AllocCore::dbg_block_size(TARGET_CLASS + 1);
     let layout = Layout::from_size_align(bs, 8).expect("TARGET_CLASS+1 layout");
 
     // Prime the magazine once so the FIRST measured iteration is already a
     // hit, not a one-off miss whose cost would otherwise pollute sample 0.
-    let prime = unsafe { (*heap).alloc_zeroed(layout) };
+    let prime = heap.alloc_zeroed(layout);
     assert!(!prime.is_null());
-    unsafe { (*heap).dealloc(prime, layout) };
+    // SAFETY: `prime` was returned by `heap.alloc_zeroed(layout)` above
+    // with the same layout, is still live, freed once, own-thread.
+    unsafe { heap.dealloc(prime, layout) };
 
     let mut group = c.benchmark_group("r13_3_virgin_zero_skip");
     group.sample_size(10);
@@ -142,23 +151,28 @@ fn bench_warm_reuse(c: &mut Criterion) {
             // design, EVERY one of these calls paid substrate free-list-scan
             // cost instead of an array pop.
             for _ in 0..WARM_BATCH {
-                let p = unsafe { (*heap).alloc_zeroed(layout) };
+                let p = heap.alloc_zeroed(layout);
                 assert!(!p.is_null(), "warm_reuse alloc_zeroed returned null");
                 std::hint::black_box(p);
-                unsafe { (*heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by `heap.alloc_zeroed(layout)`
+                // above with the same layout, is still live, freed once,
+                // own-thread via the exclusive lease.
+                unsafe { heap.dealloc(p, layout) };
             }
         });
     });
 
     group.finish();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease); // recycle: LIVE -> FREE
 }
 
 fn bench_mixed(c: &mut Criterion) {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // Ph4c: safe lease API — owner heap claimed, used and recycled on this
+    // thread (lease `Drop` below = the old explicit `recycle`).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let bs = sefer_alloc::alloc_core::AllocCore::dbg_block_size(TARGET_CLASS + 2);
     let layout = Layout::from_size_align(bs, 8).expect("TARGET_CLASS+2 layout");
@@ -177,31 +191,40 @@ fn bench_mixed(c: &mut Criterion) {
             // first-touch and steady-state traffic in the same class.
             let mut cold_ptrs = Vec::with_capacity(COLD_BATCH / 4);
             for _ in 0..(COLD_BATCH / 4) {
-                let p = unsafe { (*heap).alloc_zeroed(layout) };
+                let p = heap.alloc_zeroed(layout);
                 assert!(!p.is_null(), "mixed cold-leg alloc_zeroed returned null");
                 cold_ptrs.push(p);
             }
 
-            let warm_seed = unsafe { (*heap).alloc_zeroed(layout) };
+            let warm_seed = heap.alloc_zeroed(layout);
             assert!(!warm_seed.is_null());
-            unsafe { (*heap).dealloc(warm_seed, layout) };
+            // SAFETY: `warm_seed` was returned by `heap.alloc_zeroed(layout)`
+            // above with the same layout, is still live, freed once,
+            // own-thread via the exclusive lease.
+            unsafe { heap.dealloc(warm_seed, layout) };
             for _ in 0..(WARM_BATCH / 4) {
-                let p = unsafe { (*heap).alloc_zeroed(layout) };
+                let p = heap.alloc_zeroed(layout);
                 assert!(!p.is_null(), "mixed warm-leg alloc_zeroed returned null");
                 std::hint::black_box(p);
-                unsafe { (*heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by `heap.alloc_zeroed(layout)`
+                // above with the same layout, is still live, freed once,
+                // own-thread via the exclusive lease.
+                unsafe { heap.dealloc(p, layout) };
             }
 
             std::hint::black_box(&cold_ptrs);
             for p in cold_ptrs {
-                unsafe { (*heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by `heap.alloc_zeroed(layout)`
+                // above with the same layout, is still live, freed once,
+                // own-thread via the exclusive lease.
+                unsafe { heap.dealloc(p, layout) };
             }
         });
     });
 
     group.finish();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease); // recycle: LIVE -> FREE
 }
 
 criterion_group!(benches, bench_cold_virgin, bench_warm_reuse, bench_mixed);

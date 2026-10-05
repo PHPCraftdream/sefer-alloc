@@ -188,12 +188,11 @@ fn run_child() {
 
     let conflicts_before = config_conflicts_total();
 
-    let heap_ptr =
-        HeapRegistry::claim_with_config(LargeCacheConfig::new().headroom_bytes(headroom_bytes));
-    assert!(!heap_ptr.is_null(), "claim_with_config returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim_with_config` and is
-    // owned by THIS thread until `recycle` below.
-    let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease_with_config(
+        LargeCacheConfig::new().headroom_bytes(headroom_bytes),
+    )
+    .expect("claim_with_config returned null");
+    let heap: &mut HeapCore = lease.core();
 
     // SELF-VERIFICATION: resolved headroom matches requested.
     let (_, _, resolved) = heap.dbg_decay_config();
@@ -268,8 +267,8 @@ fn run_child() {
             guard_passed_delta < expected_calls
         };
 
-    // SAFETY: `heap_ptr` returned by `claim_with_config`, not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Lease `Drop` recycles the slot (LIVE → FREE Release).
+    drop(lease);
 
     proc_probe::emit("profile", &profile_name);
     proc_probe::emit_u64("forced", u64::from(forced));

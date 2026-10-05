@@ -12,10 +12,8 @@ fn class_at(ptr: *mut u8) -> Option<u8> {
 
 #[test]
 fn scalar_issue_reissue_and_narrow_reborrow_have_class() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the heap claim until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     for size in 1..=7 {
         let layout = Layout::from_size_align(size, 1).unwrap();
         let class = SegmentLayout::class_for(size, 1).unwrap() as u8;
@@ -34,16 +32,13 @@ fn scalar_issue_reissue_and_narrow_reborrow_have_class() {
     }
     #[cfg(feature = "fastbin")]
     heap.dbg_flush_all();
-    // SAFETY: all user allocations were returned to this claimed heap.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[test]
 fn realloc_move_issues_new_class_and_inplace_keeps_class() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the heap claim until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let old = Layout::from_size_align(1, 1).unwrap();
     let first = heap.alloc(old);
     assert!(!first.is_null());
@@ -71,16 +66,13 @@ fn realloc_move_issues_new_class_and_inplace_keeps_class() {
     unsafe { heap.dealloc(moved, Layout::from_size_align(4097, 1).unwrap()) };
     #[cfg(feature = "fastbin")]
     heap.dbg_flush_all();
-    // SAFETY: all user allocations were returned to this claimed heap.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[test]
 fn later_small_segment_is_registered_before_issue() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the heap claim until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(4096, 16).unwrap();
     let class = SegmentLayout::class_for(4096, 16).unwrap() as u8;
     let mut blocks = Vec::new();
@@ -107,17 +99,14 @@ fn later_small_segment_is_registered_before_issue() {
     }
     #[cfg(feature = "fastbin")]
     heap.dbg_flush_all();
-    // SAFETY: all user allocations were returned to this claimed heap.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[cfg(all(feature = "fastbin", feature = "alloc-decommit"))]
 #[test]
 fn magazine_hit_keeps_one_outstanding_credit() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the heap claim until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(64, 8).unwrap();
     let first = heap.alloc(layout);
     assert!(!first.is_null());
@@ -134,17 +123,14 @@ fn magazine_hit_keeps_one_outstanding_credit() {
         heap.dealloc(second, layout);
     }
     heap.dbg_flush_all();
-    // SAFETY: all user allocations were returned to this claimed heap.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[cfg(all(feature = "fastbin", feature = "batch-api", feature = "alloc-decommit"))]
 #[test]
 fn batch_freelist_reissue_records_class_once_per_credit() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the heap claim until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(128, 8).unwrap();
     let class = SegmentLayout::class_for(128, 8).unwrap() as u8;
     let mut first = [std::ptr::null_mut(); 8];
@@ -163,6 +149,5 @@ fn batch_freelist_reissue_records_class_once_per_credit() {
         unsafe { heap.dealloc(ptr, layout) };
     }
     heap.dbg_flush_all();
-    // SAFETY: all user allocations were returned to this claimed heap.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }

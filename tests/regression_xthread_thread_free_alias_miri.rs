@@ -103,14 +103,13 @@ fn xthread_thread_free_write_overlaps_owner_alloc_mut() {
     const SMALL_SIZE: usize = 64;
     let small_layout = Layout::from_size_align(SMALL_SIZE, 8).unwrap();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
 
     // Owner pre-allocates the Large blocks so they are registered, owner-
     // stamped segments before the remote thread starts freeing them.
     let mut large_ptrs: Vec<*mut u8> = Vec::with_capacity(LARGE_N);
     for i in 0..LARGE_N {
-        let p = unsafe { (*heap).alloc(large_layout) };
+        let p = lease.core().alloc(large_layout);
         assert!(!p.is_null(), "large alloc[{i}] returned null");
         large_ptrs.push(p);
     }
@@ -122,34 +121,35 @@ fn xthread_thread_free_write_overlaps_owner_alloc_mut() {
 
     // Raw pointers are `!Send`; ship addresses.
     let addrs: Vec<usize> = large_ptrs.iter().map(|&p| p as usize).collect();
-    let heap_addr = heap as usize;
     let start_remote = Arc::clone(&start);
 
     let remote = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        let mut remote_lease =
+            HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+        let remote_heap = remote_lease.core();
         while !start_remote.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }
-        // Each dealloc of a Large block owned by `heap` routes through
+        // Each dealloc of a Large block owned by the owner heap routes through
         // `dealloc_routing` → `push_large_deferred_free` → a wildcard CAS into
-        // `heap.thread_free` — concurrently with the owner's `&mut` alloc loop.
+        // the owner's `thread_free` — concurrently with the owner's `&mut`
+        // alloc loop.
         for &addr in &addrs {
             let p = addr as *mut u8;
-            unsafe { (*remote_heap).dealloc(p, large_layout) };
+            // SAFETY: `p` was allocated by the owner heap with `large_layout`.
+            unsafe { remote_heap.dealloc(p, large_layout) };
         }
-        unsafe { HeapRegistry::recycle(remote_heap) };
+        drop(remote_lease);
     });
 
     // Owner: release the gate, then spin small allocs. Every iteration forms a
     // protected `&mut HeapCore` over the struct whose `thread_free` bytes the
     // remote is CASing. These are the frames the remote write must not violate.
     start.store(true, Ordering::Release);
-    let heap_ptr = heap_addr as *mut sefer_alloc::registry::HeapCore;
     let mut small_ptrs: Vec<*mut u8> = Vec::with_capacity(SMALL_ITERS);
     for _ in 0..SMALL_ITERS {
-        let p = unsafe { (*heap_ptr).alloc(small_layout) };
+        let p = lease.core().alloc(small_layout);
         assert!(!p.is_null(), "small alloc returned null");
         small_ptrs.push(p);
     }
@@ -159,11 +159,14 @@ fn xthread_thread_free_write_overlaps_owner_alloc_mut() {
     // Drain the deferred-free stack the remote populated (own-thread large
     // alloc slow path runs the drain) and clean up, so miri's leak checker is
     // satisfied.
-    let drain = unsafe { (*heap).alloc(large_layout) };
+    let drain = lease.core().alloc(large_layout);
     assert!(!drain.is_null());
-    unsafe { (*heap).dealloc(drain, large_layout) };
+    // SAFETY: `drain` came from `alloc` with `large_layout` above.
+    unsafe { lease.core().dealloc(drain, large_layout) };
     for &p in &small_ptrs {
-        unsafe { (*heap).dealloc(p, small_layout) };
+        // SAFETY: `p` came from `alloc` with `small_layout` above.
+        unsafe { lease.core().dealloc(p, small_layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

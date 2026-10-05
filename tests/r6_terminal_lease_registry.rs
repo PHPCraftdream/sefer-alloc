@@ -11,29 +11,28 @@ fn failed_init_claim_maintenance_recycle_handoff() {
     assert_eq!(registry.dbg_slot_state(index as usize), STATE_FREE);
     assert!(!dbg_slot_initialised(index));
 
-    let owner = HeapRegistry::claim();
-    assert!(!owner.is_null());
-    // SAFETY: claim returned a live core; no other owner holds this slot.
-    assert_eq!(unsafe { (*owner).id() }, index);
+    let mut owner = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_eq!(owner.core().id(), index);
     assert_eq!(registry.dbg_slot_state(index as usize), STATE_LIVE);
     assert!(dbg_slot_initialised(index));
 
-    // SAFETY: this owner was returned by claim and has not been recycled.
-    unsafe { HeapRegistry::recycle(owner) };
+    drop(owner);
     assert_eq!(registry.dbg_slot_state(index as usize), STATE_FREE);
 
-    let mut lease = HeapRegistry::try_maintenance().expect("recycled slot");
+    let mut lease = HeapRegistry::dbg_try_maintenance().expect("recycled slot");
     assert_eq!(lease.slot_index(), index as usize);
     assert_eq!(registry.dbg_slot_state(index as usize), STATE_MAINTENANCE);
     // SAFETY: no legacy raw core alias is used after recycle and this test
     // has no remote producer touching the core.
-    assert_eq!(unsafe { lease.with_core(|core| core.id()) }, index);
+    assert_eq!(lease.dbg_with_core(|core| core.id()), index);
 
-    let other = HeapRegistry::claim();
-    assert!(!other.is_null());
-    assert_ne!(other, owner, "MAINTENANCE must defeat a claim CAS");
-    // SAFETY: this is the sole claim of `other`, still live.
-    unsafe { HeapRegistry::recycle(other) };
+    let other = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_ne!(
+        other.slot_index(),
+        index,
+        "MAINTENANCE must defeat a claim CAS"
+    );
+    drop(other);
     drop(lease);
     assert_eq!(registry.dbg_slot_state(index as usize), STATE_FREE);
     assert!(!registry.dbg_chunk_is_materialised(1));

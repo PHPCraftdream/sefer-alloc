@@ -676,9 +676,9 @@ hard compile error in every configuration:
 | [`src/registry/bootstrap/ensure.rs`](src/registry/bootstrap/ensure.rs) | The process-global `ensure()` accessor, the per-chunk materialisation slow path (`ensure_chunk_slow`), and the test-only dbg hooks (OOM injection, sentinel-rollback probe, slot introspection) | `alloc-global` |
 | [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` / the tagged free-list head (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
-| [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE` claim (plain and config-plumbed), OOM push-back, and the config-conflict rollback guard — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell` | `alloc-global` |
+| [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | `HeapRegistry`'s claim/recycle API: slot picking + the `FREE → LIVE` claim (plain and config-plumbed), OOM push-back, and the config-conflict rollback guard — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell`. Since Ph4c (task #2107) the legacy entry points (`claim` / `claim_with_config`) and `recycle` are `pub(crate)` — no longer public API; `recycle` remains the file's single `pub(crate) unsafe fn`, called only from within the crate (legacy-semantics unit tests) | `alloc-global` |
 | [`src/registry/heap_registry/counters.rs`](src/registry/heap_registry/counters.rs) | Registry diagnostics: the config-conflict counter, the process-wide hit-total aggregators over slot-resident W3 counters, the minted-slot high-water mark, and the UBFIX-5 test-only introspection hooks | `alloc-global` |
-| [`src/registry/heap_registry/maintenance.rs`](src/registry/heap_registry/maintenance.rs) | Exclusive maintenance lease handoff for finite ownerless sweeps. | `alloc-global` |
+| [`src/registry/heap_registry/maintenance.rs`](src/registry/heap_registry/maintenance.rs) | Exclusive maintenance lease handoff for finite ownerless sweeps. Since Ph4c (task #2107) `MaintenanceLease::with_core` is a safe `pub(crate)` constructor — no longer `pub unsafe`. | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
 | [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
 | [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, atomic initialization and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
@@ -757,7 +757,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **29** tier-1 module-level seams (23 in
+That's the full list (both tiers): **28** tier-1 module-level seams (23 in
 `src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **34**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
@@ -1370,7 +1370,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **339 integration test files**,
+needs its acceptance run. The present tree contains **340 integration test files**,
 **81 example binaries**, **23 benches**, and **13 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1380,7 +1380,7 @@ and support modules. The test tree also contains 9 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (339 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (340 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (81 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (23 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

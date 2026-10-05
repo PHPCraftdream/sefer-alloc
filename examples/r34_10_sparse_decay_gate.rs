@@ -235,15 +235,13 @@ fn run_child() {
 
     let conflicts_before = config_conflicts_total();
 
-    let heap_ptr = HeapRegistry::claim_with_config(
+    let mut lease = HeapRegistry::dbg_claim_lease_with_config(
         LargeCacheConfig::new()
             .headroom_bytes(HEADROOM_BYTES)
             .decay_interval_ms(DECAY_INTERVAL_MS as u32),
-    );
-    assert!(!heap_ptr.is_null(), "claim_with_config returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim_with_config` and is owned
-    // by THIS thread until `recycle` below.
-    let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+    )
+    .expect("claim_with_config returned null");
+    let heap: &mut HeapCore = lease.core();
 
     // SELF-VERIFICATION: resolved config matches requested (R26-4 rule).
     let (rate_bp, resolved_interval, resolved_headroom) = heap.dbg_decay_config();
@@ -377,8 +375,8 @@ fn run_child() {
         }
     }
 
-    // SAFETY: `heap_ptr` returned by `claim_with_config`, not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Lease `Drop` recycles the slot (LIVE → FREE Release).
+    drop(lease);
 
     // ── Config + oracle evidence line (one per child) ──────────────────────
     println!(

@@ -75,10 +75,8 @@ fn take_one(heap: &mut HeapCore, held: &mut Vec<*mut u8>, layout: Layout) -> *mu
 #[cfg(feature = "fastbin")]
 #[test]
 fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: a successful claim gives this thread exclusive ownership of the heap.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let c = heap.dbg_class_for(layout()).expect("32B is a small class");
     let want = heap.dbg_refill_n_for_class(c);
     // `FREE_PARK_CAP[c] == refill_n_for_class(c)`, so `want` is also the
@@ -223,8 +221,7 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
         // SAFETY: each block came from this heap with this exact layout.
         unsafe { heap.dealloc(ptr, layout()) };
     }
-    // SAFETY: this thread owns the claimed heap until the recycle below.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 /// Without `fastbin` the magazine refill is compiled out, so the same prepare
@@ -233,10 +230,8 @@ fn magazine_refill_prepare_refusal_commits_only_the_drained_blocks() {
 #[cfg(not(feature = "fastbin"))]
 #[test]
 fn magazine_refill_refusal_is_a_scalar_oom_with_a_full_rollback() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: a successful claim gives this thread exclusive ownership of the heap.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let c = 1usize; // the 32B class, per the shared fixture layout.
     let anchor = heap.alloc(layout());
     assert!(!anchor.is_null());
@@ -279,6 +274,5 @@ fn magazine_refill_refusal_is_a_scalar_oom_with_a_full_rollback() {
         // SAFETY: each block came from this heap with this exact layout.
         unsafe { heap.dealloc(ptr, layout()) };
     }
-    // SAFETY: this thread owns the claimed heap until the recycle below.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }

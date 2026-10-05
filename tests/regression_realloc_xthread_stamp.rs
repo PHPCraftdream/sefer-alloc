@@ -13,10 +13,8 @@ use std::alloc::{GlobalAlloc, Layout};
 
 #[test]
 fn realloc_grown_large_routes_remote_free_to_its_owner() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread has exclusive mutation authority until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let initial = Layout::from_size_align(SegmentLayout::SMALL_MAX + 4096, 16).unwrap();
     let grown_layout =
         Layout::from_size_align(initial.size() + SegmentLayout::SEGMENT, 16).unwrap();
@@ -51,8 +49,7 @@ fn realloc_grown_large_routes_remote_free_to_its_owner() {
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 0);
     drop(old_route);
     // SAFETY: reissued is a new unique allocation instance with grown_layout.
-    unsafe {
-        heap.dealloc(reissued, grown_layout);
-        HeapRegistry::recycle(heap_ptr);
-    }
+    unsafe { heap.dealloc(reissued, grown_layout) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

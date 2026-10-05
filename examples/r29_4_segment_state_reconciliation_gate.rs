@@ -206,13 +206,10 @@ fn run_child() {
     let conflicts_before = config_conflicts_total();
 
     // Claim the heap.
-    let heap_ptr = HeapRegistry::claim_with_config(config_for(pool_segments, pool_byte_cap));
-    assert!(
-        !heap_ptr.is_null(),
-        "HeapRegistry::claim_with_config returned null"
-    );
-    // SAFETY: `heap_ptr` was just returned by `claim_with_config`.
-    let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+    let mut lease =
+        HeapRegistry::dbg_claim_lease_with_config(config_for(pool_segments, pool_byte_cap))
+            .expect("HeapRegistry::claim_with_config returned null");
+    let heap: &mut HeapCore = lease.core();
 
     // SELF-VERIFICATION #1: resolved cap equals the requested one.
     let resolved = heap.dbg_pool_cap();
@@ -303,8 +300,8 @@ fn run_child() {
         rec_post.small_empty_orphan.count, rec_drain.small_empty_orphan.count,
     );
 
-    // SAFETY: `heap_ptr` was returned by `claim_with_config` above.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Lease `Drop` recycles the slot (LIVE → FREE Release).
+    drop(lease);
 }
 
 // ---------------------------------------------------------------------------

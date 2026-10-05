@@ -39,10 +39,8 @@ fn real_heap_refills_charge_fixed_large_probe_budget_at_l8_and_l64() {
     let budget = HeapCore::dbg_large_hot_budget();
     assert!(budget > 0 && budget < 8);
     for large_count in [8, 64] {
-        let heap_ptr = HeapRegistry::claim();
-        assert!(!heap_ptr.is_null());
-        // SAFETY: this claim is exclusively held until recycle below.
-        let heap = unsafe { &mut *heap_ptr };
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        let heap = lease.core();
         let mut large = Vec::with_capacity(large_count);
         for _ in 0..large_count {
             let ptr = heap.alloc(large_layout);
@@ -69,7 +67,6 @@ fn real_heap_refills_charge_fixed_large_probe_budget_at_l8_and_l64() {
             for ptr in large {
                 heap.dealloc(ptr, large_layout);
             }
-            HeapRegistry::recycle(heap_ptr);
         }
     }
 }
@@ -80,10 +77,8 @@ fn recycled_table_slot_behind_cursor_is_revisited() {
     let large_layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let small_layout = Layout::from_size_align(64, 8).unwrap();
     let class = SegmentLayout::class_for(64, 8).unwrap();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this claim is exclusively held until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let mut large = Vec::new();
     for _ in 0..8 {
         let ptr = heap.alloc(large_layout);
@@ -128,7 +123,6 @@ fn recycled_table_slot_behind_cursor_is_revisited() {
         for ptr in large {
             heap.dealloc(ptr, large_layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
 }
 
@@ -136,10 +130,8 @@ fn recycled_table_slot_behind_cursor_is_revisited() {
 fn strict_drain_still_retires_far_terminal_large_in_one_pass() {
     let _lock = TEST_LOCK.lock().unwrap();
     let layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this claim is exclusively held until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let mut live = Vec::new();
     for _ in 0..9 {
         let ptr = heap.alloc(layout);
@@ -158,7 +150,6 @@ fn strict_drain_still_retires_far_terminal_large_in_one_pass() {
         for ptr in live {
             heap.dealloc(ptr, layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
 }
 
@@ -166,10 +157,8 @@ fn strict_drain_still_retires_far_terminal_large_in_one_pass() {
 fn logical_capacity_failure_gets_one_full_rescue_and_one_retry() {
     let _lock = TEST_LOCK.lock().unwrap();
     let layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this claim is exclusively held until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let mut live = Vec::new();
     for _ in 0..9 {
         let ptr = heap.alloc(layout);
@@ -191,7 +180,6 @@ fn logical_capacity_failure_gets_one_full_rescue_and_one_retry() {
         for ptr in live {
             heap.dealloc(ptr, layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
 }
 
@@ -202,10 +190,8 @@ fn virgin_zeroed_magazine_refills_share_the_large_hot_budget() {
     let large_layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let small_layout = Layout::from_size_align(64, 8).unwrap();
     let class = SegmentLayout::class_for(64, 8).unwrap();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this claim is exclusively held until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let mut large = Vec::new();
     for _ in 0..8 {
         let ptr = heap.alloc(large_layout);
@@ -242,6 +228,5 @@ fn virgin_zeroed_magazine_refills_share_the_large_hot_budget() {
         for ptr in large {
             heap.dealloc(ptr, large_layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
 }

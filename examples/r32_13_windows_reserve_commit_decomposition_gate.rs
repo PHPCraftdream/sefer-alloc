@@ -71,10 +71,10 @@ const WARMUP: usize = 20;
 
 fn main() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap: &mut HeapCore = lease.core();
 
-    let pool_cap = unsafe { (*heap).dbg_pool_cap() };
+    let pool_cap = heap.dbg_pool_cap();
     let (payload_start, payload_end) = HeapCore::dbg_decomp_payload_range();
     let page_size = HeapCore::dbg_decomp_page_size();
     let payload_pages = (payload_end - payload_start) / page_size;
@@ -92,7 +92,7 @@ fn main() {
     // Pre-fill the pool so all subsequent releases take the release path
     // (not the pool-push path) — matches R29-3's own setup exactly.
     for _ in 0..(pool_cap + 2) {
-        let _ = unsafe { (*heap).dbg_decomp_full_cycle() };
+        let _ = heap.dbg_decomp_full_cycle();
     }
 
     // ── Measurement R: reserve-only (VirtualAlloc MEM_RESERVE + a tiny
@@ -160,11 +160,11 @@ fn main() {
     // ── Measurement A: full reserve→release cycle WITHOUT payload touch
     // (component 1+2+3, matching R29-3's own Measurement A exactly) ──
     for _ in 0..WARMUP {
-        let _ = unsafe { (*heap).dbg_decomp_full_cycle() };
+        let _ = heap.dbg_decomp_full_cycle();
     }
     let t0 = Instant::now();
     for _ in 0..N {
-        assert!(unsafe { (*heap).dbg_decomp_full_cycle() }, "reserve failed");
+        assert!(heap.dbg_decomp_full_cycle(), "reserve failed");
     }
     let a_ns = t0.elapsed().as_nanos() as f64 / N as f64;
 
@@ -182,7 +182,8 @@ fn main() {
     // ── Measurement B: irreducible floor = decommit + recommit + first-touch
     // re-fault (matching R29-3's own Measurement B exactly — same hooks,
     // same recommit-before-refault discipline from R31-6) ──
-    let handle = unsafe { (*heap).dbg_decomp_reserve_and_keep() }
+    let handle = heap
+        .dbg_decomp_reserve_and_keep()
         .expect("reserve for first-touch measurement");
     let base = handle.dbg_base();
 
@@ -220,26 +221,26 @@ fn main() {
     let decommit_ns = decommit_total as f64 / N as f64;
     let refault_ns = refault_total as f64 / N as f64;
 
-    unsafe { (*heap).dbg_decomp_release(handle) };
+    unsafe { heap.dbg_decomp_release(handle) };
 
     // ── Measurement A': full cycle WITH payload touch (the REAL production
     // cycle cost, matching R29-3's own Measurement A' exactly) ──
     for _ in 0..WARMUP {
-        let h2 = unsafe { (*heap).dbg_decomp_reserve_and_keep() }.expect("reserve A'");
+        let h2 = heap.dbg_decomp_reserve_and_keep().expect("reserve A'");
         let b2 = h2.dbg_base();
         for off in (payload_start..payload_end).step_by(page_size) {
             unsafe { core::ptr::write_volatile(b2.add(off), 1u8) };
         }
-        unsafe { (*heap).dbg_decomp_release(h2) };
+        unsafe { heap.dbg_decomp_release(h2) };
     }
     let t0 = Instant::now();
     for _ in 0..N {
-        let h2 = unsafe { (*heap).dbg_decomp_reserve_and_keep() }.expect("reserve A'");
+        let h2 = heap.dbg_decomp_reserve_and_keep().expect("reserve A'");
         let b2 = h2.dbg_base();
         for off in (payload_start..payload_end).step_by(page_size) {
             unsafe { core::ptr::write_volatile(b2.add(off), 1u8) };
         }
-        unsafe { (*heap).dbg_decomp_release(h2) };
+        unsafe { heap.dbg_decomp_release(h2) };
     }
     let a_prime_ns = t0.elapsed().as_nanos() as f64 / N as f64;
 

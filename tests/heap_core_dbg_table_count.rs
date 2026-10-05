@@ -26,12 +26,8 @@ use sefer_alloc::registry::{bootstrap, HeapRegistry};
 #[test]
 fn dbg_table_count_tracks_registered_large_segments() {
     let _ = bootstrap::ensure();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim` and is owned by this
-    // thread until `recycle` at the end of this test; no other thread
-    // touches it.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let baseline = heap.dbg_table_count();
 
@@ -64,7 +60,6 @@ fn dbg_table_count_tracks_registered_large_segments() {
         unsafe { heap.dealloc(p, layout) };
     }
 
-    // SAFETY: `heap_ptr` was returned by `claim` above, not yet recycled,
-    // and no other thread touches it.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

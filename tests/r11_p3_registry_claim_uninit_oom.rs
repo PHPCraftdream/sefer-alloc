@@ -21,46 +21,38 @@ fn chunk_oom_retries_materialised_uninitialised_free() {
     assert_eq!((old, latest), (0, 1));
     assert!(!dbg_slot_initialised(old));
     let mut held = Vec::with_capacity(64);
-    let latest_core = HeapRegistry::claim();
-    assert!(!latest_core.is_null());
-    // SAFETY: this thread owns the live claim until its later recycle.
-    assert_eq!(unsafe { (*latest_core).id() }, latest);
-    held.push(latest_core);
+    let mut latest_lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    // SAFETY-free core access: the lease exclusively owns the slot.
+    assert_eq!(latest_lease.core().id(), latest);
+    held.push(latest_lease);
     for expected in 2..64 {
-        let core = HeapRegistry::claim();
-        assert!(!core.is_null());
-        // SAFETY: this thread owns each claim until its later recycle.
-        assert_eq!(unsafe { (*core).id() }, expected);
-        held.push(core);
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        assert_eq!(lease.core().id(), expected);
+        held.push(lease);
     }
     assert_eq!(bootstrap::count_for_test(), 64);
     assert!(!bootstrap::ensure().dbg_chunk_is_materialised(1));
 
     let _reset = OomReset;
     bootstrap::dbg_set_inject_chunk_oom(true);
-    let recovered = HeapRegistry::claim();
+    let mut recovered = HeapRegistry::dbg_claim_lease().expect("claim");
     assert!(
-        !recovered.is_null(),
+        dbg_slot_initialised(recovered.slot_index()),
         "constructor retry must avoid false OOM"
     );
-    // SAFETY: the recovered slot is now LIVE and exclusively owned here.
-    assert_eq!(unsafe { (*recovered).id() }, old);
+    assert_eq!(recovered.core().id(), old);
     assert!(dbg_slot_initialised(old));
     assert!(!bootstrap::ensure().dbg_chunk_is_materialised(1));
     bootstrap::dbg_set_inject_chunk_oom(false);
 
-    let minted_retry = HeapRegistry::claim();
-    assert!(!minted_retry.is_null());
-    // SAFETY: claim returned a distinct LIVE core.
-    assert_eq!(unsafe { (*minted_retry).id() }, 64);
+    let mut minted_retry = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_eq!(minted_retry.core().id(), 64);
     assert_eq!(bootstrap::count_for_test(), 65);
-    // SAFETY: all these pointers are still distinct LIVE claims.
-    unsafe {
-        HeapRegistry::recycle(minted_retry);
-        HeapRegistry::recycle(recovered);
-    }
-    for core in held {
-        // SAFETY: this pointer has not yet been recycled.
-        unsafe { HeapRegistry::recycle(core) };
+    // All these leases are still distinct LIVE claims.
+    drop(minted_retry);
+    drop(recovered);
+    for lease in held {
+        // This lease has not yet been dropped.
+        drop(lease);
     }
 }

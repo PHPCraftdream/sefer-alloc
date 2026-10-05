@@ -13,12 +13,13 @@
 #![allow(clippy::cast_possible_truncation, clippy::needless_pass_by_value)]
 
 use std::alloc::Layout;
-use std::thread;
+use std::sync::mpsc;
 use std::time::Duration;
+use std::{mem, thread};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
 /// A small-class size well under `SMALL_MAX`, so every block is routed
 /// through the ring (never the Large/A1 path). Matches
@@ -58,64 +59,119 @@ const N: usize = 400;
 fn run_active(producers: usize) {
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    let heap_addr = heap as usize;
-
-    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
-    for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
-        assert!(!p.is_null(), "owner pre-alloc returned null");
-        ptrs.push(p);
-    }
-
-    let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
-    let chunk = N.div_ceil(producers);
-    let mut handles = Vec::with_capacity(producers);
-    for slice in addrs.chunks(chunk) {
-        let slice = slice.to_vec();
-        handles.push(thread::spawn(move || {
-            let _ = bootstrap::ensure();
-            let remote_heap = HeapRegistry::claim();
-            assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
-            for addr in slice {
-                let p = addr as *mut u8;
-                unsafe { (*remote_heap).dealloc(p, layout) };
-            }
-            unsafe { HeapRegistry::recycle(remote_heap) };
-        }));
-    }
-
-    // The owner concurrently allocates a growing batch WITHOUT self-freeing,
-    // forcing every alloc() to fall through to find_segment_with_free — the
-    // call that actually drains every owned segment's RemoteFreeRing —
-    // exactly as tests/remote_fanin.rs's harness 1 does.
+    // Ph4c: migrated to the safe `dbg_claim_lease` API, exactly like
+    // `heap_fanin_persistent.rs::run_cell`'s owner flow. `HeapLease` is
+    // `!Send`, so the lease authority lives where the ownership lives: the
+    // spawned owner thread claims its own lease (it IS the slot's owner),
+    // pre-allocates the `N` blocks the producers will free (this setup was
+    // previously on this coordinator thread BEFORE the producers spawned —
+    // the mpsc rendezvous below preserves that ordering: the producer
+    // threads are only created after the address list arrives, so none of
+    // the setup work races or overlaps the producers; the criterion-timed
+    // `b.iter` window still spans the whole call either way), and hands the
+    // address list plus its slot index back over the channel. The owner
+    // thread drops its lease at thread end (LIVE → FREE); the coordinator
+    // re-claims the slot afterwards for the residual sidecar-ingress drain
+    // — the LIFO reuse hint set by the Drop returns the same slot, asserted
+    // via `slot_index()` — and the drained slot is `mem::forget`-ed to keep
+    // the "never recycle within this process" discipline intact.
+    let (owner_addr_tx, owner_addr_rx) = mpsc::channel::<(u32, Vec<usize>)>();
     let owner_rounds: thread::JoinHandle<()> = thread::spawn(move || {
-        let heap = heap_addr as *mut HeapCore;
+        let _ = bootstrap::ensure();
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("owner HeapRegistry::claim failed");
+        let this_slot_index = lease.slot_index();
+
+        // Pre-allocate the whole burst BEFORE any producer exists — same
+        // work the coordinator did pre-Ph4c, just moved into the thread
+        // that actually owns the slot.
+        let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
+        {
+            let heap = lease.core();
+            for _ in 0..N {
+                let p = heap.alloc(layout);
+                assert!(!p.is_null(), "owner pre-alloc returned null");
+                ptrs.push(p);
+            }
+        }
+        let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+        owner_addr_tx
+            .send((this_slot_index, addrs))
+            .expect("coordinator must be receiving the owner address list");
+
+        // The owner concurrently allocates a growing batch WITHOUT
+        // self-freeing, forcing every alloc() to fall through to
+        // find_segment_with_free — the call that actually drains every
+        // owned segment's RemoteFreeRing — exactly as
+        // tests/remote_fanin.rs's harness 1 does.
+        let heap = lease.core();
         let mut batch: Vec<*mut u8> = Vec::with_capacity(N);
         for _ in 0..N {
-            let p = unsafe { (*heap).alloc(layout) };
+            let p = heap.alloc(layout);
             if p.is_null() {
                 continue; // Transient OOM under pressure — not the property under test.
             }
             batch.push(p);
         }
         for p in batch {
-            unsafe { (*heap).dealloc(p, layout) };
+            // SAFETY: `p` was returned by `heap.alloc(layout)` above with
+            // the same layout, is still live, freed once, own-thread.
+            unsafe { heap.dealloc(p, layout) };
         }
+        // Ph4c: recycle via lease Drop (LIVE → FREE Release) — the
+        // coordinator re-claims this slot below (LIFO hint) for the
+        // residual ingress drain, then forgets the lease.
+        drop(lease);
     });
+
+    let (owner_slot_index, addrs) = owner_addr_rx
+        .recv()
+        .expect("owner thread must send its pre-allocated address list");
+
+    let chunk = N.div_ceil(producers);
+    let mut handles = Vec::with_capacity(producers);
+    for slice in addrs.chunks(chunk) {
+        let slice = slice.to_vec();
+        handles.push(thread::spawn(move || {
+            let _ = bootstrap::ensure();
+            // Ph4c: safe lease API — the lease is claimed, used and recycled
+            // (via `Drop`, LIVE → FREE, exactly like the old explicit
+            // `recycle`) entirely inside this producer thread.
+            let mut lease =
+                HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+            let remote_heap = lease.core();
+            for addr in slice {
+                let p = addr as *mut u8;
+                // SAFETY: `p` was returned by the owner's `alloc(layout)`
+                // with the same layout, is still live (never freed before),
+                // and is freed exactly once here -- the deliberate
+                // cross-thread free path this bench measures.
+                unsafe { remote_heap.dealloc(p, layout) };
+            }
+            drop(lease);
+        }));
+    }
 
     for h in handles {
         h.join().expect("producer thread must not panic");
     }
     owner_rounds.join().expect("owner thread must not panic");
-    // SAFETY: the owner and producers have joined; this thread retains the
-    // unique claim and completes any remaining descriptor obligations.
-    unsafe {
-        (*heap).dbg_drain_sidecar_ingress();
-    }
-
-    unsafe { HeapRegistry::recycle(heap) };
+    // Ph4c: the owner thread dropped its lease on exit (LIVE → FREE), so the
+    // legacy raw dereference + explicit `recycle` is replaced by a fresh
+    // safe re-claim. This sweep completes any remaining descriptor
+    // obligations. The lease's Drop published the LIFO reuse hint for its
+    // own slot, so the re-claim deterministically returns the SAME slot
+    // (asserted) — every other thread has joined, so no one else can have
+    // claimed it. After the drain the lease is FORGOTTEN, not dropped: the
+    // slot stays LIVE-for-the-process, exactly like the legacy leaked raw
+    // pointer (the "never recycle within this process" discipline).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("post-burst owner re-claim failed");
+    assert_eq!(
+        lease.slot_index(),
+        owner_slot_index,
+        "LIFO reuse hint must return the owner's slot for the untimed drain"
+    );
+    let _drained = lease.core().dbg_drain_sidecar_ingress();
+    mem::forget(lease);
 }
 
 /// **`starved`** owner-state iteration: the owner allocates `N` blocks, then
@@ -127,12 +183,15 @@ fn run_active(producers: usize) {
 fn run_starved(producers: usize) {
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // Ph4c: safe lease API — owner heap claimed, used and recycled on THIS
+    // thread (`dbg_drain_sidecar_ingress` + lease `Drop` below replace the old
+    // explicit `recycle`).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "owner pre-alloc returned null");
         ptrs.push(p);
     }
@@ -144,13 +203,21 @@ fn run_starved(producers: usize) {
         let slice = slice.to_vec();
         handles.push(thread::spawn(move || {
             let _ = bootstrap::ensure();
-            let remote_heap = HeapRegistry::claim();
-            assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+            // Ph4c: safe lease API — the lease is claimed, used and recycled
+            // (via `Drop`, LIVE → FREE, exactly like the old explicit
+            // `recycle`) entirely inside this producer thread.
+            let mut lease =
+                HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+            let remote_heap = lease.core();
             for addr in slice {
                 let p = addr as *mut u8;
-                unsafe { (*remote_heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by the owner's `alloc(layout)`
+                // with the same layout, is still live (never freed before),
+                // and is freed exactly once here -- the deliberate
+                // cross-thread free path this bench measures.
+                unsafe { remote_heap.dealloc(p, layout) };
             }
-            unsafe { HeapRegistry::recycle(remote_heap) };
+            drop(lease);
         }));
     }
 
@@ -162,10 +229,10 @@ fn run_starved(producers: usize) {
 
     // SAFETY: every producer has joined and this thread retains the unique
     // owner claim. The bounded sweep measures actual logical retirement.
-    let reclaimed = unsafe { (*heap).dbg_drain_sidecar_ingress() };
+    let reclaimed = heap.dbg_drain_sidecar_ingress();
     assert_eq!(reclaimed, N);
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease); // recycle: lease `Drop` = LIVE → FREE (old explicit `recycle`)
 }
 
 fn bench_fanin_active(c: &mut Criterion) {

@@ -12,10 +12,8 @@ use sefer_alloc::{LargeCacheConfig, SegmentLayout, SmallSegmentPoolConfig};
 #[test]
 fn pool_release_and_large_cache_reissue_balance_routes() {
     let config = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
-    let heap_ptr = HeapRegistry::claim_with_config(config);
-    assert!(!heap_ptr.is_null());
-    // SAFETY: the claimed slot has one owner until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease_with_config(config).expect("claim_with_config");
+    let heap = lease.core();
     let primordial = heap.segment_bases().next().expect("primordial");
     assert_eq!(
         RouteDirectory::global().lookup(primordial).unwrap().kind(),
@@ -84,6 +82,6 @@ fn pool_release_and_large_cache_reissue_balance_routes() {
     // SAFETY: second is the live reissue with the same layout.
     unsafe {
         heap.dealloc(second, large);
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }

@@ -7,10 +7,8 @@ use sefer_alloc::SegmentLayout;
 
 #[test]
 fn heap_routes_primordial_before_issue_and_each_new_segment_before_return() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the newly claimed heap until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let primordial = heap.segment_bases().next().expect("primordial");
     let first = RouteDirectory::global()
         .lookup(primordial)
@@ -74,8 +72,8 @@ fn heap_routes_primordial_before_issue_and_each_new_segment_before_return() {
         for p in blocks {
             heap.dealloc(p, small);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
     // Recycling a registry slot retains the HeapCore and its primordial mapping.
     assert!(RouteDirectory::global().lookup(primordial).is_some());
 }

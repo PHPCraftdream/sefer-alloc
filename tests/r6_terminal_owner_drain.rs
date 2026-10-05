@@ -37,10 +37,8 @@ fn serialize() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 fn requested_sizes_one_through_seven_retire_once_and_reissue() {
     let _guard = serialize();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layouts: [_; 7] = core::array::from_fn(|i| Layout::from_size_align(i + 1, 16).unwrap());
     let ptrs = layouts.map(|layout| {
         let ptr = heap.alloc(layout);
@@ -69,16 +67,14 @@ fn requested_sizes_one_through_seven_retire_once_and_reissue() {
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 1);
     assert!(heap.dbg_is_free_for(reissued));
     // SAFETY: all issued allocations were retired by the owner-side drain.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[test]
 fn mixed_class_and_more_than_ring_capacity() {
     let _guard = serialize();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let sizes = [1, 24, 64, 128, 256, 512, 1024];
     let mut ptrs = Vec::new();
     for &size in &sizes {
@@ -114,16 +110,14 @@ fn mixed_class_and_more_than_ring_capacity() {
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 257);
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 0);
     // SAFETY: all issued allocations were retired by the owner-side drain.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[test]
 fn large_pending_claim_reclaims_and_cache_reissues() {
     let _guard = serialize();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(
         SegmentLayout::SMALL_MAX + SegmentLayout::PAGE,
         SegmentLayout::PAGE,
@@ -159,7 +153,7 @@ fn large_pending_claim_reclaims_and_cache_reissues() {
     assert!(unsafe { next.publish_large() });
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 1);
     // SAFETY: both Large instances were retired by the owner-side drain.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[cfg(feature = "alloc-decommit")]
@@ -169,10 +163,8 @@ fn last_small_node_finalizes_after_route_scan() {
     use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
     let config = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
-    let heap_ptr = HeapRegistry::claim_with_config(config);
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease_with_config(config).expect("claim_with_config");
+    let heap = lease.core();
     let layout = Layout::from_size_align(SegmentLayout::SMALL_MAX, 16).unwrap();
     let mut ptrs = Vec::new();
     let mut first_small = None;
@@ -222,16 +214,14 @@ fn last_small_node_finalizes_after_route_scan() {
     }
     let _ = heap.dbg_drain_sidecar_ingress();
     // SAFETY: all issued allocations were retired by the owner-side drain.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[test]
 fn duplicate_detached_record_does_not_retire_another_credit() {
     let _guard = serialize();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let ptr = heap.alloc(Layout::from_size_align(16, 16).unwrap());
     assert!(!ptr.is_null());
     let class = RouteRegistration::class_at_global_address_for_test(ptr.addr()).unwrap();
@@ -247,17 +237,15 @@ fn duplicate_detached_record_does_not_retire_another_credit() {
     #[cfg(feature = "alloc-decommit")]
     assert_eq!(heap.dbg_live_count_for(ptr), Some(before - 1));
     // SAFETY: no user allocation remains live.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[cfg(feature = "fastbin")]
 #[test]
 fn detached_magazine_record_preserves_the_canonical_copy() {
     let _guard = serialize();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread exclusively owns the claimed heap until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 16).unwrap();
     let ptr = heap.alloc(layout);
     assert!(!ptr.is_null());
@@ -282,7 +270,7 @@ fn detached_magazine_record_preserves_the_canonical_copy() {
     publish_small(reissued);
     assert_eq!(heap.dbg_drain_sidecar_ingress(), 1);
     // SAFETY: the reissued allocation was retired by the owner.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }
 
 #[test]

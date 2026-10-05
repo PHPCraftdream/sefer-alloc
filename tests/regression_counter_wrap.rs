@@ -50,9 +50,8 @@ use sefer_alloc::registry::{bootstrap, heap_slot::STATE_LIVE, HeapRegistry};
 /// and the final assert would fail. This is the "preset near the limit" test.
 #[test]
 fn generation_crosses_u32_boundary_as_u64() {
-    let a = HeapRegistry::claim();
-    assert!(!a.is_null(), "claim must succeed");
-    let id = unsafe { (*a).id() } as usize;
+    let lease_a = HeapRegistry::dbg_claim_lease().expect("claim must succeed");
+    let id = lease_a.slot_index() as usize;
 
     let reg = bootstrap::ensure();
     assert_eq!(
@@ -76,12 +75,13 @@ fn generation_crosses_u32_boundary_as_u64() {
     assert_eq!(reg.dbg_slot_generation(id), preset);
 
     // Recycle → reclaim: each claim bumps generation by exactly 1.
-    // SAFETY: `a` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(a) };
-    let b = HeapRegistry::claim();
-    assert!(!b.is_null());
-    let id_b = unsafe { (*b).id() } as usize;
-    assert_eq!(id_b, id, "LIFO reclaim must reuse the same slot");
+    drop(lease_a);
+    let lease_b = HeapRegistry::dbg_claim_lease().expect("claim must succeed");
+    assert_eq!(
+        lease_b.slot_index() as usize,
+        id,
+        "LIFO reclaim must reuse the same slot"
+    );
     let gen1 = reg.dbg_slot_generation(id);
     assert_eq!(
         gen1,
@@ -91,11 +91,9 @@ fn generation_crosses_u32_boundary_as_u64() {
     );
 
     // One more recycle → reclaim: generation crosses the u32 ceiling.
-    // SAFETY: `b` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(b) };
-    let c = HeapRegistry::claim();
-    assert!(!c.is_null());
-    assert_eq!(unsafe { (*c).id() } as usize, id, "still the same slot");
+    drop(lease_b);
+    let lease_c = HeapRegistry::dbg_claim_lease().expect("claim must succeed");
+    assert_eq!(lease_c.slot_index() as usize, id, "still the same slot");
     let gen2 = reg.dbg_slot_generation(id);
     assert_eq!(
         gen2,
@@ -110,6 +108,6 @@ fn generation_crosses_u32_boundary_as_u64() {
     );
 
     // Leave the slot recycled so we do not leak a live claim into later tests.
-    // SAFETY: `c` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(c) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_c);
 }

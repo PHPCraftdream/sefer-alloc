@@ -152,15 +152,13 @@ fn transient(heap: &mut HeapCore, zeroed: bool) {
 
 pub(super) fn verify(zeroed: bool) {
     // Keep both leases live so the transient fixture has a fresh uniform leaf.
-    let persistent_ptr = HeapRegistry::claim();
-    let transient_ptr = HeapRegistry::claim();
-    assert!(!persistent_ptr.is_null() && !transient_ptr.is_null());
-    assert_ne!(persistent_ptr, transient_ptr);
-    // SAFETY: successful claims give this thread exclusive ownership of distinct heaps.
-    unsafe {
-        persistent(&mut *persistent_ptr, zeroed);
-        transient(&mut *transient_ptr, zeroed);
-        HeapRegistry::recycle(transient_ptr);
-        HeapRegistry::recycle(persistent_ptr);
-    }
+    let mut persistent_lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let mut transient_lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_ne!(persistent_lease.slot_index(), transient_lease.slot_index());
+    // Successful claims give this thread exclusive ownership of distinct heaps.
+    persistent(persistent_lease.core(), zeroed);
+    transient(transient_lease.core(), zeroed);
+    // The lease Drop recycles the slots whole.
+    drop(transient_lease);
+    drop(persistent_lease);
 }

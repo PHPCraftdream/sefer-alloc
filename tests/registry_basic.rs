@@ -24,12 +24,17 @@
 //! [`count_at_entry`]). This gives test isolation without leaking.
 //!
 //! (The abandoned-segments stack round-trip tests that previously lived here
-//! were removed with that substrate — task #97 / R4-5.)
+//! were removed with that substrate — task #97 / R4-5. The legacy
+//! raw-pointer protocol tests (`recycle(null)` no-op, double-recycle no-op)
+//! were moved into `src/registry/heap_registry/claim.rs`'s
+//! `legacy_semantics` unit module — they pin legacy-API semantics that
+//! [`HeapLease`] cannot express, and the legacy surface is `pub(crate)` now.)
 
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use sefer_alloc::registry::HeapLease;
 use sefer_alloc::registry::{
     bootstrap,
     heap_slot::{STATE_FREE, STATE_LIVE},
@@ -95,30 +100,61 @@ fn slot_generation(idx: usize) -> u64 {
     reg.dbg_slot_generation(idx)
 }
 
-/// `claim` returns non-null distinct slots, and each claimed slot is `LIVE`.
+/// Claim leases until the registry MINTS a fresh slot (index == count at
+/// entry). Post-Ph4c the other tests in this suite recycle their leases on
+/// Drop, so a plain `dbg_claim_lease()` may legitimately hand back a recycled
+/// slot; this drains those (leaking them — see below) until the
+/// fresh mint happens. Pre-migration the tests leaked their claims, so every
+/// `claim` minted; the migrated suite must tolerate the recycled fast path.
+fn claim_fresh_lease() -> HeapLease {
+    let base = count_at_entry();
+    for _ in 0..4096 {
+        let lease = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
+        if lease.slot_index() == base {
+            return lease;
+        }
+        // Leak (not drop): dropping would publish a reuse hint for this slot
+        // and the next claim would pop it right back — an infinite drain.
+        // Leaked LIVE slots shrink the reclaimable pool every iteration, so
+        // the loop terminates (same shape as the pre-migration leaked claims).
+        std::mem::forget(lease);
+    }
+    panic!("registry never minted the fresh slot {base}");
+}
+
+/// `claim` hands out distinct slots, each of which is `LIVE`. Migrated to the
+/// typed [`HeapLease`] surface (Ph4c): slot distinctness is asserted via
+/// `slot_index()` (stable per-slot identity) instead of raw-pointer
+/// inequality.
 #[test]
 fn claim_yields_distinct_live_slots() {
     serial!();
     let base = count_at_entry();
-    let a = HeapRegistry::claim();
-    let b = HeapRegistry::claim();
-    let c = HeapRegistry::claim();
-    assert!(
-        !a.is_null(),
-        "claim must not return null on a fresh registry"
+    let a = claim_fresh_lease();
+    let b = claim_fresh_lease();
+    let c = claim_fresh_lease();
+    assert_ne!(
+        a.slot_index(),
+        b.slot_index(),
+        "claim must hand out DISTINCT slots (a vs b)"
     );
-    assert!(!b.is_null(), "second claim must not return null");
-    assert!(!c.is_null(), "third claim must not return null");
-    assert_ne!(a, b, "claim must hand out DISTINCT slots (a vs b)");
-    assert_ne!(b, c, "claim must hand out DISTINCT slots (b vs c)");
-    assert_ne!(a, c, "claim must hand out DISTINCT slots (a vs c)");
+    assert_ne!(
+        b.slot_index(),
+        c.slot_index(),
+        "claim must hand out DISTINCT slots (b vs c)"
+    );
+    assert_ne!(
+        a.slot_index(),
+        c.slot_index(),
+        "claim must hand out DISTINCT slots (a vs c)"
+    );
 
-    // Each claimed slot is LIVE and its heap id matches its expected index
+    // Each claimed slot is LIVE and its index matches its expected slot
     // (count was `base` at entry, so the three claims mint indices
     // `base`, `base+1`, `base+2`).
-    let id_a = unsafe { (*a).id() } as usize;
-    let id_b = unsafe { (*b).id() } as usize;
-    let id_c = unsafe { (*c).id() } as usize;
+    let id_a = a.slot_index() as usize;
+    let id_b = b.slot_index() as usize;
+    let id_c = c.slot_index() as usize;
     assert_eq!(
         id_a, base as usize,
         "first claim mints the next count index"
@@ -128,48 +164,44 @@ fn claim_yields_distinct_live_slots() {
     assert_eq!(slot_state(id_a), STATE_LIVE, "claimed slot must be LIVE");
     assert_eq!(slot_state(id_b), STATE_LIVE);
     assert_eq!(slot_state(id_c), STATE_LIVE);
+    // The leases are dropped (LIVE → FREE) at scope exit, exactly like
+    // `recycle`.
 }
 
-/// `recycle` followed by `claim` reuses the recycled slot (LIFO) and BUMPS
-/// its generation — the M8/M9 coherence key.
+/// Drop of a claim lease (the lease analogue of `recycle`) followed by a new
+/// claim reuses the recycled slot (LIFO) and BUMPS its generation — the
+/// M8/M9 coherence key.
 #[test]
 fn recycle_then_claim_reuses_slot_and_bumps_generation() {
     serial!();
     let _base = count_at_entry();
-    let a = HeapRegistry::claim();
-    assert!(!a.is_null());
-    let id_a = unsafe { (*a).id() } as usize;
-    let gen_after_first_claim = slot_generation(id_a);
-    // The first-ever claim of a slot yields generation 1 (slot starts at 0).
-    // If this slot was claimed by an earlier test... it cannot be: count is
-    // monotonic and each test mints fresh slots, so this slot is being
-    // claimed for the first time in the suite.
+    let a = claim_fresh_lease();
+    let id_a = a.slot_index() as usize;
     assert_eq!(
-        gen_after_first_claim, 1,
+        a.generation(),
+        1,
         "first claim of a fresh slot must produce generation 1 \
          (started at 0, bumped once)"
     );
 
-    // SAFETY: `a` was returned by `claim` above and not yet recycled.
-    unsafe { HeapRegistry::recycle(a) };
+    // Dropping the lease returns the slot LIVE → FREE, exactly like `recycle`.
+    drop(a);
     assert_ne!(
         slot_state(id_a),
         STATE_LIVE,
         "recycled slot must NOT be LIVE (it is FREE)"
     );
 
-    // The next claim should reuse the slot we just recycled (free_slots LIFO).
-    let b = HeapRegistry::claim();
-    assert!(!b.is_null(), "claim after recycle must not return null");
-    let id_b = unsafe { (*b).id() } as usize;
+    // The next claim should reuse the slot we just dropped (free_slots LIFO).
+    let b = HeapRegistry::dbg_claim_lease().expect("claim after recycle must not return null");
     assert_eq!(
-        id_b, id_a,
+        b.slot_index() as usize,
+        id_a,
         "claim after recycle must reuse the SAME slot (free_slots LIFO)"
     );
-    let gen_after_second_claim = slot_generation(id_b);
     assert_eq!(
-        gen_after_second_claim,
-        gen_after_first_claim + 1,
+        b.generation(),
+        2,
         "re-claim must BUMP the generation (M8/M9 coherence key)"
     );
 }
@@ -179,58 +211,60 @@ fn recycle_then_claim_reuses_slot_and_bumps_generation() {
 fn latest_hint_then_fresh_defers_older_free() {
     serial!();
     let _base = count_at_entry();
-    let a = HeapRegistry::claim();
-    let b = HeapRegistry::claim();
-    assert!(!a.is_null() && !b.is_null());
-    // SAFETY: both pointers are distinct LIVE claims owned by this test.
-    let id_a = unsafe { (*a).id() } as usize;
-    // SAFETY: b remains this test's LIVE claim until recycle below.
-    let id_b = unsafe { (*b).id() } as usize;
+    let a = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
+    let b = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
+    let id_a = a.slot_index() as usize;
+    let id_b = b.slot_index() as usize;
     assert_ne!(id_a, id_b);
-    let generation_a = slot_generation(id_a);
-    let generation_b = slot_generation(id_b);
+    let generation_a = a.generation();
+    let generation_b = b.generation();
     let next_fresh = count_at_entry();
 
     // B overwrites A's advisory hint; A's slot state remains authoritative.
-    // SAFETY: `a` and `b` were returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(a) };
-    // SAFETY: b was returned by claim and has not yet been recycled.
-    unsafe { HeapRegistry::recycle(b) };
+    // Dropping the leases recycles both slots (A first, then B — B's hint is
+    // the latest).
+    drop(a);
+    drop(b);
     assert_eq!(slot_state(id_a), STATE_FREE);
     assert_eq!(slot_state(id_b), STATE_FREE);
 
-    let c = HeapRegistry::claim();
-    assert!(!c.is_null());
-    // SAFETY: c is this test's newly acquired LIVE claim.
-    let id_c = unsafe { (*c).id() } as usize;
-    assert_eq!(id_c, id_b, "latest hint must reuse B");
+    let c = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
+    assert_eq!(c.slot_index() as usize, id_b, "latest hint must reuse B");
     assert_eq!(count_at_entry(), next_fresh);
-    assert_eq!(slot_generation(id_b), generation_b + 1);
+    assert_eq!(c.generation(), generation_b + 1);
 
-    let d = HeapRegistry::claim();
-    assert!(!d.is_null());
-    // SAFETY: d is a distinct LIVE claim owned by this test.
-    let id_d = unsafe { (*d).id() } as usize;
+    let d = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
     assert_eq!(
-        id_d, next_fresh as usize,
+        d.slot_index() as usize,
+        next_fresh as usize,
         "fresh capacity precedes older FREE"
     );
     assert_eq!(count_at_entry(), next_fresh + 1);
-    assert_eq!(slot_state(id_c), STATE_LIVE);
-    assert_eq!(slot_state(id_d), STATE_LIVE);
+    assert_eq!(slot_state(id_b), STATE_LIVE);
+    assert_eq!(slot_state(next_fresh as usize), STATE_LIVE);
     assert_eq!(slot_state(id_a), STATE_FREE, "older A remains claimable");
     assert_eq!(slot_generation(id_a), generation_a, "A was not reclaimed");
 
-    let lease = HeapRegistry::try_maintenance().expect("older FREE A remains discoverable");
-    assert_eq!(lease.slot_index(), id_a);
+    // Older FREE A remains discoverable via maintenance. Earlier tests'
+    // recycled slots may also be claimable (and scan order may surface them
+    // first), so drain maintenance leases until A itself surfaces; the
+    // intermediates are leaked LIVE (same shape as `claim_fresh_lease`), so
+    // the pool shrinks each iteration and the loop terminates.
+    let mut lease = HeapRegistry::dbg_try_maintenance().expect("older FREE A remains discoverable");
+    while lease.slot_index() != id_a {
+        std::mem::forget(lease);
+        lease = HeapRegistry::dbg_try_maintenance()
+            .expect("maintenance must keep discovering FREE slots");
+    }
     drop(lease);
-    let recovered = HeapRegistry::claim();
-    assert!(!recovered.is_null());
-    // SAFETY: recovered is this test's newly acquired LIVE claim.
-    assert_eq!(unsafe { (*recovered).id() } as usize, id_a);
+    let recovered = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
+    assert_eq!(recovered.slot_index() as usize, id_a);
     assert_eq!(slot_state(id_a), STATE_LIVE);
     assert_eq!(slot_generation(id_a), generation_a + 1);
     assert_eq!(count_at_entry(), next_fresh + 1);
+    // The LIVE leases (c, d, recovered) are held to the end of the test — the
+    // state assertions above observe them — and their Drop recycles the
+    // slots.
 }
 
 /// Bootstrap idempotency: every call to `ensure` returns the SAME pointer and
@@ -246,7 +280,13 @@ fn latest_hint_then_fresh_defers_older_free() {
 fn bootstrap_is_idempotent() {
     serial!();
     let count_before_claim = count_at_entry();
-    let _ = HeapRegistry::claim(); // advances count by 1
+    // Advance count by EXACTLY 1 via a fresh mint (`claim_fresh_lease`
+    // drains the recycled pool the other tests' lease Drops leave behind —
+    // a plain claim would legally pop a FREE slot and not mint). The lease
+    // is intentionally leaked (the pre-migration shape `let _ =
+    // HeapRegistry::claim()`): its Drop would publish a reuse hint that
+    // poisons the other tests' fresh-mint index assertions.
+    std::mem::forget(claim_fresh_lease());
     let reg_before = bootstrap::ensure();
     let count_before = bootstrap::count_for_test();
     assert_eq!(
@@ -269,64 +309,6 @@ fn bootstrap_is_idempotent() {
     assert!(
         std::ptr::eq(reg_before, reg_after),
         "ensure must return the SAME &'static Registry on every call"
-    );
-}
-
-/// `recycle` of a null pointer is a safe no-op (defensive).
-#[test]
-fn recycle_null_is_noop() {
-    serial!();
-    let base = count_at_entry();
-    // SAFETY: null is explicitly allowed (a no-op per the contract).
-    unsafe { HeapRegistry::recycle(core::ptr::null_mut()) };
-    // No crash, no state change observable: the next claim mints the next
-    // count index (does not pop a phantom slot from free_slots).
-    let a = HeapRegistry::claim();
-    assert!(!a.is_null());
-    let id_a = unsafe { (*a).id() } as usize;
-    assert_eq!(
-        id_a, base as usize,
-        "after a null recycle, the first real claim mints the next count index"
-    );
-}
-
-/// Double-recycle is a safe no-op: recycling the same heap twice does not
-/// corrupt the free_slots stack (the CAS LIVE→FREE fails on the second call).
-/// We verify by checking that two claims after a double-recycle pop the slot
-/// exactly once and then mint a fresh one.
-#[test]
-fn double_recycle_is_safe_noop() {
-    serial!();
-    let base = count_at_entry();
-    let a = HeapRegistry::claim();
-    let id_a = unsafe { (*a).id() } as usize;
-    // SAFETY: `a` was returned by `claim`. The first recycle is valid; the
-    // second is a contract violation (double-recycle) that the registry
-    // handles defensively (CAS LIVE→FREE fails, no-op).
-    unsafe { HeapRegistry::recycle(a) };
-    unsafe { HeapRegistry::recycle(a) }; // defensive: must be a no-op, not a double-push
-
-    // Two claims: the first reuses the recycled slot; the second must NOT
-    // also resolve to the same slot (which would happen if the double-recycle
-    // pushed it twice and corrupted the stack).
-    let b = HeapRegistry::claim();
-    let c = HeapRegistry::claim();
-    assert!(!b.is_null() && !c.is_null());
-    let id_b = unsafe { (*b).id() } as usize;
-    let id_c = unsafe { (*c).id() } as usize;
-    assert_eq!(
-        id_b, id_a,
-        "first re-claim pops the once-pushed recycled slot"
-    );
-    assert_ne!(
-        id_b, id_c,
-        "second claim must mint a DIFFERENT slot (no phantom duplicate from double-recycle)"
-    );
-    // The fresh slot is the next count index.
-    assert_eq!(
-        id_c,
-        base as usize + 1,
-        "the second claim after a double-recycle mints the next count index"
     );
 }
 

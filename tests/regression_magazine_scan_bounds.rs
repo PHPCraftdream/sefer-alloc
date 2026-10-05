@@ -68,35 +68,35 @@ impl Drop for SerialGuard {
 ///      `b` is the top popped, `a` the next).
 ///   2. `free(a)` then `free(b)`  — both pushed; `b` is now the top of the
 ///      stack at the highest occupied index `k`, `cnt = k + 1`.
-///   3. `alloc()` pops the top → returns `b`; `cnt` drops to `k`, but
+///   3. `heap.alloc()` pops the top → returns `b`; `cnt` drops to `k`, but
 ///      `slots[c][k]` STILL HOLDS `b` (stale). `b` is live again.
 ///   4. `free(b)` — a GENUINE free. `cnt == k`, so a correct scan compares only
 ///      `slots[c][0..k]` (which does NOT contain `b`) and pushes `b` back at
 ///      index `k`. A broken scan that reads index `k` (== `cnt`) sees the stale
 ///      `b` and swallows the free → `b` is lost.
-///   5. `alloc()` must return `b` (LIFO top just pushed). If the free was
+///   5. `heap.alloc()` must return `b` (LIFO top just pushed). If the free was
 ///      swallowed it returns a DIFFERENT block and `b` is leaked → RED.
 #[test]
 fn legit_free_with_stale_copy_at_index_ge_cnt_is_not_swallowed() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Two distinct live blocks.
-    let a = unsafe { (*heap).alloc(layout) };
-    let b = unsafe { (*heap).alloc(layout) };
+    let a = heap.alloc(layout);
+    let b = heap.alloc(layout);
     assert!(!a.is_null() && !b.is_null());
     assert_ne!(a, b);
 
     // Push both: b becomes the top of the stack.
-    unsafe { (*heap).dealloc(a, layout) };
-    unsafe { (*heap).dealloc(b, layout) };
+    unsafe { heap.dealloc(a, layout) };
+    unsafe { heap.dealloc(b, layout) };
 
     // Pop the top → returns b; the slot it vacated (index == new cnt) STILL
     // holds a stale copy of b.
-    let popped = unsafe { (*heap).alloc(layout) };
+    let popped = heap.alloc(layout);
     assert_eq!(
         popped, b,
         "LIFO magazine pop should return the last-pushed block"
@@ -104,12 +104,12 @@ fn legit_free_with_stale_copy_at_index_ge_cnt_is_not_swallowed() {
 
     // Genuine free of the now-live b. Its stale copy sits at index == cnt.
     // A correct (i < cnt) scan does NOT see it → b is pushed back.
-    unsafe { (*heap).dealloc(b, layout) };
+    unsafe { heap.dealloc(b, layout) };
 
     // The just-freed b must be re-issued (it is the LIFO top). If the scan read
     // the stale slot at index >= cnt, the free was swallowed and this returns a
     // different block — b leaked.
-    let re = unsafe { (*heap).alloc(layout) };
+    let re = heap.alloc(layout);
     assert_eq!(
         re, b,
         "legit free of a live block with a stale copy at index >= cnt was \
@@ -119,8 +119,8 @@ fn legit_free_with_stale_copy_at_index_ge_cnt_is_not_swallowed() {
 
     // Cleanup: b (== re) and a are both live now.
     unsafe {
-        (*heap).dealloc(re, layout);
-        (*heap).dealloc(a, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(re, layout);
+        heap.dealloc(a, layout);
     }
+    drop(lease);
 }

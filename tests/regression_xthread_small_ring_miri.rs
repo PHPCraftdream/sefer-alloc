@@ -95,14 +95,12 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
     #[cfg(miri)]
     const N: usize = 8;
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    let heap_addr = heap as usize;
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
 
     // Owner pre-allocates all N blocks (same segment for 64-byte blocks).
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(small_layout) };
+        let p = lease.core().alloc(small_layout);
         assert!(!p.is_null(), "owner pre-alloc returned null");
         ptrs.push(p);
     }
@@ -122,11 +120,9 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
     let start_a = Arc::clone(&start);
     let prod_a = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(
-            !remote_heap.is_null(),
-            "producer A HeapRegistry::claim failed"
-        );
+        let mut remote_lease =
+            HeapRegistry::dbg_claim_lease().expect("producer A HeapRegistry::claim failed");
+        let remote_heap = remote_lease.core();
         while !start_a.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }
@@ -135,38 +131,39 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
         // into the owner segment's per-segment ring). Both producers push
         // concurrently into the SAME ring — the multi-producer case.
         for &addr in &addrs_a {
-            unsafe { (*remote_heap).dealloc(addr as *mut u8, small_layout) };
+            // SAFETY: `addr` is a live owner allocation; this deliberate
+            // cross-thread free exercises the remote ring under test.
+            unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
         }
-        unsafe { HeapRegistry::recycle(remote_heap) };
+        drop(remote_lease);
     });
 
     // Producer B: identical structure, independent heap claim.
     let start_b = Arc::clone(&start);
     let prod_b = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(
-            !remote_heap.is_null(),
-            "producer B HeapRegistry::claim failed"
-        );
+        let mut remote_lease =
+            HeapRegistry::dbg_claim_lease().expect("producer B HeapRegistry::claim failed");
+        let remote_heap = remote_lease.core();
         while !start_b.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }
         for &addr in &addrs_b {
-            unsafe { (*remote_heap).dealloc(addr as *mut u8, small_layout) };
+            // SAFETY: `addr` is a live owner allocation; this deliberate
+            // cross-thread free exercises the remote ring under test.
+            unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
         }
-        unsafe { HeapRegistry::recycle(remote_heap) };
+        drop(remote_lease);
     });
 
     // Owner: release the gate, then spin small allocs. Every iteration forms a
     // protected `&mut HeapCore` over the struct whose segment metadata the
     // producers are concurrently CASing via `Node::atomic_u32_at` — the real
     // overlap whose aliasing discipline miri validates.
-    let heap_ptr = heap_addr as *mut sefer_alloc::registry::HeapCore;
     start.store(true, Ordering::Release);
     let mut owner_ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap_ptr).alloc(small_layout) };
+        let p = lease.core().alloc(small_layout);
         assert!(!p.is_null(), "owner concurrent alloc returned null");
         owner_ptrs.push(p);
     }
@@ -179,11 +176,13 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
     // reads of tail/head/slots). This reclaims the offsets the producers
     // pushed, making them available for the owner's future allocations and
     // satisfying miri's leak checker.
-    unsafe { (*heap_ptr).dbg_drain_sidecar_ingress() };
+    lease.core().dbg_drain_sidecar_ingress();
 
     // Cleanup: free everything the owner currently holds and recycle the heap.
     for &p in &owner_ptrs {
-        unsafe { (*heap).dealloc(p, small_layout) };
+        // SAFETY: `p` is a live owner allocation of this lease's heap.
+        unsafe { lease.core().dealloc(p, small_layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

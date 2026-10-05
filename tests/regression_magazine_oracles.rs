@@ -63,18 +63,18 @@ impl Drop for SerialGuard {
 fn in_magazine_double_free_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null());
 
-    unsafe { (*heap).dealloc(p, layout) }; // → magazine
-    unsafe { (*heap).dealloc(p, layout) }; // double-free while in magazine
+    unsafe { heap.dealloc(p, layout) }; // → magazine
+    unsafe { heap.dealloc(p, layout) }; // double-free while in magazine
 
-    let p1 = unsafe { (*heap).alloc(layout) };
-    let p2 = unsafe { (*heap).alloc(layout) };
+    let p1 = heap.alloc(layout);
+    let p2 = heap.alloc(layout);
     assert!(!p1.is_null() && !p2.is_null());
     assert_ne!(
         p1, p2,
@@ -82,10 +82,10 @@ fn in_magazine_double_free_is_noop() {
     );
 
     unsafe {
-        (*heap).dealloc(p1, layout);
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p1, layout);
+        heap.dealloc(p2, layout);
     }
+    drop(lease);
 }
 
 // ── (b) flushed double-free → no-op ───────────────────────────────────────
@@ -102,8 +102,8 @@ fn in_magazine_double_free_is_noop() {
 fn flushed_double_free_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // N only needs to comfortably exceed TCACHE_CAP (16) to force at least one
@@ -122,20 +122,20 @@ fn flushed_double_free_is_noop() {
     const REISSUE_PROBE_ATTEMPTS: usize = 2 * N;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "initial alloc null at i={i}");
         ptrs.push(p);
     }
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
     let target = ptrs[0]; // flushed early to a BinTable free list
-    unsafe { (*heap).dealloc(target, layout) }; // flushed double-free
+    unsafe { heap.dealloc(target, layout) }; // flushed double-free
 
     let mut issued: Vec<*mut u8> = Vec::with_capacity(REISSUE_PROBE_ATTEMPTS);
     for _ in 0..REISSUE_PROBE_ATTEMPTS {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         if p.is_null() {
             break;
         }
@@ -149,9 +149,9 @@ fn flushed_double_free_is_noop() {
     );
 
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }
 
 // ── (c) THE STRENGTHENING TEST ────────────────────────────────────────────
@@ -174,8 +174,8 @@ fn flushed_double_free_is_noop() {
 fn flushed_double_free_with_garbage_word1_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // See `flushed_double_free_is_noop`'s identical constants for the
@@ -191,12 +191,12 @@ fn flushed_double_free_with_garbage_word1_is_noop() {
     const REISSUE_PROBE_ATTEMPTS: usize = 2 * N;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "initial alloc null at i={i}");
         ptrs.push(p);
     }
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
     let target = ptrs[0]; // flushed early to a BinTable free list
@@ -209,11 +209,11 @@ fn flushed_double_free_with_garbage_word1_is_noop() {
     }
 
     // The hazardous double-free.
-    unsafe { (*heap).dealloc(target, layout) };
+    unsafe { heap.dealloc(target, layout) };
 
     let mut issued: Vec<*mut u8> = Vec::with_capacity(REISSUE_PROBE_ATTEMPTS);
     for _ in 0..REISSUE_PROBE_ATTEMPTS {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         if p.is_null() {
             break;
         }
@@ -228,9 +228,9 @@ fn flushed_double_free_with_garbage_word1_is_noop() {
     );
 
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }
 
 // ── (d) legit free after pop is NOT a false-positive no-op ────────────────
@@ -242,26 +242,26 @@ fn flushed_double_free_with_garbage_word1_is_noop() {
 fn legit_free_after_pop_is_not_swallowed() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Warm the magazine so this class's slots array has residents from prior
     // frees — exercises the scan against a non-empty magazine.
-    let warm = unsafe { (*heap).alloc(layout) };
+    let warm = heap.alloc(layout);
     assert!(!warm.is_null());
-    unsafe { (*heap).dealloc(warm, layout) };
+    unsafe { heap.dealloc(warm, layout) };
 
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null());
     // Write to the whole block (including word0/word1).
     unsafe { core::ptr::write_bytes(p, 0xA5, 16) };
 
     // Genuine free — must push, NOT be swallowed.
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // Re-alloc must return a usable block.
-    let q = unsafe { (*heap).alloc(layout) };
+    let q = heap.alloc(layout);
     assert!(
         !q.is_null(),
         "re-alloc returned null — legit free was swallowed"
@@ -270,7 +270,7 @@ fn legit_free_after_pop_is_not_swallowed() {
     assert_eq!(unsafe { q.read() }, 0x5A, "block not usable after re-alloc");
 
     unsafe {
-        (*heap).dealloc(q, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(q, layout);
     }
+    drop(lease);
 }

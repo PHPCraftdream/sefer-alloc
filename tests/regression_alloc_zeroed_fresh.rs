@@ -77,28 +77,30 @@ fn alloc_zeroed_is_all_zero_fresh() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Small-class shapes.
     let small_sizes = [1usize, 16, 64, 200, 4096];
     for &size in &small_sizes {
         let layout = Layout::from_size_align(size, 1).unwrap();
-        let p = unsafe { (*heap).alloc_zeroed(layout) };
+        let p = heap.alloc_zeroed(layout);
         assert!(!p.is_null(), "alloc_zeroed({size}) returned null");
         assert_all_zero(p, size, &format!("small size={size}"));
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p, layout) };
     }
 
     // Large / dedicated-segment shape (well above SMALL_MAX ~253 KiB).
     let large_size = 1024 * 1024; // 1 MiB
     let large_layout = Layout::from_size_align(large_size, 1).unwrap();
-    let pl = unsafe { (*heap).alloc_zeroed(large_layout) };
+    let pl = heap.alloc_zeroed(large_layout);
     assert!(!pl.is_null(), "alloc_zeroed(1 MiB) returned null");
     assert_all_zero(pl, large_size, "large 1 MiB");
-    unsafe { (*heap).dealloc(pl, large_layout) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(pl, large_layout) };
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }
 
 /// (2) All-zero after reuse: alloc_zeroed -> write non-zero -> dealloc ->
@@ -110,33 +112,35 @@ fn alloc_zeroed_is_all_zero_after_reuse() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Small-class reuse: pop the same free-list slot back after a free.
     let small_sizes = [16usize, 64, 200, 4096];
     for &size in &small_sizes {
         let layout = Layout::from_size_align(size, 1).unwrap();
 
-        let p1 = unsafe { (*heap).alloc_zeroed(layout) };
+        let p1 = heap.alloc_zeroed(layout);
         assert!(!p1.is_null(), "first alloc_zeroed({size}) returned null");
         assert_all_zero(p1, size, &format!("small size={size} (first touch)"));
 
         // Dirty every byte with a non-zero pattern.
         unsafe { core::ptr::write_bytes(p1, 0xEE, size) };
 
-        unsafe { (*heap).dealloc(p1, layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p1, layout) };
 
         // Re-allocate the same shape. The allocator is free to serve the
         // same physical block back (own-segment free-list pop is the
         // expected fast path for a same-thread immediate realloc-of-same-
         // class). Either way, alloc_zeroed's CONTRACT requires all-zero
         // memory.
-        let p2 = unsafe { (*heap).alloc_zeroed(layout) };
+        let p2 = heap.alloc_zeroed(layout);
         assert!(!p2.is_null(), "second alloc_zeroed({size}) returned null");
         assert_all_zero(p2, size, &format!("small size={size} (after reuse)"));
 
-        unsafe { (*heap).dealloc(p2, layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p2, layout) };
     }
 
     // Large/dedicated-segment reuse (exercises the alloc-decommit large-
@@ -146,16 +150,18 @@ fn alloc_zeroed_is_all_zero_after_reuse() {
     let large_size = 2 * 1024 * 1024; // 2 MiB, above SMALL_MAX even under medium-classes (1 MiB)
     let large_layout = Layout::from_size_align(large_size, 1).unwrap();
 
-    let l1 = unsafe { (*heap).alloc_zeroed(large_layout) };
+    let l1 = heap.alloc_zeroed(large_layout);
     assert!(!l1.is_null(), "first large alloc_zeroed returned null");
     assert_all_zero(l1, large_size, "large (first touch)");
     unsafe { core::ptr::write_bytes(l1, 0xEE, large_size) };
-    unsafe { (*heap).dealloc(l1, large_layout) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(l1, large_layout) };
 
-    let l2 = unsafe { (*heap).alloc_zeroed(large_layout) };
+    let l2 = heap.alloc_zeroed(large_layout);
     assert!(!l2.is_null(), "second large alloc_zeroed returned null");
     assert_all_zero(l2, large_size, "large (after reuse)");
-    unsafe { (*heap).dealloc(l2, large_layout) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(l2, large_layout) };
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }

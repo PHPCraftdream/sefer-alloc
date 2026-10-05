@@ -70,23 +70,22 @@ fn layout(size: usize) -> Layout {
 #[test]
 fn dealloc_batch_promoted_large_free_releases_eagerly() {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let a = SeferAlloc::new();
 
     for round in 0..5 {
         let old_size = 96 * 1024;
         let old_layout = layout(old_size);
-        // SAFETY: valid layout; `heap` is the calling thread's own slot.
-        let p = unsafe { (*heap).alloc(old_layout) };
+        // SAFETY: valid layout.
+        let p = heap.alloc(old_layout);
         assert!(!p.is_null(), "round {round}: initial alloc failed");
         // SAFETY: p valid for old_size bytes.
         unsafe { p.write(0xAB) };
 
         let new_size = PROMOTION_THRESHOLD + 1024 * (round + 1);
-        // SAFETY: p live, old_layout matches, freed at most once on success.
-        let grown = unsafe { (*heap).realloc(p, old_layout, new_size) };
+        let grown = heap.realloc(p, old_layout, new_size);
         assert!(!grown.is_null(), "round {round}: growing realloc failed");
         // SAFETY: grown valid for new_size >= old_size bytes; the growth
         // copy must have preserved byte 0.
@@ -103,7 +102,7 @@ fn dealloc_batch_promoted_large_free_releases_eagerly() {
         // layout the growing `realloc` above returned it for), made by
         // `heap`'s own realloc, freed exactly once here — through the
         // batched entry point specifically under test.
-        unsafe { (*heap).dealloc_batch(grown_layout, &[grown]) };
+        heap.dealloc_batch(grown_layout, &[grown]);
 
         let released_after = a.stats().segments_released_total;
         assert_eq!(
@@ -119,6 +118,6 @@ fn dealloc_batch_promoted_large_free_releases_eagerly() {
         );
     }
 
-    // SAFETY: `heap` was claimed above; recycled whole here.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

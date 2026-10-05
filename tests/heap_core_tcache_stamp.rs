@@ -66,10 +66,10 @@ fn t_stamp_after_refill() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
-    let heap_id = unsafe { (*heap).id() };
+    let heap_id = heap.id();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Allocate enough blocks to force at least one refill (magazine cap is 16,
@@ -77,7 +77,7 @@ fn t_stamp_after_refill() {
     const N: usize = 64;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at i={i}");
         // Write to prove usability.
         unsafe { core::ptr::write_bytes(p, (i & 0xFF) as u8, 16) };
@@ -86,7 +86,7 @@ fn t_stamp_after_refill() {
 
     // Verify: every allocated block's segment has owner_id == heap_id.
     for (i, &p) in ptrs.iter().enumerate() {
-        let owner = unsafe { (*heap).dbg_owner_id_for(p) };
+        let owner = heap.dbg_owner_id_for(p);
         assert_eq!(
             owner,
             Some(heap_id),
@@ -96,9 +96,10 @@ fn t_stamp_after_refill() {
 
     // Cleanup.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T-magazine-hit-skips-stamp ────────────────────────────────────────────
@@ -115,51 +116,51 @@ fn t_magazine_hit_skips_stamp() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
-    let heap_id = unsafe { (*heap).id() };
+    let heap_id = heap.id();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Force a refill: alloc one block.
-    let p1 = unsafe { (*heap).alloc(layout) };
+    let p1 = heap.alloc(layout);
     assert!(!p1.is_null(), "first alloc returned null");
 
     // The refill stamped the segment. Verify.
-    let owner = unsafe { (*heap).dbg_owner_id_for(p1) };
+    let owner = heap.dbg_owner_id_for(p1);
     assert_eq!(owner, Some(heap_id), "first alloc not stamped");
 
     // Record the cached segment base after the refill.
-    let cached_after_refill = unsafe { (*heap).dbg_last_stamped_segment() };
+    let cached_after_refill = heap.dbg_last_stamped_segment();
     assert!(
         !cached_after_refill.is_null(),
         "last_stamped_segment should be non-null after refill"
     );
 
     // Free the block (goes back to magazine).
-    unsafe { (*heap).dealloc(p1, layout) };
+    unsafe { heap.dealloc(p1, layout) };
 
     // The cached segment should not change after dealloc.
-    let cached_after_free = unsafe { (*heap).dbg_last_stamped_segment() };
+    let cached_after_free = heap.dbg_last_stamped_segment();
     assert_eq!(
         cached_after_refill, cached_after_free,
         "dealloc should not change last_stamped_segment"
     );
 
     // Re-alloc (magazine hit: LIFO, returns p1 or a same-segment block).
-    let p2 = unsafe { (*heap).alloc(layout) };
+    let p2 = heap.alloc(layout);
     assert!(!p2.is_null(), "re-alloc returned null");
 
     // Key assertion: the magazine-hit path (P4) does NOT call
     // stamp_segment_owner, so `last_stamped_segment` should be unchanged.
-    let cached_after_hit = unsafe { (*heap).dbg_last_stamped_segment() };
+    let cached_after_hit = heap.dbg_last_stamped_segment();
     assert_eq!(
         cached_after_refill, cached_after_hit,
         "magazine-hit alloc changed last_stamped_segment — stamp was NOT hoisted"
     );
 
     // The block is still properly stamped (ownership is correct).
-    let owner2 = unsafe { (*heap).dbg_owner_id_for(p2) };
+    let owner2 = heap.dbg_owner_id_for(p2);
     assert_eq!(owner2, Some(heap_id), "re-alloc block not stamped");
 
     // Verify the pointer is usable.
@@ -169,9 +170,10 @@ fn t_magazine_hit_skips_stamp() {
     }
 
     unsafe {
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p2, layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T-large-still-stamps ──────────────────────────────────────────────────
@@ -187,18 +189,18 @@ fn t_large_still_stamps() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
-    let heap_id = unsafe { (*heap).id() };
+    let heap_id = heap.id();
 
     // A large allocation: 128 KiB (well above SMALL_MAX which is a few KiB).
     let large_layout = Layout::from_size_align(128 * 1024, 8).unwrap();
-    let p = unsafe { (*heap).alloc(large_layout) };
+    let p = heap.alloc(large_layout);
     assert!(!p.is_null(), "large alloc returned null");
 
     // Verify ownership stamp.
-    let owner = unsafe { (*heap).dbg_owner_id_for(p) };
+    let owner = heap.dbg_owner_id_for(p);
     assert_eq!(
         owner,
         Some(heap_id),
@@ -212,9 +214,10 @@ fn t_large_still_stamps() {
     }
 
     unsafe {
-        (*heap).dealloc(p, large_layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p, large_layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T-multi-class-refill-stamps ───────────────────────────────────────────
@@ -228,10 +231,10 @@ fn t_multi_class_refill_stamps() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
-    let heap_id = unsafe { (*heap).id() };
+    let heap_id = heap.id();
 
     // Sizes that span several size classes.
     let sizes: &[usize] = &[16, 32, 64, 128, 256, 512, 1024];
@@ -242,7 +245,7 @@ fn t_multi_class_refill_stamps() {
     for &sz in sizes {
         let layout = Layout::from_size_align(sz, 8).unwrap();
         for i in 0..n_per_size {
-            let p = unsafe { (*heap).alloc(layout) };
+            let p = heap.alloc(layout);
             assert!(!p.is_null(), "alloc({sz}) returned null at i={i}");
             unsafe { core::ptr::write_bytes(p, (i & 0xFF) as u8, sz) };
             all_ptrs.push((p, layout));
@@ -251,7 +254,7 @@ fn t_multi_class_refill_stamps() {
 
     // Verify all segments are stamped.
     for (idx, &(p, _)) in all_ptrs.iter().enumerate() {
-        let owner = unsafe { (*heap).dbg_owner_id_for(p) };
+        let owner = heap.dbg_owner_id_for(p);
         assert_eq!(
             owner,
             Some(heap_id),
@@ -260,7 +263,8 @@ fn t_multi_class_refill_stamps() {
     }
 
     for &(p, layout) in &all_ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

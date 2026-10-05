@@ -93,8 +93,8 @@ fn c1_align_over_16_hits_magazine() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let before = tcache_hits_total();
 
@@ -102,16 +102,18 @@ fn c1_align_over_16_hits_magazine() {
     for &(size, align) in &shapes {
         let layout = Layout::from_size_align(size, align).unwrap();
         // First alloc: magazine is empty for this class -> miss (refill).
-        let p1 = unsafe { (*heap).alloc(layout) };
+        let p1 = heap.alloc(layout);
         assert!(!p1.is_null(), "alloc({size},{align}) returned null");
         // Free it: with the gate removed, this block goes into the magazine
         // (align>16 is no longer excluded).
-        unsafe { (*heap).dealloc(p1, layout) };
+        // SAFETY: `p1` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p1, layout) };
         // Second alloc of the SAME (size, align): should pop straight from
         // the magazine -> a hit, if (and only if) the C1 fix is in place.
-        let p2 = unsafe { (*heap).alloc(layout) };
+        let p2 = heap.alloc(layout);
         assert!(!p2.is_null(), "second alloc({size},{align}) returned null");
-        unsafe { (*heap).dealloc(p2, layout) };
+        // SAFETY: `p2` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p2, layout) };
     }
 
     let after = tcache_hits_total();
@@ -121,7 +123,7 @@ fn c1_align_over_16_hits_magazine() {
          (before={before}, after={after}) -- the magazine gate regressed"
     );
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }
 
 /// C1 correctness: many align>16 allocations round-trip through the
@@ -132,8 +134,8 @@ fn c1_align_over_16_correctness() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // A mix of align>16 shapes, some requiring the divisibility walk
     // (class_for's slow path), including a page-aligned shape (task B1).
@@ -168,7 +170,7 @@ fn c1_align_over_16_correctness() {
     for round in 0..ROUNDS {
         for &(size, align) in shapes {
             let layout = Layout::from_size_align(size, align).unwrap();
-            let p = unsafe { (*heap).alloc(layout) };
+            let p = heap.alloc(layout);
             assert!(
                 !p.is_null(),
                 "alloc({size},{align}) returned null at round {round}"
@@ -215,20 +217,22 @@ fn c1_align_over_16_correctness() {
 
     // Free everything.
     for b in &blocks {
-        unsafe { (*heap).dealloc(b.ptr, b.layout) };
+        // SAFETY: `b.ptr` is a live allocation of this heap with `b.layout`.
+        unsafe { heap.dealloc(b.ptr, b.layout) };
     }
 
     // Sanity: the allocator is still functional after the free (no panic /
     // no null on a fresh alloc of the same shapes).
     for &(size, align) in shapes {
         let layout = Layout::from_size_align(size, align).unwrap();
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(
             !p.is_null(),
             "post-free alloc({size},{align}) returned null"
         );
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: `p` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }

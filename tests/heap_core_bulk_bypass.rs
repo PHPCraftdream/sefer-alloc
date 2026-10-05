@@ -96,18 +96,18 @@ fn t_cold_storm_stays_in_magazine() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
     // A recycled slot may carry a populated magazine from an earlier test in
     // this process; flush to a known-clean baseline.
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 
     const TOTAL: usize = 64;
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(TOTAL);
     for i in 0..TOTAL {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at i={i}");
         unsafe { core::ptr::write_bytes(p, 0xBB, 16) };
         ptrs.push(p);
@@ -119,15 +119,16 @@ fn t_cold_storm_stays_in_magazine() {
 
     // Free all — no panic, no double-free trips.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
     // Allocator still serves after the storm.
-    let check = unsafe { (*heap).alloc(layout) };
+    let check = heap.alloc(layout);
     assert!(!check.is_null(), "alloc after cold-storm returned null");
-    unsafe { (*heap).dealloc(check, layout) };
+    unsafe { heap.dealloc(check, layout) };
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── t_churn_distinct_and_healthy ───────────────────────────────────────────
@@ -140,9 +141,9 @@ fn t_churn_distinct_and_healthy() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    unsafe { (*heap).dbg_flush_all() };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
+    heap.dbg_flush_all();
 
     const K: usize = 24;
     const OPS: usize = 1024;
@@ -151,7 +152,7 @@ fn t_churn_distinct_and_healthy() {
     // Initial fill.
     let mut live: Vec<*mut u8> = Vec::with_capacity(K);
     for i in 0..K {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "initial alloc returned null at {i}");
         unsafe { core::ptr::write_bytes(p, 0xCC, 16) };
         live.push(p);
@@ -161,8 +162,8 @@ fn t_churn_distinct_and_healthy() {
     let mut rng: u64 = 0xDEAD;
     for _ in 0..OPS {
         let idx = (xorshift64(&mut rng) as usize) % K;
-        unsafe { (*heap).dealloc(live[idx], layout) };
-        let p = unsafe { (*heap).alloc(layout) };
+        unsafe { heap.dealloc(live[idx], layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "churn alloc returned null");
         unsafe { core::ptr::write_bytes(p, 0xDD, 16) };
         live[idx] = p;
@@ -172,10 +173,11 @@ fn t_churn_distinct_and_healthy() {
     }
 
     for &p in &live {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── t_bulk_then_drain_then_churn ───────────────────────────────────────────
@@ -188,16 +190,16 @@ fn t_bulk_then_drain_then_churn() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    unsafe { (*heap).dbg_flush_all() };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
+    heap.dbg_flush_all();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Phase 1: cold storm.
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(64);
     for i in 0..64 {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "bulk alloc null at {i}");
         unsafe { core::ptr::write_bytes(p, 0xAA, 16) };
         ptrs.push(p);
@@ -207,7 +209,7 @@ fn t_bulk_then_drain_then_churn() {
 
     // Phase 2: free all.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
     ptrs.clear();
 
@@ -216,7 +218,7 @@ fn t_bulk_then_drain_then_churn() {
     const OPS: usize = 1024;
     let mut live: Vec<*mut u8> = Vec::with_capacity(K);
     for i in 0..K {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "churn fill alloc null at {i}");
         unsafe { core::ptr::write_bytes(p, 0xBB, 16) };
         live.push(p);
@@ -225,8 +227,8 @@ fn t_bulk_then_drain_then_churn() {
     let mut rng: u64 = 0xBEEF;
     for _ in 0..OPS {
         let idx = (xorshift64(&mut rng) as usize) % K;
-        unsafe { (*heap).dealloc(live[idx], layout) };
-        let p = unsafe { (*heap).alloc(layout) };
+        unsafe { heap.dealloc(live[idx], layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "churn alloc null");
         unsafe { core::ptr::write_bytes(p, 0xCC, 16) };
         live[idx] = p;
@@ -237,10 +239,11 @@ fn t_bulk_then_drain_then_churn() {
     assert_eq!(set.len(), K, "duplicate pointers after churn");
 
     for &p in &live {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── t_cross_thread_unaffected ──────────────────────────────────────────────

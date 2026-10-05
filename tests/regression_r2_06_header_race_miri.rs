@@ -91,14 +91,14 @@ fn owner_reconciliation_walk_overlaps_remote_large_free() {
     // without blowing the per-test miri budget.
     const RECONCILIATION_ITERS: usize = 40;
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Owner pre-allocates the Large blocks so they are registered, owner-
     // stamped segments before the remote thread starts freeing them.
     let mut large_ptrs: Vec<*mut u8> = Vec::with_capacity(LARGE_N);
     for i in 0..LARGE_N {
-        let p = unsafe { (*heap).alloc(large_layout) };
+        let p = heap.alloc(large_layout);
         assert!(!p.is_null(), "large alloc[{i}] returned null");
         large_ptrs.push(p);
     }
@@ -110,13 +110,13 @@ fn owner_reconciliation_walk_overlaps_remote_large_free() {
 
     // Raw pointers are `!Send`; ship addresses.
     let addrs: Vec<usize> = large_ptrs.iter().map(|&p| p as usize).collect();
-    let heap_addr = heap as usize;
     let start_remote = Arc::clone(&start);
 
     let remote = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        let mut remote_lease =
+            HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+        let remote_heap = remote_lease.core();
         while !start_remote.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }
@@ -126,9 +126,11 @@ fn owner_reconciliation_walk_overlaps_remote_large_free() {
         // the owner's diagnostic reconciliation walk below.
         for &addr in &addrs {
             let p = addr as *mut u8;
-            unsafe { (*remote_heap).dealloc(p, large_layout) };
+            // SAFETY: `p` is a live owner allocation; the deliberate
+            // cross-thread free exercises the deferred-free push under test.
+            unsafe { remote_heap.dealloc(p, large_layout) };
         }
-        unsafe { HeapRegistry::recycle(remote_heap) };
+        drop(remote_lease);
     });
 
     // Owner: release the gate, then repeatedly snapshot the FULL segment-state
@@ -138,9 +140,8 @@ fn owner_reconciliation_walk_overlaps_remote_large_free() {
     // `SegmentHeader::read_at`, exactly the call path this task's review
     // finding names.
     start.store(true, Ordering::Release);
-    let heap_ptr = heap_addr as *mut sefer_alloc::registry::HeapCore;
     for _ in 0..RECONCILIATION_ITERS {
-        let rec = unsafe { (*heap_ptr).dbg_segment_state_reconciliation() };
+        let rec = lease.core().dbg_segment_state_reconciliation();
         // Not asserting on the numbers themselves (they are inherently
         // racy/momentary while the remote thread is mid-free) -- the
         // regression this test targets is a miri data-race REPORT, not a
@@ -154,8 +155,10 @@ fn owner_reconciliation_walk_overlaps_remote_large_free() {
     // Drain the deferred-free stack the remote populated (own-thread large
     // alloc slow path runs the drain) and clean up, so miri's leak checker is
     // satisfied -- mirrors `regression_xthread_thread_free_alias_miri.rs`.
-    let drain = unsafe { (*heap).alloc(large_layout) };
+    let drain = lease.core().alloc(large_layout);
     assert!(!drain.is_null());
-    unsafe { (*heap).dealloc(drain, large_layout) };
-    unsafe { HeapRegistry::recycle(heap) };
+    // SAFETY: `drain` is a live allocation of this lease's heap.
+    unsafe { lease.core().dealloc(drain, large_layout) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

@@ -123,50 +123,47 @@ const READER_ITERS: usize = 2000;
 
 #[cfg(feature = "fastbin")]
 fn drive_claim_and_return_local_hits() -> u64 {
-    let heap = HeapRegistry::claim();
-    assert!(
-        !heap.is_null(),
-        "HeapRegistry::claim returned null under contention"
-    );
+    let mut lease = HeapRegistry::dbg_claim_lease()
+        .expect("HeapRegistry::claim returned None under contention");
+    let heap = lease.core();
 
-    // SAFETY: `heap` is live, just claimed by this thread, not yet recycled.
-    let local_before = unsafe { (*heap).tcache_hits() };
+    let local_before = heap.tcache_hits();
 
     let layout = Layout::from_size_align(96, 32).unwrap();
     for _ in 0..8 {
-        let p1 = unsafe { (*heap).alloc(layout) };
+        let p1 = heap.alloc(layout);
         if p1.is_null() {
             break; // benign under OOM-constrained CI runners
         }
-        unsafe { (*heap).dealloc(p1, layout) };
-        let p2 = unsafe { (*heap).alloc(layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p1, layout) };
+        let p2 = heap.alloc(layout);
         if !p2.is_null() {
-            unsafe { (*heap).dealloc(p2, layout) };
+            // SAFETY: $2 is a live allocation of this heap; layout matches.
+            unsafe { heap.dealloc(p2, layout) };
         }
     }
 
-    // SAFETY: still live, not yet recycled.
-    let local_after = unsafe { (*heap).tcache_hits() };
-    unsafe { HeapRegistry::recycle(heap) };
+    let local_after = heap.tcache_hits();
+    drop(lease);
     local_after.saturating_sub(local_before)
 }
 
 #[cfg(not(feature = "fastbin"))]
 fn drive_claim_and_return_local_hits() -> u64 {
-    let heap = HeapRegistry::claim();
-    assert!(
-        !heap.is_null(),
-        "HeapRegistry::claim returned null under contention"
-    );
+    let mut lease = HeapRegistry::dbg_claim_lease()
+        .expect("HeapRegistry::claim returned None under contention");
+    let heap = lease.core();
     let layout = Layout::from_size_align(96, 32).unwrap();
     for _ in 0..8 {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         if p.is_null() {
             break;
         }
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
     0
 }
 

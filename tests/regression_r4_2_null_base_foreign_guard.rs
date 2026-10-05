@@ -94,13 +94,12 @@ fn realloc_foreign_garbage_null_base_returns_null() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let old_layout = Layout::from_size_align(16, 8).unwrap();
-    // SAFETY: `heap` was just claimed and is LIVE + initialised; we are its
-    // sole user (serialised). We hold a `&mut HeapCore` for this call only.
-    let result = unsafe { (*heap).realloc(GARBAGE_PTR, old_layout, 64) };
+    // SAFETY: deliberate garbage-pointer misuse; the null-base guard must reject it.
+    let result = unsafe { heap.realloc(GARBAGE_PTR, old_layout, 64) };
 
     assert!(
         result.is_null(),
@@ -108,8 +107,8 @@ fn realloc_foreign_garbage_null_base_returns_null() {
          null (null-base guard) before any raw segment-header read"
     );
 
-    // SAFETY: done with the heap; return it to the pool.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// `dealloc`'s foreign leg (`dealloc_foreign_slow`) must be a safe no-op for a
@@ -121,22 +120,24 @@ fn dealloc_foreign_garbage_null_base_is_safe_noop() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
-    // SAFETY: `heap` is LIVE + initialised and solely ours. The point of this
-    // test is that the call must NOT read through a null base; if the guard
-    // were absent this would fault reading address `offset_of!(magic)`.
-    unsafe { (*heap).dealloc(GARBAGE_PTR, layout) };
+    // The point of this test is that the call must NOT read through a null
+    // base; if the guard were absent this would fault reading address
+    // `offset_of!(magic)`.
+    // SAFETY: deliberate caller-misuse (interior/garbage pointer) or live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(GARBAGE_PTR, layout) };
 
     // Establish the allocator is still fully functional after the no-op: a
     // genuine alloc/dealloc round-trip must succeed, proving the garbage
     // dealloc neither corrupted state nor crashed.
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null(), "allocator unusable after garbage dealloc");
-    unsafe { (*heap).dealloc(p, layout) };
+    // SAFETY: deliberate caller-misuse (interior/garbage pointer) or live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(p, layout) };
 
-    // SAFETY: done with the heap; return it to the pool.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

@@ -249,8 +249,6 @@
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
 //      * `registry::heap_registry::counters` — registry diagnostics/aggregators
 //                             over slot-resident counters. (under `alloc-global`)
-//      * `registry::heap_registry::maintenance` — exclusive maintenance lease
-//                             handoff for ownerless sweeps. (under `alloc-global`)
 //      * `registry::segment_route::directory` — System-backed route entry,
 //                             sidecar and sorted pointer-array allocation/
 //                             reclamation; numeric foreign lookup pins under

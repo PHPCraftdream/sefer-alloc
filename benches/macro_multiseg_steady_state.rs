@@ -138,7 +138,7 @@ use std::hint::black_box;
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 
 #[cfg(target_os = "linux")]
-use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapLease, HeapRegistry};
 #[cfg(target_os = "linux")]
 use sefer_alloc::SegmentLayout;
 
@@ -175,21 +175,20 @@ fn floor_layout() -> Layout {
     Layout::from_size_align(large_size, SegmentLayout::PAGE).unwrap()
 }
 
-/// Establishes the floor and returns the claimed heap pointer plus the
-/// floor pointers, which the timed function frees at its own end (freeing
+/// Establishes the floor and returns the claimed heap lease plus the floor
+/// pointers, which the timed function frees at its own end (freeing
 /// isn't part of `setup` so the timed body's own steady-state teardown
 /// cost — mirroring a real long-lived process eventually shutting down — is
 /// part of what gets measured; see the two-shape split below for the
 /// no-teardown variant that isolates PURE churn instead).
 #[cfg(target_os = "linux")]
-fn setup_single_thread_floor() -> (*mut HeapCore, Vec<*mut u8>) {
+fn setup_single_thread_floor() -> (HeapLease, Vec<*mut u8>) {
     let _ = bootstrap::ensure();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim`, owned by this thread
-    // for the rest of this process (iai-callgrind runs each
-    // `#[library_benchmark]` fn in its own fresh process).
-    let heap = unsafe { &mut *heap_ptr };
+    // Ph4c: safe lease API — the lease authority is returned to the caller,
+    // which recycles the slot via `Drop` where the old code called
+    // `HeapRegistry::recycle` explicitly.
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
     let layout = floor_layout();
 
     let mut floor = Vec::with_capacity(FLOOR_LARGE_OBJECTS);
@@ -213,7 +212,7 @@ fn setup_single_thread_floor() -> (*mut HeapCore, Vec<*mut u8>) {
          segment working set this bench exists to measure was NOT achieved"
     );
 
-    (heap_ptr, floor)
+    (lease, floor)
 }
 
 // ---------------------------------------------------------------------------
@@ -238,10 +237,8 @@ fn setup_single_thread_floor() -> (*mut HeapCore, Vec<*mut u8>) {
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn multiseg_steady_state_1t() {
-    let (heap_ptr, floor) = setup_single_thread_floor();
-    // SAFETY: `heap_ptr` is live and owned by this thread for the rest of
-    // this process.
-    let heap = unsafe { &mut *heap_ptr };
+    let (mut lease, floor) = setup_single_thread_floor();
+    let heap = lease.core();
 
     let small_layout = Layout::from_size_align(SMALL_SIZE, 8).unwrap();
     let large_layout = floor_layout();
@@ -272,13 +269,9 @@ fn multiseg_steady_state_1t() {
     // Teardown: free the whole floor (a long-lived process eventually
     // shutting down), then recycle the heap.
     for p in floor {
-        // SAFETY: `p` was allocated by `heap` with `large_layout` in
-        // `setup_single_thread_floor`, still live, freed exactly once here.
-        unsafe { heap.dealloc(p, large_layout) };
+        heap.dealloc(p, large_layout);
     }
-    // SAFETY: `heap_ptr` was returned by `claim` in setup, not yet
-    // recycled, no other thread touches it.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease); // recycle: lease `Drop` = LIVE → FREE (old explicit `recycle`)
 }
 
 // ---------------------------------------------------------------------------
@@ -291,10 +284,8 @@ const MT_THREAD_COUNT: usize = 4;
 
 #[cfg(target_os = "linux")]
 fn per_thread_work() {
-    let (heap_ptr, floor) = setup_single_thread_floor();
-    // SAFETY: `heap_ptr` is live and owned by this thread until `recycle`
-    // at the end of this function.
-    let heap = unsafe { &mut *heap_ptr };
+    let (mut lease, floor) = setup_single_thread_floor();
+    let heap = lease.core();
 
     let small_layout = Layout::from_size_align(SMALL_SIZE, 8).unwrap();
     let large_layout = floor_layout();
@@ -318,13 +309,9 @@ fn per_thread_work() {
     }
 
     for p in floor {
-        // SAFETY: `p` was allocated by `heap` with `large_layout` above,
-        // still live, freed exactly once here.
-        unsafe { heap.dealloc(p, large_layout) };
+        heap.dealloc(p, large_layout);
     }
-    // SAFETY: `heap_ptr` was returned by `claim` above, not yet recycled,
-    // no other thread touches it.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease); // recycle: lease `Drop` = LIVE → FREE (old explicit `recycle`)
 }
 
 // Multi-thread variant: `MT_THREAD_COUNT` (4) threads, each running the

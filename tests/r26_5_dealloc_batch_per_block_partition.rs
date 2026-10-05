@@ -147,8 +147,8 @@ fn dealloc_batch_per_block_partition_is_exact() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
     let n = 200usize;
@@ -159,7 +159,7 @@ fn dealloc_batch_per_block_partition_is_exact() {
     let mut blocks: Vec<*mut u8> = Vec::with_capacity(n);
     for i in 0..n {
         // SAFETY: valid non-zero layout; `heap` was just claimed.
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "setup alloc returned null at i={i}");
         blocks.push(p);
     }
@@ -170,7 +170,7 @@ fn dealloc_batch_per_block_partition_is_exact() {
     // `dbg_is_free_for` reads).
     let seg_bases: std::collections::HashSet<usize> = blocks
         .iter()
-        .map(|&p| unsafe { (*heap).dbg_segment_base_of_ptr(p) } as usize)
+        .map(|&p| heap.dbg_segment_base_of_ptr(p) as usize)
         .collect();
     assert_eq!(
         seg_bases.len(),
@@ -183,11 +183,12 @@ fn dealloc_batch_per_block_partition_is_exact() {
     // setup loop's last refill-batch leftovers don't perturb `live_before`
     // and so `dealloc_batch`'s magazine-fill phase starts from `cnt == 0`,
     // matching the first-warm policy exactly. Identical to `r25_4`.
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
 
     // Authoritative live_count BEFORE the batched free (magazine now empty
     // for this class: live_count == exactly the N=200 blocks in `blocks`).
-    let live_before = unsafe { (*heap).dbg_live_count_for(blocks[0]) }
+    let live_before = heap
+        .dbg_live_count_for(blocks[0])
         .expect("segment must be small/primordial and registered");
     assert_eq!(
         live_before as usize, n,
@@ -199,12 +200,13 @@ fn dealloc_batch_per_block_partition_is_exact() {
     // `r25_4` exercises.
     // SAFETY: every entry of `blocks` was allocated by `heap` above with
     // `layout`; freed exactly once here.
-    unsafe { (*heap).dealloc_batch(layout, &blocks) };
+    unsafe { heap.dealloc_batch(layout, &blocks) };
 
     // ── AGGREGATE assertions (kept identical to `r25_4` — this test
     // STRENGTHENS that oracle, it does not replace it) ──────────────────────
-    let live_after =
-        unsafe { (*heap).dbg_live_count_for(blocks[0]) }.expect("segment must still be registered");
+    let live_after = heap
+        .dbg_live_count_for(blocks[0])
+        .expect("segment must still be registered");
     let expected_delta = (n - TCACHE_CAP) as u32;
     assert_eq!(
         live_before.saturating_sub(live_after),
@@ -212,9 +214,10 @@ fn dealloc_batch_per_block_partition_is_exact() {
         "aggregate: live_count did not drop by the expected {expected_delta}"
     );
 
-    let c =
-        unsafe { (*heap).dbg_class_for(layout) }.expect("16 B @ align 8 must be Small-classified");
-    let tcache_count = unsafe { (*heap).dbg_tcache_count(c) };
+    let c = heap
+        .dbg_class_for(layout)
+        .expect("16 B @ align 8 must be Small-classified");
+    let tcache_count = heap.dbg_tcache_count(c);
     assert_eq!(
         tcache_count as usize, TCACHE_CAP,
         "aggregate: magazine for class {c} must hold exactly TCACHE_CAP blocks"
@@ -231,8 +234,8 @@ fn dealloc_batch_per_block_partition_is_exact() {
     let mut both: Vec<usize> = Vec::new(); // expected empty
 
     for (i, &p) in blocks.iter().enumerate() {
-        let in_magazine = unsafe { (*heap).dbg_tcache_contains(c, p) };
-        let is_free = unsafe { (*heap).dbg_is_free_for(p) };
+        let in_magazine = heap.dbg_tcache_contains(c, p);
+        let is_free = heap.dbg_is_free_for(p);
         match (in_magazine, is_free) {
             (true, false) => magazine_resident.push(i),
             (false, true) => genuinely_free.push(i),
@@ -284,8 +287,8 @@ fn dealloc_batch_per_block_partition_is_exact() {
     );
 
     // Cleanup: drain the magazine then recycle, identical to `r25_4`.
-    unsafe { (*heap).dbg_flush_all() };
-    // SAFETY: `heap` was claimed above via HeapRegistry::claim; recycled
-    // whole here, matching every other isolated-HeapCore test's teardown.
-    unsafe { HeapRegistry::recycle(heap) };
+    heap.dbg_flush_all();
+    // `heap` was claimed above via dbg_claim_lease; the lease Drop recycles
+    // it whole, matching every other isolated-HeapCore test's teardown.
+    drop(lease);
 }

@@ -257,15 +257,15 @@ fn heap_core_orphaned_cursor_is_finalized_on_cursor_switch() {
     let _ = bootstrap::ensure();
     let layout = fill_layout();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let (target_base, ptrs) = drive_target_segment_to_fresh_full_capacity(|| {
-        // SAFETY: `heap` is a live heap handed back by `HeapRegistry::claim`
-        // above; every call here happens before its `recycle` below.
-        let p = unsafe { (*heap).alloc(layout) };
+        // The lease keeps the heap exclusively owned by this thread; every
+        // call here happens before its `drop(lease)` below.
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "fill alloc failed");
-        let base = unsafe { (*heap).dbg_segment_base_of_ptr(p) } as usize;
-        let kind = unsafe { (*heap).dbg_kind_at_tag(p) };
+        let base = heap.dbg_segment_base_of_ptr(p) as usize;
+        let kind = heap.dbg_kind_at_tag(p);
         (p, base, kind)
     });
     let target_base_ptr = target_base as *mut u8;
@@ -274,36 +274,31 @@ fn heap_core_orphaned_cursor_is_finalized_on_cursor_switch() {
     // reflected in `live_count` until the magazine flushes a run back to the
     // substrate), so the assertion below runs AFTER an explicit flush.
     for &p in &ptrs {
-        // SAFETY: each `p` was returned by the matching `(*heap).alloc(layout)`
+        // SAFETY: each `p` was returned by the matching `heap.alloc(layout)`
         // call above, is live, and is freed exactly once here.
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    // SAFETY: `heap` is the same live heap used throughout this test.
-    unsafe {
-        // Force every class's magazine back to the substrate so
-        // `live_count` is exact...
-        (*heap).dbg_flush_all();
-        // ...and force-drain any incidentally-pooled segment, mirroring the
-        // production teardown-trim sequence (`trim_for_recycle`) R2-01's own
-        // probe used. This scenario pools nothing else, but the call is
-        // harmless (0 drained) and keeps the sequence faithful to the report.
-        (*heap).dbg_drain_small_pool();
-    }
+    // Force every class's magazine back to the substrate so
+    // `live_count` is exact...
+    heap.dbg_flush_all();
+    // ...and force-drain any incidentally-pooled segment, mirroring the
+    // production teardown-trim sequence (`trim_for_recycle`) R2-01's own
+    // probe used. This scenario pools nothing else, but the call is
+    // harmless (0 drained) and keeps the sequence faithful to the report.
+    heap.dbg_drain_small_pool();
 
     assert_eq!(
-        unsafe { (*heap).dbg_live_count_for(target_base_ptr) },
+        heap.dbg_live_count_for(target_base_ptr),
         Some(0),
         "the target segment must be fully empty (post-flush) before the \
          cursor-switching alloc"
     );
 
     // The cursor-switching allocation.
-    // SAFETY: `heap` is the same live heap used throughout this test.
-    let other = unsafe { (*heap).alloc(other_layout()) };
+    let other = heap.alloc(other_layout());
     assert!(!other.is_null(), "the cursor-switching alloc must not fail");
 
-    // SAFETY: `heap` is the same live heap used throughout this test.
-    let rec = unsafe { (*heap).dbg_segment_state_reconciliation() };
+    let rec = heap.dbg_segment_state_reconciliation();
     assert_eq!(rec.unknown_count, 0, "no corrupt segment headers");
     assert_eq!(
         rec.small_empty_orphan.count, 0,
@@ -313,11 +308,9 @@ fn heap_core_orphaned_cursor_is_finalized_on_cursor_switch() {
     );
 
     // Cleanup.
-    // SAFETY: `other` was returned by the matching `(*heap).alloc` above,
-    // is live, and is freed exactly once here; `heap` is not used again
-    // after `recycle`.
-    unsafe {
-        (*heap).dealloc(other, other_layout());
-        HeapRegistry::recycle(heap);
-    }
+    // SAFETY: `other` was returned by the matching `heap.alloc` above,
+    // is live, and is freed exactly once here; the heap is not used again
+    // after this.
+    unsafe { heap.dealloc(other, other_layout()) };
+    drop(lease);
 }

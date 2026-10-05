@@ -86,8 +86,8 @@ fn large_ptr_small_layout_free_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // 2 MiB, align 8 (< SEGMENT) — unambiguously routed to the dedicated
     // Large-segment path (class_for → None) in every feature combination
@@ -109,7 +109,7 @@ fn large_ptr_small_layout_free_is_noop() {
     // guard first, making this test vacuous for F7.)
     let small_layout = Layout::from_size_align(64, 8).unwrap();
 
-    let large = unsafe { (*heap).alloc(large_layout) };
+    let large = heap.alloc(large_layout);
     assert!(!large.is_null(), "large alloc returned null");
     // Fill the payload so the oracles, if they (wrongly) ran, would read our
     // pattern out of the payload bytes rather than incidental zeros.
@@ -124,7 +124,9 @@ fn large_ptr_small_layout_free_is_noop() {
 
     // The hazardous own-thread free of the Large pointer with a SMALL layout —
     // must be a NO-OP under the hardened Large-kind guard.
-    unsafe { (*heap).dealloc(large, small_layout) };
+    // SAFETY: `large` is a live Large allocation of this heap; the mismatched
+    // layout is the deliberate caller-misuse scenario under test.
+    unsafe { heap.dealloc(large, small_layout) };
 
     // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1 —
     // proof the defensive no-op branch itself actually ran, not just that the
@@ -155,7 +157,7 @@ fn large_ptr_small_layout_free_is_noop() {
     // registered in this heap's `SegmentTable`. A defensive no-op MUST leave
     // it `Some(_)`.
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(large) }.is_some(),
+        heap.dbg_owner_id_for(large).is_some(),
         "F7 GUARD BROKEN: the mismatched small-layout free actually \
          unregistered/freed the Large segment — it must be a detected no-op"
     );
@@ -168,7 +170,7 @@ fn large_ptr_small_layout_free_is_noop() {
     let large_hi = large_lo + LARGE_SIZE;
     let mut issued: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(small_layout) };
+        let p = heap.alloc(small_layout);
         assert!(!p.is_null(), "cold-storm small alloc returned null");
         let a = p as usize;
         assert!(
@@ -191,25 +193,26 @@ fn large_ptr_small_layout_free_is_noop() {
     // R19-1 (task #337): re-confirm liveness AFTER the cold-storm too — a
     // deferred/lazy free triggered by the storm must not have reclaimed it.
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(large) }.is_some(),
+        heap.dbg_owner_id_for(large).is_some(),
         "F7 GUARD BROKEN: the Large segment was unregistered/freed sometime \
          during the cold-storm — the mismatched free must be a permanent no-op"
     );
 
     // The Large block is still ours to free legitimately — heap stays sound.
-    unsafe {
-        assert_eq!(
-            large.read(),
-            0xCC,
-            "Large payload corrupted by the cold-storm"
-        );
-        (*heap).dealloc(large, large_layout);
-    }
+    assert_eq!(
+        unsafe { large.read() },
+        0xCC,
+        "Large payload corrupted by the cold-storm"
+    );
+    // SAFETY: `large` is still live and owned by this heap; layout matches.
+    unsafe { heap.dealloc(large, large_layout) };
+    // SAFETY: each `p` is a live small allocation of this heap.
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, small_layout) };
+        unsafe { heap.dealloc(p, small_layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -251,8 +254,8 @@ fn promoted_large_matching_free_actually_frees() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Start below the promotion threshold (256 KiB) so the initial alloc is a
     // medium-classified block in a Small segment.
@@ -263,13 +266,14 @@ fn promoted_large_matching_free_actually_frees() {
     // routing.
     const NEW_SIZE: usize = 300 * 1024;
 
-    let medium = unsafe { (*heap).alloc(medium_layout) };
+    let medium = heap.alloc(medium_layout);
     assert!(!medium.is_null(), "medium alloc returned null");
 
     // Growing realloc fires `try_promote_to_large`: allocates a fresh Large
     // segment stamped with `large_size == NEW_SIZE`, copies, frees the old
     // medium block, returns the new Large pointer.
-    let promoted = unsafe { (*heap).realloc(medium, medium_layout, NEW_SIZE) };
+    // SAFETY: `medium` is a live allocation of this heap with `medium_layout`.
+    let promoted = unsafe { heap.realloc(medium, medium_layout, NEW_SIZE) };
     assert!(!promoted.is_null(), "promoting realloc returned null");
     assert_ne!(
         promoted, medium,
@@ -280,7 +284,7 @@ fn promoted_large_matching_free_actually_frees() {
 
     // BEFORE the free: the promoted segment is live and registered.
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_some(),
+        heap.dbg_owner_id_for(promoted).is_some(),
         "promoted Large segment must be registered before the free"
     );
 
@@ -288,18 +292,21 @@ fn promoted_large_matching_free_actually_frees() {
     // `large_layout_consistent` check passes (large_size == NEW_SIZE) so it
     // reaches `self.core.dealloc`'s Large branch and ACTUALLY frees/
     // unregisters the segment.
-    unsafe { (*heap).dealloc(promoted, promoted_layout) };
+    // SAFETY: `promoted` is a live Large allocation of this heap; layout
+    // matches (NEW_SIZE, align 8).
+    unsafe { heap.dealloc(promoted, promoted_layout) };
 
     // AFTER the free: the segment really was unregistered. This is the real
     // "was it freed" signal (not a payload-byte read). A no-op here would be a
     // correctness BUG (the promoted block would leak its segment).
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_none(),
+        heap.dbg_owner_id_for(promoted).is_none(),
         "promoted Large segment was NOT freed by the matching-layout free — \
          the consistency gate must NOT turn a legitimate free into a no-op"
     );
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// R19-1 (task #337), branch (A) sub-scenario (b): an ILLEGITIMATE free of a
@@ -318,8 +325,8 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // 2 MiB, align 8: unambiguously Large (> 1 MiB SMALL_MAX under
     // `medium-classes`), so it was NEVER promoted — a genuine Large block.
@@ -331,13 +338,13 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     // first (same isolation rationale as the existing branch-B test).
     let small_layout = Layout::from_size_align(64, 8).unwrap();
 
-    let large = unsafe { (*heap).alloc(large_layout) };
+    let large = heap.alloc(large_layout);
     assert!(!large.is_null(), "large alloc returned null");
     unsafe { std::ptr::write_bytes(large, 0xCC, LARGE_SIZE) };
 
     // Confirm live before the hazardous free.
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(large) }.is_some(),
+        heap.dbg_owner_id_for(large).is_some(),
         "Large segment must be registered before the free"
     );
 
@@ -349,7 +356,9 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     // The ILLEGITIMATE own-thread free of the Large pointer with a SMALL
     // layout — under `hardened` + branch (A) this MUST be a detected no-op,
     // NOT a real free (the bug being fixed).
-    unsafe { (*heap).dealloc(large, small_layout) };
+    // SAFETY: `large` is a live Large allocation of this heap; the mismatched
+    // layout is the deliberate caller-misuse scenario under test.
+    unsafe { heap.dealloc(large, small_layout) };
 
     // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1
     // — proof branch (A)'s mismatch case itself fired, not just that the
@@ -367,7 +376,7 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     // the fix this returned `None` — branch (A) had actually freed it via
     // `self.core.dealloc` (the Large arm unconditionally `unregister`s).
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(large) }.is_some(),
+        heap.dbg_owner_id_for(large).is_some(),
         "BRANCH (A) BUG: the mismatched small-layout free actually \
          unregistered/freed the Large segment — under `hardened` it must be \
          a detected no-op (task #337)"
@@ -380,7 +389,7 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     let large_hi = large_lo + LARGE_SIZE;
     let mut issued: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(small_layout) };
+        let p = heap.alloc(small_layout);
         assert!(!p.is_null(), "cold-storm small alloc returned null");
         let a = p as usize;
         assert!(
@@ -398,22 +407,25 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     );
     // Re-confirm liveness after the storm.
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(large) }.is_some(),
+        heap.dbg_owner_id_for(large).is_some(),
         "Large segment was unregistered/freed during the cold-storm — the \
          mismatched free must be a permanent no-op"
     );
 
     // The Large block is still ours to free legitimately — heap stays sound.
-    unsafe { (*heap).dealloc(large, large_layout) };
+    // SAFETY: `large` is live and owned by this heap; layout matches.
+    unsafe { heap.dealloc(large, large_layout) };
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(large) }.is_none(),
+        heap.dbg_owner_id_for(large).is_none(),
         "Large segment must be unregistered after the legitimate matching free"
     );
+    // SAFETY: each `p` is a live small allocation of this heap.
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, small_layout) };
+        unsafe { heap.dealloc(p, small_layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// R22-5 (task #356), branch (A) sub-scenario (c): a promoted Large block
@@ -444,8 +456,8 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Same shape as `promoted_large_matching_free_actually_frees`: start
     // below the promotion threshold (256 KiB) so the initial alloc lands in
@@ -457,13 +469,14 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     // routing, same as the sibling test.
     const NEW_SIZE: usize = 300 * 1024;
 
-    let medium = unsafe { (*heap).alloc(medium_layout) };
+    let medium = heap.alloc(medium_layout);
     assert!(!medium.is_null(), "medium alloc returned null");
 
     // Growing realloc fires `try_promote_to_large`, preserving the ORIGINAL
     // layout's align (8) — `self.core.alloc_large(new_size,
     // old_layout.align())`.
-    let promoted = unsafe { (*heap).realloc(medium, medium_layout, NEW_SIZE) };
+    // SAFETY: `medium` is a live allocation of this heap with `medium_layout`.
+    let promoted = unsafe { heap.realloc(medium, medium_layout, NEW_SIZE) };
     assert!(!promoted.is_null(), "promoting realloc returned null");
     assert_ne!(
         promoted, medium,
@@ -476,7 +489,7 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     let wrong_align_layout = Layout::from_size_align(NEW_SIZE, 64).unwrap();
 
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_some(),
+        heap.dbg_owner_id_for(promoted).is_some(),
         "promoted Large segment must be registered before the free"
     );
 
@@ -485,7 +498,9 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     #[cfg(feature = "alloc-stats")]
     let noop_before = HeapCore::dbg_hardened_large_noop_count();
 
-    unsafe { (*heap).dealloc(promoted, wrong_align_layout) };
+    // SAFETY: `promoted` is a live Large allocation of this heap; the
+    // wrong-align layout is the deliberate caller-misuse scenario under test.
+    unsafe { heap.dealloc(promoted, wrong_align_layout) };
 
     // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1
     // — proof branch (A)'s mismatch case (this time via the align check,
@@ -502,7 +517,7 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     // The REAL oracle: the segment must STILL be registered — a same-size-
     // wrong-align free must be a detected no-op, not a real free.
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_some(),
+        heap.dbg_owner_id_for(promoted).is_some(),
         "R22-5 ALIGN CHECK BROKEN: a same-size-but-wrong-align free of a \
          promoted Large segment actually unregistered/freed it — \
          `large_layout_consistent` must reject on align mismatch too"
@@ -511,12 +526,14 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     // The block is still ours to free legitimately with its REAL layout
     // (align 8) — heap stays sound.
     let real_layout = Layout::from_size_align(NEW_SIZE, 8).unwrap();
-    unsafe { (*heap).dealloc(promoted, real_layout) };
+    // SAFETY: `promoted` is still live and owned by this heap; layout matches.
+    unsafe { heap.dealloc(promoted, real_layout) };
     assert!(
-        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_none(),
+        heap.dbg_owner_id_for(promoted).is_none(),
         "promoted Large segment must be unregistered after the legitimate \
          matching-layout free"
     );
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

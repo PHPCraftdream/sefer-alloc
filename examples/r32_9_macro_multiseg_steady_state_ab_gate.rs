@@ -123,11 +123,8 @@ struct ThreadResult {
 
 fn per_thread_work() -> ThreadResult {
     let _ = bootstrap::ensure();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim` and is owned by this
-    // thread until `recycle` at the end of this function.
-    let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap: &mut HeapCore = lease.core();
 
     let large_layout = floor_layout();
     let mut floor = Vec::with_capacity(FLOOR_LARGE_OBJECTS);
@@ -165,9 +162,8 @@ fn per_thread_work() -> ThreadResult {
         // still live, freed exactly once here.
         unsafe { heap.dealloc(p, large_layout) };
     }
-    // SAFETY: `heap_ptr` was returned by `claim` above, not yet recycled,
-    // no other thread touches it.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Lease `Drop` recycles the slot (LIVE → FREE Release).
+    drop(lease);
 
     ThreadResult {
         churn_elapsed_ns,

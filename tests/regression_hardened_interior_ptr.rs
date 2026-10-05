@@ -65,14 +65,14 @@ const SEGMENT: usize = SegmentLayout::SEGMENT;
 fn interior_ptr_free_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     // A 48 B request → a class whose block_size is 48 (a non-power-of-two, and
     // > 16 so an interior 16 B-aligned offset exists inside the block).
     let layout = Layout::from_size_align(48, 8).unwrap();
 
-    let anchor = unsafe { (*heap).alloc(layout) };
+    let anchor = heap.alloc(layout);
     assert!(!anchor.is_null());
     let base = (anchor as usize) & !(SEGMENT - 1);
 
@@ -86,10 +86,11 @@ fn interior_ptr_free_is_noop() {
     assert_ne!(interior, anchor);
 
     // The hazardous free of the interior pointer — must be a NO-OP.
-    unsafe { (*heap).dealloc(interior, layout) };
+    // SAFETY: deliberate caller-misuse (interior/garbage pointer) or live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(interior, layout) };
 
     // (i) The next alloc of this class must NOT hand back the interior pointer.
-    let after = unsafe { (*heap).alloc(layout) };
+    let after = heap.alloc(layout);
     assert!(!after.is_null());
     assert_ne!(
         after, interior,
@@ -105,7 +106,7 @@ fn interior_ptr_free_is_noop() {
     issued.push(anchor);
     issued.push(after);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "cold-storm alloc returned null");
         issued.push(p);
     }
@@ -122,9 +123,10 @@ fn interior_ptr_free_is_noop() {
     );
 
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: deliberate caller-misuse (interior/garbage pointer) or live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }
 
 /// The SUBSTRATE leg of the same guard (`AllocCore::dealloc_small`) — the path

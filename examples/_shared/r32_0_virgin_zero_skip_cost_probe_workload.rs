@@ -26,11 +26,11 @@ const ROUNDS: u64 = 200_000;
 
 fn run(arm_label: &str) {
     let _ = bootstrap::ensure();
-    let p = HeapRegistry::claim();
-    assert!(!p.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `p` was just returned by `claim`; this process owns it for the
-    // remainder of this single-shot binary.
-    let heap = unsafe { &mut *p };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    // SAFETY-free: the lease grants exclusive `&mut HeapCore` access; this
+    // process owns it for the remainder of this single-shot binary (the
+    // lease's `Drop` recycles the slot at scope end).
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
     let prime = heap.alloc(layout);

@@ -122,6 +122,16 @@ impl HeapCore {
             .drain_sidecar_ingress_bounded(&mut self.background_cursor, budget);
         #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
         let result = (0, 0);
+        // Ph4c mutant catcher #12: count every bounded step so a mutant that
+        // runs `with_core` (hence this step) twice per maintained slot in
+        // `maintenance_pass` becomes observable (measurement-only, Relaxed).
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "bench-internals"
+        ))]
+        crate::alloc_core::BACKGROUND_INGRESS_STEP_CALLS
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         self.trim_cold_retention();
         result
     }

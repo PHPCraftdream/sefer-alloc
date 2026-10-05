@@ -167,15 +167,15 @@ fn interleave(a: &[usize], b: &[usize]) -> Vec<usize> {
 fn run_burst_once() -> Duration {
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Owner pre-allocates all N blocks up front, then does ZERO further work
     // until every producer has finished — the "owner=paused" shape (see
     // `regression_paused_owner_wallclock.rs` for the pattern's pedigree).
     let mut by_seg: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "owner pre-alloc[{i}] returned null");
         by_seg
             .entry(p as usize & !(SEG_ALIGN - 1))
@@ -222,12 +222,14 @@ fn run_burst_once() -> Duration {
     for slice in worklists {
         handles.push(thread::spawn(move || {
             let _ = bootstrap::ensure();
-            let remote_heap = HeapRegistry::claim();
-            assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+            let mut remote_lease =
+                HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+            let remote_heap = remote_lease.core();
             for addr in slice {
-                unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+                // SAFETY: $2 is a live owner allocation; the deliberate cross-thread free drives the paused-owner path under test.
+                unsafe { remote_heap.dealloc(addr as *mut u8, layout) };
             }
-            unsafe { HeapRegistry::recycle(remote_heap) };
+            drop(remote_lease);
         }));
     }
     // The owner does NOTHING here — no alloc, no drain — for the entire
@@ -237,7 +239,8 @@ fn run_burst_once() -> Duration {
     }
     let elapsed = t0.elapsed();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the owner's slot (LIVE -> FREE, Release).
+    drop(lease);
     elapsed
 }
 

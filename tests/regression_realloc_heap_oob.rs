@@ -53,21 +53,21 @@ fn heap_realloc_own_seg_oversized_layout_returns_null() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let small = Layout::from_size_align(16, 16).unwrap();
-    // SAFETY: `heap` was returned by `claim` and is the slot's sole writer for
-    // the duration of this test (serialised by SERIAL).
-    let p = unsafe { (*heap).alloc(small) };
+    let p = heap.alloc(small);
     assert!(!p.is_null(), "setup: own-seg 16-byte alloc failed");
     // SAFETY: `p` is valid for 16 bytes.
     unsafe { core::ptr::write_bytes(p, 0xC3, 16) };
 
     let bogus = Layout::from_size_align(BOGUS_OLD, 16).unwrap();
-    // SAFETY: exclusive heap access. The old Layout is intentionally false;
-    // this test relies on the implementation's checked null-return path.
-    let result = unsafe { (*heap).realloc(p, bogus, BOGUS_OLD) };
+    // The old Layout is intentionally false; this test relies on the
+    // implementation's checked null-return path.
+    // SAFETY: `p` is a live allocation of this heap; the bogus old layout is
+    // the deliberate caller-misuse scenario under test.
+    let result = unsafe { heap.realloc(p, bogus, BOGUS_OLD) };
     assert!(
         result.is_null(),
         "own-seg realloc with a bogus oversized old_layout must return null \
@@ -83,10 +83,11 @@ fn heap_realloc_own_seg_oversized_layout_returns_null() {
             "own-seg block disturbed by the rejected realloc"
         );
     }
-    // SAFETY: same exclusive `heap` access; correct layout for the live block.
-    unsafe { (*heap).dealloc(p, small) };
-    // SAFETY: return the heap slot after exclusive use.
-    unsafe { HeapRegistry::recycle(heap) };
+    // SAFETY: `p` is still live (the realloc returned null) with `small`'s
+    // layout.
+    unsafe { heap.dealloc(p, small) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// A standalone substrate core is not registered in the process-wide route
@@ -108,13 +109,15 @@ fn heap_realloc_foreign_sefer_ptr_oversized_layout_returns_null() {
     // SAFETY: `p` is valid for 16 bytes.
     unsafe { core::ptr::write_bytes(p, 0x7E, 16) };
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let bogus = Layout::from_size_align(BOGUS_OLD, 16).unwrap();
-    // SAFETY: exclusive heap access. The old Layout is intentionally false;
-    // absence from the route directory rejects it before any payload read.
-    let result = unsafe { (*heap).realloc(p, bogus, BOGUS_OLD) };
+    // The old Layout is intentionally false; absence from the route directory
+    // rejects it before any payload read.
+    // SAFETY: `p` is a live source allocation; the bogus old layout is the
+    // deliberate caller-misuse scenario under test.
+    let result = unsafe { heap.realloc(p, bogus, BOGUS_OLD) };
     assert!(
         result.is_null(),
         "unrouted standalone pointer must be rejected before any payload copy"
@@ -125,8 +128,8 @@ fn heap_realloc_foreign_sefer_ptr_oversized_layout_returns_null() {
     // Reclaim it there with the CORRECT layout.
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(p, small) };
-    // SAFETY: return the heap slot after exclusive use.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// Gap 1 control: a correct-layout realloc from another routed registry heap
@@ -149,14 +152,14 @@ fn heap_realloc_foreign_sefer_ptr_correct_layout_succeeds() {
     // SAFETY: `p` is valid for 16 bytes.
     unsafe { core::ptr::write_bytes(p, 0x99, 16) };
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "destination heap claim failed");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Correct layout (16), modest grow to 32: the source route validates
     // the payload span and the destination issues a fresh block.
-    // SAFETY: the destination heap is exclusively claimed on this thread;
     // `p` is a current source allocation with exactly `small`'s layout.
-    let new_ptr = unsafe { (*heap).realloc(p, small, 32) };
+    // SAFETY: `p` is a live allocation with `small`'s layout.
+    let new_ptr = unsafe { heap.realloc(p, small, 32) };
     assert!(
         !new_ptr.is_null(),
         "a legit cross-heap realloc (correct layout, modest grow) must succeed \
@@ -176,9 +179,8 @@ fn heap_realloc_foreign_sefer_ptr_correct_layout_succeeds() {
     assert!(route.pending_for_test(p));
     source.trim_current_thread();
     assert!(!route.pending_for_test(p));
-    // SAFETY: exclusive `heap` access; `new_ptr` is a heap block of size 32.
-    unsafe { (*heap).dealloc(new_ptr, Layout::from_size_align(32, 16).unwrap()) };
-    // SAFETY: the destination heap is exclusively owned and its issued block
-    // was retired. The source heap remains bound to this thread's TLS guard.
-    unsafe { HeapRegistry::recycle(heap) };
+    // SAFETY: `new_ptr` is a live 32-byte allocation from this realloc.
+    unsafe { heap.dealloc(new_ptr, Layout::from_size_align(32, 16).unwrap()) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

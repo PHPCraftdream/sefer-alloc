@@ -100,8 +100,7 @@ fn claiming_one_heap_does_not_materialise_unrelated_chunks() {
 
     // Claim a heap — this touches count (a low index) and therefore, at
     // most, a low-numbered chunk.
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "claim must not return null");
+    let lease = HeapRegistry::dbg_claim_lease().expect("claim must not return None");
 
     // The core assertion: the LAST chunk must still be untouched.
     assert!(
@@ -111,10 +110,10 @@ fn claiming_one_heap_does_not_materialise_unrelated_chunks() {
          materialisation"
     );
 
-    // Clean up: recycle so this claim does not perturb other tests' index
-    // arithmetic more than a normal claim already would.
-    // SAFETY: `heap` was just returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Clean up: recycle (drop of the lease, LIVE -> FREE) so this claim does
+    // not perturb other tests' index arithmetic more than a normal claim
+    // already would.
+    drop(lease);
 }
 
 /// Slot-address stability across recycle/re-claim, now specifically in the
@@ -125,22 +124,18 @@ fn claiming_one_heap_does_not_materialise_unrelated_chunks() {
 fn slot_address_is_stable_across_recycle_under_chunking() {
     let _serial = SerialGuard::acquire();
 
-    let a = HeapRegistry::claim();
-    assert!(!a.is_null(), "first claim must not return null");
-    // SAFETY: `a` is live, just claimed, not yet recycled.
-    let id_a = unsafe { (*a).id() };
-    let addr_before = a as usize;
+    let mut lease_a = HeapRegistry::dbg_claim_lease().expect("first claim must not return None");
+    let id_a = lease_a.slot_index();
+    let addr_before = lease_a.core() as *mut _ as usize;
 
-    // SAFETY: `a` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(a) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_a);
 
     // Re-claim: with the free_slots LIFO stack empty of anything else in a
     // freshly-serialised test, this pops the SAME slot we just recycled.
-    let b = HeapRegistry::claim();
-    assert!(!b.is_null(), "re-claim must not return null");
-    // SAFETY: `b` is live, just claimed, not yet recycled.
-    let id_b = unsafe { (*b).id() };
-    let addr_after = b as usize;
+    let mut lease_b = HeapRegistry::dbg_claim_lease().expect("re-claim must not return None");
+    let id_b = lease_b.slot_index();
+    let addr_after = lease_b.core() as *mut _ as usize;
 
     assert_eq!(
         id_a, id_b,
@@ -156,8 +151,8 @@ fn slot_address_is_stable_across_recycle_under_chunking() {
          stability)"
     );
 
-    // SAFETY: `b` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(b) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_b);
 }
 
 /// Cross-thread variant of the address-stability property: a DIFFERENT
@@ -169,22 +164,18 @@ fn slot_address_is_stable_across_recycle_under_chunking() {
 fn slot_address_is_stable_across_recycle_from_different_thread() {
     let _serial = SerialGuard::acquire();
 
-    let a = HeapRegistry::claim();
-    assert!(!a.is_null());
-    // SAFETY: `a` is live, just claimed, not yet recycled.
-    let id_a = unsafe { (*a).id() };
-    let addr_before = a as usize;
-    // SAFETY: `a` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(a) };
+    let mut lease_a = HeapRegistry::dbg_claim_lease().expect("claim");
+    let id_a = lease_a.slot_index();
+    let addr_before = lease_a.core() as *mut _ as usize;
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease_a);
 
     let (id_b, addr_after) = std::thread::spawn(|| {
-        let b = HeapRegistry::claim();
-        assert!(!b.is_null());
-        // SAFETY: `b` is live, just claimed by this thread, not yet recycled.
-        let id_b = unsafe { (*b).id() };
-        let addr = b as usize;
-        // SAFETY: `b` was returned by `claim` and not yet recycled.
-        unsafe { HeapRegistry::recycle(b) };
+        let mut lease_b = HeapRegistry::dbg_claim_lease().expect("claim");
+        let id_b = lease_b.slot_index();
+        let addr = lease_b.core() as *mut _ as usize;
+        // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+        drop(lease_b);
         (id_b, addr)
     })
     .join()

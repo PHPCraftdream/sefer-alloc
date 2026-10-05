@@ -74,8 +74,10 @@ const RECYCLED_BATCH: usize = 64;
 
 fn bench_virgin(c: &mut Criterion) {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // Ph4c: safe lease API — owner heap claimed, used and recycled on this
+    // thread (lease `Drop` below = the old explicit `recycle`).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(CALLOC_SIZE_64K, 8).expect("64 KiB layout");
 
@@ -93,7 +95,7 @@ fn bench_virgin(c: &mut Criterion) {
             // targets, at a size where the skipped memset is real.
             let mut ptrs = Vec::with_capacity(VIRGIN_BATCH);
             for _ in 0..VIRGIN_BATCH {
-                let p = unsafe { (*heap).alloc_zeroed(layout) };
+                let p = heap.alloc_zeroed(layout);
                 assert!(!p.is_null(), "virgin alloc_zeroed(64 KiB) returned null");
                 ptrs.push(p);
             }
@@ -103,20 +105,25 @@ fn bench_virgin(c: &mut Criterion) {
             // matters for THIS scenario is that each individual
             // alloc_zeroed within a batch was virgin at the time it ran).
             for p in ptrs {
-                unsafe { (*heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by `heap.alloc_zeroed(layout)`
+                // above with the same layout, is still live, freed once,
+                // own-thread via the exclusive lease.
+                unsafe { heap.dealloc(p, layout) };
             }
         });
     });
 
     group.finish();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease); // recycle: LIVE -> FREE
 }
 
 fn bench_recycled(c: &mut Criterion) {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // Ph4c: safe lease API — owner heap claimed, used and recycled on this
+    // thread (lease `Drop` below = the old explicit `recycle`).
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(CALLOC_SIZE_64K, 8).expect("64 KiB layout");
 
@@ -124,10 +131,12 @@ fn bench_recycled(c: &mut Criterion) {
     // free -- so the FIRST measured iteration already pops a genuinely dirty
     // block off the free list, not a one-off virgin carve whose cost would
     // otherwise pollute sample 0.
-    let prime = unsafe { (*heap).alloc(layout) };
+    let prime = heap.alloc(layout);
     assert!(!prime.is_null(), "prime alloc(64 KiB) returned null");
     unsafe { core::ptr::write_bytes(prime, 0xAA, CALLOC_SIZE_64K) };
-    unsafe { (*heap).dealloc(prime, layout) };
+    // SAFETY: `prime` was returned by `heap.alloc(layout)` above with the
+    // same layout, is still live, freed once, own-thread via the lease.
+    unsafe { heap.dealloc(prime, layout) };
 
     let mut group = c.benchmark_group("r29_16_virgin_zero_skip_calloc");
     group.sample_size(10);
@@ -142,17 +151,20 @@ fn bench_recycled(c: &mut Criterion) {
             // never virgin, so Node::zero MUST run on every call regardless
             // of virgin-zero-skip.
             for _ in 0..RECYCLED_BATCH {
-                let p = unsafe { (*heap).alloc_zeroed(layout) };
+                let p = heap.alloc_zeroed(layout);
                 assert!(!p.is_null(), "recycled alloc_zeroed(64 KiB) returned null");
                 std::hint::black_box(p);
-                unsafe { (*heap).dealloc(p, layout) };
+                // SAFETY: `p` was returned by `heap.alloc_zeroed(layout)`
+                // above with the same layout, is still live, freed once,
+                // own-thread via the exclusive lease.
+                unsafe { heap.dealloc(p, layout) };
             }
         });
     });
 
     group.finish();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease); // recycle: LIVE -> FREE
 }
 
 criterion_group!(benches, bench_virgin, bench_recycled);

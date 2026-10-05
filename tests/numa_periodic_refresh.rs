@@ -76,13 +76,12 @@ fn cached_node_refreshes_after_mid_claim_migration() {
 
     // ── Claim on node A, populate the cache ──
     script_node(1);
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim returned null");
+    let heap = lease.core();
 
-    // SAFETY: live claimed slot, single-writer.
-    unsafe { (*heap).dbg_populate_numa_cache_for_test() };
+    heap.dbg_populate_numa_cache_for_test();
     assert_eq!(
-        unsafe { (*heap).dbg_cached_numa_node() },
+        heap.dbg_cached_numa_node(),
         Some(1),
         "cache must populate with the pre-migration mock node (1)"
     );
@@ -102,9 +101,9 @@ fn cached_node_refreshes_after_mid_claim_migration() {
     // bounded staleness property would be vacuous). Asserting staleness
     // HERE first proves the cache is genuinely caching, not just always
     // hitting the OS.
-    unsafe { (*heap).dbg_populate_numa_cache_for_test() };
+    heap.dbg_populate_numa_cache_for_test();
     assert_eq!(
-        unsafe { (*heap).dbg_cached_numa_node() },
+        heap.dbg_cached_numa_node(),
         Some(1),
         "immediately after migration, the cache must still report the STALE \
          node (1) — this proves the cache is genuinely caching (not \
@@ -122,8 +121,7 @@ fn cached_node_refreshes_after_mid_claim_migration() {
     // cross the threshold and force a re-query within this loop.
     const REFRESH_PERIOD: u32 = 128; // mirrors AllocCore::NUMA_NODE_REFRESH_PERIOD
     for _ in 0..=REFRESH_PERIOD {
-        // SAFETY: live claimed slot, single-writer.
-        unsafe { (*heap).dbg_populate_numa_cache_for_test() };
+        heap.dbg_populate_numa_cache_for_test();
     }
 
     // ── Post-fix: the cache must have refreshed to the NEW node (9). ──
@@ -131,7 +129,7 @@ fn cached_node_refreshes_after_mid_claim_migration() {
     // claim()/recycle() boundaries), this would still read `Some(1)` no
     // matter how many more calls are driven, since we never recycled.
     assert_eq!(
-        unsafe { (*heap).dbg_cached_numa_node() },
+        heap.dbg_cached_numa_node(),
         Some(9),
         "after driving past NUMA_NODE_REFRESH_PERIOD calls post-migration, \
          the cache must have refreshed to the NEW mock node (9) — a value \
@@ -139,6 +137,6 @@ fn cached_node_refreshes_after_mid_claim_migration() {
          periodic refresh exists to bound"
     );
 
-    // SAFETY: `heap` was returned by `claim` above and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

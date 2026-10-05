@@ -128,16 +128,16 @@ fn dbg_owner_id_for_sound_under_provenance_less_input() {
     let _g = Guard;
 
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(64, 8).unwrap();
-    let real_ptr = unsafe { (*heap).alloc(layout) };
+    let real_ptr = heap.alloc(layout);
     assert!(!real_ptr.is_null());
     let stale = core::ptr::without_provenance_mut::<u8>(real_ptr.expose_provenance());
 
-    let via_real = unsafe { (*heap).dbg_owner_id_for(real_ptr) };
-    let via_stale = unsafe { (*heap).dbg_owner_id_for(stale) };
+    let via_real = heap.dbg_owner_id_for(real_ptr);
+    let via_stale = heap.dbg_owner_id_for(stale);
     assert_eq!(via_real, via_stale);
     assert!(via_real.is_some(), "a freshly-allocated block must resolve");
 }
@@ -170,16 +170,16 @@ fn dbg_directory_bit_for_ptr_sound_under_provenance_less_input() {
     let _g = Guard;
 
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(64, 8).unwrap();
-    let real_ptr = unsafe { (*heap).alloc(layout) };
+    let real_ptr = heap.alloc(layout);
     assert!(!real_ptr.is_null());
     let stale = core::ptr::without_provenance_mut::<u8>(real_ptr.expose_provenance());
 
-    let via_real = unsafe { (*heap).dbg_directory_bit_for_ptr(real_ptr, 0) };
-    let via_stale = unsafe { (*heap).dbg_directory_bit_for_ptr(stale, 0) };
+    let via_real = heap.dbg_directory_bit_for_ptr(real_ptr, 0);
+    let via_stale = heap.dbg_directory_bit_for_ptr(stale, 0);
     assert_eq!(via_real, via_stale);
 }
 

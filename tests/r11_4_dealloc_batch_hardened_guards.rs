@@ -82,15 +82,15 @@ fn dealloc_batch_large_via_small_layout_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     const LARGE_SIZE: usize = 2 * 1024 * 1024;
     let large_layout = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
     let small_layout = Layout::from_size_align(64, 8).unwrap();
 
     // SAFETY: valid layout; `heap` is the calling thread's own slot.
-    let large = unsafe { (*heap).alloc(large_layout) };
+    let large = heap.alloc(large_layout);
     assert!(!large.is_null(), "large alloc returned null");
     // Fill the payload so a wrongly-run oracle would visibly corrupt it.
     // SAFETY: `large` is a live LARGE_SIZE-byte allocation.
@@ -101,7 +101,7 @@ fn dealloc_batch_large_via_small_layout_is_noop() {
     let mut owned: Vec<*mut u8> = Vec::with_capacity(owned_n);
     for _ in 0..owned_n {
         // SAFETY: valid layout; `heap` is the calling thread's own slot.
-        let p = unsafe { (*heap).alloc(small_layout) };
+        let p = heap.alloc(small_layout);
         assert!(!p.is_null(), "owned alloc returned null");
         owned.push(p);
     }
@@ -117,7 +117,9 @@ fn dealloc_batch_large_via_small_layout_is_noop() {
     // the caller side) — the F7 guard's documented job is to degrade this to
     // a safe no-op rather than corruption, exercised here through the
     // batched entry point specifically.
-    unsafe { (*heap).dealloc_batch(small_layout, &batch) };
+    unsafe {
+        heap.dealloc_batch(small_layout, &batch);
+    };
 
     // The Large payload must be untouched.
     // SAFETY: `large` is still a live allocation (the free above must have
@@ -139,7 +141,7 @@ fn dealloc_batch_large_via_small_layout_is_noop() {
     let mut issued: Vec<*mut u8> = Vec::with_capacity(N);
     for _ in 0..N {
         // SAFETY: valid layout.
-        let p = unsafe { (*heap).alloc(small_layout) };
+        let p = heap.alloc(small_layout);
         assert!(!p.is_null(), "cold-storm small alloc returned null");
         let a = p as usize;
         assert!(
@@ -164,16 +166,16 @@ fn dealloc_batch_large_via_small_layout_is_noop() {
             0xCC,
             "Large payload corrupted by the cold-storm"
         );
-        (*heap).dealloc(large, large_layout);
+        heap.dealloc(large, large_layout);
     }
     // SAFETY: every entry of `issued` was allocated above with
     // `small_layout`; freed exactly once here.
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, small_layout) };
+        unsafe { heap.dealloc(p, small_layout) };
     }
 
-    // SAFETY: `heap` was claimed above; recycled whole here.
-    unsafe { HeapRegistry::recycle(heap) };
+    // The lease Drop recycles the slot whole.
+    drop(lease);
 }
 
 /// H1 through `dealloc_batch`: a batch mixing legitimate owned Small blocks
@@ -187,15 +189,15 @@ fn dealloc_batch_large_via_small_layout_is_noop() {
 fn dealloc_batch_interior_pointer_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     // 48 B request → block_size 48 (non-power-of-two; a 16 B-aligned
     // interior offset exists but is not a whole multiple of 48).
     let layout = Layout::from_size_align(48, 8).unwrap();
 
     // SAFETY: valid layout; `heap` is the calling thread's own slot.
-    let anchor = unsafe { (*heap).alloc(layout) };
+    let anchor = heap.alloc(layout);
     assert!(!anchor.is_null());
     let base = (anchor as usize) & !(SEGMENT - 1);
     let off = (anchor as usize) - base;
@@ -209,7 +211,7 @@ fn dealloc_batch_interior_pointer_is_noop() {
     let mut owned: Vec<*mut u8> = Vec::with_capacity(owned_n);
     for _ in 0..owned_n {
         // SAFETY: valid layout.
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "owned alloc returned null");
         owned.push(p);
     }
@@ -224,12 +226,14 @@ fn dealloc_batch_interior_pointer_is_noop() {
     // allocation (a deliberate contract violation) — the H1 guard's
     // documented job is to degrade this to a safe no-op, exercised here
     // through the batched entry point specifically.
-    unsafe { (*heap).dealloc_batch(layout, &batch) };
+    unsafe {
+        heap.dealloc_batch(layout, &batch);
+    };
 
     // (i) The next alloc of this class must NOT hand back the interior
     // pointer.
     // SAFETY: valid layout.
-    let after = unsafe { (*heap).alloc(layout) };
+    let after = heap.alloc(layout);
     assert!(!after.is_null());
     assert_ne!(
         after, interior,
@@ -245,7 +249,7 @@ fn dealloc_batch_interior_pointer_is_noop() {
     issued.push(after);
     for _ in 0..N {
         // SAFETY: valid layout.
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "cold-storm alloc returned null");
         issued.push(p);
     }
@@ -266,9 +270,9 @@ fn dealloc_batch_interior_pointer_is_noop() {
     // the `dealloc_batch` call above (all of `owned` was included in
     // `batch`), so nothing further to free for it.
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    // SAFETY: `heap` was claimed above; recycled whole here.
-    unsafe { HeapRegistry::recycle(heap) };
+    // The lease Drop recycles the slot whole.
+    drop(lease);
 }

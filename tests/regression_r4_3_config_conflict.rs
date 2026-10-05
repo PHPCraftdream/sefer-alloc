@@ -73,13 +73,12 @@ fn config_conflict_detected_on_recycled_slot() {
     // 1. Claim + materialise a slot with CONFIG_A. Capture its slot id so the
     //    R6-CQ-3 leak check below can prove the SAME slot is reclaimable
     //    after the conflict-triggered panic.
-    let heap1 = HeapRegistry::claim_with_config(CONFIG_A);
-    assert!(!heap1.is_null());
-    let slot_idx = unsafe { (*heap1).id() };
+    let lease1 = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A)
+        .expect("claim_with_config returned None");
+    let slot_idx = lease1.slot_index();
 
-    // 2. Recycle it back to the free pool.
-    // SAFETY: heap1 was returned by claim_with_config and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap1) };
+    // 2. Recycle it back to the free pool (drop of the lease: LIVE -> FREE).
+    drop(lease1);
 
     let before = SeferAlloc::new().stats().config_conflicts;
 
@@ -88,13 +87,14 @@ fn config_conflict_detected_on_recycled_slot() {
     //    (Pre-R2-08 a debug_assert fired here after the counter increment;
     //    the tolerant catch_unwind is kept from that era.)
     let result = std::panic::catch_unwind(|| {
-        // claim_with_config copies the config (by value), which is UnwindSafe.
-        HeapRegistry::claim_with_config(CONFIG_B)
+        // dbg_claim_lease_with_config copies the config (by value), which is
+        // UnwindSafe.
+        HeapRegistry::dbg_claim_lease_with_config(CONFIG_B)
     });
     // Post-R2-08: Ok in every profile (strictly asserted in regression_r2_08).
-    if let Ok(heap2) = result {
-        // SAFETY: heap2 was returned by claim_with_config; clean up.
-        unsafe { HeapRegistry::recycle(heap2) };
+    if let Ok(lease2) = result {
+        // Drop of the lease recycles the slot (LIVE -> FREE); clean up.
+        drop(lease2);
     }
 
     let after = SeferAlloc::new().stats().config_conflicts;
@@ -113,20 +113,21 @@ fn config_conflict_detected_on_recycled_slot() {
     //    re-claim minted a different index (or, eventually, exhausted the
     //    registry). See the dedicated `slot_not_leaked_after_config_conflict_panic`
     //    test for the full RED→GREEN counterfactual.
-    let heap3 = HeapRegistry::claim_with_config(CONFIG_A);
+    let lease3 = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A);
     assert!(
-        !heap3.is_null(),
-        "slot leaked: re-claim after the config-conflict signal returned null"
+        lease3.is_some(),
+        "slot leaked: re-claim after the config-conflict signal returned None"
     );
+    let lease3 = lease3.unwrap();
     assert_eq!(
-        unsafe { (*heap3).id() },
+        lease3.slot_index(),
         slot_idx,
         "slot leaked: the original slot {slot_idx} was not restored to \
          free_slots after the config-conflict signal — re-claim reused a \
          different slot (the original is stuck LIVE)"
     );
-    // SAFETY: heap3 was returned by claim_with_config; clean up.
-    unsafe { HeapRegistry::recycle(heap3) };
+    // Drop of the lease recycles the slot (LIVE -> FREE).
+    drop(lease3);
 }
 
 /// Re-claim a recycled slot with the *same* config → no conflict, no
@@ -135,22 +136,22 @@ fn config_conflict_detected_on_recycled_slot() {
 #[test]
 fn matching_config_does_not_trigger_conflict_signal() {
     let _serial = SerialGuard::acquire();
-    let heap1 = HeapRegistry::claim_with_config(CONFIG_A);
-    assert!(!heap1.is_null());
-    // SAFETY: heap1 was returned by claim_with_config.
-    unsafe { HeapRegistry::recycle(heap1) };
+    let lease1 = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A)
+        .expect("claim_with_config returned None");
+    // Drop of the lease recycles the slot (LIVE -> FREE).
+    drop(lease1);
 
     let before = SeferAlloc::new().stats().config_conflicts;
 
     // Re-claim with the SAME config. This must NOT panic and must NOT
     // increment the counter. catch_unwind turns any panic into a clear
     // failure message.
-    let result = std::panic::catch_unwind(|| HeapRegistry::claim_with_config(CONFIG_A));
-    let heap2 = match result {
-        Ok(h) => h,
+    let result = std::panic::catch_unwind(|| HeapRegistry::dbg_claim_lease_with_config(CONFIG_A));
+    let lease2 = match result {
+        Ok(l) => l,
         Err(panic) => panic!("false positive: claim panicked on a matching config: {panic:?}"),
     };
-    assert!(!heap2.is_null());
+    assert!(lease2.is_some(), "claim returned None");
 
     let after = SeferAlloc::new().stats().config_conflicts;
     assert_eq!(
@@ -158,8 +159,8 @@ fn matching_config_does_not_trigger_conflict_signal() {
         "false positive: config conflict counted when configs match"
     );
 
-    // SAFETY: heap2 was returned by claim_with_config; clean up.
-    unsafe { HeapRegistry::recycle(heap2) };
+    // Drop of the lease recycles the slot (LIVE -> FREE).
+    drop(lease2);
 }
 
 /// R6-CQ-3 — the dedicated slot-leak counterfactual on the config-conflict
@@ -190,40 +191,41 @@ fn matching_config_does_not_trigger_conflict_signal() {
 fn slot_not_leaked_after_config_conflict_panic() {
     let _serial = SerialGuard::acquire();
     // 1. Claim + materialise with CONFIG_A; capture the slot id.
-    let heap_a = HeapRegistry::claim_with_config(CONFIG_A);
-    assert!(!heap_a.is_null());
-    let slot_idx = unsafe { (*heap_a).id() };
+    let lease_a = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A)
+        .expect("claim_with_config returned None");
+    let slot_idx = lease_a.slot_index();
 
-    // 2. Recycle — slot returns to free_slots.
-    // SAFETY: heap_a returned by claim_with_config, not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_a) };
+    // 2. Recycle — slot returns to free_slots (drop of the lease: LIVE -> FREE).
+    drop(lease_a);
 
     // 3. Re-claim with CONFIG_B — same slot (LIFO), already initialised with
     //    CONFIG_A → conflict → counted, returns normally (R2-08); the Ok
     //    branch recycles the returned pointer so the slot is back in
     //    free_slots for the re-claim check below.
     let result = std::panic::catch_unwind(|| {
-        // claim_with_config copies the config (by value), which is UnwindSafe.
-        HeapRegistry::claim_with_config(CONFIG_B)
+        // dbg_claim_lease_with_config copies the config (by value), which is
+        // UnwindSafe.
+        HeapRegistry::dbg_claim_lease_with_config(CONFIG_B)
     });
-    if let Ok(heap_b) = result {
-        // SAFETY: heap_b returned by claim_with_config; clean up so the slot
-        // is back in free_slots for the re-claim check below.
-        unsafe { HeapRegistry::recycle(heap_b) };
+    if let Ok(lease_b) = result {
+        // Drop of the lease recycles the slot (LIVE -> FREE) so it is back in
+        // free_slots for the re-claim check below.
+        drop(lease_b);
     }
 
     // 4. R6-CQ-3: the slot MUST be reclaimable as the SAME index. Pre-fix
     //    this returned a DIFFERENT slot (bump_count minting a fresh index)
     //    because the original was stuck LIVE; post-fix the guard restored
     //    the original slot, so LIFO re-claim returns the SAME index.
-    let heap_c = HeapRegistry::claim_with_config(CONFIG_A);
+    let lease_c = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A);
     assert!(
-        !heap_c.is_null(),
-        "registry returned null on re-claim after a config-conflict panic — \
+        lease_c.is_some(),
+        "registry returned None on re-claim after a config-conflict panic — \
          the slot appears leaked (stuck LIVE, never returned to free_slots)"
     );
+    let lease_c = lease_c.unwrap();
     assert_eq!(
-        unsafe { (*heap_c).id() },
+        lease_c.slot_index(),
         slot_idx,
         "slot leaked: after the config-conflict panic the original slot \
          {slot_idx} was not restored to free_slots — re-claim got a different \
@@ -233,16 +235,17 @@ fn slot_not_leaked_after_config_conflict_panic() {
     // 5. Sustained recyclability: the restored slot participates in a normal
     //    claim/recycle round-trip, proving it genuinely re-entered the free
     //    pool (not a one-shot borrow that drops out again).
-    // SAFETY: heap_c returned by claim_with_config.
-    unsafe { HeapRegistry::recycle(heap_c) };
-    let heap_d = HeapRegistry::claim_with_config(CONFIG_A);
-    assert!(!heap_d.is_null());
+    // Drop of the lease recycles the slot (LIVE -> FREE).
+    drop(lease_c);
+    let lease_d = HeapRegistry::dbg_claim_lease_with_config(CONFIG_A);
+    assert!(lease_d.is_some());
+    let lease_d = lease_d.unwrap();
     assert_eq!(
-        unsafe { (*heap_d).id() },
+        lease_d.slot_index(),
         slot_idx,
         "restored slot {slot_idx} not reused on a second round-trip — it did \
          not genuinely re-enter the free pool"
     );
-    // SAFETY: heap_d returned by claim_with_config; clean up.
-    unsafe { HeapRegistry::recycle(heap_d) };
+    // Drop of the lease recycles the slot (LIVE -> FREE).
+    drop(lease_d);
 }

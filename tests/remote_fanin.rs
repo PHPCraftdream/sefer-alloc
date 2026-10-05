@@ -12,10 +12,8 @@ use std::alloc::{GlobalAlloc, Layout};
 
 #[test]
 fn paused_owner_fanin_retires_every_publication_exactly_once() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread holds exclusive ownership until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(64, 16).unwrap();
     // Larger than both retired ring tiers: descriptor publication has no queue cap.
     let blocks: Vec<_> = (0..4096)
@@ -63,6 +61,7 @@ fn paused_owner_fanin_retires_every_publication_exactly_once() {
     // SAFETY: anchor is the only user allocation not terminally published.
     unsafe {
         heap.dealloc(anchor, layout);
-        HeapRegistry::recycle(heap_ptr);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

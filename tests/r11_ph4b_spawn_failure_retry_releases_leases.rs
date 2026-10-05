@@ -56,7 +56,7 @@ fn spawn_failure_leaves_no_half_activation_and_retry_releases_leases() {
     // No worker holds any lease: the maintenance taker acquires a FREE slot,
     // and its Drop returns that exact slot to FREE for the next taker.
     let registry = bootstrap::ensure();
-    let lease = HeapRegistry::try_maintenance()
+    let lease = HeapRegistry::dbg_try_maintenance()
         .expect("after a Spawn failure a FREE heap must be maintainable");
     let index = lease.slot_index();
     assert_eq!(
@@ -70,7 +70,7 @@ fn spawn_failure_leaves_no_half_activation_and_retry_releases_leases() {
         STATE_FREE,
         "dropping the lease must publish the slot back to FREE"
     );
-    let again = HeapRegistry::try_maintenance()
+    let again = HeapRegistry::dbg_try_maintenance()
         .expect("the slot is freely takeable again after the lease Drop");
     drop(again);
 

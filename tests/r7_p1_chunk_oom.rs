@@ -36,11 +36,9 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     // chunk 1. No churn or pressure is needed to reproduce this boundary.
     let mut held = Vec::with_capacity(64);
     for expected in 0..64 {
-        let heap = HeapRegistry::claim();
-        assert!(!heap.is_null());
-        // SAFETY: claim returned a LIVE, initialised HeapCore until recycle.
-        assert_eq!(unsafe { (*heap).id() }, expected);
-        held.push(heap as usize);
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        assert_eq!(lease.core().id(), expected);
+        held.push(lease);
     }
     assert_eq!(bootstrap::count_for_test(), 64);
     assert!(!reg.dbg_chunk_is_materialised(1));
@@ -109,10 +107,9 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     assert!(!reg.dbg_chunk_is_materialised(1));
     bootstrap::dbg_set_inject_chunk_oom(false);
 
-    let hinted = HeapRegistry::claim();
-    assert!(!hinted.is_null());
+    let mut hinted = HeapRegistry::dbg_claim_lease().expect("claim");
     // SAFETY: hinted is this test's exclusively owned LIVE claim.
-    let hinted_id = unsafe { (*hinted).id() };
+    let hinted_id = hinted.core().id();
     assert!((64..raced_count).contains(&hinted_id));
     assert_eq!(bootstrap::count_for_test(), minted, "hint precedes bump");
     assert!(reg.dbg_chunk_is_materialised(1));
@@ -127,10 +124,9 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
         assert!(!dbg_slot_initialised(idx));
     }
 
-    let fresh = HeapRegistry::claim();
-    assert!(!fresh.is_null());
+    let mut fresh = HeapRegistry::dbg_claim_lease().expect("claim");
     // SAFETY: fresh is a distinct LIVE claim retained through the cold scan.
-    assert_eq!(unsafe { (*fresh).id() }, minted);
+    assert_eq!(fresh.core().id(), minted);
     assert_eq!(bootstrap::count_for_test(), minted + 1);
     for &idx in &pending {
         assert_eq!(reg.dbg_slot_state(idx as usize), STATE_EMPTY);
@@ -144,19 +140,18 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     }
     assert_eq!(dbg_bump_count_without_materialising(), None);
     assert_eq!(bootstrap::count_for_test(), bootstrap::MAX_HEAPS as u32);
-    let mut recovered = vec![hinted as usize, fresh as usize];
+    let mut recovered: Vec<_> = vec![hinted, fresh];
     let pending_count = pending.len();
     for _ in 0..pending_count {
-        let heap = HeapRegistry::claim();
-        assert!(!heap.is_null());
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
         // SAFETY: each successful claim is retained LIVE until cleanup.
-        let idx = unsafe { (*heap).id() };
+        let idx = lease.core().id();
         let position = pending
             .iter()
             .position(|&expected| expected == idx)
             .expect("cold claim must recover a displaced minted index");
         pending.remove(position);
-        recovered.push(heap as usize);
+        recovered.push(lease);
         assert_eq!(bootstrap::count_for_test(), bootstrap::MAX_HEAPS as u32);
     }
     assert!(pending.is_empty(), "no minted OOM index was lost");
@@ -171,12 +166,6 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
             "numeric cap must not allocate chunks"
         );
     }
-    for heap in recovered {
-        // SAFETY: this LIVE pointer has not been recycled yet.
-        unsafe { HeapRegistry::recycle(heap as *mut _) };
-    }
-    for heap in held {
-        // SAFETY: this LIVE pointer has not been recycled yet.
-        unsafe { HeapRegistry::recycle(heap as *mut _) };
-    }
+    drop(recovered);
+    drop(held);
 }

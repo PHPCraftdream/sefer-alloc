@@ -92,12 +92,9 @@ fn main() {
     let to_fill = MAX_HEAPS - 1;
     let mut claimed = Vec::with_capacity(to_fill);
     for _ in 0..to_fill {
-        let ptr = HeapRegistry::claim();
-        assert!(
-            !ptr.is_null(),
-            "registry claim failed before intended exhaustion"
-        );
-        claimed.push(ptr);
+        let lease = HeapRegistry::dbg_claim_lease()
+            .expect("registry claim failed before intended exhaustion");
+        claimed.push(lease);
     }
     let fill_elapsed = fill_start.elapsed();
     println!(
@@ -142,8 +139,9 @@ fn main() {
     let ratio = exhausted_elapsed.as_nanos() as f64 / warm_elapsed.as_nanos() as f64;
     println!("summary=exhausted_vs_warm_ns_ratio value={ratio:.2}");
 
-    // Keep every claimed pointer alive for the whole run (never recycled),
-    // matching the "these slots are LIVE forever" registry-exhaustion
-    // scenario this probe measures.
+    // Keep every claimed lease alive for the whole run (never explicitly
+    // recycled), matching the "these slots are LIVE forever"
+    // registry-exhaustion scenario this probe measures. (The leases recycle
+    // their slots only at process teardown, after every measurement.)
     core::hint::black_box(&claimed);
 }

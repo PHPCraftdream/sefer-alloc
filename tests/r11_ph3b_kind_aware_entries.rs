@@ -88,7 +88,7 @@ use std::alloc::{GlobalAlloc, Layout};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::registry::segment_route::RouteDirectory;
-use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapCore, HeapLease, HeapRegistry};
 use sefer_alloc::{SeferAlloc, SegmentLayout};
 
 /// `dbg_kind_at_tag` tags (see `tests/kind_at_strict_decode.rs`).
@@ -130,24 +130,16 @@ impl Drop for SerialGuard {
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
-/// Claim a registry heap and empty its magazines, so per-test observers
-/// (magazine counts, `live_count` deltas) start from a known state instead of
-/// whatever a previous occupant of the recycled slot left behind.
-fn claim_normalised() -> *mut HeapCore {
+/// Claim a registry heap (as a [`HeapLease`]) and empty its magazines, so
+/// per-test observers (magazine counts, `live_count` deltas) start from a
+/// known state instead of whatever a previous occupant of the recycled slot
+/// left behind. The lease recycles the slot on `drop` (Ph4c: the legacy raw
+/// `claim`/`recycle` protocol is crate-only now).
+fn claim_normalised() -> HeapLease {
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: this thread exclusively owns the claimed slot until recycled.
-    let heap: &mut HeapCore = unsafe { &mut *heap };
-    heap.dbg_flush_all();
-    heap as *mut HeapCore
-}
-
-/// Recycle a heap this test claimed and fully drained.
-fn recycle(heap: *mut HeapCore) {
-    // SAFETY: `heap` was claimed by this thread and every block it issued has
-    // been freed again by its owner test before the recycle.
-    unsafe { HeapRegistry::recycle(heap) };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("dbg_claim_lease returned None");
+    lease.core().dbg_flush_all();
+    lease
 }
 
 /// The kind tag this build's OWN classifier predicts for `(size, align)`.
@@ -250,9 +242,8 @@ fn small_resting(heap: &HeapCore, class: usize, ptr: *mut u8) -> bool {
 #[test]
 fn alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size() {
     let _g = SerialGuard::acquire();
-    let raw = claim_normalised();
-    // SAFETY: owned exclusively by this thread.
-    let heap: &mut HeapCore = unsafe { &mut *raw };
+    let mut lease = claim_normalised();
+    let heap = lease.core();
 
     let sweep: [(usize, usize); 10] = [
         (1, 8),
@@ -379,7 +370,7 @@ fn alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size() {
         }
     }
 
-    recycle(raw);
+    drop(lease);
 }
 
 // ── task items 1 & 2: realloc across the Small/Large boundary ─────────────
@@ -397,9 +388,8 @@ fn alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size() {
 #[test]
 fn realloc_crosses_the_boundary_in_step_with_the_header_kind() {
     let _g = SerialGuard::acquire();
-    let raw = claim_normalised();
-    // SAFETY: owned exclusively by this thread.
-    let heap: &mut HeapCore = unsafe { &mut *raw };
+    let mut lease = claim_normalised();
+    let heap = lease.core();
 
     let small = Layout::from_size_align(256, 8).unwrap();
     let large = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
@@ -467,7 +457,7 @@ fn realloc_crosses_the_boundary_in_step_with_the_header_kind() {
         "Large->Small round: the Large census must end where it started"
     );
 
-    recycle(raw);
+    drop(lease);
 }
 
 // ── task item 3: realloc OOM ──────────────────────────────────────────────
@@ -489,9 +479,8 @@ fn realloc_crosses_the_boundary_in_step_with_the_header_kind() {
 #[test]
 fn realloc_oom_returns_null_and_leaves_the_old_block_intact() {
     let _g = SerialGuard::acquire();
-    let raw = claim_normalised();
-    // SAFETY: owned exclusively by this thread.
-    let heap: &mut HeapCore = unsafe { &mut *raw };
+    let mut lease = claim_normalised();
+    let heap = lease.core();
 
     let small = Layout::from_size_align(64, 8).unwrap();
     let big = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
@@ -573,7 +562,7 @@ fn realloc_oom_returns_null_and_leaves_the_old_block_intact() {
     unsafe { heap.dealloc(fresh, small) };
     assert_eq!(census(heap), baseline, "the heap must end where it started");
 
-    recycle(raw);
+    drop(lease);
 }
 
 // ── task item 4: layout agreement inside the GlobalAlloc contract ─────────
@@ -602,9 +591,8 @@ fn realloc_oom_returns_null_and_leaves_the_old_block_intact() {
 #[test]
 fn matching_layout_free_keeps_the_small_route_across_a_same_class_realloc() {
     let _g = SerialGuard::acquire();
-    let raw = claim_normalised();
-    // SAFETY: owned exclusively by this thread.
-    let heap: &mut HeapCore = unsafe { &mut *raw };
+    let mut lease = claim_normalised();
+    let heap = lease.core();
 
     let a = Layout::from_size_align(17, 16).unwrap();
     let b = Layout::from_size_align(32, 16).unwrap();
@@ -668,7 +656,7 @@ fn matching_layout_free_keeps_the_small_route_across_a_same_class_realloc() {
          substrate and unregister its segment"
     );
 
-    recycle(raw);
+    drop(lease);
 }
 
 // ── task item 1: the fallback and foreign-free entries ────────────────────
@@ -804,9 +792,8 @@ fn fallback_served_blocks_freed_by_another_thread_keep_their_kind() {
 #[test]
 fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
     let _g = SerialGuard::acquire();
-    let raw = claim_normalised();
-    // SAFETY: owned exclusively by this thread.
-    let heap: &mut HeapCore = unsafe { &mut *raw };
+    let mut lease = claim_normalised();
+    let heap = lease.core();
 
     // The task's pattern: 64 blocks of 256 B. `256` B is a small class whose
     // `FREE_PARK_CAP` is the full magazine depth, so both the scalar and the
@@ -973,7 +960,7 @@ fn scalar_and_batch_frees_of_one_pattern_agree_on_every_observer() {
         );
     }
 
-    recycle(raw);
+    drop(lease);
 }
 
 // ── Ph3b's own headline case: physically Large, small-classifying layout ───
@@ -1007,9 +994,8 @@ fn promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout() {
     }
 
     let _g = SerialGuard::acquire();
-    let raw = claim_normalised();
-    // SAFETY: owned exclusively by this thread.
-    let heap: &mut HeapCore = unsafe { &mut *raw };
+    let mut lease = claim_normalised();
+    let heap = lease.core();
 
     let start = Layout::from_size_align(64 * 1024, 8).unwrap();
     let promote_to = 324 * 1024; // past the 256 KiB promotion threshold
@@ -1107,5 +1093,5 @@ fn promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout() {
         "the kind-routed frees must restore the Large-segment census"
     );
 
-    recycle(raw);
+    drop(lease);
 }

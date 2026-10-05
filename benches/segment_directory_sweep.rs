@@ -961,8 +961,8 @@ mod remote_density {
     /// exceeding `MAX_SEGMENTS`).
     const DENSITY_S_VALUES: &[u32] = &[3, 64, 1023];
 
-    /// Construct `s` SCANNABLE segments of `SMALL_MAX`-sized blocks via a
-    /// REAL `HeapCore` (through `HeapRegistry::claim`), PLUS one extra
+    /// Construct `s` SCANNABLE segments of `SMALL_MAX`-sized blocks through a
+    /// REAL claimed heap (see the caller's `dbg_claim_lease`), PLUS one extra
     /// always-full "current" segment -- the SAME structural requirement
     /// `super::construct_s_segments`'s doc comment explains in full: without
     /// it, the free block meant for the scan to find would sit in
@@ -975,20 +975,15 @@ mod remote_density {
     /// capacity via `super::measure_segment_capacity`, so no segment is left
     /// with an undrained carve-refill-batch residual either (the harness's
     /// OTHER real construction bug, also fixed in the non-xthread matrix
-    /// first). Returns the owning heap pointer, the layout used, and
-    /// per-segment buckets (scan order) of live block pointers for the `s`
-    /// SCANNABLE segments only (the extra current segment is deliberately
+    /// first). Returns the layout used and per-segment buckets (scan order)
+    /// of live block pointers for the `s` SCANNABLE segments only (the extra
+    /// current segment is deliberately
     /// left untracked/never touched, exactly like
     /// `super::construct_s_segments`).
     fn construct_s_segments_via_heap(
+        heap: &mut sefer_alloc::registry::HeapCore,
         s: u32,
-    ) -> (
-        *mut sefer_alloc::registry::HeapCore,
-        Layout,
-        Vec<Vec<*mut u8>>,
-    ) {
-        let heap = HeapRegistry::claim();
-        assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    ) -> (Layout, Vec<Vec<*mut u8>>) {
         let layout = Layout::from_size_align(sefer_alloc::SegmentLayout::SMALL_MAX, 8).unwrap();
         // `SMALL_MAX` is `AllocCore::dbg_small_class_count() - 1` by
         // construction (the largest small class) -- reuse the same
@@ -1009,12 +1004,13 @@ mod remote_density {
             let mut bucket: Vec<*mut u8> = Vec::with_capacity(this_cap);
             let mut this_base: Option<usize> = None;
             for _ in 0..this_cap {
-                // SAFETY: `heap` is a live claimed heap pointer from
-                // `HeapRegistry::claim` above, used single-threaded here (no
-                // other thread touches it until the deliberate cross-thread
-                // dealloc phase below, which only targets specific
-                // already-recorded pointers, never `heap` itself).
-                let p = unsafe { (*heap).alloc(layout) };
+                // SAFE: `alloc` is a safe `&mut self` method; `heap` is the
+                // live claimed heap core from `dbg_claim_lease` (see the
+                // caller), used single-threaded here (no other thread touches
+                // it until the deliberate cross-thread dealloc phase below,
+                // which only targets specific already-recorded pointers,
+                // never `heap` itself).
+                let p = heap.alloc(layout);
                 assert!(!p.is_null(), "construct_s_segments_via_heap: alloc null");
                 let b = base_of(p);
                 match this_base {
@@ -1043,7 +1039,7 @@ mod remote_density {
         let current_bucket = buckets.pop().expect("at least s+1 buckets");
         let _ = current_bucket;
         seen_bases.pop();
-        (heap, layout, buckets)
+        (layout, buckets)
     }
 
     /// Seed `dirty_pct%` of the NON-TARGET segments (`[0, S-1)`) with exactly
@@ -1055,7 +1051,7 @@ mod remote_density {
     /// the timed scan), so it is still sitting in the ring when the scan
     /// walks that segment and must pay the lazy ring-drain cost.
     fn seed_remote_dirty(
-        heap: *mut sefer_alloc::registry::HeapCore,
+        heap_addr: usize,
         layout: Layout,
         buckets: &mut [Vec<*mut u8>],
         dirty_pct: u32,
@@ -1066,7 +1062,6 @@ mod remote_density {
         if n_dirty == 0 {
             return;
         }
-        let heap_addr = heap as usize;
         let barrier = Arc::new(Barrier::new(2));
         for bucket in buckets.iter_mut().take(n_dirty) {
             let victim = bucket
@@ -1096,7 +1091,7 @@ mod remote_density {
     /// block freed via an OWN-THREAD dealloc (so the scan can still succeed
     /// there without depending on ring-drain timing at the target itself).
     fn punch_target_hole(
-        heap: *mut sefer_alloc::registry::HeapCore,
+        heap: &mut sefer_alloc::registry::HeapCore,
         layout: Layout,
         buckets: &mut [Vec<*mut u8>],
     ) {
@@ -1104,7 +1099,7 @@ mod remote_density {
         let victim = target.pop().expect("target segment has a block");
         // SAFETY: `victim` was returned by `heap.alloc(layout)` on this same
         // (owner) thread, is still live, freed exactly once, own-thread.
-        unsafe { (*heap).dealloc(victim, layout) };
+        unsafe { heap.dealloc(victim, layout) };
     }
 
     /// Time the ONE `alloc()` call that must fall through to
@@ -1117,18 +1112,19 @@ mod remote_density {
     /// comment for the full story of why an earlier "drain first" design was
     /// a real bug: draining `small_cur` when the target block WAS `small_cur`
     /// consumed the very block the scan needed to find).
-    fn time_scan_alloc(heap: *mut sefer_alloc::registry::HeapCore, layout: Layout) -> Duration {
+    fn time_scan_alloc(heap: &mut sefer_alloc::registry::HeapCore, layout: Layout) -> Duration {
         let t0 = Instant::now();
-        // SAFETY: `heap` is a live claimed heap; single-threaded use here
-        // (all producer threads have already joined by this point).
-        let found = unsafe { (*heap).alloc(layout) };
+        // SAFE: `alloc` is a safe `&mut self` method; `heap` is the live
+        // claimed heap core, single-threaded use here (all producer threads
+        // have already joined by this point).
+        let found = heap.alloc(layout);
         let elapsed = t0.elapsed();
         assert!(!found.is_null());
         // Free the found block back so a subsequent measurement of this same
         // heap (if any) would find consistent state -- SAFETY: `found` was
         // returned by the immediately preceding `alloc` call on this thread
         // with the same layout, still live, freed exactly once.
-        unsafe { (*heap).dealloc(found, layout) };
+        unsafe { heap.dealloc(found, layout) };
         elapsed
     }
 
@@ -1168,12 +1164,13 @@ mod remote_density {
     /// `HeapRegistry::recycle` only returns a slot to the FREE pool; it does
     /// NOT reset/tear down the recycled `HeapCore`'s `AllocCore` (no segment
     /// is un-carved, `dbg_table_count()` and `small_cur` are left exactly as
-    /// the previous trial left them — confirmed by `HeapRegistry::claim`'s
+    /// the previous trial left them — confirmed by `claim_impl`'s
     /// own `initialised` gate, which skips `HeapCore::new()` entirely on
-    /// every claim AFTER the slot's first-ever materialisation). A
-    /// `recycle`-then-`claim` cycle between trials therefore handed back a
-    /// `HeapCore` whose primordial segment was ALREADY partially or fully
-    /// carved from the PRIOR trial — `construct_s_segments_via_heap`'s
+    /// every claim AFTER the slot's first-ever materialisation; the
+    /// lease-based `dbg_claim_lease` shares it). A `recycle`-then-`claim`
+    /// cycle between trials therefore handed back a `HeapCore` whose
+    /// primordial segment was ALREADY partially or fully carved from the
+    /// PRIOR trial — `construct_s_segments_via_heap`'s
     /// pre-measured `capacity.primordial`/`capacity.fresh` counts (measured
     /// on a FRESH, never-before-used `AllocCore`) then diverged from the
     /// REUSED heap's actual remaining capacity, producing a real panic
@@ -1193,17 +1190,37 @@ mod remote_density {
     /// reservations (~40 GiB) across just ONE `dirty_pct` cell.
     pub(super) fn run_remote_density_matrix() {
         eprintln!("segment_directory_sweep: remote-dirty-density matrix (alloc-xthread)");
+        // Heaps claimed via `dbg_claim_lease` are parked here (never dropped)
+        // so every slot stays LIVE until process exit — the Ph4c equivalent of
+        // the old deliberately-leaked `claim()` pointers. See the trial loop
+        // below and the doc comment above.
+        let mut parked_leases: Vec<sefer_alloc::registry::HeapLease> = Vec::new();
         for &s in DENSITY_S_VALUES {
             let repeats = remote_repeats_for(s);
             for &dirty_pct in DIRTY_PCTS {
                 let mut samples: Vec<Duration> = Vec::with_capacity(repeats);
                 for _ in 0..repeats {
-                    let (heap, layout, mut buckets) = construct_s_segments_via_heap(s);
-                    seed_remote_dirty(heap, layout, &mut buckets, dirty_pct);
-                    punch_target_hole(heap, layout, &mut buckets);
-                    samples.push(time_scan_alloc(heap, layout));
-                    // `heap` is deliberately LEAKED here, not recycled -- see
-                    // this function's doc comment above.
+                    // Ph4c: the legacy leaked `HeapRegistry::claim()` pointer
+                    // is replaced by a `dbg_claim_lease` handle. The lease is
+                    // deliberately NEVER dropped for the rest of the process:
+                    // it is parked in `parked_leases`, so the slot stays LIVE
+                    // and is never recycled — exactly the previous
+                    // "leaked pointer" semantics (a recycled-then-reclaimed
+                    // core would carry the prior trial's carve state; see the
+                    // doc comment above).
+                    let mut lease = HeapRegistry::dbg_claim_lease()
+                        .expect("dbg_claim_lease: no free heap slot for trial");
+                    let (layout, mut buckets) = construct_s_segments_via_heap(lease.core(), s);
+                    // Ph4c: the raw core address is taken from the parked
+                    // lease HERE, single-threaded on the coordinator; the
+                    // lease itself stays LIVE until the end of the trial
+                    // (parked in `parked_leases` below), so the address is
+                    // valid for the whole cross-thread seeding phase.
+                    let heap_addr = lease.core() as *mut sefer_alloc::registry::HeapCore as usize;
+                    seed_remote_dirty(heap_addr, layout, &mut buckets, dirty_pct);
+                    punch_target_hole(lease.core(), layout, &mut buckets);
+                    samples.push(time_scan_alloc(lease.core(), layout));
+                    parked_leases.push(lease);
                 }
                 samples.sort_unstable();
                 let sum: Duration = samples.iter().sum();

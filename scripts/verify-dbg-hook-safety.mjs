@@ -126,6 +126,18 @@ const SAFE_MUTATORS = [
     "test-only forwarder to the real claim CAS protocol (same claim_impl as HeapRegistry::claim); it returns the typed HeapLease whose Drop is the Release LIVE->FREE publication, takes no pointer and exposes no core access (core() is pub(crate)) -- the only effect is a slot state transition that the lease's own Drop reverses (Ph4a, task #2091)"
   ],
   [
+    "src/registry/heap_registry/claim.rs::dbg_claim_lease_with_config",
+    "test-only forwarder to the real claim_lease_with_config path (same claim_impl CAS protocol and N2 config-conflict hook as HeapRegistry::claim_with_config); like dbg_claim_lease it returns a typed HeapLease (Drop = Release LIVE->FREE), takes a LargeCacheConfig by value and no raw pointers (Ph4c, task #2107)"
+  ],
+  [
+    "src/registry/heap_registry/claim.rs::dbg_try_maintenance",
+    "test-only forwarder to HeapRegistry::try_maintenance after the Ph4c surface narrowing made it pub(crate) (ADR addendum section 2.6); same FREE->MAINTENANCE CAS as the production path, returns the typed MaintenanceLease whose Drop restores FREE, takes no pointer and exposes no core access"
+  ],
+  [
+    "src/registry/heap_registry/claim.rs::dbg_with_core",
+    "test-only forwarder to MaintenanceLease::with_core after the Ph4c surface narrowing made it pub(crate) (ADR addendum section 2.6); the callback receives the exclusive &mut HeapCore guarded by the lease's won FREE->MAINTENANCE CAS, and the alias adds no access beyond the crate-only original"
+  ],
+  [
     "crates/once-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
     "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered"
   ],

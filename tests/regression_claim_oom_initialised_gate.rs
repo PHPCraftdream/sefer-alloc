@@ -132,18 +132,23 @@ fn slot_generation(idx: usize) -> u64 {
 /// `tests/registry_*` file's documented isolation model).
 fn drain_free_slots_by_claiming() {
     loop {
-        let before = HeapRegistry::claim();
-        assert!(
-            !before.is_null(),
-            "registry must not be exhausted in a fresh test process"
-        );
-        // SAFETY: just claimed, not yet recycled.
-        let idx = unsafe { (*before).id() };
+        let lease = HeapRegistry::dbg_claim_lease()
+            .expect("registry must not be exhausted in a fresh test process");
+        let idx = lease.slot_index();
+        let fresh = slot_generation(idx as usize) == 1;
+        // The claimed-and-leaked heaps are intentionally never recycled in
+        // THIS helper (recycling would just refill the free list this
+        // function exists to empty): forgetting the lease leaves the slot
+        // LIVE, exactly like the legacy leaked raw pointer. Each test that
+        // calls this is expected to be the only thing touching the registry
+        // under the `SERIAL` guard, so the leaked slots are harmless
+        // test-process-lifetime bookkeeping, not a real leak.
+        std::mem::forget(lease);
         // If this claim minted a BRAND NEW slot (generation == 1 AND it is
         // the high-water index), free_slots was already empty -- stop here,
         // this heap is now the guaranteed-fresh boundary marker and we leave
         // it LIVE (not recycled) so free_slots stays empty for the caller.
-        if slot_generation(idx as usize) == 1 {
+        if fresh {
             return;
         }
         // Otherwise this was a recycled slot popped off free_slots -- keep
@@ -201,13 +206,9 @@ fn simulated_oom_does_not_leak_the_slot() {
     // LIFO stack -- if the OOM branch failed to push it back, this claim
     // would mint a BRAND NEW index via `bump_count` instead (the freed slot
     // would sit LIVE-but-unreachable forever).
-    let heap = HeapRegistry::claim();
-    assert!(
-        !heap.is_null(),
-        "claim after simulated OOM must not return null"
-    );
-    // SAFETY: `heap` was just returned by `claim`.
-    let reclaimed_idx = unsafe { (*heap).id() };
+    let lease =
+        HeapRegistry::dbg_claim_lease().expect("claim after simulated OOM must not return None");
+    let reclaimed_idx = lease.slot_index();
     assert_eq!(
         reclaimed_idx, freed_idx,
         "claim() after a simulated OOM must reuse the SAME slot index via \
@@ -215,8 +216,8 @@ fn simulated_oom_does_not_leak_the_slot() {
          this claim would mint an unrelated fresh index instead"
     );
 
-    // SAFETY: `heap` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// (a)+(b) combined, end to end: after a simulated OOM, the following real
@@ -241,13 +242,9 @@ fn reclaim_after_simulated_oom_still_materialises() {
         "sanity: the simulated-OOM prelude bumped generation to 1 already"
     );
 
-    let heap = HeapRegistry::claim();
-    assert!(
-        !heap.is_null(),
-        "reclaim after simulated OOM must not return null"
-    );
-    // SAFETY: `heap` was just returned by `claim`.
-    let reclaimed_idx = unsafe { (*heap).id() };
+    let mut lease =
+        HeapRegistry::dbg_claim_lease().expect("reclaim after simulated OOM must not return None");
+    let reclaimed_idx = lease.slot_index();
     assert_eq!(
         reclaimed_idx, freed_idx,
         "must reuse the same slot (free_slots LIFO)"
@@ -274,9 +271,7 @@ fn reclaim_after_simulated_oom_still_materialises() {
     // Behavioural oracle: the returned heap must be a genuinely usable,
     // freshly-constructed HeapCore -- allocate and round-trip through it.
     let layout = Layout::from_size_align(64, 8).unwrap();
-    // SAFETY: `heap` is live, materialised (just proven above), and not yet
-    // recycled; we are its sole writer.
-    let ptr = unsafe { (*heap).alloc(layout) };
+    let ptr = lease.core().alloc(layout);
     assert!(
         !ptr.is_null(),
         "alloc through the reclaimed heap must succeed -- a HeapCore that \
@@ -285,11 +280,14 @@ fn reclaim_after_simulated_oom_still_materialises() {
          memory; observing a valid non-null pointer here corroborates that \
          `HeapCore::new` genuinely ran"
     );
-    unsafe {
-        core::ptr::write_bytes(ptr, 0xAB, layout.size());
-        (*heap).dealloc(ptr, layout);
+    {
+        let heap = lease.core();
+        unsafe { core::ptr::write_bytes(ptr, 0xAB, layout.size()) };
+        // SAFETY: `ptr` is a live allocation of this reclaimed heap; layout
+        // matches the alloc above.
+        unsafe { heap.dealloc(ptr, layout) };
     }
 
-    // SAFETY: `heap` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

@@ -34,6 +34,61 @@ impl SeferAlloc {
             root.addr(),
         ))
     }
+
+    /// M-C oracle (Ph4c, receipt open question M-C): process-wide
+    /// `(full_ingress_drain_calls, ingress_records_consumed)` counters of the
+    /// strict trim-path drain ([`AllocCore::drain_sidecar_ingress`] — the
+    /// `trim_for_recycle` / re-claim pass; the bounded worker step and the
+    /// Large hot/rescue scans are NOT counted). `trim_for_recycle` performs
+    /// EXACTLY ONE full drain pass per trim, so:
+    /// - `drain_calls` delta = 1 across a single trim / re-claim — a mutant
+    ///   consuming ingress twice in one trim yields 2, a suppressed trim
+    ///   yields 0, both red under
+    ///   `tests/r11_ph4c_ingress_consume_exactly_once_oracle.rs`;
+    /// - `records_consumed` delta = the number of pending publications —
+    ///   distinguishing "exactly one trim consumed exactly the pending set"
+    ///   from "no trim ran" (delta 0, the idempotence blindness the receipt
+    ///   documented).
+    /// MEASUREMENT-ONLY: both counters are pure relaxed-atomic numeric
+    /// observers under `bench-internals`; no production logic reads them.
+    /// `#[doc(hidden)]` — not part of the public API (the established
+    /// test-only export pattern documented in `src/lib.rs`).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[must_use]
+    pub fn dbg_sidecar_ingress_stats(&self) -> (u64, u64) {
+        use crate::alloc_core::{SIDECAR_INGRESS_DRAIN_CALLS, SIDECAR_INGRESS_RECORDS_CONSUMED};
+        use core::sync::atomic::Ordering;
+        (
+            SIDECAR_INGRESS_DRAIN_CALLS.load(Ordering::Relaxed),
+            SIDECAR_INGRESS_RECORDS_CONSUMED.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Ph4c mutant catcher #12: process-wide count of BOUNDED background
+    /// maintenance ingress steps (`HeapCore::background_maintenance_step` —
+    /// exactly one per maintained registry slot in
+    /// [`crate::registry::HeapRegistry::maintenance_pass`]).
+    ///
+    /// Why a separate counter: the bounded step is cursor-idempotent, so
+    /// `dbg_sidecar_ingress_stats` (which counts ONLY the full trim-path
+    /// drain) cannot distinguish one ingress step from two on the maintenance
+    /// path. This counter can: a mutant that calls
+    /// `MaintenanceLease::with_core` twice per maintained slot doubles the
+    /// delta and goes red under
+    /// `tests/r11_ph4c_ingress_consume_exactly_once_oracle.rs`.
+    /// MEASUREMENT-ONLY (pure relaxed atomic, `bench-internals`-gated);
+    /// no production logic reads it. `#[doc(hidden)]` — not public API.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "alloc-xthread",
+        feature = "bench-internals"
+    ))]
+    #[must_use]
+    pub fn dbg_background_ingress_step_calls(&self) -> u64 {
+        crate::alloc_core::BACKGROUND_INGRESS_STEP_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl SeferAlloc {

@@ -33,10 +33,9 @@ fn far_large_publication_after_clean_pass_retires_with_pin_held() {
     let large_layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let small_layout = Layout::from_size_align(64, 8).unwrap();
     let class = SegmentLayout::class_for(64, 8).unwrap();
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this claim is exclusively held until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    // SAFETY-free core access: the lease exclusively owns the slot until drop.
+    let heap = lease.core();
     let mut large = Vec::new();
     for _ in 0..9 {
         let ptr = heap.alloc(large_layout);
@@ -102,6 +101,6 @@ fn far_large_publication_after_clean_pass_retires_with_pin_held() {
         for ptr in large {
             heap.dealloc(ptr, large_layout);
         }
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }

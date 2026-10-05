@@ -81,8 +81,8 @@ fn t1_round_trip() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     const K: usize = 64;
     const OPS: usize = 1024;
@@ -91,7 +91,7 @@ fn t1_round_trip() {
     // Initial fill: allocate K blocks.
     let mut live: Vec<*mut u8> = Vec::with_capacity(K);
     for i in 0..K {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "initial alloc returned null at {i}");
         // Write a pattern to prove the block is usable.
         unsafe { core::ptr::write_bytes(p, 0xAA, 16) };
@@ -109,9 +109,9 @@ fn t1_round_trip() {
     for iter in 0..OPS {
         let idx = (xorshift64(&mut rng) as usize) % K;
         // Free the old block.
-        unsafe { (*heap).dealloc(live[idx], layout) };
+        unsafe { heap.dealloc(live[idx], layout) };
         // Alloc a replacement.
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at iteration {iter}");
         // Write a pattern.
         unsafe { core::ptr::write_bytes(p, (iter & 0xFF) as u8, 16) };
@@ -129,10 +129,11 @@ fn t1_round_trip() {
 
     // Final: dealloc all.
     for p in &live {
-        unsafe { (*heap).dealloc(*p, layout) };
+        unsafe { heap.dealloc(*p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T7: conservation ───────────────────────────────────────────────────────
@@ -144,8 +145,8 @@ fn t7_conservation() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     const N: usize = 128;
     const ROUNDS: usize = 100;
@@ -154,7 +155,7 @@ fn t7_conservation() {
     for round in 0..ROUNDS {
         let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
         for i in 0..N {
-            let p = unsafe { (*heap).alloc(layout) };
+            let p = heap.alloc(layout);
             assert!(!p.is_null(), "alloc returned null at round {round}, i={i}");
             // Write pattern to verify usability.
             unsafe { core::ptr::write_bytes(p, (round & 0xFF) as u8, 32) };
@@ -162,12 +163,12 @@ fn t7_conservation() {
         }
         // Free all in reverse order (exercises the magazine stack).
         for &p in ptrs.iter().rev() {
-            unsafe { (*heap).dealloc(p, layout) };
+            unsafe { heap.dealloc(p, layout) };
         }
     }
 
     // Final sanity: allocate one more and verify it works.
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(
         !p.is_null(),
         "final alloc returned null after conservation loop"
@@ -175,10 +176,11 @@ fn t7_conservation() {
     unsafe {
         core::ptr::write_bytes(p, 0x55, 32);
         assert_eq!(p.read(), 0x55, "final read-back mismatch");
-        (*heap).dealloc(p, layout);
+        heap.dealloc(p, layout);
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T-bulk-overflow ────────────────────────────────────────────────────────
@@ -191,15 +193,15 @@ fn t_bulk_overflow() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     const TOTAL: usize = 1000;
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(TOTAL);
     for i in 0..TOTAL {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at i={i}");
         // Write a pattern.
         unsafe { core::ptr::write_bytes(p, (i & 0xFF) as u8, 16) };
@@ -217,8 +219,9 @@ fn t_bulk_overflow() {
 
     // Free all.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

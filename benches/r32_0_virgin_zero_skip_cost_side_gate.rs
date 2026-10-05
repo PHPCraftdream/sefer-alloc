@@ -136,15 +136,18 @@ const BURST: usize = 16;
 const REPS: usize = 15;
 
 fn claim_fresh() -> &'static mut HeapCore {
-    let p = HeapRegistry::claim();
-    assert!(
-        !p.is_null(),
-        "HeapRegistry::claim returned null (registry exhaustion?)"
-    );
-    // SAFETY: `p` was just returned by `claim`; this thread owns it for the
-    // rep. The slot lives in the `'static` registry array, so the exclusive
-    // borrow is `'static`. Each rep claims a DISTINCT slot, so no aliasing.
-    unsafe { &mut *p }
+    // Ph4c: safe lease API. The slot is deliberately NEVER recycled (a fresh
+    // slot per rep), so the lease is forgotten immediately: that keeps the
+    // slot LIVE exactly like the legacy raw-pointer claim.
+    let mut lease = HeapRegistry::dbg_claim_lease()
+        .expect("HeapRegistry::claim returned null (registry exhaustion?)");
+    // SAFETY: the slot lives in the `'static` registry array; forgetting the
+    // lease suppresses its LIVE -> FREE Drop, so the exclusive borrow stays
+    // valid for `'static` exactly like the legacy raw pointer. Each rep
+    // claims a DISTINCT slot, so no aliasing.
+    let heap = unsafe { &mut *(lease.core() as *mut HeapCore) };
+    core::mem::forget(lease);
+    heap
 }
 
 fn ns_per_op(elapsed: Duration, n: usize) -> f64 {

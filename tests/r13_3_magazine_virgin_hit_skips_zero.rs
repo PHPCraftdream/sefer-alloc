@@ -93,9 +93,9 @@ fn assert_all_zero(ptr: *mut u8, len: usize, ctx: &str) {
 const VIRGIN_TEST_CLASS_CANDIDATES: [usize; 3] = [20, 21, 22];
 const REUSE_TEST_CLASS_CANDIDATES: [usize; 3] = [23, 24, 25];
 
-fn pick_target_class(heap: *mut sefer_alloc::registry::HeapCore, candidates: &[usize]) -> usize {
+fn pick_target_class(heap: &mut sefer_alloc::registry::HeapCore, candidates: &[usize]) -> usize {
     for &c in candidates {
-        let refill_n = unsafe { (*heap).dbg_refill_n_for_class(c) };
+        let refill_n = heap.dbg_refill_n_for_class(c);
         if refill_n >= 2 {
             return c;
         }
@@ -112,22 +112,22 @@ fn pick_target_class(heap: *mut sefer_alloc::registry::HeapCore, candidates: &[u
 fn magazine_hit_of_virgin_block_skips_zero_pass() {
     let _guard = serial();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let target_class = pick_target_class(heap, &VIRGIN_TEST_CLASS_CANDIDATES);
 
     let bs = AllocCore::dbg_block_size(target_class);
     let layout = Layout::from_size_align(bs, 8).unwrap();
-    let refill_n = unsafe { (*heap).dbg_refill_n_for_class(target_class) };
+    let refill_n = heap.dbg_refill_n_for_class(target_class);
     assert!(
         refill_n >= 2,
         "this test requires refill_n >= 2 so a miss parks >=1 retained \
          virgin block for a later hit to pop; got refill_n={refill_n}"
     );
 
-    unsafe { (*heap).dbg_flush_all() };
+    heap.dbg_flush_all();
     assert_eq!(
-        unsafe { (*heap).dbg_tcache_count(target_class) },
+        heap.dbg_tcache_count(target_class),
         0,
         "magazine must be empty for target_class after a forced flush \
          (target_class is untouched by any other test in this binary)"
@@ -138,7 +138,7 @@ fn magazine_hit_of_virgin_block_skips_zero_pass() {
     // block of this class in this process) -> the refill is a pure
     // carve_batch run -> genuinely all-virgin.
     let zero_before_1 = AllocCore::dbg_small_zero_pass_count();
-    let p1 = unsafe { (*heap).alloc_zeroed(layout) };
+    let p1 = heap.alloc_zeroed(layout);
     assert!(!p1.is_null(), "first alloc_zeroed returned null");
     assert_all_zero(p1, bs, "first (miss/virgin-carve) alloc_zeroed");
     let delta_1 = AllocCore::dbg_small_zero_pass_count() - zero_before_1;
@@ -153,13 +153,13 @@ fn magazine_hit_of_virgin_block_skips_zero_pass() {
     // load-bearing verification, not an assumption) EVERY one of those bits
     // must read virgin: target_class's free list was empty, so the refill
     // was a pure bump-carve run sharing ONE segment's payload_virgin bit.
-    let resident = unsafe { (*heap).dbg_tcache_count(target_class) };
+    let resident = heap.dbg_tcache_count(target_class);
     assert_eq!(
         resident,
         (refill_n - 1) as u16,
         "magazine must retain refill_n - 1 blocks after the miss-triggering refill"
     );
-    let mask = unsafe { (*heap).dbg_tcache_virgin_mask(target_class) };
+    let mask = heap.dbg_tcache_virgin_mask(target_class);
     let expect_all_virgin_mask: u16 = if resident >= 16 {
         u16::MAX
     } else {
@@ -178,7 +178,7 @@ fn magazine_hit_of_virgin_block_skips_zero_pass() {
     // check above. THE core R13-3 assertion: the hit must ALSO skip the
     // zero pass.
     let zero_before_2 = AllocCore::dbg_small_zero_pass_count();
-    let p2 = unsafe { (*heap).alloc_zeroed(layout) };
+    let p2 = heap.alloc_zeroed(layout);
     assert!(!p2.is_null(), "second (hit) alloc_zeroed returned null");
     assert_ne!(p1, p2, "must be a DIFFERENT block from the first call");
     assert_all_zero(p2, bs, "second (magazine-HIT/virgin) alloc_zeroed");
@@ -197,10 +197,10 @@ fn magazine_hit_of_virgin_block_skips_zero_pass() {
     }
 
     unsafe {
-        (*heap).dealloc(p1, layout);
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p1, layout);
+        heap.dealloc(p2, layout);
     }
+    drop(lease);
 }
 
 /// Complementary counterfactual: a magazine HIT of a block that was
@@ -211,8 +211,8 @@ fn magazine_hit_of_virgin_block_skips_zero_pass() {
 fn magazine_hit_of_reused_block_still_zeroes() {
     let _guard = serial();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let target_class = pick_target_class(heap, &REUSE_TEST_CLASS_CANDIDATES);
 
     let bs = AllocCore::dbg_block_size(target_class);
@@ -222,19 +222,19 @@ fn magazine_hit_of_reused_block_still_zeroes() {
     // alloc_zeroed), then dirty it and free it -- this push puts a
     // NON-virgin block back into the magazine (dispatch conjunct: it was
     // already issued once).
-    let p0 = unsafe { (*heap).alloc(layout) };
+    let p0 = heap.alloc(layout);
     assert!(!p0.is_null());
     unsafe { core::ptr::write_bytes(p0, 0xAA, bs) };
-    unsafe { (*heap).dealloc(p0, layout) };
+    unsafe { heap.dealloc(p0, layout) };
 
     assert!(
-        unsafe { (*heap).dbg_tcache_count(target_class) } > 0,
+        heap.dbg_tcache_count(target_class) > 0,
         "magazine must hold the just-freed block"
     );
     // Verify the pushed-back slot's virgin bit reads false — proving the
     // push-clear logic (not just the pop-read logic) is exercised.
-    let cnt = unsafe { (*heap).dbg_tcache_count(target_class) } as usize;
-    let mask = unsafe { (*heap).dbg_tcache_virgin_mask(target_class) };
+    let cnt = heap.dbg_tcache_count(target_class) as usize;
+    let mask = heap.dbg_tcache_virgin_mask(target_class);
     assert_eq!(
         mask & (1u16 << (cnt - 1)),
         0,
@@ -244,7 +244,7 @@ fn magazine_hit_of_reused_block_still_zeroes() {
     // Re-popping it via alloc_zeroed must be a magazine HIT (LIFO -- this is
     // the most-recently-pushed block) that STILL zeroes (never virgin).
     let zero_before = AllocCore::dbg_small_zero_pass_count();
-    let p1 = unsafe { (*heap).alloc_zeroed(layout) };
+    let p1 = heap.alloc_zeroed(layout);
     assert!(!p1.is_null());
     assert_eq!(
         p0, p1,
@@ -263,9 +263,9 @@ fn magazine_hit_of_reused_block_still_zeroes() {
     let _ = zero_before;
 
     unsafe {
-        (*heap).dealloc(p1, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p1, layout);
     }
+    drop(lease);
 }
 
 // Guard against accidental future reuse of the class-candidate pools above

@@ -12,10 +12,8 @@ use sefer_alloc::{LargeCacheConfig, SegmentLayout, SmallSegmentPoolConfig};
 #[test]
 fn pooled_small_keeps_route_until_pool_drain() {
     let config = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(1));
-    let heap_ptr = HeapRegistry::claim_with_config(config);
-    assert!(!heap_ptr.is_null());
-    // SAFETY: this thread owns the claimed heap until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease_with_config(config).expect("claim_with_config");
+    let heap = lease.core();
     let small = Layout::from_size_align(SegmentLayout::SMALL_MAX, 16).unwrap();
     let mut blocks = Vec::new();
     let mut prior_base = None;
@@ -51,6 +49,5 @@ fn pooled_small_keeps_route_until_pool_drain() {
     assert!(RouteDirectory::global().lookup(prior_ptr).is_some());
     assert_eq!(heap.dbg_drain_small_pool(), 1);
     assert!(RouteDirectory::global().lookup(prior_ptr).is_none());
-    // SAFETY: the claimed heap is no longer in use.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }

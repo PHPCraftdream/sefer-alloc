@@ -166,13 +166,12 @@ fn magic_at_atomic_load_survives_recycle_xthread_race() {
     #[cfg(miri)]
     const ITERS: usize = 4;
 
-    let owner_heap = HeapRegistry::claim();
-    assert!(!owner_heap.is_null(), "HeapRegistry::claim returned null");
+    let mut owner_lease =
+        HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let owner_heap = owner_lease.core();
 
     // ── Owner allocates M live Large segments (magic == SEGMENT_MAGIC). ─────
-    let ptrs: Vec<*mut u8> = (0..M)
-        .map(|_| unsafe { (*owner_heap).alloc(layout) })
-        .collect();
+    let ptrs: Vec<*mut u8> = (0..M).map(|_| owner_heap.alloc(layout)).collect();
     for (i, &p) in ptrs.iter().enumerate() {
         assert!(!p.is_null(), "owner alloc[{i}] returned null");
     }
@@ -185,12 +184,13 @@ fn magic_at_atomic_load_survives_recycle_xthread_race() {
     // concurrently recycling below.
     let remote = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        let mut remote_lease =
+            HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+        let remote_heap = remote_lease.core();
         for _ in 0..ITERS {
             for &addr in &addrs {
-                // SAFETY (R6-MS-1/2 + raw-deref): `remote_heap` is the live
-                // heap this remote thread claimed. `addr` is a stale address
+                // SAFETY (R6-MS-1/2): `remote_heap` is the live heap this
+                // remote thread claimed. `addr` is a stale address
                 // the owner allocated and is concurrently recycling — a
                 // deliberate duplicate/stale remote free (caller misuse under
                 // the `unsafe fn` dealloc contract) exercised concurrently to
@@ -199,10 +199,10 @@ fn magic_at_atomic_load_survives_recycle_xthread_race() {
                 // (magic mismatch → foreign/no-op branch) or a guarded
                 // deferred-free push (double-push CAS guard), never corrupting
                 // the substrate.
-                unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+                unsafe { remote_heap.dealloc(addr as *mut u8, layout) };
             }
         }
-        unsafe { HeapRegistry::recycle(remote_heap) };
+        drop(remote_lease);
     });
 
     // ── Owner: dealloc each segment to cache CONCURRENTLY with the remote's
@@ -218,7 +218,7 @@ fn magic_at_atomic_load_survives_recycle_xthread_race() {
         // claimed; `p` is a live allocation it owns (allocated above). This
         // single own-thread free recycles the segment to the large cache
         // (magic → 0), the racing store.
-        unsafe { (*owner_heap).dealloc(p, layout) };
+        unsafe { owner_heap.dealloc(p, layout) };
     }
 
     remote.join().expect("remote cross-thread freer panicked");
@@ -226,9 +226,12 @@ fn magic_at_atomic_load_survives_recycle_xthread_race() {
     // ── Defensive contract: the concurrent stale/duplicate remote free +
     // recycle did not corrupt the substrate. The owner heap is still usable.
     let final_small = Layout::from_size_align(16, 8).unwrap();
-    let p = unsafe { (*owner_heap).alloc(final_small) };
+    let p = owner_heap.alloc(final_small);
     assert!(!p.is_null(), "heap unusable after recycle+xthread race");
-    unsafe { (*owner_heap).dealloc(p, final_small) };
+    // SAFETY: `p` is a live small allocation made above; the owner heap is
+    // still live.
+    unsafe { owner_heap.dealloc(p, final_small) };
 
-    unsafe { HeapRegistry::recycle(owner_heap) };
+    // Drop of the lease recycles the owner's slot (LIVE -> FREE, Release).
+    drop(owner_lease);
 }

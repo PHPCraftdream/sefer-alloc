@@ -17,10 +17,8 @@ fn bounded_scan_skips_uninitialized_busy_and_absent_slots() {
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 0);
     assert_eq!(registry.dbg_slot_state(failed as usize), STATE_FREE);
 
-    let owner = HeapRegistry::claim();
-    assert!(!owner.is_null());
-    // SAFETY: the current claim owns the initialized core exclusively.
-    let index = unsafe { (*owner).id() } as usize;
+    let mut owner = HeapRegistry::dbg_claim_lease().expect("claim");
+    let index = owner.core().id() as usize;
     assert_eq!(
         index, failed as usize,
         "failed initialization remains claimable"
@@ -29,17 +27,17 @@ fn bounded_scan_skips_uninitialized_busy_and_absent_slots() {
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 0);
     assert_eq!(registry.dbg_slot_state(index), STATE_LIVE);
 
-    // SAFETY: this is our sole, still-live claim; never use its core again.
-    unsafe { HeapRegistry::recycle(owner) };
-    let lease = HeapRegistry::try_maintenance().expect("initialized FREE heap");
+    // Never use the owner's core again below.
+    drop(owner);
+    let lease = HeapRegistry::dbg_try_maintenance().expect("initialized FREE heap");
     assert_eq!(lease.slot_index(), index);
     assert_eq!(registry.dbg_slot_state(index), STATE_MAINTENANCE);
     cursor = index;
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 0);
-    let rival = HeapRegistry::claim();
-    assert!(!rival.is_null());
+    let rival = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_ne!(
-        rival, owner,
+        rival.slot_index() as usize,
+        index,
         "failed MAINTENANCE claim CAS grants no authority"
     );
     assert_eq!(registry.dbg_slot_state(index), STATE_MAINTENANCE);
@@ -65,6 +63,5 @@ fn bounded_scan_skips_uninitialized_busy_and_absent_slots() {
     let before = cursor;
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 0), 0);
     assert_eq!(cursor, before);
-    // SAFETY: rival is still this test's sole active claim.
-    unsafe { HeapRegistry::recycle(rival) };
+    drop(rival);
 }

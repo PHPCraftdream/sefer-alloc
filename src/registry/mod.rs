@@ -72,6 +72,9 @@ pub use heap_registry::tcache_and_large_cache_hits_total;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 pub use heap_registry::tcache_hits_total;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use heap_registry::HeapLease;
 #[doc(hidden)]
 pub use heap_registry::HeapRegistry;
 #[doc(hidden)]

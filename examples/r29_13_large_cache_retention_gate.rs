@@ -232,14 +232,11 @@ fn run_child() {
             Arc::clone(&slots_occupied_post_teardown),
         );
         handles.push(thread::spawn(move || {
-            let heap_ptr = HeapRegistry::claim_with_config(config_for(headroom_bytes));
-            assert!(
-                !heap_ptr.is_null(),
-                "HeapRegistry::claim_with_config returned null at thread {i}"
-            );
-            // SAFETY: `heap_ptr` was just returned by `claim_with_config` and is
-            // owned by THIS thread until we `recycle` it below.
-            let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+            let mut lease = HeapRegistry::dbg_claim_lease_with_config(config_for(headroom_bytes))
+                .unwrap_or_else(|| {
+                    panic!("HeapRegistry::claim_with_config returned null at thread {i}")
+                });
+            let heap: &mut HeapCore = lease.core();
 
             // SELF-VERIFICATION: resolved headroom equals the requested one,
             // read back from `AllocCore::dbg_decay_config()` (the diagnostic
@@ -306,9 +303,9 @@ fn run_child() {
             while !release.load(Ordering::Acquire) {
                 thread::sleep(Duration::from_millis(2));
             }
-            // SAFETY: `heap_ptr` was returned by `claim_with_config` above and
-            // has not yet been recycled.
-            unsafe { HeapRegistry::recycle(heap_ptr) };
+            // Lease `Drop` recycles the slot (LIVE → FREE Release) after the
+            // release signal.
+            drop(lease);
         }));
     }
 

@@ -216,6 +216,18 @@ pub(crate) use alloc_core::{
     promotion_byte_bucket, PROMOTION_BYTES_HIST, PROMOTION_BYTES_MAX, PROMOTION_BYTES_MIN,
     PROMOTION_BYTES_SUM, PROMOTION_COUNT,
 };
+/// M-C oracle (Ph4c, receipt open question M-C) numeric observers of the
+/// strict trim-path sidecar ingress drain — see
+/// `alloc_core/sidecar_drain.rs` and `SeferAlloc::dbg_sidecar_ingress_stats`.
+/// Not public API; never read by production logic.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "bench-internals"
+))]
+pub(crate) use alloc_core::{
+    BACKGROUND_INGRESS_STEP_CALLS, SIDECAR_INGRESS_DRAIN_CALLS, SIDECAR_INGRESS_RECORDS_CONSUMED,
+};
 /// R29-4 (task #435) MEASUREMENT-ONLY: the segment-state reconciliation
 /// snapshot types returned by `AllocCore::dbg_segment_state_reconciliation`.
 /// Re-exported from the private `alloc_core_small_pool` submodule so

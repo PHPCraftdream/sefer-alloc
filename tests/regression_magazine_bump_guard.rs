@@ -77,15 +77,15 @@ const SEGMENT: usize = SegmentLayout::SEGMENT;
 fn bogus_uncarved_free_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     // 16B class: block_size == 16 divides SEGMENT/2 (a large power of two), so
     // the chosen uncarved offset is a valid multiple of the class block size.
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     // Alloc one real block to establish a live segment and obtain its base.
-    let anchor = unsafe { (*heap).alloc(layout) };
+    let anchor = heap.alloc(layout);
     assert!(!anchor.is_null());
     let base = (anchor as usize) & !(SEGMENT - 1);
     assert_eq!(
@@ -112,11 +112,13 @@ fn bogus_uncarved_free_is_noop() {
     // The hazardous free: a bogus, never-carved in-segment address. The guard
     // (`off >= bump`) must make this a NO-OP. Without it, `bogus` is pushed
     // into the magazine.
-    unsafe { (*heap).dealloc(bogus, layout) };
+    // SAFETY: `bogus` is a never-carved in-segment address — the deliberate
+    // caller-misuse scenario under test (the guard must swallow it).
+    unsafe { heap.dealloc(bogus, layout) };
 
     // (i) The next alloc of this class must NOT hand back the bogus address.
     // (Without the guard, LIFO magazine pop returns `bogus` immediately.)
-    let after = unsafe { (*heap).alloc(layout) };
+    let after = heap.alloc(layout);
     assert!(!after.is_null());
     assert_ne!(
         after, bogus,
@@ -133,7 +135,7 @@ fn bogus_uncarved_free_is_noop() {
     issued.push(anchor);
     issued.push(after);
     for _ in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "cold-storm alloc returned null");
         issued.push(p);
     }
@@ -153,8 +155,9 @@ fn bogus_uncarved_free_is_noop() {
 
     // Also confirm a re-free of the bogus address remains a no-op (idempotent),
     // and the allocator stays healthy afterwards.
-    unsafe { (*heap).dealloc(bogus, layout) };
-    let healthy = unsafe { (*heap).alloc(layout) };
+    // SAFETY: same deliberate bogus free — must stay an idempotent no-op.
+    unsafe { heap.dealloc(bogus, layout) };
+    let healthy = heap.alloc(layout);
     assert!(
         !healthy.is_null(),
         "allocator unhealthy after bogus re-free"
@@ -164,7 +167,8 @@ fn bogus_uncarved_free_is_noop() {
 
     // Clean up: free every genuinely-issued block (NOT the bogus address).
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, layout) };
+        // SAFETY: `p` is a genuinely-issued live block of this heap.
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }

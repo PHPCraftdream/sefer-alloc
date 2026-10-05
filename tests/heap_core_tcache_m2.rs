@@ -68,26 +68,26 @@ impl Drop for SerialGuard {
 fn t2_double_free_magazine_block_is_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null());
 
     // First free -> pushes to magazine.
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // Second free of SAME ptr -> M2 guard must catch it.
     // (Without the guard, this would push p twice into the magazine,
     // and the next two allocs would return the SAME ptr.)
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // Now alloc twice. The first MUST return p (LIFO from magazine), the
     // second MUST return SOMETHING DIFFERENT -- if the guard worked,
     // p appears at most once in the magazine.
-    let p1 = unsafe { (*heap).alloc(layout) };
-    let p2 = unsafe { (*heap).alloc(layout) };
+    let p1 = heap.alloc(layout);
+    let p2 = heap.alloc(layout);
     assert!(!p1.is_null());
     assert!(!p2.is_null());
     assert_ne!(
@@ -96,10 +96,11 @@ fn t2_double_free_magazine_block_is_noop() {
     );
 
     unsafe {
-        (*heap).dealloc(p1, layout);
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p1, layout);
+        heap.dealloc(p2, layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 /// Variant of T2: triple-free of the same block. The guard must catch each
@@ -108,21 +109,21 @@ fn t2_double_free_magazine_block_is_noop() {
 fn t2_triple_free_still_noop() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null());
 
     // Free three times.
-    unsafe { (*heap).dealloc(p, layout) };
-    unsafe { (*heap).dealloc(p, layout) };
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // Alloc twice: first returns p (LIFO), second must be different.
-    let p1 = unsafe { (*heap).alloc(layout) };
-    let p2 = unsafe { (*heap).alloc(layout) };
+    let p1 = heap.alloc(layout);
+    let p2 = heap.alloc(layout);
     assert!(!p1.is_null());
     assert!(!p2.is_null());
     assert_ne!(
@@ -131,10 +132,11 @@ fn t2_triple_free_still_noop() {
     );
 
     unsafe {
-        (*heap).dealloc(p1, layout);
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p1, layout);
+        heap.dealloc(p2, layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T3: double-free of a flushed block ────────────────────────────────────
@@ -147,14 +149,14 @@ fn t2_triple_free_still_noop() {
 fn t3_double_free_flushed_block_still_caught_by_bitmap() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     const N: usize = 100;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at i={i}");
         ptrs.push(p);
     }
@@ -162,19 +164,19 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
     // Free all. The magazine (cap=16) flushes repeatedly, so the first
     // blocks end up on the BinTable free list.
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
     // Double-free the FIRST block (long since flushed to BinTable).
     // The bitmap M2 guard should catch it (no-op or panic, but NOT
     // corruption). We simply assert the allocator still works after.
-    unsafe { (*heap).dealloc(ptrs[0], layout) };
+    unsafe { heap.dealloc(ptrs[0], layout) };
 
     // Verify the allocator is still functional: alloc a batch and check
     // all pointers are distinct.
     let mut check: Vec<*mut u8> = Vec::with_capacity(20);
     for _ in 0..20 {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(
             !p.is_null(),
             "alloc returned null after flushed double-free"
@@ -190,9 +192,10 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
     );
 
     for &p in &check {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T3-strong: flushed-then-double-freed block does NOT get double-issued ─
@@ -224,32 +227,32 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
 fn t3_flushed_double_free_does_not_double_issue() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     const N: usize = 200;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "initial alloc null at i={i}");
         ptrs.push(p);
     }
 
     for &p in &ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
     let target = ptrs[0];
     // The hazardous step:
-    unsafe { (*heap).dealloc(target, layout) };
+    unsafe { heap.dealloc(target, layout) };
 
     // Drain the magazine and BinTable. 400 > 2 × N covers magazine
     // refills from the entire BinTable free list, guaranteed to pull
     // `target` if it sits there.
     let mut issued: Vec<*mut u8> = Vec::with_capacity(400);
     for _ in 0..400 {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         if p.is_null() {
             break;
         }
@@ -265,9 +268,10 @@ fn t3_flushed_double_free_does_not_double_issue() {
     );
 
     for &p in &issued {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T-false-positive: user data happens to equal our key ──────────────────
@@ -282,11 +286,11 @@ fn t3_flushed_double_free_does_not_double_issue() {
 fn t_false_positive_handled() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null());
 
     // Write an arbitrary value into word1 (offset size_of::<usize>()). Pre-Э6
@@ -298,10 +302,10 @@ fn t_false_positive_handled() {
     unsafe { word1_addr.write(fake_key) };
 
     // Free the block. Must succeed (not silently dropped).
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // Alloc again: should return p (LIFO from the magazine).
-    let p2 = unsafe { (*heap).alloc(layout) };
+    let p2 = heap.alloc(layout);
     assert!(
         !p2.is_null(),
         "alloc returned null after false-positive free"
@@ -312,9 +316,10 @@ fn t_false_positive_handled() {
     assert_eq!(unsafe { p2.read() }, 0xBB, "read-back mismatch");
 
     unsafe {
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p2, layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T-key-round-trip: key in word1 does not break alloc/free cycle ────────
@@ -327,22 +332,22 @@ fn t_false_positive_handled() {
 fn t_key_does_not_break_round_trip() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let mut last_ptr: *mut u8 = core::ptr::null_mut();
     for round in 0..200 {
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at round {round}");
         // Write user data (overwriting whatever is in word0/word1).
         unsafe { core::ptr::write_bytes(p, (round & 0xFF) as u8, 16) };
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
         // Э6: free leaves the block body untouched. Next alloc must still work.
         last_ptr = p;
     }
     // Final alloc should still work.
-    let p_final = unsafe { (*heap).alloc(layout) };
+    let p_final = heap.alloc(layout);
     assert!(!p_final.is_null(), "final alloc returned null");
     // The block is usable.
     unsafe { core::ptr::write_bytes(p_final, 0xCC, 16) };
@@ -350,9 +355,10 @@ fn t_key_does_not_break_round_trip() {
     let _ = last_ptr; // suppress unused warning
 
     unsafe {
-        (*heap).dealloc(p_final, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p_final, layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ── T2 with larger size class ─────────────────────────────────────────────
@@ -363,24 +369,24 @@ fn t_key_does_not_break_round_trip() {
 fn t2_double_free_64b_class() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(64, 8).unwrap();
 
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null());
 
     // Write user data to the full 64 bytes (including word1).
     unsafe { core::ptr::write_bytes(p, 0xDD, 64) };
 
     // First free -> pushes to magazine (Э6: word1 left untouched).
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // Second free of SAME ptr -> M2 guard must catch it.
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
-    let p1 = unsafe { (*heap).alloc(layout) };
-    let p2 = unsafe { (*heap).alloc(layout) };
+    let p1 = heap.alloc(layout);
+    let p2 = heap.alloc(layout);
     assert!(!p1.is_null());
     assert!(!p2.is_null());
     assert_ne!(
@@ -389,8 +395,9 @@ fn t2_double_free_64b_class() {
     );
 
     unsafe {
-        (*heap).dealloc(p1, layout);
-        (*heap).dealloc(p2, layout);
-        HeapRegistry::recycle(heap);
+        heap.dealloc(p1, layout);
+        heap.dealloc(p2, layout);
     }
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

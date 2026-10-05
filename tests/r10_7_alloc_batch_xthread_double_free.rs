@@ -125,8 +125,8 @@ impl Drop for SerialGuard {
 fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
 
@@ -135,7 +135,7 @@ fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     //     into the magazine → pops P for the caller. After this, the magazine
     //     holds `refill_n - 1` blocks of class 0, and P is live in the caller.
     // SAFETY: valid layout; heap is the calling thread's own slot.
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null(), "alloc(P) returned null");
 
     // (2) Own-thread free P → P is pushed to the magazine (the magazine had
@@ -143,7 +143,7 @@ fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     //     magazine-residency bit is SET. The alloc_bitmap still reads
     //     "allocated" (the magazine push does not `mark_free`).
     // SAFETY: `p` was allocated above with `layout`; freed once here.
-    unsafe { (*heap).dealloc(p, layout) };
+    unsafe { heap.dealloc(p, layout) };
 
     // (3) Cross-thread free P from a producer thread. This is a DELIBERATE
     //     double-free (P was already freed in step 2) — caller UB under the
@@ -156,8 +156,9 @@ fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     let x_addr = p as usize;
     let producer = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote = HeapRegistry::claim();
-        assert!(!remote.is_null(), "producer HeapRegistry::claim failed");
+        let mut producer_lease =
+            HeapRegistry::dbg_claim_lease().expect("producer HeapRegistry::claim failed");
+        let remote = producer_lease.core();
         // SAFETY (R6-MS-1/2 + raw-deref): `remote` is a live heap; `x_addr`
         // is a block previously allocated by `heap` (the owner). This dealloc
         // from a DIFFERENT thread routes through `dealloc_foreign_slow`, which
@@ -166,9 +167,9 @@ fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
         // to exercise the drain's magazine-residency rejection guard. The
         // allocator handles this defensively (the guard returns false, no
         // corruption) under the fixed code.
-        unsafe { (*remote).dealloc(x_addr as *mut u8, layout) };
-        // SAFETY: `remote` was claimed above; recycled whole here.
-        unsafe { HeapRegistry::recycle(remote) };
+        unsafe { remote.dealloc(x_addr as *mut u8, layout) };
+        // The lease Drop recycles the slot whole.
+        drop(producer_lease);
     });
     producer.join().expect("producer thread must not panic");
 
@@ -183,7 +184,7 @@ fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     // SAFETY: `layout` is a valid non-zero Layout; `heap` is the calling
     // thread's own slot. Every returned non-null pointer is freed exactly
     // once in the cleanup loop below.
-    let filled: usize = unsafe { (*heap).alloc_batch(layout, &mut out) };
+    let filled: usize = heap.alloc_batch(layout, &mut out);
     assert!(filled > 0, "alloc_batch returned 0 (OOM?)");
 
     // (5) Assert NO duplicate pointers in `out[..filled]`. The HashSet check
@@ -219,9 +220,9 @@ fn alloc_batch_no_duplicate_on_stale_xthread_double_free_entry() {
     // SAFETY: every `q` in `out[..filled]` was produced by `alloc_batch` above
     // with `layout`; each is freed exactly once here.
     for &q in &out[..filled] {
-        unsafe { (*heap).dealloc(q, layout) };
+        unsafe { heap.dealloc(q, layout) };
     }
 
     // SAFETY: `heap` was claimed above; recycled whole here.
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }

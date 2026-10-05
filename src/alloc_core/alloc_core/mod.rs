@@ -58,6 +58,19 @@ mod counters;
 #[cfg(feature = "alloc-global")]
 pub(crate) use counters::LARGE_REMOTE_RETIREMENTS;
 
+/// M-C oracle (Ph4c, receipt open question M-C) numeric observers of the
+/// strict trim-path sidecar ingress drain — see `sidecar_drain.rs` and
+/// `SeferAlloc::dbg_sidecar_ingress_stats`. Not public API; never read by
+/// production logic.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "bench-internals"
+))]
+pub(crate) use sidecar_drain::{
+    BACKGROUND_INGRESS_STEP_CALLS, SIDECAR_INGRESS_DRAIN_CALLS, SIDECAR_INGRESS_RECORDS_CONSUMED,
+};
+
 /// Group module: object lifecycle — construction config resolution, bootstrap
 /// invocation, and teardown.
 #[path = "lifecycle.rs"]

@@ -88,8 +88,8 @@ impl Drop for SerialGuard {
 /// lifetime-cumulative count, which may already be nonzero if `claim`
 /// handed back a recycled slot from an earlier test/run in this process.
 fn drive_one_heap() -> u64 {
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // `claim` may hand back a RECYCLED slot whose `HeapCore` (and its
     // `tcache_hits` counter) was already live -- possibly with a nonzero
@@ -102,10 +102,7 @@ fn drive_one_heap() -> u64 {
     // before/after delta of the process-wide total is an apples-to-oranges
     // bug -- exactly what the first version of this test got wrong; see the
     // counterfactual note in the module doc comment).
-    //
-    // SAFETY: `heap` is live, just claimed by this thread, not yet
-    // recycled; read-only Relaxed load.
-    let local_before = unsafe { (*heap).tcache_hits() };
+    let local_before = heap.tcache_hits();
 
     let shapes = [
         (640usize, 128usize),
@@ -114,19 +111,19 @@ fn drive_one_heap() -> u64 {
     ];
     for &(size, align) in &shapes {
         let layout = Layout::from_size_align(size, align).unwrap();
-        let p1 = unsafe { (*heap).alloc(layout) };
+        let p1 = heap.alloc(layout);
         assert!(!p1.is_null(), "alloc({size},{align}) returned null");
-        unsafe { (*heap).dealloc(p1, layout) };
-        let p2 = unsafe { (*heap).alloc(layout) };
+        // SAFETY: `p1` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p1, layout) };
+        let p2 = heap.alloc(layout);
         assert!(!p2.is_null(), "second alloc({size},{align}) returned null");
-        unsafe { (*heap).dealloc(p2, layout) };
+        // SAFETY: `p2` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p2, layout) };
     }
 
-    // SAFETY: `heap` is a live `*mut HeapCore` returned by `claim` above,
-    // not yet recycled. `tcache_hits()` is a read-only Relaxed load.
-    let local_after = unsafe { (*heap).tcache_hits() };
+    let local_after = heap.tcache_hits();
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
     local_after.saturating_sub(local_before)
 }
 
@@ -187,8 +184,8 @@ fn tcache_hits_single_heap_matches_local_and_global() {
 
     let before = tcache_hits_total();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // `HeapRegistry::claim` may hand back a RECYCLED slot whose `HeapCore`
     // (and thus its `tcache_hits` counter) was already live before this
@@ -198,24 +195,22 @@ fn tcache_hits_single_heap_matches_local_and_global() {
     // Capture its starting value here so the "how many hits did THIS test's
     // workload cause" comparison below is a delta, matching the delta we
     // compute for the process-wide total.
-    //
-    // SAFETY: `heap` is live, just claimed by this thread, not yet
-    // recycled; read-only Relaxed load.
-    let local_before = unsafe { (*heap).tcache_hits() };
+    let local_before = heap.tcache_hits();
 
     const N: usize = 20;
     let layout = Layout::from_size_align(384, 128).unwrap();
     for _ in 0..N {
-        let p1 = unsafe { (*heap).alloc(layout) };
+        let p1 = heap.alloc(layout);
         assert!(!p1.is_null());
-        unsafe { (*heap).dealloc(p1, layout) };
-        let p2 = unsafe { (*heap).alloc(layout) };
+        // SAFETY: `p1` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p1, layout) };
+        let p2 = heap.alloc(layout);
         assert!(!p2.is_null());
-        unsafe { (*heap).dealloc(p2, layout) };
+        // SAFETY: `p2` is a live allocation of this heap with `layout`.
+        unsafe { heap.dealloc(p2, layout) };
     }
 
-    // SAFETY: `heap` is live, not yet recycled; read-only Relaxed load.
-    let local_after = unsafe { (*heap).tcache_hits() };
+    let local_after = heap.tcache_hits();
     let local_delta = local_after.saturating_sub(local_before);
     let after = tcache_hits_total();
 
@@ -241,5 +236,5 @@ fn tcache_hits_single_heap_matches_local_and_global() {
         after.saturating_sub(before)
     );
 
-    unsafe { HeapRegistry::recycle(heap) };
+    drop(lease);
 }

@@ -85,8 +85,8 @@ fn c2_same_class_realloc_is_inplace() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // 113 and 140 bytes (align 1) both classify into the geometric table's
     // 144-byte class (classes: ..., 112, 144, 192, ... -- both sizes fall in
@@ -95,11 +95,12 @@ fn c2_same_class_realloc_is_inplace() {
     // returned pointer's identity below) so this test fails loudly (not
     // vacuously) if the table geometry ever changes.
     let old_layout = Layout::from_size_align(113, 1).unwrap();
-    let p1 = unsafe { (*heap).alloc(old_layout) };
+    let p1 = heap.alloc(old_layout);
     assert!(!p1.is_null(), "initial alloc(113,1) returned null");
     unsafe { core::ptr::write_bytes(p1, 0x5A, 113) };
 
-    let p2 = unsafe { (*heap).realloc(p1, old_layout, 140) };
+    // SAFETY: source pointer is a live allocation with the given old layout.
+    let p2 = unsafe { heap.realloc(p1, old_layout, 140) };
     assert!(!p2.is_null(), "realloc(113->140) returned null");
 
     assert_eq!(
@@ -117,9 +118,11 @@ fn c2_same_class_realloc_is_inplace() {
     );
 
     let new_layout = Layout::from_size_align(140, 1).unwrap();
-    unsafe { (*heap).dealloc(p2, new_layout) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(p2, new_layout) };
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }
 
 /// C2, assertion (3)+(4): a cross-class shrink through `HeapCore::realloc`
@@ -132,16 +135,17 @@ fn c2_cross_class_shrink_relocates_and_preserves_data() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let l0 = Layout::from_size_align(1, 1).unwrap();
-    let p0 = unsafe { (*heap).alloc(l0) };
+    let p0 = heap.alloc(l0);
     assert!(!p0.is_null(), "initial alloc failed");
 
     // Grow into a class covering 4097 bytes (B1's page-aligned 4096 class or
     // a neighbouring geometric class).
-    let p1 = unsafe { (*heap).realloc(p0, l0, 4097) };
+    // SAFETY: source pointer is a live allocation with the given old layout.
+    let p1 = unsafe { heap.realloc(p0, l0, 4097) };
     assert!(!p1.is_null(), "grow realloc failed");
     unsafe { core::ptr::write_bytes(p1, 0xCD, 4097) };
 
@@ -150,7 +154,8 @@ fn c2_cross_class_shrink_relocates_and_preserves_data() {
     // regression_realloc_cross_class_shrink.rs's precondition; both classify
     // to Some via SizeClasses post-B1, and to different classes for a
     // genuine cross-class shrink on the current table geometry).
-    let p2 = unsafe { (*heap).realloc(p1, l1, 3713) };
+    // SAFETY: source pointer is a live allocation with the given old layout.
+    let p2 = unsafe { heap.realloc(p1, l1, 3713) };
     assert!(!p2.is_null(), "shrink realloc failed");
 
     // Whether OPT-F took the in-place path or the relocate path is a table-
@@ -162,7 +167,9 @@ fn c2_cross_class_shrink_relocates_and_preserves_data() {
     );
 
     let l2 = Layout::from_size_align(3713, 1).unwrap();
-    unsafe { (*heap).dealloc(p2, l2) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(p2, l2) };
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
+    drop(lease);
 }

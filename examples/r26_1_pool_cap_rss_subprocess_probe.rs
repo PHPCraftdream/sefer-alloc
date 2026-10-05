@@ -293,19 +293,15 @@ fn run_child() -> ChildOutcome {
         let ready_count = Arc::clone(&ready_count);
         let caps = Arc::clone(&caps);
         handles.push(thread::spawn(move || {
-            // Each thread claims its OWN heap via `HeapRegistry::claim_with_config`
+            // Each thread claims its OWN heap via `HeapRegistry::dbg_claim_lease_with_config`
             // — NOT `SeferAlloc` (which would hide the HeapCore behind private
-            // TLS). Raw `*mut HeapCore` is the established pattern from
+            // TLS). The lease is the established pattern from
             // `r13_9_class_aware_dirty_sidecar_rss.rs::claim_heap_with_materialised_sidecar`.
-            let heap_ptr = HeapRegistry::claim_with_config(config_for(pool_segments));
-            assert!(
-                !heap_ptr.is_null(),
-                "HeapRegistry::claim_with_config returned null at thread {i}"
-            );
-            // SAFETY: `heap_ptr` was just returned by `claim_with_config` and is
-            // owned by THIS thread until we `recycle` it below. No other thread
-            // holds a reference to this slot's HeapCore.
-            let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+            let mut lease = HeapRegistry::dbg_claim_lease_with_config(config_for(pool_segments))
+                .unwrap_or_else(|| {
+                    panic!("HeapRegistry::claim_with_config returned null at thread {i}")
+                });
+            let heap: &mut HeapCore = lease.core();
 
             // === SELF-VERIFICATION #1: resolved cap equals the requested one ===
             // This is the direct proof R25-5's RSS axis lacked. A panic here
@@ -331,15 +327,12 @@ fn run_child() -> ChildOutcome {
             }
 
             // Recycle so the slot returns to `free_slots` cleanly on thread exit
-            // (mirrors `r13_9_class_aware_dirty_sidecar_rss.rs:266`'s
-            // `unsafe { HeapRegistry::recycle(h) }` pattern). In a fresh
+            // (mirrors the established claim/recycle discipline — now the
+            // lease's own `Drop`, no `unsafe` recycle call). In a fresh
             // single-arm process this is cosmetic (no later arm will reuse the
-            // slot), but keeping the established claim/recycle discipline makes
-            // the worker identical in shape to production usage.
-            // SAFETY: `heap_ptr` was returned by `claim_with_config` above and
-            // has not yet been recycled — exactly the contract `recycle`
-            // requires.
-            unsafe { HeapRegistry::recycle(heap_ptr) };
+            // slot), but keeping the discipline makes the worker identical in
+            // shape to production usage.
+            drop(lease);
         }));
     }
 

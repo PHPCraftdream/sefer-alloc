@@ -288,14 +288,11 @@ fn run_child() {
         );
         let burst_label = burst_label.clone();
         handles.push(thread::spawn(move || {
-            let heap_ptr = HeapRegistry::claim_with_config(config_for(headroom_bytes));
-            assert!(
-                !heap_ptr.is_null(),
-                "HeapRegistry::claim_with_config returned null at thread {i}"
-            );
-            // SAFETY: `heap_ptr` was just returned by `claim_with_config` and
-            // is owned by THIS thread until `recycle` at the end.
-            let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+            let mut lease = HeapRegistry::dbg_claim_lease_with_config(config_for(headroom_bytes))
+                .unwrap_or_else(|| {
+                    panic!("HeapRegistry::claim_with_config returned null at thread {i}")
+                });
+            let heap: &mut HeapCore = lease.core();
 
             let (_, _, resolved) = heap.dbg_decay_config();
             assert_eq!(
@@ -329,9 +326,8 @@ fn run_child() {
 
             finished.fetch_add(1, Ordering::Release);
 
-            // SAFETY: `heap_ptr` was returned by `claim_with_config` above,
-            // not yet recycled, and no other thread touches it.
-            unsafe { HeapRegistry::recycle(heap_ptr) };
+            // Lease `Drop` recycles the slot (LIVE → FREE Release).
+            drop(lease);
         }));
     }
 

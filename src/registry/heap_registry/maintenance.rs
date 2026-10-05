@@ -1,9 +1,7 @@
 //! Bounded, non-materialising maintenance of registry heaps.
 //!
-//! Unsafe is confined to the successful MaintenanceLease handoff. A recycled
-//! owner's raw alias is dead, and terminal publishers touch only independent
-//! route sidecars, never the exclusively borrowed HeapCore.
-#![allow(unsafe_code)]
+//! Ph4c: `MaintenanceLease::with_core` is safe (proof at its doc comment);
+//! this file no longer contains any `unsafe`.
 
 use core::sync::atomic::Ordering;
 
@@ -31,16 +29,9 @@ impl HeapRegistry {
             let Some(mut lease) = Self::try_maintenance_at(index) else {
                 continue;
             };
-            // SAFETY: only the successful FREE -> MAINTENANCE CAS grants
-            // access; initialization was Acquire-observed. Recycle ends all
-            // legacy owner's accesses before its Release publication. Foreign
-            // producers access independent sidecars, not HeapCore or its
-            // reservations. The callback neither allocates nor exports aliases.
-            unsafe {
-                lease.with_core(|core| {
-                    core.background_maintenance_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
-                })
-            };
+            lease.with_core(|core| {
+                core.background_maintenance_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
+            });
             drop(lease);
             maintained += 1;
         }

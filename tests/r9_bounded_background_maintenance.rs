@@ -88,10 +88,8 @@ fn one_unit_cursor_retires_early_and_late_words_once() {
 
 #[test]
 fn heap_worker_hook_uses_persistent_cursor_across_visits() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: claim grants this thread exclusive ownership through recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let layout = Layout::from_size_align(BLOCK, 16).unwrap();
     let sentinel = heap.alloc(layout);
     let victim = heap.alloc(layout);
@@ -108,11 +106,11 @@ fn heap_worker_hook_uses_persistent_cursor_across_visits() {
         assert!(visits <= word(victim) - START + 2);
     }
     assert!(!heap.dbg_is_free_for(sentinel));
-    // SAFETY: sentinel is the remaining unique issue; recycle retains none.
+    // SAFETY: sentinel is the remaining unique issue; recycling retains none.
     unsafe {
         heap.dealloc(sentinel, layout);
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }
 
 #[test]

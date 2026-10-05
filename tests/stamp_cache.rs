@@ -64,15 +64,14 @@ fn alloc_loop_in_one_segment_does_not_panic() {
     // Ensure the registry is bootstrapped.
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(64, 8).unwrap();
     let mut ptrs: Vec<*mut u8> = Vec::new();
 
     for i in 0u8..200 {
-        // SAFETY: heap is a live slot; single-writer (this thread owns it).
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at iteration {i}");
         // Write + read-back to verify the pointer is usable.
         unsafe {
@@ -84,11 +83,11 @@ fn alloc_loop_in_one_segment_does_not_panic() {
 
     // Free all (own-thread).
     for p in ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    // SAFETY: we are done with this heap core pointer; return the slot.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ─── test 2 ────────────────────────────────────────────────────────────────
@@ -101,8 +100,8 @@ fn alloc_across_classes_works() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     // Sizes that span several different size classes.
     let sizes: &[usize] = &[16, 32, 64, 128, 256, 512, 1024, 2048];
@@ -113,7 +112,7 @@ fn alloc_across_classes_works() {
     for &sz in sizes {
         let layout = Layout::from_size_align(sz, 8).unwrap();
         for i in 0u8..n_per_size as u8 {
-            let p = unsafe { (*heap).alloc(layout) };
+            let p = heap.alloc(layout);
             assert!(!p.is_null(), "alloc({sz}) returned null at i={i}");
             unsafe {
                 core::ptr::write_bytes(p, i.wrapping_add(sz as u8), sz);
@@ -129,10 +128,11 @@ fn alloc_across_classes_works() {
 
     // Free everything (own-thread).
     for (p, layout) in all_ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }
 
 // ─── test 3 (xthread only) ─────────────────────────────────────────────────
@@ -160,8 +160,8 @@ fn stamp_cache_writes_owner_thread_free() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(64, 8).unwrap();
 
@@ -171,8 +171,7 @@ fn stamp_cache_writes_owner_thread_free() {
     const N: usize = 64;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        // SAFETY: heap is a live slot; single-writer (this thread owns it).
-        let p = unsafe { (*heap).alloc(layout) };
+        let p = heap.alloc(layout);
         assert!(!p.is_null(), "alloc returned null at i={i}");
         ptrs.push(p);
     }
@@ -183,7 +182,7 @@ fn stamp_cache_writes_owner_thread_free() {
     // reading the stamped field; if the stamp were missing it would return
     // `None` (or a mismatched id).
     for &p in &ptrs {
-        let owner = unsafe { (*heap).dbg_owner_id_for(p) };
+        let owner = heap.dbg_owner_id_for(p);
         assert!(
             owner.is_some(),
             "stamp-cache regression: ptr {:p} has no owner_thread_free stamp \
@@ -194,8 +193,9 @@ fn stamp_cache_writes_owner_thread_free() {
 
     // Free all (own-thread).
     for p in ptrs {
-        unsafe { (*heap).dealloc(p, layout) };
+        unsafe { heap.dealloc(p, layout) };
     }
 
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

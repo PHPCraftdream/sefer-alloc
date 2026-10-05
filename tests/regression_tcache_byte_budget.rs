@@ -68,13 +68,15 @@ fn small_class_refill_unaffected_by_byte_budget() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     let layout = Layout::from_size_align(16, 8).unwrap();
-    let class_idx = unsafe { (*heap).dbg_class_for(layout) }.expect("16B must be a small class");
+    let class_idx = heap
+        .dbg_class_for(layout)
+        .expect("16B must be a small class");
 
-    let want = unsafe { (*heap).dbg_refill_n_for_class(class_idx) };
+    let want = heap.dbg_refill_n_for_class(class_idx);
     assert_eq!(
         want, TCACHE_CAP,
         "16B class's refill amount should be the full TCACHE_CAP (byte budget \
@@ -84,9 +86,9 @@ fn small_class_refill_unaffected_by_byte_budget() {
     // Drive one refill (first alloc on an empty magazine) and confirm the
     // magazine actually filled to TCACHE_CAP - 1 remaining (one popped for
     // the caller) — i.e. the refill really pulled `want` blocks.
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     assert!(!p.is_null(), "alloc must not fail");
-    let mag_cnt = unsafe { (*heap).dbg_tcache_count(class_idx) };
+    let mag_cnt = heap.dbg_tcache_count(class_idx);
     assert_eq!(
         mag_cnt as usize,
         TCACHE_CAP - 1,
@@ -94,16 +96,18 @@ fn small_class_refill_unaffected_by_byte_budget() {
          hold TCACHE_CAP - 1 blocks (one popped for the caller)"
     );
 
-    unsafe { (*heap).dealloc(p, layout) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(p, layout) };
     // Drain the magazine to avoid leaking state into later tests in this
     // binary (best-effort; other files already tolerate residual state via
     // per-file serialisation, but this keeps the test self-contained).
     for _ in 0..(TCACHE_CAP as u32) {
-        let p2 = unsafe { (*heap).alloc(layout) };
+        let p2 = heap.alloc(layout);
         if p2.is_null() {
             break;
         }
-        unsafe { (*heap).dealloc(p2, layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p2, layout) };
     }
 }
 
@@ -124,8 +128,8 @@ fn large_small_class_refill_bounded_by_byte_budget() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let heap = lease.core();
 
     // Search downward from a large candidate size for the first size that is
     // classified as a small class AND whose refill amount is clamped below
@@ -147,10 +151,10 @@ fn large_small_class_refill_bounded_by_byte_budget() {
             Ok(l) => l,
             Err(_) => continue,
         };
-        let Some(class_idx) = (unsafe { (*heap).dbg_class_for(layout) }) else {
+        let Some(class_idx) = heap.dbg_class_for(layout) else {
             continue; // Large/huge path — not a magazine class.
         };
-        let want = unsafe { (*heap).dbg_refill_n_for_class(class_idx) };
+        let want = heap.dbg_refill_n_for_class(class_idx);
         if want < TCACHE_CAP {
             found = Some((class_idx, layout, want));
             break;
@@ -181,12 +185,12 @@ fn large_small_class_refill_bounded_by_byte_budget() {
     // `want` (minus the one block popped for the caller) — proving the
     // clamp is honoured on the LIVE alloc path, not just in the pure
     // function.
-    let p = unsafe { (*heap).alloc(layout) };
+    let p = heap.alloc(layout);
     if p.is_null() {
         eprintln!("OOM allocating the probed large-small-class layout — skip");
         return;
     }
-    let mag_cnt = unsafe { (*heap).dbg_tcache_count(class_idx) } as usize;
+    let mag_cnt = heap.dbg_tcache_count(class_idx) as usize;
     assert_eq!(
         mag_cnt,
         want - 1,
@@ -210,13 +214,15 @@ fn large_small_class_refill_bounded_by_byte_budget() {
         layout.size()
     );
 
-    unsafe { (*heap).dealloc(p, layout) };
+    // SAFETY: $2 is a live allocation of this heap; layout matches.
+    unsafe { heap.dealloc(p, layout) };
     // Best-effort drain.
     for _ in 0..(want as u32) {
-        let p2 = unsafe { (*heap).alloc(layout) };
+        let p2 = heap.alloc(layout);
         if p2.is_null() {
             break;
         }
-        unsafe { (*heap).dealloc(p2, layout) };
+        // SAFETY: $2 is a live allocation of this heap; layout matches.
+        unsafe { heap.dealloc(p2, layout) };
     }
 }

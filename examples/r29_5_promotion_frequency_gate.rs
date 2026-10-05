@@ -185,10 +185,8 @@ fn main() {
     );
     println!();
 
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null(), "HeapRegistry::claim returned null");
-    // SAFETY: `heap_ptr` was just returned by `claim`.
-    let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned null");
+    let heap: &mut HeapCore = lease.core();
 
     // Baseline: promotion counters should read 0 before any growth activity
     // (self-verification that we are reading a fresh process's counters,
@@ -309,6 +307,6 @@ fn main() {
          bytes_min={promo_bytes_min} bytes_max={promo_bytes_max}"
     );
 
-    // SAFETY: `heap_ptr` was returned by `claim` above.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    // Lease `Drop` recycles the slot (LIVE → FREE Release).
+    drop(lease);
 }

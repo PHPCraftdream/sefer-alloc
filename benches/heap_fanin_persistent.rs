@@ -16,11 +16,12 @@
 
 use std::alloc::Layout;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
 /// A small-class size well under `SMALL_MAX`, so every block routes through
 /// the ring (never the Large/A1 path). Matches `tests/remote_fanin.rs`'s and
@@ -146,128 +147,116 @@ impl CellResult {
 /// invocation's own address space, reclaimed whole by the OS on process
 /// exit.
 fn run_cell(threads: usize, burst: usize, owner: OwnerState) -> CellResult {
+    // ---- Owner setup (claim + pre-allocate blocks the producers will free) ----
+    // Ph4c: migrated to the safe `dbg_claim_lease` API. `HeapLease` is
+    // `!Send`, so the lease authority now lives exactly where the ownership
+    // lives — semantically MORE precise than the legacy raw-pointer handoff:
+    //
+    // - `active`/`slow`: the owner THREAD claims its own lease (it IS the
+    //   slot's owner), pre-allocates the `burst` blocks BEFORE waiting on
+    //   `start_barrier` (it joins the barrier as an extra party — all of
+    //   this is outside the timed window), and hands the address list plus
+    //   its slot index to the coordinator over an mpsc channel so the
+    //   producer slices can be built from it. The timed loop then uses only
+    //   `lease.core()` (`&mut`, same thread). The lease is DROPPED at thread
+    //   end (LIVE → FREE); the coordinator re-claims the slot afterwards
+    //   (untimed) for the residual sidecar-ingress drain — the LIFO reuse
+    //   hint set by the Drop returns the same slot, asserted via
+    //   `slot_index()`, and the drained slot is `mem::forget`-ed to keep the
+    //   "never recycle within this process" discipline intact.
+    // - `paused`/`exited`: no owner thread (as before); the coordinator
+    //   holds the lease itself and pre-allocates through `lease.core()`.
+    //   `exited` drops the lease at exactly the old `HeapRegistry::recycle`
+    //   point — before any producer touches the blocks, so every free in
+    //   the timed burst targets a segment whose owning slot is genuinely
+    //   FREE for the whole burst. `paused` keeps the lease alive until the
+    //   untimed time-to-reclaim measurement below, then forgets it (the
+    //   slot stays LIVE for the process, exactly like the legacy leaked
+    //   raw pointer).
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
-    // ---- Owner setup (claim + pre-allocate blocks the producers will free) ----
-    let owner_heap = HeapRegistry::claim();
-    assert!(!owner_heap.is_null(), "owner HeapRegistry::claim failed");
-    let owner_heap_addr = owner_heap as usize;
-
-    let mut owner_ptrs: Vec<*mut u8> = Vec::with_capacity(burst);
-    for _ in 0..burst {
-        let p = unsafe { (*owner_heap).alloc(layout) };
-        assert!(!p.is_null(), "owner pre-alloc returned null");
-        owner_ptrs.push(p);
-    }
-    let addrs: Vec<usize> = owner_ptrs.iter().map(|&p| p as usize).collect();
-
-    // `exited`: recycle the owner's slot NOW, before any producer touches its
-    // blocks — every free in the timed burst below targets a segment whose
-    // owning slot is genuinely FREE for the whole burst (see module doc).
-    if owner == OwnerState::Exited {
-        unsafe { HeapRegistry::recycle(owner_heap) };
-    }
-
-    // ---- Producer setup: each claims its own heap (a real remote thread —
-    // never the owner's), splits the address list into disjoint slices.
-    // Threads are spawned ONCE here, parked on `start_barrier`, and perform
-    // their entire burst slice after release — this IS the "threads created
-    // once, outside the timer" fix over heap_fanin_production.rs. ----
-    let chunk = burst.div_ceil(threads);
-    let slices: Vec<Vec<usize>> = addrs.chunks(chunk).map(<[usize]>::to_vec).collect();
-    // Some (T, burst) combinations produce fewer slices than the REQUESTED
-    // `threads` — `chunks(chunk)` never emits empty slices, and two-stage
-    // ceiling division (chunk_size = ceil(burst/threads), then slice_count =
-    // ceil(burst/chunk_size)) can round down by exactly one when `burst`
-    // is not an exact multiple of `chunk_size`. Concretely, at this
-    // harness's own T=64/burst=1_000 matrix point: chunk_size =
-    // ceil(1000/64) = 16, and ceil(1000/16) = 63, not 64 — the 63rd slice
-    // absorbs the remainder (8 items) instead of a 64th thread being spawned
-    // for a near-empty slice. This is expected two-stage-chunking arithmetic
-    // (every one of the `burst` items is still covered exactly once, just by
-    // one fewer thread than nominally requested at this specific burst/T
-    // ratio), not an off-by-one bug — `report()`'s printed `T=` column
-    // always reflects this ACTUAL slice count (`effective_threads`), not the
-    // caller's nominal `threads` argument, specifically so a reader is never
-    // shown a `T=64` label next to a run that genuinely used 63 producer
-    // threads.
-    let effective_threads = slices.len().max(1);
-
-    let start_barrier = Arc::new(Barrier::new(effective_threads + 1));
-    let done_barrier = Arc::new(Barrier::new(effective_threads + 1));
-
-    let mut handles = Vec::with_capacity(effective_threads);
-    for slice in slices {
-        let start_barrier = Arc::clone(&start_barrier);
-        let done_barrier = Arc::clone(&done_barrier);
-        handles.push(thread::spawn(move || {
-            let _ = bootstrap::ensure();
-            let remote_heap = HeapRegistry::claim();
-            assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
-
-            // Parked here until the main thread releases every producer
-            // simultaneously — this rendezvous is OUTSIDE the timed region
-            // from the main thread's point of view (the main thread starts
-            // its Instant AFTER this barrier releases, not before).
-            start_barrier.wait();
-
-            let mut latencies: Vec<Duration> = Vec::with_capacity(slice.len());
-            for addr in slice {
-                let p = addr as *mut u8;
-                let t0 = Instant::now();
-                unsafe { (*remote_heap).dealloc(p, layout) };
-                latencies.push(t0.elapsed());
-            }
-
-            done_barrier.wait();
-            // Deliberately NOT recycled — see run_cell's doc comment on the
-            // "never recycle within this process" fix (the coordinator's
-            // zero-trust review caught cross-cell state leakage from LIFO
-            // slot reuse; this is the other half of that fix, alongside the
-            // owner heap below).
-            latencies
-        }));
-    }
-
-    // Give every producer thread time to reach the start barrier (claim +
-    // bootstrap can take a little wall-clock on first touch) — this wait is
-    // itself outside the timed region; it only ensures the barrier release
-    // below is the actual synchronized start rather than a race with a
-    // still-initializing producer.
-    thread::sleep(Duration::from_millis(1));
-
-    // ---- Owner thread for `active` / `slow`: spawned here (once), runs
-    // concurrently with the producers' burst until it observes the done
-    // barrier's release via a shared flag. `paused`/`exited` do no
-    // concurrent owner work at all.
-    //
-    // `thread::yield_now()` every `OWNER_YIELD_EVERY` iterations (`active`
-    // only — `slow` already yields the scheduler via its own sleep): on a
-    // machine with fewer logical CPUs than `threads + 1` (every T >
-    // num_cpus cell in this matrix — T up to 64 vs this harness's own
-    // 16-core dev box), a completely uncooperative owner spin loop measurably
-    // starves the producer threads it is supposed to be racing against
-    // (measured: without this yield, T=32/64 `active` cells inflated
-    // wall_total into the hundreds-of-ms/seconds range purely from scheduler
-    // contention, not genuine ring-retry cost — an artifact of THIS harness's
-    // owner loop, not a production signal). A bare `spin_loop()` hint is not
-    // enough here (it is a CPU pause hint, not a scheduler yield); this
-    // periodic real yield keeps the owner's "always draining" semantics
-    // (still the tightest-draining state on the pressure axis relative to
-    // `slow`/`paused`/`exited`) while letting an oversubscribed run actually
-    // make forward progress within this project's fast-bench-profile budget.
     const OWNER_YIELD_EVERY: u32 = 64;
     let owner_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let owner_thread: Option<thread::JoinHandle<()>> = match owner {
+    let (owner_addr_tx, owner_addr_rx) = mpsc::channel::<(u32, Vec<usize>)>();
+
+    let mut owner_thread: Option<thread::JoinHandle<()>> = None;
+    // Lease held by the coordinator across the burst (Paused only; `exited`
+    // is dropped at the recycle point below, the other states never hold it
+    // on this thread).
+    let mut owner_lease: Option<sefer_alloc::registry::heap_registry::HeapLease> = None;
+    // Slot index of the owner's heap (sent over the channel for active/slow,
+    // read off the lease for paused) — used by the untimed post-burst drain
+    // to assert the fresh re-claim got the SAME slot back.
+    let owner_slot_index: u32;
+    let addrs: Vec<usize>;
+
+    // Barrier geometry must be fixed BEFORE the owner thread is spawned (it
+    // is a `start_barrier` party itself for active/slow), but the producer
+    // slice count is derivable purely from (threads, burst) — the exact
+    // same two-stage ceiling-division arithmetic as `slices.len()` below.
+    let chunk = burst.div_ceil(threads);
+    let effective_threads = burst.div_ceil(chunk).max(1);
+    let owner_is_thread = matches!(owner, OwnerState::Active | OwnerState::Slow);
+    let start_barrier = Arc::new(Barrier::new(
+        effective_threads + 1 + usize::from(owner_is_thread),
+    ));
+    let done_barrier = Arc::new(Barrier::new(effective_threads + 1));
+    match owner {
         OwnerState::Active | OwnerState::Slow => {
+            // `thread::yield_now()` every `OWNER_YIELD_EVERY` iterations
+            // (`active` only — `slow` already yields the scheduler via its
+            // own sleep): on a machine with fewer logical CPUs than
+            // `threads + 1` (every T > num_cpus cell in this matrix — T up
+            // to 64 vs this harness's own 16-core dev box), a completely
+            // uncooperative owner spin loop measurably starves the producer
+            // threads it is supposed to be racing against (measured:
+            // without this yield, T=32/64 `active` cells inflated
+            // wall_total into the hundreds-of-ms/seconds range purely from
+            // scheduler contention, not genuine ring-retry cost — an
+            // artifact of THIS harness's owner loop, not a production
+            // signal). A bare `spin_loop()` hint is not enough here (it is
+            // a CPU pause hint, not a scheduler yield); this periodic real
+            // yield keeps the owner's "always draining" semantics (still
+            // the tightest-draining state on the pressure axis relative to
+            // `slow`/`paused`/`exited`) while letting an oversubscribed run
+            // actually make forward progress within this project's
+            // fast-bench-profile budget.
             let owner_done = Arc::clone(&owner_done);
             let sleep_between = matches!(owner, OwnerState::Slow);
-            Some(thread::spawn(move || {
-                let heap = owner_heap_addr as *mut HeapCore;
+            let start_barrier = Arc::clone(&start_barrier);
+            owner_thread = Some(thread::spawn(move || {
+                let _ = bootstrap::ensure();
+                let mut lease =
+                    HeapRegistry::dbg_claim_lease().expect("owner HeapRegistry::claim failed");
+                let this_slot_index = lease.slot_index();
+                // Pre-allocate the whole burst BEFORE the barrier: the timed
+                // window must not contain any of this setup (same work the
+                // coordinator did pre-Ph4c, just moved into the thread that
+                // actually owns the slot).
+                let mut owner_ptrs: Vec<*mut u8> = Vec::with_capacity(burst);
+                {
+                    let heap = lease.core();
+                    for _ in 0..burst {
+                        let p = heap.alloc(layout);
+                        assert!(!p.is_null(), "owner pre-alloc returned null");
+                        owner_ptrs.push(p);
+                    }
+                }
+                let thread_addrs: Vec<usize> = owner_ptrs.iter().map(|&p| p as usize).collect();
+                owner_addr_tx
+                    .send((this_slot_index, thread_addrs))
+                    .expect("coordinator must be receiving the owner address list");
+
+                // Parked here until the main thread releases every party
+                // (producers + this owner) simultaneously — OUTSIDE the
+                // timed region.
+                start_barrier.wait();
+
+                let heap = lease.core();
                 let mut batch: Vec<*mut u8> = Vec::new();
                 let mut iter: u32 = 0;
                 while !owner_done.load(Ordering::Relaxed) {
-                    let p = unsafe { (*heap).alloc(layout) };
+                    let p = heap.alloc(layout);
                     if !p.is_null() {
                         batch.push(p);
                     }
@@ -288,17 +277,135 @@ fn run_cell(threads: usize, burst: usize, owner: OwnerState) -> CellResult {
                     // reasoning as heap_fanin_production.rs::run_active).
                     if batch.len() >= 4096 {
                         for p in batch.drain(..) {
-                            unsafe { (*heap).dealloc(p, layout) };
+                            // SAFETY: `p` was returned by `heap.alloc(layout)`
+                            // above with the same layout, is still live,
+                            // freed once, own-thread via the owner's lease.
+                            unsafe { heap.dealloc(p, layout) };
                         }
                     }
                 }
                 for p in batch {
-                    unsafe { (*heap).dealloc(p, layout) };
+                    // SAFETY: `p` was returned by `heap.alloc(layout)` above
+                    // with the same layout, is still live, freed once,
+                    // own-thread via the owner's lease.
+                    unsafe { heap.dealloc(p, layout) };
                 }
-            }))
+                // Ph4c: recycle via lease Drop (LIVE → FREE Release) — the
+                // coordinator re-claims this slot (untimed, LIFO hint) for
+                // the residual ingress drain below. The reclaimed-and-
+                // drained slot is then forgotten, preserving the "never
+                // recycle within this process" leak discipline.
+                drop(lease);
+            }));
+            let (idx, thread_addrs) = owner_addr_rx
+                .recv()
+                .expect("owner thread must send its pre-allocated address list");
+            owner_slot_index = idx;
+            addrs = thread_addrs;
         }
-        OwnerState::Paused | OwnerState::Exited => None,
-    };
+        OwnerState::Paused | OwnerState::Exited => {
+            let mut lease =
+                HeapRegistry::dbg_claim_lease().expect("owner HeapRegistry::claim failed");
+            owner_slot_index = lease.slot_index();
+            let mut owner_ptrs: Vec<*mut u8> = Vec::with_capacity(burst);
+            {
+                let heap = lease.core();
+                for _ in 0..burst {
+                    let p = heap.alloc(layout);
+                    assert!(!p.is_null(), "owner pre-alloc returned null");
+                    owner_ptrs.push(p);
+                }
+            }
+            addrs = owner_ptrs.iter().map(|&p| p as usize).collect();
+            if owner == OwnerState::Exited {
+                // Recycle NOW (lease Drop = LIVE → FREE Release), before any
+                // producer touches the blocks — every free in the timed burst
+                // below targets a segment whose owning slot is genuinely FREE
+                // for the whole burst (see module doc). Same point in the
+                // sequence as the legacy explicit `HeapRegistry::recycle`.
+                drop(lease);
+            } else {
+                // Paused: the lease (and the slot) stays with the coordinator
+                // across the burst for the untimed time-to-reclaim sweep.
+                owner_lease = Some(lease);
+            }
+        }
+    }
+
+    // ---- Producer setup: each claims its own heap (a real remote thread —
+    // never the owner's), splits the address list into disjoint slices.
+    // Threads are spawned ONCE here, parked on `start_barrier`, and perform
+    // their entire burst slice after release — this IS the "threads created
+    // once, outside the timer" fix over heap_fanin_production.rs. ----
+    let slices: Vec<Vec<usize>> = addrs.chunks(chunk).map(<[usize]>::to_vec).collect();
+    // Some (T, burst) combinations produce fewer slices than the REQUESTED
+    // `threads` — `chunks(chunk)` never emits empty slices, and two-stage
+    // ceiling division (chunk_size = ceil(burst/threads), then slice_count =
+    // ceil(burst/chunk_size)) can round down by exactly one when `burst`
+    // is not an exact multiple of `chunk_size`. Concretely, at this
+    // harness's own T=64/burst=1_000 matrix point: chunk_size =
+    // ceil(1000/64) = 16, and ceil(1000/16) = 63, not 64 — the 63rd slice
+    // absorbs the remainder (8 items) instead of a 64th thread being spawned
+    // for a near-empty slice. This is expected two-stage-chunking arithmetic
+    // (every one of the `burst` items is still covered exactly once, just by
+    // one fewer thread than nominally requested at this specific burst/T
+    // ratio), not an off-by-one bug — `report()`'s printed `T=` column
+    // always reflects this ACTUAL slice count (`effective_threads`), not the
+    // caller's nominal `threads` argument, specifically so a reader is never
+    // shown a `T=64` label next to a run that genuinely used 63 producer
+    // threads.
+    debug_assert_eq!(slices.len(), effective_threads);
+
+    let mut handles = Vec::with_capacity(effective_threads);
+    for slice in slices {
+        let start_barrier = Arc::clone(&start_barrier);
+        let done_barrier = Arc::clone(&done_barrier);
+        handles.push(thread::spawn(move || {
+            let _ = bootstrap::ensure();
+            // Ph4c: safe lease API. This heap is deliberately NEVER recycled
+            // (see run_cell's doc comment on the "never recycle within this
+            // process" fix), so the lease is explicitly forgotten below —
+            // forgetting keeps the slot LIVE exactly like the old
+            // dropped-on-the-floor raw pointer.
+            let mut lease =
+                HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+            let remote_heap = lease.core();
+
+            // Parked here until the main thread releases every producer
+            // simultaneously — this rendezvous is OUTSIDE the timed region
+            // from the main thread's point of view (the main thread starts
+            // its Instant AFTER this barrier releases, not before).
+            start_barrier.wait();
+
+            let mut latencies: Vec<Duration> = Vec::with_capacity(slice.len());
+            for addr in slice {
+                let p = addr as *mut u8;
+                let t0 = Instant::now();
+                // SAFETY: `p` was returned by the owner's `alloc(layout)`
+                // with the same layout, is still live, freed exactly once
+                // here -- the deliberate cross-thread free path measured.
+                unsafe { remote_heap.dealloc(p, layout) };
+                latencies.push(t0.elapsed());
+            }
+
+            done_barrier.wait();
+            // Deliberately NOT recycled — see run_cell's doc comment on the
+            // "never recycle within this process" fix (the coordinator's
+            // zero-trust review caught cross-cell state leakage from LIFO
+            // slot reuse; this is the other half of that fix, alongside the
+            // owner heap below). `mem::forget` keeps the slot LIVE exactly
+            // like the old leaked raw pointer.
+            core::mem::forget(lease);
+            latencies
+        }));
+    }
+
+    // Give every producer thread time to reach the start barrier (claim +
+    // bootstrap can take a little wall-clock on first touch) — this wait is
+    // itself outside the timed region; it only ensures the barrier release
+    // below is the actual synchronized start rather than a race with a
+    // still-initializing producer.
+    thread::sleep(Duration::from_millis(1));
 
     // ---- TIMED SECTION: release start barrier -> producers free -> wait
     // for completion -> stop the clock. This is the ENTIRE timed window. ----
@@ -319,11 +426,24 @@ fn run_cell(threads: usize, burst: usize, owner: OwnerState) -> CellResult {
     }
     all_latencies.sort_unstable();
     if matches!(owner, OwnerState::Active | OwnerState::Slow) {
-        // SAFETY: both the producer group and the unique mutation owner joined.
-        // This untimed sweep completes any residual descriptor obligations.
-        unsafe {
-            (*(owner_heap_addr as *mut HeapCore)).dbg_drain_sidecar_ingress();
-        }
+        // Ph4c: the owner thread dropped its lease on exit (LIVE → FREE), so
+        // the legacy raw dereference of the leaked pointer is replaced by a
+        // fresh safe re-claim. This untimed sweep completes residual
+        // descriptor obligations. The lease's Drop published the LIFO reuse
+        // hint for its own slot, so the re-claim deterministically returns
+        // the SAME slot (asserted) — every other thread has joined, so no
+        // one else can have claimed it. After the drain the lease is
+        // FORGOTTEN, not dropped: the slot stays LIVE-for-the-process,
+        // exactly like the legacy leaked raw pointer (the "never recycle
+        // within this process" discipline of run_cell's doc comment).
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("post-burst owner re-claim failed");
+        assert_eq!(
+            lease.slot_index(),
+            owner_slot_index,
+            "LIFO reuse hint must return the owner's slot for the untimed drain"
+        );
+        let _drained = lease.core().dbg_drain_sidecar_ingress();
+        core::mem::forget(lease);
     }
 
     let n_ops = all_latencies.len();
@@ -336,13 +456,20 @@ fn run_cell(threads: usize, burst: usize, owner: OwnerState) -> CellResult {
     // cells have surrendered that lease and do not report a guessed reclaim time.
     let time_to_reclaim = match owner {
         OwnerState::Paused => {
-            let heap = owner_heap_addr as *mut HeapCore;
+            // Ph4c: same sweep through the coordinator-held lease (`core(&mut)`
+            // is the sole core-access seam; all other threads have joined).
+            let mut lease = owner_lease
+                .take()
+                .expect("paused cell must still hold the owner lease");
+            let heap = lease.core();
             let t0 = Instant::now();
-            // SAFETY: producers have joined and the paused core is still owned;
-            // no other thread can mutate it during this bounded cold sweep.
-            let reclaimed = unsafe { (*heap).dbg_drain_sidecar_ingress() };
+            let reclaimed = heap.dbg_drain_sidecar_ingress();
             let elapsed = t0.elapsed();
             assert_eq!(reclaimed, burst, "every paused publication must be retired");
+            // Keep the slot LIVE for the process (deliberately never
+            // recycled — run_cell's doc comment), exactly like the legacy
+            // leaked raw pointer.
+            core::mem::forget(lease);
             Some(elapsed)
         }
         OwnerState::Active | OwnerState::Slow | OwnerState::Exited => None,
@@ -391,17 +518,22 @@ fn verify_setup_isolation() {
     ] {
         let t0 = Instant::now();
 
-        let owner_heap = HeapRegistry::claim();
-        assert!(!owner_heap.is_null());
+        // Ph4c: safe lease API — owner heap claimed, used and recycled on
+        // this thread (lease `Drop` = the old explicit `recycle`).
+        // `Option` so the conditional `exited` Drop can move the lease out
+        // without tripping the conditional-move check.
+        let mut owner_lease =
+            Some(HeapRegistry::dbg_claim_lease().expect("owner HeapRegistry::claim failed"));
+        let owner_heap = owner_lease.as_mut().expect("lease just set").core();
         let mut owner_ptrs: Vec<*mut u8> = Vec::with_capacity(BURST);
         for _ in 0..BURST {
-            let p = unsafe { (*owner_heap).alloc(layout) };
+            let p = owner_heap.alloc(layout);
             assert!(!p.is_null());
             owner_ptrs.push(p);
         }
         let addrs: Vec<usize> = owner_ptrs.iter().map(|&p| p as usize).collect();
         if owner == OwnerState::Exited {
-            unsafe { HeapRegistry::recycle(owner_heap) };
+            drop(owner_lease.take()); // recycle: LIVE → FREE (the old explicit `recycle`)
         }
         let chunk = BURST.div_ceil(T);
         let slices: Vec<Vec<usize>> = addrs.chunks(chunk).map(<[usize]>::to_vec).collect();
@@ -412,11 +544,12 @@ fn verify_setup_isolation() {
             let start_barrier = Arc::clone(&start_barrier);
             handles.push(thread::spawn(move || {
                 let _ = bootstrap::ensure();
-                let remote_heap = HeapRegistry::claim();
-                assert!(!remote_heap.is_null());
+                let mut lease =
+                    HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
+                let _remote_heap = lease.core();
                 start_barrier.wait();
                 std::hint::black_box(&slice);
-                unsafe { HeapRegistry::recycle(remote_heap) };
+                drop(lease); // recycle: LIVE → FREE (the old explicit `recycle`)
             }));
         }
         thread::sleep(Duration::from_millis(1));
@@ -431,7 +564,7 @@ fn verify_setup_isolation() {
             h.join().expect("producer must not panic");
         }
         if owner != OwnerState::Exited {
-            unsafe { HeapRegistry::recycle(owner_heap) };
+            drop(owner_lease.take()); // recycle: LIVE → FREE (the old explicit `recycle`)
         }
     }
 

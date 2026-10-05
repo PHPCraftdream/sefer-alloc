@@ -182,14 +182,11 @@ fn run_child() {
         let sizes = sizes.clone();
 
         handles.push(thread::spawn(move || {
-            let heap_ptr = HeapRegistry::claim_with_config(config());
-            assert!(
-                !heap_ptr.is_null(),
-                "HeapRegistry::claim_with_config returned null at thread {i}"
-            );
-            // SAFETY: `heap_ptr` was just returned by `claim_with_config` and
-            // is owned by THIS thread until we `recycle` it below.
-            let heap: &mut HeapCore = unsafe { &mut *heap_ptr };
+            let mut lease =
+                HeapRegistry::dbg_claim_lease_with_config(config()).unwrap_or_else(|| {
+                    panic!("HeapRegistry::claim_with_config returned null at thread {i}")
+                });
+            let heap: &mut HeapCore = lease.core();
 
             // SELF-VERIFICATION (R26-4 config-identity rule): the resolved
             // budget must match what THIS build's `LargeCacheConfig::DEFAULT`
@@ -243,9 +240,8 @@ fn run_child() {
             while !release.load(Ordering::Acquire) {
                 thread::sleep(Duration::from_millis(2));
             }
-            // SAFETY: `heap_ptr` was returned by `claim_with_config` above and
-            // has not yet been recycled.
-            unsafe { HeapRegistry::recycle(heap_ptr) };
+            // Lease `Drop` recycles the slot (LIVE → FREE Release).
+            drop(lease);
         }));
     }
 

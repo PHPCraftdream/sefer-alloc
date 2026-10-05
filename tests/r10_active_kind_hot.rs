@@ -11,10 +11,8 @@ use sefer_alloc::SegmentLayout;
 
 #[test]
 fn h128_to_one_large_and_first_small_magazine_miss_probe_one_slot() {
-    let heap_ptr = HeapRegistry::claim();
-    assert!(!heap_ptr.is_null());
-    // SAFETY: the claim gives this thread exclusive ownership until recycle.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+    let heap = lease.core();
     let large = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let mut ptrs = Vec::with_capacity(127);
     for issued in 1..=127 {
@@ -57,6 +55,5 @@ fn h128_to_one_large_and_first_small_magazine_miss_probe_one_slot() {
         heap.dealloc(ptrs[0], large);
     }
     assert!(heap.dbg_active_kind_census().2);
-    // SAFETY: this is the same claimed heap pointer, no reference is used later.
-    unsafe { HeapRegistry::recycle(heap_ptr) };
+    drop(lease);
 }

@@ -11,6 +11,56 @@ pub(crate) static LARGE_SIDECAR_SLOT_INSPECTIONS: core::sync::atomic::AtomicU64 
 pub(crate) static LARGE_SIDECAR_FULL_RESCUES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// M-C oracle (Ph4c, receipt open question M-C): process-wide count of FULL
+/// owner-side ingress drain passes (`drain_sidecar_ingress` — the strict
+/// trim / re-claim pass, not the bounded worker step and not the Large
+/// hot/rescue scans). `trim_for_recycle` performs EXACTLY ONE, so a mutant
+/// that consumes ingress twice in one trim (or suppresses it) moves this
+/// counter and goes red under
+/// `tests/r11_ph4c_ingress_consume_exactly_once_oracle.rs`. Pure numeric
+/// observer under `bench-internals` — never read by production logic.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "bench-internals"
+))]
+pub(crate) static SIDECAR_INGRESS_DRAIN_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// Ph4c mutant catcher #12: process-wide count of BOUNDED background
+/// maintenance ingress steps (`HeapCore::background_maintenance_step` — one
+/// call per maintained registry slot in `HeapRegistry::maintenance_pass`).
+/// The bounded drain is cursor-idempotent (each record is consumed exactly
+/// once no matter how many steps run), so the record/retirement counters
+/// CANNOT distinguish one step from two; only this step-count observer can.
+/// A mutant that runs `MaintenanceLease::with_core` twice per maintained
+/// slot in `maintenance_pass` doubles this delta and goes red under
+/// `tests/r11_ph4c_ingress_consume_exactly_once_oracle.rs`. Pure numeric
+/// observer under `bench-internals` — never read by production logic.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "bench-internals"
+))]
+pub(crate) static BACKGROUND_INGRESS_STEP_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// M-C oracle companion: process-wide count of individual sidecar records
+/// consumed (Small cuts popped + Large routes claimed) by the full
+/// [`Self::drain_sidecar_ingress`] pass. Distinguishes "0 trims" (delta 0 —
+/// the receipt's M-C weakness: an idempotent trim is indistinguishable from
+/// no trim) from "exactly 1" (delta = pending publications) and would expose
+/// a double record consumption (delta above the pending count — impossible
+/// today via the drain's CAS-based idempotence, which this counter pins
+/// observably). Pure numeric observer under `bench-internals`.
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "bench-internals"
+))]
+pub(crate) static SIDECAR_INGRESS_RECORDS_CONSUMED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 // Provisional: four probes per miss; real L=8/64 cost and lag are tested.
 #[cfg(feature = "fastbin")]
 pub(crate) const LARGE_HOT_BUDGET: usize = 4;
@@ -139,6 +189,12 @@ impl AllocCore {
     /// pass and keep their outstanding credits. No dirty hint or producer
     /// quiescence is required. Only stored table roots access reservations.
     pub(crate) fn drain_sidecar_ingress(&mut self) -> usize {
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "bench-internals"
+        ))]
+        SIDECAR_INGRESS_DRAIN_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         if !self.table.is_routed() {
             return 0;
         }
@@ -163,6 +219,13 @@ impl AllocCore {
                                 if Self::reclaim_sidecar_record(base, record.offset, record.class) {
                                     changed_classes |= 1u64 << record.class;
                                     reclaimed += 1;
+                                    #[cfg(all(
+                                        feature = "alloc-global",
+                                        feature = "alloc-xthread",
+                                        feature = "bench-internals"
+                                    ))]
+                                    SIDECAR_INGRESS_RECORDS_CONSUMED
+                                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                 }
                             }
                         }
@@ -188,6 +251,13 @@ impl AllocCore {
                         LARGE_REMOTE_RETIREMENTS
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         reclaimed += 1;
+                        #[cfg(all(
+                            feature = "alloc-global",
+                            feature = "alloc-xthread",
+                            feature = "bench-internals"
+                        ))]
+                        SIDECAR_INGRESS_RECORDS_CONSUMED
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 SegmentKind::Unknown => std::process::abort(),

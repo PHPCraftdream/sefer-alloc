@@ -84,15 +84,14 @@ fn cached_node_invalidates_across_slot_recycle() {
 
     // ── First claim: cache should populate with the first mock node (7) ──
     script_node(7);
-    let heap_a = HeapRegistry::claim();
-    assert!(!heap_a.is_null(), "first claim returned null");
+    let mut lease_a = HeapRegistry::dbg_claim_lease().expect("first claim returned null");
+    let heap_a = lease_a.core();
 
     // Deterministically populate the cache by directly invoking the cached
     // accessor (see the file doc for why we don't rely on a real alloc here).
-    // SAFETY: `heap_a` is the live, sole-writer slot we just claimed.
-    unsafe { (*heap_a).dbg_populate_numa_cache_for_test() };
+    heap_a.dbg_populate_numa_cache_for_test();
     assert_eq!(
-        unsafe { (*heap_a).dbg_cached_numa_node() },
+        heap_a.dbg_cached_numa_node(),
         Some(7),
         "first claim: cache must be populated with the mock node 7"
     );
@@ -101,32 +100,29 @@ fn cached_node_invalidates_across_slot_recycle() {
     // `find_segment_with_free` — if it fires (it may not, depending on
     // free-list state), it must NOT overwrite the already-cached value.
     let layout = Layout::from_size_align(64, 8).unwrap();
-    // SAFETY: live claimed slot, single-writer.
-    let p = unsafe { (*heap_a).alloc(layout) };
+    let p = heap_a.alloc(layout);
     assert!(!p.is_null(), "first alloc returned null");
     assert_eq!(
-        unsafe { (*heap_a).dbg_cached_numa_node() },
+        heap_a.dbg_cached_numa_node(),
         Some(7),
         "first claim: cache must still hold mock node 7 after a real alloc"
     );
 
     // Recycle the slot — the `HeapCore` stays whole (whole-slot reuse), but
-    // `HeapRegistry::claim`'s R11-5 invalidation hook must reset the cache
-    // on the NEXT claim.
-    // SAFETY: `heap_a` was returned by `claim` above and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap_a) };
+    // `claim`'s R11-5 invalidation hook must reset the cache on the NEXT
+    // claim. (The lease's Drop publishes LIVE → FREE, Release.)
+    drop(lease_a);
 
     // ── Second claim against a DIFFERENT mock node (11) ──
     script_node(11);
-    let heap_b = HeapRegistry::claim();
-    assert!(!heap_b.is_null(), "second claim returned null");
+    let mut lease_b = HeapRegistry::dbg_claim_lease().expect("second claim returned null");
+    let heap_b = lease_b.core();
 
     // Immediately after claim, BEFORE any populate/alloc on the new claim,
     // the cache must be `None` — invalidation fired. (This is the assertion
     // that would fail against a naively-unconditional cache.)
-    // SAFETY: raw-pointer deref of the live, claimed slot.
     assert_eq!(
-        unsafe { (*heap_b).dbg_cached_numa_node() },
+        heap_b.dbg_cached_numa_node(),
         None,
         "post-claim: cache must be invalidated (None) before any populate \
          on the new claim — a stale Some(7) here is the exact bug \
@@ -135,10 +131,9 @@ fn cached_node_invalidates_across_slot_recycle() {
 
     // After populating on the new claim, the cache must reflect the NEW
     // mock node (11), NOT the stale 7.
-    // SAFETY: live claimed slot, single-writer.
-    unsafe { (*heap_b).dbg_populate_numa_cache_for_test() };
+    heap_b.dbg_populate_numa_cache_for_test();
     assert_eq!(
-        unsafe { (*heap_b).dbg_cached_numa_node() },
+        heap_b.dbg_cached_numa_node(),
         Some(11),
         "post-populate on new claim: cache must hold the NEW mock node (11), \
          not the stale 7 from the previous owner"
@@ -146,18 +141,16 @@ fn cached_node_invalidates_across_slot_recycle() {
 
     // Real alloc on the new claim for end-to-end coverage.
     let layout2 = Layout::from_size_align(128, 8).unwrap();
-    // SAFETY: same as above.
-    let p2 = unsafe { (*heap_b).alloc(layout2) };
+    let p2 = heap_b.alloc(layout2);
     assert!(!p2.is_null(), "second alloc returned null");
     assert_eq!(
-        unsafe { (*heap_b).dbg_cached_numa_node() },
+        heap_b.dbg_cached_numa_node(),
         Some(11),
         "post-alloc on new claim: cache must still hold the NEW mock node (11)"
     );
 
-    // SAFETY: `heap_b` was returned by the second `claim` and not yet
-    // recycled.
-    unsafe { HeapRegistry::recycle(heap_b) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease_b);
     // Touch `p`/`p2` to suppress a dead-code warning; we intentionally leak
     // them (the slot has been recycled with the segments whole).
     let _ = (p, p2);
@@ -175,30 +168,27 @@ fn cached_node_amortises_within_a_claim() {
     let _ = bootstrap::ensure();
 
     script_node(5);
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "claim returned null");
+    let mut lease = HeapRegistry::dbg_claim_lease().expect("claim returned null");
+    let heap = lease.core();
 
-    // SAFETY: live claimed slot, single-writer for all of these.
-    unsafe {
-        // First populate: queries the mock, populates cache with 5.
-        (*heap).dbg_populate_numa_cache_for_test();
+    // First populate: queries the mock, populates cache with 5.
+    heap.dbg_populate_numa_cache_for_test();
+    assert_eq!(
+        heap.dbg_cached_numa_node(),
+        Some(5),
+        "first populate must query the mock and cache node 5"
+    );
+
+    // Subsequent populates: must NOT re-query the mock — the cache
+    // already holds 5. (If they re-queried, the mock state could be
+    // changed underneath us mid-claim, defeating the cache.)
+    for _ in 0..5 {
+        heap.dbg_populate_numa_cache_for_test();
         assert_eq!(
-            (*heap).dbg_cached_numa_node(),
+            heap.dbg_cached_numa_node(),
             Some(5),
-            "first populate must query the mock and cache node 5"
+            "subsequent populate: cache must stay at 5 (no re-query)"
         );
-
-        // Subsequent populates: must NOT re-query the mock — the cache
-        // already holds 5. (If they re-queried, the mock state could be
-        // changed underneath us mid-claim, defeating the cache.)
-        for _ in 0..5 {
-            (*heap).dbg_populate_numa_cache_for_test();
-            assert_eq!(
-                (*heap).dbg_cached_numa_node(),
-                Some(5),
-                "subsequent populate: cache must stay at 5 (no re-query)"
-            );
-        }
     }
 
     // The mock records every `current_node()` dispatch. With the cache
@@ -217,6 +207,6 @@ fn cached_node_amortises_within_a_claim() {
          {current_node_calls}"
     );
 
-    // SAFETY: `heap` was returned by `claim` above.
-    unsafe { HeapRegistry::recycle(heap) };
+    // Recycle: the lease's Drop publishes LIVE → FREE (Release).
+    drop(lease);
 }

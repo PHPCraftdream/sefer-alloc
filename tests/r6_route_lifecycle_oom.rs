@@ -12,15 +12,11 @@ use sefer_alloc::SegmentLayout;
 #[test]
 fn registration_oom_rolls_back_primordial_small_and_large_before_issue() {
     RouteDirectory::fail_next_registration_for_test();
-    assert!(HeapRegistry::claim().is_null());
+    assert!(HeapRegistry::dbg_claim_lease().is_none());
 
-    let heap_ptr = HeapRegistry::claim();
-    assert!(
-        !heap_ptr.is_null(),
-        "failed first materialization is retryable"
-    );
-    // SAFETY: this thread owns the claimed heap until recycle below.
-    let heap = unsafe { &mut *heap_ptr };
+    let mut lease =
+        HeapRegistry::dbg_claim_lease().expect("failed first materialization is retryable");
+    let heap = lease.core();
     let before = heap.dbg_table_count();
     let large = Layout::from_size_align(
         SegmentLayout::SMALL_MAX + SegmentLayout::PAGE,
@@ -53,13 +49,12 @@ fn registration_oom_rolls_back_primordial_small_and_large_before_issue() {
     let recovered = heap.alloc(small);
     assert!(!recovered.is_null());
     assert!(RouteDirectory::global().lookup(recovered).is_some());
-    // SAFETY: p came from this heap with large; the slot is then recycled.
     unsafe {
         heap.dealloc(p, large);
         for block in blocks {
             heap.dealloc(block, small);
         }
         heap.dealloc(recovered, small);
-        HeapRegistry::recycle(heap_ptr);
     }
+    drop(lease);
 }
