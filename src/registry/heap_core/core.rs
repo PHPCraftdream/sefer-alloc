@@ -79,7 +79,7 @@ use crate::alloc_core::AllocCore;
 // already read by the aggregator via `&HeapSlot` for `initialised`) lets the
 // aggregator read it WITHOUT any `&HeapCore`. The owner reaches its slot's
 // counter through the stable `*const AtomicU64` in the field below, planted by
-// `HeapRegistry::claim` right after the slot is bound. See
+// `HeapRegistry::claim_lease` right after the slot is bound. See
 // `HeapSlot::tcache_hits`.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
@@ -87,18 +87,17 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 
 /// The thin, slot-resident heap value.
 ///
-/// Lives inside a [`HeapSlot`](crate::registry::heap_slot::HeapSlot)'s `UnsafeCell` and
+/// Lives inside a `HeapSlot`'s `UnsafeCell` and
 /// is handed out to a thread via
-/// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim) as a
-/// `*mut HeapCore`. Single-writer invariant (the owning thread is the only
+/// `HeapRegistry::claim_lease` as a
+/// `HeapLease`. Single-writer invariant (the owning thread is the only
 /// mutator of its heap's bins) makes the `UnsafeCell` sound.
 pub struct HeapCore {
-    /// The owning slot's index in the registry. Used by
-    /// [`recycle`](crate::registry::heap_registry::HeapRegistry::recycle) to find the
-    /// slot back from a `*mut HeapCore` (12.3 stamps this into segment
+    /// The owning slot's index in the registry. Used by `HeapLease`'s `Drop` implementation to release the
+    /// slot back to the registry (12.3 stamps this into segment
     /// headers as the ownership key).
     /// `u32::MAX` is reserved as "not yet bound to a slot" (a freshly-init'd
-    /// slot has `id = u32::MAX` until `claim` overwrites it). The
+    /// slot has `id = u32::MAX` until the lease is claimed). The
     /// process-global fallback heap instead uses `OWNER_ID_FALLBACK`
     /// (0x7FFF_FFFE, `alloc_core::segment_header`).
     ///
@@ -107,7 +106,7 @@ pub struct HeapCore {
     /// exactly (the OPT-C stamp-cache compare unpacks the stored word and
     /// compares against this id). Do not reintroduce a >= 2^31 sentinel here:
     /// the `u32::MAX` "unbound" value is safe only because it never reaches
-    /// `pack_owner` — it is overwritten by `claim` before any alloc.
+    /// `pack_owner` — it is overwritten by the lease before any alloc.
     pub(crate) id: u32,
     /// The segment substrate this heap owns. Owns the primordial + any
     /// additionally-reserved small/large segments. Phase 12.1: free-list
@@ -153,13 +152,13 @@ pub struct HeapCore {
     /// `&HeapCore` over a struct another thread holds a protected `&mut` into
     /// is UB under Stacked Borrows).
     ///
-    /// Planted by [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
+    /// Planted by `HeapRegistry::claim_lease`
     /// immediately after the slot is bound (`bind_counters`): it points at the
     /// slot's `AtomicU64`. Because the slot lives in the `'static` registry
     /// array, this pointer is sound for the slot's (process) lifetime and is
     /// never re-pointed. `null` only in the transient window before the first
     /// bind (never observed on any alloc path — `alloc` runs only after
-    /// `claim` planted it); the increment/read helpers treat `null` as "no
+    /// `claim_lease` planted it); the increment/read helpers treat `null` as "no
     /// counter" defensively.
     ///
     /// The increment (owner-only, single writer) and the cross-thread
@@ -169,7 +168,7 @@ pub struct HeapCore {
     /// Stored as a SAFE `Option<&'static _>` (not a raw pointer): this module
     /// is `#![deny(unsafe_code)]` with no local `allow`, so a raw-pointer
     /// deref would be a hard error. The `&'static` is minted by
-    /// `HeapRegistry::claim` (which lives in the unsafe-permitted registry
+    /// `HeapRegistry::claim_lease` (which lives in the unsafe-permitted registry
     /// seam) from the slot's counter and planted here — a shared reference to
     /// a process-`'static` atomic, entirely sound to hold and read/write from
     /// the owning thread. `None` only in the transient pre-bind window (never
@@ -212,9 +211,9 @@ pub struct HeapCore {
 // R34-18 (task #537, F-6 [low]) — compile-time stack-pressure budget pin.
 //
 // `HeapCore` is constructed BY VALUE on the stack of the frame that triggers a
-// thread's FIRST allocation: `HeapRegistry::claim` does
+// thread's FIRST allocation: `HeapRegistry::claim_lease` does
 // `HeapCore::new(idx) → heap_ptr.cast::<HeapCore>().write(hc)`
-// (`heap_registry/claim.rs`, both `claim` and `claim_with_config`), and the
+// (`heap_registry/claim.rs`, all claim routes), and the
 // process-global fallback constructs it the same way inside a
 // `MaybeUninit<HeapCore>` (`global/fallback.rs`). Rust does NOT guarantee
 // return-value/move elision: on a debug build, or any toolchain/backend that
@@ -292,7 +291,7 @@ impl HeapCore {
     /// Construction uses the OS aperture only. Terminal route and sidecar
     /// storage are established before any allocation is issued.
     ///
-    /// Called lazily by [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim)
+    /// Called lazily by `HeapRegistry::claim_lease`
     /// when it transitions a slot `FREE → LIVE` and needs to materialise the
     /// heap value in the slot's `UnsafeCell`.
     #[must_use]
@@ -312,9 +311,9 @@ impl HeapCore {
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
-            // is planted by `HeapRegistry::claim` (via `bind_tcache_hits`)
+            // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
-            // any alloc path — alloc runs only after claim planted it).
+            // any alloc path — alloc runs only after claim_lease planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
             #[cfg(feature = "alloc-global")]
@@ -349,9 +348,9 @@ impl HeapCore {
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: crate::registry::heap_core::state::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
-            // is planted by `HeapRegistry::claim` (via `bind_tcache_hits`)
+            // is planted by `HeapRegistry::claim_lease` (via `bind_tcache_hits`)
             // right after the slot binds. `None` until then (never observed on
-            // any alloc path — alloc runs only after claim planted it).
+            // any alloc path — alloc runs only after claim_lease planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
             #[cfg(feature = "alloc-global")]
@@ -383,7 +382,7 @@ impl HeapCore {
 
     /// Compare this heap's live (resolved) cache/pool policy against a
     /// requested config. Forwards to `AllocCore::live_config_matches`.
-    /// Used by `HeapRegistry::claim_with_config` (N2) to detect a config
+    /// Used by `HeapRegistry::claim_lease_with_config` (N2) to detect a config
     /// mismatch on a recycled, already-materialised slot.
     #[cfg(feature = "alloc-decommit")]
     pub(crate) fn live_config_matches(
@@ -394,9 +393,9 @@ impl HeapCore {
     }
 
     /// R11-5: invalidate the cached `current_node()` value on this heap's
-    /// `AllocCore`. Called by `HeapRegistry::claim` /
-    /// `claim_with_config` immediately before handing the freshly-claimed
-    /// `*mut HeapCore` to the caller, so a recycled slot's next
+    /// `AllocCore`. Called by `HeapRegistry::claim_lease` /
+    /// `claim_lease_with_config` immediately before handing the freshly-claimed
+    /// `HeapLease` to the caller, so a recycled slot's next
     /// `current_node_cached()` call re-queries the OS instead of returning
     /// the previous owner's stale value. See `docs/PHASE_NUMA_DESIGN.md`
     /// §4.1 for the design note and the slot-recycle soundness argument.

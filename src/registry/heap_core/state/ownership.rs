@@ -90,7 +90,7 @@ impl HeapCore {
     /// drain the small-segment pool, and evict the entire large cache.
     ///
     /// Called by the TLS `AbandonGuard::drop` on thread exit, BEFORE the
-    /// `HeapRegistry::recycle` CAS flips the slot `LIVE → FREE`. At that
+    /// `HeapLease::drop` CAS flips the slot `LIVE → FREE`. At that
     /// point this thread is still the slot's sole owner/writer (same
     /// single-writer window every other mutation relies on), so no
     /// cross-thread quiescence is needed.

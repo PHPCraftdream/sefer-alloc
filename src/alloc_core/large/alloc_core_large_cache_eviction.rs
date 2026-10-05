@@ -315,13 +315,13 @@ impl AllocCore {
 
     /// W3: plant the stable `&'static` handle to THIS heap's SLOT-resident
     /// large-cache hit counter. Called (via `HeapCore::bind_large_cache_hits`)
-    /// by `HeapRegistry::claim` right after the slot binds, before any alloc on
+    /// during lease binding, before any alloc on
     /// this heap. Redirects all subsequent increments and diagnostic reads to
     /// the slot's `AtomicU64`, closing the aliasing gap (see
     /// [`LargeCacheHitCounter`]). Idempotent — the slot counter is `'static`,
     /// so re-planting on a re-claim is a harmless no-op.
     ///
-    /// Only reachable via the registry (`HeapRegistry::claim`, `alloc-global`);
+    /// Only reachable through an active registry lease (`alloc-global`);
     /// unused in an `alloc-decommit`-without-`alloc-global` build.
     #[cfg(feature = "alloc-decommit")]
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]

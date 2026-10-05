@@ -215,7 +215,7 @@ impl HeapCore {
     /// segment). Forwards to `AllocCore::drain_small_pool` — the production
     /// teardown-trim primitive (see [`trim_for_recycle`](Self::trim_for_recycle)).
     /// Used by decommit tests that run through the `SeferAlloc`/`HeapRegistry` face
-    /// (where `claim_with_config` cannot reliably disable the pool on a reused
+    /// (where `claim_lease_with_config` cannot reliably disable the pool on a reused
     /// slot) to deterministically observe the decommit that a pooled segment
     /// would otherwise absorb. Returns the number of segments drained.
     #[doc(hidden)]

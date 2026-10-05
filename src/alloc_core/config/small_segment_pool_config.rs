@@ -73,7 +73,7 @@
 //! [`LargeCacheConfig`](crate::alloc_core::config::large_cache_config::LargeCacheConfig) — both are
 //! `alloc-decommit`-gated construction-time knobs threaded through the SAME
 //! single-config plumbing (`SeferAlloc::with_config` →
-//! `HeapRegistry::claim_with_config` → `HeapCore::new_with_config` →
+//! `HeapRegistry::claim_lease_with_config` → `HeapCore::new_with_config` →
 //! `AllocCore::new_with_config`). Embedding it there (rather than adding a
 //! second config parameter through four layers) keeps every existing
 //! `with_config(cfg)` caller working unchanged while still honouring the

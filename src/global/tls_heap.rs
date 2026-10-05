@@ -302,7 +302,7 @@ pub enum CurrentHeapForDealloc {
 /// thread whose TLS is `null` (never allocated anything itself — e.g. a
 /// worker thread that only ever receives a pointer via a channel from a
 /// producer thread, frees it, and exits) called `bind_slow_tagged()` →
-/// `HeapRegistry::claim()` → materialised a FULL `HeapCore` → reserved/
+/// `HeapRegistry::claim_lease()` → materialised a FULL `HeapCore` → reserved/
 /// committed a 4 MiB primordial segment, JUST to free one foreign pointer.
 /// For a `TORN` thread it instead routed through `fallback::with_heap`,
 /// taking the fallback's spinlock, to service what is — in the
@@ -310,7 +310,7 @@ pub enum CurrentHeapForDealloc {
 /// belong to the fallback heap.
 ///
 /// **Passive, read-only.** This resolver reads `LOCAL`; it never writes it,
-/// never calls `HeapRegistry::claim`, and never acquires the fallback lock.
+/// never calls `HeapRegistry::claim_lease`, and never acquires the fallback lock.
 /// Gated on `alloc-xthread`, which `alloc-global` implies.
 ///
 /// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
@@ -415,7 +415,7 @@ fn bind_slow_tagged() -> CurrentHeap {
     finish_bind(HeapRegistry::claim_lease())
 }
 
-/// Like [`bind_slow_tagged`] but uses [`HeapRegistry::claim_lease_with_config`]
+/// Like [`bind_slow_tagged`] but uses `HeapRegistry::claim_lease_with_config`
 /// so the newly materialised `HeapCore` is configured with `config`. On a
 /// re-claim the existing `HeapCore` is reused as-is.
 ///
@@ -435,13 +435,13 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 /// was dead by construction and has been removed: since task H1 (#13), the
 /// cross-thread free-stack head is planted by
 /// [`HeapCore::bind_thread_free`](crate::registry::heap_core::HeapCore::bind_thread_free),
-/// called from `HeapRegistry::claim`/`claim_with_config` (via
+/// called from `HeapRegistry::claim_lease`/`claim_lease_with_config` (via
 /// `bind_slot_counters`) BEFORE either function returns `heap` to this
 /// caller — so `thread_free` is always `Some` by the time `finish_bind` runs,
 /// and `install_thread_free` (a pure accessor, `self.thread_free.map_or(null,
 /// |h| h as *const _)`) had no side effect to perform and its return value
 /// was discarded. Verified by tracing every `heap`-producing path
-/// (`claim`/`claim_with_config`'s first-claim AND re-claim legs) to the
+/// (`claim_lease`/`claim_lease_with_config`'s first-claim AND re-claim legs) to the
 /// planting call before any return.
 ///
 /// ## Order: publish `LOCAL`, then arm `GUARD` (fxx R2-01; was UBFIX-10's guard-first)

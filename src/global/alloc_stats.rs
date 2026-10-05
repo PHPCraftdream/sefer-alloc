@@ -150,7 +150,7 @@ pub struct AllocStats {
     /// investigate a non-zero, growing value as a dropped free.
     pub foreign_or_unroutable_frees: u64,
 
-    /// Number of times `claim_with_config` found an already-materialised
+    /// Number of times `claim_lease_with_config` found an already-materialised
     /// registry slot whose live (resolved) large-cache/pool policy differs
     /// from the requested config. Each such event means the slot's
     /// pre-existing config silently overrides the caller's request
@@ -168,7 +168,7 @@ pub struct AllocStats {
     /// behind `alloc-stats`: it lives on the cold claim/bind path (at most
     /// one increment per thread bind, never on the alloc/dealloc fast path),
     /// so there is no perf cost to always compiling it in. Requires the
-    /// `alloc-decommit` feature (where `claim_with_config` exists); `0`
+    /// `alloc-decommit` feature (where `claim_lease_with_config` exists); `0`
     /// otherwise.
     pub config_conflicts: u64,
 }

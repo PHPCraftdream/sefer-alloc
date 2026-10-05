@@ -159,7 +159,7 @@ impl Registry {
     /// registry. A garbled-but-in-range id therefore triggers a FRESH OS
     /// reservation of a registry chunk on the dealloc path. By itself this is
     /// harmless (the chunk is a small leaked reservation that a future
-    /// `claim()` would have materialised anyway), but it is the same input
+    /// `claim_lease()` would have materialised anyway), but it is the same input
     /// that reaches this OOM branch — which is exactly why the free path must
     /// not abort here. For a single legitimate cross-thread free the segment
     /// cannot be released under the freer (the block holds `live_count >= 1`
@@ -196,7 +196,7 @@ impl Registry {
     /// materialised by the time the walk reached it. In fact `bump_count`
     /// (`heap_registry::stack`) mints a fresh index by bumping `count` and
     /// returns immediately — it does NOT call `slot()` itself; the caller
-    /// (`claim`/`claim_with_config`) calls `reg.slot(idx)` as a SEPARATE,
+    /// (`claim_lease`/`claim_lease_with_config`) calls `reg.slot(idx)` as a SEPARATE,
     /// later step. A concurrent `stats()` call can observe the just-bumped
     /// `count` and reach that index before the claiming thread's own
     /// `slot()` call has materialised the chunk — driving `stats()` (meant to
@@ -314,7 +314,7 @@ const _: () = {
 // instead. The reads are plain atomic loads — always sound — so they stay
 // safe `fn`. The single write (`dbg_slot_preset_generation`) is `unsafe fn`
 // because its soundness needs the slot to not be racing a concurrent
-// `claim()`; the only caller (`tests/regression_counter_wrap.rs`) wraps it in
+// `claim_lease()`; the only caller (`tests/regression_counter_wrap.rs`) wraps it in
 // `unsafe { .. }` under a documented precondition. These are NOT stable
 // public API.
 // -------------------------------------------------------------------------

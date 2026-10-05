@@ -209,7 +209,7 @@ impl AllocCore {
     /// values match what [`new_with_config`](Self::new_with_config) would
     /// apply from `requested`.
     ///
-    /// Used by `HeapRegistry::claim_with_config` (task #95 / N2) to detect
+    /// Used by `HeapRegistry::claim_lease_with_config` (task #95 / N2) to detect
     /// that a recycled slot's pre-existing policy silently overrides a
     /// different config passed by a later claimant. Comparing **resolved**
     /// values (not the raw `Option` fields of `LargeCacheConfig`) means two
@@ -224,7 +224,7 @@ impl AllocCore {
     /// matching comparison here.
     ///
     /// R1-08: this method's only callers (`HeapCore::live_config_matches`,
-    /// `HeapRegistry::claim_with_config`) live in `registry`, which itself
+    /// `HeapRegistry::claim_lease_with_config`) live in `registry`, which itself
     /// compiles only under `alloc-global` — add that gate alongside
     /// `alloc-decommit` so `alloc-core alloc-decommit` (no `alloc-global`)
     /// does not warn this dead.
@@ -284,7 +284,7 @@ impl AllocCore {
             table: prim.table,
             small_cur,
             // R11-5: cache starts empty; first call to `current_node_cached`
-            // populates it. `HeapRegistry::claim` resets it to `None` on
+            // populates it. `HeapRegistry::claim_lease` resets it to `None` on
             // every (re-)claim of a registry slot so a recycled slot never
             // hands a stale node to a new owning thread. Standalone
             // `AllocCore`s (tests) never claim/recycle, so the first-query
@@ -327,7 +327,7 @@ impl AllocCore {
             large_cache_mode: LargeCacheMode::Lazy,
             #[cfg(feature = "alloc-decommit")]
             large_cache_hits: LargeCacheHitCounter::new(0),
-            // W3: unbound by default; `HeapRegistry::claim` redirects this to
+            // W3: unbound by default; `HeapRegistry::claim_lease` redirects this to
             // the owning slot's counter for a registry-bound heap. Standalone
             // `AllocCore`s (tests) stay `None` and count into the owned field
             // above.
@@ -390,9 +390,8 @@ impl AllocCore {
 ///
 /// 1. **Registry heaps never reach this `drop`.** The `HeapRegistry`/
 ///    `HeapCore` substrate that `SeferAlloc`/TLS actually use lives for the
-///    entire process (`HeapCore::new`'s `AllocCore` is never dropped by
-///    `recycle` — `recycle` only flips the slot's state and pushes it onto
-///    `free_slots` for reuse; see `HeapRegistry::recycle`). So the ONLY way
+///    entire process (`HeapCore::new`'s `AllocCore` is retained in its slot
+///    for reuse when a lease ends). So the ONLY way
 ///    to reach `AllocCore::drop` today is constructing a STANDALONE
 ///    `AllocCore` directly (`AllocCore::new`, bypassing the
 ///    registry entirely) and letting it go out of scope.

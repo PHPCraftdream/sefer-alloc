@@ -423,7 +423,6 @@ pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
 // be a hard `deny(unsafe_code)` error — this module carries no
 // `#![allow(unsafe_code)]`; the crate's `forbid(unsafe_code)` does not apply
 // here, since this file only exists under `alloc-core` — see `src/lib.rs`,
-// oxx R2-07), planted by
-// `HeapRegistry::claim` at bind time. See `HeapSlot::large_cache_hits`.
+// oxx R2-07), planted when the active lease binds. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) type LargeCacheHitCounter = core::sync::atomic::AtomicU64;

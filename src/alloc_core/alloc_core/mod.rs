@@ -39,9 +39,8 @@
 //! [`large_cache_extended`](super::super::large_cache_extended)'s own notes
 //! on this, oxx R2-07). In `production` the `AllocCore` inside a registry
 //! slot stays in place, but its owning thread changes when the slot is
-//! recycled and re-claimed (`HeapRegistry::recycle`/`claim_impl`); soundness
-//! comes from the slot's ordered CAS handoff (Release on `recycle`, AcqRel on
-//! `claim`) or the fallback `LockGuard`, not from a `Send` bound.
+//! lease handoffs; soundness comes from the slot's ordered ownership transfer or
+//! the fallback `LockGuard`, not from a `Send` bound.
 
 #[path = "alloc_core_core_diag/mod.rs"]
 mod alloc_core_core_diag;

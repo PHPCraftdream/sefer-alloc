@@ -305,8 +305,8 @@
 //    * `os::{decommit_pages, recommit_pages}` — safe fns; the range-containment
 //      invariant is the caller's, unchecked.
 //    * `registry::heap_slot::HeapSlot` — its `state`/`heap` single-writer
-//      invariant (which the slot's `Sync` proof and the `claim`/`recycle`
-//      protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
+//      invariant (which the slot's `Sync` proof and the `claim_lease` /
+//      lease-drop (LIVE→FREE) protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
 //      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep
 //      this membrane inside the crate — see that module's M7 note.)
 //  In short: the membrane pattern concentrates the *unsafe blocks* into a

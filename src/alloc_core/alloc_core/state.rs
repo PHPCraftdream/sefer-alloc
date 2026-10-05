@@ -15,7 +15,7 @@ impl AllocCore {
     /// Bounds the staleness introduced by an OS-level thread migration that
     /// happens *mid-claim* (a long-lived, non-pinned thread the scheduler
     /// moves to another NUMA node): without this periodic refresh, R11-5's
-    /// cache is invalidated only at the next `claim()`/`recycle()` boundary,
+    /// cache is invalidated only at the next `claim_lease()`/lease-drop boundary,
     /// which for a long-lived heap may be unbounded in wall-clock time —
     /// every subsequent allocation would keep steering new segments toward
     /// the stale, now-wrong node indefinitely.
@@ -54,7 +54,7 @@ impl AllocCore {
     /// queries `numa::current_node()`, stores the result in
     /// [`cached_numa_node`](Self::cached_numa_node), resets the hit counter,
     /// and returns it. The cache is ALSO invalidated at registry-slot
-    /// `claim()` time by
+    /// `claim_lease()` time by
     /// [`invalidate_numa_node_cache`](Self::invalidate_numa_node_cache) so a
     /// recycled slot never hands a stale node to a new owning thread. See
     /// `docs/PHASE_NUMA_DESIGN.md` §4.1 for the full design note, including
@@ -75,7 +75,7 @@ impl AllocCore {
             // R12-5: hit budget exhausted — force a re-query even though the
             // cache is still `Some`, so a thread that migrated mid-claim is
             // caught within `NUMA_NODE_REFRESH_PERIOD` refill-misses instead
-            // of waiting for the next `claim()`.
+            // of waiting for the next `claim_lease()`.
         }
         let n = numa::current_node();
         self.cached_numa_node = Some(n);
@@ -84,12 +84,12 @@ impl AllocCore {
     }
 
     /// R11-5: invalidate the cached NUMA node. Called by
-    /// `HeapRegistry::claim` / `claim_with_config` immediately before
-    /// handing a freshly-claimed `*mut HeapCore` to the caller, so the next
+    /// `HeapRegistry::claim_lease` / `claim_lease_with_config` immediately
+    /// before handing a freshly-claimed `HeapLease` to the caller, so the next
     /// `current_node_cached()` call re-queries `numa::current_node()` instead
     /// of returning the previous owner's stale value. Soundness argument
     /// (why a plain write is sufficient — no atomic, no fence beyond what
-    /// `claim`'s state-CAS already establishes) lives in
+    /// `claim_lease`'s state-CAS already establishes) lives in
     /// `docs/PHASE_NUMA_DESIGN.md` §4.1.
     ///
     /// R12-5: also resets the refresh-hit counter. Not strictly required for

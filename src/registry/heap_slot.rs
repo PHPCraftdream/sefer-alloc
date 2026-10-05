@@ -10,7 +10,7 @@
 //! slot's `id` with a generation field that is always 0 (the adoption
 //! substrate that once bumped it was removed — task #97 / R4-5). This
 //! slot's own `generation` is production-dead: it is written on every
-//! `claim`/`claim_with_config` but read by nothing outside the `#[doc(hidden)]`
+//! `claim_lease`/`claim_lease_with_config` but read by nothing outside the `#[doc(hidden)]`
 //! test/diagnostic accessors (`dbg_slot_generation` and friends,
 //! `registry/bootstrap/registry.rs`).
 //!
@@ -112,7 +112,7 @@ pub(crate) struct HeapSlotRemote {
     /// protected `&mut` into (a foreign-read of a protected `Unique` — UB
     /// under Stacked Borrows). The owning thread increments this through a
     /// stable `&'static AtomicU64` handed to its `HeapCore` at
-    /// [`super::heap_registry::HeapRegistry::claim`] time (the slot lives in
+    /// `super::heap_registry::HeapRegistry::claim_lease` time (the slot lives in
     /// the `'static` registry array, so the reference is sound for the
     /// process lifetime).
     ///
@@ -165,7 +165,7 @@ pub struct HeapSlot {
     /// stamp (`alloc_core/segment/segment_header/mod.rs`), which packs the
     /// slot's `id` with a generation field hardcoded to 0 (the adoption
     /// substrate that once bumped it was removed — task #97 / R4-5). This
-    /// field is written on every `claim`/`claim_with_config` but read by
+    /// field is written on every `claim_lease`/`claim_lease_with_config` but read by
     /// nothing outside the `#[doc(hidden)]` test/diagnostic accessors below.
     /// In particular it is NOT consulted by the 12.3 stale-TLS-pointer check
     /// — that check uses the `TORN` sentinel in `global::tls_heap` instead
@@ -206,8 +206,8 @@ pub struct HeapSlot {
     ///
     /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
     /// slot's first successful construction, immediately after
-    /// `heap_ptr.write(hc)` completes) — see `HeapRegistry::claim` /
-    /// `claim_with_config`. NEVER reset back to `false` afterwards: once a
+    /// `heap_ptr.write(hc)` completes) — see `HeapRegistry::claim_lease` /
+    /// `claim_lease_with_config`. NEVER reset back to `false` afterwards: once a
     /// slot's `HeapCore` is materialised it is reused as-is across every
     /// later `recycle` → `claim` cycle (it is never dropped or
     /// re-`MaybeUninit`'d — see `heap`'s doc comment above), so once this

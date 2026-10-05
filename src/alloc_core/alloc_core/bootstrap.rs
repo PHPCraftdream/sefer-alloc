@@ -235,7 +235,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 1024→4096 raise quadrupled this loop's trip count (LLVM lowers it to a
     // `memset` of `HASH_CAPACITY * 8 = 2 * MAX_SEGMENTS * 8` bytes); R16-4
     // (task #314) pinned the resulting flat +61.4K Ir startup regression to
-    // this `memset` in `claim_with_config` via `callgrind_annotate` (see
+    // this `memset` in `claim_lease_with_config` via `callgrind_annotate` (see
     // `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §2.3a). Under `miri`
     // the fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed,
     // so miri keeps the explicit zero-fill unconditionally — the identical

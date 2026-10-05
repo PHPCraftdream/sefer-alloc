@@ -61,12 +61,10 @@
 //! thread accessing it (oxx R2-07 — corrected from an earlier, stronger
 //! "never crosses a thread boundary" claim: in `production` an `AllocCore`
 //! embedded in a registry `HeapSlot`'s `HeapCore` DOES change owning thread
-//! over the process lifetime, when the slot is recycled by its old owner and
-//! re-claimed by a new one — `HeapRegistry::recycle`/`claim_impl`,
-//! `registry/heap_registry/claim.rs`). What rules out a concurrent producer
+//! across lease handoffs. What rules out a concurrent producer
 //! is the ordered hand-off between those owners, not an absence of movement:
-//! `recycle`'s LIVE→FREE CAS is Release (publishing every write the outgoing
-//! owner made), `claim`'s FREE→LIVE CAS is AcqRel (observing that publish
+//! `HeapLease::drop`'s LIVE→FREE CAS is Release (publishing every write the outgoing
+//! owner made), `HeapRegistry::claim_lease`'s FREE→LIVE CAS is AcqRel (observing that publish
 //! before the new owner touches anything), and the process-lifetime fallback
 //! heap is instead guarded by `fallback::with_heap`'s spinlock
 //! (`LockGuard::acquire`) — either way exactly one thread at a time may

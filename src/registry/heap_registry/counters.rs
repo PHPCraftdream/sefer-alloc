@@ -12,7 +12,7 @@ use crate::registry::heap_slot::HeapSlot;
 use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
-/// — times `claim_with_config` found an already-materialised slot whose live
+/// — times `claim_lease_with_config` found an already-materialised slot whose live
 /// (resolved) cache/pool policy differs from the requested config. Each such
 /// event means the slot's pre-existing config silently overrides the caller's
 /// request (first-materialisation-wins semantics; see
@@ -22,7 +22,7 @@ use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 /// never on the alloc/dealloc hot path), so — unlike the `alloc-stats`-gated
 /// hot-path counters — the increment is ALWAYS compiled in (not gated behind
 /// `alloc-stats`). Reads `0` in a build without `alloc-decommit` (where
-/// `claim_with_config` does not exist).
+/// `claim_lease_with_config` does not exist).
 ///
 /// Relaxed ordering — diagnostic only, no synchronization obligation.
 pub(super) static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
@@ -37,7 +37,7 @@ pub(super) static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 /// the fallback `HeapCore` once, at fallback init
 /// (`global::fallback::heap_ptr`'s init-race winner), via
 /// [`HeapCore::bind_tcache_hits`](crate::registry::HeapCore::bind_tcache_hits)
-/// — the SAME binder `HeapRegistry::claim` uses for a real slot's counter —
+/// — the SAME binder `HeapRegistry::claim_lease` uses for a real slot's counter —
 /// then folded into [`tcache_hits_total`] and
 /// [`tcache_and_large_cache_hits_total`] alongside every registry slot's
 /// contribution. `pub(crate)` (not `pub(super)`): `global::fallback` binds it
@@ -70,12 +70,12 @@ pub fn heaps_claimed_high_water() -> u32 {
 }
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
-/// — times `claim_with_config` found an already-materialised slot whose live
+/// — times `claim_lease_with_config` found an already-materialised slot whose live
 /// (resolved) cache/pool policy differs from the requested config. Backs
 /// [`AllocStats::config_conflicts`](crate::AllocStats::config_conflicts).
 /// See [`CONFIG_CONFLICTS`] for the full rationale. A plain relaxed atomic
 /// load — diagnostic only, no ordering obligation. Reads `0` in a build
-/// without `alloc-decommit` (where `claim_with_config` does not exist).
+/// without `alloc-decommit` (where `claim_lease_with_config` does not exist).
 #[doc(hidden)]
 #[must_use]
 pub fn config_conflicts_total() -> u64 {
@@ -116,7 +116,7 @@ pub fn config_conflicts_total() -> u64 {
 /// writeup, and `tests/regression_registry_initialised_gate.rs` for the
 /// regression coverage.)
 ///
-/// The fix: [`HeapRegistry::claim`] (and `claim_with_config`) Release-store
+/// The fix: `HeapRegistry::claim_lease` (and `claim_lease_with_config`) Release-store
 /// `true` into `HeapSlot::initialised` ONLY after `heap_ptr.write(hc)` has
 /// fully completed. This function's Acquire load of `initialised`, when it
 /// observes `true`, is guaranteed by the C++/Rust memory model to
@@ -214,7 +214,7 @@ pub fn tcache_hits_total() -> u64 {
 /// `bump_count` before the claiming thread even starts `HeapCore::new()`).
 /// This function gates every slot on an `Acquire` load of
 /// [`HeapSlot::initialised`] before dereferencing `heap`, pairing with the
-/// `Release` store `claim`/`claim_with_config` perform immediately after
+/// `Release` store `claim_lease`/`claim_lease_with_config` perform immediately after
 /// `heap_ptr.write(hc)` completes — establishing happens-before to the
 /// write. A slot observed `initialised == false` is skipped (never
 /// claimed, or mid-claim — either way it has never incremented
@@ -317,7 +317,7 @@ pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
 /// `visit` closure to accumulate whichever counter(s) it aggregates —
 /// see `tcache_hits_total`'s doc comment for the full soundness argument
 /// this loop's `initialised`-gate rests on (identical for every caller: the
-/// Acquire load pairs with `claim`'s Release publish after
+/// Acquire load pairs with `claim_lease`'s Release publish after
 /// `heap_ptr.write(hc)` completes, so a mid-mint slot is never visited).
 ///
 /// R2-11 (task #2013): this walk resolves each index via
@@ -325,7 +325,7 @@ pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
 /// `0..count` is NOT guaranteed to have its owning chunk already
 /// materialised by the time this walk reaches it — `bump_count`
 /// (`heap_registry::stack`) bumps `count` and returns immediately; it is the
-/// CALLER (`claim`/`claim_with_config`), as a separate later step, that
+/// CALLER (`claim_lease`/`claim_lease_with_config`), as a separate later step, that
 /// calls `reg.slot(idx)` and thereby materialises the chunk. A `stats()`
 /// call racing that window used to reach `reg.slot(idx)` here too — driving
 /// this "cheap, read-only" walk into a real OS chunk reservation, a
@@ -399,7 +399,7 @@ pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
 /// `generation`), so this hook exists purely to let integration tests assert
 /// the M-5 postcondition: a slot returned by [`dbg_claim_then_simulate_oom`]
 /// must read `initialised == false` (materialisation never ran), and after a
-/// following successful `claim()` on the same index it must read `true`.
+/// following successful `claim_lease()` on the same index it must read `true`.
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_slot_initialised(idx: u32) -> bool {
@@ -422,7 +422,7 @@ pub fn dbg_slot_initialised(idx: u32) -> bool {
 /// Test-only hook (R2-11/task #2013): mint a fresh slot index via
 /// [`bump_count`](super::stack::bump_count) ALONE — deliberately stopping
 /// short of the follow-up `reg.slot(idx)` call that `pick_slot`'s only
-/// production caller, `claim`/`claim_with_config`, always performs
+/// production caller, `claim_lease`/`claim_lease_with_config`, always performs
 /// immediately afterward.
 ///
 /// This reproduces, on demand and deterministically (no timing-dependent

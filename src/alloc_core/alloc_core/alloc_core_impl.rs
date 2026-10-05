@@ -464,7 +464,7 @@ pub struct AllocCore {
     /// TEST/DIAGNOSTIC-ONLY (task W3): stable `&'static` handle to THIS heap's
     /// SLOT-resident large-cache hit counter
     /// ([`HeapSlot::large_cache_hits`](crate::registry::heap_slot::HeapSlot::large_cache_hits)),
-    /// planted by `HeapRegistry::claim` via
+    /// bound during lease acquisition via
     /// [`bind_large_cache_hits`](Self::bind_large_cache_hits) at bind time.
     /// See [`LargeCacheHitCounter`] above for the aliasing-gap rationale.
     ///

@@ -6,9 +6,8 @@
 //! The confined-`unsafe` seams of this module are:
 //! - [`tls_heap`] -- the raw-pointer TLS binding (`Cell<*mut HeapCore>` +
 //!   `AbandonGuard`); the `unsafe` is the pointer handoff under the
-//!   single-writer invariant + the `unsafe fn recycle` call in the guard's
-//!   drop (whole-slot reuse -- the guard does NOT abandon segments; the
-//!   abandon/adopt substrate was removed, see CHANGELOG.md).
+//!   single-writer invariant; the guard's drop runs TORN -> `trim_for_recycle`
+//!   -> `HeapLease::drop` (LIVE -> FREE Release CAS, whole-slot reuse).
 //! - `fallback` -- the process-global always-live fallback heap; the
 //!   `unsafe` is the `static mut MaybeUninit<HeapCore>` + atomic-init
 //!   state-machine + spinlock-guarded `&mut` handout.

@@ -2869,13 +2869,13 @@ fn oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate() {
         "src/alloc_core/large/large_cache_extended.rs: stale oxx R2-07 claim \
          reintroduced — in `production` an `AllocCore` embedded in a \
          registry `HeapSlot` DOES change owning thread when the slot is \
-         recycled and re-claimed (`HeapRegistry::recycle`/`claim_impl`); the \
+         recycled and re-claimed (`HeapLease::drop`/`HeapRegistry::claim_lease`); the \
          soundness argument must rest on the ordered CAS hand-off / fallback \
          spinlock, not on the value never moving",
     );
     assert!(
         flat.contains("ordered hand-off between those owners")
-            && flat.contains("claim_impl")
+            && flat.contains("claim_lease")
             && flat.contains("LockGuard"),
         "src/alloc_core/large/large_cache_extended.rs must ground its \
          plain-`*mut`-sidecar soundness argument in the actual mechanism — \

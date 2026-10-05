@@ -35,7 +35,7 @@ impl HeapCore {
 
     /// W3: plant the stable handle to THIS heap's slot-resident magazine
     /// (tcache) hit counter. Called by
-    /// [`HeapRegistry::claim`](crate::registry::heap_registry::HeapRegistry::claim) once,
+    /// [`HeapRegistry::claim_lease`](crate::registry::heap_registry::HeapRegistry::claim_lease) once,
     /// right after the slot is bound (and the `HeapCore` materialised), before
     /// any allocation on this heap runs. `counter` is a `&'static` reference to
     /// the owning slot's `tcache_hits`. Idempotent — on a slot re-claim the

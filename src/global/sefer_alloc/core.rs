@@ -235,7 +235,7 @@ impl SeferAlloc {
     /// need distinct large-cache configs, run separate processes — do not
     /// rely on per-instance config under a single global registry.
     ///
-    /// **Detecting the conflict (task #95 / N2):** when a later `claim_with_config`
+    /// **Detecting the conflict (task #95 / N2):** when a later `claim_lease_with_config`
     /// hits a slot that was already materialised with a *different* config, the
     /// mismatch is no longer fully silent: it is counted in
     /// [`config_conflicts`](crate::global::AllocStats::config_conflicts) (visible via
