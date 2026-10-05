@@ -292,6 +292,9 @@ fn main() {
         }
     }
     let stats = GLOBAL.stats();
-    println!("RESULT segments_reserved_total={}", stats.segments_reserved_total);
+    println!(
+        "RESULT segments_reserved_total={}",
+        stats.segments_reserved_total
+    );
     println!("RESULT config_conflicts={}", stats.config_conflicts);
 }

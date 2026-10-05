@@ -208,3 +208,5 @@ f198ecba017ba2d2ec5e1a4880c97a7c4c9185c139e5190a56db2adbdff00a3b  $HOME/target-p
 ## mt example binary sha256 (post-build)
 6482161ceaecb182449842606dcb027dc96a378a2b258579ca6b057cf83c8f3d  $HOME/target-ph6b-base-mt/release/examples/ph6b_mt_ab
 7e81180a1a973ab8cd6ac9d21d53d001563d46dd0da29cf3d4035a431f23187e  $HOME/target-ph6b-cand-mt/release/examples/ph6b_mt_ab
+
+POST-MEASUREMENT NOTE (orchestrator): examples/ph6b_mt_ab.rs was reformatted by rustfmt after the A/B run (one println! layout, no workload change; commit "rustfmt the Ph6b MT harness"). The sha256 recorded above is of the bytes that were MEASURED; the committed file differs from it only by that formatting.
