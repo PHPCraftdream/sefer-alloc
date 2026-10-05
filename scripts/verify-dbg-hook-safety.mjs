@@ -122,6 +122,10 @@ const PURE_OBSERVERS = [
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
   [
+    "src/registry/heap_registry/claim.rs::dbg_claim_lease",
+    "test-only forwarder to the real claim CAS protocol (same claim_impl as HeapRegistry::claim); it returns the typed HeapLease whose Drop is the Release LIVE->FREE publication, takes no pointer and exposes no core access (core() is pub(crate)) -- the only effect is a slot state transition that the lease's own Drop reverses (Ph4a, task #2091)"
+  ],
+  [
     "crates/once-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
     "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered"
   ],
