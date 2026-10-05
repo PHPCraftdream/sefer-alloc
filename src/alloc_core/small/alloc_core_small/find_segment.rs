@@ -4,9 +4,11 @@
 //! `alloc_core_small.rs`; pure code movement, no behavior changed).
 
 use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{
-    Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
-};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+// Consumed only by the sidecar payload-start helpers below (patch S).
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+use crate::alloc_core::segment_header::Layout as SegLayout;
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::size_classes::MIN_BLOCK;
 
 use crate::alloc_core::alloc_core::AllocCore;
