@@ -41,6 +41,14 @@
 //!   placement, `src/alloc_core/alloc_core/bootstrap.rs`), so draining the
 //!   registry commits ~`MAX_HEAPS` x 4 MiB (~9 GiB) of host commit charge —
 //!   a machine-load test, not a routing test. Routing is NUMA-independent.
+//! - Not built on eager-primordial Windows configs either (`windows &&
+//!   !primordial-lazy-commit`) for the same reason: every claim materialises
+//!   a `HeapCore` whose 4 MiB primordial is eager-committed, so a drain to
+//!   `MAX_HEAPS` costs ~16 GiB of host commit charge. Measured on a Windows
+//!   host with ~16 GiB free commit: the drain stalled at 1924 leases and the
+//!   fallback `HeapCore::new` got an OS refusal → null (true OOM, M10),
+//!   whereas under `primordial-lazy-commit` (shipping `production`) the test
+//!   PASSes.
 //! - The repeated-bind-after-TORN surface is covered elsewhere
 //!   (`tls_heap_teardown_torn_sentinel.rs`, `r31_10` ac4b/ac4c,
 //!   `dealloc_only_no_bind_torn.rs`) and deliberately NOT duplicated here.
@@ -51,7 +59,10 @@
 #![cfg(all(
     feature = "alloc-global",
     feature = "internals",
-    not(feature = "numa-aware")
+    not(any(
+        feature = "numa-aware",
+        all(windows, not(feature = "primordial-lazy-commit"))
+    ))
 ))]
 
 use sefer_alloc::global::dbg_fallback_lock_acquisitions;

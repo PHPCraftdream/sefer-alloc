@@ -55,6 +55,39 @@ fn layout() -> Layout {
 #[test]
 fn reclaim_trim_consumes_ingress_exactly_once() {
     let _guard = ORACLE_LOCK.lock().expect("oracle mutex");
+
+    // Bounded pre-drain: the sibling oracle on this ORACLE_LOCK may leave
+    // residual pending publications on the sidecar of a previously used
+    // (hinted) slot; without this they land inside the exactly-once window
+    // below and inflate `records_delta` by +1 (flake 2026-10-05 ph6a: 17
+    // instead of 16). Warm a fresh thread, trim, and repeat until the
+    // consumed-records delta settles at 0 — the window is then exclusive.
+    for attempt in 0..64 {
+        let records_before = GLOBAL.dbg_sidecar_ingress_stats().1;
+        std::thread::spawn(|| {
+            let allocator = SeferAlloc::new();
+            // SAFETY: valid non-zero layout.
+            let warm = unsafe { allocator.alloc(Layout::from_size_align(64, 8).expect("valid")) };
+            assert!(!warm.is_null(), "pre-drain warm alloc returned null");
+            allocator.trim_current_thread();
+            // SAFETY: the warm block, original layout.
+            unsafe { allocator.dealloc(warm, Layout::from_size_align(64, 8).expect("valid")) };
+        })
+        .join()
+        .expect("pre-drain thread exited normally");
+        let records_delta = GLOBAL.dbg_sidecar_ingress_stats().1 - records_before;
+        if records_delta == 0 {
+            break;
+        }
+        if attempt == 63 {
+            panic!(
+                "pre-drain: residual sidecar ingress publications never settled \
+                 (still consuming after 64 trim rounds) — exactly-once window \
+                 cannot be made exclusive"
+            );
+        }
+    }
+
     let layout = layout();
 
     // 1. Blocker: binds a slot and holds it, so the hint lands on slot A only.
