@@ -716,6 +716,9 @@ function git(args) {
   return execFileSync('git', ['-c', 'core.quotepath=false', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false', ...args], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
+    // A single commit may carry megabytes of committed raw logs; Node's 1 MiB
+    // default maxBuffer made `git show` throw ENOBUFS on such a commit.
+    maxBuffer: 1024 * 1024 * 1024,
   });
 }
 
