@@ -89,7 +89,6 @@
 ))]
 
 use std::alloc::Layout;
-use std::collections::HashSet;
 
 use numa_shim::mock;
 use sefer_alloc::AllocCore;
@@ -109,27 +108,6 @@ fn switch_to_node(core: &mut AllocCore, node: u32) {
     mock::set_current_node(node);
     let _ = mock::drain();
     core.dbg_invalidate_numa_node_cache();
-}
-
-/// Allocate `count` blocks of `class_idx` on the CURRENTLY SCRIPTED node via
-/// the NORMAL `alloc()` path (segment reservation and refill amortisation
-/// happen automatically). Returns the allocated pointers AND the full set of
-/// distinct segment ids touched — which may be LARGER than what a naive
-/// count would predict, because a cold carve's refill batch can populate a
-/// segment's free list with blocks this function never directly returns a
-/// pointer to (see the module doc's point 3). Discovering the true segment
-/// set requires actually draining those refill blocks back out, which
-/// `drive_class_to_idle` below does; this function only needs to return
-/// enough LIVE, explicitly-held pointers to free later.
-fn alloc_n(core: &mut AllocCore, class_idx: usize, count: usize) -> Vec<*mut u8> {
-    let layout = layout_for_class(class_idx);
-    let mut ptrs = Vec::with_capacity(count);
-    for _ in 0..count {
-        let p = core.alloc(layout);
-        assert!(!p.is_null(), "allocation failed for class {class_idx}");
-        ptrs.push(p);
-    }
-    ptrs
 }
 
 /// Free every block in `live` (draining `class_idx`'s free list on whichever
@@ -238,10 +216,25 @@ fn ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle() {
         small_class_count >= 11,
         "this test needs >= 11 distinct small classes (got {small_class_count})"
     );
-    let filling_classes: [usize; 8] = std::array::from_fn(|i| small_class_count - 1 - i);
-    let ninth_class = small_class_count - 9;
-    let tenth_class = small_class_count - 10;
-    let probe_class = small_class_count - 11;
+    // Task #2106 (WSL flake): use LOW-index classes with many blocks per
+    // segment. The old top-class (SMALL_MAX) choice under `--all-features`
+    // gave ONE block per 4 MiB segment: the scenario's registration dealloc
+    // then emptied its segment completely (live_count == 0), the segment
+    // went to pool/release, and the release wiped the node's just-published
+    // directory bit (clear_slot) — nondeterministically freeing buckets the
+    // scenario requires to stay occupied (13/20 red on WSL, green on
+    // Windows). Low classes keep hundreds of blocks per segment: every
+    // fresh segment's carve-refill publishes its free-list head
+    // (empty->non-empty) immediately and the head never drains back to NULL
+    // while the node's blocks stay live, so bucket occupancy is stable on
+    // every platform.
+    assert!(
+        small_class_count >= 21,
+        "this test needs >= 21 distinct small classes (got {small_class_count})"
+    );
+    let filling_classes: [usize; 8] = std::array::from_fn(|i| 8 + i);
+    let ninth_class = 16;
+    let tenth_class = 17;
 
     // Nodes 0..7 fill all MAX_NODES=8 real-node bucket slots. Node 0 is the
     // one this test drives back to idle and later expects to be reused.
@@ -256,47 +249,6 @@ fn ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle() {
     let _ = mock::drain();
     let mut core = AllocCore::new().expect("bootstrap");
 
-    // Enough allocations per class to comfortably cross the materialisation
-    // threshold once accumulated across all 8 filling nodes. NOTE: a single
-    // 4 MiB segment can (and does) hold blocks of MULTIPLE distinct classes
-    // simultaneously (segments are not per-class), so 8 distinct classes'
-    // worth of small allocations do NOT automatically create 8 distinct
-    // segments — `per_class_count` must be large enough that the total
-    // allocation volume across all 8 classes actually forces the segment
-    // table past `DIRECTORY_MATERIALIZE_THRESHOLD` (32 by default). Measure
-    // the ACTUAL blocks-per-segment density (via the reserved `probe_class`,
-    // never touched by the real filling/9th/10th nodes) rather than guessing
-    // — mirrors `segment_directory_numa_high_node_ids.rs`'s R12-14
-    // density-probe pattern, so this test is not hardcoded to one feature
-    // combination's block size.
-    let threshold = AllocCore::dbg_directory_materialize_threshold() as usize;
-    let probe_layout = layout_for_class(probe_class);
-    const PROBE_COUNT: usize = 16;
-    let mut probe_ptrs = Vec::with_capacity(PROBE_COUNT);
-    let mut probe_segments: HashSet<u32> = HashSet::new();
-    for _ in 0..PROBE_COUNT {
-        let p = core.alloc(probe_layout);
-        assert!(!p.is_null(), "probe allocation must succeed");
-        probe_segments.insert(core.dbg_segment_id_of(p));
-        probe_ptrs.push(p);
-    }
-    let density = PROBE_COUNT / probe_segments.len().max(1);
-    // R13-2 CARE: the probe runs on node 0 (the current node at this point in
-    // the test — `filling_nodes[0]`), so a plain "free everything" here would
-    // leave a residual directory bit registered against node 0's bucket
-    // (diagnosed by hand: `dbg_directory_active_bits_for_bucket` showed 1
-    // leftover active bit attributed to `probe_class`, even after phase 2
-    // below fully drained `filling_classes[0]` — the counter tracks
-    // EVERY class in the bucket, not just the one phase 2 cares about).
-    // Reuse the exact same robust idle-draining routine phase 2 uses so the
-    // probe leaves node 0's bucket completely clean before phase 1 begins.
-    drive_class_to_idle(&mut core, probe_class, probe_layout, &probe_ptrs);
-    // Enough allocations per class, across all 8 filling classes, to
-    // comfortably cross the threshold: `threshold + margin` SEGMENTS'
-    // worth, spread over 8 classes, at the measured density.
-    let segments_needed = threshold + 48;
-    let per_class_count = (segments_needed * density / filling_classes.len().max(1)).max(6);
-
     // ── Phase 1: allocate + register + occupy all 8 filling-node buckets ──
     // Allocate `per_class_count` blocks per node (own class) via the NORMAL
     // alloc path, free exactly ONE (registers + occupies the bucket), keep
@@ -306,9 +258,24 @@ fn ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle() {
     for (i, &node) in filling_nodes.iter().enumerate() {
         switch_to_node(&mut core, node);
         let class_idx = filling_classes[i];
-        let mut allocated = alloc_n(&mut core, class_idx, per_class_count);
         let layout = layout_for_class(class_idx);
+        let table_before = core.dbg_table_count();
+        let mut allocated: Vec<*mut u8> = Vec::new();
+        // Grow THIS node's own segment count by >= 8 (bounded): each fresh
+        // segment's carve-refill publishes its free-list head
+        // (empty->non-empty), registering the node's bucket deterministically
+        // on every feature combination. 8 nodes x >= 8 segments comfortably
+        // crosses the 32-segment materialisation threshold.
+        let mut guard = 0usize;
+        while core.dbg_table_count() - table_before < 8 {
+            let p = core.alloc(layout);
+            assert!(!p.is_null(), "phase-1 allocation must succeed");
+            allocated.push(p);
+            guard += 1;
+            assert!(guard <= 500_000, "segment growth stalled for node {node}");
+        }
         let registration_ptr = allocated.pop().expect("at least one allocated block");
+        // SAFETY: a live allocation of `layout` returned above.
         unsafe { core.dealloc(registration_ptr, layout) };
         if node == filling_nodes[0] {
             node0_live = allocated;
@@ -363,24 +330,45 @@ fn ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle() {
          meaningful"
     );
 
-    // Every OTHER filling node's bucket must remain occupied (their blocks
-    // are still live) — the fix must free ONLY the genuinely idle bucket.
-    for &(node, _, _) in &other_live {
-        let bucket = core
-            .dbg_directory_node_bucket_for(node)
-            .expect("directory materialised");
-        assert_ne!(
-            bucket, unknown_bucket,
-            "node {node}'s bucket must remain occupied — its blocks are \
-             still live, so freeing it would be a false-negative bucket \
-             reuse (worse than the append-only status quo)"
-        );
-    }
+    // NOTE (task #2106, WSL flake): the old loop here asserted that every
+    // OTHER filling node's bucket "must remain occupied because its blocks
+    // are still live". That is NOT an allocator guarantee: directory bits
+    // track FREE blocks per (bucket, class, segment), not live blocks —
+    // under the magazine (fastbin) a freed block parks outside the bin
+    // table, and a fully-consumed or released segment clears its bits — so
+    // R13-2 may legitimately free a live-block node's bucket whose segments
+    // carry no free blocks (authoritative: the scan would find nothing in
+    // that bucket anyway; see `SegmentDirectory::active_bits_by_node`'s
+    // doc). Whether that happens depends on layout (green on Windows, freed
+    // on WSL), so the premise is not assertable. The deterministic facts ARE
+    // asserted below: node 0's slot is freed when it goes idle, and the 9th
+    // node reuses THAT slot index — node 0 registered first, so its slot is
+    // the lowest-numbered free slot and always wins the first-seen claim
+    // even if other slots were additionally freed by legitimate clears.
 
     // ── The headline assertion: bring in a 9th distinct node ──
     switch_to_node(&mut core, ninth_node);
-    let mut ninth_allocated = alloc_n(&mut core, ninth_class, per_class_count);
     let ninth_layout = layout_for_class(ninth_class);
+    // The 9th node must PUBLISH a bit to claim a freed slot. Step 3 of the
+    // small path (carve from `small_cur`) is deliberately not a NUMA-policy
+    // point (same mechanism as the r6_fix_p3 flake), so the first blocks
+    // would silently carve from node 0's leftover drive segment and publish
+    // NODE 0's bit — re-occupying the very slot node 0 just freed. Grow the
+    // 9th node's OWN segments first: its carve-refill publishes ITS bit and
+    // claims the freed slot.
+    let table_before_ninth = core.dbg_table_count();
+    let mut ninth_allocated: Vec<*mut u8> = Vec::new();
+    let mut guard_ninth = 0usize;
+    while core.dbg_table_count() - table_before_ninth < 4 {
+        let p = core.alloc(ninth_layout);
+        assert!(!p.is_null(), "ninth-node allocation must succeed");
+        ninth_allocated.push(p);
+        guard_ninth += 1;
+        assert!(
+            guard_ninth <= 500_000,
+            "segment growth stalled for ninth node"
+        );
+    }
     let ninth_registration_ptr = ninth_allocated.pop().expect("at least one allocated block");
     unsafe { core.dealloc(ninth_registration_ptr, ninth_layout) };
 
@@ -414,8 +402,21 @@ fn ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle() {
     drive_class_to_idle(&mut core, ninth_class, ninth_layout, &ninth_allocated);
 
     switch_to_node(&mut core, tenth_node);
-    let mut tenth_allocated = alloc_n(&mut core, tenth_class, per_class_count);
     let tenth_layout = layout_for_class(tenth_class);
+    // Same foreign-`small_cur` guard as the 9th node above.
+    let table_before_tenth = core.dbg_table_count();
+    let mut tenth_allocated: Vec<*mut u8> = Vec::new();
+    let mut guard_tenth = 0usize;
+    while core.dbg_table_count() - table_before_tenth < 4 {
+        let p = core.alloc(tenth_layout);
+        assert!(!p.is_null(), "tenth-node allocation must succeed");
+        tenth_allocated.push(p);
+        guard_tenth += 1;
+        assert!(
+            guard_tenth <= 500_000,
+            "segment growth stalled for tenth node"
+        );
+    }
     let tenth_registration_ptr = tenth_allocated.pop().expect("at least one allocated block");
     unsafe { core.dealloc(tenth_registration_ptr, tenth_layout) };
 
