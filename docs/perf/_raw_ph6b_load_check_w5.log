@@ -1,0 +1,8 @@
+=== load check W5: 2026-10-05T23:43:14+02:00 ===
+wsl cargo/rustc/valgrind: none (grep rc=1)
+top tasklist mem: wslservice.exe 7.6MB, wslrelay/host/exe all small (<=260K)
+powercfg: GUID 381b4222-... (Balanced)
+=== bench-table silence re-check: 2026-10-05T23:45:29+02:00 ===
+clean
+=== bench-table silence re-check: 2026-10-05T23:45:42+02:00 ===
+clean

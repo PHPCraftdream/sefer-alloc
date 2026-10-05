@@ -1,0 +1,146 @@
+=== R31-10 trim_current_thread() RSS gate — subprocess-per-arm isolation ===
+arms: ["TRIM", "NO_TRIM"] × 3 reps; LARGE_OBJ=33554432 bytes × 4 = 128 MiB/burst; IDLE_MS=500
+
+--- arm=TRIM rep=0/3 ---
+RESULT arm=TRIM
+RESULT repetition=0
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2112
+RESULT commit_before_kib=3400
+RESULT rss_burst1_kib=133292
+RESULT commit_burst1_kib=175928
+RESULT action_released_delta=4
+RESULT rss_idle_kib=2268
+RESULT commit_idle_kib=12088
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133356
+RESULT commit_burst2_kib=175928
+RESULT rss_drop_burst1_to_idle_kib=131024
+RESULT commit_drop_burst1_to_idle_kib=163840
+OK arm=TRIM rep=0 rss_burst1=133292 rss_idle=2268 rss_burst2=133356 commit_burst1=175928 commit_idle=12088 action_released=4 idle_released=0
+--- arm=TRIM rep=1/3 ---
+RESULT arm=TRIM
+RESULT repetition=1
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2072
+RESULT commit_before_kib=3400
+RESULT rss_burst1_kib=133252
+RESULT commit_burst1_kib=175928
+RESULT action_released_delta=4
+RESULT rss_idle_kib=2228
+RESULT commit_idle_kib=12088
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133316
+RESULT commit_burst2_kib=175928
+RESULT rss_drop_burst1_to_idle_kib=131024
+RESULT commit_drop_burst1_to_idle_kib=163840
+OK arm=TRIM rep=1 rss_burst1=133252 rss_idle=2228 rss_burst2=133316 commit_burst1=175928 commit_idle=12088 action_released=4 idle_released=0
+--- arm=TRIM rep=2/3 ---
+RESULT arm=TRIM
+RESULT repetition=2
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2156
+RESULT commit_before_kib=3400
+RESULT rss_burst1_kib=133400
+RESULT commit_burst1_kib=175928
+RESULT action_released_delta=4
+RESULT rss_idle_kib=2376
+RESULT commit_idle_kib=12088
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133464
+RESULT commit_burst2_kib=175928
+RESULT rss_drop_burst1_to_idle_kib=131024
+RESULT commit_drop_burst1_to_idle_kib=163840
+OK arm=TRIM rep=2 rss_burst1=133400 rss_idle=2376 rss_burst2=133464 commit_burst1=175928 commit_idle=12088 action_released=4 idle_released=0
+--- arm=NO_TRIM rep=0/3 ---
+RESULT arm=NO_TRIM
+RESULT repetition=0
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2152
+RESULT commit_before_kib=3400
+RESULT rss_burst1_kib=133392
+RESULT commit_burst1_kib=175928
+RESULT action_released_delta=0
+RESULT rss_idle_kib=133456
+RESULT commit_idle_kib=175928
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133456
+RESULT commit_burst2_kib=175928
+RESULT rss_drop_burst1_to_idle_kib=0
+RESULT commit_drop_burst1_to_idle_kib=0
+OK arm=NO_TRIM rep=0 rss_burst1=133392 rss_idle=133456 rss_burst2=133456 commit_burst1=175928 commit_idle=175928 action_released=0 idle_released=0
+--- arm=NO_TRIM rep=1/3 ---
+RESULT arm=NO_TRIM
+RESULT repetition=1
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2088
+RESULT commit_before_kib=3400
+RESULT rss_burst1_kib=133392
+RESULT commit_burst1_kib=175928
+RESULT action_released_delta=0
+RESULT rss_idle_kib=133456
+RESULT commit_idle_kib=175928
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133456
+RESULT commit_burst2_kib=175928
+RESULT rss_drop_burst1_to_idle_kib=0
+RESULT commit_drop_burst1_to_idle_kib=0
+OK arm=NO_TRIM rep=1 rss_burst1=133392 rss_idle=133456 rss_burst2=133456 commit_burst1=175928 commit_idle=175928 action_released=0 idle_released=0
+--- arm=NO_TRIM rep=2/3 ---
+RESULT arm=NO_TRIM
+RESULT repetition=2
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2076
+RESULT commit_before_kib=3400
+RESULT rss_burst1_kib=133384
+RESULT commit_burst1_kib=175928
+RESULT action_released_delta=0
+RESULT rss_idle_kib=133448
+RESULT commit_idle_kib=175928
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133448
+RESULT commit_burst2_kib=175928
+RESULT rss_drop_burst1_to_idle_kib=0
+RESULT commit_drop_burst1_to_idle_kib=0
+OK arm=NO_TRIM rep=2 rss_burst1=133384 rss_idle=133448 rss_burst2=133448 commit_burst1=175928 commit_idle=175928 action_released=0 idle_released=0
+
+=== aggregated (median of 3 reps per arm) ===
+     arm   rss_burst1     rss_idle   rss_burst2   cmt_burst1       cmt_idle       rss_drop       cmt_drop   act_released
+    TRIM     130.2 MiB       2.2 MiB     130.2 MiB     171.8 MiB      11.8 MiB     128.0 MiB     160.0 MiB              4
+ NO_TRIM     130.3 MiB     130.3 MiB     130.3 MiB     171.8 MiB     171.8 MiB       0.0 MiB       0.0 MiB              0
+
+=== headline: RSS/commit win at idle (TRIM vs NO_TRIM) ===
+rss_idle:   TRIM=2.2 MiB  NO_TRIM=130.3 MiB  →  win=128.1 MiB (RSS RECLAIMED)
+commit_idle: TRIM=11.8 MiB  NO_TRIM=171.8 MiB  →  win=160.0 MiB (COMMIT RECLAIMED)
+
+=== between-arm mechanism delta (CLAUDE.md R30-8 rule) ===
+TRIM action_released_delta=4  vs  NO_TRIM action_released_delta=0  (delta=4)
+
+=== raw CSV (all 6 child runs) ===
+# arm,repetition,large_obj_bytes,large_obj_count,total_burst_bytes,idle_ms,rss_before_kib,commit_before_kib,rss_burst1_kib,commit_burst1_kib,action_released_delta,rss_idle_kib,commit_idle_kib,idle_released_delta,rss_burst2_kib,commit_burst2_kib,rss_drop_burst1_to_idle_kib,commit_drop_burst1_to_idle_kib
+TRIM,0,33554432,4,134217728,500,2112,3400,133292,175928,4,2268,12088,0,133356,175928,131024,163840
+TRIM,1,33554432,4,134217728,500,2072,3400,133252,175928,4,2228,12088,0,133316,175928,131024,163840
+TRIM,2,33554432,4,134217728,500,2156,3400,133400,175928,4,2376,12088,0,133464,175928,131024,163840
+NO_TRIM,0,33554432,4,134217728,500,2152,3400,133392,175928,0,133456,175928,0,133456,175928,0,0
+NO_TRIM,1,33554432,4,134217728,500,2088,3400,133392,175928,0,133456,175928,0,133456,175928,0,0
+NO_TRIM,2,33554432,4,134217728,500,2076,3400,133384,175928,0,133448,175928,0,133448,175928,0,0
+
+NOTE: each (arm, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation). The TRIM arm hard-asserted action_released_delta > 0 (the eviction mechanism fired — CLAUDE.md R30-8 path-activation oracle). Entry point: SeferAlloc (direct GlobalAlloc::alloc/dealloc + trim_current_thread).

@@ -1,0 +1,210 @@
+Ph6b (#2097) A/B COST MEASUREMENT — IDENTITY FILE
+==================================================
+MEASUREMENT-ONLY. Filled BEFORE the measurement runs. No src/tests/benches
+changes in either tree.
+
+CANDIDATE C (arm A)
+-------------------
+Worktree: <repo>/worktrees/ph6b (branch ph6b)
+HEAD:     fd954856acab9aa3015b30d49c87c58d2436d796
+Tree:     17bdf9b88fb773296d11506c001f76acbc1739f8
+
+git status --porcelain (measurement-only additions):
+ M Cargo.toml                      (one [[example]] entry: ph6b_mt_ab)
+?? examples/ph6b_mt_ab.rs          (new MT harness)
+?? docs/perf/PH6B_COST_AB_identity.txt
+?? docs/perf/_raw_ph6b_build_base_frag.log
+?? docs/perf/_raw_ph6b_build_base_trim.log
+?? docs/perf/_raw_ph6b_build_base_mt.log
+?? docs/perf/_raw_ph6b_build_cand_frag.log
+?? docs/perf/_raw_ph6b_build_cand_trim.log
+?? docs/perf/_raw_ph6b_build_cand_mt.log
+(note: examples/ph3c_frag_stand.rs is TRACKED in C's HEAD — it is the
+C-side frag stand, copied byte-identical into B; raw logs under docs/perf/
+matching the _raw_*gitignore pattern do not show as untracked)
+(note: the untracked .wt/ directory is the baseline worktree itself)
+
+sha256 of measurement files (C side):
+  examples/ph6b_mt_ab.rs   07a92783088e4edeca4a733d833503fac8ef134a4ca06fa166185040d77e6d4a
+  Cargo.toml (modified)    647f6f7565481c30729577af612c1fc94d4e6caa76fa23a3a7af0e44ba93658d
+  examples/ph3c_frag_stand.rs (pre-existing in C)
+                           d71a408b4a06315400817b6a264a832c7a4b085f351073394f150f6e9e09b545
+
+sha256 of C binaries ($HOME/target-ph6b-cand-*, WSL):
+  frag: target-ph6b-cand-frag/release/examples/ph3c_frag_stand
+        10a6f583f93d904404e2fdde0d783b0cb36c2b7dfe2a8137dc8a0e13b951e039
+  trim: target-ph6b-cand-trim/release/examples/r31_10_trim_rss_gate
+        743e51befb2e49743c66c19724f3252f2566d3f86fce792dcb9432bb65476a3e
+  mt:   target-ph6b-cand-mt/release/examples/ph6b_mt_ab
+        7e81180a1a973ab8cd6ac9d21d53d001563d46dd0da29cf3d4035a431f23187e
+
+BASELINE B (arm B)
+------------------
+Worktree: <repo>/worktrees/ph6b/.wt/base (detached)
+SHA:      7d80d7e1fb6127b7747831ee61738b948a9b32f9
+Tree:     5e5da6d1e0409aaadbd7e2f6b573722b43e44edb
+  (DEVIATION NOTE: the task brief expected tree 70885b71…; the actual tree of
+   commit 7d80d7e1 is 5e5da6d1… as printed by
+   `git -C .wt/base rev-parse HEAD HEAD^{tree}`. The SHA matches.)
+
+Justification of B choice: commit 7d80d7e1 ("bench(perf): PG-3 iai arm of the
+off-body NextTable spike") touches ONLY docs/perf + scripts, so the
+production code of B == that of its parent. `git diff --stat 70885b71
+7d80d7e1` (verbatim tail):
+  docs/perf/PG3_OFFBODY_SPIKE_IAI.md          | 453 +++++++++++++++++
+  docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv |  86 ++++
+  docs/perf/_raw_pg3_iai_base.log             | 733 +++++++++++++++++++++
+  docs/perf/_raw_pg3_iai_spike.log            | 597 +++++++++++++++++++++
+  scripts/pg3_iai_table.mjs                   | 430 ++++++++++++++++
+  5 files changed, 2299 insertions(+)
+(no src/, tests/, benches/, Cargo.toml changes)
+
+git -C .wt/base status --porcelain (measurement-only additions ONLY):
+ M Cargo.toml                      (two [[example]] entries: ph6b_mt_ab, ph3c_frag_stand)
+?? examples/ph3c_frag_stand.rs     (byte-identical copy from C)
+?? examples/ph6b_mt_ab.rs          (byte-identical copy from C)
+
+sha256 of measurement files (B side):
+  examples/ph6b_mt_ab.rs   07a92783088e4edeca4a733d833503fac8ef134a4ca06fa166185040d77e6d4a  (== C)
+  examples/ph3c_frag_stand.rs d71a408b4a06315400817b6a264a832c7a4b085f351073394f150f6e9e09b545  (== C)
+  Cargo.toml (modified)    fa58d98dd6db612cb120000bfc205914f054621eddab1df5c6a9e2f21c699af8
+
+sha256 of B binaries ($HOME/target-ph6b-base-*, WSL):
+  frag: target-ph6b-base-frag/release/examples/ph3c_frag_stand
+        93e47daf7c18b16a6767bd335d94af30dc6d306385e295c592ec112ef3e6b2b5
+  trim: target-ph6b-base-trim/release/examples/r31_10_trim_rss_gate
+        8f6c4ab8e1cb5788c4a506c8af474491c47e16edb9c485bbcce81d2657c11eb8
+  mt:   target-ph6b-base-mt/release/examples/ph6b_mt_ab
+        6482161ceaecb182449842606dcb027dc96a378a2b258579ca6b057cf83c8f3d
+
+TOOLCHAIN
+---------
+rustc:   rustc 1.98.1 (48a229cea 2026-09-01)   (WSL Ubuntu 24.04)
+valgrind: valgrind-3.22.0
+Kernel:  6.18.33.2-microsoft-standard-WSL2
+nproc:   16
+CPU governor: N/A — not exposed/controllable under WSL2 (recorded as such).
+OS:      Ubuntu 24.04.4 LTS (/etc/os-release PRETTY_NAME)
+iai-callgrind-runner: 0.14.2
+WSL build flags fixed for every build: CARGO_BUILD_JOBS=4, RUSTC_WRAPPER=,
+CARGO_BUILD_RUSTC_WRAPPER= (empty), one heavy cargo at a time.
+
+FEATURE SETS PER AXIS
+---------------------
+iai:         "production bench-internals internals"
+bench-table: "production internals bench-internals"
+frag:        "production internals bench-internals"
+trim:        "production"
+mt:          "production internals"
+Notes: `SeferAlloc::stats()` / `AllocStats` (config_conflicts,
+segments_reserved_total) are NOT feature-gated, so "production internals"
+suffices for the mt harness; the frag stand additionally needs
+bench-internals (proc_probe protocol), matching C's existing Cargo.toml
+entry. Feature sets identical on both sides; no symmetric correction was
+needed.
+
+CARGO_TARGET_DIR SCHEME (private per tree × axis, under WSL $HOME):
+  base: $HOME/target-ph6b-base-{frag,trim,mt,iai,bt}
+  cand: $HOME/target-ph6b-cand-{frag,trim,mt,iai,bt}
+(iai/bt target dirs are reserved for the later iai/bench-table runs; those
+were NOT built in this phase.)
+
+EXACT COMMANDS OF THE FUTURE RUNS
+---------------------------------
+(B = cd worktrees/ph6b/.wt/base, C = cd worktrees/ph6b; all in
+`wsl.exe -e bash -lc`; RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= exported)
+
+frag (per side S in {base→B, cand→C}, TDIR=$HOME/target-ph6b-S-frag):
+  cargo build --release --example ph3c_frag_stand --features "production internals bench-internals"
+  $TDIR/release/examples/ph3c_frag_stand w1   # then w2, w3, w4
+
+trim (TDIR=$HOME/target-ph6b-S-trim):
+  cargo build --release --example r31_10_trim_rss_gate --features "production"
+  $TDIR/release/examples/r31_10_trim_rss_gate
+
+mt (TDIR=$HOME/target-ph6b-S-mt):
+  cargo build --release --example ph6b_mt_ab --features "production internals"
+  $TDIR/release/examples/ph6b_mt_ab
+
+iai (TDIR=$HOME/target-ph6b-S-iai):
+  cargo bench --bench perf_gate_iai --features "production bench-internals internals"
+
+bench-table (TDIR=$HOME/target-ph6b-S-bt):
+  cargo bench --bench global_alloc --features "production internals bench-internals"
+
+HARNESS NOTES / DEVIATIONS FROM THE BRIEF
+-----------------------------------------
+1. B commit tree is 5e5da6d1…, not the 70885b71… quoted in the brief (SHA
+   itself matches). Recorded verbatim above.
+2. The mt harness uses NO unsafe: remote-free queue carries the block address
+   as `usize` (strict-provenance reconstitution via
+   `std::ptr::with_exposed_provenance_mut`), because `*mut u8` is not `Send`.
+3. mstress rounds fixed constant MSTRESS_ROUNDS = 260 → 399_360 ops/thread
+   (≈400_000). larson: 400_000 steps + 768 fill + 768 teardown per thread.
+   Smoke: full mt run takes ~0.2 s wall — no steps_per_thread reduction
+   needed.
+4. `.wt/base/.git` pointer file (git plumbing, not tracked content) was
+   rewritten from a POSIX path to the Windows form
+   `gitdir: <repo>/.git/worktrees/base` so Windows-side git
+   can read the worktree. No tracked content affected.
+5. Smoke outputs are appended to the corresponding _raw_ph6b_build_*.log
+   after a `# SMOKE RUN` marker; mt prints 18 RESULT lines (16 cells + 2
+   sanity) on both sides, config_conflicts=0 everywhere, and the Compiling
+   line points at the correct tree in all six logs (grep -c == 1 each).
+
+ЗАПОЛНИТЬ ПОСЛЕ ЗАМЕРОВ: перепроверка
+-------------------------------------
+(повторные хеши после всех прогонов — должны совпасть с зафиксированными)
+
+Проверено: 2026-10-06T00:37:43+02:00.
+
+C: examples/ph6b_mt_ab.rs       sha256 = 07a92783088e4edeca4a733d833503fac8ef134a4ca06fa166185040d77e6d4a  (совпал)
+C: Cargo.toml                   sha256 = 647f6f7565481c30729577af612c1fc94d4e6caa76fa23a3a7af0e44ba93658d  (совпал)
+C: cand-frag binary             sha256 = 10a6f583f93d904404e2fdde0d783b0cb36c2b7dfe2a8137dc8a0e13b951e039  (совпал)
+C: cand-trim binary             sha256 = 743e51befb2e49743c66c19724f3252f2566d3f86fce792dcb9432bb65476a3e  (совпал)
+C: cand-mt binary               sha256 = 7e81180a1a973ab8cd6ac9d21d53d001563d46dd0da29cf3d4035a431f23187e  (совпал)
+B: examples/ph6b_mt_ab.rs       sha256 = 07a92783088e4edeca4a733d833503fac8ef134a4ca06fa166185040d77e6d4a  (совпал с C — байт-в-байт)
+B: examples/ph3c_frag_stand.rs  sha256 = d71a408b4a06315400817b6a264a832c7a4b085f351073394f150f6e9e09b545  (совпал с C)
+B: Cargo.toml                   sha256 = fa58d98dd6db612cb120000bfc205914f054621eddab1df5c6a9e2f21c699af8  (отличается от C: у B нет [[example]] ph6b_mt_ab — ожидаемо, правится только своё Cargo.toml)
+B: base-frag binary             sha256 = 93e47daf7c18b16a6767bd335d94af30dc6d306385e295c592ec112ef3e6b2b5
+B: base-trim binary             sha256 = 8f6c4ab8e1cb5788c4a506c8af474491c47e16edb9c485bbcce81d2657c11eb8
+B: base-mt binary               sha256 = 6482161ceaecb182449842606dcb027dc96a378a2b258579ca6b057cf83c8f3d  (совпал с pre-build)
+C: git rev-parse HEAD = fd954856acab9aa3015b30d49c87c58d2436d796 (совпал)
+C: git status --porcelain после прогонов:
+    M Cargo.toml
+   ?? .tmp/            (временный каталог вывода судьи; удалён при уборке)
+   ?? .wt/
+   ?? docs/perf/PH6B_COST_AB_identity.txt
+   ?? docs/perf/PH6B_COST_AB_summary.csv
+   ?? docs/perf/_ph6b_frag_run.sh
+   ?? docs/perf/_ph6b_trim_run.sh
+   ?? docs/perf/_tmp_analyze_w5.py
+   ?? docs/perf/_tmp_run_bt_w5.sh
+   ?? docs/perf/_tmp_run_mt_w5.sh
+   ?? examples/ph6b_mt_ab.rs
+   ?? scripts/ph6b_cost_ab_table.mjs
+   (measurement-only: Cargo.toml M + examples/ph6b_mt_ab.rs + docs/perf/* + judge script + .wt/)
+C: git status --porcelain -- src/ tests/ benches/ = пусто
+B: git -C .wt/base rev-parse HEAD = 7d80d7e1fb6127b7747831ee61738b948a9b32f9 (совпал)
+B: git -C .wt/base status --porcelain после прогонов:
+    M Cargo.toml
+   ?? examples/ph3c_frag_stand.rs
+   ?? examples/ph6b_mt_ab.rs
+   (ровно как зафиксировано до прогонов)
+B: git status --porcelain -- src/ tests/ benches/ = пусто
+
+ВЫВОД: identity не нарушена — src/, tests/, benches/ не изменены ни в одном дереве;
+хеши измерительных файлов и кандид-state binaries совпали с pre-registered
+(отличие B Cargo.toml от C ожидаемо и было задокументировано до прогонов).
+
+## iai bench binary sha256 (post-build)
+f20e8bf979dd89684febe935958e4311c52a2944142c6c20752796bcf9702cca  $HOME/target-ph6b-base-iai/release/deps/perf_gate_iai-1eae813e19149d63
+4c4084d219e0fc564be38e40bbcbc7db0a846876874a11b963b3f5caddc65b92  $HOME/target-ph6b-cand-iai/release/deps/perf_gate_iai-1eae813e19149d63
+
+## bench-table bench binary sha256 (post-build)
+268a2ec4fadb89ca8626a464498602cb2338e8c19e48f0da8dea7b33c1c2931d  $HOME/target-ph6b-base-bt/release/deps/global_alloc-dbcb5f322929efe8
+f198ecba017ba2d2ec5e1a4880c97a7c4c9185c139e5190a56db2adbdff00a3b  $HOME/target-ph6b-cand-bt/release/deps/global_alloc-dbcb5f322929efe8
+
+## mt example binary sha256 (post-build)
+6482161ceaecb182449842606dcb027dc96a378a2b258579ca6b057cf83c8f3d  $HOME/target-ph6b-base-mt/release/examples/ph6b_mt_ab
+7e81180a1a973ab8cd6ac9d21d53d001563d46dd0da29cf3d4035a431f23187e  $HOME/target-ph6b-cand-mt/release/examples/ph6b_mt_ab

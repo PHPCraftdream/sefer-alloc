@@ -1,0 +1,610 @@
+# Ph6b orchestrator quiet-machine bench-table re-measure of global_alloc_churn/{SeferAlloc,mimalloc}/1024B (supplementary to §3.2; resolves the INCONCLUSIVE max-ratio id)
+# Procedure: 60 alternating runs (20+40, two consecutive series on the quiet machine) B,C,B,C,... of the SAME pre-built criterion binaries recorded in PH6B_COST_AB_identity.txt (WSL, no other load: see uptime line); filter regex global_alloc_churn/(SeferAlloc|mimalloc)/1024B$ , --bench --noplot.
+# Reproduce: for i in 1..20: $HOME/target-ph6b-{base,cand}-bt/release/deps/global_alloc-dbcb5f322929efe8 --bench --noplot "global_alloc_churn/(SeferAlloc|mimalloc)/1024B$" alternately.
+268a2ec4fadb89ca8626a464498602cb2338e8c19e48f0da8dea7b33c1c2931d  $HOME/target-ph6b-base-bt/release/deps/global_alloc-dbcb5f322929efe8
+f198ecba017ba2d2ec5e1a4880c97a7c4c9185c139e5190a56db2adbdff00a3b  $HOME/target-ph6b-cand-bt/release/deps/global_alloc-dbcb5f322929efe8
+ 01:17:40 up 6 days,  8:37,  2 users,  load average: 0.35, 0.34, 0.57
+== B run=1
+global_alloc_churn/mimalloc/1024B
+                        time:   [114.17 µs 141.06 µs 155.82 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [21.084 µs 23.769 µs 26.028 µs]
+== C run=1
+global_alloc_churn/mimalloc/1024B
+                        time:   [65.291 µs 71.418 µs 79.838 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [28.282 µs 39.309 µs 54.661 µs]
+== B run=2
+global_alloc_churn/mimalloc/1024B
+                        time:   [103.60 µs 151.73 µs 175.06 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.473 µs 19.506 µs 25.928 µs]
+== C run=2
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [20.314 µs 28.318 µs 35.617 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [127.42 µs 141.29 µs 163.54 µs]
+== B run=3
+global_alloc_churn/mimalloc/1024B
+                        time:   [69.475 µs 99.438 µs 137.59 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.564 µs 19.063 µs 24.583 µs]
+== C run=3
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.821 µs 20.803 µs 27.307 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [147.82 µs 161.09 µs 168.21 µs]
+== B run=4
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.364 µs 25.069 µs 34.057 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [126.16 µs 184.78 µs 226.87 µs]
+== C run=4
+global_alloc_churn/mimalloc/1024B
+                        time:   [81.867 µs 107.56 µs 122.81 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [23.621 µs 34.646 µs 46.438 µs]
+== B run=5
+global_alloc_churn/mimalloc/1024B
+                        time:   [97.439 µs 138.81 µs 184.75 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.226 µs 20.351 µs 27.387 µs]
+== C run=5
+global_alloc_churn/mimalloc/1024B
+                        time:   [152.14 µs 167.59 µs 196.11 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.758 µs 43.233 µs 56.943 µs]
+== B run=6
+global_alloc_churn/mimalloc/1024B
+                        time:   [165.41 µs 183.09 µs 212.11 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [30.702 µs 42.906 µs 60.283 µs]
+== C run=6
+global_alloc_churn/mimalloc/1024B
+                        time:   [71.367 µs 123.46 µs 166.78 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [27.708 µs 35.699 µs 43.651 µs]
+== B run=7
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [27.328 µs 34.303 µs 44.093 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [94.644 µs 129.34 µs 158.76 µs]
+== C run=7
+global_alloc_churn/mimalloc/1024B
+                        time:   [92.055 µs 112.95 µs 146.01 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.079 µs 24.847 µs 39.154 µs]
+== B run=8
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [21.382 µs 26.756 µs 30.477 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [158.28 µs 169.73 µs 185.35 µs]
+== C run=8
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [23.108 µs 28.459 µs 35.109 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [161.63 µs 184.21 µs 197.99 µs]
+== B run=9
+global_alloc_churn/mimalloc/1024B
+                        time:   [89.508 µs 115.85 µs 139.05 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [32.357 µs 51.280 µs 69.345 µs]
+== C run=9
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [31.062 µs 39.690 µs 55.489 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [145.22 µs 162.30 µs 181.87 µs]
+== B run=10
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [26.181 µs 36.308 µs 53.247 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [192.25 µs 201.19 µs 207.34 µs]
+== C run=10
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [30.739 µs 36.790 µs 42.817 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [163.15 µs 176.27 µs 191.31 µs]
+== B run=11
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.149 µs 35.153 µs 46.420 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [147.63 µs 180.64 µs 219.24 µs]
+== C run=11
+global_alloc_churn/mimalloc/1024B
+                        time:   [166.09 µs 180.36 µs 197.28 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [28.703 µs 33.614 µs 38.575 µs]
+== B run=12
+global_alloc_churn/mimalloc/1024B
+                        time:   [165.22 µs 188.97 µs 203.23 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.176 µs 17.299 µs 17.977 µs]
+== C run=12
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.318 µs 20.029 µs 28.783 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [175.23 µs 198.67 µs 216.15 µs]
+== B run=13
+global_alloc_churn/mimalloc/1024B
+                        time:   [95.062 µs 126.84 µs 156.58 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.361 µs 20.745 µs 26.573 µs]
+== C run=13
+global_alloc_churn/mimalloc/1024B
+                        time:   [108.00 µs 139.37 µs 164.61 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.047 µs 37.378 µs 48.104 µs]
+== B run=14
+global_alloc_churn/mimalloc/1024B
+                        time:   [95.486 µs 140.40 µs 193.80 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [31.358 µs 54.065 µs 71.845 µs]
+== C run=14
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.314 µs 37.521 µs 51.391 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [97.214 µs 145.79 µs 174.07 µs]
+== B run=15
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [41.846 µs 61.477 µs 88.730 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [167.06 µs 188.17 µs 221.12 µs]
+== C run=15
+global_alloc_churn/mimalloc/1024B
+                        time:   [158.54 µs 183.58 µs 198.07 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [28.845 µs 39.208 µs 48.804 µs]
+== B run=16
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.190 µs 34.598 µs 41.495 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [168.59 µs 183.59 µs 195.29 µs]
+== C run=16
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.997 µs 16.524 µs 19.256 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [169.03 µs 189.46 µs 202.30 µs]
+== B run=17
+global_alloc_churn/mimalloc/1024B
+                        time:   [206.68 µs 258.09 µs 316.44 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [39.132 µs 72.920 µs 117.71 µs]
+== C run=17
+global_alloc_churn/mimalloc/1024B
+                        time:   [144.77 µs 175.92 µs 207.01 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [31.311 µs 33.994 µs 37.703 µs]
+== B run=18
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [21.483 µs 27.966 µs 33.098 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [170.11 µs 186.97 µs 206.32 µs]
+== C run=18
+global_alloc_churn/mimalloc/1024B
+                        time:   [144.15 µs 154.61 µs 162.54 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.747 µs 43.001 µs 65.954 µs]
+== B run=19
+global_alloc_churn/mimalloc/1024B
+                        time:   [277.25 µs 299.75 µs 317.77 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [25.269 µs 27.095 µs 29.109 µs]
+== C run=19
+global_alloc_churn/mimalloc/1024B
+                        time:   [287.30 µs 309.57 µs 330.20 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [24.651 µs 33.625 µs 48.517 µs]
+== B run=20
+global_alloc_churn/mimalloc/1024B
+                        time:   [77.557 µs 107.98 µs 144.52 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.182 µs 18.724 µs 20.581 µs]
+== C run=20
+global_alloc_churn/mimalloc/1024B
+                        time:   [110.05 µs 159.99 µs 183.20 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.575 µs 39.332 µs 49.289 µs]
+# --- second series (runs 21..60) ---
+268a2ec4fadb89ca8626a464498602cb2338e8c19e48f0da8dea7b33c1c2931d  $HOME/target-ph6b-base-bt/release/deps/global_alloc-dbcb5f322929efe8
+f198ecba017ba2d2ec5e1a4880c97a7c4c9185c139e5190a56db2adbdff00a3b  $HOME/target-ph6b-cand-bt/release/deps/global_alloc-dbcb5f322929efe8
+ 01:22:16 up 6 days,  8:42,  2 users,  load average: 0.46, 0.56, 0.63
+== B run=21
+global_alloc_churn/mimalloc/1024B
+                        time:   [66.759 µs 73.517 µs 84.628 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.632 µs 23.928 µs 31.402 µs]
+== C run=21
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [12.956 µs 18.143 µs 22.400 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [101.12 µs 121.11 µs 149.50 µs]
+== B run=22
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [37.407 µs 44.877 µs 63.157 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [93.824 µs 103.85 µs 116.21 µs]
+== C run=22
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.297 µs 14.861 µs 16.165 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [100.58 µs 145.29 µs 166.12 µs]
+== B run=23
+global_alloc_churn/mimalloc/1024B
+                        time:   [150.38 µs 162.98 µs 181.19 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [29.925 µs 37.836 µs 46.017 µs]
+== C run=23
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [22.881 µs 29.452 µs 33.428 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [116.36 µs 136.45 µs 154.96 µs]
+== B run=24
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [26.656 µs 38.000 µs 50.786 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [164.32 µs 177.71 µs 189.05 µs]
+== C run=24
+global_alloc_churn/mimalloc/1024B
+                        time:   [97.173 µs 115.89 µs 137.40 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [23.340 µs 34.039 µs 46.386 µs]
+== B run=25
+global_alloc_churn/mimalloc/1024B
+                        time:   [73.447 µs 78.387 µs 89.227 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.734 µs 21.649 µs 25.515 µs]
+== C run=25
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [22.516 µs 33.211 µs 46.271 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [91.347 µs 114.74 µs 149.98 µs]
+== B run=26
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [33.176 µs 42.358 µs 53.672 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [82.886 µs 131.65 µs 186.81 µs]
+== C run=26
+global_alloc_churn/mimalloc/1024B
+                        time:   [147.58 µs 169.86 µs 188.57 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [32.262 µs 38.143 µs 49.984 µs]
+== B run=27
+global_alloc_churn/mimalloc/1024B
+                        time:   [122.08 µs 147.25 µs 181.53 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.467 µs 28.950 µs 40.112 µs]
+== C run=27
+global_alloc_churn/mimalloc/1024B
+                        time:   [84.624 µs 99.100 µs 131.19 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [30.253 µs 43.259 µs 56.064 µs]
+== B run=28
+global_alloc_churn/mimalloc/1024B
+                        time:   [78.958 µs 93.678 µs 132.87 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.324 µs 21.227 µs 25.837 µs]
+== C run=28
+global_alloc_churn/mimalloc/1024B
+                        time:   [92.947 µs 144.96 µs 216.21 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [33.033 µs 48.794 µs 63.525 µs]
+== B run=29
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [27.105 µs 46.364 µs 70.660 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [129.38 µs 189.53 µs 259.84 µs]
+== C run=29
+global_alloc_churn/mimalloc/1024B
+                        time:   [89.374 µs 105.00 µs 128.00 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.007 µs 25.605 µs 41.061 µs]
+== B run=30
+global_alloc_churn/mimalloc/1024B
+                        time:   [74.799 µs 104.91 µs 126.78 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.923 µs 16.022 µs 18.392 µs]
+== C run=30
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.153 µs 15.470 µs 15.736 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [83.632 µs 141.56 µs 211.84 µs]
+== B run=31
+global_alloc_churn/mimalloc/1024B
+                        time:   [77.112 µs 138.12 µs 212.79 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [20.601 µs 33.114 µs 45.504 µs]
+== C run=31
+global_alloc_churn/mimalloc/1024B
+                        time:   [82.345 µs 108.03 µs 134.21 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [21.270 µs 26.465 µs 40.010 µs]
+== B run=32
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [27.103 µs 53.376 µs 83.260 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [127.82 µs 150.49 µs 171.20 µs]
+== C run=32
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [22.063 µs 30.444 µs 40.548 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [143.72 µs 173.92 µs 191.94 µs]
+== B run=33
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [13.848 µs 17.184 µs 20.503 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [88.433 µs 124.16 µs 155.71 µs]
+== C run=33
+global_alloc_churn/mimalloc/1024B
+                        time:   [97.152 µs 120.29 µs 149.03 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.233 µs 21.704 µs 25.272 µs]
+== B run=34
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.875 µs 18.174 µs 20.701 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [75.810 µs 85.490 µs 105.28 µs]
+== C run=34
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.070 µs 23.999 µs 36.612 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [111.06 µs 143.84 µs 164.78 µs]
+== B run=35
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [25.722 µs 32.078 µs 43.688 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [73.983 µs 108.42 µs 148.68 µs]
+== C run=35
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.579 µs 32.030 µs 57.972 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [74.530 µs 85.081 µs 110.22 µs]
+== B run=36
+global_alloc_churn/mimalloc/1024B
+                        time:   [111.73 µs 146.55 µs 178.25 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.206 µs 20.801 µs 24.866 µs]
+== C run=36
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.609 µs 19.296 µs 23.349 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [69.628 µs 71.428 µs 74.282 µs]
+== B run=37
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.326 µs 21.926 µs 24.520 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [104.10 µs 171.02 µs 252.23 µs]
+== C run=37
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.653 µs 22.844 µs 36.249 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [78.279 µs 119.46 µs 142.49 µs]
+== B run=38
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.289 µs 22.269 µs 26.248 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [74.954 µs 90.699 µs 122.82 µs]
+== C run=38
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.859 µs 17.819 µs 19.010 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [83.931 µs 95.783 µs 108.37 µs]
+== B run=39
+global_alloc_churn/mimalloc/1024B
+                        time:   [71.518 µs 89.372 µs 113.43 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.252 µs 21.484 µs 27.946 µs]
+== C run=39
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.390 µs 15.927 µs 16.613 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [87.168 µs 93.637 µs 98.408 µs]
+== B run=40
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.439 µs 22.430 µs 33.498 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [70.700 µs 78.390 µs 85.852 µs]
+== C run=40
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.144 µs 18.527 µs 25.467 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [112.60 µs 146.18 µs 178.38 µs]
+== B run=41
+global_alloc_churn/mimalloc/1024B
+                        time:   [180.10 µs 223.23 µs 291.40 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [28.107 µs 35.345 µs 41.232 µs]
+== C run=41
+global_alloc_churn/mimalloc/1024B
+                        time:   [85.923 µs 178.90 µs 237.39 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.733 µs 20.818 µs 23.856 µs]
+== B run=42
+global_alloc_churn/mimalloc/1024B
+                        time:   [91.441 µs 137.45 µs 176.32 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [28.862 µs 37.576 µs 43.970 µs]
+== C run=42
+global_alloc_churn/mimalloc/1024B
+                        time:   [77.386 µs 120.78 µs 154.63 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.719 µs 23.116 µs 26.985 µs]
+== B run=43
+global_alloc_churn/mimalloc/1024B
+                        time:   [76.369 µs 123.29 µs 158.58 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.098 µs 15.500 µs 16.061 µs]
+== C run=43
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.413 µs 26.863 µs 39.649 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [73.455 µs 76.834 µs 81.666 µs]
+== B run=44
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.873 µs 27.382 µs 40.689 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [84.991 µs 107.44 µs 131.69 µs]
+== C run=44
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [20.541 µs 35.966 µs 54.137 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [93.089 µs 139.49 µs 169.82 µs]
+== B run=45
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [25.715 µs 31.235 µs 36.391 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [100.73 µs 137.24 µs 173.12 µs]
+== C run=45
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.603 µs 21.210 µs 24.149 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [87.948 µs 115.75 µs 146.35 µs]
+== B run=46
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [20.070 µs 23.229 µs 28.173 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [65.640 µs 69.564 µs 73.372 µs]
+== C run=46
+global_alloc_churn/mimalloc/1024B
+                        time:   [68.142 µs 69.721 µs 70.636 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.382 µs 21.816 µs 24.248 µs]
+== B run=47
+global_alloc_churn/mimalloc/1024B
+                        time:   [73.345 µs 92.173 µs 116.69 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [13.968 µs 15.370 µs 17.117 µs]
+== C run=47
+global_alloc_churn/mimalloc/1024B
+                        time:   [79.108 µs 88.489 µs 95.016 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.210 µs 33.557 µs 54.747 µs]
+== B run=48
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.665 µs 17.766 µs 22.272 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [76.810 µs 91.267 µs 117.97 µs]
+== C run=48
+global_alloc_churn/mimalloc/1024B
+                        time:   [79.277 µs 87.118 µs 104.11 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.772 µs 22.087 µs 32.399 µs]
+== B run=49
+global_alloc_churn/mimalloc/1024B
+                        time:   [68.180 µs 73.147 µs 78.483 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.340 µs 17.333 µs 19.776 µs]
+== C run=49
+global_alloc_churn/mimalloc/1024B
+                        time:   [82.172 µs 88.346 µs 100.52 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.744 µs 21.067 µs 33.373 µs]
+== B run=50
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.984 µs 16.694 µs 18.245 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [69.607 µs 74.957 µs 78.609 µs]
+== C run=50
+global_alloc_churn/mimalloc/1024B
+                        time:   [66.750 µs 68.972 µs 71.342 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.317 µs 27.617 µs 50.771 µs]
+== B run=51
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [12.995 µs 13.150 µs 13.318 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [98.032 µs 111.83 µs 137.24 µs]
+== C run=51
+global_alloc_churn/mimalloc/1024B
+                        time:   [131.84 µs 161.63 µs 194.59 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.803 µs 23.971 µs 26.904 µs]
+== B run=52
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.235 µs 18.511 µs 20.818 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [94.098 µs 141.13 µs 194.69 µs]
+== C run=52
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.485 µs 28.595 µs 65.929 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [83.295 µs 120.51 µs 141.61 µs]
+== B run=53
+global_alloc_churn/mimalloc/1024B
+                        time:   [74.852 µs 85.624 µs 101.33 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.998 µs 24.506 µs 34.410 µs]
+== C run=53
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [16.914 µs 24.019 µs 42.608 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [75.269 µs 115.54 µs 154.71 µs]
+== B run=54
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.772 µs 26.499 µs 33.054 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [108.58 µs 139.17 µs 189.41 µs]
+== C run=54
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.938 µs 33.880 µs 52.563 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [83.177 µs 109.55 µs 141.13 µs]
+== B run=55
+global_alloc_churn/mimalloc/1024B
+                        time:   [92.537 µs 116.54 µs 147.02 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.125 µs 21.376 µs 24.177 µs]
+== C run=55
+global_alloc_churn/mimalloc/1024B
+                        time:   [109.08 µs 135.77 µs 155.27 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [24.364 µs 27.711 µs 30.956 µs]
+== B run=56
+global_alloc_churn/mimalloc/1024B
+                        time:   [72.675 µs 106.76 µs 145.82 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.465 µs 18.658 µs 18.893 µs]
+== C run=56
+global_alloc_churn/mimalloc/1024B
+                        time:   [71.000 µs 129.93 µs 216.32 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [20.906 µs 30.218 µs 42.942 µs]
+== B run=57
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [14.481 µs 37.670 µs 75.334 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [108.03 µs 146.94 µs 179.09 µs]
+== C run=57
+global_alloc_churn/mimalloc/1024B
+                        time:   [172.64 µs 181.75 µs 192.81 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [15.426 µs 21.574 µs 29.369 µs]
+== B run=58
+global_alloc_churn/mimalloc/1024B
+                        time:   [121.19 µs 159.40 µs 238.07 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [19.041 µs 21.696 µs 24.603 µs]
+== C run=58
+global_alloc_churn/mimalloc/1024B
+                        time:   [88.792 µs 155.45 µs 201.18 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.773 µs 22.960 µs 26.279 µs]
+== B run=59
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [18.034 µs 22.471 µs 30.874 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [128.54 µs 170.42 µs 207.23 µs]
+== C run=59
+global_alloc_churn/mimalloc/1024B
+                        time:   [153.31 µs 173.22 µs 189.06 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [24.991 µs 29.638 µs 36.519 µs]
+== B run=60
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [24.965 µs 47.115 µs 76.559 µs]
+global_alloc_churn/mimalloc/1024B
+                        time:   [74.910 µs 82.773 µs 98.803 µs]
+== C run=60
+global_alloc_churn/mimalloc/1024B
+                        time:   [204.02 µs 240.47 µs 277.42 µs]
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [17.845 µs 25.559 µs 30.901 µs]

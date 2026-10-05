@@ -1561,6 +1561,13 @@ required-features = ["alloc-core", "alloc-decommit", "internals"]
 name = "malloc_macro"
 required-features = ["alloc-global", "alloc-xthread"]
 
+# Ph6b (#2097) A/B cost measurement: multi-thread installed-#[global_allocator]
+# harness (larson/mstress-shaped, T = 1/2/4/8) — MEASUREMENT-ONLY, byte-identical
+# file in both A/B trees (docs/perf/PH6B_COST_AB.md).
+[[example]]
+name = "ph6b_mt_ab"
+required-features = ["alloc-global", "internals"]
+
 # Soak harness: high-load multi-thread stability test (32/64/128 threads, hours).
 # NOT a throughput benchmark — a correctness + stability harness that detects
 # panics, deadlocks, and accounting mismatches at scale.

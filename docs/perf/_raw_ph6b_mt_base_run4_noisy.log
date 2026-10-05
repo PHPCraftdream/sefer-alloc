@@ -1,0 +1,19 @@
+== ph6b_mt_ab: installed #[global_allocator] MT A/B harness (measurement-only) ==
+RESULT mt_ns workload=larson T=1 ns=22924412
+RESULT mt_ops workload=larson T=1 ops=801536
+RESULT mt_ns workload=mstress T=1 ns=10077575
+RESULT mt_ops workload=mstress T=1 ops=399360
+RESULT mt_ns workload=larson T=2 ns=29602144
+RESULT mt_ops workload=larson T=2 ops=1602315
+RESULT mt_ns workload=mstress T=2 ns=21978336
+RESULT mt_ops workload=mstress T=2 ops=798154
+RESULT mt_ns workload=larson T=4 ns=51785248
+RESULT mt_ops workload=larson T=4 ops=3197429
+RESULT mt_ns workload=mstress T=4 ns=56725444
+RESULT mt_ops workload=mstress T=4 ops=1592784
+RESULT mt_ns workload=larson T=8 ns=68697072
+RESULT mt_ops workload=larson T=8 ops=6394108
+RESULT mt_ns workload=mstress T=8 ns=70832845
+RESULT mt_ops workload=mstress T=8 ops=3185432
+RESULT segments_reserved_total=24
+RESULT config_conflicts=0

@@ -1,0 +1,247 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.228
+   Compiling zerocopy v0.8.52
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling syn v2.0.118
+   Compiling serde_json v1.0.150
+   Compiling getrandom v0.3.4
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling crossbeam-epoch v0.9.20
+   Compiling rand_core v0.9.5
+   Compiling once_cell v1.21.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling bitflags v2.13.0
+   Compiling version_check v0.9.5
+   Compiling regex-syntax v0.8.11
+   Compiling slotmap v1.1.1
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.52
+   Compiling derive_more-impl v2.1.1
+   Compiling cc v1.2.65
+   Compiling either v1.16.0
+   Compiling fastrand v2.4.1
+   Compiling rayon-core v1.13.0
+   Compiling tempfile v3.27.0
+   Compiling libmimalloc-sys v0.1.49
+   Compiling crossbeam-deque v0.8.6
+   Compiling wait-timeout v0.2.1
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling itoa v1.0.18
+   Compiling quick-error v1.2.3
+   Compiling memchr v2.8.2
+   Compiling anstyle v1.0.14
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling ciborium-io v0.2.2
+   Compiling clap_lex v1.1.0
+   Compiling plotters-backend v0.3.7
+   Compiling fnv v1.0.7
+   Compiling bit-vec v0.8.0
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling ciborium-ll v0.2.2
+   Compiling proc-macro-error2 v2.0.1
+   Compiling rand_chacha v0.9.0
+   Compiling itertools v0.10.5
+   Compiling derive_more v2.1.1
+   Compiling regex-automata v0.4.14
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling unarray v0.1.4
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling iai-callgrind v0.14.2
+   Compiling regex v1.12.4
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling proptest v1.11.0
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling rayon v1.12.0
+   Compiling clap v4.6.1
+   Compiling sefer-region v0.2.0 (<repo>/worktrees/ph6b/crates/sefer-region)
+   Compiling tinytemplate v1.2.1
+   Compiling ciborium v0.2.2
+   Compiling plotters v0.3.7
+   Compiling bincode v1.3.3
+   Compiling tokio-macros v2.7.0
+   Compiling is-terminal v0.4.17
+   Compiling pin-project-lite v0.2.17
+   Compiling proc-memstat v0.1.0 (<repo>/worktrees/ph6b/crates/proc-memstat)
+   Compiling size-classes v0.1.0 (<repo>/worktrees/ph6b/crates/size-classes)
+   Compiling once-ptr-cell v0.1.0 (<repo>/worktrees/ph6b/crates/once-ptr-cell)
+   Compiling aligned-vmem v0.2.0 (<repo>/worktrees/ph6b/crates/aligned-vmem)
+   Compiling oorandom v11.1.5
+   Compiling anes v0.1.6
+   Compiling tagged-index-stack v0.1.0 (<repo>/worktrees/ph6b/crates/tagged-index-stack)
+   Compiling tokio v1.52.3
+   Compiling sefer-alloc v0.3.0 (<repo>/worktrees/ph6b)
+   Compiling criterion v0.5.1
+   Compiling proc-probe v0.1.0 (<repo>/worktrees/ph6b/crates/proc-probe)
+   Compiling globalalloc-model v0.1.0 (<repo>/worktrees/ph6b/crates/globalalloc-model)
+   Compiling mimalloc v0.1.52
+   Compiling malloc-bench-rs v0.1.0 (<repo>/worktrees/ph6b/crates/malloc-bench-rs)
+    Finished `release` profile [optimized] target(s) in 41.07s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+# SMOKE RUN
+=== R31-10 trim_current_thread() RSS gate — subprocess-per-arm isolation ===
+arms: ["TRIM", "NO_TRIM"] × 3 reps; LARGE_OBJ=33554432 bytes × 4 = 128 MiB/burst; IDLE_MS=500
+
+--- arm=TRIM rep=0/3 ---
+RESULT arm=TRIM
+RESULT repetition=0
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2092
+RESULT commit_before_kib=3404
+RESULT rss_burst1_kib=133396
+RESULT commit_burst1_kib=175932
+RESULT action_released_delta=4
+RESULT rss_idle_kib=2372
+RESULT commit_idle_kib=12092
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133460
+RESULT commit_burst2_kib=175932
+RESULT rss_drop_burst1_to_idle_kib=131024
+RESULT commit_drop_burst1_to_idle_kib=163840
+OK arm=TRIM rep=0 rss_burst1=133396 rss_idle=2372 rss_burst2=133460 commit_burst1=175932 commit_idle=12092 action_released=4 idle_released=0
+--- arm=TRIM rep=1/3 ---
+RESULT arm=TRIM
+RESULT repetition=1
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2092
+RESULT commit_before_kib=3404
+RESULT rss_burst1_kib=133396
+RESULT commit_burst1_kib=175932
+RESULT action_released_delta=4
+RESULT rss_idle_kib=2372
+RESULT commit_idle_kib=12092
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133460
+RESULT commit_burst2_kib=175932
+RESULT rss_drop_burst1_to_idle_kib=131024
+RESULT commit_drop_burst1_to_idle_kib=163840
+OK arm=TRIM rep=1 rss_burst1=133396 rss_idle=2372 rss_burst2=133460 commit_burst1=175932 commit_idle=12092 action_released=4 idle_released=0
+--- arm=TRIM rep=2/3 ---
+RESULT arm=TRIM
+RESULT repetition=2
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2124
+RESULT commit_before_kib=3404
+RESULT rss_burst1_kib=133300
+RESULT commit_burst1_kib=175932
+RESULT action_released_delta=4
+RESULT rss_idle_kib=2276
+RESULT commit_idle_kib=12092
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133364
+RESULT commit_burst2_kib=175932
+RESULT rss_drop_burst1_to_idle_kib=131024
+RESULT commit_drop_burst1_to_idle_kib=163840
+OK arm=TRIM rep=2 rss_burst1=133300 rss_idle=2276 rss_burst2=133364 commit_burst1=175932 commit_idle=12092 action_released=4 idle_released=0
+--- arm=NO_TRIM rep=0/3 ---
+RESULT arm=NO_TRIM
+RESULT repetition=0
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2140
+RESULT commit_before_kib=3404
+RESULT rss_burst1_kib=133380
+RESULT commit_burst1_kib=175932
+RESULT action_released_delta=0
+RESULT rss_idle_kib=133444
+RESULT commit_idle_kib=175932
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133444
+RESULT commit_burst2_kib=175932
+RESULT rss_drop_burst1_to_idle_kib=0
+RESULT commit_drop_burst1_to_idle_kib=0
+OK arm=NO_TRIM rep=0 rss_burst1=133380 rss_idle=133444 rss_burst2=133444 commit_burst1=175932 commit_idle=175932 action_released=0 idle_released=0
+--- arm=NO_TRIM rep=1/3 ---
+RESULT arm=NO_TRIM
+RESULT repetition=1
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2092
+RESULT commit_before_kib=3404
+RESULT rss_burst1_kib=133400
+RESULT commit_burst1_kib=175932
+RESULT action_released_delta=0
+RESULT rss_idle_kib=133464
+RESULT commit_idle_kib=175932
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133464
+RESULT commit_burst2_kib=175932
+RESULT rss_drop_burst1_to_idle_kib=0
+RESULT commit_drop_burst1_to_idle_kib=0
+OK arm=NO_TRIM rep=1 rss_burst1=133400 rss_idle=133464 rss_burst2=133464 commit_burst1=175932 commit_idle=175932 action_released=0 idle_released=0
+--- arm=NO_TRIM rep=2/3 ---
+RESULT arm=NO_TRIM
+RESULT repetition=2
+RESULT large_obj_bytes=33554432
+RESULT large_obj_count=4
+RESULT total_burst_bytes=134217728
+RESULT idle_ms=500
+RESULT rss_before_kib=2096
+RESULT commit_before_kib=3404
+RESULT rss_burst1_kib=133400
+RESULT commit_burst1_kib=175932
+RESULT action_released_delta=0
+RESULT rss_idle_kib=133464
+RESULT commit_idle_kib=175932
+RESULT idle_released_delta=0
+RESULT rss_burst2_kib=133464
+RESULT commit_burst2_kib=175932
+RESULT rss_drop_burst1_to_idle_kib=0
+RESULT commit_drop_burst1_to_idle_kib=0
+OK arm=NO_TRIM rep=2 rss_burst1=133400 rss_idle=133464 rss_burst2=133464 commit_burst1=175932 commit_idle=175932 action_released=0 idle_released=0
+
+=== aggregated (median of 3 reps per arm) ===
+     arm   rss_burst1     rss_idle   rss_burst2   cmt_burst1       cmt_idle       rss_drop       cmt_drop   act_released
+    TRIM     130.3 MiB       2.3 MiB     130.3 MiB     171.8 MiB      11.8 MiB     128.0 MiB     160.0 MiB              4
+ NO_TRIM     130.3 MiB     130.3 MiB     130.3 MiB     171.8 MiB     171.8 MiB       0.0 MiB       0.0 MiB              0
+
+=== headline: RSS/commit win at idle (TRIM vs NO_TRIM) ===
+rss_idle:   TRIM=2.3 MiB  NO_TRIM=130.3 MiB  →  win=128.0 MiB (RSS RECLAIMED)
+commit_idle: TRIM=11.8 MiB  NO_TRIM=171.8 MiB  →  win=160.0 MiB (COMMIT RECLAIMED)
+
+=== between-arm mechanism delta (CLAUDE.md R30-8 rule) ===
+TRIM action_released_delta=4  vs  NO_TRIM action_released_delta=0  (delta=4)
+
+=== raw CSV (all 6 child runs) ===
+# arm,repetition,large_obj_bytes,large_obj_count,total_burst_bytes,idle_ms,rss_before_kib,commit_before_kib,rss_burst1_kib,commit_burst1_kib,action_released_delta,rss_idle_kib,commit_idle_kib,idle_released_delta,rss_burst2_kib,commit_burst2_kib,rss_drop_burst1_to_idle_kib,commit_drop_burst1_to_idle_kib
+TRIM,0,33554432,4,134217728,500,2092,3404,133396,175932,4,2372,12092,0,133460,175932,131024,163840
+TRIM,1,33554432,4,134217728,500,2092,3404,133396,175932,4,2372,12092,0,133460,175932,131024,163840
+TRIM,2,33554432,4,134217728,500,2124,3404,133300,175932,4,2276,12092,0,133364,175932,131024,163840
+NO_TRIM,0,33554432,4,134217728,500,2140,3404,133380,175932,0,133444,175932,0,133444,175932,0,0
+NO_TRIM,1,33554432,4,134217728,500,2092,3404,133400,175932,0,133464,175932,0,133464,175932,0,0
+NO_TRIM,2,33554432,4,134217728,500,2096,3404,133400,175932,0,133464,175932,0,133464,175932,0,0
+
+NOTE: each (arm, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation). The TRIM arm hard-asserted action_released_delta > 0 (the eviction mechanism fired — CLAUDE.md R30-8 path-activation oracle). Entry point: SeferAlloc (direct GlobalAlloc::alloc/dealloc + trim_current_thread).

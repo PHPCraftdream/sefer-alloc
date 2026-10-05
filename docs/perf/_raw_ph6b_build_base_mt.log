@@ -1,0 +1,24 @@
+   Compiling sefer-alloc v0.3.0 (<repo>/worktrees/ph6b/.wt/base)
+    Finished `release` profile [optimized] target(s) in 5.39s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+# SMOKE RUN
+== ph6b_mt_ab: installed #[global_allocator] MT A/B harness (measurement-only) ==
+RESULT mt_ns workload=larson T=1 ns=9706994
+RESULT mt_ops workload=larson T=1 ops=801536
+RESULT mt_ns workload=mstress T=1 ns=6397105
+RESULT mt_ops workload=mstress T=1 ops=399360
+RESULT mt_ns workload=larson T=2 ns=18844314
+RESULT mt_ops workload=larson T=2 ops=1600155
+RESULT mt_ns workload=mstress T=2 ns=14460070
+RESULT mt_ops workload=mstress T=2 ops=796967
+RESULT mt_ns workload=larson T=4 ns=47054890
+RESULT mt_ops workload=larson T=4 ops=3195073
+RESULT mt_ns workload=mstress T=4 ns=140408024
+RESULT mt_ops workload=mstress T=4 ops=1584495
+RESULT mt_ns workload=larson T=8 ns=115405162
+RESULT mt_ops workload=larson T=8 ops=6395188
+RESULT mt_ns workload=mstress T=8 ns=65099868
+RESULT mt_ops workload=mstress T=8 ops=3180193
+RESULT segments_reserved_total=27
+RESULT config_conflicts=0

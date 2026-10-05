@@ -1,0 +1,4 @@
+2026-10-05T20:12:18+02:00 check#1: quiet (no cargo/rustc/valgrind)
+2026-10-05T20:13:29+02:00 check#2 before bench-table: quiet
+pool_cap_sweep excluded from axis 2 (diagnostic-only, no vs-mimalloc role; printPoolCapSweepNote); base freshness = _raw_ph6b_benchtable_base_build.log; cand freshness = cand_run1 Compiling line
+2026-10-05T23:13:54+02:00 check#3 before bench-table A/A: quiet

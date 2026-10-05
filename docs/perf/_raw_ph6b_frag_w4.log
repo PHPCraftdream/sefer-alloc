@@ -1,0 +1,110 @@
+== RUN B1 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2216
+RESULT commit_empty_kib=12020
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69168
+RESULT commit_end_kib=143768
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN C1 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69176
+RESULT commit_end_kib=143776
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B2 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2200
+RESULT commit_empty_kib=12020
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69152
+RESULT commit_end_kib=143768
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN C2 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2220
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69172
+RESULT commit_end_kib=143776
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B3 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2212
+RESULT commit_empty_kib=12020
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69164
+RESULT commit_end_kib=143768
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN C3 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69176
+RESULT commit_end_kib=143776
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B4 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2204
+RESULT commit_empty_kib=12020
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69156
+RESULT commit_end_kib=143768
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN C4 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2220
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69172
+RESULT commit_end_kib=143776
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN B5 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2208
+RESULT commit_empty_kib=12020
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69160
+RESULT commit_end_kib=143768
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0
+== RUN C5 ==
+RESULT workload=w4
+RESULT rss_empty_kib=2224
+RESULT commit_empty_kib=12028
+RESULT config_conflicts_before=0
+RESULT resolved_config=unavailable
+RESULT live_requested_bytes=67115840
+RESULT rss_end_kib=69176
+RESULT commit_end_kib=143776
+RESULT segments_reserved_total=17
+RESULT config_conflicts_after=0

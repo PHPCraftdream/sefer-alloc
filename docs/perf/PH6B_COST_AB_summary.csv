@@ -1,0 +1,136 @@
+axis,item,metric,B,C,C_over_B,limit,aa_noise,verdict
+iai,small_churn_16b,gate,60629,58346,0.962345,Ir≤1.02 И EstCycles≤1.02,0 (детерминизм),PASS
+iai,churn_256b,gate,60629,58346,0.962345,Ir≤1.02 И EstCycles≤1.02,0 (детерминизм),PASS
+iai,churn_write_256b,gate,60821,58526,0.962266,Ir≤1.02 И EstCycles≤1.02,0 (детерминизм),PASS
+iai,aligned_churn_640b_a128,gate,60635,58328,0.961953,Ir≤1.02 И EstCycles≤1.02,0 (детерминизм),PASS
+iai,cold_alloc_free_256x16b,gate,196467,158111,0.804771,EstCycles≤1.05 И Ir≤1.10,0 (детерминизм),PASS
+iai,cold_alloc_free_256x64b,gate,197322,159014,0.805860,EstCycles≤1.05 И Ir≤1.10,0 (детерминизм),PASS
+iai,recycle_alloc_free_256x16b,gate,307240,265409,0.863849,EstCycles≤1.05 И Ir≤1.10,0 (детерминизм),PASS
+iai,recycle_alloc_free_256x64b,gate,308095,266312,0.864383,EstCycles≤1.05 И Ir≤1.10,0 (детерминизм),PASS
+iai,multiseg_cold_256k,gate,4200265,4028010,0.958989,EstCycles≤1.05 И Ir≤1.10,0 (детерминизм),PASS
+iai,alloc_zeroed_magazine_prefill_only_16b,gate,59673,57540,0.964255,raw Ir≤1.05,0 (детерминизм),PASS
+iai,alloc_zeroed_magazine_hit_only_16b,gate,60211,58089,0.964757,raw Ir≤1.05,0 (детерминизм),PASS
+iai,alloc_zeroed_calloc_virgin_64k,gate,3,3,1.000000,raw Ir≤1.05,0 (детерминизм),PASS
+iai,alloc_zeroed_calloc_recycled_64k,gate,3,3,1.000000,raw Ir≤1.05,0 (детерминизм),PASS
+iai,realloc_grow,gate,611778,583182,0.953258,raw Ir≤1.05,0 (детерминизм),PASS
+iai,dealloc_realloc_burst_1088_16b_n17,gate,526495,355793,0.675777,raw Ir≤1.05,0 (детерминизм),PASS
+iai,small_churn_16b,hot,60629,58346,0.962345,,0 (детерминизм),
+iai,small_churn_16b_2n,all,67285,65118,0.967794,,0 (детерминизм),
+iai,dealloc_prealloc_only_16b,all,74148,64265,0.866713,,0 (детерминизм),
+iai,dealloc_free_only_16b,all,82778,73187,0.884136,,0 (детерминизм),
+iai,dealloc_contains_base_probe_only_16b,all,75495,65617,0.869157,,0 (детерминизм),
+iai,dealloc_segment_base_of_ptr_probe_only_16b,all,74738,64848,0.867671,,0 (детерминизм),
+iai,alloc_magazine_prefill_only_16b,all,59673,57528,0.964054,,0 (детерминизм),
+iai,alloc_magazine_hit_only_16b,all,60162,58013,0.964280,,0 (детерминизм),
+iai,alloc_zeroed_magazine_prefill_only_16b,zeroed,59673,57540,0.964255,,0 (детерминизм),
+iai,alloc_zeroed_magazine_hit_only_16b,zeroed,60211,58089,0.964757,,0 (детерминизм),
+iai,dealloc_hash_contains_only_probe_16b,all,76517,66639,0.870905,,0 (детерминизм),
+iai,dealloc_own_thread_body_only_16b,all,81797,71985,0.880045,,0 (детерминизм),
+iai,dealloc_free_only_16b_n1,all,74217,64346,0.866998,,0 (детерминизм),
+iai,dealloc_free_only_16b_n8,all,74676,64829,0.868137,,0 (детерминизм),
+iai,dealloc_free_only_16b_n9,all,74741,64899,0.868319,,0 (детерминизм),
+iai,dealloc_free_only_16b_n16,all,75196,65389,0.869581,,0 (детерминизм),
+iai,dealloc_free_only_16b_n17,all,76006,66202,0.871010,,0 (детерминизм),
+iai,dealloc_free_only_16b_n32,all,77722,67991,0.874797,,0 (детерминизм),
+iai,dealloc_flush_class_only_16b_prefix,all,54562,52130,0.955427,,0 (детерминизм),
+iai,dealloc_flush_class_only_16b,all,55067,52650,0.956108,,0 (детерминизм),
+iai,alloc_clear_magazine_only_16b_prefix,all,55078,52687,0.956589,,0 (детерминизм),
+iai,alloc_clear_magazine_only_16b,all,55451,53072,0.957097,,0 (детерминизм),
+iai,alloc_zeroed_calloc_virgin_64k_prefix,zeroed,3,3,1.000000,,0 (детерминизм),
+iai,alloc_zeroed_calloc_virgin_64k,zeroed,3,3,1.000000,,0 (детерминизм),
+iai,alloc_zeroed_calloc_recycled_64k_prefix,zeroed,3,3,1.000000,,0 (детерминизм),
+iai,alloc_zeroed_calloc_recycled_64k,zeroed,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_prealloc_only_1088_16b,all,517435,349152,0.674775,,0 (детерминизм),
+iai,dealloc_free_only_1088_16b_n17,all,519293,351089,0.676090,,0 (детерминизм),
+iai,dealloc_free_only_1088_16b_n32,all,521009,352878,0.677297,,0 (детерминизм),
+iai,dealloc_free_only_1088_16b_n64,all,526053,358074,0.680680,,0 (детерминизм),
+iai,dealloc_free_only_1088_16b_n256,all,556317,389250,0.699691,,0 (детерминизм),
+iai,dealloc_free_only_1088_16b_n1024,all,677373,513966,0.758764,,0 (детерминизм),
+iai,dealloc_realloc_burst_1088_16b_n17,realloc,526495,355793,0.675777,,0 (детерминизм),
+iai,oscillating_live_set_16b,all,91318,87985,0.963501,,0 (детерминизм),
+iai,carve_batch_only_16b,all,3238,3241,1.000926,,0 (детерминизм),
+iai,carve_batch_only_16b_2n,all,9139,9142,1.000328,,0 (детерминизм),
+iai,dealloc_batch_fresh_16_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_64_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_80_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_81_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_128_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_200_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_512_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_1024_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_0_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_1_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_8_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,dealloc_batch_fresh_17_16b,all,3,3,1.000000,,0 (детерминизм),
+iai,medium_class_dealloc_churn_16b,all,60641,58334,0.961956,,0 (детерминизм),
+iai,aligned_churn_640b_a128,hot,60635,58328,0.961953,,0 (детерминизм),
+iai,large_alloc_free_cycle,all,49922,49951,1.000581,,0 (детерминизм),
+iai,large_cache_prefill_only_4mib,all,58908,58939,1.000526,,0 (детерминизм),
+iai,large_cache_hit_only_4mib,all,60248,60242,0.999900,,0 (детерминизм),
+iai,large_cache_free_slot_search_prefill_only,all,63707,63749,1.000659,,0 (детерминизм),
+iai,large_cache_free_slot_search_cycle_only,all,75260,75282,1.000292,,0 (детерминизм),
+iai,realloc_grow,realloc,611778,583182,0.953258,,0 (детерминизм),
+iai,cold_alloc_free_256x16b,refill,196467,158111,0.804771,,0 (детерминизм),
+iai,cold_alloc_free_256x16b_2n,all,351181,274441,0.781480,,0 (детерминизм),
+iai,cold_alloc_free_256x16b_4n,all,659049,505541,0.767076,,0 (детерминизм),
+iai,cold_alloc_only_256x16b,all,156554,116991,0.747288,,0 (детерминизм),
+iai,cold_alloc_only_256x16b_2n,all,269892,190729,0.706686,,0 (детерминизм),
+iai,cold_alloc_only_256x16b_4n,all,495008,336645,0.680080,,0 (детерминизм),
+iai,cold_alloc_free_256x64b,refill,197322,159014,0.805860,,0 (детерминизм),
+iai,recycle_alloc_free_256x16b,refill,307240,265409,0.863849,,0 (детерминизм),
+iai,recycle_alloc_only_256x16b,all,266338,223826,0.840383,,0 (детерминизм),
+iai,recycle_alloc_free_256x64b,refill,308095,266312,0.864383,,0 (детерминизм),
+iai,churn_256b,hot,60629,58346,0.962345,,0 (детерминизм),
+iai,churn_write_256b,hot,60821,58526,0.962266,,0 (детерминизм),
+iai,multiseg_cold_256k,refill,4200265,4028010,0.958989,,0 (детерминизм),
+iai,seg_cycle_decommit_256k,all,12858979,12374664,0.962336,,0 (детерминизм),
+iai,mimalloc_small_churn_16b,mimalloc-AA,16629,16629,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_small_churn_16b_2n,mimalloc-AA,21557,21557,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_churn_256b,mimalloc-AA,16130,16130,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_free_256x16b,mimalloc-AA,32325,32325,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_free_256x16b_2n,mimalloc-AA,58389,58389,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_free_256x16b_4n,mimalloc-AA,106653,106653,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_only_256x16b,mimalloc-AA,24584,24584,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_only_256x16b_2n,mimalloc-AA,42968,42968,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_only_256x16b_4n,mimalloc-AA,75872,75872,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_cold_alloc_free_256x64b,mimalloc-AA,33329,33329,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_recycle_alloc_free_256x16b,mimalloc-AA,53020,53020,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_recycle_alloc_free_256x64b,mimalloc-AA,54024,54024,1.000000,,0 (детерминизм),PASS
+iai,mimalloc_bootstrap_proxy,mimalloc-AA,13050,13050,1.000000,,0 (детерминизм),PASS
+iai,decomp_full_cycle_8x,all,680055,680068,1.000019,,0 (детерминизм),
+iai,decomp_os_roundtrip_8x,all,861,861,1.000000,,0 (детерминизм),
+bench-table,global_alloc/SeferAlloc/16B,sefer_over_mimalloc_C_over_B,7.354613,7.518751,1.022318,1.15,26.0686%,PASS
+bench-table,global_alloc/SeferAlloc/64B,sefer_over_mimalloc_C_over_B,6.046892,6.017617,0.995159,1.15,18.3711%,PASS
+bench-table,global_alloc/SeferAlloc/256B,sefer_over_mimalloc_C_over_B,5.486613,4.266520,0.777624,1.15,1.7210%,PASS
+bench-table,global_alloc/SeferAlloc/1024B,sefer_over_mimalloc_C_over_B,2.543326,2.621222,1.030628,1.15,1.7690%,PASS
+bench-table,global_alloc_churn/SeferAlloc/16B,sefer_over_mimalloc_C_over_B,2.292796,2.092681,0.912720,,4.3967%,INFO
+bench-table,global_alloc_churn/SeferAlloc/64B,sefer_over_mimalloc_C_over_B,1.640861,1.659145,1.011143,,8.0775%,INFO
+bench-table,global_alloc_churn/SeferAlloc/256B,sefer_over_mimalloc_C_over_B,0.986715,0.821329,0.832388,,19.1165%,INFO
+bench-table,global_alloc_churn/SeferAlloc/1024B,sefer_over_mimalloc_C_over_B,0.202341,0.250999,1.240474,,13.3562%,INFO
+bench-table,global_alloc_churn_write/SeferAlloc/16B,sefer_over_mimalloc_C_over_B,2.135643,2.168476,1.015374,,30.0690%,INFO
+bench-table,global_alloc_churn_write/SeferAlloc/64B,sefer_over_mimalloc_C_over_B,1.962718,1.752746,0.893020,,25.0707%,INFO
+bench-table,global_alloc_churn_write/SeferAlloc/256B,sefer_over_mimalloc_C_over_B,1.256928,1.218203,0.969191,,20.2900%,INFO
+bench-table,global_alloc_churn_write/SeferAlloc/1024B,sefer_over_mimalloc_C_over_B,0.384298,0.299390,0.779058,,1.5560%,INFO
+bench-table,global_alloc_churn_with_teardown/SeferAlloc/16B,sefer_over_mimalloc_C_over_B,2.853275,2.787927,0.977097,,5.9741%,INFO
+bench-table,global_alloc_churn_with_teardown/SeferAlloc/64B,sefer_over_mimalloc_C_over_B,2.721317,2.725039,1.001368,,33.0707%,INFO
+bench-table,global_alloc_churn_with_teardown/SeferAlloc/256B,sefer_over_mimalloc_C_over_B,1.863988,1.999729,1.072823,,11.1210%,INFO
+bench-table,global_alloc_churn_with_teardown/SeferAlloc/1024B,sefer_over_mimalloc_C_over_B,1.400730,1.503805,1.073587,,36.4608%,INFO
+bench-table,global_alloc/manual_realloc_sim/SeferAlloc,sefer_over_mimalloc_C_over_B,1.767731,1.648753,0.932695,,8.6884%,INFO
+bench-table,segment_decommit_cycle/SeferAlloc/253KiB,sefer_over_mimalloc_C_over_B,519.306472,581.422647,1.119614,,15.5738%,INFO
+bench-table,control mimalloc arms (n=18),raw_ns_C_over_B_median,—,—,0.998263,,36.4608%,INFO
+mt,larson T=1,mops_C_over_B,61.046461,80.368038,1.316506,0.90,16.2709%,PASS
+mt,mstress T=1,mops_C_over_B,46.541647,48.368033,1.039242,0.90,3.5783%,PASS
+mt,larson T=2,mops_C_over_B,68.855110,89.728299,1.303147,0.90,3.0738%,PASS
+mt,mstress T=2,mops_C_over_B,48.625365,77.697842,1.597887,0.90,7.7366%,PASS
+mt,larson T=4,mops_C_over_B,102.182087,116.215724,1.137340,0.90,34.3380%,PASS
+mt,mstress T=4,mops_C_over_B,86.075720,94.948665,1.103083,0.90,18.1015%,PASS
+mt,larson T=8,mops_C_over_B,121.321444,126.050940,1.038983,0.90,38.7546%,PASS
+mt,mstress T=8,mops_C_over_B,121.947429,85.258500,0.699141,0.90,6.5831%,INCONCLUSIVE
+frag,w1,frag_C_over_B,1.112243,1.112243,1.000000,1.10,0.0055%,PASS
+frag,w2,frag_C_over_B,1.065482,1.065482,1.000000,1.10,0.0000%,PASS
+frag,w3,frag_C_over_B,1.144920,1.144920,1.000000,1.10,0.0000%,PASS
+frag,w4,frag_C_over_B,1.021500,1.021500,1.000000,control,0.0000%,INFO
+trim,TRIM arm,rss_burst1_kib,133384.0,133352.0,0.999760,1.05 or Δ≤1024KiB,0.0780%,PASS
+trim,TRIM arm,rss_idle_kib,2360.0,2328.0,0.986441,1.05 or Δ≤1024KiB,4.4068%,PASS
+trim,TRIM arm,rss_burst2_kib,133448.0,133416.0,0.999760,1.05 or Δ≤1024KiB,0.0779%,PASS
+trim,TRIM arm,commit_idle_kib,12088.0,12088.0,1.000000,1.05 or Δ≤1024KiB,0.0000%,PASS
