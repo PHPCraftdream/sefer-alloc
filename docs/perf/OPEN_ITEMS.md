@@ -148,6 +148,14 @@ for completeness.
    > - **Next trigger:** нет (новая карточка, если пустые payload-слова станут видимой ценой refill в iai-атрибуции).
    > - **Evidence:** `docs/perf/PG3R_SCAN_PATCH_IAI.md`; полный нарратив — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `80`.
 
+81. **Ph6b — wall-clock оси A/B (bench-table, MT) остались INCONCLUSIVE: судья с глобальной A/A-полосой, WSL2-хост шумит сильнее предела.**
+
+   > **Current state**
+   > - **Status:** OPEN (низкий приоритет; блокирует только БЕЗУСЛОВНЫЙ GO по wall-clock, не работу) — детерминированные оси Ph6b (iai, фрагментация, trim-RSS) PASS, общий вердикт Ph6b — условный GO (2026-10-06).
+   > - **Current number/verdict:** bench-table geomean C/B 0.9743 (≤ 1.05), MT geomean Mops C/B 1.1267 (≥ 0.95); две ячейки INCONCLUSIVE по шум-правилу: MT mstress T=8 (Mops C/B 0.6991) и `global_alloc_churn/*/1024B` (C/B 1.2405). Перемер оркестратора на тихой машине (MT 30+30, bench 60+60 чередующихся прогонов): значимых различий нет (p = 0.929 / 0.725), но bootstrap 95% CI для churn/1024B [0.855, 1.269] включает предел 1.10 — wall-clock на этом хосте эффект до +27% не исключает.
+   > - **Next trigger:** владелец требует безусловный GO по wall-clock → повтор на нативной Windows или на тихом хосте с судьёй, сравнивающим каждую ячейку со СВОЕЙ полосой/мощностью (не с глобальным max по ячейкам) и 60+ прогонами на ячейку; либо новое подозрение на регрессию churn/1024B/MT T=8 из iai-атрибуции.
+   > - **Evidence:** `docs/perf/PH6B_COST_AB.md` §3.2/§3.3/§7/§9; `docs/perf/PH6B_COST_AB_summary.csv`; `scripts/ph6b_cost_ab_table.mjs`, `scripts/ph6b_mt_rerun_table.mjs`, `scripts/ph6b_bt_rerun_table.mjs`; сырьё `docs/perf/_raw_ph6b_*.log`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**
