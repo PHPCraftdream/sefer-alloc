@@ -248,9 +248,26 @@ fn ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption() {
     }
 
     let max_segments = AllocCore::dbg_max_segments();
-    let safety_margin = 16; // headroom for the bootstrap/primordial segment.
-    let safe_total_segments = max_segments.saturating_sub(safety_margin);
-    let per_node_count = (safe_total_segments * density / nodes.len()).min(300);
+    // Segment budget, task #2106 follow-up: tie the per-node count to the
+    // MEASURED density so the worst-case total segment demand
+    // (`nodes.len() * per_node_count / density`) stays ~12 segments per node
+    // in EVERY feature combination. The old `min(safe_total * d / 9, 300)`
+    // kept the `MAX_SEGMENTS` budget but not the OS one: under
+    // `--all-features` (wide classes + magazine parking) the measured density
+    // is 1 block/segment, so 9 x 300 allocations opened ~2700 segments, each
+    // one a 4 MiB EAGERLY COMMITTED reservation on the Windows NUMA path
+    // (reserve-then-commit, see numa-shim `reserve_aligned_numa`) — ~11 GiB of
+    // commit charge, refused with Win32 1455 (ERROR_COMMITMENT_LIMIT) on a
+    // loaded host long before `MAX_SEGMENTS` (observed: null at a healthy
+    // table count of ~2250/4096). `12 * density` (>= 24) still gives every
+    // node several segments and crosses the 32-segment materialisation
+    // threshold with margin, while capping total demand at ~9*12*density.
+    let per_node_count = (density * 12).clamp(24, 300);
+    assert!(
+        nodes.len() * per_node_count <= max_segments.saturating_sub(16),
+        "worst-case segment demand {}/{max_segments} does not fit the table",
+        nodes.len() * per_node_count
+    );
     assert!(
         per_node_count >= 8,
         "per-node allocation count collapsed to {per_node_count} \
