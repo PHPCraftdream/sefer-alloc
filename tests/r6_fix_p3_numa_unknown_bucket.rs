@@ -15,6 +15,10 @@ fn layout_for_class(class: usize) -> Layout {
     Layout::from_size_align(AllocCore::dbg_block_size(class), 1).unwrap()
 }
 
+fn unknown_bucket() -> usize {
+    AllocCore::dbg_directory_node_bitmaps() - 1
+}
+
 fn switch_node(core: &mut AllocCore, node: u32) {
     mock::set_current_node(node);
     let _ = mock::drain();
@@ -93,6 +97,65 @@ fn drive_class_to_idle(core: &mut AllocCore, class: usize, live: &[*mut u8]) {
     );
 }
 
+/// Allocate on `node` until a fresh segment is registered and return the
+/// live blocks. Refill publishes make the fresh segment's node register its
+/// directory bucket, and `small_cur` ends up pointing at that fresh
+/// node-stamped segment.
+fn force_fresh_segment(core: &mut AllocCore, node: u32, class: usize) -> Vec<*mut u8> {
+    switch_node(core, node);
+    let before = core.dbg_table_count();
+    let blocks_per_segment = sefer_alloc::SegmentLayout::SEGMENT / AllocCore::dbg_block_size(class);
+    let max = usize::try_from(before)
+        .expect("segment table count must fit the platform usize")
+        .saturating_mul(blocks_per_segment)
+        .saturating_add(blocks_per_segment + 1);
+    let mut live = Vec::new();
+    for _ in 0..max {
+        let p = core.alloc(layout_for_class(class));
+        assert!(
+            !p.is_null(),
+            "force_fresh_segment: alloc failed for node {node}"
+        );
+        live.push(p);
+        if core.dbg_table_count() != before {
+            return live;
+        }
+    }
+    panic!("fresh segment for node {node} class {class} not reached in {max} allocs");
+}
+
+/// Deterministically (re-)claim a dedicated directory bucket for `node`:
+/// R13-2 frees the slot once the node's active bits hit 0, which a fill
+/// node whose segments were fully consumed triggers earlier than this test
+/// expects. A fresh node-stamped segment re-registers it: the fresh
+/// segment serves a single block, and releasing that block is what flips
+/// the segment's class free list empty -> non-empty, firing the publish
+/// that registers the node. Retry a few times in case a release (hysteresis
+/// pool overflow) wiped an earlier pass's bits.
+fn reregister_node_bucket(core: &mut AllocCore, node: u32, class: usize) {
+    let layout = layout_for_class(class);
+    for _ in 0..4 {
+        let live = force_fresh_segment(core, node, class);
+        for p in live {
+            // SAFETY: each pointer is a live allocation returned for `layout`.
+            unsafe { core.dealloc(p, layout) };
+        }
+        if core.dbg_directory_node_bucket_for(node) != Some(unknown_bucket()) {
+            return;
+        }
+    }
+}
+
+// Determinism notes (flake fix, task #2106): the two facts this test used to
+// assume are NOT allocator guarantees — (1) a fill node keeps its dedicated
+// bucket (R13-2 frees the slot as soon as its active bits hit 0, which a
+// fully-consumed segment triggers early); (2) the overflow node's first
+// allocation of a fresh class reserves a fresh node-stamped segment (step 3
+// of the small path — carve from `small_cur` — is deliberately not a NUMA
+// policy point, see docs/PHASE_NUMA_DESIGN.md "AllocCore"; a foreign-node
+// `small_cur` with leftover bump space serves the block under the foreign
+// node's bucket). Both are now forced deterministically before the asserts
+// that rely on them; the asserted invariant itself is unchanged.
 #[test]
 fn unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket() {
     let classes = AllocCore::dbg_small_class_count();
@@ -132,40 +195,146 @@ fn unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket() {
     }
     assert!(core.dbg_directory_is_materialised());
 
+    // R13-2 frees a bucket slot the moment a node's active bits hit 0, and a
+    // fill node whose `count` blocks fully consumed its segment can already
+    // be idle here — nondeterministically, because it depends on how the
+    // blocks spread over segments. Re-claim every slot that was freed early
+    // so "all 8 dedicated slots are claimed" below is a fact, not a hope.
+    let mut warmup_keepalive: Vec<*mut u8> = Vec::new();
+    for (i, &node) in nodes.iter().enumerate() {
+        if core.dbg_directory_node_bucket_for(node) != Some(unknown_bucket()) {
+            continue;
+        }
+        // Best-effort: a re-registration can itself be wiped by a
+        // hysteresis-pool release that fires mid-sweep (the decay is
+        // wall-clock based). The attempt loop below re-checks the actual
+        // postcondition (overflow node == unknown bucket) and retries the
+        // whole phase, so a wiped re-registration must not panic here.
+        reregister_node_bucket(&mut core, node, filling_classes[i]);
+    }
+
     switch_node(&mut core, overflow_node);
-    let mut overflow_live = alloc_n(&mut core, overflow_class, count);
-    let overflow_registration = overflow_live.pop().unwrap();
-    let overflow_slot = usize::try_from(core.dbg_segment_id_of(overflow_registration))
-        .expect("segment slot id must fit the platform usize");
-    // SAFETY: this is a live allocation made with this class's layout.
-    unsafe { core.dealloc(overflow_registration, layout_for_class(overflow_class)) };
-    let unknown = AllocCore::dbg_directory_node_bitmaps() - 1;
+    // Overflow-phase attempt loop: any deallocation in this test can release
+    // a fully-consumed segment (pool overflow or a clock-based pool decay),
+    // wiping that bucket's bits and — via R13-2 — freeing its slot. If that
+    // happens before the overflow node's first publish, it legitimately
+    // claims the freed slot instead of the unknown bucket. That is correct
+    // allocator behavior, but it is not the scenario under test, so the
+    // whole phase is retried until its precondition (all 8 dedicated slots
+    // claimed at publish time) actually holds.
+    let mut overflow_live: Vec<*mut u8> = Vec::new();
+    let mut overflow_slot = 0usize;
+    for _ in 0..8 {
+        // Determinism guard: the overflow-node allocations must land in
+        // segments stamped with the overflow node (so their bits go to the
+        // shared unknown bucket). A leftover bump space in `small_cur`
+        // (a foreign-node segment) would otherwise serve these blocks
+        // silently under a foreign node's bucket. Force a fresh
+        // overflow-node segment first.
+        let warmup = force_fresh_segment(&mut core, overflow_node, overflow_class);
+        let warmup_layout = layout_for_class(overflow_class);
+        // Keep the first (possibly foreign-stamped) warmup block alive: see
+        // the `warmup_keepalive` note at the end of the test.
+        for p in &warmup[1..] {
+            // SAFETY: live allocations of `warmup_layout` returned by `alloc`.
+            unsafe { core.dealloc(*p, warmup_layout) };
+        }
+        warmup_keepalive.push(warmup[0]);
+        // The warmup deallocations above can free a slot before the overflow
+        // allocations start publishing; re-run the re-registration sweep so
+        // "all 8 dedicated slots are claimed" holds at that moment.
+        for (i, &node) in nodes.iter().enumerate() {
+            if core.dbg_directory_node_bucket_for(node) != Some(unknown_bucket()) {
+                continue;
+            }
+            // Best-effort: a re-registration can itself be wiped by a
+            // hysteresis-pool release that fires mid-sweep (the decay is
+            // wall-clock based). The attempt loop below re-checks the actual
+            // postcondition (overflow node == unknown bucket) and retries the
+            // whole phase, so a wiped re-registration must not panic here.
+            reregister_node_bucket(&mut core, node, filling_classes[i]);
+        }
+        overflow_live = alloc_n(&mut core, overflow_class, count);
+        let overflow_registration = overflow_live.pop().unwrap();
+        overflow_slot = usize::try_from(core.dbg_segment_id_of(overflow_registration))
+            .expect("segment slot id must fit the platform usize");
+        // SAFETY: this is a live allocation made with this class's layout.
+        unsafe { core.dealloc(overflow_registration, layout_for_class(overflow_class)) };
+        if core.dbg_directory_node_bucket_for(overflow_node) == Some(unknown_bucket()) {
+            break;
+        }
+        // A slot was freed mid-phase and the overflow node claimed it. A
+        // plain release is not enough: the overflow node's free-list bits
+        // keep its claimed bucket active, so no slot ever becomes free for
+        // the next attempt's re-registration sweep. Drive the class fully
+        // idle instead — that clears every overflow-node bit and frees its
+        // slot for the retry.
+        drive_class_to_idle(&mut core, overflow_class, &overflow_live);
+    }
     assert_eq!(
         core.dbg_directory_node_bucket_for(overflow_node),
-        Some(unknown)
+        Some(unknown_bucket())
     );
     assert_eq!(
-        core.dbg_directory_get_bit_bucket(unknown, overflow_class, overflow_slot),
+        core.dbg_directory_get_bit_bucket(unknown_bucket(), overflow_class, overflow_slot),
         Some(true)
     );
 
     switch_node(&mut core, nodes[0]);
     drive_class_to_idle(&mut core, filling_classes[0], &node0_live);
-    assert_eq!(core.dbg_directory_node_bucket_for(nodes[0]), Some(unknown));
+    // A single drain pass can legally leave node 0 short of true idleness: a
+    // segment of its class may retain free blocks (the drain stops at the
+    // first fresh segment), or a stale-positive directory bit may survive
+    // until the next scan self-heals it. Both keep the active-bit counter
+    // above zero, so R13-2 correctly keeps the slot claimed. Keep driving —
+    // each pass strictly consumes free blocks and/or self-heals a stale bit —
+    // until the slot is actually released; only then is the invariant below
+    // meaningful.
+    for _ in 0..8 {
+        if core.dbg_directory_node_bucket_for(nodes[0]) == Some(unknown_bucket()) {
+            break;
+        }
+        drive_class_to_idle(&mut core, filling_classes[0], &[]);
+    }
+    assert_eq!(
+        core.dbg_directory_node_bucket_for(nodes[0]),
+        Some(unknown_bucket())
+    );
 
     switch_node(&mut core, overflow_node);
-    let mut dedicated_live = alloc_n(&mut core, dedicated_class, 1);
-    let registration = dedicated_live.pop().unwrap();
-    // SAFETY: this is a live allocation made with this class's layout.
-    unsafe { core.dealloc(registration, layout_for_class(dedicated_class)) };
+    // Dedicated-phase attempt loop, mirroring the overflow one: a publish
+    // into a node-0-stamped segment (via a foreign `small_cur` carve) or a
+    // segment release can (re-)claim the last free slot right before the
+    // dedicated allocation. Retry: drive node 0 back to idleness, which
+    // re-frees its slot, and try again.
+    let mut dedicated_live: Vec<*mut u8> = Vec::new();
+    for _ in 0..8 {
+        let warmup = force_fresh_segment(&mut core, overflow_node, overflow_class);
+        let warmup_layout = layout_for_class(overflow_class);
+        for p in &warmup[1..] {
+            // SAFETY: live allocations of `warmup_layout` returned by `alloc`.
+            unsafe { core.dealloc(*p, warmup_layout) };
+        }
+        warmup_keepalive.push(warmup[0]);
+        dedicated_live = alloc_n(&mut core, dedicated_class, 1);
+        let registration = dedicated_live.pop().unwrap();
+        // SAFETY: this is a live allocation made with this class's layout.
+        unsafe { core.dealloc(registration, layout_for_class(dedicated_class)) };
+        if core.dbg_directory_node_bucket_for(overflow_node) != Some(unknown_bucket()) {
+            break;
+        }
+        switch_node(&mut core, nodes[0]);
+        drive_class_to_idle(&mut core, filling_classes[0], &[]);
+        switch_node(&mut core, overflow_node);
+    }
     let dedicated_bucket = core.dbg_directory_node_bucket_for(overflow_node).unwrap();
-    assert_ne!(dedicated_bucket, unknown);
+    assert_ne!(dedicated_bucket, unknown_bucket());
 
     // The overflow-class bit predates the dedicated bucket. Its empty
     // transition must clear that stale unknown-bucket copy as well.
     drive_class_to_idle(&mut core, overflow_class, &overflow_live);
     assert_eq!(
-        core.dbg_directory_get_bit_bucket(unknown, overflow_class, overflow_slot),
+        core.dbg_directory_get_bit_bucket(unknown_bucket(), overflow_class, overflow_slot),
         Some(false)
     );
     assert!(core.dbg_find_segment_with_free(overflow_class).is_none());
@@ -173,7 +342,7 @@ fn unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket() {
     let class_count = AllocCore::dbg_small_class_count();
     let table_entries = usize::try_from(core.dbg_table_count())
         .expect("segment table count must fit the platform usize");
-    for bucket in 0..unknown {
+    for bucket in 0..unknown_bucket() {
         let set_bits = (0..class_count)
             .flat_map(|class| (0..table_entries).map(move |slot| (class, slot)))
             .filter(|&(class, slot)| {
@@ -198,5 +367,9 @@ fn unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket() {
     for p in dedicated_live {
         // SAFETY: each pointer remains a live allocation of this layout.
         unsafe { core.dealloc(p, layout_for_class(dedicated_class)) };
+    }
+    for p in warmup_keepalive {
+        // SAFETY: each pointer remains a live allocation of this layout.
+        unsafe { core.dealloc(p, layout_for_class(overflow_class)) };
     }
 }
