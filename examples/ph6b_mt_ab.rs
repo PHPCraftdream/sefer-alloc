@@ -148,7 +148,7 @@ impl Worker {
     /// physically happens (local free here, remote free by the recipient).
     fn release(&mut self, p: *mut u8, size: usize, me: usize) {
         self.free_tick += 1;
-        if self.senders.len() > 1 && self.free_tick % XTHREAD_EVERY == 0 {
+        if self.senders.len() > 1 && self.free_tick.is_multiple_of(XTHREAD_EVERY) {
             let to = (me + 1) % self.senders.len();
             // Unbounded channel: send cannot fail while the receiver lives;
             // all receivers live in joined threads of this cell's scope.
