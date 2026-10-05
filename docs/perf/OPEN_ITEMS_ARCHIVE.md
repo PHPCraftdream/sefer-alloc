@@ -2076,3 +2076,15 @@ lived inline).*
    > - **Update 2026-10-02:** B и B2 (микро-прототип, `docs/perf/PH3C_LEAF_PROTO_IAI.md`, `cda836f2`) и B3 (`docs/perf/PH3C_B3_PROTO_IAI.md`, `cbceb311`) провалили пред-регистрированные фильтры — битовое семейство закрыто. Регрессия PG-3 при этом оказалась артефактом скана pending-bitmap (+1024 слова из-за 1 MiB таблицы перед payload), а не ценой off-body учёта. План (решение владельца): шаг 0 PG-3r (патч S, перемер PG-3 на обеих сторонах) → шаг 1 интегрированный спайк B3 с ценой корректности refill/flush (EstCycles ≤1.10 И Ir ≤1.20, hot ≤1.02) → конечная точка (б) (интрузивный slab + принятый известный дефект P1-box). Правила и пределы — `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md`.
 
 **Closure.** 2026-10-05: PG-3r (патч S) показал, что регрессия PG-3 — скан pending-bitmap, а не off-body учёт; B/B2 (микро-прототип, `cda836f2`), B3 (фильтр, `cbceb311`) и интегрированный B3 (шаг 0/1/1′: `c584a3ae`, `49057e12`) — NO-GO по пределам ADR/эскалации. Исполнен путь (б): `docs/design/2026-10-05-adr-addendum-ph3c-path-b.md`.
+
+## 80 — скан pending-bitmap с первого слова payload (closure narrative, 2026-10-05)
+
+80. **Скан pending-bitmap на refill-промахе без пропуска пустых слов (perf(runtime) кандидат, выявлен PG-3 атрибуцией).**
+
+   > **Current state (на момент закрытия)**
+   > - **Status:** OPEN — подтверждено измерением PG-3r (патч S: hot ΔIr −0.003…+0.017%, cold/recycle −0.46…−1.23%, A/A 0.000%); осталось внести как отдельный `perf(runtime)` коммит в `main` (патч — `docs/perf/PG3R_SCAN_PATCH_S.patch`).
+   > - **Current number/verdict:** `drain_segment_sidecar` (`src/alloc_core/small/alloc_core_small/find_segment.rs`) и курсор `sidecar_drain.rs` проходили pending-bitmap от слова 0 до `high_water` по одному `swap(0, AcqRel)` на слово (1 слово = 1 KiB payload), включая пустые и слова метаданных: до 4096 атомарных swap (≈49k Ir) на полностью нарезанном сегменте.
+   > - **Next trigger:** результат PG-3r (патч S: начинать скан с первого слова payload). Если ΔIr hot ≤ +0.5% и refill в пределах ADR — оформить как отдельный `perf(runtime)` с iai-гейтом; с Ph3c не смешивать.
+   > - **Evidence:** `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md` §1.1, §3, §6; `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv`.
+
+**Closure.** 2026-10-05: триггер выполнен — PG-3r (`docs/perf/PG3R_SCAN_PATCH_IAI.md`) уложился в пределы (hot ΔIr ≤ +0.017%, refill/flush −0.46…−1.23%, A/A 0.000%), патч S влит отдельным `perf(runtime)` коммитом `18d76472` (скан и курсор ingress стартуют со слова `payload_start / (MIN_BLOCK * 64)`; слова ниже — нули по построению, т.к. выдача и reclaim отвергают смещения ниже `payload_start`); гейт импортов для наборов без `alloc-global`/`alloc-xthread` — `ccb668d4`. Мутант (+1 слово) краснит `r8_owner_sidecar_miss`; `tests/r9_bounded_background_maintenance.rs` ожидает позиции от START. Остаток исходной формулировки — пропуск ПУСТЫХ payload-слов (иерархический summary-bitmap) — не реализован и не открыт: в PG-3r-атрибуции он не выделялся как цена refill; новая карточка — только по такому измерению.

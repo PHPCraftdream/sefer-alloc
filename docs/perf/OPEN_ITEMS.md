@@ -140,13 +140,13 @@ for completeness.
    > - **Next trigger:** нет (переоткрытие только по внешней причине: решение Rust о protector'ах `Box`, нативное воспроизведение, новое решение владельца).
    > - **Evidence:** `docs/perf/PH3C_B3P_STEP1PRIME_IAI.md`, `docs/design/2026-10-05-adr-addendum-ph3c-path-b.md`; полный нарратив — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `79`.
 
-80. **Скан pending-bitmap на refill-промахе без пропуска пустых слов (perf(runtime) кандидат, выявлен PG-3 атрибуцией).**
+80. **Скан pending-bitmap на refill-промахе: CLOSED — патч S влит (`perf(runtime)`).**
 
    > **Current state**
-   > - **Status:** OPEN — подтверждено измерением PG-3r (патч S: hot ΔIr −0.003…+0.017%, cold/recycle −0.46…−1.23%, A/A 0.000%); осталось внести как отдельный `perf(runtime)` коммит в `main` (патч — `docs/perf/PG3R_SCAN_PATCH_S.patch`).
-   > - **Current number/verdict:** `drain_segment_sidecar` (`src/alloc_core/small/alloc_core_small/find_segment.rs`) и курсор `sidecar_drain.rs` проходят pending-bitmap от слова 0 до `high_water` по одному `swap(0, AcqRel)` на слово (1 слово = 1 KiB payload), включая пустые и слова метаданных: до 4096 атомарных swap (≈49k Ir) на полностью нарезанном сегменте.
-   > - **Next trigger:** результат PG-3r (патч S: начинать скан с первого слова payload). Если ΔIr hot ≤ +0.5% и refill в пределах ADR — оформить как отдельный `perf(runtime)` с iai-гейтом; с Ph3c не смешивать.
-   > - **Evidence:** `docs/design/2026-10-02-adr-addendum-ph3c-escalation.md` §1.1, §3, §6; `docs/perf/PG3_OFFBODY_SPIKE_IAI_summary.csv`.
+   > - **Status:** CLOSED (2026-10-05) — патч S влит коммитом `18d76472` (+ гейт импортов `ccb668d4`): скан pending-bitmap начинается с первого слова payload, слова метаданных больше не свопаются.
+   > - **Current number/verdict:** PG-3r iai (85 бенчей, A/A 0.000%): hot ΔIr −0.003…+0.017%, cold/recycle −0.46…−1.23%; мутант (+1 слово) краснит `r8_owner_sidecar_miss`. Пропуск ПУСТЫХ payload-слов (summary-bitmap) не делался — триггера нет.
+   > - **Next trigger:** нет (новая карточка, если пустые payload-слова станут видимой ценой refill в iai-атрибуции).
+   > - **Evidence:** `docs/perf/PG3R_SCAN_PATCH_IAI.md`; полный нарратив — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `80`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
@@ -3002,6 +3002,7 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **80** — скан pending-bitmap с первого слова payload (патч S): влит `18d76472` (2026-10-05); см. `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `80`.
 - **79** — PG-2/PG-3 off-body учёт свободных блоков: NO-GO, путь (б) (2026-10-05); см. `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `79`.
 - **Ph3a — Small issuance as a prepare→commit `IssueTransaction` witness.** Closed 2026-10-02, commits `faf253e9` + `3962933b` (release-only `inline(always)` по iai): карта входов не нашла ни одного фаллибл-шага после мутации; мутанты (a)/(b)/(c) красные по нужным причинам; iai в порогах (hot −0.354% Ir, refill до −2.670% EstCycles); Miri paused ожидаемо красный на прежнем месте (`node.rs:90`), TB-нога и Loom — NOT_RUN, зона Ph3c. См. `docs/reviews/2026-10-02-ph3a-issue-transaction-receipt.md`.
 - **Ph3b — kind-aware входы выдачи/освобождения (единый `BlockKind`).** Closed 2026-10-02, commit `fa88c95f`: единственный красный мутант — (a) (kind не консультируется; под `medium-classes`, паника на `tests/r11_ph3b_kind_aware_entries.rs:1052`); мутанты (b)/(c) нативно зелёные — исход идентичен (гигиена, не контрфактуал); закрытое production-расхождение (физический Large со small-Layout под plain production шёл в magazine-push) покрыто красным (a); iai в порогах, Miri-красный не сдвинулся. См. `docs/reviews/2026-10-02-ph3b-kind-aware-entries-receipt.md`.
