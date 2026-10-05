@@ -12,14 +12,19 @@
 //! Token-based, so reformatting cannot break it; a semantic regression does.
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
-const TLS_SRC: &str = include_str!("../src/global/tls_heap.rs");
-
 /// The body of the `thread_local! { ... }` block.
+/// Source text with CRLF normalised (Windows checkouts convert line endings).
+fn tls_src() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| include_str!("../src/global/tls_heap.rs").replace("\r\n", "\n"))
+        .as_str()
+}
+
 fn thread_local_block() -> &'static str {
-    let start = TLS_SRC
+    let start = tls_src()
         .find("thread_local! {")
         .expect("tls_heap declares its TLS cells in a thread_local! block");
-    let rest = &TLS_SRC[start..];
+    let rest = &tls_src()[start..];
     let end = rest.find("\n}\n").expect("end of the thread_local! block");
     &rest[..end]
 }
@@ -66,10 +71,10 @@ fn local_is_a_const_initialised_dropless_raw_cell() {
 
 #[test]
 fn guard_stores_the_typed_lease_option() {
-    let start = TLS_SRC
+    let start = tls_src()
         .find("struct AbandonGuard")
         .expect("AbandonGuard is the thread-exit guard");
-    let rest = &TLS_SRC[start..];
+    let rest = &tls_src()[start..];
     let end = rest.find("\n}\n").expect("end of the AbandonGuard struct");
     let body = &rest[..end];
     assert!(
@@ -81,10 +86,10 @@ fn guard_stores_the_typed_lease_option() {
 
 #[test]
 fn finish_bind_rollback_unpublishes_local_before_the_lease_drop() {
-    let start = TLS_SRC
+    let start = tls_src()
         .find("fn finish_bind(")
         .expect("finish_bind is the shared post-claim path");
-    let rest = &TLS_SRC[start..];
+    let rest = &tls_src()[start..];
     let end = rest.find("\n}\n").expect("end of finish_bind");
     let body = &rest[..end];
     let rollback = body

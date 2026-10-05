@@ -7,13 +7,20 @@
 //! claimant's Acquire CAS). A mutant that weakens it to `Relaxed` turns this red.
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
-const CLAIM_SRC: &str = include_str!("../src/registry/heap_registry/claim.rs");
+/// Source text with CRLF normalised (Windows checkouts convert line endings).
+fn claim_src() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        include_str!("../src/registry/heap_registry/claim.rs").replace("\r\n", "\n")
+    })
+    .as_str()
+}
 
 fn lease_drop_body() -> &'static str {
-    let start = CLAIM_SRC
+    let start = claim_src()
         .find("impl Drop for HeapLease")
         .expect("impl Drop for HeapLease present");
-    let rest = &CLAIM_SRC[start..];
+    let rest = &claim_src()[start..];
     let end = rest.find("\n}\n").expect("end of the Drop impl");
     &rest[..end]
 }

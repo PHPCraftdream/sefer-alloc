@@ -155,6 +155,19 @@ fn scenario() {
     println!("{MARKER}");
 }
 
+fn child_command(exe: &std::path::Path) -> Command {
+    // Cargo's target runner does not propagate to subprocesses automatically
+    // (same shape as `tests/r8_autonomous_maintenance.rs`).
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    if let Ok(runner) = std::env::var("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER") {
+        let mut words = runner.split_ascii_whitespace();
+        let mut command = Command::new(words.next().expect("nonempty target runner"));
+        command.args(words).arg(exe);
+        return command;
+    }
+    Command::new(exe)
+}
+
 #[test]
 fn no_worker_pending_stays() {
     if std::env::var_os(CHILD).is_some() {
@@ -162,7 +175,7 @@ fn no_worker_pending_stays() {
         return;
     }
     let exe = std::env::current_exe().expect("test binary");
-    let out = Command::new(exe)
+    let out = child_command(&exe)
         .args(["--exact", TEST, "--nocapture", "--test-threads=1"])
         .env(CHILD, "1")
         .output()

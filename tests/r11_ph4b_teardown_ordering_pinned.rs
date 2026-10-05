@@ -17,16 +17,29 @@
 //! (stale-pointer window) — turns this red.
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
-const TLS_SRC: &str = include_str!("../src/global/tls_heap.rs");
-const CLAIM_SRC: &str = include_str!("../src/registry/heap_registry/claim.rs");
-
 /// The Drop body with whole-line `//` comments removed: a commented-out call
 /// (or prose that merely names one) must not satisfy the position checks.
+/// Source text with CRLF normalised (Windows checkouts convert line endings).
+fn tls_src() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| include_str!("../src/global/tls_heap.rs").replace("\r\n", "\n"))
+        .as_str()
+}
+
+/// Source text with CRLF normalised (Windows checkouts convert line endings).
+fn claim_src() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        include_str!("../src/registry/heap_registry/claim.rs").replace("\r\n", "\n")
+    })
+    .as_str()
+}
+
 fn abandon_guard_drop_body() -> String {
-    let start = TLS_SRC
+    let start = tls_src()
         .find("impl Drop for AbandonGuard")
         .expect("AbandonGuard implements Drop");
-    let rest = &TLS_SRC[start..];
+    let rest = &tls_src()[start..];
     let end = rest
         .find("\n}\n")
         .expect("end of the AbandonGuard Drop impl");
@@ -63,10 +76,10 @@ fn teardown_stamps_torn_then_trims_then_releases_the_slot() {
 
 #[test]
 fn lease_release_cas_is_release_ordered() {
-    let start = CLAIM_SRC
+    let start = claim_src()
         .find("impl Drop for HeapLease")
         .expect("HeapLease implements Drop");
-    let rest = &CLAIM_SRC[start..];
+    let rest = &claim_src()[start..];
     let end = rest.find("\n}\n").expect("end of the HeapLease Drop impl");
     let body = &rest[..end];
     let cas = body

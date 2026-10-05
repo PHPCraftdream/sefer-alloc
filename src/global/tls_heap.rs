@@ -481,6 +481,19 @@ fn finish_bind(lease: Option<HeapLease>) -> CurrentHeap {
         // Registry exhausted or primordial OOM: fall back, never null.
         return CurrentHeap::Fallback;
     };
+    // Nested bind (re-entrancy): an allocation made INSIDE the outer claim —
+    // e.g. NUMA topology initialisation — re-enters the global allocator on
+    // this thread while `LOCAL` is still null, and that inner call completes
+    // a full bind (publishes `LOCAL`, arms `GUARD`) before the outer claim
+    // returns. Keep the inner bind and release the outer lease: publishing
+    // the outer heap over it would orphan the inner slot (still LIVE, never
+    // recycled) and reroute this thread's inner blocks as foreign.
+    if let Ok(current) = LOCAL.try_with(|c| c.get()) {
+        if !current.is_null() && current != TORN {
+            drop(lease); // LIVE → FREE; allocates nothing, no TLS.
+            return CurrentHeap::Own(current);
+        }
+    }
     // S1–S4 of addendum §2.1 via `HeapLease::core`; the raw pointer is a
     // same-thread TLS derivative of the lease's exclusive borrow.
     let heap = lease.core() as *mut HeapCore;
