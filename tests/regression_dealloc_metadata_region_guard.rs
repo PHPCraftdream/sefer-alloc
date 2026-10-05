@@ -112,9 +112,8 @@ fn dealloc_metadata_region_offsets_are_noop() {
 
     // Three block-size-aligned (16 B) offsets, all strictly inside the
     // metadata region (`< payload_start`), matching the task's counterfactual
-    // triple: base+0, base+PAGE, base+4096 (PAGE == 4096 in this build, so we
-    // add a third distinct offset — base + 2*PAGE — to still exercise three
-    // genuinely different metadata addresses).
+    // triple: base+0, base+PAGE, base+2*PAGE (PAGE is allocator's compile-time
+    // geometry constant, not necessarily the host runtime page size).
     let bogus_offsets: [usize; 3] = [0, SegmentLayout::PAGE, 2 * SegmentLayout::PAGE];
     for &off in &bogus_offsets {
         assert!(

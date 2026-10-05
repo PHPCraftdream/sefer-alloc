@@ -46,10 +46,11 @@ fn m1_large_allocations_are_aligned_and_writable() {
     let mut a = AllocCore::new().unwrap();
     // Larger than SMALL_MAX → dedicated-segment path.
     let big = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
-    let layout = Layout::from_size_align(big, 4096).unwrap();
+    let page_size = aligned_vmem::page_size();
+    let layout = Layout::from_size_align(big, page_size).unwrap();
     let ptr = a.alloc(layout);
     assert!(!ptr.is_null(), "large alloc returned null");
-    assert_eq!((ptr as usize) % 4096, 0, "large ptr not page-aligned");
+    assert_eq!((ptr as usize) % page_size, 0, "large ptr not page-aligned");
     // SAFETY: valid for `big` bytes.
     unsafe {
         ptr::write_bytes(ptr, 0x33, big);

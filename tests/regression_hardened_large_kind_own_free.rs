@@ -101,12 +101,13 @@ fn large_ptr_small_layout_free_is_noop() {
     //
     // Size 64 (block_size 64) is chosen deliberately so this test ISOLATES the
     // F7 Large-kind guard from the sibling interior-pointer guard: the Large
-    // payload starts at segment offset `hdr_aligned` = `align_up(SegmentHeader,
-    // PAGE)` = 4096 (for align 8, PAGE 4096), and 4096 is a whole multiple of
-    // the 64 B block size, so the interior-pointer guard's `off % block_size ==
-    // 0` check PASSES the pointer through — only the F7 kind check stops it.
-    // (A non-page-multiple block size like 48 would be caught by the interior
-    // guard first, making this test vacuous for F7.)
+    // payload starts at compile-time allocator `PAGE` (currently 4096), and
+    // `PAGE` is `align_up(SegmentHeader, PAGE)` for this align-8 layout. This
+    // is NOT OS page alignment. `PAGE` is a whole multiple of the 64 B block
+    // size, so the interior-pointer guard's `off % block_size == 0` check
+    // PASSES the pointer through — only the F7 kind check stops it. (A block
+    // size not dividing PAGE, such as 48, would be caught by that guard first,
+    // making this test vacuous for F7.)
     let small_layout = Layout::from_size_align(64, 8).unwrap();
 
     let large = heap.alloc(large_layout);
