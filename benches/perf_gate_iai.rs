@@ -272,8 +272,7 @@ fn dealloc_prealloc_only_16b() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
     // Deliberately leaked (never freed): this arm exists ONLY to measure the
@@ -295,8 +294,7 @@ fn dealloc_free_only_16b() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -330,8 +328,7 @@ fn dealloc_contains_base_probe_only_16b() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -341,8 +338,8 @@ fn dealloc_contains_base_probe_only_16b() {
     // `let base = os::segment_base_of_ptr(ptr); self.core.contains_base(base)`.
     for &ptr in &ptrs {
         if !ptr.is_null() {
-            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
-            let hit = unsafe { (*heap).dbg_contains_base(base) };
+            let base = (*heap).dbg_segment_base_of_ptr(ptr);
+            let hit = (*heap).dbg_contains_base(base);
             black_box(hit);
         }
     }
@@ -377,8 +374,7 @@ fn dealloc_segment_base_of_ptr_probe_only_16b() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -387,7 +383,7 @@ fn dealloc_segment_base_of_ptr_probe_only_16b() {
     // base-computation half of the routing prefix.
     for &ptr in &ptrs {
         if !ptr.is_null() {
-            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+            let base = (*heap).dbg_segment_base_of_ptr(ptr);
             black_box(base);
         }
     }
@@ -463,8 +459,7 @@ fn alloc_magazine_prefill_only_16b() {
         // Carve 16 fresh blocks (never magazine-resident before -- these are
         // carve/refill misses, not hits).
         for slot in ptrs.iter_mut() {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            *slot = unsafe { (*heap).alloc(layout) };
+            *slot = (*heap).alloc(layout);
         }
         black_box(&ptrs);
         // Populate the magazine: free all 16 -- each push lands in the
@@ -501,8 +496,7 @@ fn alloc_magazine_hit_only_16b() {
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
     for _ in 0..PREFILL_CYCLES {
         for slot in ptrs.iter_mut() {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            *slot = unsafe { (*heap).alloc(layout) };
+            *slot = (*heap).alloc(layout);
         }
         black_box(&ptrs);
         for &ptr in &ptrs {
@@ -518,8 +512,7 @@ fn alloc_magazine_hit_only_16b() {
     // of these 16 `alloc` calls pops from it -- all 16 are magazine HITS,
     // never a miss/refill.
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 }
@@ -559,8 +552,7 @@ fn alloc_zeroed_magazine_prefill_only_16b() {
         // Carve 16 fresh blocks via plain `alloc` (never magazine-resident
         // before -- carve/refill misses, not hits).
         for slot in ptrs.iter_mut() {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            *slot = unsafe { (*heap).alloc(layout) };
+            *slot = (*heap).alloc(layout);
         }
         black_box(&ptrs);
         // Populate the magazine via the real free push path. After the LAST
@@ -606,8 +598,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
     for _ in 0..PREFILL_CYCLES {
         for slot in ptrs.iter_mut() {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            *slot = unsafe { (*heap).alloc(layout) };
+            *slot = (*heap).alloc(layout);
         }
         black_box(&ptrs);
         for &ptr in &ptrs {
@@ -627,10 +618,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
     // false every time and `Node::zero` runs on every pop, exactly like a
     // real non-virgin `calloc`-shaped hit workload).
     for slot in ptrs.iter_mut() {
-        // SAFETY: `heap` was returned live (non-null) by `HeapRegistry::claim`
-        // above and is dereferenced only on the claiming thread; `layout` has
-        // non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc_zeroed(layout) };
+        *slot = (*heap).alloc_zeroed(layout);
     }
     black_box(&ptrs);
 }
@@ -669,8 +657,7 @@ fn alloc_zeroed_magazine_prefill_only_16b() {
         // Carve 16 fresh blocks (never magazine-resident before -- these are
         // carve/refill misses, not hits).
         for slot in ptrs.iter_mut() {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            *slot = unsafe { (*heap).alloc(layout) };
+            *slot = (*heap).alloc(layout);
         }
         black_box(&ptrs);
         // Populate the magazine: free all 16 -- each push lands in the
@@ -722,8 +709,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
     for _ in 0..PREFILL_CYCLES {
         for slot in ptrs.iter_mut() {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            *slot = unsafe { (*heap).alloc(layout) };
+            *slot = (*heap).alloc(layout);
         }
         black_box(&ptrs);
         for &ptr in &ptrs {
@@ -739,10 +725,7 @@ fn alloc_zeroed_magazine_hit_only_16b() {
     // prefill cycle) and every one of these 16 calls pops from it -- all 16
     // are magazine HITS, never a miss/refill.
     for slot in ptrs.iter_mut() {
-        // SAFETY: `heap` was returned live (non-null) by `HeapRegistry::claim`
-        // above and is dereferenced only on the claiming thread; `layout` has
-        // non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc_zeroed(layout) };
+        *slot = (*heap).alloc_zeroed(layout);
     }
     black_box(&ptrs);
 }
@@ -768,8 +751,7 @@ fn dealloc_hash_contains_only_probe_16b() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -781,8 +763,8 @@ fn dealloc_hash_contains_only_probe_16b() {
     // subtraction R23-1 used to isolate Tier-1's `contains_base`.
     for &ptr in &ptrs {
         if !ptr.is_null() {
-            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
-            let hit = unsafe { (*heap).dbg_hash_contains_only(base) };
+            let base = (*heap).dbg_segment_base_of_ptr(ptr);
+            let hit = (*heap).dbg_hash_contains_only(base);
             black_box(hit);
         }
     }
@@ -834,8 +816,7 @@ fn dealloc_own_thread_body_only_16b() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -845,7 +826,7 @@ fn dealloc_own_thread_body_only_16b() {
     // no bypass, no alternate implementation.
     for &ptr in &ptrs {
         if !ptr.is_null() {
-            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+            let base = (*heap).dbg_segment_base_of_ptr(ptr);
             // SAFETY: `ptr` was returned by the alloc loop above with `layout`
             // and is freed exactly once here; `base` is `ptr`'s true segment
             // base (`dealloc_routing`'s own `contains_base` check already
@@ -894,8 +875,7 @@ fn dealloc_free_only_16b_n1() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -921,8 +901,7 @@ fn dealloc_free_only_16b_n8() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -949,8 +928,7 @@ fn dealloc_free_only_16b_n9() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -976,8 +954,7 @@ fn dealloc_free_only_16b_n16() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1005,8 +982,7 @@ fn dealloc_free_only_16b_n17() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1032,8 +1008,7 @@ fn dealloc_free_only_16b_n32() {
 
     let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1100,8 +1075,7 @@ fn dealloc_flush_class_only_16b_prefix() {
     // n8`'s prefix).
     let mut warm: [*mut u8; 8] = [core::ptr::null_mut(); 8];
     for slot in warm.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     for &ptr in &warm {
         // SAFETY: ptr was returned by the alloc loop above with the same
@@ -1115,8 +1089,7 @@ fn dealloc_flush_class_only_16b_prefix() {
     // allocation of the target class, freed at most once by the call itself).
     let mut flush_input: [*mut u8; 8] = [core::ptr::null_mut(); 8];
     for slot in flush_input.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&flush_input);
     // Deliberately never flushed: this arm exists ONLY to measure the shared
@@ -1142,8 +1115,7 @@ fn dealloc_flush_class_only_16b() {
     // comment) -- byte-identical prefix so the paired subtraction cancels it.
     let mut warm: [*mut u8; 8] = [core::ptr::null_mut(); 8];
     for slot in warm.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     for &ptr in &warm {
         // SAFETY: ptr was returned by the alloc loop above with the same
@@ -1153,14 +1125,13 @@ fn dealloc_flush_class_only_16b() {
 
     let mut flush_input: [*mut u8; 8] = [core::ptr::null_mut(); 8];
     for slot in flush_input.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&flush_input);
 
-    // SAFETY: `dbg_class_for` resolves the same size class production's
-    // magazine dispatch would for this layout.
-    let class_idx = unsafe { (*heap).dbg_class_for(layout) }.expect("16 B must classify small");
+    let class_idx = (*heap)
+        .dbg_class_for(layout)
+        .expect("16 B must classify small");
 
     // Timed region: `flush_class` standalone on the 8 live blocks -- the
     // exact call production's overflow arm makes
@@ -1231,8 +1202,7 @@ fn alloc_clear_magazine_only_16b_prefix() {
     // own-thread free push calls `mark_magazine`).
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
     for &ptr in &ptrs {
@@ -1264,8 +1234,7 @@ fn alloc_clear_magazine_only_16b() {
     // comment) -- byte-identical prefix so the paired subtraction cancels it.
     let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
     for &ptr in &ptrs {
@@ -1574,8 +1543,7 @@ fn dealloc_prealloc_only_1088_16b() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 }
@@ -1592,8 +1560,7 @@ fn dealloc_free_only_1088_16b_n17() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1616,8 +1583,7 @@ fn dealloc_free_only_1088_16b_n32() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1640,8 +1606,7 @@ fn dealloc_free_only_1088_16b_n64() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1664,8 +1629,7 @@ fn dealloc_free_only_1088_16b_n256() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1691,8 +1655,7 @@ fn dealloc_free_only_1088_16b_n1024() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1725,8 +1688,7 @@ fn dealloc_realloc_burst_1088_16b_n17() {
 
     let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1741,8 +1703,7 @@ fn dealloc_realloc_burst_1088_16b_n17() {
     }
     let mut reallocs: [*mut u8; 17] = [core::ptr::null_mut(); 17];
     for slot in reallocs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&reallocs);
 }
@@ -1770,8 +1731,7 @@ fn oscillating_live_set_16b() {
     // Untimed warm-up: bring the live set to the low end (8) before the timed
     // oscillation begins, so the FIRST timed round starts from a known state.
     for slot in live.iter_mut().take(8) {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
         live_n += 1;
     }
     black_box(&live);
@@ -1781,8 +1741,7 @@ fn oscillating_live_set_16b() {
     // (crossing 16 from above via frees).
     for _ in 0..OSC_ROUNDS {
         while live_n < 24 {
-            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-            live[live_n] = unsafe { (*heap).alloc(layout) };
+            live[live_n] = (*heap).alloc(layout);
             live_n += 1;
         }
         while live_n > 8 {
@@ -1863,8 +1822,7 @@ fn dealloc_batch_fresh_16_16b() {
 
     let mut ptrs: [*mut u8; 16] = [core::ptr::null_mut(); 16];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1883,8 +1841,7 @@ fn dealloc_batch_fresh_64_16b() {
 
     let mut ptrs: [*mut u8; 64] = [core::ptr::null_mut(); 64];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1921,8 +1878,7 @@ fn dealloc_batch_fresh_80_16b() {
 
     let mut ptrs: [*mut u8; 80] = [core::ptr::null_mut(); 80];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1942,8 +1898,7 @@ fn dealloc_batch_fresh_81_16b() {
 
     let mut ptrs: [*mut u8; 81] = [core::ptr::null_mut(); 81];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1964,8 +1919,7 @@ fn dealloc_batch_fresh_128_16b() {
 
     let mut ptrs: [*mut u8; 128] = [core::ptr::null_mut(); 128];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -1985,8 +1939,7 @@ fn dealloc_batch_fresh_200_16b() {
 
     let mut ptrs: [*mut u8; 200] = [core::ptr::null_mut(); 200];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -2006,8 +1959,7 @@ fn dealloc_batch_fresh_512_16b() {
 
     let mut ptrs: [*mut u8; 512] = [core::ptr::null_mut(); 512];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -2027,8 +1979,7 @@ fn dealloc_batch_fresh_1024_16b() {
 
     let mut ptrs: [*mut u8; 1024] = [core::ptr::null_mut(); 1024];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -2074,8 +2025,7 @@ fn dealloc_batch_fresh_1_16b() {
 
     let mut ptrs: [*mut u8; 1] = [core::ptr::null_mut(); 1];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -2095,8 +2045,7 @@ fn dealloc_batch_fresh_8_16b() {
 
     let mut ptrs: [*mut u8; 8] = [core::ptr::null_mut(); 8];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -2116,8 +2065,7 @@ fn dealloc_batch_fresh_17_16b() {
 
     let mut ptrs: [*mut u8; 17] = [core::ptr::null_mut(); 17];
     for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
+        *slot = (*heap).alloc(layout);
     }
     black_box(&ptrs);
 
@@ -2287,8 +2235,7 @@ fn large_cache_prefill_only_4mib() {
     let layout = Layout::from_size_align(LARGE_ALLOC_BYTES, 8).unwrap();
 
     for _ in 0..LARGE_HIT_CYCLES {
-        // SAFETY: layout has non-zero size and valid alignment.
-        let ptr = unsafe { (*heap).alloc(layout) };
+        let ptr = (*heap).alloc(layout);
         black_box(ptr);
         if !ptr.is_null() {
             // SAFETY: ptr was returned by the alloc call directly above with
@@ -2324,8 +2271,7 @@ fn large_cache_hit_only_4mib() {
     let layout = Layout::from_size_align(LARGE_ALLOC_BYTES, 8).unwrap();
 
     for _ in 0..LARGE_HIT_CYCLES {
-        // SAFETY: layout has non-zero size and valid alignment.
-        let ptr = unsafe { (*heap).alloc(layout) };
+        let ptr = (*heap).alloc(layout);
         black_box(ptr);
         if !ptr.is_null() {
             // SAFETY: ptr was returned by the alloc call directly above with
@@ -2335,8 +2281,7 @@ fn large_cache_hit_only_4mib() {
     }
     // Timed-in-spirit region: one more alloc, guaranteed (see doc above) to
     // be a large-cache HIT — this is the F12 targeted-write call site.
-    // SAFETY: layout has non-zero size and valid alignment.
-    let ptr = unsafe { (*heap).alloc(layout) };
+    let ptr = (*heap).alloc(layout);
     black_box(ptr);
     if !ptr.is_null() {
         // SAFETY: ptr was returned by the alloc call directly above with the
@@ -2403,8 +2348,7 @@ fn large_cache_free_slot_search_prefill_only() {
     for mult in 1..=FREE_SLOT_SEARCH_DECOY_COUNT {
         let sz = mult * 4 * 1024 * 1024; // SEGMENT-multiple decoy sizes
         let layout = Layout::from_size_align(sz, 8).unwrap();
-        // SAFETY: layout has non-zero size and valid alignment.
-        let ptr = unsafe { (*heap).alloc(layout) };
+        let ptr = (*heap).alloc(layout);
         black_box(ptr);
         if !ptr.is_null() {
             // SAFETY: ptr was returned by the alloc call directly above with
@@ -2415,8 +2359,7 @@ fn large_cache_free_slot_search_prefill_only() {
     }
     let cycle_size = (FREE_SLOT_SEARCH_DECOY_COUNT + 1) * 4 * 1024 * 1024;
     let cycle_layout = Layout::from_size_align(cycle_size, 8).unwrap();
-    // SAFETY: cycle_layout has non-zero size and valid alignment.
-    let ptr = unsafe { (*heap).alloc(cycle_layout) };
+    let ptr = (*heap).alloc(cycle_layout);
     black_box(ptr);
     if !ptr.is_null() {
         // SAFETY: ptr was returned by the alloc call directly above with the
@@ -2444,8 +2387,7 @@ fn large_cache_free_slot_search_cycle_only() {
     for mult in 1..=FREE_SLOT_SEARCH_DECOY_COUNT {
         let sz = mult * 4 * 1024 * 1024;
         let layout = Layout::from_size_align(sz, 8).unwrap();
-        // SAFETY: layout has non-zero size and valid alignment.
-        let ptr = unsafe { (*heap).alloc(layout) };
+        let ptr = (*heap).alloc(layout);
         black_box(ptr);
         if !ptr.is_null() {
             // SAFETY: ptr was returned by the alloc call directly above with
@@ -2455,8 +2397,7 @@ fn large_cache_free_slot_search_cycle_only() {
     }
     let cycle_size = (FREE_SLOT_SEARCH_DECOY_COUNT + 1) * 4 * 1024 * 1024;
     let cycle_layout = Layout::from_size_align(cycle_size, 8).unwrap();
-    // SAFETY: cycle_layout has non-zero size and valid alignment.
-    let prime = unsafe { (*heap).alloc(cycle_layout) };
+    let prime = (*heap).alloc(cycle_layout);
     if !prime.is_null() {
         // SAFETY: prime was returned by the alloc call directly above with
         // the same layout, freed exactly once.
@@ -2468,8 +2409,7 @@ fn large_cache_free_slot_search_cycle_only() {
     // worst-case free-slot-search cost (7 occupied decoys walked before the
     // one free slot).
     for _ in 0..FREE_SLOT_SEARCH_CYCLES {
-        // SAFETY: cycle_layout has non-zero size and valid alignment.
-        let ptr = unsafe { (*heap).alloc(cycle_layout) };
+        let ptr = (*heap).alloc(cycle_layout);
         black_box(ptr);
         if !ptr.is_null() {
             // SAFETY: ptr was returned by the alloc call directly above with
@@ -3375,14 +3315,13 @@ fn dealloc_batch_fresh_17_16b() {
 fn decomp_full_cycle_8x() {
     let _ = bootstrap::ensure();
     let heap = claim_leaked_heap();
-    let pool_cap = unsafe { (*heap).dbg_pool_cap() };
+    let pool_cap = (*heap).dbg_pool_cap();
     // Pre-fill pool so releases take the release path.
     for _ in 0..(pool_cap + 2) {
-        let _ = unsafe { (*heap).dbg_decomp_full_cycle() };
+        let _ = (*heap).dbg_decomp_full_cycle();
     }
     for _ in 0..8 {
-        // SAFETY: dbg_decomp_full_cycle is a safe measurement hook.
-        let _ = unsafe { (*heap).dbg_decomp_full_cycle() };
+        let _ = (*heap).dbg_decomp_full_cycle();
     }
 }
 

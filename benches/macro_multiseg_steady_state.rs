@@ -269,7 +269,9 @@ fn multiseg_steady_state_1t() {
     // Teardown: free the whole floor (a long-lived process eventually
     // shutting down), then recycle the heap.
     for p in floor {
-        heap.dealloc(p, large_layout);
+        // SAFETY: every `floor` pointer came from `heap.alloc` with
+        // `large_layout` and is freed exactly once here.
+        unsafe { heap.dealloc(p, large_layout) };
     }
     drop(lease); // recycle: lease `Drop` = LIVE → FREE (old explicit `recycle`)
 }
@@ -309,7 +311,9 @@ fn per_thread_work() {
     }
 
     for p in floor {
-        heap.dealloc(p, large_layout);
+        // SAFETY: every `floor` pointer came from `heap.alloc` with
+        // `large_layout` and is freed exactly once here.
+        unsafe { heap.dealloc(p, large_layout) };
     }
     drop(lease); // recycle: lease `Drop` = LIVE → FREE (old explicit `recycle`)
 }

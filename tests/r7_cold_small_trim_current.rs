@@ -13,9 +13,22 @@ use sefer_alloc::{SeferAlloc, SegmentLayout};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+/// Runs `body` on a fresh thread and joins it while the caller holds
+/// `TEST_LOCK`: the thread's registry slot is released (TLS teardown,
+/// `HeapLease::drop` publishing `reuse_hint`) BEFORE the lock is dropped. Run
+/// on the libtest thread itself, that release would race the next test's
+/// claim and redirect `reuse_hint` to a different slot.
+fn on_joined_thread(body: impl FnOnce() + Send + 'static) {
+    thread::spawn(body).join().expect("test body thread");
+}
+
 #[test]
 fn empty_current_small_releases_and_next_allocation_is_safe() {
     let _guard = TEST_LOCK.lock().unwrap();
+    on_joined_thread(empty_current_small_releases_body);
+}
+
+fn empty_current_small_releases_body() {
     let a = SeferAlloc::new();
     let layout = Layout::from_size_align(SegmentLayout::SMALL_MAX, 8).unwrap();
     let mut ptrs = Vec::new();
@@ -65,6 +78,10 @@ fn empty_current_small_releases_and_next_allocation_is_safe() {
 #[test]
 fn live_current_small_is_not_released() {
     let _guard = TEST_LOCK.lock().unwrap();
+    on_joined_thread(live_current_small_body);
+}
+
+fn live_current_small_body() {
     let a = SeferAlloc::new();
     let layout = Layout::from_size_align(SegmentLayout::SMALL_MAX, 8).unwrap();
     let mut ptrs = Vec::new();
