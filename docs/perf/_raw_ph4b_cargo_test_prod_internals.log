@@ -1,0 +1,2556 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.60s
+     Running unittests src\lib.rs (target-ph4b\debug\deps\sefer_alloc-95bcc650c8d0185f.exe)
+
+running 9 tests
+test alloc_core::large::reservation_state::credit_tests::cached_eviction_has_no_outstanding_credit ... ok
+test alloc_core::large::reservation_state::tests::consumed_cache_hit_advances_generation_only_after_reset_phase ... ok
+test alloc_core::large::reservation_state::credit_tests::owner_release_and_cache_reissue_transfer_credit_once ... ok
+test alloc_core::large::reservation_state::credit_tests::remote_pending_claim_and_rollback_cannot_double_consume ... ok
+test alloc_core::large::reservation_state::tests::pending_is_single_admission_and_single_owner_claim ... ok
+test alloc_core::large::reservation_state::tests::reduced_width_exhaustion_retires_without_wrap ... ok
+test alloc_core::large::reservation_state::tests::negative_control_pointer_stack_aba - should panic ... ok
+test alloc_core::large::reservation_state::tests::release_is_terminal_and_cannot_reenter_cache ... ok
+test registry::segment_route::large_state::tests::adapter_uses_existing_phase_encoding_and_reset_gate ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\alloc_core_batch.rs (target-ph4b\debug\deps\alloc_core_batch-88f1d98a244eb136.exe)
+
+running 15 tests
+test t_flush_double_free_is_noop ... ok
+test t_flush_null_defensive ... ok
+test t_refill_bump_equiv_class0_n64 ... ok
+test t_refill_bump_equiv_class0_n8 ... ok
+test t_flush_equiv_class0_n16 ... ok
+test t_flush_equiv_medium_n16 ... ok
+test t_refill_bump_equiv_medium_n16 ... ok
+test t_refill_bump_len_bound ... ok
+test t_refill_equiv_class0_n16 ... ok
+test t_refill_equiv_class0_n64 ... ok
+test t_refill_equiv_medium_n16 ... ok
+test t_refill_zero ... ok
+test t_refill_equiv_class0_n8 ... ok
+test t_refill_spans_segments ... ok
+test t_flush_decommit ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\alloc_core_differential.rs (target-ph4b\debug\deps\alloc_core_differential-c3d9f708a86916e1.exe)
+
+running 3 tests
+test replay_native_failure_seed_without_shrinking ... ok
+test bounded_streams_and_small_witness_exercise_large_allocations ... ok
+test alloc_core_matches_reference_model ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.67s
+
+     Running tests\alloc_core_invariants.rs (target-ph4b\debug\deps\alloc_core_invariants-a7096d34ce3fdba2.exe)
+
+running 13 tests
+test m2_foreign_pointer_dealloc_is_noop ... ok
+test m1_alloc_zeroed_is_all_zero ... ok
+test m2_double_free_is_noop ... ok
+test free_list_reuses_freed_blocks ... ok
+test m1_large_allocations_are_aligned_and_writable ... ok
+test m4_large_alignment_uses_dedicated_segment ... ok
+test realloc_preserves_prefix_bytes ... ok
+test m4_size_class_satisfies_size_and_align ... ok
+test m3_simultaneous_allocations_do_not_overlap ... ok
+test m1_small_allocations_are_aligned_and_writable ... ok
+test segment_of_finds_our_segment_base ... ok
+test many_large_allocs_then_free ... ok
+test m5_churn_keeps_allocator_consistent ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\alloc_core_reentrancy.rs (target-ph4b\debug\deps\alloc_core_reentrancy-736e68114035409a.exe)
+
+running 1 test
+test m5_alloc_path_does_not_touch_global_allocator ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\alloc_zeroed_fresh_large_skip.rs (target-ph4b\debug\deps\alloc_zeroed_fresh_large_skip-194c8f329464b927.exe)
+
+running 4 tests
+test cache_hit_large_alloc_zeroed_still_zeroes ... ok
+test fresh_large_alloc_zeroed_via_heapcore ... ok
+test fresh_large_alloc_zeroed_is_all_zero ... ok
+test interleaved_alloc_zeroed_always_zero ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+     Running tests\alloc_zeroed_virgin_small_skip.rs (target-ph4b\debug\deps\alloc_zeroed_virgin_small_skip-340127ccd779573f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\asan_alloc_core.rs (target-ph4b\debug\deps\asan_alloc_core-a45976ddefb14e2a.exe)
+
+running 7 tests
+test asan_alloc_zeroed_is_zero ... ok
+test asan_large_segment_lifecycle ... ok
+test asan_mixed_sizes_aligns ... ok
+test asan_small_alloc_write_realloc_dealloc ... ok
+test asan_many_live_then_reverse_free ... ok
+test asan_churn_reuse ... ok
+test asan_realloc_chain_across_classes ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\batch_large_deferred_reclaim.rs (target-ph4b\debug\deps\batch_large_deferred_reclaim-8e9453428fa99e5a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\batch_tcache.rs (target-ph4b\debug\deps\batch_tcache-2e6752c117b3bad3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\ci_clippy_matrix_consistency.rs (target-ph4b\debug\deps\ci_clippy_matrix_consistency-78e9aeed9ce6465a.exe)
+
+running 1 test
+test ci_clippy_steps_match_manifest_clippy_rows_exactly ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\concurrent_stress.rs (target-ph4b\debug\deps\concurrent_stress-ed5ca4fdfacf18ad.exe)
+
+running 1 test
+test concurrent_insert_read_remove_never_corrupts_and_accounting_holds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\dealloc_only_no_bind.rs (target-ph4b\debug\deps\dealloc_only_no_bind-e8d184d66d6ba28b.exe)
+
+running 2 tests
+test unbound_thread_dealloc_only_does_not_claim_a_slot ... ok
+test unbound_thread_many_dealloc_only_does_not_claim_a_slot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dealloc_only_no_bind_torn.rs (target-ph4b\debug\deps\dealloc_only_no_bind_torn-087676fde5c6a108.exe)
+
+running 1 test
+test torn_sentinel_resolves_to_foreign_no_bind ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dealloc_sublinear.rs (target-ph4b\debug\deps\dealloc_sublinear-6c8c8f4b71091e4e.exe)
+
+running 1 test
+test own_thread_free_is_subquadratic ... ignored, coarse wall-clock; flaky under concurrent test-binary CPU contention (docs/CORRECTNESS_OPEN_ITEMS.md item 3, resolved R23-6/task #375) — no clean deterministic counter replacement exists (the guard it protects is an unconditional O(1) bitmap test with no loop to instrument); run manually with --ignored, or use npm run iai instead
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\decommit_miri_cycle.rs (target-ph4b\debug\deps\decommit_miri_cycle-259f2270ad71648c.exe)
+
+running 1 test
+test decommit_recommit_cycle_bookkeeping ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\decommit_soak.rs (target-ph4b\debug\deps\decommit_soak-0f8d66d40f65c661.exe)
+
+running 2 tests
+test live_count_tracks_alloc_free_exactly ... ok
+test decommit_fires_and_recommit_roundtrips ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests\decomp_hooks_forced_page.rs (target-ph4b\debug\deps\decomp_hooks_forced_page-6908e554a39f7460.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\differential.rs (target-ph4b\debug\deps\differential-abafb1403a0790e6.exe)
+
+running 1 test
+test region_matches_reference_model ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests\directory_authoritative_miss.rs (target-ph4b\debug\deps\directory_authoritative_miss-2dbfe8b653c005d1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dirty_directory_incremental_sync.rs (target-ph4b\debug\deps\dirty_directory_incremental_sync-39b78bc7c9dccb06.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\double_free_guard.rs (target-ph4b\debug\deps\double_free_guard-c40a8053ec19dbe2.exe)
+
+running 3 tests
+test realloc_same_address_is_refreeable ... ok
+test double_free_does_not_double_issue ... ok
+test many_double_frees_keep_free_list_consistent ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\epoch.rs (target-ph4b\debug\deps\epoch-5b96240ad1c892eb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\exact_span_large.rs (target-ph4b\debug\deps\exact_span_large-a813d5436e393f29.exe)
+
+running 1 test
+test without_feature_span_usable_is_always_a_whole_segment_multiple ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\fastbin_requires_xthread.rs (target-ph4b\debug\deps\fastbin_requires_xthread-02170a428419e2f8.exe)
+
+running 1 test
+test fastbin_implies_xthread ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\freelist_reuse.rs (target-ph4b\debug\deps\freelist_reuse-1bbeb55bc5bd2917.exe)
+
+running 3 tests
+test reinsert_reuses_capacity_without_unbounded_growth ... ok
+test surviving_handles_resolve_after_churn ... ok
+test len_matches_iter_after_churn ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\global_alloc.rs (target-ph4b\debug\deps\global_alloc-0f1c9162ec5dfe05.exe)
+
+running 5 tests
+test alloc_zeroed_is_zero ... ok
+test alloc_dealloc_roundtrip_is_valid_and_aligned ... ok
+test realloc_grows_and_preserves_prefix ... ok
+test many_live_allocations_do_not_overlap ... ok
+test churn_reuses_without_growth ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\global_alloc_installed.rs (target-ph4b\debug\deps\global_alloc_installed-edf022de83e289e5.exe)
+
+running 2 tests
+test global_allocator_repeated_churn_reuses_state ... ok
+test global_allocator_serves_single_thread_churn ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\global_alloc_mt.rs (target-ph4b\debug\deps\global_alloc_mt-0abaaca36082a9ef.exe)
+
+running 3 tests
+test global_allocator_cross_thread_free ... ok
+test global_allocator_multithreaded_size_class_churn ... ok
+test global_allocator_serves_multithreaded_churn_with_thread_exit ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\heap_core_bulk_bypass.rs (target-ph4b\debug\deps\heap_core_bulk_bypass-3e0e95f454ad7ec6.exe)
+
+running 4 tests
+test t_bulk_then_drain_then_churn ... ok
+test t_cold_storm_stays_in_magazine ... ok
+test t_cross_thread_unaffected ... ok
+test t_churn_distinct_and_healthy ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\heap_core_dbg_table_count.rs (target-ph4b\debug\deps\heap_core_dbg_table_count-1d3d74ab31e96277.exe)
+
+running 1 test
+test dbg_table_count_tracks_registered_large_segments ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\heap_core_tcache.rs (target-ph4b\debug\deps\heap_core_tcache-4a1ff39da412f5a2.exe)
+
+running 3 tests
+test t1_round_trip ... ok
+test t7_conservation ... ok
+test t_bulk_overflow ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\heap_core_tcache_decommit.rs (target-ph4b\debug\deps\heap_core_tcache_decommit-19c20a1a6a706716.exe)
+
+running 2 tests
+test t4_decommit_fires_after_flush_not_before ... ok
+test t4_live_count_zero_after_flush ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests\heap_core_tcache_m2.rs (target-ph4b\debug\deps\heap_core_tcache_m2-a42c9f1f831f18dc.exe)
+
+running 7 tests
+test t2_double_free_64b_class ... ok
+test t_key_does_not_break_round_trip ... ok
+test t3_double_free_flushed_block_still_caught_by_bitmap ... ok
+test t_false_positive_handled ... ok
+test t2_triple_free_still_noop ... ok
+test t3_flushed_double_free_does_not_double_issue ... ok
+test t2_double_free_magazine_block_is_noop ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\heap_core_tcache_stamp.rs (target-ph4b\debug\deps\heap_core_tcache_stamp-302394b0e47bbe7d.exe)
+
+running 4 tests
+test t_large_still_stamps ... ok
+test t_magazine_hit_skips_stamp ... ok
+test t_stamp_after_refill ... ok
+test t_multi_class_refill_stamps ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\heap_cross_segment.rs (target-ph4b\debug\deps\heap_cross_segment-1e339206e9ba1196.exe)
+
+running 1 test
+test cross_segment_free_blocks_are_reused ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests\heap_diag.rs (target-ph4b\debug\deps\heap_diag-8dd2c5e306c89897.exe)
+
+running 2 tests
+test churn_with_large ... ok
+test churn_small_only ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.23s
+
+     Running tests\heap_differential.rs (target-ph4b\debug\deps\heap_differential-867fb59e2156ae02.exe)
+
+running 1 test
+test heap_matches_reference_model ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.33s
+
+     Running tests\heap_invariants.rs (target-ph4b\debug\deps\heap_invariants-a78cc99a1b0c660b.exe)
+
+running 11 tests
+test m1_alloc_zeroed_is_all_zero ... ok
+test m2_double_free_does_not_crash ... ok
+test free_list_reuses_freed_blocks ... ok
+test m4_various_sizes_and_aligns ... ok
+test refill_works_after_draining_free_list ... ok
+test m1_small_allocations_are_aligned_and_writable ... ok
+test m3_simultaneous_allocations_do_not_overlap ... ok
+test realloc_preserves_prefix_bytes ... ok
+test m1_large_allocations_are_aligned_and_writable ... ok
+test multi_thread_own_heap_own_dealloc ... ok
+test churn_keeps_heap_consistent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\heap_soak.rs (target-ph4b\debug\deps\heap_soak-d64c16711a01ca59.exe)
+
+running 1 test
+test soak_segment_reuse_bounded ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\kind_at_strict_decode.rs (target-ph4b\debug\deps\kind_at_strict_decode-d1bdc306591638f7.exe)
+
+running 3 tests
+test dealloc_on_unknown_kind_is_noop_not_crash ... ok
+test baseline_kind_at_decodes_legitimate_bytes ... ok
+test kind_at_rejects_corrupt_discriminant ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache.rs (target-ph4b\debug\deps\large_cache-1e45b3840169564a.exe)
+
+running 5 tests
+test alloc_dealloc_alloc_reuses_cached_large ... ok
+test alloc_dealloc_loop_does_not_grow_segment_table ... ok
+test drop_releases_cached_reservations ... ok
+test two_sizes_in_cache_no_cross_contamination ... ok
+test alloc_too_large_not_cached ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_budget.rs (target-ph4b\debug\deps\large_cache_budget-9edff59504318fc6.exe)
+
+running 5 tests
+test budget_set_evicts_when_full ... ok
+test config_sets_budget ... ok
+test large_cache_used_bytes_invariant ... ok
+test budget_too_small_releases_immediately ... ok
+test budget_none_caches_any_size ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_config_knobs.rs (target-ph4b\debug\deps\large_cache_config_knobs-003aaebda30540ce.exe)
+
+running 7 tests
+test decay_interval_ms_applied ... ok
+test decay_rate_percent_clamped_low ... ok
+test decay_rate_percent_clamped_high ... ok
+test headroom_bytes_applied ... ok
+test default_equals_const_default ... ok
+test budget_bytes_absent_is_unbounded ... ok
+test budget_bytes_zero_disables_cache ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_decay.rs (target-ph4b\debug\deps\large_cache_decay-edc45228c5c4b3ae.exe)
+
+running 7 tests
+test config_decay_rate_percent ... ok
+test decay_interval_respected ... ok
+test decay_releases_excess_over_target ... ok
+test decay_skips_when_under_target ... ok
+test decay_respects_headroom ... ok
+test zero_interval_decays_on_first_eligible_op ... ok
+test zero_interval_ticks_on_every_eligible_op ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_budget_before_materialization.rs (target-ph4b\debug\deps\large_cache_extended_budget_before_materialization-0bcf237ec0f4be8f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_budget_still_enforced.rs (target-ph4b\debug\deps\large_cache_extended_budget_still_enforced-47f7cbebfafa8def.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_fresh_slots_are_none.rs (target-ph4b\debug\deps\large_cache_extended_fresh_slots_are_none-1835d4b0681d0495.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_materializes_on_overflow.rs (target-ph4b\debug\deps\large_cache_extended_materializes_on_overflow-8f9c11c868cd912d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_mixed_size_best_fit_fifo.rs (target-ph4b\debug\deps\large_cache_extended_mixed_size_best_fit_fifo-cf26d772950410a1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_narrow_working_set_after_materialization.rs (target-ph4b\debug\deps\large_cache_extended_narrow_working_set_after_materialization-89155b3fc65455f0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_extended_off_no_overflow_capacity.rs (target-ph4b\debug\deps\large_cache_extended_off_no_overflow_capacity-069fb47fdc3756d5.exe)
+
+running 1 test
+test without_extension_feature_cache_stays_capped_at_eight ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_mode.rs (target-ph4b\debug\deps\large_cache_mode-fddfe131e7000287.exe)
+
+running 3 tests
+test lazy_mode_round_trips ... ok
+test default_mode_is_lazy ... ok
+test lazy_mode_stored_correctly_in_shard ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\large_cache_occupancy_bitmask_invariant.rs (target-ph4b\debug\deps\large_cache_occupancy_bitmask_invariant-73f09a50bd1b2ad7.exe)
+
+running 7 tests
+test fresh_cache_bitmask_is_zero ... ok
+test single_deposit_and_hit_bitmask ... ok
+test best_fit_hit_returns_array_predicted_segment ... ok
+test fifo_oldest_eviction_victim_is_seq_zero_first_deposit ... ok
+test randomised_bitmask_scan_equivalence_shadow ... ok
+test base_slots_fill_sets_all_bits ... ok
+test eviction_clears_bitmask_bit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\large_reserved_capacity.rs (target-ph4b\debug\deps\large_reserved_capacity-7d4920c6733e4da8.exe)
+
+running 1 test
+test without_feature_reserved_capacity_equals_span_usable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_b2_grow.rs (target-ph4b\debug\deps\lazy_commit_b2_grow-a7353f4e0ef658e3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_b3_recycle.rs (target-ph4b\debug\deps\lazy_commit_b3_recycle-a156845c3a5ad613.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_b4_matrix.rs (target-ph4b\debug\deps\lazy_commit_b4_matrix-bfc05f45511d9e92.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_frontier.rs (target-ph4b\debug\deps\lazy_commit_frontier-73c2af0a2c60ae33.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_commit_r12_9_split.rs (target-ph4b\debug\deps\lazy_commit_r12_9_split-7b7ed5a23c75e927.exe)
+
+running 1 test
+test primordial_only_isolates_from_small_segment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\lazy_initial_commit_forced_page.rs (target-ph4b\debug\deps\lazy_initial_commit_forced_page-ab06fbb7d8214f67.exe)
+
+running 1 test
+test unrounded_lazy_sums_remain_discriminable_at_every_supported_page_size ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lazy_initial_commit_page_sizes.rs (target-ph4b\debug\deps\lazy_initial_commit_page_sizes-02698cead25e6a55.exe)
+
+running 2 tests
+test lazy_initial_commit_is_a_multiple_of_every_supported_page_size ... ok
+test lazy_initial_commit_matches_decommit_start_frontier_at_runtime_page_size ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lock_free.rs (target-ph4b\debug\deps\lock_free-d8d55b70579a85f2.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_active_kind_index.rs (target-ph4b\debug\deps\loom_active_kind_index-0978de9e758eb57d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_epoch.rs (target-ph4b\debug\deps\loom_epoch-3af11c5324d12498.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_epoch_false_full.rs (target-ph4b\debug\deps\loom_r11_epoch_false_full-46f1d90e221d622e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_ph4a_heap_lease.rs (target-ph4b\debug\deps\loom_r11_ph4a_heap_lease-58d45d20c61e8b8f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_ph4b_publish_recycle_drain.rs (target-ph4b\debug\deps\loom_r11_ph4b_publish_recycle_drain-7fdad48ace22b86c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_registry_claim.rs (target-ph4b\debug\deps\loom_r11_registry_claim-9795a9d9cee154ea.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r11_small_sidecar.rs (target-ph4b\debug\deps\loom_r11_small_sidecar-961e781a2a4ab9cb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_r8_maintenance_lease.rs (target-ph4b\debug\deps\loom_r8_maintenance_lease-893b2d3f2d8a6abb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_registry_free_slots.rs (target-ph4b\debug\deps\loom_registry_free_slots-075ba8f9cdf43b6a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_sharded.rs (target-ph4b\debug\deps\loom_sharded-43411f7f0e335406.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_sidecar_bitmap.rs (target-ph4b\debug\deps\loom_sidecar_bitmap-9f286e4810917dfa.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_terminal_large.rs (target-ph4b\debug\deps\loom_terminal_large-cb0d517f965d8bee.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\loom_terminal_owner_drain.rs (target-ph4b\debug\deps\loom_terminal_owner_drain-4ecc0194c34e43a0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\medium_classes_correctness.rs (target-ph4b\debug\deps\medium_classes_correctness-4019bf6f708776f5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\medium_classes_wide_correctness.rs (target-ph4b\debug\deps\medium_classes_wide_correctness-ab58bcee899fa334.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\no_panic_doc_accuracy.rs (target-ph4b\debug\deps\no_panic_doc_accuracy-fbae01149482da29.exe)
+
+running 2 tests
+test no_panic_doc_is_qualified ... ok
+test four_invariant_tripwires_pinned_by_message ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\no_stale_cross_checkout_artifacts.rs (target-ph4b\debug\deps\no_stale_cross_checkout_artifacts-ed92a5e287f6efa6.exe)
+
+running 1 test
+test baked_manifest_dir_matches_running_tree ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\no_stale_doc_references.rs (target-ph4b\debug\deps\no_stale_doc_references-23a83690a1084ae4.exe)
+
+running 33 tests
+test decommit_calls_doc_distinguishes_logical_entries_from_syscalls ... ok
+test allocator_64bit_gate_docs_match_live_metadata_bounds ... ok
+test correctness_item_87_sentinel_counts_agree ... ok
+test correctness_item_59a_hugetlb_real_sentinel_count_agrees ... ok
+test cargo_toml_alloc_global_panic_contract_is_accurate ... ok
+test oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate ... ok
+test lock_free_generation_max_doc_matches_the_final_reuse_policy ... ok
+test large_cache_config_doc_matches_budget_and_headroom_behavior ... ok
+test crate_root_stats_blurb_matches_method_level_contract ... ok
+test perclass_doc_offsets_match_const_asserts ... ok
+test epoch_hand_doc_matches_conditional_confinement_and_bounded_impls ... ok
+test oxx_r2_07_large_cache_extended_thread_boundary_claim_is_accurate ... ok
+test every_undecided_feature_has_exactly_one_owner_with_a_next_trigger ... ok
+test r9_current_stats_and_unsafe_inventory_docs_use_live_routes ... ok
+test oxx_r2_07_bootstrap_unsafe_block_claim_is_accurate ... ok
+test production_bundle_guard_rejects_non_manifest_suffix ... ok
+test oxx_r2_07_alloc_core_is_not_send_in_doc ... ok
+test oxx_r2_07_forbid_unsafe_code_claims_are_accurate ... ok
+test root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings ... ok
+test correctness_index_recently_resolved_pointers_carry_verdicts ... ok
+test remote_evict_doc_names_the_blocking_bookkeeping ... ok
+test oxx_r2_07_realloc_unsafe_fn_claims_are_accurate ... ok
+test strict_rustdoc_links_keep_public_targets_and_private_names_plain ... ok
+test architecture_test_file_count_matches_reality ... ok
+test production_feature_bundle_doc_sites_match_cargo_toml ... ok
+test verification_inventory_matches_docs ... ok
+test lib_rs_seam_inventory_matches_canonical_grep ... ok
+test no_crate_heap_module_path ... ok
+test honest_reject_sections_are_indexed ... ok
+test no_removed_heap_type_doc_mentions ... ok
+test no_owned_sidecar_references_anywhere ... ok
+test readme_unsafe_inventory_counts_match_reality ... ok
+test no_stale_abandon_adopt_substrate_references ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\numa_alloc.rs (target-ph4b\debug\deps\numa_alloc-805115ef35c22f76.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_cache_invalidation.rs (target-ph4b\debug\deps\numa_cache_invalidation-19394360710c08da.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_periodic_refresh.rs (target-ph4b\debug\deps\numa_periodic_refresh-b15b60bebd2261fa.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_seam.rs (target-ph4b\debug\deps\numa_seam-fc3bcaf52c5a7ac9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numa_segment_id.rs (target-ph4b\debug\deps\numa_segment_id-c0bf489e0b530fc4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\owner_stamp_round_trip.rs (target-ph4b\debug\deps\owner_stamp_round_trip-e128cdd52a6a9526.exe)
+
+running 5 tests
+test fallback_heap_id_is_round_trip_stable_and_slot_distinct ... ok
+test fresh_segment_stamp_word_is_byte_stable ... ok
+test u32_max_clamps_instead_of_leaking ... ok
+test u32_max_stamp_never_leaks_into_generation_field ... ok
+test owner_id_round_trips_through_pack_owner ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\oxx_r2_01_orphaned_cursor_finalized.rs (target-ph4b\debug\deps\oxx_r2_01_orphaned_cursor_finalized-c2a26ec07798db76.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\oxx_r2_02_realloc_lazy_commit_frontier.rs (target-ph4b\debug\deps\oxx_r2_02_realloc_lazy_commit_frontier-2e6c207ff4e9e4ac.exe)
+
+running 2 tests
+test oxx_r2_02_realloc_lazy_commit_frontier_child ... ignored, run only in a fresh subprocess (see run_child)
+test realloc_with_bogus_layout_past_lazy_commit_frontier_rejected_not_crashed ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\oxx_r2_03_dealloc_batch_current_for_dealloc.rs (target-ph4b\debug\deps\oxx_r2_03_dealloc_batch_current_for_dealloc-e6f8369089bf1a45.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\oxx_r2_05_reserve_failure_accounting.rs (target-ph4b\debug\deps\oxx_r2_05_reserve_failure_accounting-97a71ce4e972fea8.exe)
+
+running 1 test
+test no_unaccounted_reserve_aligned_calls ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\oxx_r2_07_alloc_core_not_send.rs (target-ph4b\debug\deps\oxx_r2_07_alloc_core_not_send-5b8984757c9e8554.exe)
+
+running 2 tests
+test alloc_core_is_not_send ... ok
+test alloc_core_is_not_sync ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\phase13_3_dealloc_layout_class.rs (target-ph4b\debug\deps\phase13_3_dealloc_layout_class-3a3cee9dc3b6d3cb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\phase13_drain_reclaim_layout_class.rs (target-ph4b\debug\deps\phase13_drain_reclaim_layout_class-ffd136382ec31eba.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\pinning.rs (target-ph4b\debug\deps\pinning-0dc9e96be7e56982.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\profile.rs (target-ph4b\debug\deps\profile-7206a4e8684b156e.exe)
+
+running 8 tests
+test both_axes_together_compose_as_expected ... ok
+test default_profile_matches_seferalloc_new_defaults ... ok
+test low_headroom_alone_does_not_perturb_small_pool_axis ... ok
+test diverse_turnover_without_the_feature_matches_default ... ok
+test no_small_pool_policy_reintroduces_the_r27_1_noop_trap ... ok
+test throughput_small_pool_alone_does_not_perturb_large_cache_axis ... ok
+test profile_default_trait_matches_the_const ... ok
+test all_axis_combinations_resolve_independently ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_7_alloc_batch_xthread_double_free.rs (target-ph4b\debug\deps\r10_7_alloc_batch_xthread_double_free-a531c718e33955c4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_hot.rs (target-ph4b\debug\deps\r10_active_kind_hot-3c7a9c3afbd273e0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_late_publish.rs (target-ph4b\debug\deps\r10_active_kind_late_publish-fe0055415c40b307.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_layout.rs (target-ph4b\debug\deps\r10_active_kind_layout-e70ed7adccb638d5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_logical.rs (target-ph4b\debug\deps\r10_active_kind_logical-2115630e011e696a.exe)
+
+running 3 tests
+test unknown_kind_is_rejected_before_slot_and_index_mutation ... ok
+test oracle_rejects_clean_bit_clear_mutant ... ok
+test word_boundaries_summary_empty_and_kind_reuse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r10_active_kind_negative_directory.rs (target-ph4b\debug\deps\r10_active_kind_negative_directory-021310fb05a16574.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_no_directory.rs (target-ph4b\debug\deps\r10_active_kind_no_directory-1ec3d7f330dc1612.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_numa_fallback.rs (target-ph4b\debug\deps\r10_active_kind_numa_fallback-44db781df1950b47.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_pool_cache.rs (target-ph4b\debug\deps\r10_active_kind_pool_cache-b9c05bd210cdce65.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_prepare_oom.rs (target-ph4b\debug\deps\r10_active_kind_prepare_oom-af006c2d62785bf9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r10_active_kind_small_recycle.rs (target-ph4b\debug\deps\r10_active_kind_small_recycle-10032c93f0765a65.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_4_dealloc_batch_hardened_guards.rs (target-ph4b\debug\deps\r11_4_dealloc_batch_hardened_guards-939ce6a20a784d06.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_4_dealloc_batch_mixed_ownership.rs (target-ph4b\debug\deps\r11_4_dealloc_batch_mixed_ownership-0557f43abf46d5dd.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_4_dealloc_batch_same_segment_double_free.rs (target-ph4b\debug\deps\r11_4_dealloc_batch_same_segment_double_free-2fee3916d9b0ae7b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_epoch_false_full.rs (target-ph4b\debug\deps\r11_epoch_false_full-400f014e48f650fa.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_large_hot_late.rs (target-ph4b\debug\deps\r11_p3_large_hot_late-c52b893c1200f7ca.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_large_hot_refill.rs (target-ph4b\debug\deps\r11_p3_large_hot_refill-f8e7ae67528ffe03.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_registry_claim_chunk_oom.rs (target-ph4b\debug\deps\r11_p3_registry_claim_chunk_oom-e2099bba8c3948a1.exe)
+
+running 1 test
+test failed_new_chunk_recovers_older_free_then_retries_minted_index ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p3_registry_claim_first_bind.rs (target-ph4b\debug\deps\r11_p3_registry_claim_first_bind-7350ce5ff16a3d41.exe)
+
+running 1 test
+test simultaneous_first_binds_take_distinct_fresh_slots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_registry_claim_selector.rs (target-ph4b\debug\deps\r11_p3_registry_claim_selector-0e397c9a5c220750.exe)
+
+running 5 tests
+test delayed_stale_hint_cannot_grant_a_second_owner ... ok
+test live_first_touch_is_linear_in_selector_probes ... ok
+test overwritten_free_hint_is_deferred_until_cap_not_lost ... ok
+test overwritten_unmaterialized_retry_is_cold_recoverable ... ok
+test logical_last_index_and_independent_cold_census ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_registry_claim_uninit_oom.rs (target-ph4b\debug\deps\r11_p3_registry_claim_uninit_oom-cecea8c405b1a5d0.exe)
+
+running 1 test
+test chunk_oom_retries_materialised_uninitialised_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r11_p3_small_sidecar_issue_oom.rs (target-ph4b\debug\deps\r11_p3_small_sidecar_issue_oom-0acb43d41db7419b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_small_sidecar_preflight.rs (target-ph4b\debug\deps\r11_p3_small_sidecar_preflight-44d8aeb84a6642f4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_small_sidecar_routes.rs (target-ph4b\debug\deps\r11_p3_small_sidecar_routes-790b5714b7399b01.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p3_small_sidecar_zeroed_oom.rs (target-ph4b\debug\deps\r11_p3_small_sidecar_zeroed_oom-8761c26c0492943b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p4_1_route_lookup_ab.rs (target-ph4b\debug\deps\r11_p4_1_route_lookup_ab-7845487332044805.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p4_1_route_shard_model.rs (target-ph4b\debug\deps\r11_p4_1_route_shard_model-3220b8c487d2cb6c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p4_1_route_shard_moves.rs (target-ph4b\debug\deps\r11_p4_1_route_shard_moves-cad66cf5058fdd84.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_p4_3_sharded_per_region_binding.rs (target-ph4b\debug\deps\r11_p4_3_sharded_per_region_binding-ec86c96dbc737483.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_issue_transaction_batch.rs (target-ph4b\debug\deps\r11_ph3a_issue_transaction_batch-d5d30a99ac67cd8a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_issue_transaction_scalar.rs (target-ph4b\debug\deps\r11_ph3a_issue_transaction_scalar-9d68478d2a792d89.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_magazine_refill_partial.rs (target-ph4b\debug\deps\r11_ph3a_magazine_refill_partial-844395ac7b70b0ce.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3a_reserve_promotion_fault.rs (target-ph4b\debug\deps\r11_ph3a_reserve_promotion_fault-01c072807c0979f7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph3b_kind_aware_entries.rs (target-ph4b\debug\deps\r11_ph3b_kind_aware_entries-1989d1bff1c243e7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4a_drop_ordering_pinned.rs (target-ph4b\debug\deps\r11_ph4a_drop_ordering_pinned-2249ff642ddfbd62.exe)
+
+running 2 tests
+test lease_drop_aborts_on_a_lost_cas ... ok
+test lease_drop_publishes_live_to_free_with_release ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4a_lease_miri.rs (target-ph4b\debug\deps\r11_ph4a_lease_miri-f37346299a5ca34a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4a_lease_not_send_sync.rs (target-ph4b\debug\deps\r11_ph4a_lease_not_send_sync-3681991fc56c5331.exe)
+
+running 1 test
+test lease_slot_lifecycle_free_after_drop_and_regeneration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4b_late_publication_across_recycle_exactly_once.rs (target-ph4b\debug\deps\r11_ph4b_late_publication_across_recycle_exactly_once-6dc5d52d92ffe0a9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4b_local_no_drop_pinned.rs (target-ph4b\debug\deps\r11_ph4b_local_no_drop_pinned-7548e64d1d5530d7.exe)
+
+running 3 tests
+test guard_stores_the_typed_lease_option ... ok
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4b_no_worker_pending_stays.rs (target-ph4b\debug\deps\r11_ph4b_no_worker_pending_stays-6be730b267610341.exe)
+
+running 1 test
+test no_worker_pending_stays ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\r11_ph4b_spawn_failure_retry_releases_leases.rs (target-ph4b\debug\deps\r11_ph4b_spawn_failure_retry_releases_leases-e1ea70a6aa0556dc.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r11_ph4b_teardown_ordering_pinned.rs (target-ph4b\debug\deps\r11_ph4b_teardown_ordering_pinned-8f287b2c7967bbc2.exe)
+
+running 2 tests
+test teardown_stamps_torn_then_trims_then_releases_the_slot ... ok
+test lease_release_cas_is_release_ordered ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r12_1_directory_scan_no_aliasing.rs (target-ph4b\debug\deps\r12_1_directory_scan_no_aliasing-4623b133fc90e79c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r13_3_magazine_virgin_hit_skips_zero.rs (target-ph4b\debug\deps\r13_3_magazine_virgin_hit_skips_zero-2607ce7fb6e55b4f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_feature_off_non_disturbance.rs (target-ph4b\debug\deps\r14_4_promotion_feature_off_non_disturbance-8a96d2420af0fd41.exe)
+
+running 2 tests
+test small_to_large_growth_without_medium_classes_is_the_ordinary_move_leg ... ok
+test growth_across_the_would_be_medium_threshold_is_ordinary_large_realloc ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r14_4_promotion_free_correctness.rs (target-ph4b\debug\deps\r14_4_promotion_free_correctness-1e531ea9b02aa6a1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_move_leg_reduction.rs (target-ph4b\debug\deps\r14_4_promotion_move_leg_reduction-cb03f54543e65f3e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_4_promotion_shrink_uses_move_leg.rs (target-ph4b\debug\deps\r14_4_promotion_shrink_uses_move_leg-a448a2e937cb6958.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r14_7_max_segments_ceiling.rs (target-ph4b\debug\deps\r14_7_max_segments_ceiling-18c735a142ddec04.exe)
+
+running 2 tests
+test live_large_objects_ceiling_is_exactly_max_segments_minus_one ... ok
+test ceiling_is_not_permanent_after_freeing_everything ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests\r17_4_inplace_grown_large_dealloc_routes_by_kind.rs (target-ph4b\debug\deps\r17_4_inplace_grown_large_dealloc_routes_by_kind-014655ccfdfc9eae.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r17_8_deterministic_trim_releases_cached_large_span.rs (target-ph4b\debug\deps\r17_8_deterministic_trim_releases_cached_large_span-711eff393d867b7e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r1_03_pool_docs_contract.rs (target-ph4b\debug\deps\r1_03_pool_docs_contract-e67c33858da91f78.exe)
+
+running 3 tests
+test readme_states_pool_is_free_list_reserve_not_carve_reserve ... ok
+test stale_carve_reuse_promise_is_gone ... ok
+test pool_config_doc_states_pool_is_free_list_reserve_not_carve_reserve ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph4b\debug\deps\r1_04_alloc_core_drop_stack_pressure-8cc6f673adb265f9.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r1_10_fallback_hits_counted_in_stats.rs (target-ph4b\debug\deps\r1_10_fallback_hits_counted_in_stats-d13aca2895bc2da0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r21_2_opt_h_stage1_precondition_probe.rs (target-ph4b\debug\deps\r21_2_opt_h_stage1_precondition_probe-a13648d30410a120.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r24_8_dealloc_batch_multi_flush.rs (target-ph4b\debug\deps\r24_8_dealloc_batch_multi_flush-72c644b6bd3640f3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r25_4_dealloc_batch_multi_flush_oracle.rs (target-ph4b\debug\deps\r25_4_dealloc_batch_multi_flush_oracle-7e37bda44182a39a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r26_5_dealloc_batch_per_block_partition.rs (target-ph4b\debug\deps\r26_5_dealloc_batch_per_block_partition-722bd84347f61262.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r30_1_decomp_full_cycle_cursor_safety.rs (target-ph4b\debug\deps\r30_1_decomp_full_cycle_cursor_safety-f9bdd23ae2a4d128.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r31_10_trim_current_thread_api.rs (target-ph4b\debug\deps\r31_10_trim_current_thread_api-dd26da9218a634d6.exe)
+
+running 5 tests
+test ac1_trim_empties_pool_and_evicts_large_cache ... ok
+test ac2_thread_continues_working_after_trim ... ok
+test ac3_trim_does_not_affect_other_thread_heap ... ok
+test ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe ... ok
+test ac4c_trim_on_never_allocated_thread_claims_no_slot ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r31_15_reserved_small_segment_cross_core_release.rs (target-ph4b\debug\deps\r31_15_reserved_small_segment_cross_core_release-34b25c588764785d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r31_4_reserved_small_segment_handle.rs (target-ph4b\debug\deps\r31_4_reserved_small_segment_handle-d3b3969f7af7b15e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r34_18_heap_core_stack_pressure_pin.rs (target-ph4b\debug\deps\r34_18_heap_core_stack_pressure_pin-d23edde3bfc5a373.exe)
+
+running 1 test
+test heap_core_size_within_stack_pressure_budget ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r34_3_internals_boundary_api.rs (target-ph4b\debug\deps\r34_3_internals_boundary_api-1420719b94a3f115.exe)
+
+running 2 tests
+test sefer_alloc_stable_methods_are_callable_without_internals ... ok
+test stable_surface_resolves_at_crate_root_without_internals ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r3_1_fallback_remote_free.rs (target-ph4b\debug\deps\r3_1_fallback_remote_free-d2c0eebb5a37d3f0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_canonical_root_cache.rs (target-ph4b\debug\deps\r6_canonical_root_cache-f5ba48d8aedad272.exe)
+
+running 2 tests
+test cache_fill_hit_evict_and_reuse_keep_stored_provenance ... ok
+test hash_identity_without_a_stored_root_is_not_a_live_member ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_class_issue.rs (target-ph4b\debug\deps\r6_class_issue-4dfd3f90e4005326.exe)
+
+running 4 tests
+test magazine_hit_keeps_one_outstanding_credit ... ok
+test scalar_issue_reissue_and_narrow_reborrow_have_class ... ok
+test realloc_move_issues_new_class_and_inplace_keeps_class ... ok
+test later_small_segment_is_registered_before_issue ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_drop_large_credit.rs (target-ph4b\debug\deps\r6_drop_large_credit-55b66d7fa5376ba2.exe)
+
+running 2 tests
+test drop_uses_phase_credit_protocol ... ok
+test standalone_drop_releases_live_and_cached_large_once ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_fix_p2_fallback_dealloc.rs (target-ph4b\debug\deps\r6_fix_p2_fallback_dealloc-739080e480aa805c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph4b\debug\deps\r6_fix_p3_numa_unknown_bucket-407d19206a3313fd.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_fix_p4_batch_empty_output.rs (target-ph4b\debug\deps\r6_fix_p4_batch_empty_output-8c35a1614e026062.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_heapcore_provenance.rs (target-ph4b\debug\deps\r6_heapcore_provenance-b18f1b9b83e0179f.exe)
+
+running 1 test
+test own_scalar_magazine_and_realloc_use_physical_block ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_large_credit.rs (target-ph4b\debug\deps\r6_large_credit-c0d94ac6d9464ad5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_own_provenance.rs (target-ph4b\debug\deps\r6_own_provenance-a797eb82338cec6a.exe)
+
+running 4 tests
+test batch_flush_links_blocks_from_canonical_root ... ok
+test large_one_byte_reborrow_can_be_freed ... ok
+test one_byte_reborrows_can_be_freed_and_reused ... ok
+test narrow_reborrow_realloc_returns_full_physical_block ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_directory.rs (target-ph4b\debug\deps\r6_route_directory-1188950fb3a02cc8.exe)
+
+running 9 tests
+test owner_registration_can_move_between_lease_threads ... ok
+test incarnation_exhaustion_never_wraps ... ok
+test sorted_shard_keeps_neighbors_after_middle_unlink ... ok
+test published_pin_cleanup_survives_reservation_unmap ... ok
+test large_route_key_and_invalid_span ... ok
+test duplicate_key_and_same_address_reuse_preserve_old_pin_identity ... ok
+test paused_published_pin_survives_removal_and_same_address_registration ... ok
+test repeated_churn_reuses_pointer_array_capacity ... ok
+test more_than_4096_active_routes_and_same_shard_collision ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_route_directory_global.rs (target-ph4b\debug\deps\r6_route_directory_global-b6490085f863f3b0.exe)
+
+running 1 test
+test system_backed_route_metadata_does_not_reenter_global_allocator ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_directory_model.rs (target-ph4b\debug\deps\r6_route_directory_model-6691b2c252394dde.exe)
+
+running 3 tests
+test cached_instance_cannot_be_claimed_before_owner_reset ... ok
+test all_owner_and_two_pin_release_orders_reclaim_slot ... ok
+test terminal_publication_signatures_consume_the_pin ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s
+
+     Running tests\r6_route_lifecycle_basic.rs (target-ph4b\debug\deps\r6_route_lifecycle_basic-1c06a6fe9949cf38.exe)
+
+running 1 test
+test heap_routes_primordial_before_issue_and_each_new_segment_before_return ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_decommit.rs (target-ph4b\debug\deps\r6_route_lifecycle_decommit-eb455d3fd960ab41.exe)
+
+running 1 test
+test pool_release_and_large_cache_reissue_balance_routes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_diag_provenance.rs (target-ph4b\debug\deps\r6_route_lifecycle_diag_provenance-7c8701cd8a4443d0.exe)
+
+running 1 test
+test safe_live_count_diagnostic_uses_stored_root_for_address_only_key ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_fallback.rs (target-ph4b\debug\deps\r6_route_lifecycle_fallback-2afcedb2e5dc40e1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_oom.rs (target-ph4b\debug\deps\r6_route_lifecycle_oom-fc43078bbaaaef99.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_pool.rs (target-ph4b\debug\deps\r6_route_lifecycle_pool-50b9c60ca1d5021a.exe)
+
+running 1 test
+test pooled_small_keeps_route_until_pool_drain ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_route_lifecycle_release.rs (target-ph4b\debug\deps\r6_route_lifecycle_release-e024c7f86803dfcf.exe)
+
+running 1 test
+test uncached_large_removes_route_before_os_release ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_sidecar_bitmap.rs (target-ph4b\debug\deps\r6_sidecar_bitmap-bd98be78a40f803f.exe)
+
+running 4 tests
+test tests::r6_reuse_bit_and_republish_class ... ok
+test tests::r6_geometry_and_fixed_high_water ... ok
+test tests::r6_paused_before_and_after_terminal_publish ... ok
+
+running 1 test
+
+running 1 test
+test tests::r6_invalid_class_aborts_without_unwind ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests\r6_terminal_header_atomic.rs (target-ph4b\debug\deps\r6_terminal_header_atomic-8fbd89ac84175fe3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_lease_registry.rs (target-ph4b\debug\deps\r6_terminal_lease_registry-6dd9f75dea284ce7.exe)
+
+running 1 test
+test failed_init_claim_maintenance_recycle_handoff ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_ledger_small.rs (target-ph4b\debug\deps\r6_terminal_ledger_small-05a69e4c48d2a07a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_owner_drain.rs (target-ph4b\debug\deps\r6_terminal_owner_drain-a8b8eb2fbf7fd489.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r6_terminal_owner_drain_model.rs (target-ph4b\debug\deps\r6_terminal_owner_drain_model-baefb0ad07a92a60.exe)
+
+running 1 test
+test publication_after_word_cut_waits_for_next_bounded_scan ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_cold_small_trim_current.rs (target-ph4b\debug\deps\r7_cold_small_trim_current-cf2000c32c9173d6.exe)
+
+running 3 tests
+test empty_current_small_releases_and_next_allocation_is_safe ... ok
+test live_current_small_is_not_released ... ok
+test recycled_slot_can_be_claimed_and_allocated_again ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r7_cold_small_trim_directory.rs (target-ph4b\debug\deps\r7_cold_small_trim_directory-02c323f4f756b359.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_p1_chunk_oom.rs (target-ph4b\debug\deps\r7_p1_chunk_oom-77c4b23f37f0e634.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_p3_claim_scan.rs (target-ph4b\debug\deps\r7_p3_claim_scan-b3e4698270e3deb2.exe)
+
+running 7 tests
+test consumed_reuse_hint_does_not_repeat_full_scan_after_resaturation ... ok
+test full_registry_scans_once_until_availability_changes ... ok
+test near_max_publication_during_scan_cannot_restore_saturation ... ok
+test newly_minted_last_index_cannot_be_hidden_by_older_scan ... ok
+test version_exhaustion_disables_hint_and_keeps_scan_backstop ... ok
+test publication_during_negative_scan_prevents_stale_saturation ... ok
+test pre_cap_mints_without_scanning_an_older_free_slot ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_p3_fallback_config_default.rs (target-ph4b\debug\deps\r7_p3_fallback_config_default-8cf778b31f25d6e7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r7_p3_fallback_config_zero.rs (target-ph4b\debug\deps\r7_p3_fallback_config_zero-58cbe4c93f7d65ca.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_6_decommit_boundary.rs (target-ph4b\debug\deps\r8_6_decommit_boundary-9bfbb13a0352c96c.exe)
+
+running 3 tests
+test primordial_meta_end_recovers_payload_vs_old_over_alignment ... ok
+test small_meta_end_recovers_payload_vs_old_over_alignment ... ok
+test decommit_recommit_round_trip_near_payload_start ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r8_autonomous_maintenance.rs (target-ph4b\debug\deps\r8_autonomous_maintenance-b854769f031002f0.exe)
+
+running 1 test
+test autonomous_maintenance_global_alloc ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+
+     Running tests\r8_global_box_provenance.rs (target-ph4b\debug\deps\r8_global_box_provenance-4563e4b706eff162.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_large_alignment.rs (target-ph4b\debug\deps\r8_large_alignment-19bd4c247bcc3271.exe)
+
+running 2 tests
+test narrow_payload_pointer_uses_owner_canonical_root ... ok
+test oversegment_alignment_preserves_geometry_and_realloc_prefix ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_maintenance_registry.rs (target-ph4b\debug\deps\r8_maintenance_registry-9af7d998b6f480d9.exe)
+
+running 1 test
+test bounded_scan_skips_uninitialized_busy_and_absent_slots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_os_release_oracle.rs (target-ph4b\debug\deps\r8_os_release_oracle-3d3b94070e5fedfb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_owner_sidecar_miss.rs (target-ph4b\debug\deps\r8_owner_sidecar_miss-2df7803c770e70e3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_standalone_alloc_core.rs (target-ph4b\debug\deps\r8_standalone_alloc_core-2f1d590f53018a68.exe)
+
+running 1 test
+test ordinary_standalone_core_allocates_frees_and_reissues_with_production_features ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_terminal_global.rs (target-ph4b\debug\deps\r8_terminal_global-97969a10ecad3e6c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r9_8_directory_drift_recovery.rs (target-ph4b\debug\deps\r9_8_directory_drift_recovery-638bb32cb5ca7e98.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r9_bounded_background_maintenance.rs (target-ph4b\debug\deps\r9_bounded_background_maintenance-f48a29ade67eb819.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r9_diagnostic_reader_kinds.rs (target-ph4b\debug\deps\r9_diagnostic_reader_kinds-be53ddb93aefcbf1.exe)
+
+running 3 tests
+test small_still_exposes_real_head_and_free_bit ... ok
+test large_has_no_small_free_bit ... ok
+test large_has_no_small_freelist_head ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\race_norecycle.rs (target-ph4b\debug\deps\race_norecycle-3e863e71c17534f1.exe)
+
+running 1 test
+test cross_thread_reclaim_no_recycle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests\race_repro.rs (target-ph4b\debug\deps\race_repro-ddfb25409b073ec5.exe)
+
+running 3 tests
+test drain_reclaim_uaf_repro_direct_api ... ok
+test drain_reclaim_uaf_repro_long_lived_consumer ... ok
+test drain_reclaim_uaf_repro_tight_handoff ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests\realloc_in_place.rs (target-ph4b\debug\deps\realloc_in_place-c6a10a3e439d16ce.exe)
+
+running 5 tests
+test realloc_same_size_returns_same_ptr ... ok
+test realloc_shrink_cross_class_down_relocates_and_preserves_data ... ok
+test realloc_cross_class_up_moves_and_preserves_data ... ok
+test realloc_shrink_within_same_class_returns_same_ptr ... ok
+test realloc_large_to_large_preserves_data ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\region_invariants.rs (target-ph4b\debug\deps\region_invariants-93264c40552955b4.exe)
+
+running 6 tests
+test clear_invalidates_all_handles ... ok
+test drops_each_value_exactly_once ... ok
+test get_mut_mutates_in_place ... ok
+test stale_handle_after_reuse_is_none ... ok
+test handle_from_different_region_is_rejected_on_every_accessor ... ok
+test insert_get_remove_keeps_others_valid ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\registry_basic.rs (target-ph4b\debug\deps\registry_basic-6fdcaee5d3baaf27.exe)
+
+running 7 tests
+test heap_slot_is_sync ... ok
+test bootstrap_is_idempotent ... ok
+test recycle_then_claim_reuses_slot_and_bumps_generation ... ok
+test recycle_null_is_noop ... ok
+test claim_yields_distinct_live_slots ... ok
+test double_recycle_is_safe_noop ... ok
+test latest_hint_then_fresh_defers_older_free ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_alloc_zeroed_fresh.rs (target-ph4b\debug\deps\regression_alloc_zeroed_fresh-4ddeefa37ded22db.exe)
+
+running 2 tests
+test alloc_zeroed_is_all_zero_after_reuse ... ok
+test alloc_zeroed_is_all_zero_fresh ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_batch_flush.rs (target-ph4b\debug\deps\regression_batch_flush-b5a4573a8e45a9a6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_batch_freelist_drain.rs (target-ph4b\debug\deps\regression_batch_freelist_drain-77a5398855464358.exe)
+
+running 4 tests
+test partial_and_bounded_drain_set_head_correct ... ok
+test drained_blocks_are_allocated_and_double_free_noop_256b ... ok
+test drained_blocks_are_allocated_and_double_free_noop_16b ... ok
+test d1_batch_drain_exact_cold_free_recycle ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_bootstrap_oom_sentinel_rollback.rs (target-ph4b\debug\deps\regression_bootstrap_oom_sentinel_rollback-fd08e97b5eb2868b.exe)
+
+running 1 test
+test oom_bailout_rollback_clears_chunk_sentinel_not_stuck ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_bump_direct_refill.rs (target-ph4b\debug\deps\regression_bump_direct_refill-2b5e7f994917e826.exe)
+
+running 3 tests
+test cold_storm_free_storm_churn_256b ... ok
+test cold_storm_free_storm_churn_16b ... ok
+test d1_cold_storm_then_free_decommits ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_c3_unbounded_recycle.rs (target-ph4b\debug\deps\regression_c3_unbounded_recycle-3249724765215c5e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_carve_batch.rs (target-ph4b\debug\deps\regression_carve_batch-6fcc887114d411d0.exe)
+
+running 6 tests
+test carve_batch_len_bound ... ok
+test mixed_drain_then_carve_refill_roundtrips ... ok
+test carve_batch_wellformed_16b_n16 ... ok
+test carve_batch_wellformed_medium_n8 ... ok
+test carve_batch_wellformed_64b_n64 ... ok
+test carve_batch_wellformed_16b_n256 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_claim_oom_initialised_gate.rs (target-ph4b\debug\deps\regression_claim_oom_initialised_gate-db774be40f6afc57.exe)
+
+running 3 tests
+test reclaim_after_simulated_oom_still_materialises ... ok
+test simulated_oom_does_not_leak_the_slot ... ok
+test simulated_oom_leaves_initialised_false ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_counter_wrap.rs (target-ph4b\debug\deps\regression_counter_wrap-f5c461e745cb9f04.exe)
+
+running 1 test
+test generation_crosses_u32_boundary_as_u64 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_dealloc_batch_promoted_large_free.rs (target-ph4b\debug\deps\regression_dealloc_batch_promoted_large_free-d667d5aaad02355e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_dealloc_metadata_region_guard.rs (target-ph4b\debug\deps\regression_dealloc_metadata_region_guard-24a1e5d2d7dda7dd.exe)
+
+running 1 test
+test dealloc_metadata_region_offsets_are_noop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_exact_256_class.rs (target-ph4b\debug\deps\regression_exact_256_class-a2cd8dcd67b5f6db.exe)
+
+running 2 tests
+test class_for_256_resolves_to_block_size_256 ... ok
+test alloc_256_roundtrips_and_frees ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_fallback_init_unwind_guard.rs (target-ph4b\debug\deps\regression_fallback_init_unwind_guard-13dfb3ac3baebcc7.exe)
+
+running 1 test
+test fallback_init_panic_rolls_back_state_not_wedged ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_fallback_panic_lock.rs (target-ph4b\debug\deps\regression_fallback_panic_lock-1284e56836bd13f6.exe)
+
+running 1 test
+test fallback_lock_not_wedged_by_panic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_fastbin_aligned_roundtrip.rs (target-ph4b\debug\deps\regression_fastbin_aligned_roundtrip-fc20faec66d785e6.exe)
+
+running 1 test
+test c1_align_over_16_correctness ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_flush_class_unsafe_boundary.rs (target-ph4b\debug\deps\regression_flush_class_unsafe_boundary-e7bd942b2d485ef2.exe)
+
+running 2 tests
+test flush_class_is_unsafe_fn_boundary_compiles_only_in_unsafe_block ... ok
+test dbg_freelist_head_for_rejects_out_of_range_class_without_oob_read ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_free_path_chunk_oom_graceful.rs (target-ph4b\debug\deps\regression_free_path_chunk_oom_graceful-e051dce6d9c77b27.exe)
+
+running 2 tests
+test oom_injection_flag_is_clean_after_test ... ok
+test chunk_oom_on_free_path_returns_gracefully_not_abort ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_freelist_next_validation.rs (target-ph4b\debug\deps\regression_freelist_next_validation-7e309d48214328d0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_gen_table_layout.rs (target-ph4b\debug\deps\regression_gen_table_layout-4a81fb2ce9f31cfa.exe)
+
+running 1 test
+test non_hardened_build_compiles_and_layout_is_unchanged ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_gen_table_lifecycle_seams.rs (target-ph4b\debug\deps\regression_gen_table_lifecycle_seams-0c6257644454e55b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_hardened_interior_ptr.rs (target-ph4b\debug\deps\regression_hardened_interior_ptr-59ea9a40d80d0d14.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_hardened_large_kind_own_free.rs (target-ph4b\debug\deps\regression_hardened_large_kind_own_free-5476a49734e38c2d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_inplace_large_realloc.rs (target-ph4b\debug\deps\regression_inplace_large_realloc-a13a127b840c15e6.exe)
+
+running 7 tests
+test inplace_grow_stores_clamped_large_size_for_tiny_huge_aligned ... ok
+test grow_within_span_returns_same_ptr ... ok
+test dealloc_after_inplace_grow_then_reuse ... ok
+test same_size_large_realloc_returns_same_ptr ... ok
+test shrink_large_does_not_pin ... ok
+test grow_beyond_span_relocates_and_preserves ... ok
+test shrink_large_to_smaller_large_relocates_and_preserves ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_large_align_no_segment_exhaustion.rs (target-ph4b\debug\deps\regression_large_align_no_segment_exhaustion-0d0b2f40cd95c251.exe)
+
+running 2 tests
+test many_align128_allocations_do_not_exhaust_segment_table ... ok
+test align64_and_align256_also_resolve_to_small_path ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_large_cache_multi_size_cycle.rs (target-ph4b\debug\deps\regression_large_cache_multi_size_cycle-c075d7f8182b567b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_large_cache_span_usable_stable.rs (target-ph4b\debug\deps\regression_large_cache_span_usable_stable-4d4f0f5949c07220.exe)
+
+running 1 test
+test cache_hit_reuse_preserves_physical_span_usable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_magazine_bump_guard.rs (target-ph4b\debug\deps\regression_magazine_bump_guard-91be1d923fd3abbc.exe)
+
+running 1 test
+test bogus_uncarved_free_is_noop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_magazine_oracles.rs (target-ph4b\debug\deps\regression_magazine_oracles-bf09ea3a0b4164a4.exe)
+
+running 4 tests
+test flushed_double_free_is_noop ... ok
+test legit_free_after_pop_is_not_swallowed ... ok
+test in_magazine_double_free_is_noop ... ok
+test flushed_double_free_with_garbage_word1_is_noop ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_magazine_scan_bounds.rs (target-ph4b\debug\deps\regression_magazine_scan_bounds-5624f8fc912a932b.exe)
+
+running 1 test
+test legit_free_with_stale_copy_at_index_ge_cnt_is_not_swallowed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_magic_at_atomic_load.rs (target-ph4b\debug\deps\regression_magic_at_atomic_load-c0b4fc38fc42fd72.exe)
+
+running 1 test
+test magic_at_atomic_load_survives_recycle_xthread_race ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_own_segment_cache_invalidation.rs (target-ph4b\debug\deps\regression_own_segment_cache_invalidation-fc7c11fb5048e163.exe)
+
+running 1 test
+test recycle_evicts_own_segment_cache_no_stale_hit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests\regression_own_thread_large_no_leak.rs (target-ph4b\debug\deps\regression_own_thread_large_no_leak-e23fefdded2193cd.exe)
+
+running 1 test
+test own_thread_large_dealloc_no_leak_with_decommit_admission_reject ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests\regression_page_aligned_no_segment_exhaustion.rs (target-ph4b\debug\deps\regression_page_aligned_no_segment_exhaustion-66ea6dea2303e129.exe)
+
+running 2 tests
+test small_page_aligned_shapes_resolve_to_small_class_not_large ... ok
+test page_aligned_allocations_do_not_exhaust_segment_table ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_paused_owner_multisegment.rs (target-ph4b\debug\deps\regression_paused_owner_multisegment-5c14b8e2a87015a3.exe)
+
+running 1 test
+test paused_owner_multisegment_interleave_completes_fast ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\regression_paused_owner_wallclock.rs (target-ph4b\debug\deps\regression_paused_owner_wallclock-46778f5f7433ec90.exe)
+
+running 1 test
+test paused_owner_sustained_saturation_completes_fast ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_percounter_perheap_aggregation.rs (target-ph4b\debug\deps\regression_percounter_perheap_aggregation-ef0a06aa9b6b838a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r1_01_magazine_free_budget.rs (target-ph4b\debug\deps\regression_r1_01_magazine_free_budget-686e0aca9b1f0bf1.exe)
+
+running 2 tests
+test small_class_free_side_park_unaffected_still_fills_tcache_cap ... ok
+test large_small_class_free_side_park_is_bounded_by_byte_budget ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_01_segment_bases_lifetime.rs (target-ph4b\debug\deps\regression_r2_01_segment_bases_lifetime-9a40e15839f25e4c.exe)
+
+running 1 test
+test segment_bases_iterator_outliving_owner_must_not_compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.85s
+
+     Running tests\regression_r2_02_epoch_region_non_send_value.rs (target-ph4b\debug\deps\regression_r2_02_epoch_region_non_send_value-d1c355e9f858241b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_03_cross_instance_identity.rs (target-ph4b\debug\deps\regression_r2_03_cross_instance_identity-d52e0e69201be1a3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_04_generation_setter_lockdown.rs (target-ph4b\debug\deps\regression_r2_04_generation_setter_lockdown-c7647d5478608add.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_05_diag_provenance.rs (target-ph4b\debug\deps\regression_r2_05_diag_provenance-859f0ada46320902.exe)
+
+running 3 tests
+test dbg_committed_payload_end_for_sound_under_provenance_less_input ... ok
+test dbg_directory_bit_for_ptr_sound_under_provenance_less_input ... ok
+test dbg_owner_id_for_sound_under_provenance_less_input ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_05_diag_provenance_miri.rs (target-ph4b\debug\deps\regression_r2_05_diag_provenance_miri-a06f0cca6e226370.exe)
+
+running 9 tests
+test dbg_span_usable_of_sound_under_provenance_less_input ... ok
+test dbg_kind_byte_of_sound_under_provenance_less_input ... ok
+test dbg_is_free_for_sound_under_provenance_less_input ... ok
+test dbg_reserved_capacity_of_sound_under_provenance_less_input ... ok
+test dbg_freelist_head_for_sound_under_provenance_less_input ... ok
+test dbg_segment_id_of_sound_under_provenance_less_input ... ok
+test dbg_kind_byte_of_panics_cleanly_on_a_genuinely_foreign_address ... ok
+test dbg_large_size_of_sound_under_provenance_less_input ... ok
+test dbg_kind_at_tag_sound_under_provenance_less_input ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_06_header_race_miri.rs (target-ph4b\debug\deps\regression_r2_06_header_race_miri-b461f647a80a1111.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_08_global_allocator_path_no_unwind.rs (target-ph4b\debug\deps\regression_r2_08_global_allocator_path_no_unwind-3e0c53674fd22aca.exe)
+
+running 1 test
+test global_allocator_bind_on_config_conflict_does_not_panic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\regression_r2_08_globalalloc_no_unwind.rs (target-ph4b\debug\deps\regression_r2_08_globalalloc_no_unwind-7721abba6d2cefa2.exe)
+
+running 5 tests
+test direct_alloc_on_config_conflict_bind_does_not_unwind ... ok
+test direct_alloc_zeroed_on_config_conflict_bind_does_not_unwind ... ok
+test direct_realloc_on_config_conflict_bind_does_not_unwind ... ok
+test extreme_valid_layouts_never_unwind_steady_state ... ok
+test registry_claim_with_config_conflict_returns_normally ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_r2_11_stats_no_materialize.rs (target-ph4b\debug\deps\regression_r2_11_stats_no_materialize-2be70d4dbfd1e5d6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_12_sidecar_leak.rs (target-ph4b\debug\deps\regression_r2_12_sidecar_leak-86170dd12e182375.exe)
+
+running 1 test
+test standalone_directory_sidecar_churn_releases_every_span ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_r2_15_virgin_mask_zeroed_and_bounded.rs (target-ph4b\debug\deps\regression_r2_15_virgin_mask_zeroed_and_bounded-49fbf6a6e09f4c48.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_17_64bit_target_gate.rs (target-ph4b\debug\deps\regression_r2_17_64bit_target_gate-4bbc6b9be5c01d9f.exe)
+
+running 2 tests
+test unsupported_32bit_target_region_only_surface_still_compiles ... ok
+test unsupported_32bit_target_with_alloc_features_is_rejected_by_gate ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.18s
+
+     Running tests\regression_r2_21_epoch_drain_buffer_reuse.rs (target-ph4b\debug\deps\regression_r2_21_epoch_drain_buffer_reuse-7c8bbb06e0c38cf0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_3_dbg_accessors_membership_guard.rs (target-ph4b\debug\deps\regression_r2_3_dbg_accessors_membership_guard-1a81c30ea069765f.exe)
+
+running 1 test
+test dbg_accessors_reject_foreign_segment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r2_3_gen_table_index_guard.rs (target-ph4b\debug\deps\regression_r2_3_gen_table_index_guard-3c501dfd4790c0f8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r3a_stats_walk_compiled_out.rs (target-ph4b\debug\deps\regression_r3a_stats_walk_compiled_out-854821378970a50d.exe)
+
+running 1 test
+test stats_hit_counters_are_zero_without_alloc_stats ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_2_null_base_foreign_guard.rs (target-ph4b\debug\deps\regression_r4_2_null_base_foreign_guard-8e9f7e4b259e32e8.exe)
+
+running 2 tests
+test dealloc_foreign_garbage_null_base_is_safe_noop ... ok
+test realloc_foreign_garbage_null_base_returns_null ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_2_refill_return_clamp.rs (target-ph4b\debug\deps\regression_r4_2_refill_return_clamp-9637f2a0ab0549e9.exe)
+
+running 1 test
+test t_refill_return_never_exceeds_outlen_contracted ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_3_config_conflict.rs (target-ph4b\debug\deps\regression_r4_3_config_conflict-6c48176cce364900.exe)
+
+running 3 tests
+test config_conflict_detected_on_recycled_slot ... ok
+test matching_config_does_not_trigger_conflict_signal ... ok
+test slot_not_leaked_after_config_conflict_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r4_3_teardown_trim.rs (target-ph4b\debug\deps\regression_r4_3_teardown_trim-ae08d56f60aac01f.exe)
+
+running 1 test
+test teardown_trim_releases_retained_large_cache_spans ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_r5_01_alloc_global_cross_thread.rs (target-ph4b\debug\deps\regression_r5_01_alloc_global_cross_thread-31e6227a583ae640.exe)
+
+running 5 tests
+test alloc_global_implies_alloc_xthread ... ok
+test cross_thread_large_free_reclaims_segments ... ok
+test cross_thread_small_free_bounds_segment_growth ... ok
+test cross_thread_realloc_succeeds_and_preserves_prefix ... ok
+test cross_thread_small_free_does_not_hit_foreign_or_unroutable_frees ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\regression_realloc_cross_class_shrink.rs (target-ph4b\debug\deps\regression_realloc_cross_class_shrink-c48c491d19f92cc9.exe)
+
+running 1 test
+test realloc_cross_class_shrink_relocates_not_aliases ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_foreign_pointer_null.rs (target-ph4b\debug\deps\regression_realloc_foreign_pointer_null-a784040023391b1b.exe)
+
+running 2 tests
+test realloc_of_foreign_pointer_returns_null ... ok
+test realloc_of_foreign_pointer_does_not_touch_foreign_memory_or_allocator_state ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_heap_oob.rs (target-ph4b\debug\deps\regression_realloc_heap_oob-72e5c8d8b9e89906.exe)
+
+running 3 tests
+test heap_realloc_foreign_sefer_ptr_correct_layout_succeeds ... ok
+test heap_realloc_foreign_sefer_ptr_oversized_layout_returns_null ... ok
+test heap_realloc_own_seg_oversized_layout_returns_null ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_inplace_global.rs (target-ph4b\debug\deps\regression_realloc_inplace_global-e824f7cb1b90b1c9.exe)
+
+running 2 tests
+test c2_cross_class_shrink_relocates_and_preserves_data ... ok
+test c2_same_class_realloc_is_inplace ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_oob_old_layout.rs (target-ph4b\debug\deps\regression_realloc_oob_old_layout-ed747a3b6e114eb4.exe)
+
+running 3 tests
+test realloc_with_oversized_old_layout_returns_null_not_oob ... ok
+test legit_realloc_still_succeeds_under_the_bound ... ok
+test realloc_large_block_filling_span_is_not_falsely_rejected ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_realloc_xthread_stamp.rs (target-ph4b\debug\deps\regression_realloc_xthread_stamp-9e1cc447cd7ddcbe.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_registry_chunking.rs (target-ph4b\debug\deps\regression_registry_chunking-aa86b0fc42582ca3.exe)
+
+running 3 tests
+test claiming_one_heap_does_not_materialise_unrelated_chunks ... ok
+test slot_address_is_stable_across_recycle_under_chunking ... ok
+test slot_address_is_stable_across_recycle_from_different_thread ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_registry_initialised_gate.rs (target-ph4b\debug\deps\regression_registry_initialised_gate-c399430ae1dcbe0d.exe)
+
+running 1 test
+test concurrent_claim_and_aggregate_no_uninit_read ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_resolver_branch_collapse.rs (target-ph4b\debug\deps\regression_resolver_branch_collapse-1bd7d7efadb568b3.exe)
+
+running 2 tests
+test torn_sentinel_resolves_to_fallback_after_branch_collapse ... ok
+test fresh_thread_null_local_binds_a_real_slot_not_fallback ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_segment_table_tombstone_rebuild.rs (target-ph4b\debug\deps\regression_segment_table_tombstone_rebuild-9bdb907b2c653e1c.exe)
+
+running 1 test
+test backshift_no_latency_spike_at_threshold_boundary ... ignored, coarse wall-clock; flaky under concurrent test-binary CPU contention (docs/CORRECTNESS_OPEN_ITEMS.md item 3, resolved R23-6/task #375) — run manually with --ignored, or use npm run iai / the deterministic backshift_max_scan_steps_bounded_at_threshold_boundary test instead
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_stamp_metadata_unsafe_boundary.rs (target-ph4b\debug\deps\regression_stamp_metadata_unsafe_boundary-faae56df3225be2f.exe)
+
+running 2 tests
+test dbg_stamp_kind_byte_is_unsafe_fn_boundary_and_restore_honoring_path_works ... ok
+test dbg_stamp_segment_id_is_unsafe_fn_boundary_and_restore_honoring_path_works ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_t10_find_segment_multiseg_recovery.rs (target-ph4b\debug\deps\regression_t10_find_segment_multiseg_recovery-f09155a8d12deb52.exe)
+
+running 2 tests
+test find_segment_recovers_frees_across_segments_without_missed_segment ... ok
+test find_segment_recovers_frees_through_segment_drain_transitions ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_tcache_byte_budget.rs (target-ph4b\debug\deps\regression_tcache_byte_budget-fed1a4125cb40b2d.exe)
+
+running 2 tests
+test large_small_class_refill_bounded_by_byte_budget ... ok
+test small_class_refill_unaffected_by_byte_budget ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_virgin_bitmap_skip.rs (target-ph4b\debug\deps\regression_virgin_bitmap_skip-24cf9e9c0d27d28c.exe)
+
+running 3 tests
+test t3_double_free_guard_still_correct_on_freshly_reserved_segment ... ok
+test t1_primordial_bitmap_reads_zero_before_any_traffic ... ok
+test t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\regression_w3_stats_aliasing_miri.rs (target-ph4b\debug\deps\regression_w3_stats_aliasing_miri-c62622cb6d548144.exe)
+
+running 2 tests
+test old_pattern_is_sb_ub ... ignored, counterfactual: intentionally Stacked-Borrows UB (the pre-W3 shape)
+test w3_pattern_is_sb_clean ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_xthread_large_free_no_leak.rs (target-ph4b\debug\deps\regression_xthread_large_free_no_leak-48256f1789b2534d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_xthread_small_ring_miri.rs (target-ph4b\debug\deps\regression_xthread_small_ring_miri-ea35348d59224e36.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\regression_xthread_thread_free_alias_miri.rs (target-ph4b\debug\deps\regression_xthread_thread_free_alias_miri-ecb76cfbdaabc0c8.exe)
+
+running 1 test
+test xthread_thread_free_write_overlaps_owner_alloc_mut ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\release_graph_no_fault_injection.rs (target-ph4b\debug\deps\release_graph_no_fault_injection-3826815613b823b4.exe)
+
+running 2 tests
+test commit_path_fault_hook_call_site_is_cfg_gated ... ok
+test release_graph_has_no_fault_injection_and_test_graph_keeps_it ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests\remote_fanin.rs (target-ph4b\debug\deps\remote_fanin-4150e87198bbf93e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\sefer_alloc_examples.rs (target-ph4b\debug\deps\sefer_alloc_examples-ca574049ae2a3306.exe)
+
+running 3 tests
+test stats_snapshot_fields_are_readable ... ok
+test new_global_allocator_serves_allocs ... ok
+test stats_doc_example_matches_runnable_form ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\sefer_alloc_with_config.rs (target-ph4b\debug\deps\sefer_alloc_with_config-d3731f4174c9e08e.exe)
+
+running 4 tests
+test small_allocs_work ... ok
+test single_instance_config_consistent_across_threads ... ok
+test large_alloc_through_configured_global ... ok
+test multiple_allocs_and_frees ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\segment_directory_a1.rs (target-ph4b\debug\deps\segment_directory_a1-32f733499a068397.exe)
+
+running 5 tests
+test threshold_is_32 ... ok
+test directory_get_bit_returns_none_when_not_materialised ... ok
+test directory_does_not_materialise_below_threshold ... ok
+test directory_bit_accessor_returns_some_when_materialised ... ok
+test directory_rebuild_matches_bintable_after_frees ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\segment_directory_a2.rs (target-ph4b\debug\deps\segment_directory_a2-32c34e563d6b4694.exe)
+
+running 9 tests
+test multiple_classes_one_segment ... ok
+test flush_class_maintains_directory ... ok
+test single_free_sets_bit ... ok
+test randomized_workload_incremental_equals_rebuild ... ok
+test last_pop_clears_bit ... ok
+test drain_freelist_batch_maintains_directory ... ok
+test recycled_segment_no_stale_bits ... ok
+test pool_unpool_maintains_directory ... ok
+test randomized_workload_periodic_assertions ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\segment_directory_a3.rs (target-ph4b\debug\deps\segment_directory_a3-481df1740f15732b.exe)
+
+running 6 tests
+test below_threshold_uses_linear_scan ... ok
+test stale_positive_cleared_and_correct_fallback ... ok
+test no_false_negative_after_local_free ... ok
+test directory_lookup_finds_correct_segment ... ok
+test multi_class_same_segment_directory_tracking ... ok
+test mixed_workload_directory_consistency ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\segment_directory_a5.rs (target-ph4b\debug\deps\segment_directory_a5-d57a1ff9280833e3.exe)
+
+running 4 tests
+test below_threshold_fallback_scan_functional ... ok
+test decommit_recommit_directory_consistency ... ok
+test recycle_reuse_different_class ... ok
+test periodic_assertions_multiclass_workload ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\segment_directory_a5_miri.rs (target-ph4b\debug\deps\segment_directory_a5_miri-31b533272a2c3d92.exe)
+
+running 1 test
+test below_threshold_alloc_dealloc_provenance_clean ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_a5_proptest.rs (target-ph4b\debug\deps\segment_directory_a5_proptest-cff65612eaf1cef4.exe)
+
+running 1 test
+test directory_bits_match_bintable_under_random_ops ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+     Running tests\segment_directory_clear_bit_no_register.rs (target-ph4b\debug\deps\segment_directory_clear_bit_no_register-4d04595b2344ec9f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_numa.rs (target-ph4b\debug\deps\segment_directory_numa-fddd01b3684f0a64.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_numa_bucket_reuse.rs (target-ph4b\debug\deps\segment_directory_numa_bucket_reuse-348b0c4a9fb2a612.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph4b\debug\deps\segment_directory_numa_high_node_ids-bb82dbc801f0fa6f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_meta_page_alignment.rs (target-ph4b\debug\deps\segment_meta_page_alignment-68943db52b9ae36c.exe)
+
+running 3 tests
+test both_decommit_boundaries_fit_within_segment_with_payload_room ... ok
+test primordial_decommit_start_is_real_page_aligned ... ok
+test small_decommit_start_is_real_page_aligned ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_state_reconciliation_dual_enumeration.rs (target-ph4b\debug\deps\segment_state_reconciliation_dual_enumeration-a971f6abe46a4212.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_state_reconciliation_oracle.rs (target-ph4b\debug\deps\segment_state_reconciliation_oracle-4dbaa2a753dc33f1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_table_backshift_proptest.rs (target-ph4b\debug\deps\segment_table_backshift_proptest-a72ef1056c122b50.exe)
+
+running 5 tests
+test backshift_remove_absent_is_noop ... ok
+test backshift_dense_cluster_mid_removal ... ok
+test backshift_wraparound_cluster_removal ... ok
+test backshift_churn_fixed_universe_all_orders ... ok
+test backshift_hash_matches_oracle_model ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.00s
+
+     Running tests\segment_table_contains_base_tier1_counters.rs (target-ph4b\debug\deps\segment_table_contains_base_tier1_counters-7e3decdcb1c13ba4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\segment_table_hash.rs (target-ph4b\debug\deps\segment_table_hash-1b55adc646187888.exe)
+
+running 3 tests
+test dealloc_foreign_pointer_is_noop ... ok
+test register_many_then_contains_each ... ok
+test recycle_then_register_uses_hash_correctly ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\segment_table_o1.rs (target-ph4b\debug\deps\segment_table_o1-f74e28f6ff2fc774.exe)
+
+running 4 tests
+test realloc_own_segment_still_works_after_o1_swap ... ok
+test unregister_defends_against_mismatched_segment_id ... ok
+test free_list_many_cycles_no_duplicate_or_lost_slots ... ok
+test free_list_cycle_reuses_slots_without_growing_count ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\segment_table_recycle.rs (target-ph4b\debug\deps\segment_table_recycle-d669c4df15852fc6.exe)
+
+running 3 tests
+test recycle_defensive_tail_evicts_hash_and_cache ... ok
+test recycled_slot_is_reused ... ok
+test slot_recycle_lifts_cap ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.95s
+
+     Running tests\sharded.rs (target-ph4b\debug\deps\sharded-3e92fb9aff808bb5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\sharded_remote.rs (target-ph4b\debug\deps\sharded_remote-2353ab7904887900.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\size_classes_lookup.rs (target-ph4b\debug\deps\size_classes_lookup-5dcfe5298d0004a8.exe)
+
+running 15 tests
+test boundary_align_above_small_align_max_resolves_to_divisible_class ... ok
+test boundary_size_above_small_max_is_large ... ok
+test boundary_size_just_above_a_class_uses_next_class ... ok
+test boundary_size_small_max_is_small_not_large ... ok
+test counterfactual_naive_shift_without_minus_one_would_be_wrong ... ok
+test boundary_size_one_returns_class_zero ... ok
+test min_block_shift_is_log2_of_min_block ... ok
+test small_max_is_a_multiple_of_min_block_so_top_index_is_in_bounds ... ok
+test try_class_for_rejects_non_power_of_two_align ... ok
+test try_class_for_rejects_zero_align_without_panicking ... ok
+test tokio_task_cell_shape_resolves_to_small_class_not_large ... ok
+test boundary_size_min_block_returns_class_zero ... ok
+test size2class_table_matches_linear_scan_for_every_bucket ... ok
+test try_class_for_matches_class_for_on_every_valid_small_input ... ok
+test o1_lookup_matches_linear_scan_for_every_small_size_and_align ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests\size_classes_proptest.rs (target-ph4b\debug\deps\size_classes_proptest-454bde13cf55ed4b.exe)
+
+running 2 tests
+test page_aligned_small_requests_never_fall_through_to_large ... ok
+test class_for_resolution_is_always_fidelity_correct ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\size_classes_slow_path_equivalence.rs (target-ph4b\debug\deps\size_classes_slow_path_equivalence-e1e8a708f0261d7a.exe)
+
+running 3 tests
+test jump_skips_non_divisible_run_for_align_128 ... ok
+test slow_path_align_set_covers_the_slow_path_range ... ok
+test class_for_slow_path_matches_walk ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests\small_segment_pool.rs (target-ph4b\debug\deps\small_segment_pool-68fb3064b7f211b4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\src_file_size_cap.rs (target-ph4b\debug\deps\src_file_size_cap-1ce995eb26eb17f1.exe)
+
+running 1 test
+test no_source_file_exceeds_the_line_cap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\stamp_cache.rs (target-ph4b\debug\deps\stamp_cache-8257e82918a03406.exe)
+
+running 3 tests
+test alloc_across_classes_works ... ok
+test stamp_cache_writes_owner_thread_free ... ok
+test alloc_loop_in_one_segment_does_not_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\stats_foreign_or_unroutable_frees.rs (target-ph4b\debug\deps\stats_foreign_or_unroutable_frees-81abca0089751a95.exe)
+
+running 1 test
+test checked_foreign_span_and_valid_cross_thread_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\stats_reflects_activity.rs (target-ph4b\debug\deps\stats_reflects_activity-346999f4f4d4eff5.exe)
+
+running 2 tests
+test stats_is_cheap_and_never_panics ... ok
+test stats_reflects_activity ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\stress_boundary_sweep.rs (target-ph4b\debug\deps\stress_boundary_sweep-070691376a5f9b60.exe)
+
+running 3 tests
+test over_small_max_align_routes_to_segment ... ok
+test sweep2_realloc_matrix ... ok
+test sweep1_size_align_grid ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running tests\stress_concurrent_boundaries.rs (target-ph4b\debug\deps\stress_concurrent_boundaries-50b9a597f584b521.exe)
+
+running 1 test
+test concurrent_boundary_stress ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests\stress_safe_surface_no_aliasing.rs (target-ph4b\debug\deps\stress_safe_surface_no_aliasing-15e5a0ffe6358b69.exe)
+
+running 1 test
+test safe_surface_never_aliases_live_allocations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\tagged_index_stack_ab_runner_scratch_guard.rs (target-ph4b\debug\deps\tagged_index_stack_ab_runner_scratch_guard-9e8454505f54a9fa.exe)
+
+running 14 tests
+test evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatible ... ok
+test unsupported_codegen_target_is_rejected_before_scratch ... ok
+test unexpected_post_mkdtemp_error_leaves_no_scratch_root ... ok
+test target_dot_and_dotdot_are_rejected_and_scratch_canary_survives ... ok
+test summary_target_is_required_before_artifacts ... ok
+test cargo_config_ancestor_chain_fails_closed_and_cleans_external_cwd ... ok
+test mode_specific_options_are_rejected_before_scratch ... ok
+test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok
+test cargo_temp_root_must_be_disjoint_from_repo ... ok
+test keep_scratch_fatal_failure_keeps_exactly_one_owned_root ... ok
+test build_check_fatal_failure_leaves_no_scratch_root ... ok
+test out_dir_rejection_is_value_independent ... ok
+test wallclock_host_mismatch_is_rejected_before_scratch_or_build ... ok
+test build_check_success_leaves_no_scratch_root ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.65s
+
+     Running tests\tagged_index_stack_compile_fail.rs (target-ph4b\debug\deps\tagged_index_stack_compile_fail-2f88a3236494ab0f.exe)
+
+running 10 tests
+test loom_cfg_without_feature_fails_with_only_the_named_error ... ok
+test index_bits_seventeen_must_not_compile ... ok
+test array_index_stack_capacity_default_above_index_mask_must_not_compile ... ok
+test index_bits_zero_must_not_compile ... ok
+test array_index_stack_capacity_new_above_index_mask_must_not_compile ... ok
+test push_index_requires_unsafe_block ... ok
+test plain_impl_of_unsafe_stack_storage_must_not_compile ... ok
+test two_arraylinks_backings_against_one_stackhead_must_not_compile ... ok
+test competing_binding_around_array_index_stack_head_must_not_compile ... ok
+test hook_call_requires_unsafe_block ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+
+     Running tests\tls_heap_teardown_ordering_stress.rs (target-ph4b\debug\deps\tls_heap_teardown_ordering_stress-711314d25982be80.exe)
+
+running 1 test
+test teardown_ordering_stress_no_crash ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\tls_heap_teardown_torn_sentinel.rs (target-ph4b\debug\deps\tls_heap_teardown_torn_sentinel-3a67f1f2a8bc3d51.exe)
+
+running 1 test
+test teardown_then_resolve_is_fallback ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\unsafe_allow_placement.rs (target-ph4b\debug\deps\unsafe_allow_placement-f764c2bf1baefc6e.exe)
+
+running 2 tests
+test no_mod_rs_carries_module_level_allow ... ok
+test every_file_with_unsafe_carries_its_own_allow ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\xs_r3_02_sharded_region_len_docs.rs (target-ph4b\debug\deps\xs_r3_02_sharded_region_len_docs-ab8e9a2cce3315a5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\xs_r3_03_dealloc_foreign_pointer_docs.rs (target-ph4b\debug\deps\xs_r3_03_dealloc_foreign_pointer_docs-7982bc37a191a1a0.exe)
+
+running 2 tests
+test summary_states_null_only_safe_no_op_contract ... ok
+test old_blanket_foreign_no_op_claim_is_gone ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\xxs_r5_02_epoch_generation_setter_gated.rs (target-ph4b\debug\deps\xxs_r5_02_epoch_generation_setter_gated-54ac8f6fac8411f6.exe)
+
+running 2 tests
+test atomic_slot_generation_setter_is_internals_gated ... ok
+test epoch_region_generation_setter_is_internals_gated ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests sefer_alloc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -3173,10 +3173,12 @@ jobs:
             --test loom_active_kind_index \
             --test loom_r11_registry_claim \
             --test loom_r11_ph4a_heap_lease \
+            --test loom_r11_ph4b_publish_recycle_drain \
             --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
           grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test publication_survives_recycle_and_is_consumed_exactly_once ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test owner_only_membership_survives_late_terminal_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test clean_bit_clear_mutant_is_rejected ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test completed_free_publication_cannot_leave_false_full_or_two_owners ... ok" "$RUNNER_TEMP/loom-registry.log"

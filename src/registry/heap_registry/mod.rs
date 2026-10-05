@@ -32,9 +32,13 @@ pub use stack::pick_with_saturation;
 pub use claim::{HeapRegistry, MaintenanceLease};
 // Ph4a (task #2091): test-only exposure of the claim lease (`internals`
 // builds only; the struct itself is `pub(crate)` without `internals`).
+// Ph4b (#2092): without `internals` the re-export stays crate-visible so
+// `global::tls_heap` can import the lease for the typed bind path.
 #[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use claim::HeapLease;
+#[cfg(not(feature = "internals"))]
+pub(crate) use claim::HeapLease;
 // R1-10 (src review round 1): the fallback heap's own process-static
 // magazine/large-cache hit counters, bound by `global::fallback` at init
 // (there is no registry slot to bind for it) — see `counters::

@@ -84,6 +84,56 @@ impl HeapRegistry {
         })
     }
 
+    /// Ph4b (#2092): typed bind path for `tls_heap` — like [`claim`](Self::claim),
+    /// but the [`HeapLease`] authority stays with the caller instead of being
+    /// drained into the legacy raw pointer.
+    #[must_use]
+    pub(crate) fn claim_lease() -> Option<HeapLease> {
+        // No re-claim-time check: a plain `claim` carries no config to
+        // conflict with, so the "already initialised" hook is a no-op.
+        Self::claim_impl(HeapCore::new, |_| {})
+    }
+
+    /// `claim_lease` with the alloc-decommit config plumbing of
+    /// [`claim_with_config`](Self::claim_with_config) (same first-materialisation
+    /// config, same N2 config-conflict hook).
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub(crate) fn claim_lease_with_config(
+        config: crate::alloc_core::LargeCacheConfig,
+    ) -> Option<HeapLease> {
+        Self::claim_impl(
+            // First materialisation: use the caller's config.
+            |idx| HeapCore::new_with_config(idx, config),
+            |heap_ptr| {
+                // N2 (task #95): re-claim of an already-materialised slot.
+                // The slot's existing config (set at first materialisation)
+                // silently wins. Compare the requested config against the
+                // slot's live policy; on mismatch, count + signal.
+                //
+                // SAFETY: `claim_impl` only calls this hook when the slot is
+                // LIVE and initialised, with the caller being the sole
+                // writer (just won the FREE→LIVE CAS). The comparison is a
+                // read-only `&self` method on `HeapCore` — no mutation, no
+                // hazard.
+                let matches = unsafe { (*heap_ptr).live_config_matches(&config) };
+                if !matches {
+                    // The counter is the ONLY signal, in every build profile
+                    // (always compiled in — one increment per mismatched
+                    // bind on this cold path, not a hot-path RMW worth gating
+                    // behind `alloc-stats`). R2-08 (task #2010): this branch
+                    // is the cold bind behind every `GlobalAlloc` method and
+                    // is reachable by a legitimate multi-instance config
+                    // collision, so it must not panic — a former
+                    // `debug_assert!` here unwound out of `GlobalAlloc::alloc`
+                    // in debug builds (UB per the trait's contract). The slot
+                    // stays LIVE and is returned below: first-wins.
+                    CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+        )
+    }
+
     /// Claim a free slot and return a `*mut HeapCore` into it.
     ///
     /// Reuses a materialised FREE slot or claims EMPTY→INITIALIZING, then
@@ -97,9 +147,7 @@ impl HeapRegistry {
     /// WITHOUT running its `Drop` (see [`HeapLease::into_raw`]).
     #[must_use]
     pub fn claim() -> *mut HeapCore {
-        // No re-claim-time check: a plain `claim` carries no config to
-        // conflict with, so the "already initialised" hook is a no-op.
-        lease_into_raw(Self::claim_impl(HeapCore::new, |_heap_ptr| {}))
+        lease_into_raw(Self::claim_lease())
     }
 
     /// Like [`claim`](Self::claim) but plumbs `config` into the newly
@@ -130,36 +178,7 @@ impl HeapRegistry {
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub fn claim_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
-        lease_into_raw(Self::claim_impl(
-            // First materialisation: use the caller's config.
-            |idx| HeapCore::new_with_config(idx, config),
-            |heap_ptr| {
-                // N2 (task #95): re-claim of an already-materialised slot.
-                // The slot's existing config (set at first materialisation)
-                // silently wins. Compare the requested config against the
-                // slot's live policy; on mismatch, count + signal.
-                //
-                // SAFETY: `claim_impl` only calls this hook when the slot is
-                // LIVE and initialised, with the caller being the sole
-                // writer (just won the FREE→LIVE CAS). The comparison is a
-                // read-only `&self` method on `HeapCore` — no mutation, no
-                // hazard.
-                let matches = unsafe { (*heap_ptr).live_config_matches(&config) };
-                if !matches {
-                    // The counter is the ONLY signal, in every build profile
-                    // (always compiled in — one increment per mismatched
-                    // bind on this cold path, not a hot-path RMW worth gating
-                    // behind `alloc-stats`). R2-08 (task #2010): this branch
-                    // is the cold bind behind every `GlobalAlloc` method and
-                    // is reachable by a legitimate multi-instance config
-                    // collision, so it must not panic — a former
-                    // `debug_assert!` here unwound out of `GlobalAlloc::alloc`
-                    // in debug builds (UB per the trait's contract). The slot
-                    // stays LIVE and is returned below: first-wins.
-                    CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
-                }
-            },
-        ))
+        lease_into_raw(Self::claim_lease_with_config(config))
     }
 
     /// Shared CAS/materialise/bind protocol behind [`claim`](Self::claim) and

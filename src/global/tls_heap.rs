@@ -6,9 +6,10 @@
 //! the heap is NOT owned by the TLS slot (RAII-dropped on thread exit); it
 //! is a slot in the global [`HeapRegistry`], and the TLS slot caches only a
 //! raw `*mut HeapCore` to it. On thread exit, `AbandonGuard::drop` does NOT
-//! abandon segments — it recycles the slot (`LIVE → FREE`) with the `HeapCore`
-//! and all its segments staying whole, for reuse by whichever thread claims
-//! the slot next (whole-slot reuse, Phase 12.5).
+//! abandon segments — it releases the slot (`LIVE → FREE`) by dropping its
+//! [`HeapLease`], with the `HeapCore` and all its segments staying whole, for
+//! reuse by whichever thread claims the slot next (whole-slot reuse, Phase
+//! 12.5).
 //!
 //! ## Why raw `Cell<*mut HeapCore>` (no `RefCell`)
 //!
@@ -36,14 +37,15 @@
 //!
 //! ## TLS teardown and the TORN sentinel
 //!
-//! `LOCAL` (the cached `*mut HeapCore`) and `GUARD` (the recycle-on-death
+//! `LOCAL` (the cached `*mut HeapCore`) and `GUARD` (the release-on-death
 //! guard) are both `thread_local!`s. The hazard at thread teardown is: once
-//! `GUARD::drop` runs `HeapRegistry::recycle`, the slot returns to the free
-//! pool and another thread may `claim` it. If a resolver on the *exiting*
-//! thread then read `LOCAL` and found its stale (pre-recycle) pointer, it
+//! `GUARD::drop` drops the `HeapLease` (its `Drop` does the `LIVE → FREE`
+//! Release CAS), the slot returns to the free pool and another thread may
+//! `claim` it. If a resolver on the *exiting*
+//! thread then read `LOCAL` and found its stale (pre-release) pointer, it
 //! would hand out a second `&mut HeapCore` aliasing the new owner's. The
 //! guard prevents this by stamping `LOCAL` with the `TORN` sentinel BEFORE
-//! it calls `recycle`.
+//! it drops the lease.
 //!
 //! Note we do NOT rely on any thread-local destructor *ordering*: std makes
 //! no such guarantee (destructor order is unspecified and platform-dependent
@@ -58,11 +60,11 @@
 //!     "`GUARD` runs before `LOCAL` becomes unreadable" holds trivially, no
 //!     ordering assumption required.
 //! (b) TLS accessibility is monotone within a single thread's program order:
-//!     if a post-recycle resolver's `LOCAL.try_with` returned `Ok`, then the
+//!     if a post-release resolver's `LOCAL.try_with` returned `Ok`, then the
 //!     earlier-in-program-order `mark_local_torn` (run by `GUARD::drop`
-//!     before `recycle`) must ALSO have returned `Ok` and already written
+//!     before the lease's `LIVE → FREE` Drop) must ALSO have returned `Ok` and already written
 //!     `TORN`. So any resolver that can still read `LOCAL` reads `TORN`, never
-//!     the stale pre-recycle pointer — whatever the destructor order.
+//!     the stale pre-release pointer — whatever the destructor order.
 //! (c) On os-keyed platforms where `LOCAL`'s storage may already be gone, the
 //!     resolvers' `try_with` returns `Err` → they route to the always-live
 //!     Fallback heap, which is likewise safe.
@@ -92,21 +94,21 @@
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented raw-pointer TLS seam (Phase 12.3).
 // `allow` lifts the crate-level `deny` for this file only — `unsafe`
-// anywhere else in the crate is a hard error. The `unsafe` surface here is:
-//   * dereferencing the cached `*mut HeapCore` into `&mut HeapCore` (sound
-//     under the single-writer invariant documented above), and
-//   * calling `HeapRegistry::recycle` (which is an `unsafe fn` whose
-//     contract is "pointer previously returned by `claim`").
-// Every `unsafe` block carries a `// SAFETY:` proof.
+// anywhere else in the crate is a hard error. Since Ph4b (#2092) the
+// `unsafe` surface here is empty: the only core access goes through
+// `HeapLease::core` (the sole, `pub(crate)` SAFETY seam of the typed lease,
+// a SAFE function whose S1–S4 contract is proven inside `claim.rs`), and
+// `HeapLease::drop` owns the `LIVE → FREE` Release CAS.
 #![allow(unsafe_code)]
 
 use core::cell::Cell;
 
+use crate::registry::heap_registry::HeapLease;
 use crate::registry::{HeapCore, HeapRegistry};
 
 /// Sentinel value stamped into [`LOCAL`] by [`mark_local_torn`] the instant
-/// this thread's [`AbandonGuard`] starts tearing down (before it recycles
-/// the slot). It is a "poison" marker, not a heap pointer: it is NEVER
+/// this thread's [`AbandonGuard`] starts tearing down (before the slot is
+/// released). It is a "poison" marker, not a heap pointer: it is NEVER
 /// dereferenced, only compared against in the three resolvers below. Chosen
 /// as `usize::MAX` so it is:
 /// - distinct from `null` (the "never bound yet" state), and
@@ -116,7 +118,7 @@ use crate::registry::{HeapCore, HeapRegistry};
 ///
 /// See the module doc's "TLS destructor ordering" section for why this is
 /// necessary: without it, a stale non-null `LOCAL` value would survive
-/// `GUARD`'s recycle of the slot, and a resolver reading `LOCAL` afterwards
+/// `GUARD`'s release of the slot, and a resolver reading `LOCAL` afterwards
 /// (e.g. from another thread-local's `Drop` that allocates, running after
 /// `GUARD` in the reverse-declaration teardown order) would hand out a
 /// `&mut HeapCore` into a slot some other thread may have already
@@ -127,9 +129,10 @@ thread_local! {
     /// The cached raw pointer to this thread's heap (a slot in the global
     /// [`HeapRegistry`]). `null` until the first call to [`current_for_alloc`];
     /// non-null thereafter, until the thread exits — at which point the
-    /// [`AbandonGuard`] recycles the slot AND stamps this cell to [`TORN`]
+    /// [`AbandonGuard`] releases the slot (via the [`HeapLease`]'s `LIVE → FREE`
+    /// Drop) AND stamps this cell to [`TORN`]
     /// (via [`mark_local_torn`]) BEFORE releasing it, so a post-teardown
-    /// read never observes the stale pre-recycle pointer. Some other
+    /// read never observes the stale pre-release pointer. Some other
     /// thread-local's `Drop` (declared before `LOCAL`, hence destroyed
     /// after it — reverse declaration order) can legitimately still
     /// allocate/deallocate after `GUARD` has dropped; every resolver checks
@@ -140,23 +143,31 @@ thread_local! {
     /// borrow state to fail under reentrancy: reading is a single load.
     static LOCAL: Cell<*mut HeapCore> = const { Cell::new(core::ptr::null_mut()) };
 
-    /// The thread-exit abandon guard. Holds a COPY of the heap pointer
+    /// The thread-exit abandon guard. Holds the thread's [`HeapLease`]
     /// (set in [`finish_bind`]) so its `Drop` does not need to read `LOCAL`
-    /// (which may already be torn down). On drop: if the copy is non-null,
-    /// abandon the heap's segments to the registry (a no-op stub in 12.3;
-    /// the real walk arrives in 12.4) and recycle the slot. Null copy →
-    /// nothing to abandon (the thread never bound a heap).
+    /// (which may already be torn down). On drop: take the lease — `None` →
+    /// nothing to do (the thread never bound a heap); otherwise stamp
+    /// [`LOCAL`] [`TORN`], trim the core, and let the lease's own `Drop`
+    /// do the `LIVE → FREE` Release CAS.
+    ///
+    /// Stored as `Cell<Option<HeapLease>>` — not `RefCell` and not a bare
+    /// lease — so the guard itself stays `Drop`-less: `Cell` has no borrow
+    /// state to fail under reentrancy, and `take()` MOVES the lease out
+    /// without dropping it, so the `LIVE → FREE` CAS runs exactly once, at
+    /// the explicit `drop(lease)` in the teardown path. Reentrancy semantics
+    /// are unchanged: `GUARD` was already a `thread_local!` with a
+    /// destructor.
     static GUARD: AbandonGuard = const { AbandonGuard::new() };
 }
 
 /// The per-thread abandon guard. See the module docs for the TLS destructor
 /// ordering reasoning.
 struct AbandonGuard {
-    /// A copy of the heap pointer this thread bound via [`bind_slow_tagged`]. Read
-    /// ONLY in `Drop` (never in `LOCAL`-reading code paths). Storing the
-    /// copy here is what makes the guard robust to `LOCAL` being torn down
-    /// first.
-    heap: Cell<*mut HeapCore>,
+    /// The typed lease for the heap this thread bound via
+    /// [`bind_slow_tagged`]. Read ONLY in `Drop` (never in `LOCAL`-reading
+    /// code paths). Storing it here is what makes the guard robust to
+    /// `LOCAL` being torn down first.
+    lease: Cell<Option<HeapLease>>,
 }
 
 impl AbandonGuard {
@@ -164,7 +175,7 @@ impl AbandonGuard {
     /// initialise a `thread_local!` slot.
     const fn new() -> Self {
         Self {
-            heap: Cell::new(core::ptr::null_mut()),
+            lease: Cell::new(None),
         }
     }
 }
@@ -186,34 +197,32 @@ fn mark_local_torn() {
 
 impl Drop for AbandonGuard {
     fn drop(&mut self) {
-        let heap = self.heap.get();
-        if heap.is_null() {
+        let Some(mut lease) = self.lease.take() else {
             return; // This thread never bound a registry heap.
-        }
-        // Stamp `LOCAL` as TORN *before* recycling the slot below. This does
-        // NOT rely on thread-local destructor ordering (std does not specify
-        // it — see the module doc's "TLS teardown and the TORN sentinel"
-        // section). It is sound because: `LOCAL` is a `Drop`-less `const` Cell
-        // that (on native TLS) is never torn down, so it stays readable; and
-        // TLS access is monotone in program order, so any later resolver that
-        // still gets `Ok` from `LOCAL.try_with` runs AFTER this write and
-        // therefore observes `TORN`, never the stale pre-recycle pointer. If
-        // `try_with` here returns `Err` (`LOCAL` already gone on an os-keyed
-        // platform), no post-teardown reader of `LOCAL` can run either — those
-        // resolvers get `Err` too and route to Fallback — so the no-op is safe.
+        };
+        // Stamp `LOCAL` as TORN *before* the lease's `LIVE → FREE` Drop below.
+        // This does NOT rely on thread-local destructor ordering (std does not
+        // specify it — see the module doc's "TLS teardown and the TORN
+        // sentinel" section). It is sound because: `LOCAL` is a `Drop`-less
+        // `const` Cell that (on native TLS) is never torn down, so it stays
+        // readable; and TLS access is monotone in program order, so any later
+        // resolver that still gets `Ok` from `LOCAL.try_with` runs AFTER this
+        // write and therefore observes `TORN`, never the stale pre-release
+        // pointer. If `try_with` here returns `Err` (`LOCAL` already gone on
+        // an os-keyed platform), no post-teardown reader of `LOCAL` can run
+        // either — those resolvers get `Err` too and route to Fallback — so
+        // the no-op is safe.
         mark_local_torn();
-        // Complete the terminal sidecar cut and owner cache trim before releasing
-        // this thread's ownership. Never mutate the core after recycle.
-        // SAFETY: this thread owns the successfully claimed slot until the
-        // matching recycle below; trim mutates only owner-owned state.
-        unsafe {
-            (*heap).trim_for_recycle();
-        }
-        // Reservation identities and independently pinned sidecars survive slot
-        // recycle. A later claimant or a successful maintenance lease can consume
-        // late publications; publishers never borrow this core.
-        // SAFETY: this guard recycles its claimed slot once, after all mutation.
-        unsafe { HeapRegistry::recycle(heap) };
+        // Complete the terminal sidecar cut and owner cache trim before
+        // releasing this thread's ownership. Never mutate the core after the
+        // lease Drop.
+        // S1–S4 of addendum §2.1 via `HeapLease::core` — this thread is the
+        // sole owner until the `drop(lease)` below; trim mutates only
+        // owner-owned state.
+        lease.core().trim_for_recycle();
+        // HeapLease::drop: LIVE → FREE (Release), abort on a lost CAS —
+        // owner decision A3. It allocates nothing and never touches TLS.
+        drop(lease);
     }
 }
 
@@ -403,25 +412,23 @@ pub fn current_for_trim() -> Option<*mut HeapCore> {
 /// always-live primordial heap — never null, M10).
 #[cold]
 fn bind_slow_tagged() -> CurrentHeap {
-    let heap = HeapRegistry::claim();
-    finish_bind(heap)
+    finish_bind(HeapRegistry::claim_lease())
 }
 
-/// Like [`bind_slow_tagged`] but uses [`HeapRegistry::claim_with_config`] so
-/// the newly materialised `HeapCore` is configured with `config`. On a
+/// Like [`bind_slow_tagged`] but uses [`HeapRegistry::claim_lease_with_config`]
+/// so the newly materialised `HeapCore` is configured with `config`. On a
 /// re-claim the existing `HeapCore` is reused as-is.
 ///
 /// Only present under `alloc-decommit`.
 #[cfg(feature = "alloc-decommit")]
 #[cold]
 fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
-    let heap = HeapRegistry::claim_with_config(config);
-    finish_bind(heap)
+    finish_bind(HeapRegistry::claim_lease_with_config(config))
 }
 
-/// Shared post-claim logic: arm the `AbandonGuard`, publish the pointer into
-/// `LOCAL`, and return the tagged result. Called from both
-/// [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
+/// Shared post-claim logic: store the [`HeapLease`] into the `AbandonGuard`,
+/// publish the pointer into `LOCAL`, and return the tagged result. Called
+/// from both [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
 ///
 /// task #38: this used to also call `HeapCore::install_thread_free` here
 /// ("install the cross-thread TFS handle on the bind-slow path"). That call
@@ -447,48 +454,68 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 /// TLS with destructors")`. Publishing `LOCAL` first makes the re-entry
 /// resolve to `Own(heap)`. On std >= 1.93 (`DTORS` on `System`, the crate's
 /// MSRV) there is no re-entry and the order is inert; it stays as defence.
-/// No `&mut HeapCore` is live here (`heap` is only a raw pointer), so a
-/// nested alloc through `heap` does not alias the caller's later borrow.
+/// No `&mut HeapCore` is live here (the raw pointer is a same-thread TLS
+/// derivative of the lease per addendum §2.1 S3), so a nested alloc through
+/// `heap` does not alias the caller's later borrow.
 ///
 /// ## Rollback (UBFIX-10 / L-6: never hand out a slot without a live guard)
 ///
 /// - `LOCAL.try_with` fails (os-keyed TLS only; native `LOCAL` is a
-///   `Drop`-less `const` `Cell`): nothing published or armed -> recycle,
-///   `Fallback`.
-/// - `GUARD.try_with` fails: reset `LOCAL` to null, then recycle, `Fallback`.
-///   The next call on this thread re-attempts a bind, as before this order
-///   change. Blocks carved through `heap` meanwhile stay valid: `recycle`
-///   returns the slot, not its segments, and a later free from this thread
-///   sees null `LOCAL` and routes as foreign.
+///   `Drop`-less `const` `Cell`): nothing published or stored -> drop the
+///   lease (its `Drop` does the `LIVE → FREE` Release), `Fallback`.
+/// - `GUARD.try_with` fails: reset `LOCAL` to null BEFORE dropping the lease
+///   (owner decision), then `Fallback`. The next call on this thread
+///   re-attempts a bind, as before this order change. Blocks carved through
+///   the heap meanwhile stay valid: the release returns the slot, not its
+///   segments, and a later free from this thread sees null `LOCAL` and routes
+///   as foreign.
 ///
-/// SAFETY: `heap` was just returned by `claim`/`claim_with_config` and has
-/// not been recycled yet (this is the only code path that could recycle it
-/// between claim and here) — the single-caller contract `HeapRegistry::recycle`
-/// documents ("pointer previously returned by `claim`, not yet recycled") is
-/// satisfied in both rollback legs.
+/// `drop(lease)` deliberately runs OUTSIDE any `try_with` closure: dropping
+/// inside a closure whose borrow of the TLS cell is live risks a nested-TLS
+/// access. `HeapLease::drop` allocates nothing and never touches TLS (it is
+/// one CAS plus two relaxed stores on the registry), so it is safe on the
+/// teardown/dtor path.
 #[cold]
-fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
-    let heap = if heap.is_null() {
+fn finish_bind(lease: Option<HeapLease>) -> CurrentHeap {
+    let Some(mut lease) = lease else {
         // Registry exhausted or primordial OOM: fall back, never null.
         return CurrentHeap::Fallback;
-    } else {
-        heap
     };
+    // S1–S4 of addendum §2.1 via `HeapLease::core`; the raw pointer is a
+    // same-thread TLS derivative of the lease's exclusive borrow.
+    let heap = lease.core() as *mut HeapCore;
 
     // fxx R2-01: publish LOCAL first so a std <= 1.92 re-entry from GUARD's
     // destructor registration resolves to this slot, not a second bind.
     if LOCAL.try_with(|c| c.set(heap)).is_err() {
-        // SAFETY: `heap` came from `claim`/`claim_with_config` above and is
-        // not yet recycled; no guard was armed to recycle it later.
-        unsafe { HeapRegistry::recycle(heap) };
+        // HeapLease Drop: LIVE → FREE (Release). Allocates nothing, no TLS.
+        drop(lease);
         return CurrentHeap::Fallback;
     }
 
-    // UBFIX-10 (L-6): no guard -> un-publish LOCAL and recycle the slot.
-    if GUARD.try_with(|g| g.heap.set(heap)).is_err() {
+    // UBFIX-10 (L-6): no guard -> un-publish LOCAL, then release the slot.
+    // `Cell::set` on `Some(lease)` would drop a previous lease if one were
+    // still stored (None in normal operation); use take/replace to move it
+    // in without relying on that. The lease travels via `Option::take` so it
+    // is only moved when the closure actually runs (on `try_with` `Err` the
+    // closure never executes and ownership stays with the caller).
+    let mut lease = Some(lease);
+    let armed = GUARD
+        .try_with(|g| {
+            let old = g.lease.take();
+            debug_assert!(old.is_none());
+            drop(old); // normal operation: None, no-op
+            g.lease.set(lease.take());
+        })
+        .is_ok();
+    let Some(lease) = lease else {
+        return CurrentHeap::Own(heap);
+    };
+    if !armed {
         let _ = LOCAL.try_with(|c| c.set(core::ptr::null_mut()));
-        // SAFETY: as above; this is the only chance to recycle `heap`.
-        unsafe { HeapRegistry::recycle(heap) };
+        // Rollback: LOCAL := null BEFORE Drop lease (owner decision).
+        // HeapLease Drop: LIVE → FREE (Release). Allocates nothing, no TLS.
+        drop(lease);
         return CurrentHeap::Fallback;
     }
 
@@ -601,7 +628,7 @@ pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
 // rule targets. It is covered by this file's existing tier-1
 // `#![allow(unsafe_code)]` (NO item-level `#[allow(unsafe_code)]` is added, so
 // no new tier-2 site is created): `tls_heap.rs` already holds `unsafe` for the
-// pointer handoff + `recycle`. `dbg_dealloc_own_thread_with_base` /
+// lease-core handoff + `trim_for_recycle`. `dbg_dealloc_own_thread_with_base` /
 // `dbg_flush_class_only` in `heap_core_diag.rs` are the item-scoped (tier-2)
 // positive pattern this mirrors where the enclosing file is otherwise safe.
 #[doc(hidden)]
