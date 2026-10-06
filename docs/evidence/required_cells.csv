@@ -1,0 +1,149 @@
+cell_id,class,gate,expects,requires_mutant,note
+R-PG1-b-sb,p1-box,C1,KNOWN-DEFECT,false,"набор B KNOWN-DEFECT (класс P1-box, node.rs:90)"
+R-PG1-b-tb,p1-box,C1,KNOWN-DEFECT,false,"набор B KNOWN-DEFECT (класс P1-box, node.rs:90)"
+R-PG1-native,evidence-infra,C4,PASS,false,W-0 positive-свидетель на наборе A (native)
+R-PG1-sb,model-limit,C4,MODEL-LIMIT,false,W-0 гипотеза MODEL-LIMIT (SB)
+R-PG1-tb,model-limit,C4,MODEL-LIMIT,false,W-0 гипотеза MODEL-LIMIT (TB)
+R-PG2-sb,prototype,C4,CONDITIONAL,false,спайк off-body; not-for-merge
+R-PG2-tb,prototype,C4,CONDITIONAL,false,спайк off-body; not-for-merge
+R-PG3,cost,COST,FAIL,false,iai-плечо спайка; resolved-by-decision (ADR addendum Ph3c path B)
+R-Ph1b-native,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
+R-Ph1b-sb,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
+R-Ph1b-tb,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
+R-Ph3a,protocol,C1,PASS|CONDITIONAL,false,waiver: строка реестра вне minimal-обоснования; метаданные см. registry.csv
+R0-01,p1-box,C1,FAIL,false,исторический Ph0-witness P1-box
+R0-02,p1-box,C1,FAIL,false,исторический Ph0-witness P1-box
+R0-03,evidence-infra,C7,NOT_RUN,false,CI job miri-core; результата нет
+R0-11,protocol,C1,CFG_EXCLUDED,false,waiver: W−1 нативный контроль; значим только под Miri (R0-12..R0-15)
+R0-12,protocol,C1,PASS,true,мутант W−1 отвергнут UB на r11_box_cap_gate.rs:136
+R0-13,protocol,C1,PASS,true,мутант W−1 отвергнут UB на r11_box_cap_gate.rs:144
+R0-14,protocol,C1,PASS,true,мутант W−1 отвергнут UB в модели TB
+R0-15,protocol,C1,PASS,true,мутант W−1 отвергнут UB в модели TB
+R0-18,evidence-infra,C7,NOT_RUN,false,CI job global-regressions; результата нет
+R0-21,protocol,C1,PASS,true,shadow-модель; мутанты sidecar/terminal отвергнуты
+R0-22,protocol,C1,PASS,true,shadow-модель; мутанты pointer-publication/early-leaf отвергнуты
+R0-23,protocol,C5,NOT_RUN|PASS,false,waiver: ownerless progress; не проверялся в Фазе 0
+R0-24,protocol,C1,NOT_RUN|PASS,false,waiver: W+3; witness не выбран (шаг 1a)
+R0-25,cost,COST,NOT_RUN|PASS|CONDITIONAL,false,агрегат стоимости; закрывается строками R6b-01..07
+R0-26,platform,C7,NOT_RUN|PASS,false,кросс-платформенная матрица не прогонялась
+R4a-01,ordering,C5,CONDITIONAL|PASS,false,waiver: Miri lease lifecycle; переприёмка Ph4c = R4c-03
+R4a-05,ordering,C5,PASS,true,мутант M1 пойман loom-ловцом DROP_ORDERING
+R4a-06,ordering,C5,PASS,true,мутант M2 пойман loom-моделью
+R4a-07,ordering,C5,PASS,true,мутант M3 пойман loom-моделью
+R4a-08,ordering,C5,PASS|CONDITIONAL,true,мутант M4 пойман loom-моделью
+R4a-09,ordering,C5,PASS,true,мутант M5 пойман loom-моделью
+R4a-10,ordering,C5,PASS|CONDITIONAL,true,source-pin Release у CAS LIVE->FREE в HeapLease::drop
+R4b-06,protocol,C5,CONDITIONAL|PASS,false,waiver: изолированный child-раннер; pending не двигаются без worker
+R4b-07,protocol,C4,CONDITIONAL|PASS,false,waiver: spawn-ошибка без полуактивации; мутант M8 = R6a-M8
+R4b-08,ordering,C5,PASS,true,мутант M-A пойман crash-ом (abort дочернего процесса)
+R4b-09,ordering,C5,CONDITIONAL|PASS,false,waiver: мутант M-B пойман source-pin
+R4b-10,protocol,C5,INCONCLUSIVE,false,waiver: ловец слаб (trim идемпотентен; 0 vs 1 не различает); закрыто оракулом Ph4c R4c-01
+R4b-11,ordering,C5,PASS|CONDITIONAL,true,source-pin teardown-порядка torn -> trim -> release
+R4b-12,ordering,C5,PASS|CONDITIONAL,true,source-pin GUARD take/set-перемещение
+R4b-13,ordering,C5,INCONCLUSIVE,false,"waiver: loom-модель наблюдает data-целостность, не S2-упорядочивание state-CAS; частично закрыто source-pin R4a-10/R4b-11"
+R4b-14,ordering,C5,INCONCLUSIVE,false,waiver: аналогично L1; частично закрыто source-pin
+R4b-15,ordering,C5,PASS,true,L3: CAS-loser не drain'ит (loom красный)
+R4c-01,protocol,C5,PASS|CONDITIONAL,true,оракул trim при re-claim consume ровно один раз
+R4c-04,protocol,C5,PASS,false,waiver: Miri-свидетель lease teardown (Ph4b); собственного мутанта нет — протокол закрыт loom/source-pin строками R4a-05/R4a-10/R4b-11; описание исправлено: это НЕ ingress-оракул
+R4c-05,model-limit,C4,KNOWN-RED,false,известная краснота Miri-скабболда (int->ptr); в PLAIN PASS
+R4c-06,model-limit,C4,KNOWN-RED,false,известная краснота Miri-скабболда (int->ptr); в PLAIN PASS
+R4c-09,ordering,C5,PASS,true,мутант №1 пойман loom-моделью
+R4c-10,free,C5,PASS,true,мутант №2 пойман
+R4c-11,protocol,C5,PASS,true,мутант №3 пойман
+R4c-12,protocol,C5,CONDITIONAL|PASS,false,waiver: мутант №4 пойман СТАРЫМ оракулом (оракул переписан в fd954856/39e86338)
+R4c-13,protocol,C5,PASS,true,мутант №5 пойман
+R4c-14,protocol,C5,PASS,true,мутант №6 пойман
+R4c-15,protocol,C5,PASS,true,мутант №7 пойман
+R4c-16,oom,C5,PASS,true,мутант №8 пойман (crash-shaped)
+R4c-17,protocol,C5,PASS,true,мутант №9 пойман
+R4c-18,oom,C5,PASS,true,мутант №10 пойман
+R4c-19,ordering,C5,PASS,true,мутант №11 пойман loom-моделью
+R4c-20,protocol,C5,CONDITIONAL|PASS,false,waiver: мутант №12 пойман СТАРЫМ step-оракулом
+R4c-21,protocol,C5,CONDITIONAL|PASS,false,waiver: мутант №13 пойман СТАРЫМ оракулом
+R4c-22,protocol,C5,INCONCLUSIVE,false,waiver: доброкачественный (advisory reuse_hint идемпотентен); наблюдаемого нарушения нет
+R5b-01,free,C2,PASS,false,waiver: C2 cache SAME-VA
+R5b-03,free,C2,PASS,false,"waiver: C2 batch reuse после join; позитив-клетка, мутант закрыт парной строкой реестра"
+R5b-04,free,C2,INCONCLUSIVE,false,waiver: мутант NOT CAUGHT; claim о reclamation не делается
+R5b-08,free,C3,PASS,true,C3 bypass-free-list-pop KILLED
+R5b-09-sb,model-limit,C4,MODEL-LIMIT,false,C4-гейт: клетки в спайке PG-2
+R5b-09-tb,model-limit,C4,MODEL-LIMIT,false,C4-гейт: клетки в спайке PG-2
+R5b-11,protocol,C5,PASS,true,C5 lost-publication нативный оракул
+R5b-12,ordering,C5,PASS,false,"waiver: source-pin трёх атомарных рёбер; позитив-клетка, мутант закрыт парной строкой реестра"
+R5b-13,ordering,C5,PASS,true,publish fetch_or AcqRel->Relaxed красный
+R5b-14,ordering,C5,PASS,true,bitmap_scan cut swap AcqRel->Relaxed красный
+R5b-15,ordering,C5,CONDITIONAL|PASS,false,waiver: reportedly KILLED в prior evidence без сырого лога; не независимое подтверждение
+R5b-16,oom,C6,PASS,false,"waiver: realloc OOM old-alive; позитив-клетка, мутант закрыт парной строкой реестра"
+R5b-17,oom,C6,PASS,true,realloc-мутант KILLED (crash-shaped)
+R5b-19,oom,C6,NOT_RUN|PASS,false,waiver: мутанты fallback OOM NOT_RUN
+R5b-20,oom,C6,PASS,false,"waiver: dealloc system-count baseline; позитив-клетка, мутант закрыт парной строкой реестра"
+R5b-21,oom,C6,PASS,true,Vec-insertion мутант KILLED
+R5b-22,platform,C7,CI_PENDING|PASS,false,CI-матрица по landing SHA
+R5b-23,platform,C7,NOT_RUN|PASS,false,нативного ARM-железа нет; только cross/QEMU в CI
+R5b-24,platform,C7,NOT_RUN|PASS,false,локального macOS-тулчайна нет
+R5c-01,protocol,C2,PASS|CONDITIONAL,true,saturation -> fallback -> recovery
+R5c-02,free,C2,PASS,false,"waiver: trim идемпотентность после join; позитив-клетка, мутант закрыт парной строкой реестра"
+R5c-03,protocol,C3,PASS,false,"waiver: GlobalAlloc realloc high-align S<->L; позитив-клетка, мутант закрыт парной строкой реестра"
+R5c-06,free,C3,PASS,false,"waiver: narrow-reborrow Box/Vec/String; позитив-клетка, мутант закрыт парной строкой реестра"
+R5c-09,protocol,C1,NOT_RUN,false,"waiver: вне вычислимости Miri (дрен 2216 слотов, тысячи куч + реальные TLS-потоки); повышение = новая приёмка, не авторатификация"
+R5c-10,protocol,C1,NOT_RUN,false,"waiver: вне вычислимости Miri (реальный teardown-порядок, 6 МиБ живых Small-блоков); повышение = новая приёмка, не авторатификация"
+R5c-11,protocol,C2,PASS|CONDITIONAL,true,finish_bind exhaustion -> panic! KILLED
+R5c-12,free,C2,PASS,true,release_empty_current_small_for_trim без guard KILLED
+R5c-13,protocol,C6,PASS,true,realloc own-segment move leg KILLED
+R5c-14,oom,C3,PASS,true,HeapCore::alloc_zeroed Node::zero KILLED
+R5c-15,protocol,C6,INCONCLUSIVE,false,waiver: мутант вне production-пути (реальный путь own-segment); coverage не заявляется
+R5c-16,protocol,C3,INCONCLUSIVE,false,waiver: мутант вне production GlobalAlloc-пути (идёт через HeapCore); coverage не заявляется
+R6a-A1,evidence-infra,C7,PASS,false,клетка A1 матрицы Ph6a (native Windows production internals)
+R6a-A10,evidence-infra,C7,PASS|CONDITIONAL,false,клетка A10 (numa_shim_mock --all-features; PASS + EX3/EX4)
+R6a-A11,evidence-infra,C7,PASS,false,клетка A11 (fault-injection)
+R6a-A12,evidence-infra,C7,PASS,false,клетка A12 (check-matrix)
+R6a-A2,evidence-infra,C7,PASS,false,клетка A2 (production --lib --tests)
+R6a-A3,evidence-infra,C7,PASS,false,клетка A3 (alloc-global internals bench-internals)
+R6a-A4,evidence-infra,C7,PASS,false,клетка A4 (production alloc-stats)
+R6a-A5,evidence-infra,C7,PASS,false,клетка A5 (batch-api)
+R6a-A6,evidence-infra,C7,PASS,false,клетка A6 (pinning)
+R6a-A7,evidence-infra,C7,PASS,false,клетка A7 (hardened medium-classes internals)
+R6a-A8,evidence-infra,C7,PASS,false,клетка A8 (CI-строка virgin-zero-skip)
+R6a-A8b,evidence-infra,C7,NOT_RUN,false,"клетка A8b (голый virgin-zero-skip, cfg-broken NOT_RUN)"
+R6a-A9,evidence-infra,C7,PASS,false,клетка A9 (--all-features Windows)
+R6a-B,evidence-infra,C6,PASS,false,клетка B (named fault-injection хуки)
+R6a-C1,evidence-infra,C2,PASS,false,miri suite 15/16
+R6a-C2,p1-box,C1,KNOWN-DEFECT,false,"P1-box EXPECTED RED, сигнатура Node::write_next node.rs:90"
+R6a-C3,p1-box,C1,KNOWN-DEFECT,false,"P1-box EXPECTED RED, сигнатура Node::write_next node.rs:90"
+R6a-C4,p1-box,C1,KNOWN-DEFECT,false,"P1-box EXPECTED RED, сигнатура Node::write_next node.rs:90"
+R6a-C5,p1-box,C1,KNOWN-DEFECT,false,"P1-box EXPECTED RED, сигнатура Node::write_next node.rs:90"
+R6a-C5b,p1-box,C1,KNOWN-DEFECT|NOT_RUN,false,"P1-box EXPECTED RED в CI, локально не запускался"
+R6a-C6a,evidence-infra,C2,PASS,false,клетка C6a (narrow witness SB)
+R6a-C6b,evidence-infra,C2,PASS,false,клетка C6b (narrow witness TB)
+R6a-D,evidence-infra,C5,PASS,false,клетка D (Loom 6 групп)
+R6a-E1,evidence-infra,C7,PASS,false,клетка E1 (WSL production internals)
+R6a-E2,evidence-infra,C7,PASS,false,клетка E2 (WSL --all-features)
+R6a-E3,evidence-infra,C7,PASS,false,клетка E3 (WSL numa_shim_mock)
+R6a-EX1,platform,C7,KNOWN-RED,false,debug-стек WSL; на Windows/main зелёный
+R6a-EX2,platform,C7,KNOWN-RED,false,offline-smallvec WSL; на Windows/main зелёный
+R6a-EX3,platform,C7,KNOWN-RED|CONDITIONAL|PASS,false,numa-mock семья
+R6a-EX4,platform,C7,KNOWN-RED|CONDITIONAL|PASS,false,numa-mock семья
+R6a-EX5,platform,C7,NOT_RUN|PASS,false,WSL env (cc из crates.io); на Windows зелёная
+R6a-F,evidence-infra,C5,PASS,false,клетка F (TSan teardown ordering stress)
+R6a-G,platform,C7,CI_PENDING|PASS,false,macOS arm64 по landing SHA
+R6a-G2,platform,C7,CI_PENDING|PASS,false,Linux aarch64 по landing SHA
+R6a-M1,free,C5,PASS,true,мутант node.rs:90 write_next KILLED
+R6a-M2,free,C2,PASS,true,мутант dealloc_own_base RouteToLargeFree KILLED
+R6a-M3,protocol,C5,PASS,true,мутант publish_foreign KILLED
+R6a-M4,free,C2,PASS,true,мутант tls_heap Own(null) KILLED
+R6a-M5,protocol,C2,PASS,true,мутант batch filled KILLED
+R6a-M6,oom,C6,PASS,true,мутант realloc OOM Node::zero KILLED
+R6a-M7,protocol,C2,PASS,true,мутант zeroed is_virgin KILLED
+R6a-M8,protocol,C4,PASS,true,мутант StartingGuard::drop rollback KILLED
+R6b-01,cost,COST,CONDITIONAL|PASS,false,wall-clock bench-table; безусловный PASS требует перемера на нативной Windows/тихом хосте (perf item 81)
+R6b-02,cost,COST,NOT_RUN|PASS,false,p99/p999 latency не измерялись
+R6b-03,cost,COST,PASS,false,RSS/commit/фрагментация A/B
+R6b-04,cost,COST,NOT_RUN|PASS,false,"System-вызовы, remote-merge, reclaim lag"
+R6b-05,cost,COST,PASS,false,iai CPU/op детерминированно
+R6b-06,cost,COST,NOT_RUN|PASS,false,page faults не измерялись
+R6b-07,cost,COST,INCONCLUSIVE|PASS,false,MT wall-clock; perf item 81
+R0-06,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R0-16,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R0-17,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R0-19,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R0-20,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера
+R-Ph3b,reverify,C2,PASS|CONDITIONAL,false,перепроверка на HEAD после изменения теста; тест переписан после замера

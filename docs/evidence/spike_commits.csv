@@ -1,0 +1,3 @@
+sha,branch,reason
+cabc785b2b18adbc1bb7278b95da5f4fca412b51,proto/exact-object-ph1b,Ph1b exact-object prototype (not merged; ADR chose another path)
+8a0286166a07c3ff35258836400d94f16c7994cd,ph2-pg2,Ph2 PG-2/PG-3 off-body NextTable spike (cancelled by ADR addendum path (b); not merged)

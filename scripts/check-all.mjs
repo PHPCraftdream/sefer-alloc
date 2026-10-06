@@ -282,6 +282,10 @@
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
+//   53-55. the three Ph7 evidence-registry tail steps (task #2098: judge +
+//      mutation self-test + REGISTRY.md --check; appended at the array END so
+//      all numbers above stay stable; pure node scans, no cargo — check-all
+//      fails only on the judge's RED, its honest INCOMPLETE stays exit 0)
 //
 // This does NOT replace CI (CI additionally runs miri, loom, TSan, multi-arch,
 // no_std, MSRV — see .github/workflows/ci.yml) — it is the FAST subset that
@@ -290,11 +294,22 @@
 // pushes never need a red CI run to discover a problem.
 
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 import { REPO_ROOT, run, dllInitFailedDiagnosis } from './lib.mjs';
 import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
 import { staleArtifactDiagnosis } from './stale-artifact-diagnosis.mjs';
+
+function registryBaseline() {
+  const r = spawnSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: REPO_ROOT, encoding: 'utf8' });
+  const ref = r.status === 0 ? r.stdout.trim() : '';
+  if (/^[0-9a-f]{40}$/i.test(ref)) return ref;
+  console.warn('[check-all] warning: optional evidence-registry baseline unavailable; strict judge runs without ratchet');
+  return '';
+}
+
+const EVIDENCE_BASELINE = registryBaseline();
 
 // Task #1142: the feature set docs.rs ACTUALLY builds with, read out of
 // `crates/aligned-vmem/Cargo.toml`'s `[package.metadata.docs.rs]` rather than
@@ -1094,10 +1109,30 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-root-package-list.mjs'],
   },
+  // Ph7 (task #2098, step 7 of the foundational plan): appended at the END
+  // to keep every existing step number stable (header convention). Pure
+  // node scans, no cargo. The registry's GREEN condition is its own
+  // semantics: the strict judge (with the optional baseline ratchet) decides
+  // RED/INCOMPLETE/GREEN; check-all fails only on RED.
+  {
+    name: 'verify-evidence-registry (Ph7 evidence registry judge: forbidden auto-promotions, identity, receipts)',
+    cmd: 'node',
+    args: ['scripts/verify-evidence-registry.mjs', '--strict', ...(EVIDENCE_BASELINE ? ['--baseline', EVIDENCE_BASELINE] : [])],
+  },
+  {
+    name: 'evidence-registry-selftest (Ph7 registry mutation self-test)',
+    cmd: 'node',
+    args: ['scripts/evidence-registry-selftest.mjs'],
+  },
+  {
+    name: 'generate-evidence-registry-md --check (Ph7 generated REGISTRY.md freshness)',
+    cmd: 'node',
+    args: ['scripts/generate-evidence-registry-md.mjs', '--check'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x21 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 5 test (2 real-backend debug + 1 mock debug + 1 mock-release + 1 real-backend release, task #1157/F14) + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test + alloc-core-decommit-internals-warnings check [generated, R1-08], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, verify-ci-sentinels [task #1150], iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x21 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 5 test (2 real-backend debug + 1 mock debug + 1 mock-release + 1 real-backend release, task #1157/F14) + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test + alloc-core-decommit-internals-warnings check [generated, R1-08], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, verify-ci-sentinels [task #1150], iai, evidence-registry [judge + selftest + md --check, Ph7/task #2098]) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

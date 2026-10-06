@@ -8,3 +8,5 @@
 # flagged "new blank line at EOF" on several `_raw_*.log` files that are
 # genuine tool output, not something to reformat.
 docs/perf/_raw_*.log -whitespace
+docs/evidence/*.csv text eol=lf
+docs/evidence/REGISTRY.md text eol=lf

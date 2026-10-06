@@ -1,4 +1,5 @@
 # Реестр обязательств доказательства: черновик (шаг 7 плана, введён в Фазе 0)
+> 2026-10-05 (Ph7): черновик заменён живым реестром — `docs/evidence/registry.csv` (судья `scripts/verify-evidence-registry.mjs`, самотест `scripts/evidence-registry-selftest.mjs`, производный обзор `docs/evidence/REGISTRY.md`); строки R0-*/R-Ph1b/R-PG*/R-Ph3a/R-Ph3b перенесены туда с сохранением id. Этот файл — исторический источник.
 
 Дата: 2026-10-01. План: `docs/design/2026-10-01-113842-src-foundational-refactoring-plan-xs-sol.md` §4 шаг 7. Это **черновик структуры + первые реальные строки** из `docs/reviews/2026-10-01-refactor-ph0-obligations-receipt.md`; автоматической генерации и CI-проверки пока нет. Каждую фазу плана дополняет интегратор.
 
@@ -38,7 +39,7 @@
 - База: `ceffecb5c07d45e9d715670dfcaec3de69b2f9d2`, tree `c1fa03eae961c5ae2b442ec963c2e3978c0b3941`.
 - Незакоммиченное: `tests/support/r8_global_box_witness.rs` -> sha256 `9a7007c5...c1e4` (полный в записке §1), `git diff | sha256sum` = `0004c9834e6f...c042dc053` (`0004c9834e6fd24bddc84184681038022b71aef0197087b5b5c63507e42dc053`). Строки с префиксом лога `v3-` измерены на нём; без префикса `sb-/tb-/native-` — на HEAD-версии (sha `29fff9c6...`).
 - Toolchain: native `rustc 1.97.0 (2d8144b78 2026-07-07)`; Miri `miri 0.1.0 (3659db0d3e 2026-07-05)` / `rustc 1.99.0-nightly (3659db0d3 2026-07-05)`. OS: Windows 10 x86_64 MSVC.
-- Логи: `D:/dev/rust/sefer-alloc/target/wt/logs/ph0/` (вне репо; в записке выдержки). Binary hash не фиксировался (`—`).
+- Логи: `<repo>/target/wt/logs/ph0/` (вне репо; в записке выдержки). Binary hash не фиксировался (`—`).
 - Miri-флаги `S` = `-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000`; `T` = `S -Zmiri-tree-borrows`; `P` = `-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5`; `PT` = `P -Zmiri-tree-borrows`.
 
 ## 4. Записи

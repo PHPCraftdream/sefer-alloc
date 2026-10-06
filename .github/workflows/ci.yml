@@ -1373,6 +1373,31 @@ jobs:
       - name: clippy (--features "production internals")
         run: cargo clippy --all-targets --features "production internals" -- -D warnings
 
+  evidence-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Strict evidence registry judge (optional baseline ratchet)
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          baseline="$PR_BASE_SHA"
+          if [[ -z "$baseline" ]]; then baseline="$PUSH_BEFORE_SHA"; fi
+          if [[ -n "$baseline" && ! "$baseline" =~ ^0{40}$ ]]; then
+            node scripts/verify-evidence-registry.mjs --strict --baseline "$baseline"
+          else
+            node scripts/verify-evidence-registry.mjs --strict
+          fi
+      - run: node scripts/evidence-registry-selftest.mjs
+      - run: node scripts/generate-evidence-registry-md.mjs --check
+
   check-matrix:
     # R30-5 (task #454): runs the NON-clippy rows of `scripts/check-matrix.mjs`'s
     # `PER_PR_ROWS` manifest via the shared `scripts/run-check-matrix.mjs`
