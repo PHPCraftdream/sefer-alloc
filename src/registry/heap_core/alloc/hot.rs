@@ -44,10 +44,12 @@ impl HeapCore {
         &self,
         issued: *mut u8,
     ) -> (*mut u8, usize) {
-        let base = self
-            .core
-            .canonical_root_for(issued)
-            .expect("issued magazine block belongs to a live segment");
+        let base = os::segment_base_of_ptr(issued);
+        debug_assert_eq!(
+            self.core.canonical_root_for(issued),
+            Some(base),
+            "small magazine block must map to its segment base"
+        );
         let off = issued.addr() - base.addr();
         SegmentMeta::new(base)
             .magazine_bitmap()

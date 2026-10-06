@@ -1,0 +1,8 @@
+bench,a_ir,b_ir,delta_ir,ratio_ir,a_est_cycles,b_est_cycles,ratio_est_cycles
+small_churn_16b,58201,57571,-630,0.989175,144280,143384,0.993790
+small_churn_16b_2n,64985,63715,-1270,0.980457,152920,151290,0.989341
+alloc_magazine_hit_only_16b,57880,57236,-644,0.988874,143041,142181,0.993988
+alloc_clear_magazine_only_16b_prefix,52554,52434,-120,0.997717,136172,135946,0.998340
+alloc_clear_magazine_only_16b,52915,52629,-286,0.994595,136662,136620,0.999693
+per_hit_ir_clear_magazine_on_issue,22.5625,12.1875,-10.375,0.540166,,,
+control_max_abs_delta_ir,12,,,,,,
