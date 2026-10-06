@@ -119,3 +119,7 @@ _raw_reverify_head_r6a_a10_numamock_full.log
 _raw_reverify_head_r6a_ex3_ex4_numa_win_x20.log
 _raw_reverify_head_r6a_ex3_ex4_numa_wsl_x20.log
 ```
+
+## Дополнение оркестратора: R6a-EX1 (r1_04) закрыт
+
+Красный `r1_04_alloc_core_drop_stack_pressure` на WSL, описанный в приложении выше, оказался настоящей регрессией, а не средой: инлайн-лог мока numa-shim (`CALLS_CAP = 4096`, ~128 KiB) лежит в статическом TLS каждого потока, а glibc вырезает статический TLS из стека потока — у потоков теста со стеком 64 KiB не оставалось полезного стека. Исправлено коммитом `784bdfdf` (`CALLS_CAP` 4096 -> 256). Контрфактуал: WSL красный при 4096, зелёный при 256; Windows зелёный; CI job `test (gated bodies + all-features)` (run 37399933378) красный до фикса и зелёный после. Строка R6a-EX1 повышена до PASS (evidence — `docs/evidence/_raw_reverify_head_r1_04_cap256.log`).

@@ -2,16 +2,16 @@
 
 > **ВНИМАНИЕ:** этот файл сгенерирован скриптом `scripts/generate-evidence-registry-md.mjs` из `docs/evidence/registry.csv` — НЕ править руками; правки только в `registry.csv`.
 
-Источник: sha256 registry.csv = f9ae1c8b
+Источник: sha256 registry.csv = 63c308d8
 
 ## Сводка по статусам
 
 | Статус | Строк |
 |---|---:|
-| PASS | 126 |
+| PASS | 127 |
 | FAIL | 3 |
 | KNOWN-DEFECT | 6 |
-| KNOWN-RED | 4 |
+| KNOWN-RED | 3 |
 | MODEL-LIMIT | 4 |
 | NOT_RUN | 16 |
 | CFG_EXCLUDED | 1 |
@@ -37,7 +37,7 @@
 | Ph4c | 22 | 19 | 0 | 3 |
 | Ph5b | 26 | 18 | 3 | 5 |
 | Ph5c | 16 | 12 | 2 | 2 |
-| Ph6a | 42 | 31 | 3 | 8 |
+| Ph6a | 42 | 32 | 3 | 7 |
 | Ph6b | 7 | 2 | 3 | 2 |
 
 ## Сводка по scope
@@ -182,7 +182,7 @@
 | R6a-E1 | C7 | evidence-infra | PASS | PASS | клетка E1 (WSL production internals) |
 | R6a-E2 | C7 | evidence-infra | PASS | PASS | клетка E2 (WSL --all-features) |
 | R6a-E3 | C7 | evidence-infra | PASS | PASS | клетка E3 (WSL numa_shim_mock) |
-| R6a-EX1 | C7 | platform | KNOWN-RED | KNOWN-RED | debug-стек WSL; на Windows/main зелёный |
+| R6a-EX1 | C7 | platform | KNOWN-RED\|PASS | PASS | r1_04: причина найдена и исправлена (784bdfdf), больше не средовое исключение |
 | R6a-EX2 | C7 | platform | KNOWN-RED | KNOWN-RED | offline-smallvec WSL; на Windows/main зелёный |
 | R6a-EX3 | C7 | platform | KNOWN-RED\|CONDITIONAL\|PASS | PASS | numa-mock семья |
 | R6a-EX4 | C7 | platform | KNOWN-RED\|CONDITIONAL\|PASS | PASS | numa-mock семья |
@@ -216,7 +216,7 @@
 | C4 | 11 | R-PG1-native=PASS, R-PG1-sb=MODEL-LIMIT, R-PG1-tb=MODEL-LIMIT, R-PG2-sb=CONDITIONAL, R-PG2-tb=CONDITIONAL, R4b-07=PASS, R4c-05=KNOWN-RED, R4c-06=KNOWN-RED, R5b-09-sb=MODEL-LIMIT, R5b-09-tb=MODEL-LIMIT, R6a-M8=PASS |
 | C5 | 42 | R0-23=NOT_RUN, R4a-01=PASS, R4a-05=PASS, R4a-06=PASS, R4a-07=PASS, R4a-08=PASS, R4a-09=PASS, R4a-10=PASS, R4b-06=PASS, R4b-08=PASS, R4b-09=PASS, R4b-10=INCONCLUSIVE, R4b-11=PASS, R4b-12=PASS, R4b-13=INCONCLUSIVE, R4b-14=INCONCLUSIVE, R4b-15=PASS, R4c-01=PASS, R4c-04=PASS, R4c-09=PASS, R4c-10=PASS, R4c-11=PASS, R4c-12=PASS, R4c-13=PASS, R4c-14=PASS, R4c-15=PASS, R4c-16=PASS, R4c-17=PASS, R4c-18=PASS, R4c-19=PASS, R4c-20=PASS, R4c-21=PASS, R4c-22=INCONCLUSIVE, R5b-11=PASS, R5b-12=PASS, R5b-13=PASS, R5b-14=PASS, R5b-15=CONDITIONAL, R6a-D=PASS, R6a-F=PASS, R6a-M1=PASS, R6a-M3=PASS |
 | C6 | 9 | R5b-16=PASS, R5b-17=PASS, R5b-19=NOT_RUN, R5b-20=PASS, R5b-21=PASS, R5c-13=PASS, R5c-15=INCONCLUSIVE, R6a-B=PASS, R6a-M6=PASS |
-| C7 | 29 | R0-03=NOT_RUN, R0-18=NOT_RUN, R0-26=NOT_RUN, R5b-22=CI_PENDING, R5b-23=NOT_RUN, R5b-24=NOT_RUN, R6a-A1=PASS, R6a-A10=PASS, R6a-A11=PASS, R6a-A12=PASS, R6a-A2=PASS, R6a-A3=PASS, R6a-A4=PASS, R6a-A5=PASS, R6a-A6=PASS, R6a-A7=PASS, R6a-A8=PASS, R6a-A8b=NOT_RUN, R6a-A9=PASS, R6a-E1=PASS, R6a-E2=PASS, R6a-E3=PASS, R6a-EX1=KNOWN-RED, R6a-EX2=KNOWN-RED, R6a-EX3=PASS, R6a-EX4=PASS, R6a-EX5=NOT_RUN, R6a-G=CI_PENDING, R6a-G2=CI_PENDING |
+| C7 | 29 | R0-03=NOT_RUN, R0-18=NOT_RUN, R0-26=NOT_RUN, R5b-22=CI_PENDING, R5b-23=NOT_RUN, R5b-24=NOT_RUN, R6a-A1=PASS, R6a-A10=PASS, R6a-A11=PASS, R6a-A12=PASS, R6a-A2=PASS, R6a-A3=PASS, R6a-A4=PASS, R6a-A5=PASS, R6a-A6=PASS, R6a-A7=PASS, R6a-A8=PASS, R6a-A8b=NOT_RUN, R6a-A9=PASS, R6a-E1=PASS, R6a-E2=PASS, R6a-E3=PASS, R6a-EX1=PASS, R6a-EX2=KNOWN-RED, R6a-EX3=PASS, R6a-EX4=PASS, R6a-EX5=NOT_RUN, R6a-G=CI_PENDING, R6a-G2=CI_PENDING |
 | COST | 9 | R-PG3=FAIL, R0-25=CONDITIONAL, R6b-01=CONDITIONAL, R6b-02=NOT_RUN, R6b-03=PASS, R6b-04=NOT_RUN, R6b-05=PASS, R6b-06=NOT_RUN, R6b-07=INCONCLUSIVE |
 
 ## Полная таблица строк
@@ -380,7 +380,7 @@
 | R6a-E1 | PASS | Ph6a | cargo test (WSL) | production internals | Linux x86_64 (WSL) | native debug | cargo test в WSL | лог wsl_prod_int.log: 187 x test result: ok | красный ТОЛЬКО r6_route_directory_model -> R6a-EX2 (KNOWN-RED offline-smallvec; параллельный аген… | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | false | fd954856acab9aa3015b30d49c87c58d2436d796 | красный только известный KNOWN-RED r6_route_directory_model; полный прогон EXIT=101; красные ТОЛЬ… |
 | R6a-E2 | PASS | Ph6a | cargo test --all-features (WSL) | --all-features | Linux x86_64 (WSL) | native debug | cargo test --all-features в WSL | лог wsl_allfeat.log: 347 x test result: ok | красные: r6_route_directory_model (->EX2) + regression_r2_01_segment_bases_lifetime (->R6a-EX5 NO… | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | false | fd954856acab9aa3015b30d49c87c58d2436d796 | красные: KNOWN-RED r6_route_directory_model + NOT_RUN(env) regression_r2_01; полный прогон EXIT=1… |
 | R6a-E3 | PASS | Ph6a | RUSTFLAGS=--cfg numa_shim_mock cargo test --all-features (WSL) | numa_shim_mock --all-features | Linux x86_64 (WSL) | native debug | прогон в WSL с RUSTFLAGS | лог wsl_numamock.log: 345 x test result: ok | красные: r1_04 (->EX1); r6_route_directory_model (->EX2); r6_fix_p3 (->EX3); r2_01 (->EX5) | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | false | fd954856acab9aa3015b30d49c87c58d2436d796 | красные только известные KNOWN-RED / NOT_RUN(env) исключения; полный прогон EXIT=101; красные ТОЛ… |
-| R6a-EX1 | KNOWN-RED | Ph6a | tests::r1_04_alloc_core_drop_stack_pressure | internals alloc-core | Linux x86_64 (WSL) | native debug | красный подтверждён в логах WSL (wsl_numamock.log:1563;1576) | wsl_numamock.log:1563;1576: красный на WSL; на Windows и на main 18d76472 зелёный (переприёмка Ph… | известная краснота debug-стека | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | false | fd954856acab9aa3015b30d49c87c58d2436d796 | средовое исключение: красный только на WSL debug-стеке; на Windows и main 18d76472 зелёный; не чинился по предписанию (параллельный агент) |
+| R6a-EX1 | PASS | Ph6a | tests::r1_04_alloc_core_drop_stack_pressure | internals alloc-core | Windows x86_64 + Linux x86_64 (WSL Ubuntu; CI ubuntu-latest) | native debug | RUSTFLAGS=--cfg numa_shim_mock cargo test --all-features --test r1_04_alloc_core_drop_stack_press… | drop_on_64kib_stack_bare ... ok; drop_on_64kib_stack_with_many_segments ... ok; test result: ok. … | CALLS_CAP=4096 (до фикса) -> FAILED stack overflow SIGABRT в WSL и в CI; CALLS_CAP=256 -> ok | docs/evidence/_raw_reverify_head_r1_04_cap256.log | crate-internal | true | 784bdfdf4a2d95d93bd126b0ad9cd304dc1fec21 | причина была не средовой: инлайн-лог мока numa-shim в статическом TLS (~128 KiB) съедал малые сте… |
 | R6a-EX2 | KNOWN-RED | Ph6a | tests::r6_route_directory_model | production internals / --all-features | Linux x86_64 (WSL) | native debug | красный подтверждён в логах WSL | логи wsl_prod_int.log:1524; wsl_allfeat.log:1717: panicked at tests/r6_route_directory_model.rs:3… | известная краснота offline-smallvec | docs/reviews/2026-10-05-ph6a-correctness-matrix.md | crate-internal | false | fd954856acab9aa3015b30d49c87c58d2436d796 | KNOWN-RED offline-smallvec на WSL; на Windows и main 18d76472 зелёный; не чинился по предписанию (параллельный агент) |
 | R6a-EX3 | PASS | Ph6a | tests::r6_fix_p3_numa_unknown_bucket | numa_shim_mock --all-features | Windows x86_64 + Linux x86_64 (WSL) | native debug | RUSTFLAGS=--cfg numa_shim_mock cargo test --all-features --test r6_fix_p3_numa_unknown_bucket (x2… | r6_fix_p3_numa_unknown_bucket: 1 passed x20 Windows and x20 WSL | — | docs/reviews/2026-10-06-ph7-reverification-at-head.md | crate-internal | false | 876429d2a63ce73dd248bbacc4c6d6c528692cbb | Ph7b: целевой тест прошёл x20 Windows и WSL; общий WSL EXIT=101 вызван r1_04 |
 | R6a-EX4 | PASS | Ph6a | tests::segment_directory_numa_high_node_ids | numa_shim_mock --all-features | Windows x86_64 + Linux x86_64 (WSL) | native debug | RUSTFLAGS=--cfg numa_shim_mock cargo test --all-features --test segment_directory_numa_high_node_… | segment_directory_numa_high_node_ids: 2 passed x20 Windows and x20 WSL | — | docs/reviews/2026-10-06-ph7-reverification-at-head.md | crate-internal | false | 876429d2a63ce73dd248bbacc4c6d6c528692cbb | Ph7b: целевой тест прошёл x20 Windows и WSL; общий WSL EXIT=101 вызван r1_04 |

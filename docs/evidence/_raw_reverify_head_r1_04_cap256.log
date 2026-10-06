@@ -1,0 +1,37 @@
+# R6a-EX1 evidence (orchestrator, 2026-10-06): r1_04_alloc_core_drop_stack_pressure under --cfg numa_shim_mock
+# cause: the inline numa-shim mock call log (CALLS_CAP=4096 x ~32 B ~ 128 KiB) sits in every thread's static TLS; glibc carves static TLS out of the thread stack,
+# so the 64 KiB-stack threads of this test had no usable stack. Fix: commit 784bdfdf (CALLS_CAP 4096 -> 256). CI run 37399933378 (job "test (gated bodies + all-features)") was red before the fix and green after.
+
+## WSL (Ubuntu), CALLS_CAP=4096 (before the fix): RUSTFLAGS="--cfg numa_shim_mock" cargo test --all-features --test r1_04_alloc_core_drop_stack_pressure
+running 1 test
+stderr=
+thread '<unknown>' (3843091) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.06s
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+
+## WSL (Ubuntu), CALLS_CAP=256 (after the fix), same command
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-r104/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+## Windows x86_64, CALLS_CAP=256, same RUSTFLAGS, run together with the 8 NUMA tests (excerpt: the r1_04 binary)
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (<target>\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (<target>\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
