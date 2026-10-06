@@ -23,6 +23,8 @@ record.)
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **fxx round 12 (2026-10-06) — correctness findings fixed in-round, not previously indexed.** R12-01 (P2, foreign free of a never-issued granule aborted the owner): fixed for metadata/uncarved-tail granules, `0228d150` — the interior-pointer residual is open as item 166; R12-04 (fallback-init losers spun without `yield_now`): `c4725071`; R12-06/07/08 (empty unsafe seam, contradictory seam comments, dead `tagged-index-stack` dependency): `ea47a10c` — the loom/kani model coverage residual is open as item 167; R12-09/R12-10 (stale slot/bootstrap docs, inline `#[cfg(test)]` modules, stale `allow(dead_code)`): `3cf802e6`, `516358fa`. Report: `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md`.
+
 - **CI defect (macOS): `std::sync::Mutex` в `RouteDirectory` аллоцирует `Box` при первом `lock` → рекурсия в глобальный аллокатор → переполнение стека.** CLOSED 2026-10-02, commit `b50f04f4` (`fix(perf)`): шарды RouteDirectory переведены на неаллоцирующий spin-lock (`ShardLock`); rustfmt-своп `14807327`; гейт дифференциальной диагностики на доступность segment_bases — `041cfd9e`. Не номерной пункт (не был в индексе до фикса) — заведён задним числом как closure trail.
 
 - **CI defect (macOS arm64, 16 KiB-страницы): тесты с литералом 4096 вместо runtime page size.** CLOSED 2026-10-01/02, commits `37a1aceb` (large-cache probe по runtime page size) + `41a4c626` (shadow-scan requests по runtime page size). Не номерной пункт — заведён задним числом как closure trail.

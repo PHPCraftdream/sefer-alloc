@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 12 (2026-10-06; fixes accepted)
+
+- Independent fxx source review: 0 P1, 1 P2, 4 P3, 5 P4
+  (`docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md`). Manifest:
+  `docs/perf/round-manifests/SRC_REVIEW_R12_MANIFEST.md`; the production feature
+  composition is unchanged.
+- [correctness fix] R12-01: a cross-thread free of a 16-aligned address that was never
+  issued (segment metadata, uncarved tail) is dropped before the sidecar publication
+  instead of aborting the owner in `BitmapCut::pop` (`0228d150`). An interior pointer into
+  an issued uniform-class block still reaches the owner's geometry check; that residual is
+  correctness item 166, not hidden.
+- [correctness fix] R12-04: fallback-heap init losers `yield_now()` after the tight-spin
+  budget instead of burning quanta (`c4725071`), pinned by a held-winner oracle test.
+- `perf(runtime)` R12-02: `clear_magazine_on_issue` uses the segment-base mask again; the
+  per-hit clear cost fell from 22.5625 to 12.1875 `Ir` and `small_churn_16b` by 630 `Ir`
+  (-1.082%) on the deterministic iai axis; no wall-clock claim (`7232598b`).
+- `perf(opt-in)` R12-05: `alloc_batch` and the Large batch use the bounded cursor probe plus
+  one rescue sweep like the scalar path (64 active Large routes: 4 inspections per Small
+  batch miss instead of 64); `realloc` keeps its full sweep. Scan counts only (`2600b337`).
+- [docs] / [test] R12-03, R12-09: stale directory/bootstrap documentation refreshed and the
+  routed negative-directory behaviour pinned (`3cf802e6`); trusting a negative directory
+  answer for routed cores stays off, perf item 82 records why and the next trigger. [bench]
+  Four `alloc-stats` counters classify every routed miss scan (data only, `5ee118d2`).
+- [build] R12-06/07/08: the empty tier-1 unsafe seam in `counters.rs` is gone (inventory 28 to
+  27) and `tagged-index-stack` left the `production` dependency closure (`ea47a10c`);
+  correctness item 167 tracks the loom/kani model coverage that remains.
+- [test] R12-10: three inline `#[cfg(test)]` modules moved to `tests/` over a doc-hidden
+  `internals` surface; the stale `allow(dead_code)` on the Large reservation state machine is
+  removed (`516358fa`). A clippy `--all-features` lint in the new R12-01 test is fixed (`7d3b3e84`).
+
 ### Root allocator `src/` review round 11 (2026-09-30; remediation active)
 
 - Independent source-only XS review reports one experimental false-full P2
