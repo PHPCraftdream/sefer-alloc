@@ -468,7 +468,7 @@ impl AllocCore {
     /// blocks of class `class_idx` from `segment`'s `BinTable[class_idx]` in ONE
     /// walk, writing them into `out[..k]` and returning `k` (the number popped,
     /// `0` if the free list was empty). Byte-identical end-state to calling
-    /// [`pop_free`] `k` times, but with the per-block round-trip HOISTED:
+    /// [`pop_free`](Self::pop_free) `k` times, but with the per-block round-trip HOISTED:
     ///
     ///   - `head` is read ONCE (not re-read from the `BinTable` per block).
     ///   - `set_head` is written ONCE at the end, to the first UN-popped node

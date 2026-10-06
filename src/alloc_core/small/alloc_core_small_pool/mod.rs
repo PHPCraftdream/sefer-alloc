@@ -1,4 +1,4 @@
-//! Mechanism-2 empty-small-segment pool + M6 decommit cluster of [`AllocCore`]
+//! Mechanism-2 empty-small-segment pool + M6 decommit cluster of [`AllocCore`](crate::AllocCore)
 //! (mechanical split of `alloc_core.rs`).
 //!
 //! This module holds an additional `impl AllocCore { .. }` block carrying the

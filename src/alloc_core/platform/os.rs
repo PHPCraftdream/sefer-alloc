@@ -85,10 +85,10 @@ pub(crate) static SEGMENTS_RESERVE_FAILED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// The segment size and alignment, in bytes. 4 MiB — mimalloc's default. Every
 /// [`Segment`] handed up by this module is aligned to a multiple of this value,
-/// so [`crate::alloc_core::segment_of`] can find an allocation's owning segment
+/// so [`segment_base_of_ptr`] can find an allocation's owning segment
 /// header in O(1) by masking the low bits of its address.
 ///
-/// This is exposed (read-only) as [`crate::alloc_core::SegmentLayout::SEGMENT`].
+/// This is exposed (read-only) as [`crate::SegmentLayout::SEGMENT`].
 pub(crate) const SEGMENT: usize = 1 << 22;
 
 /// A page size used by the page-granularity `PageMap`. 4 KiB — the smallest
@@ -124,7 +124,7 @@ pub(crate) const MAX_REALISTIC_PAGE_SIZE: usize = 1 << 16;
 /// Pure safe arithmetic — this is part of the Cartographer and lives outside
 /// the `unsafe` seam logically, but is so tightly coupled to [`SEGMENT`] that
 /// it is defined here next to the constant. Re-exported via
-/// [`crate::alloc_core::SegmentLayout`].
+/// [`crate::SegmentLayout`].
 #[must_use]
 pub(crate) const fn segment_base_of(addr: usize) -> usize {
     addr & !(SEGMENT - 1)
@@ -551,7 +551,7 @@ const _: () = {
 /// # Contract (caller's invariant — not enforced by the type system)
 ///
 /// `reservation` must be a pointer previously returned by
-/// [`Segment::reserve`] (specifically its [`Segment::reservation`]) and not
+/// [`Segment::reserve`] (the span owned by that returned [`Segment`]) and not
 /// yet released. `reservation_len` must be the matching length. Must be called
 /// exactly once per reservation.
 pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
@@ -605,9 +605,9 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 // ever dereferences it (no cross-thread race, no CAS protocol needed —
 // simpler than the `HeapOverflow` sidecar, which IS cross-thread).
 
-/// Reserve and construct a [`SegmentDirectory`] sidecar. Returns
+/// Reserve and construct a [`crate::alloc_core::segment_directory::SegmentDirectory`] sidecar. Returns
 /// `Some((ptr, sidecar))` on success — `ptr` is the fully-valid initial
-/// state and `sidecar` (the [`sidecar::AccountedSidecar`] token) OWNS the
+/// state and `sidecar` (the [`crate::alloc_core::sidecar::AccountedSidecar`] token) OWNS the
 /// span's VM reservation, released exactly once when the caller drops the
 /// token (for this crate's single caller: when the owning `AllocCore` drops
 /// its `directory_sidecar_vm` field — R2-12; the span is NO longer leaked
@@ -615,7 +615,7 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 /// OOM — the mechanism simply stays off and the linear scan fallback is
 /// used).
 ///
-/// Uses [`sidecar::reserve_zeroed_with`] rather than [`sidecar::reserve`]:
+/// Uses [`crate::alloc_core::sidecar::reserve_zeroed_with`] rather than [`crate::alloc_core::sidecar::reserve`]:
 /// `SegmentDirectory`'s bitmap fields (`class_nonempty_by_node`,
 /// `active_bits_by_node`) are valid at all-zero (every bit/count clear is a
 /// real, intentional initial state), but under `numa-aware` the `node_ids`
@@ -627,12 +627,12 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 /// SegmentDirectory` over the not-yet-fully-valid span (see
 /// `reserve_zeroed_with`'s `# Safety` contract). Moving the whole (up to
 /// ~56 KiB under `numa-aware`) `SegmentDirectory` through a by-value
-/// [`sidecar::reserve`] call would risk an avoidable stack copy; the
+/// [`crate::alloc_core::sidecar::reserve`] call would risk an avoidable stack copy; the
 /// in-place fixup avoids it.
 ///
 /// The caller stores the pointer in `AllocCore::directory_sidecar` (and the
 /// token in `AllocCore::directory_sidecar_vm`) and dereferences it via
-/// [`sidecar::deref`] / [`sidecar::deref_mut`].
+/// [`crate::alloc_core::sidecar::deref`] / [`crate::alloc_core::sidecar::deref_mut`].
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) fn reserve_directory_sidecar() -> Option<(
     *mut crate::alloc_core::segment_directory::SegmentDirectory,
@@ -674,9 +674,12 @@ pub(crate) fn reserve_directory_sidecar() -> Option<(
 ///
 /// `find_segment_with_free_impl`'s directory-driven scan (in
 /// `alloc_core_small.rs`) used to hold a live `&'static SegmentDirectory`
-/// (from [`deref_directory_sidecar`]) across calls to
+/// (from `deref_directory_sidecar`, removed by the R14-9 sidecar-seam
+/// migration — today's seam is `crate::alloc_core::sidecar::deref[_mut]`)
+/// across calls to
 /// `validate_directory_candidate`, which can itself call
-/// [`deref_directory_sidecar_mut`] (via `publish_empty` /
+/// `deref_directory_sidecar_mut` (likewise removed; today's seam is
+/// `crate::alloc_core::sidecar::deref_mut`) (via `publish_empty` /
 /// `sync_directory_for_segment_classes`) on the SAME allocation while the
 /// shared reference was still lexically live. That is aliasing UB under
 /// Stacked/Tree Borrows — `&T` and `&mut T` simultaneously live over one

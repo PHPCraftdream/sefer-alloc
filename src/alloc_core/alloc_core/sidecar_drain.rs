@@ -47,7 +47,7 @@ pub(crate) static BACKGROUND_INGRESS_STEP_CALLS: core::sync::atomic::AtomicU64 =
 
 /// M-C oracle companion: process-wide count of individual sidecar records
 /// consumed (Small cuts popped + Large routes claimed) by the full
-/// [`Self::drain_sidecar_ingress`] pass. Distinguishes "0 trims" (delta 0 —
+/// [`AllocCore::drain_sidecar_ingress`](crate::alloc_core::alloc_core::AllocCore::drain_sidecar_ingress) pass. Distinguishes "0 trims" (delta 0 —
 /// the receipt's M-C weakness: an idempotent trim is indistinguishable from
 /// no trim) from "exactly 1" (delta = pending publications) and would expose
 /// a double record consumption (delta above the pending count — impossible

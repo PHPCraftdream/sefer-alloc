@@ -1,6 +1,6 @@
-//! [`SegmentLayout`] — read-only access to the segment substrate's geometry
+//! [`SegmentLayout`](crate::SegmentLayout) — read-only access to the segment substrate's geometry
 //! constants. The single public type re-exported from the `alloc_core` module
-//! alongside [`AllocCore`].
+//! alongside [`AllocCore`](crate::alloc_core::alloc_core::AllocCore).
 //!
 //! Pure compile-time constants — no state, no `unsafe`. Exposed so callers
 //! (and tests) can reason about segment boundaries, page counts, and the

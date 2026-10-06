@@ -81,12 +81,23 @@ impl Node {
         // and writing one word is in-bounds: the block is `>= NODE_SIZE` bytes,
         // and we write exactly `size_of::<*mut u8>()` bytes at offset 0. The
         // write does not alias any other live reference under the SINGLE-WRITER
-        // invariant: a free-list node is touched only by the segment's owner.
-        // A legal remote free transfers a still-issued block to the allocator:
-        // the two ring tiers leave its body untouched; an overflow spill may
-        // write a node there, but the owner pops it before reclaiming this
-        // block into the free list. While `block` is in that list, no legal
-        // remote path can write it, so this write is exclusively the owner's.
+        // invariant: a free-list node is touched only by the block's owning
+        // allocator thread. A legal cross-thread free transfers ownership
+        // WITHOUT writing the block: the producer resolves the address in the
+        // route directory and publishes terminally into the independent,
+        // System-backed route sidecar (a pending-bit RMW for Small/Primordial,
+        // a LIVE(g) → PENDING(g) CAS on the descriptor's own Large state word
+        // for Large) — its last access to the allocation. The block's bytes
+        // re-enter allocator control only when the owner consumes that
+        // publication during a bounded cut/reclaim pass, so while `block` is
+        // in this free list no other thread can write it: this write is
+        // exclusively the owner's. Thread-level exclusivity is the whole
+        // argument — it is NOT an aliasing-model proof: free-list links live
+        // inside freed small blocks, and a block freed through a by-value
+        // `Box` whose receiving frame is still live intersects that frame's
+        // protector under Miri's Stacked/Tree Borrows. That is the ACCEPTED
+        // P1-box limitation (`docs/CORRECTNESS_OPEN_ITEMS.md` item 164);
+        // nothing here claims the intrusive owner path is Miri-clean.
         unsafe { ptr.write_unaligned(next) };
     }
 
@@ -140,9 +151,10 @@ impl Node {
         // (a freshly-reserved or free block). `write_bytes(0)` fills it with
         // zeroes; the range does not overlap any other live reference under the
         // single-writer invariant: this freshly allocated block has not yet
-        // been handed to the caller, so no legal free has transferred it to a
-        // remote producer. After handoff a remote spill may write its first
-        // 16 bytes, but not concurrently with this pre-handoff zeroing.
+        // been handed to the caller. Under the terminal sidecar protocol no
+        // cross-thread producer ever writes block bytes — publication touches
+        // only the independent route sidecar — so no remote write into this
+        // range exists before or after handoff.
         unsafe { core::ptr::write_bytes(ptr, 0, len) };
     }
 
@@ -175,11 +187,10 @@ impl Node {
         // properly aligned, and exclusively owned. `T: Copy` means the write
         // is a plain bit copy (no destructor surprise). The write does not
         // alias any other live reference under the single-writer invariant: a
-        // metadata field is written only by its owning thread. R2-09's
-        // intrusive overflow spill is a separate case: after a legal remote
-        // free transfers its block exclusively, that producer writes a node
-        // into the freed block before publishing it to the owner. The owner
-        // cannot touch that block until publication completes. Metadata
+        // metadata field is written only by its owning thread. Cross-thread
+        // free publication never writes segment bytes — it targets the
+        // independent route sidecar or the descriptor's independent state
+        // word — so nothing races this write from another thread. Metadata
         // fields read cross-thread remain owner-only or atomic.
         unsafe { dst.write(value) };
     }
@@ -296,7 +307,8 @@ impl Node {
                 );
             }
             // Real atomic load of the word, at the same offset a writer's
-            // `&AtomicU64` view (e.g. `SegmentMeta::deferred_next_atomic`)
+            // `&AtomicU64` view (e.g. the `owner_state` word
+            // `SegmentHeader::read_at` snapshots)
             // targets — this is the ONLY access to those 8 bytes here, so it
             // cannot race the writer's own atomic RMW/store.
             let atomic_ptr = src_ptr.add(atomic_word_off).cast::<AtomicU64>();
@@ -341,9 +353,8 @@ impl Node {
     /// segment-header accessors for `segment_id` and `live_count` (single-word
     /// owner-only / once-written fields — a field read does not race the
     /// owner's `bump` field writes because they touch disjoint bytes). NOT used
-    /// for `magic`: that field is also atomically zeroed on recycle, so its
-    /// cross-thread read is an atomic Acquire load via [`atomic_u32_at`] (see
-    /// `SegmentHeader::magic_at`, R6-MS-5).
+    /// for `magic`: that word is managed with an atomic Release store when a
+    /// deposited Large segment's magic is zeroed — see [`atomic_u32_at`].
     ///
     /// `src` MUST be valid for 4 bytes, 4-byte aligned, in a live segment.
     // Used by the alloc-xthread cross-thread path; under `alloc-core` alone
@@ -356,45 +367,11 @@ impl Node {
         unsafe { src.read() }
     }
 
-    /// Read a `*const T` pointer from `src` (aligned, word-sized). Used by the
-    /// field-specific segment-header accessor for `owner_thread_free` (a
-    /// pointer written ONCE at stamp time and only read cross-thread
-    /// thereafter — a field read does not race with the owner's `bump` writes).
-    ///
-    /// `src` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
-    /// for a pointer, in a live segment.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn read_ptr<T>(src: *const *const T) -> *const T {
-        // SAFETY: caller guarantees `src` is valid, pointer-aligned, in a live
-        // segment. One word load.
-        unsafe { src.read() }
-    }
-
-    /// Write a `*const T` pointer `value` at `dst` (aligned, word-sized). Used
-    /// by the field-specific segment-header accessor that stamps
-    /// `owner_thread_free` ONCE per segment (owner-only write under the
-    /// single-writer discipline; cross-thread readers use [`read_ptr`] on the
-    /// same field — a single-word write does not race with single-word reads of
-    /// disjoint fields the way a full-struct `write_struct` RMW does).
-    ///
-    /// `dst` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
-    /// for a pointer, and exclusively owned.
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub(crate) fn write_ptr<T>(dst: *mut *const T, value: *const T) {
-        // SAFETY: caller guarantees `dst` is valid, pointer-aligned, and
-        // exclusively owned (single-writer: the stamping path runs on the
-        // owning thread and writes the field at most once per segment).
-        unsafe { dst.write(value) };
-    }
-
     /// Read a `*mut T` pointer from `src` (aligned, word-sized). RAD-3 (E2,
-    /// task #56): the mutable-pointer counterpart of [`read_ptr`] — used by
-    /// the field-specific segment-header accessors for the empty-small-segment
-    /// pool's intrusive `pool_next`/`pool_prev` links, which are OWNER-ONLY
-    /// (mutated on every pool admit/remove, unlike `owner_thread_free`'s
-    /// write-once discipline) `*mut u8` fields, not `*const u8`.
+    /// task #56): used by the field-specific segment-header accessors for the
+    /// empty-small-segment pool's intrusive `pool_next`/`pool_prev` links,
+    /// which are OWNER-ONLY (mutated on every pool admit/remove) `*mut u8`
+    /// fields, not `*const u8`.
     ///
     /// `src` MUST be valid for `size_of::<*mut T>()` bytes, properly aligned
     /// for a pointer, in a live segment.
@@ -407,9 +384,8 @@ impl Node {
     }
 
     /// Write a `*mut T` pointer `value` at `dst` (aligned, word-sized). RAD-3
-    /// (E2, task #56): the mutable-pointer counterpart of [`write_ptr`]; see
-    /// [`read_ptr_mut`] for why the pool's link fields need this variant
-    /// rather than the `*const T` one.
+    /// (E2, task #56); see [`read_ptr_mut`] for why the pool's link fields
+    /// need this variant rather than a `*const T` one.
     ///
     /// `dst` MUST be valid for `size_of::<*mut T>()` bytes, properly aligned
     /// for a pointer, and exclusively owned (owner-only: only the segment's
@@ -460,24 +436,27 @@ impl Node {
         // "the segment is mapped for the whole process" — Large segments are
         // released mid-process (`AllocCore::reclaim_large_segment` /
         // large-cache eviction → `os::release_segment`), and no `HeapCore` is
-        // ever dropped. The reference is valid only WHILE `base`'s segment is
-        // registered in its owning heap's table; the CALLER must supply the
-        // per-path liveness argument that the segment cannot be released under
-        // this access (for the remote-free paths: the double-push guard in
-        // `alloc_core::large::reservation_state::LargeReservationState::publish_pending` and the "(a)/(b) indistinguishable,
-        // dangling free → fault" reasoning in
-        // `registry::heap_core::dealloc_routing`). `AtomicU8` is `Sync`, so
+        // ever dropped. The reference is valid only while the MAPPED backing
+        // is held by its
+        // exclusive owner (a registry heap lease, a standalone core's `&mut`, or
+        // the owner's Large cache holding an unregistered cached reservation) and
+        // never after `os::release_segment`; the hardened generation-table paths
+        // at `segment_header_gen_table.rs` run on live, owner-held reservations.
+        // The producer terminal-publication path never reads these physical
+        // words — it targets the route directory's independent descriptor
+        // word. `AtomicU8` is `Sync`, so
         // shared atomic access from any thread is race-free.
         unsafe { &*ptr }
     }
 
     /// Return a `&'static AtomicU32` view over the 4 aligned bytes at
-    /// `base + off`. Used by the per-segment `RemoteFreeRing` (the
-    /// non-intrusive cross-thread-free queue) to obtain atomic views over its
-    /// in-segment slot/cursor words. Mirrors [`atomic_u64_at`]; see that fn's
-    /// contract — the same segment-lifetime + alignment-by-construction
-    /// reasoning applies, only the field width is 4 bytes and the alignment
-    /// requirement is 4 (not 8).
+    /// `base + off`. Used for the owner's atomic Release-store zeroing of
+    /// the header `magic` when a freed Large segment is deposited into the
+    /// large cache (`alloc_core_large.rs`, `mem_impl.rs`) and for the
+    /// terminal `remote_head` word (`terminal_words.rs`). Mirrors
+    /// [`atomic_u64_at`]; see that fn's contract — the same
+    /// segment-lifetime + alignment-by-construction reasoning applies, only
+    /// the field width is 4 bytes and the alignment requirement is 4 (not 8).
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "bench-internals")),
         allow(dead_code)
@@ -495,14 +474,14 @@ impl Node {
         // [`atomic_u64_at`] for the full argument): the `'static` is NOT "mapped
         // for the whole process" — Large segments are released mid-process
         // (`AllocCore::reclaim_large_segment` / large-cache eviction →
-        // `os::release_segment`). The reference is valid only WHILE `base`'s
-        // segment is registered in its owning heap's table; the CALLER must
-        // supply the per-path liveness argument that the segment cannot be
-        // released under this access (for remote frees, the per-segment
-        // LIVE-to-PENDING transition is the exactly-once claim; see
-        // `LargeReservationState::publish_pending`) and the
-        // "(a)/(b) indistinguishable, dangling free → fault" reasoning in
-        // `registry::heap_core::dealloc_routing`). `AtomicU32` is `Sync`, so
+        // `os::release_segment`). The backing must stay live, MAPPED, and
+        // owner-held (lease, standalone
+        // `&mut`, or the owner's unregistered cached Large reservation) for the
+        // access, and the reference must not be retained or used after
+        // `os::release_segment` (for remote frees, the
+        // producer's exactly-once claim is the terminal LIVE(g) → PENDING(g)
+        // CAS on the route descriptor's INDEPENDENT `LargeState` word —
+        // never a write into this reservation). `AtomicU32` is `Sync`, so
         // shared atomic access from any thread is race-free.
         unsafe { &*ptr }
     }
@@ -525,9 +504,10 @@ impl Node {
         unsafe { ptr.write(core::sync::atomic::AtomicU64::new(value)) };
     }
 
-    /// Write a single `u32` `value` at `dst` (aligned — used by the ring init).
-    /// Same contract as [`write_u32_unaligned`] but requires 4-byte alignment
-    /// (the ring slots are 4-aligned by the Layout).
+    /// Write a single `u32` `value` at `dst` (aligned). Same contract as
+    /// [`write_u32_unaligned`] but requires 4-byte alignment (every call site
+    /// writes an aligned header/table field: bootstrap table init and the
+    /// `magic`/`segment_id`/`node_id` field accessors).
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
     pub(crate) fn write_u32(dst: *mut u32, value: u32) {
         // SAFETY: caller guarantees `dst` is valid for 4 bytes, 4-byte aligned,
@@ -537,52 +517,48 @@ impl Node {
 
     /// Return a `&'static AtomicU64` view over the 8 aligned bytes at
     /// `base + off`. Used to obtain a race-free atomic view over an
-    /// 8-byte-aligned `u64` field in a segment header (e.g. `owner_state`
-    /// for cross-thread owner-id reads, `deferred_next` for the deferred-
-    /// large stack link); a plain struct-field read would race a concurrent
+    /// 8-byte-aligned `u64` field in a segment header (e.g. `owner_state`,
+    /// Release-stored by the owning heap's stamp path and read by its
+    /// fast-path/diagnostic probes, or the per-segment Large reservation
+    /// state word via `SegmentMeta::large_state_atomic`); a plain struct-field
+    /// read would race a concurrent
     /// atomic store.
     ///
     /// # Caller's contract
     ///
-    /// - `base` MUST be a live allocator segment base, or the ring's
-    ///   exclusively-owned test buffer. The caller MUST keep it live for
-    ///   the duration of the access — see the LIFETIME note below.
+    /// - `base` MUST be a live, MAPPED reservation held by its exclusive
+    ///   owner — a registry heap lease, a standalone core's `&mut`, or the
+    ///   owner's Large cache holding an unregistered cached reservation
+    ///   (the cache-hit reuse and decay/eviction/trim paths in
+    ///   `alloc_core_large.rs` and `alloc_core_large_cache_eviction.rs`) —
+    ///   or an exclusively-owned test buffer. Table registration is NOT
+    ///   required: cached reservations are legitimate.
     /// - `base + off` MUST address an initialized, 8-byte-aligned atomic
-    ///   word within the live segment or exclusively-owned ring test buffer.
-    ///   Header callers derive this with `offset_of!`; `RemoteFreeRing` uses
-    ///   its fixed 8-byte-aligned cursor offsets in a 64-byte-aligned carve.
+    ///   word within the mapped backing (an exclusively-owned test buffer
+    ///   included).
+    ///   Header callers derive this with `offset_of!` or the fixed
+    ///   terminal-words carve offsets (`terminal_words.rs`).
     ///   `off + 8` MUST remain within the allocation.
+    /// - Pins protect route descriptors only; producers never touch these
+    ///   physical words.
     ///
     /// ## LIFETIME — why `'static`, and what actually backs it
     ///
-    /// The `'static` here is a SEAM convenience (it lets `registry::heap_core`,
+    /// The `'static` is a SEAM convenience (it lets `registry::heap_core`,
     /// which is `#![deny(unsafe_code)]`, hold an `&AtomicU64` into segment
-    /// metadata without its own pointer seam), NOT a claim that the segment
-    /// lives for the whole process. The old "segments are only freed at
-    /// `AllocCore::drop`, after all cross-thread frees/adoption have quiesced"
-    /// wording was FALSE on both halves and is removed:
-    ///
-    /// - Large segments are released MID-process —
-    ///   `AllocCore::reclaim_large_segment` → `os::release_segment`, plus the
-    ///   several `alloc-decommit`/large-cache eviction release sites in
-    ///   `alloc_core.rs`. So a segment header CAN become unmapped while the
-    ///   process runs.
-    /// - "after cross-thread frees have quiesced" was an argument for the
-    ///   long-removed public alloc façade (task #17); today nothing enforces it
-    ///   and — because registry `HeapCore`s are never dropped — nothing needs it.
-    ///
-    /// The real safety of remote accesses rests on THIN per-path liveness
-    /// arguments living in OTHER files, which the caller is obliged to carry:
-    /// the per-segment large-state transition from LIVE to PENDING (exactly-once claim)
-    /// (`push_large_deferred_free`, "claim once") and the honest
-    /// "(a) live-foreign / (b) already-released are O(1)-indistinguishable;
-    /// a dangling free into a released segment is fundamentally UB" reasoning in
-    /// `registry::heap_core::dealloc_routing`. This same class of "dormant"
-    /// substrate hazard is what the REACTIVATION HAZARD note in
-    /// `registry::heap_registry` warns about: a future decommit-when-empty
-    /// policy that releases segments mid-process would invalidate any naive
-    /// blanket-`'static` read here. Treat the returned reference as valid ONLY
-    /// while `base`'s segment is registered in its owning heap's table.
+    /// metadata without its own pointer seam), NOT a whole-process mapping
+    /// claim: Large reservations — including cached ones — are released
+    /// mid-process via `os::release_segment`. The view is sound ONLY while
+    /// the mapped backing is held by its exclusive owner (heap lease,
+    /// standalone `&mut`, or the owner's Large cache for an unregistered
+    /// cached reservation), the word was initialized before any view
+    /// existed, alignment/in-bounds hold, and the reference is not retained
+    /// or used after `os::release_segment`. The producer terminal path
+    /// never reads or writes these physical words: its exactly-once claim
+    /// is the terminal LIVE(g) → PENDING(g) CAS on the route descriptor's
+    /// INDEPENDENT `LargeState` word — a System allocation kept alive by
+    /// the route pin's pin/cut rules, which is descriptor capability, not
+    /// reservation credit.
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn atomic_u64_at(
@@ -592,9 +568,10 @@ impl Node {
         let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
         // SAFETY: caller guarantees `base` is a live segment base and `off` is
         // the offset of a properly-aligned, initialized atomic word within
-        // a header or ring carve at `base`, with `off + 8` in-bounds. The `'static`
-        // is sound only WHILE the segment remains registered or the test
-        // buffer stays owned and live; the caller carries the liveness argument (see
+        // a header or terminal-words carve at `base`, with `off + 8` in-bounds. The `'static`
+        // is sound only while the mapped backing stays owner-held and live
+        // (registered segment OR unregistered cached reservation OR owned
+        // test buffer); the caller carries the liveness argument (see
         // the LIFETIME note in this fn's doc — segments ARE released mid-process,
         // so this is not a whole-process mapping guarantee). `AtomicU64` is
         // `Sync`, so shared atomic access from any thread is race-free.

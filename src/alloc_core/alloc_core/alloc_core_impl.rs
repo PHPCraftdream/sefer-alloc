@@ -143,7 +143,7 @@ use crate::alloc_core::large_cache_mode::LargeCacheMode;
 // ---------------------------------------------------------------------------
 
 /// Immutable decay configuration, computed once at `AllocCore::new_with_config`
-/// from a [`LargeCacheConfig`](super::super::large_cache_config::LargeCacheConfig).
+/// from a [`LargeCacheConfig`](crate::alloc_core::config::large_cache_config::LargeCacheConfig).
 /// Kept in its own struct to make the intent clear and to allow
 /// `dbg_set_decay_config` to swap it in tests.
 #[cfg(feature = "alloc-decommit")]
@@ -271,7 +271,7 @@ pub struct AllocCore {
     /// long-lived claim (a `HeapCore` held by a non-pinned thread for
     /// millions of allocations never re-queries once populated, pre-R12-5).
     /// [`current_node_cached`](Self::current_node_cached) now additionally
-    /// forces a re-query every [`NUMA_NODE_REFRESH_PERIOD`] calls, bounding
+    /// forces a re-query every [`NUMA_NODE_REFRESH_PERIOD`](crate::alloc_core::alloc_core::AllocCore::NUMA_NODE_REFRESH_PERIOD) calls, bounding
     /// the staleness to that many refill-misses even within a single claim.
     /// See `docs/PHASE_NUMA_DESIGN.md` §4.1 "Bounded mid-claim refresh
     /// (R12-5)" for the full rationale.
@@ -283,7 +283,7 @@ pub struct AllocCore {
     /// periodic forced refresh). Reset to `0` every time the cache is
     /// (re-)populated; reset implicitly whenever `cached_numa_node` is set to
     /// `None` (the next call is a miss regardless of this counter's value).
-    /// Compared against [`NUMA_NODE_REFRESH_PERIOD`] to trigger the periodic
+    /// Compared against [`NUMA_NODE_REFRESH_PERIOD`](crate::alloc_core::alloc_core::AllocCore::NUMA_NODE_REFRESH_PERIOD) to trigger the periodic
     /// refresh. Owner-private single-writer, same discipline as
     /// `cached_numa_node`.
     #[cfg(feature = "numa-aware")]
@@ -376,7 +376,7 @@ pub struct AllocCore {
     /// Set via [`LargeCacheConfig::budget_bytes`] passed to
     /// [`AllocCore::new_with_config`].
     ///
-    /// [`LargeCacheConfig::budget_bytes`]: super::super::large_cache_config::LargeCacheConfig::budget_bytes
+    /// [`LargeCacheConfig::budget_bytes`]: crate::alloc_core::config::large_cache_config::LargeCacheConfig::budget_bytes
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) large_cache_budget_bytes: Option<usize>,
 
@@ -463,7 +463,7 @@ pub struct AllocCore {
 
     /// TEST/DIAGNOSTIC-ONLY (task W3): stable `&'static` handle to THIS heap's
     /// SLOT-resident large-cache hit counter
-    /// ([`HeapSlot::large_cache_hits`](crate::registry::heap_slot::HeapSlot::large_cache_hits)),
+    /// ([`HeapSlotRemote::large_cache_hits`](crate::registry::heap_slot::HeapSlotRemote::large_cache_hits)),
     /// bound during lease acquisition via
     /// [`bind_large_cache_hits`](Self::bind_large_cache_hits) at bind time.
     /// See [`LargeCacheHitCounter`] above for the aliasing-gap rationale.
@@ -487,7 +487,7 @@ pub struct AllocCore {
     /// The pool's HEAD: the base of the most-recently-pooled ("warmest")
     /// empty small segment, or `null` if the pool is empty. The pool's
     /// storage is an intrusive DOUBLY-linked list threaded through each
-    /// pooled segment's own [`SegmentHeader::pool_next`]/`pool_prev` fields
+    /// pooled segment's own [`SegmentHeader::pool_next`](crate::alloc_core::segment_header::SegmentHeader::pool_next)/`pool_prev` fields
     /// (see [`SmallSegmentPoolConfig`] for the pool's design) — `AllocCore`
     /// itself holds only this head pointer, [`pool_tail`](Self::pool_tail),
     /// [`pooled_count`](Self::pooled_count), and
@@ -523,7 +523,7 @@ pub struct AllocCore {
     /// the stale-ring-while-pooled soundness argument, unchanged by this
     /// restructure).
     ///
-    /// [`SmallSegmentPoolConfig`]: super::super::small_segment_pool_config::SmallSegmentPoolConfig
+    /// [`SmallSegmentPoolConfig`]: crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) pool_head: *mut u8,
 
@@ -628,10 +628,10 @@ pub struct AllocCore {
 
     /// R31-15 (task #486): a stable, process-wide-unique identity for THIS
     /// `AllocCore`, stamped once at construction ([`new_inner`](Self::new_inner))
-    /// from [`DBG_RESERVATION_OWNER_ID_COUNTER`]'s `fetch_add`. Exists solely
+    /// from the private `DBG_RESERVATION_OWNER_ID_COUNTER`'s `fetch_add`. Exists solely
     /// to bind [`ReservedSmallSegment`](super::super::reserved_small_segment::ReservedSmallSegment)
     /// handles to the exact `AllocCore` that minted them — see
-    /// [`dbg_decomp_release`](super::super::alloc_core_small_pool::AllocCore::dbg_decomp_release)'s
+    /// [`dbg_decomp_release`](crate::alloc_core::alloc_core::AllocCore::dbg_decomp_release)'s
     /// doc comment for the soundness hole this closes (a handle minted by one
     /// `AllocCore` could otherwise be handed to a DIFFERENT `AllocCore`'s
     /// `dbg_decomp_release`, corrupting the wrong heap's pool/table state).

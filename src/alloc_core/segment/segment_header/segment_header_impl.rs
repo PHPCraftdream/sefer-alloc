@@ -297,8 +297,8 @@ pub(crate) struct SegmentHeader {
     /// the refill path.
     pub bump: usize,
     /// The segment's ownership state — packed
-    /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /
-    /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The state bit is
+    /// `(state, owner_heap_id, generation)` (see the `OWNER_STATE_*` /
+    /// `OWNER_ID_*` / `OWNER_GEN_*` const families above). The state bit is
     /// structurally always `LIVE` (the abandoned-segments / adoption
     /// substrate that wrote the `ABANDONED` value was removed — task #97 /
     /// R4-5; the bit is retained only for layout stability), and
@@ -315,7 +315,11 @@ pub(crate) struct SegmentHeader {
     pub owner_state: u64,
     /// Sanity magic — every segment starts with this. A computed segment base
     /// that does not have this magic is not one of our segments (foreign ptr).
-    /// Read on every cross-thread dealloc-routing base validation.
+    /// Own-path base validation (`contains_base`) is a segment-table lookup
+    /// that reads no header bytes; the cross-thread foreign-free path also
+    /// reads no header bytes — it resolves the address against the route
+    /// directory. Zeroed with an atomic Release store when a freed Large
+    /// segment is deposited into the large cache.
     pub magic: u32,
     /// Phase 35 (M6 decommit): the **owner-only** count of live (carved-and-not-
     /// free) blocks in this small/primordial segment. Incremented when a block
@@ -325,9 +329,10 @@ pub(crate) struct SegmentHeader {
     /// returned to the OS.
     ///
     /// **Not atomic — owner-only.** Every mutation runs on the segment's owner:
-    /// own-thread alloc/free AND the owner-side ring drain (`reclaim_offset`).
-    /// The cross-thread freer NEVER touches this field (it pushes an offset into
-    /// the `RemoteFreeRing`; the owner decrements when it drains). So a plain
+    /// own-thread alloc/free AND the owner-side sidecar-ingress reclaim
+    /// (`reclaim_offset`).
+    /// The cross-thread freer NEVER touches this field (it publishes an offset into
+    /// the route sidecar's pending bits; the owner decrements when it reclaims). So a plain
     /// `u32` field, accessed through its `offset_of!` offset like `bump`, is
     /// race-free under the single-writer discipline (see §2 of the Phase 35
     /// design and the `bump_of`/`set_bump` precedent).
@@ -449,8 +454,8 @@ pub(crate) struct SegmentHeader {
     ///
     /// **Not atomic — owner-only.** Written at segment-init time and (B2,
     /// future) when the owner grows the frontier. The cross-thread freer
-    /// NEVER touches this field (it pushes into the `RemoteFreeRing`; the
-    /// owner grows when it drains). Accessed via the field-specific
+    /// NEVER touches this field (it publishes into the route sidecar; the
+    /// owner grows when it reclaims). Accessed via the field-specific
     /// `committed_payload_end_of` / `set_committed_payload_end` accessor pair
     /// (same `offset_of!` discipline as `bump` and `live_count`).
     #[cfg_attr(

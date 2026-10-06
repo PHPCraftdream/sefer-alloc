@@ -1,4 +1,4 @@
-//! Bench/diagnostic static counter bank of [`AllocCore`] (mechanical split of
+//! Bench/diagnostic static counter bank of [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) (mechanical split of
 //! the former flat `alloc_core.rs`; pure code movement, no behavior changed).
 //!
 //! Every static here is ALWAYS compiled (so the `dbg_*` accessors have a
@@ -13,7 +13,7 @@ pub(crate) static LARGE_REMOTE_RETIREMENTS: core::sync::atomic::AtomicU64 =
 
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
 /// `decommit_empty_segment_impl` (the shared decommit body); read by the soak
-/// test via [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
+/// test via [`AllocCore::dbg_decommit_count`](crate::alloc_core::alloc_core::AllocCore::dbg_decommit_count). Diagnostic only (relaxed).
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
@@ -25,7 +25,7 @@ pub(in crate::alloc_core) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
 /// `bench-internals` is on (a plain `alloc-decommit` production build never
 /// touches this counter, matching the R30-8 CLAUDE.md convention: this is a
 /// measurement-only instrument, not a production code-path change). Read via
-/// [`AllocCore::dbg_maybe_decay_guard_passed_count`]. Diagnostic only
+/// [`AllocCore::dbg_maybe_decay_guard_passed_count`](crate::alloc_core::alloc_core::AllocCore::dbg_maybe_decay_guard_passed_count). Diagnostic only
 /// (Relaxed, like `DECOMMIT_CALLS`).
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 pub(in crate::alloc_core) static MAYBE_DECAY_GUARD_PASSED: core::sync::atomic::AtomicU64 =
@@ -69,7 +69,7 @@ pub(in crate::alloc_core) static FORCE_DECAY_CLOCK_READ: core::sync::atomic::Ato
 /// convention: a plain production build never touches this counter, so it
 /// cannot affect real allocator behavior or add overhead to a release
 /// build). Read via
-/// [`AllocCore::dbg_contains_base_tier1_hits`](alloc_core_core_diag).
+/// [`AllocCore::dbg_contains_base_tier1_hits`](crate::alloc_core::alloc_core::AllocCore::dbg_contains_base_tier1_hits).
 /// Diagnostic only (Relaxed, like `DECOMMIT_CALLS`).
 #[cfg(feature = "bench-internals")]
 pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::AtomicU64 =
@@ -91,9 +91,9 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic:
 /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT
 /// `Node::zero` passes on the Large-classified `alloc_zeroed` path — bumped
 /// at both consumers of `alloc_large`'s freshness signal
-/// ([`AllocCore::alloc_zeroed`] and `HeapCore::alloc_zeroed`) each time they
+/// ([`AllocCore::alloc_zeroed`](crate::alloc_core::alloc_core::AllocCore::alloc_zeroed) and `HeapCore::alloc_zeroed`) each time they
 /// actually zero (i.e. the fresh-reservation skip did NOT fire). Read via
-/// [`AllocCore::dbg_large_zero_pass_count`]. This is the seam that makes
+/// [`AllocCore::dbg_large_zero_pass_count`](crate::alloc_core::alloc_core::AllocCore::dbg_large_zero_pass_count). This is the seam that makes
 /// `tests/alloc_zeroed_fresh_large_skip.rs` sensitive to the OPTIMIZATION
 /// itself, not just the safety contract: with an unconditional memset
 /// reintroduced, the fresh-path tests observe a nonzero delta and go red
@@ -103,20 +103,20 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic:
 /// zeroing or a fresh OS reservation, so its cost is noise.
 ///
 /// Reads 0 unless `alloc-stats` is on — the per-event increments (in
-/// [`AllocCore::alloc_zeroed`] and `HeapCore::alloc_zeroed`) are gated behind
+/// [`AllocCore::alloc_zeroed`](crate::alloc_core::alloc_core::AllocCore::alloc_zeroed) and `HeapCore::alloc_zeroed`) are gated behind
 /// `alloc-stats`, matching the established convention for diagnostic counters
 /// (`WASTED_DIRTY_DRAINS`, `FOREIGN_OR_UNROUTABLE_FREES`); the static itself is
-/// always compiled so [`AllocCore::dbg_large_zero_pass_count`] has a stable
+/// always compiled so [`AllocCore::dbg_large_zero_pass_count`](crate::alloc_core::alloc_core::AllocCore::dbg_large_zero_pass_count) has a stable
 /// definition regardless of the feature set.
 pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): process-wide count of
 /// EXPLICIT `Node::zero` passes on the Small-classified `alloc_zeroed` path —
-/// bumped at both consumers of [`AllocCore::alloc_small_with_virgin`]'s
-/// freshness signal ([`AllocCore::alloc_zeroed`] and `HeapCore::alloc_zeroed`)
+/// bumped at both consumers of [`AllocCore::alloc_small_with_virgin`](crate::alloc_core::alloc_core::AllocCore::alloc_small_with_virgin)'s
+/// freshness signal ([`AllocCore::alloc_zeroed`](crate::alloc_core::alloc_core::AllocCore::alloc_zeroed) and `HeapCore::alloc_zeroed`)
 /// each time they actually zero (i.e. the virgin-carve skip did NOT fire).
-/// Read via [`AllocCore::dbg_small_zero_pass_count`]. Mirrors
+/// Read via [`AllocCore::dbg_small_zero_pass_count`](crate::alloc_core::alloc_core::AllocCore::dbg_small_zero_pass_count). Mirrors
 /// [`LARGE_ZERO_PASS_CALLS`] exactly — this is the seam that makes
 /// `tests/alloc_zeroed_virgin_small_skip.rs` sensitive to the OPTIMIZATION
 /// itself, not just the safety contract: with an unconditional memset
@@ -129,7 +129,7 @@ pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
 /// per-event increments are gated behind `alloc-stats` (matching
 /// `LARGE_ZERO_PASS_CALLS`'s convention); the static itself is always
 /// compiled (regardless of `virgin-zero-skip`) so
-/// [`AllocCore::dbg_small_zero_pass_count`] has a stable definition across
+/// [`AllocCore::dbg_small_zero_pass_count`](crate::alloc_core::alloc_core::AllocCore::dbg_small_zero_pass_count) has a stable definition across
 /// every feature set — a build without `virgin-zero-skip` simply never
 /// increments it (the Small `alloc_zeroed` arm always zeroes explicitly
 /// there, so the counter would read as "every alloc_zeroed counted", which
@@ -142,7 +142,7 @@ pub(crate) static SMALL_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
 
 /// STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351,
 /// `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §6.1/§8 step 1):
-/// process-wide count of times [`AllocCore::realloc_inplace_fast_path_known_base`]
+/// process-wide count of times [`AllocCore::realloc_inplace_fast_path_known_base`](crate::alloc_core::alloc_core::AllocCore::realloc_inplace_fast_path_known_base)
 /// reaches a cross-class Small/Primordial grow attempt that OPT-H (a
 /// **proposed, NOT YET IMPLEMENTED** in-place tail-of-segment grow mechanism —
 /// see the design doc) would need to evaluate: `old_class`/`new_class` both
@@ -156,7 +156,7 @@ pub(crate) static SMALL_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
 /// through to `None` exactly as before this counter existed, letting the
 /// caller's existing promotion/move-leg path run unchanged. Only observation.
 ///
-/// Read via [`AllocCore::dbg_opt_h_attempts`]. Reads 0 unless `alloc-stats` is
+/// Read via [`AllocCore::dbg_opt_h_attempts`](crate::alloc_core::alloc_core::AllocCore::dbg_opt_h_attempts). Reads 0 unless `alloc-stats` is
 /// on — the per-event increment is gated behind `alloc-stats`, matching
 /// [`LARGE_ZERO_PASS_CALLS`]'s convention; the static itself is always
 /// compiled so the accessor has a stable definition regardless of the rest of
@@ -189,7 +189,7 @@ pub(crate) static OPT_H_ATTEMPTS: core::sync::atomic::AtomicU64 =
 /// nested inside the precondition-1 check that bumps `OPT_H_ATTEMPTS`), so
 /// `OPT_H_HITS <= OPT_H_ATTEMPTS` always holds.
 ///
-/// Read via [`AllocCore::dbg_opt_h_hits`]. Reads 0 unless `alloc-stats` is on
+/// Read via [`AllocCore::dbg_opt_h_hits`](crate::alloc_core::alloc_core::AllocCore::dbg_opt_h_hits). Reads 0 unless `alloc-stats` is on
 /// (same gating convention as [`OPT_H_ATTEMPTS`]). Relaxed ordering.
 pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -216,24 +216,24 @@ pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic
 /// R34-23 path-activation oracle: process-wide count of Large→Large in-place
 /// realloc grows that succeeded via OPT-G (committed-span path OR the
 /// `large-reserved-capacity` reserved-VA path). Bumped at BOTH `return
-/// Some(ptr)` sites in [`realloc_inplace_fast_path_known_base`]'s Large branch.
-/// Read via [`AllocCore::dbg_reloc_inplace_large_count`].
+/// Some(ptr)` sites in [`AllocCore::realloc_inplace_fast_path_known_base`](crate::alloc_core::alloc_core::AllocCore::realloc_inplace_fast_path_known_base)'s Large branch.
+/// Read via [`AllocCore::dbg_reloc_inplace_large_count`](crate::alloc_core::alloc_core::AllocCore::dbg_reloc_inplace_large_count).
 pub(crate) static RELOC_INPLACE_LARGE_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// R34-23 path-activation oracle: process-wide count of Small/Primordial
 /// same-class in-place reallocs that succeeded via OPT-F (the block stayed in
 /// its own size class, no copy). Bumped at the `return Some(ptr)` site in the
-/// Small branch. Read via [`AllocCore::dbg_reloc_inplace_small_count`].
+/// Small branch. Read via [`AllocCore::dbg_reloc_inplace_small_count`](crate::alloc_core::alloc_core::AllocCore::dbg_reloc_inplace_small_count).
 pub(crate) static RELOC_INPLACE_SMALL_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// R34-23 path-activation oracle: process-wide count of reallocs where the
 /// in-place fast paths DECLINED (returned `None`), forcing the caller's
 /// move-leg (alloc-new + copy + dealloc-old). Bumped at every `None` return in
-/// [`realloc_inplace_fast_path_known_base`]: Large-grow-doesn't-fit,
+/// [`AllocCore::realloc_inplace_fast_path_known_base`](crate::alloc_core::alloc_core::AllocCore::realloc_inplace_fast_path_known_base): Large-grow-doesn't-fit,
 /// Small-cross-class, and other-kind. Read via
-/// [`AllocCore::dbg_reloc_fastpath_decline_count`]. By construction
+/// [`AllocCore::dbg_reloc_fastpath_decline_count`](crate::alloc_core::alloc_core::AllocCore::dbg_reloc_fastpath_decline_count). By construction
 /// `inplace_large + inplace_small + decline == total_fast_path_calls`.
 pub(crate) static RELOC_FASTPATH_DECLINE_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
@@ -268,7 +268,7 @@ pub(crate) static RELOC_FASTPATH_DECLINE_CALLS: core::sync::atomic::AtomicU64 =
 
 /// DIAGNOSTIC (R29-5, task #436): process-wide count of successful
 /// medium→Large realloc promotions (`try_promote_to_large` returning `Some`)
-/// since process start. Read via [`AllocCore::dbg_promotion_count`]. Relaxed
+/// since process start. Read via [`AllocCore::dbg_promotion_count`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_count). Relaxed
 /// ordering — a diagnostic count, not a synchronization primitive. Reads 0
 /// unless `bench-internals` is on.
 pub(crate) static PROMOTION_COUNT: core::sync::atomic::AtomicU64 =
@@ -277,26 +277,26 @@ pub(crate) static PROMOTION_COUNT: core::sync::atomic::AtomicU64 =
 /// DIAGNOSTIC (R29-5): cumulative bytes copied by all promotions counted by
 /// [`PROMOTION_COUNT`] (sum of `old_layout.size()` per event). `sum / count`
 /// is the mean copied bytes per promotion. Read via
-/// [`AllocCore::dbg_promotion_bytes_sum`]. Relaxed.
+/// [`AllocCore::dbg_promotion_bytes_sum`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_sum). Relaxed.
 pub(crate) static PROMOTION_BYTES_SUM: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// DIAGNOSTIC (R29-5): smallest `old_layout.size()` ever copied by a single
 /// promotion. Updated via `fetch_min` per event. Read via
-/// [`AllocCore::dbg_promotion_bytes_min`]. Relaxed. Initial `u64::MAX` reads
+/// [`AllocCore::dbg_promotion_bytes_min`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_min). Relaxed. Initial `u64::MAX` reads
 /// as "no promotion has occurred yet" — the accessor maps that to 0.
 pub(crate) static PROMOTION_BYTES_MIN: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(u64::MAX);
 
 /// DIAGNOSTIC (R29-5): largest `old_layout.size()` ever copied by a single
 /// promotion. Updated via `fetch_max` per event. Read via
-/// [`AllocCore::dbg_promotion_bytes_max`]. Relaxed.
+/// [`AllocCore::dbg_promotion_bytes_max`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_max). Relaxed.
 pub(crate) static PROMOTION_BYTES_MAX: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// DIAGNOSTIC (R29-5): per-bucket histogram of bytes copied per promotion
 /// (one increment per event in exactly one bucket, per `promotion_byte_bucket`).
-/// Read via [`AllocCore::dbg_promotion_bytes_hist`]. The buckets are:
+/// Read via [`AllocCore::dbg_promotion_bytes_hist`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_hist). The buckets are:
 /// `[0,4KiB) [4KiB,16KiB) [16KiB,64KiB) [64KiB,128KiB) [128KiB,256KiB)
 /// [256KiB,512KiB) [512KiB,1MiB) [1MiB,∞)`. Relaxed.
 pub(crate) static PROMOTION_BYTES_HIST: [core::sync::atomic::AtomicU64; 8] = [
@@ -369,10 +369,10 @@ pub(crate) const fn promotion_byte_bucket(bytes: usize) -> usize {
 /// occupant. Best-effort: a pointer into unmapped memory faults on the header
 /// read before reaching these checks. Surfaced as
 /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
-/// via [`AllocCore::dbg_foreign_or_unroutable_frees`].
+/// via [`AllocCore::dbg_foreign_or_unroutable_frees`](crate::alloc_core::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees).
 ///
 /// Two disjoint increment sites feed it (no double counting):
-/// - [`AllocCore::dealloc`]'s foreign branch, gated on `alloc-stats` (a
+/// - [`AllocCore::dealloc`](crate::alloc_core::alloc_core::AllocCore::dealloc)'s foreign branch, gated on `alloc-stats` (a
 ///   standalone `AllocCore` pays nothing by default); unreachable under
 ///   `alloc-global`, since `HeapCore::dealloc_routing` already proved
 ///   `contains_base`.

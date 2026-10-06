@@ -6,6 +6,7 @@
 #![allow(unsafe_code)]
 
 use core::cell::UnsafeCell;
+use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,8 +23,18 @@ unsafe impl<T: Send> Sync for ShardLock<T> {}
 // SAFETY: moving the lock moves the owned `T`.
 unsafe impl<T: Send> Send for ShardLock<T> {}
 
+/// Guard for one acquired [`ShardLock`]: exclusive payload access on the
+/// single thread that holds it.
+///
+/// Auto traits, pinned by the `_unique` marker: `Send` requires only
+/// `T: Send`; `Sync` additionally requires `T: Sync`, because [`Deref`]
+/// hands `&T` to every thread sharing the guard. [`ShardLock`] itself stays
+/// `Sync` under `T: Send` alone.
 pub(super) struct ShardGuard<'a, T> {
     lock: &'a ShardLock<T>,
+    // `&'a mut T` is `Send` iff `T: Send` and `Sync` iff `T: Sync` —
+    // exactly the guard's access contract (R13-05).
+    _unique: PhantomData<&'a mut T>,
 }
 
 impl<T> ShardLock<T> {
@@ -48,7 +59,10 @@ impl<T> ShardLock<T> {
                 std::thread::yield_now();
             }
         }
-        ShardGuard { lock: self }
+        ShardGuard {
+            lock: self,
+            _unique: PhantomData,
+        }
     }
 }
 

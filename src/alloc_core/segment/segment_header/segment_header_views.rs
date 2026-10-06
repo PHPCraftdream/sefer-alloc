@@ -25,8 +25,9 @@ impl SegmentHeader {
         // of containing it (e.g. a Large segment with a corrupted kind byte
         // would be misrouted onto the Small free path, and a
         // Small-specific free would write a BinTable/free-list header into
-        // a live Large payload). `magic_at` (checked by the caller first on
-        // the cross-thread path) rejects a non-sefer BASE, but does nothing
+        // a live Large payload). Own-path base validation (the segment-table
+        // lookup in `contains_base`) rejects a non-sefer BASE by table
+        // membership, but nothing
         // to validate the `kind` BYTE of a base that IS ours but has been
         // corrupted in place — so this decode must reject on its own.
         // Every unexpected byte now maps to `SegmentKind::Unknown`, a
@@ -86,7 +87,7 @@ impl SegmentHeader {
     /// the large-cache-hit path, `register_segment`'s caller) — never mutated
     /// in place thereafter — so a field read here does not race with the
     /// owner's `bump` field writes on a disjoint field (same discipline as
-    /// `magic_at`/`kind_at`). Present in EVERY build's layout (like `magic`),
+    /// `kind_at` and the other field-specific accessors). Present in EVERY build's layout (like `magic`),
     /// so this accessor is not feature-gated.
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
@@ -178,13 +179,15 @@ impl SegmentHeader {
 
     /// F12 (task #498): overwrite the header's `magic` field only
     /// (field-specific `u32` store) with `SEGMENT_MAGIC`, re-establishing the
-    /// sanity magic that the large-cache deposit path atomically zeroed (see
-    /// [`magic_at`](Self::magic_at)'s doc for that Release-store writer).
+    /// sanity magic that the large-cache deposit path atomically zeroed (the
+    /// Release-store zeroing lives at the deposit sites in
+    /// `alloc_core_large.rs`/`mem_impl.rs`, via `Node::atomic_u32_at`).
     ///
-    /// **Deliberately a PLAIN store, not an atomic one**, even though
-    /// `magic_at`'s cross-thread reader pairs an atomic Release writer with
-    /// its Acquire load in the STEADY-STATE case (a registered, live segment
-    /// whose `magic` a remote thread may concurrently zero on deposit). This
+    /// **Deliberately a PLAIN store, not an atomic one**, even though the
+    /// deposit path's Release zero-store pairs with the header's history of
+    /// remote defensive reads (the removed `magic_at` Acquire load; a
+    /// registered, live segment whose `magic` a remote thread could
+    /// concurrently zero on deposit). This
     /// call site is different: it runs strictly BEFORE `register()` makes
     /// `slot.base` reachable via `contains_base`, so no concurrent reader —
     /// atomic-aware or otherwise — can observe this write at all; the

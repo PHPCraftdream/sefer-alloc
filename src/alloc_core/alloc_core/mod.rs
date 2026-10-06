@@ -4,8 +4,8 @@
 //! This is the **Cartographer** of the segment substrate: all placement logic
 //! (which size class, which page, free-list pop/push, large/huge routing) is
 //! **pure safe integer arithmetic** over segment-relative offsets and
-//! size-class indices. Every raw memory touch is delegated to the [`node`](node)
-//! seam; every OS reservation to the [`os`](os) seam. `AllocCore` itself
+//! size-class indices. Every raw memory touch is delegated to the [`node`](crate::alloc_core::platform::node)
+//! seam; every OS reservation to the [`os`](crate::alloc_core::platform::os) seam. `AllocCore` itself
 //! contains NO `unsafe` and NO `Vec`/`Box`/`HashSet`/`std::alloc` — the alloc
 //! path is therefore **reentrancy-free (M5)**: it cannot recurse into the
 //! global allocator because it allocates no metadata through it.
@@ -35,8 +35,8 @@
 //! Phase 8 is single-threaded (correctness before concurrency — §5 P8).
 //! Per-thread heaps + lock-free cross-thread free are Phase 9/10. `AllocCore`
 //! is deliberately NEITHER `Send` NOR `Sync` (raw pointers, no `unsafe impl`
-//! of either — see [`lifecycle`](super::lifecycle)'s and
-//! [`large_cache_extended`](super::super::large_cache_extended)'s own notes
+//! of either — see [`lifecycle`](lifecycle)'s and
+//! [`large_cache_extended`](crate::alloc_core::large::large_cache_extended)'s own notes
 //! on this, oxx R2-07). In `production` the `AllocCore` inside a registry
 //! slot stays in place, but its owning thread changes when the slot is
 //! lease handoffs; soundness comes from the slot's ordered ownership transfer or

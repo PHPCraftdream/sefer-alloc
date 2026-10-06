@@ -33,17 +33,28 @@
 //! allocator, ANY use of `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
 //! alloc path would recurse infinitely. This module contains NONE of those.
 //! `current_for_alloc()` is a plain thread-local load + null check.
-//! `bind_slow_tagged` claims a registry slot (which bootstraps via the OS
-//! aperture, never `std::alloc`); the bind path performs NO `std::alloc` at
-//! all: since task H1 (#13), the cross-thread free head (TFS) is a
-//! slot-resident `'static AtomicPtr<u8>` (or `FALLBACK_TFS` for the fallback
-//! heap), planted by `HeapCore::bind_thread_free` at claim time — before
-//! `bind_slow_tagged` ever sees the heap pointer, so no per-bind allocation is
-//! needed at all (a `Box` there would have recursed into `SeferAlloc::alloc`
-//! → `bind_slow_tagged` → …; see
-//! `registry::heap_core`). The `HeapCore` alloc/dealloc paths are pure safe integer
-//! arithmetic + the `node` seam (intrusive pointer r/w). No `std` collection
-//! is reachable from here.
+//! `bind_slow_tagged` claims a registry slot. M5's rule is narrow and
+//! precise: NO allocator path may recurse into the SELECTED global
+//! allocator (a `Box`/`Vec`/`format!` there would re-enter
+//! `SeferAlloc::alloc` → `bind_slow_tagged` → …; see
+//! `registry::heap_core`). It is NOT a zero-allocation rule: the first
+//! routed construction of a heap materialises its terminal-route
+//! bookkeeping BEFORE any issue — the slot's `RouteSlots` handle array,
+//! each route entry, and its Small sidecar or Large descriptor word — via
+//! explicit `System` allocations (`segment_table/route_slots.rs`,
+//! `segment_route/directory.rs`) and OS-backed reservations, which bypass
+//! the installed allocator by construction and therefore cannot recurse.
+//! There is no per-thread handle left to install at claim time (the
+//! former cross-thread free-stack plant is gone); the claim-time bind
+//! (`bind_slot_counters`, called from `HeapRegistry::claim_lease`/
+//! `claim_lease_with_config`) plants only the slot's diagnostic
+//! hit-counter handles. TERMINAL publication is the allocation-free half
+//! of the protocol: a foreign free resolves the block's route and
+//! performs one RMW/CAS into the already-materialised independent
+//! sidecar or descriptor word — lookup, removal, and pin release never
+//! allocate (`segment_route/mod.rs`). The `HeapCore` alloc/dealloc paths
+//! use no `std` collections on top of these seams; nothing reachable
+//! from them touches the selected global allocator.
 //!
 //! ## No-panic discipline -- how it is upheld
 //!

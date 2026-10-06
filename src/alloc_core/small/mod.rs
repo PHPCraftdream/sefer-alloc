@@ -11,7 +11,8 @@
 //! visibility/cfg parity) so every one stays reachable at its existing
 //! `alloc_core::<name>` module path.
 
-/// The small-object alloc/dealloc/carve hot cluster of [`AllocCore`] — the
+/// The small-object alloc/dealloc/carve hot cluster of
+/// [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) — the
 /// former flat `alloc_core_small.rs`, mechanically split into `mod.rs` +
 /// `find_segment.rs` + `dealloc.rs` + `reserve.rs` + `directory.rs`.
 pub(super) mod alloc_core_small;

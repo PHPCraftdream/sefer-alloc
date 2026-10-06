@@ -34,7 +34,7 @@ pub use harness::SegmentHashHarness;
 /// [`AllocCore::dbg_hash_remove_max_scan_steps`](crate::alloc_core::alloc_core::AllocCore::dbg_hash_remove_max_scan_steps).
 /// Reads 0 unless `alloc-stats` is on — the per-step increment is gated
 /// behind `alloc-stats`, matching
-/// [`OPT_H_ATTEMPTS`](crate::alloc_core::alloc_core::OPT_H_ATTEMPTS)'s convention; the
+/// `OPT_H_ATTEMPTS`'s diagnostic convention; the
 /// static itself is always compiled so the accessor has a stable definition
 /// regardless of the rest of the feature set. Relaxed ordering — a
 /// diagnostic count, not a synchronization primitive.
@@ -173,7 +173,7 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 ///
 /// Under `alloc-decommit`, recycled slots hold `null_mut()` — the OS
 /// reservation for those segments has been released. [`bases`](Self::bases)
-/// filters them out; [`register`] reuses them before appending.
+/// filters them out; [`register`](Self::register) reuses them before appending.
 pub(crate) struct SegmentTable {
     #[cfg(feature = "alloc-global")]
     routes: Option<RouteSlots>,
@@ -473,7 +473,7 @@ impl SegmentTable {
     /// `segment_id` directly out of the segment's own header (via the
     /// field-specific `segment_id_at` accessor — a single `u32` load, disjoint
     /// from the owner-mutated `bump` field, so this is race-free under the
-    /// same §11/§33 discipline as `magic_at`/`kind_at`) instead of scanning the
+    /// same §11/§33 field-atomic discipline as `kind_at`) instead of scanning the
     /// table for a matching base pointer. The header at `base` is still valid
     /// here (this is the pre-decommit/pre-release call site — see the
     /// contract above), so the read is safe.

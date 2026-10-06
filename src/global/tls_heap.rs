@@ -30,7 +30,8 @@
 //! Every resolver in this module is called only on the owning thread (it
 //! reads its own TLS), so the `&mut HeapCore` it yields is exclusive. No
 //! other thread writes
-//! these bins; cross-thread frees go through the segment's `RemoteFreeRing`,
+//! these bins; cross-thread frees publish through the registry's route
+//! directory and its independent sidecars,
 //! not the bins directly. The registry's atomic protocol (M5-clean bootstrap,
 //! claim/recycle CAS) establishes the single writer; this file relies on
 //! that, it does not re-establish it.
@@ -430,17 +431,15 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 ///
 /// task #38: this used to also call `HeapCore::install_thread_free` here
 /// ("install the cross-thread TFS handle on the bind-slow path"). That call
-/// was dead by construction and has been removed: since task H1 (#13), the
-/// cross-thread free-stack head is planted by
-/// [`HeapCore::bind_thread_free`](crate::registry::heap_core::HeapCore::bind_thread_free),
-/// called from `HeapRegistry::claim_lease`/`claim_lease_with_config` (via
-/// `bind_slot_counters`) BEFORE either function returns `heap` to this
-/// caller — so `thread_free` is always `Some` by the time `finish_bind` runs,
-/// and `install_thread_free` (a pure accessor, `self.thread_free.map_or(null,
-/// |h| h as *const _)`) had no side effect to perform and its return value
-/// was discarded. Verified by tracing every `heap`-producing path
-/// (`claim_lease`/`claim_lease_with_config`'s first-claim AND re-claim legs) to the
-/// planting call before any return.
+/// was dead by construction and has been removed. There is no cross-thread
+/// free head left to plant: a cross-thread free resolves the block's route
+/// in the registry's route directory and publishes terminally into the
+/// independent pinned sidecar, never through a heap- or thread-resident
+/// handle. The claim-time bind inside
+/// `HeapRegistry::claim_lease`/`claim_lease_with_config` is
+/// `bind_slot_counters`, and it plants only the slot's diagnostic
+/// hit-counter handles (`HeapSlot::tcache_hits` /
+/// `HeapSlot::large_cache_hits`) — nothing this function depends on.
 ///
 /// ## Order: publish `LOCAL`, then arm `GUARD` (fxx R2-01; was UBFIX-10's guard-first)
 ///

@@ -27,7 +27,7 @@
 //!   owns ONLY the free-list bookkeeping and the remote-free queue drain. The
 //!   eviction itself (value swap + generation bump) is a single atomic CAS in
 //!   [`AtomicSlot::try_evict_at`], which ANY thread may perform. A
-//!   cross-thread [`remote_evict`](Self::remote_evict) is therefore lock-free
+//!   cross-thread [`remote_evict`](EpochRegion::remote_evict) is therefore lock-free
 //!   ONLY in its eviction step: after a winning CAS the remover still
 //!   ENQUEUES the freed index into the `Mutex<Vec<u32>>` remote-free queue
 //!   (below) — a brief blocking section on the REMOTE thread. What
@@ -39,9 +39,9 @@
 //! ## Phase 7b — accounting under remote removal
 //!
 //! A remote remover must decrement the live count WITHOUT the owner mutex, so
-//! [`len`](Self::len) is an [`AtomicUsize`] (per shard — `EpochRegion` is a
+//! [`len`](EpochRegion::len) is an [`AtomicUsize`] (per shard — `EpochRegion` is a
 //! public standalone type, so the count lives here, not at the
-//! `ShardedRegion`). [`insert`](Self::insert) does `fetch_add(1)`; any
+//! `ShardedRegion`). [`insert`](EpochRegion::insert) does `fetch_add(1)`; any
 //! successful [`try_evict_at`](AtomicSlot::try_evict_at) does `fetch_sub(1)`.
 //!
 //! The **free list stays owner-only**: a remote remover, after a successful
@@ -51,14 +51,14 @@
 //! tradeoff is a brief lock on the remote push, but it is NOT the owner's
 //! writer mutex, so the read path and the value-swap are untouched). The owner
 //! drains the queue at the start of its next
-//! [`insert`](Self::insert)/[`remove`](Self::remove) (single consumer).
+//! [`insert`](EpochRegion::insert)/[`remove`](EpochRegion::remove) (single consumer).
 //! Reusable-vs-retired (generation saturation at `u32::MAX`) is honored when
 //! re-adding: a retired slot is never re-added.
 //!
 //! ## Reclamation & region drop
 //!
 //! Removed values are reclaimed by `crossbeam-epoch`: on
-//! [`remove`](EpochRegion::remove)/[`remote_evict`](Self::remote_evict) the old
+//! [`remove`](EpochRegion::remove)/[`remote_evict`](EpochRegion::remote_evict) the old
 //! pointer is scheduled for destruction via `guard.defer_destroy` and freed
 //! once no reader can still be holding it (at an epoch boundary; if the process
 //! exits first they may not run their destructors — the standard epoch caveat).

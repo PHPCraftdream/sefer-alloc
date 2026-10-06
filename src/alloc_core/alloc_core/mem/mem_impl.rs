@@ -242,7 +242,8 @@ impl AllocCore {
     }
 
     /// The `kind_at`-onward tail of [`dealloc`](Self::dealloc), shared with
-    /// [`dealloc_with_base`](Self::dealloc_with_base). `#[inline(always)]`
+    /// `dealloc_with_base` (that sibling exists only when the `fastbin`
+    /// feature is disabled, so it is not linked here). `#[inline(always)]`
     /// keeps `dealloc`'s compiled code identical to before the split.
     ///
     /// # Safety
@@ -405,10 +406,13 @@ impl AllocCore {
                         // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-
                         // synthesis.md): this used to be `hdr_zero = stale;
                         // hdr_zero.magic = 0; Node::write_struct(base, hdr_zero)`
-                        // — a non-atomic FULL-STRUCT write that races with
-                        // `SegmentHeader::magic_at`/`kind_at`/`large_size_at`/
-                        // `span_usable_at` (remote defensive field reads that can
-                        // observe a live header concurrently with this owner
+                        // — a non-atomic FULL-STRUCT write that raced with
+                        // the remote defensive field reads that existed when
+                        // this fix landed (`magic_at`/`kind_at`/
+                        // `large_size_at`/`span_usable_at`; `magic_at` has
+                        // since been removed and the foreign path now resolves
+                        // addresses through the route directory — those reads
+                        // could observe a live header concurrently with this owner
                         // write under a stale/duplicate remote free — misuse of
                         // the `GlobalAlloc` contract the defensive reads exist to
                         // survive without UB). `stale` is a fresh `read_at(base)`
@@ -421,7 +425,7 @@ impl AllocCore {
                         // already uses for cross-thread owner-state reads): write only the
                         // `magic` field, through an `&AtomicU32` view at its
                         // `offset_of!` offset, so a concurrent remote
-                        // `magic_at`/`kind_at`/`large_size_at`/`span_usable_at`
+                        // `kind_at`/`large_size_at`/`span_usable_at`
                         // read never races a torn/non-atomic store — those other
                         // three fields are untouched here, so no write to them is
                         // needed at all.
@@ -573,7 +577,7 @@ impl AllocCore {
     /// the block physically fits the new size without any data movement, so we
     /// return the original pointer unchanged: no alloc, no copy, no dealloc.
     /// The block's live-count and alloc-bitmap stay intact. The `==` (not
-    /// `<=`) rule is load-bearing — see `realloc_inplace_fast_path`'s comment
+    /// `<=`) rule is load-bearing — see `realloc_inplace_fast_path_known_base`'s comment
     /// and `tests/regression_realloc_cross_class_shrink.rs`.
     ///
     /// **OPT-G — in-place Large→Large realloc:** when the block lives in a
@@ -631,7 +635,7 @@ impl AllocCore {
         }
         // OPT-F / OPT-G: try the in-place fast paths first (Large grow-in-span
         // and Small same-class). The detection logic lives in ONE place —
-        // `realloc_inplace_fast_path` — shared with `try_realloc_inplace`
+        // `realloc_inplace_fast_path_known_base` — shared with `try_realloc_inplace_known_base`
         // (which `HeapCore::realloc` calls so its alloc leg can route through
         // the magazine-aware `HeapCore::alloc`). Keeping a single source of
         // truth here closes the unmarked duplication/divergence hazard flagged

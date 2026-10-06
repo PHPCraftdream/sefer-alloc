@@ -169,7 +169,7 @@ medium_promotion_reachable! {
 /// how often that pre-existing decision fires. Read via
 /// [`HeapCore::dbg_hardened_large_noop_count`]. Reads 0 unless `alloc-stats`
 /// is on — the per-event increment is gated behind `alloc-stats`, matching
-/// [`OPT_H_ATTEMPTS`](crate::alloc_core::alloc_core::OPT_H_ATTEMPTS)'s
+/// `OPT_H_ATTEMPTS`'s diagnostic
 /// convention; the static itself is always compiled (gated on `alloc-core`,
 /// which both `hardened` and plain `medium-classes` promotion depend on
 /// transitively — see `Cargo.toml`) so the accessor has a stable definition

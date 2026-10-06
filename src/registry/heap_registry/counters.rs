@@ -27,7 +27,7 @@ use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 pub(super) static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 
 /// R1-10 (src review round 1): the fallback heap's own magazine (tcache) hit
-/// counter — the fallback-heap analogue of `HeapSlot::tcache_hits`. The
+/// counter — the fallback-heap analogue of `HeapSlotRemote::tcache_hits`. The
 /// fallback (`global::fallback`) has no registry slot to host a
 /// `HeapSlot`-resident counter, so it needs its own process-static one;
 /// without it, a fallback-served magazine hit was silently dropped from
@@ -83,7 +83,7 @@ pub fn config_conflicts_total() -> u64 {
 
 /// DIAGNOSTIC (task #133 → W3): process-wide magazine (tcache) hit total —
 /// aggregated across every slot ever minted, summing each slot's own
-/// [`HeapSlot::tcache_hits`] (moved there from `HeapCore` in W3 to close a
+/// [`HeapSlotRemote::tcache_hits`] (moved there from `HeapCore` in W3 to close a
 /// Stacked-Borrows aliasing gap — the aggregator no longer materialises any
 /// `&HeapCore`). Replaces the pre-#133 single global `static`
 /// counter (`DBG_TCACHE_HITS`), which was bumped by every thread's alloc
@@ -95,7 +95,7 @@ pub fn config_conflicts_total() -> u64 {
 ///
 /// This walks slot indices `0..count` (the high-water mark of minted
 /// slots — [`heaps_claimed_high_water`]) and, for each, performs a Relaxed
-/// load of that slot's `HeapCore::tcache_hits` — but ONLY after first
+/// load of that slot's `HeapSlotRemote::tcache_hits` — but ONLY after first
 /// checking [`HeapSlot::initialised`] with an `Acquire` load.
 ///
 /// **This gate is load-bearing, not defensive.** `count` (bumped by
@@ -151,7 +151,7 @@ pub fn config_conflicts_total() -> u64 {
 /// compile-time zeros — it is compiled out (returns 0 with no loop) to keep
 /// `stats()` O(1) on a metrics-scrape hot path as its doc promises.
 ///
-/// [`HeapSlot::tcache_hits`]: crate::registry::heap_slot::HeapSlot::tcache_hits
+/// [`HeapSlotRemote::tcache_hits`]: crate::registry::heap_slot::HeapSlotRemote::tcache_hits
 /// [`HeapSlot::initialised`]: crate::registry::heap_slot::HeapSlot::initialised
 /// [`HeapSlot::heap`]: crate::registry::heap_slot::HeapSlot::heap
 /// [`HeapCore`]: crate::registry::heap_core::HeapCore
@@ -337,6 +337,9 @@ pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
 /// chunk that isn't even materialised yet certainly holds no `initialised`
 /// slot either, so skipping it is a benign, self-correcting omission (the
 /// very next `stats()` call sees it once the real claim finishes).
+///
+/// [`Registry::slot_if_materialised`]: crate::registry::bootstrap::Registry::slot_if_materialised
+/// [`Registry::slot`]: crate::registry::bootstrap::Registry::slot
 #[cfg(feature = "alloc-stats")]
 fn walk_initialised_slots(mut visit: impl FnMut(&'static HeapSlot)) {
     let reg = ensure();

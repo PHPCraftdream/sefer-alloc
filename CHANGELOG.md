@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
-### Root allocator `src/` review round 13 (2026-10-06; review only)
+### Root allocator `src/` review round 13 (2026-10-06; fixes accepted)
 
 - [docs] Source review on `e90a3575`: four P3 and one P4, including an
   actual-source `ShardGuard<Cell<u32>>: Sync` witness and an empty-directory
@@ -17,7 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   production library clippy and warning-strict production rustdoc passed.
   No Miri/Loom/Kani or performance A/B performed; no release/performance GO.
   Report: `docs/reviews/2026-10-06-src-review-sol-round-13.md`.
-- Runtime code, defaults and production feature composition unchanged.
+- [correctness fix] R13-01 counts all scanned bitmap words, including zeros,
+  under the existing alloc-stats gate; on/off and early-hit controls added.
+- [correctness fix] R13-02 uses weak TLS claims over out-of-line token backing,
+  preserving live-region claims and thread-exit release; dead claims prune
+  at cold registration. Pre-exit lifetime, FIFO and reclamation oracles added.
+- [correctness fix] R13-05 structurally requires Sync for shared guard payloads
+  without overrestricting the lock's Send-only payloads; actual-source
+  compile-fail and positive runtime cases added.
+- [docs] R13-03 updates terminal/owner/cache lifetime explanations and repairs
+  public/private rustdoc links without warning suppression. R13-04 removes
+  two dead private Node accessors. The incidental substring link test was
+  removed rather than repinned; strict rustdoc validates real resolution.
+- [verification] Full native suite: 804 passed, 0 failed, 7 ignored before
+  incidental test removal; expected-red mutants and installed-allocator smoke
+  passed. Default/experimental/production library clippy and all-features
+  all-targets clippy passed; strict production/public and all-features/private
+  rustdoc passed. Miri/Loom/Kani and performance A/B were not run.
+- Production feature composition, defaults and dependency versions unchanged.
   Manifest: `docs/perf/round-manifests/SRC_REVIEW_R13_MANIFEST.md`.
 
 ### Root allocator `src/` review round 12 (2026-10-06; fixes accepted)

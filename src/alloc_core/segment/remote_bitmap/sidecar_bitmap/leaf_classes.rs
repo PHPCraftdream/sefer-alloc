@@ -1,4 +1,6 @@
-//! Owner-issued class codes in 4 KiB leaves; producers never access them.
+//! Owner-written class codes in 4 KiB leaves. A producer's terminal
+//! publication READS them (Acquire, before the pending-bit RMW) to drop a
+//! never-issued granule; producers never write them.
 #![allow(unsafe_code)]
 
 use core::ptr;

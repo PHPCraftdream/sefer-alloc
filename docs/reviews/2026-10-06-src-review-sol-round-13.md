@@ -492,3 +492,89 @@ fn main() {
 | `src/registry/segment_route/shard_lock.rs` | 75 |
 | `src/registry/segment_route/small_sidecar.rs` | 158 |
 | `src/registry/segment_route/terminal_publication_gate.rs` | 111 |
+
+## Принятые исправления после ревью
+
+**Status: R13-01…05 CLOSED.** Исходный обзор выше остаётся историческим
+снимком `e90a3575`; приведённые там старые counter/auto-trait witnesses
+описывают именно ту базу, не исправленное дерево. Реализация выполнена по
+отдельному запросу владельца через `/wrush`, от базы `021399a3`.
+
+### Реализация и контроль интегратора
+
+- R13-01: increment перенесён перед пропуском нулевого bitmap-слова, под
+  прежним `alloc-stats`. API не переименовывался. Новый regression проверяет
+  отсутствие директории, пустой materialized bitmap, ранний hit и feature-off.
+- R13-02: region владеет Arc<TokenBlock> с Box<[AtomicBool]>; TLS хранит Weak.
+  Это не Weak на inline Arc-срез: последний мог бы удерживать всю аллокацию.
+  Полный token backing уничтожается при final strong drop; временный upgrade
+  во время exit-release может удерживать его до конца этого release.
+  Dead weak-claims прунятся на cold bind/claim, живые claims не выбрасываются.
+  Pure internals observers проверяют backing lifetime и bounded claim count;
+  FIFO/remote routing и освобождение двух живых claims на thread-exit сохранены.
+- R13-03: terminal publication, allocation credit, independent descriptor pin,
+  owner/cache authority и физические lifecycle-слова описаны раздельно.
+  Исправлены также обнаруженные настоящим private-rustdoc гейтом внутренние
+  ссылки, cfg-недоступные ссылки и ссылки на удалённые имена. Никаких lint allow
+  или расширений visibility ради документации не добавлено. Неразрешимый
+  private-only SegmentBitmap в group-doc назван как private helper, без
+  фиктивной публичной ссылки.
+- R13-04: удалены только Node::read_ptr/write_ptr. Mutable pool-пара и
+  read_struct_with_atomic_word сохранены; narrow-feature builds прошли.
+- R13-05: PhantomData<&mut T> в ShardGuard сохраняет Send-only payload у lock-а
+  и moved guard-а, но shared guard требует Sync. Actual-source fixture
+  проверяется локальным rustc (JSON stderr, только coded error diagnostics),
+  не копией implementation и не mock-echo.
+
+Шесть Rush-сессий работали в выделенных in-repo worktrees: четыре основные
+среза и два private-link среза. Агентские отчёты не принимались за receipts:
+интегратор прочитал actual diffs, вернул compile/синхронизационные и
+документальные ошибки на доработку, затем сам выполнил проверку.
+Тест-проверка буквальных link-строк удалена целиком как incidental source-text
+oracle, а не перепинена под новые строки. Behavioral tests не ослаблялись.
+
+### Исполненные проверки после реализации
+
+- Полный native root `cargo test --locked -j 2 --features
+  "production internals alloc-stats bench-internals batch-api" --tests
+  -- --test-threads=1`: по Rust-harness итогам **804 passed, 0 failed,
+  7 ignored** до удаления одного incidental link-text test.
+- После окончательного doc/link cutover: тот же feature set, targets
+  `r13_directory_words_examined`, `r13_shard_guard_auto_traits`,
+  `r13_sharded_dead_region_retention`, `no_stale_doc_references`,
+  `r6_drop_large_credit`: **42 passed, 0 failed**.
+- Counter feature-off: `production internals`, 1 passed.
+  Token release без observers: plain `experimental`, 1 passed.
+  Existing sharded/FIFO/remote suites в `experimental internals` прошли.
+- Expected-red counterfactuals, затем восстановленные passing implementations:
+  старое положение increment даёт `0 != 64`; удаление guard-marker позволяет
+  fixture скомпилироваться и роняет negative oracle; no-prune и дополнительная
+  strong TLS ownership дают claim-count 3 вместо ≤2; отсутствие exit-release
+  даёт shard 2 вместо 0. Никакая data race не исполнялась; failure paths не
+  оставили зависших test workers.
+- Clippy `-D warnings`: default / experimental / production library rows и
+  `--all-features --all-targets` — PASS.
+- Narrow library builds `alloc-core alloc-decommit` и
+  `alloc-global alloc-xthread` — PASS.
+- Strict rustdoc: exact published `production` и
+  `--all-features --document-private-items`, `--lib -- -D warnings` — PASS.
+  Private-gate failures сначала были реальными, затем исправлены; они не
+  подавлены и не записаны в долг на следующий раунд.
+- `node scripts/fmt-check.mjs` — PASS, Windows argv-budgeted проверка всех
+  workspace targets.
+- End-to-end throwaway executable с установленным SeferAlloc, активированной
+  maintenance, typed regions и реальным пустым directory scan — PASS:
+
+```text
+R13 smoke PASS: installed allocator + maintenance; transient backings=0 before exit; claims=1; empty scan words=64
+```
+
+Этот executable удалён после исполнения. Постоянные regression-файлы и
+actual-source compile-fail fixture сохранены. Значения — correctness oracles,
+не latency/Ir/RSS gate; измеренный speedup не заявляется.
+
+**Без изменений:** production feature composition, defaults, Cargo.lock,
+версии проекта/зависимостей. P1-box (164), interior-free hardening residual
+(166), verification-only mirror (167), perf 81/82 и общий prose-долг 154 не
+закрываются этими проверками. Miri/Loom/Kani, release-profile suite и
+performance A/B не запускались; push не выполнялся.

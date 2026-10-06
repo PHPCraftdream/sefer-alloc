@@ -144,9 +144,10 @@ pub struct HeapCore {
     pub(crate) tcache: crate::registry::heap_core::state::tcache::Tcache,
 
     /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
-    /// heap's magazine HIT counter, which now lives in the owning
-    /// [`HeapSlot::tcache_hits`](crate::registry::heap_slot::HeapSlot::tcache_hits) — a
-    /// `Sync`, process-`'static` slot — rather than inline in this `HeapCore`.
+    /// heap's magazine HIT counter, which now lives in the owning slot's
+    /// remote counters
+    /// ([`HeapSlotRemote::tcache_hits`](crate::registry::heap_slot::HeapSlotRemote::tcache_hits),
+    /// a `Sync`, process-`'static` slot region) rather than inline in this `HeapCore`.
     /// See the module-level comment above [`TcacheHitCounter`] for the full
     /// aliasing-gap rationale (task W3: an aggregator materialising a shared
     /// `&HeapCore` over a struct another thread holds a protected `&mut` into

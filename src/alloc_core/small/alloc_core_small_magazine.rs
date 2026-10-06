@@ -1,4 +1,4 @@
-//! Tcache / magazine batch operations for [`AllocCore`] (mechanical split of
+//! Tcache / magazine batch operations for [`AllocCore`](crate::AllocCore) (mechanical split of
 //! `alloc_core_small.rs`, task R4-10).
 //!
 //! This file holds the `impl AllocCore { .. }` block for the magazine refill
@@ -205,8 +205,8 @@ impl AllocCore {
             //    straight to the batched bump-carve. The head cannot become
             //    non-null mid-refill: no dealloc / reclaim / flush runs inside
             //    `refill_class_bump` after the latch, and a remote free that
-            //    arrives now lands in the (already-scanned) ring, deferred to the
-            //    NEXT refill's drain. So re-draining the current segment's
+            //    arrives now publishes into the route sidecar, deferred to a
+            //    later drain pass. So re-draining the current segment's
             //    freelist would only ever pop 0 — safe to skip.
             if !free_exhausted {
                 let n = match self.try_drain_freelist_batch(
@@ -418,7 +418,7 @@ impl AllocCore {
     /// # Safety
     ///
     /// The caller must honour the batch-free contract for every entry in
-    /// `blocks`. This is the batched analogue of [`dealloc`](AllocCore::dealloc)'s
+    /// `blocks`. This is the batched analogue of [`dealloc`](crate::alloc_core::alloc_core::AllocCore::dealloc)'s
     /// `# Safety` contract — the same reasoning that made `dealloc`/`realloc`
     /// `unsafe fn` in R6-MS-1/2 applies here: the method derives each block's
     /// segment `base` arithmetically (`os::segment_base_of_ptr`) and reads/writes

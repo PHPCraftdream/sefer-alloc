@@ -1,8 +1,8 @@
 //! The large/huge allocation path — `alloc_large` and its slow/reclaim path
 //! (`alloc_core_large`), the per-shard large-cache decay/eviction cluster
 //! (`alloc_core_large_cache`), the experimental `large-cache-extended`
-//! sidecar (`large_cache_extended`), and the cross-thread deferred-free
-//! Treiber stack (`deferred_large`).
+//! sidecar (`large_cache_extended`), and the per-reservation Large
+//! phase-transition word wrapper (`reservation_state`).
 //!
 //! All children are re-exported by `alloc_core` (at their original
 //! visibility/cfg parity) so every one stays reachable at its existing

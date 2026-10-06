@@ -2,6 +2,9 @@
 //! the primordial segment's payload (not a `Vec` / `Box` on the global
 //! allocator).
 //!
+//! [`SegmentTable`]: crate::alloc_core::segment_table::SegmentTable
+//! [`MAX_SEGMENTS`]: crate::alloc_core::segment_table::MAX_SEGMENTS
+//!
 //! This is the keystone of the Phase 8 Membrane Inversion (§1 of
 //! `ALLOC_PLAN.md`): the safe slot-table discipline stops *consuming* memory
 //! (via `Vec`/`HashSet`) and starts *governing* it. The registry lives inside
@@ -20,8 +23,8 @@
 //! - `segment_count` is the **high-water mark** of slots ever written.  It
 //!   never decreases.  A NULL entry in `slots[0..count)` is a **recyclable
 //!   slot** — the OS reservation for that segment has already been released
-//!   (by [`recycle`](SegmentTable::recycle)); the slot is available for the
-//!   next [`register`](SegmentTable::register) call.
+//!   (by [`recycle`](crate::alloc_core::segment_table::SegmentTable::recycle)); the slot is available for the
+//!   next [`register`](crate::alloc_core::segment_table::SegmentTable::register) call.
 //! - `drop` walks only non-NULL slots and frees each OS reservation. NULL
 //!   slots are already freed and skipped.
 //! - O(1) `segment_of(ptr) = ptr & ~(SEGMENT-1)` lives in [`crate::alloc_core::os`] and
@@ -40,8 +43,8 @@
 //! - A **live slot** holds the segment base pointer (non-NULL, SEGMENT-aligned).
 //! - A **recyclable slot** holds `null_mut()`. The corresponding OS reservation
 //!   has already been released; the virtual address is no longer valid.
-//! - [`register`] pops a recyclable slot from the free-list before appending.
-//! - [`recycle`] finds the slot for a given base, releases the OS reservation,
+//! - [`register`](crate::alloc_core::segment_table::SegmentTable::register) pops a recyclable slot from the free-list before appending.
+//! - [`recycle`](crate::alloc_core::segment_table::SegmentTable::recycle) finds the slot for a given base, releases the OS reservation,
 //!   then writes NULL. These two operations happen in `decommit_empty_segment`
 //!   as a unit, so there is never a window where the OS reservation is released
 //!   but the slot is still non-NULL (which would cause `drop` to double-free).

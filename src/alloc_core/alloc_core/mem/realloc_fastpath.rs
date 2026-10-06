@@ -40,7 +40,7 @@ impl AllocCore {
     /// defence-in-depth, not a soundness requirement of the signature itself:
     /// a caller bug that passes a bogus `old_layout.size()` must not turn
     /// into an out-of-bounds read in the move leg's
-    /// [`Node::copy_nonoverlapping`]. `contains_base(base)` proves the segment
+    /// [`Node::copy_nonoverlapping`](crate::alloc_core::node::Node::copy_nonoverlapping). `contains_base(base)` proves the segment
     /// is OURS and MAPPED, but says nothing about how large the block at
     /// `payload` actually is; this method supplies that missing upper bound.
     ///
@@ -74,10 +74,13 @@ impl AllocCore {
     /// only ever called through `&mut self` by the thread that currently has
     /// exclusive access to that `AllocCore`/`HeapCore` — its registry slot
     /// claim, or the fallback `LockGuard` — so a `contains_base(base) == true`
-    /// proof IS an ownership proof). `false` for the cross-heap FOREIGN leg
-    /// (`HeapCore::realloc`'s `alloc-xthread` branch, gated on
-    /// `magic_at(base) == SEGMENT_MAGIC` instead), where `base` belongs to
-    /// ANOTHER heap's thread.
+    /// proof IS an ownership proof). `false` is a coarse NON-OWNER branch
+    /// that NO current caller exercises:
+    /// every call site is an owner path passing `own_segment == true`. The
+    /// cross-heap foreign realloc leg does not call this header-reading
+    /// helper at all — it validates via the route directory's descriptor —
+    /// and a route lookup must never be cited as the mapping/ownership
+    /// proof this branch would need.
     ///
     /// For a Small/Primordial segment this selects the bound:
     ///   - `own_segment == true`: the OWNER-ONLY `committed_payload_end`
@@ -107,18 +110,18 @@ impl AllocCore {
     ///     cross-cutting change out of scope for this defence-in-depth fix.
     ///     Reading the owner-only frontier from a non-owner thread would
     ///     therefore be a genuine data race (UB), not merely a stale read.
-    ///     `SEGMENT` stays a SOUND (never-too-small) bound regardless of
-    ///     commit state — the foreign leg is unaffected by R2-02's bug
-    ///     (whose failure mode was reading PAST the frontier, not too
-    ///     little) and continues to rely, as before, on the
-    ///     `GlobalAlloc::realloc` / `old_layout` contract for
-    ///     commit-precision on that leg specifically.
+    ///
+    ///     This branch is retained for shape only: it has no caller today
+    ///     and would require its OWN independent mapping/ownership proof —
+    ///     a route-directory pin is a descriptor capability, not such
+    ///     proof.
     ///
     /// # Preconditions
     ///
-    /// `base` MUST already be proven to be a live, mapped segment — via
-    /// `contains_base(base)` (own-segment legs) or `magic_at(base) ==
-    /// SEGMENT_MAGIC` (the cross-heap foreign leg under `alloc-xthread`).
+    /// `base` MUST already be proven to be a live, mapped segment via
+    /// `contains_base(base)` — the proof every current caller holds (all
+    /// call sites are owner paths passing `own_segment == true`); the
+    /// `false` branch has no caller and no separate proof path today.
     /// This method reads `kind`/`span_usable`/`committed_payload_end` header
     /// fields at `base`, which is only sound for a mapped segment.
     #[inline]
@@ -258,7 +261,7 @@ impl AllocCore {
     /// through.
     /// In-place realloc fast paths for a pointer whose segment base has already
     /// been proven live in this `AllocCore`'s table. This is the same logic as
-    /// [`realloc_inplace_fast_path`](Self::realloc_inplace_fast_path), split so
+    /// [`realloc_inplace_fast_path_known_base`](Self::realloc_inplace_fast_path_known_base), split so
     /// `HeapCore::realloc` can reuse its own `contains_base(base)` proof instead
     /// of probing the segment table again.
     #[inline]
@@ -482,7 +485,9 @@ impl AllocCore {
     /// page-aligned at all. Rounding UP to the next
     /// [`os::MAX_REALISTIC_PAGE_SIZE`] (64 KiB) boundary (capped at
     /// `reserved_capacity`, which is itself always a runtime-page multiple —
-    /// see [`os::Segment::reserve_capacity_exact`]'s contract) commits a
+    /// see `os::Segment::reserve_capacity_exact`'s contract; that method
+    /// exists only when the `numa-aware` feature is disabled, so it is not
+    /// linked here) commits a
     /// whole number of pages on EVERY host page size while still covering
     /// `required_end`; the extra bytes up to the boundary are committed but
     /// not yet claimed by any allocation — exactly the same "commit whole

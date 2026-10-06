@@ -15,7 +15,7 @@ impl HeapCore {
 
     /// Stamp this heap's canonical reservation root with its owner id.
     /// Foreign frees route exclusively through terminal descriptors, never
-    /// through an owner-header pointer or an intrusive deferred stack.
+    /// through an owner-header pointer.
     ///
     /// Called on the alloc path after a successful allocation. The segment is
     /// exclusively ours (single-writer invariant from the claim CAS), so the
@@ -76,8 +76,9 @@ impl HeapCore {
         let cur = owner_atomic.load(Ordering::Acquire);
         if unpack_owner_id(cur) != self.id {
             let me = pack_owner(OWNER_STATE_LIVE, self.id, 0);
-            // Release: a later cross-thread freer's Acquire read of owner_state
-            // (to resolve the owning heap) must observe our stamp.
+            // Release: publishes the stamp so any concurrent cross-thread
+            // reader of `owner_state` (diagnostic probes; the owner fast
+            // path's re-read) observes a complete value.
             owner_atomic.store(me, Ordering::Release);
         }
 

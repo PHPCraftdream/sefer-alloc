@@ -27,8 +27,8 @@ pub(crate) fn align_up(n: usize, a: usize) -> usize {
 /// NOTE (post-Phase 13.3): this table is **NOT load-bearing for class routing**;
 /// do NOT derive block classes from it. No production `dealloc` path derives a
 /// freed block's class from `PageMap` — the class is carried authoritatively by
-/// the caller's `Layout` (own-thread) or stamped into the `RemoteFreeRing` entry
-/// (cross-thread). Deriving a class here would reintroduce the mixed-class /
+/// the caller's `Layout` (own-thread) or recovered by the owner from the route
+/// sidecar's owner-issued class map (cross-thread). Deriving a class here would reintroduce the mixed-class /
 /// stale-cursor drain-reclaim bug fixed in §13 of `RACE_DRAIN_RECLAIM.md`.
 ///
 /// R12-11 (task #262): an inventory of every call site confirmed the note
@@ -37,8 +37,8 @@ pub(crate) fn align_up(n: usize, a: usize) -> usize {
 /// regression tests use as an ORACLE to prove the real dealloc/reclaim paths
 /// do NOT consult it (see `tests/phase13_3_dealloc_layout_class.rs`,
 /// `tests/phase13_drain_reclaim_layout_class.rs`). Maintaining the table is
-/// therefore diagnostic-only work: [`new`](Self::new), [`init_in_place`],
-/// [`set_class`], [`set_free`], and [`class_of`] are ALL gated behind the
+/// therefore diagnostic-only work: [`new`](Self::new), [`Self::init_in_place`],
+/// [`Self::set_class`], [`Self::set_free`], and [`Self::class_of`] are ALL gated behind the
 /// `page-map-diag` feature (see its `Cargo.toml` doc for the full rationale)
 /// and elided from the default/`production` build. Only `FOOTPRINT` stays
 /// UNCONDITIONAL: it only describes the fixed offset this table occupies in
@@ -59,7 +59,7 @@ impl PageMap {
     pub(crate) const FOOTPRINT: usize = PAGES_PER_SEGMENT * size_of::<u8>();
 
     /// Construct the view over an already-laid-down page map at `entries`.
-    /// The bootstrap calls this AFTER writing the entries via [`init_in_place`].
+    /// The bootstrap calls this AFTER writing the entries via [`Self::init_in_place`].
     #[cfg(feature = "page-map-diag")]
     pub(crate) fn new(entries: *mut u8) -> Self {
         Self { entries }
@@ -210,7 +210,7 @@ impl BinTable {
 }
 
 /// The metadata footprint of a small segment: header + page map + bin table,
-/// each laid out at fixed offsets (see [`Layout::small`]). This does NOT
+/// each laid out at fixed offsets (see [`Layout::small_meta_end`]). This does NOT
 /// include the registry array (which lives only in the primordial segment).
 #[allow(dead_code)] // Compile-time sanity only; consumed by the `const _` asserts below.
 pub(crate) const SMALL_META_FOOTPRINT: usize = Layout::small_meta_end();
@@ -314,9 +314,10 @@ impl SegmentMeta {
     // -------------------------------------------------------------------
 
     /// A `&AtomicU64` view over this segment's `owner_state` field.
-    /// Cross-thread free routing uses this for a race-free read of the
-    /// owning heap's id (`owner_state`'s `owner_heap_id` field); the
-    /// owner-stamp path uses it for the atomic store. The view aliases the
+    /// The owner-stamp path (`stamp_segment_owner`) writes it with a
+    /// Release store; the owner's stamp fast path and diagnostic probes
+    /// read it. Foreign free routing resolves the owning heap from the
+    /// route descriptor, not from this field. The view aliases the
     /// header byte range; access is atomic so there is no data race with a
     /// concurrent header read.
     ///

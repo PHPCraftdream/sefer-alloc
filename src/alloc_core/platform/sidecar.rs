@@ -109,6 +109,12 @@
 //! `Some` iff the pointer is non-null) is maintained at the two
 //! materialisation sites and consumed by `AllocCore`'s own `Drop`; see the
 //! field docs in `alloc_core::alloc_core`.
+//!
+//! [`reserve`]: crate::alloc_core::platform::sidecar::reserve
+//! [`reserve_zeroed_with`]: crate::alloc_core::platform::sidecar::reserve_zeroed_with
+//! [`AccountedSidecar`]: crate::alloc_core::platform::sidecar::AccountedSidecar
+//! [`deref`]: crate::alloc_core::platform::sidecar::deref
+//! [`deref_mut`]: crate::alloc_core::platform::sidecar::deref_mut
 
 // Named `unsafe` seam (tier 1): the four documented reasons to hold
 // `unsafe` here are (1) `ptr::write`-constructing a fully-typed `T` into the

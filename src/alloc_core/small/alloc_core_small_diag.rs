@@ -1,4 +1,4 @@
-//! Diagnostics / test-only hooks for [`AllocCore`] (mechanical split of
+//! Diagnostics / test-only hooks for [`AllocCore`](crate::AllocCore) (mechanical split of
 //! `alloc_core_small.rs`, task R4-10).
 //!
 //! This file holds the `impl AllocCore { .. }` block for the inspection and

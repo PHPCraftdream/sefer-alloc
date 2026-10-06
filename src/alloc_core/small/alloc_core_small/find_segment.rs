@@ -66,7 +66,7 @@ impl AllocCore {
 
     /// Scan all owned SMALL/PRIMORDIAL segments and return the base of the
     /// first one whose `BinTable[class_idx]` is non-empty. Used by
-    /// [`alloc_small`] on a current-segment miss to reuse freed blocks in
+    /// [`alloc_small`](Self::alloc_small) on a current-segment miss to reuse freed blocks in
     /// non-current segments (Phase 12.1: free state lives in per-segment
     /// `BinTable`s).
     ///
@@ -367,13 +367,14 @@ impl AllocCore {
 
                 for (w, &word_val) in words.iter().enumerate() {
                     let mut bits = word_val;
-                    if bits == 0 {
-                        continue;
-                    }
-                    // R7-A0: count each word examined by the directory scan.
+                    // R7-A0 / R13-01: count each word examined — including
+                    // all-zero words — before the zero-word skip below.
                     #[cfg(feature = "alloc-stats")]
                     crate::alloc_core::directory_stats::DIRECTORY_WORDS_EXAMINED
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    if bits == 0 {
+                        continue;
+                    }
 
                     while bits != 0 {
                         let j = bits.trailing_zeros() as usize;

@@ -47,15 +47,14 @@ impl AllocCore {
     /// The original plan (§2.5) reached for `crossbeam-epoch` because the OLD
     /// intrusive cross-thread-free model wrote the free-list `next` pointer INSIDE
     /// the block — a late cross-thread freer could write into a page we had just
-    /// decommitted (UAF / write-to-unmapped). Variant-2 (Phase 12.6) moved the
-    /// common remote path to a metadata-resident `RemoteFreeRing`; the per-heap
-    /// sidecar ring also leaves block bytes untouched. R2-09 added an intrusive
-    /// spill after both rings saturate, but only after a legal free transfers
-    /// exclusive use of a still-live block. No epoch is needed for legal frees:
+    /// decommitted (UAF / write-to-unmapped). Today the cross-thread freer never
+    /// writes block bytes at all: publication targets the route directory's
+    /// independently pinned sidecar (the intermediate ring/spill variants from
+    /// Phases 12.6–R2-09 are gone). No epoch is needed for legal frees:
     ///
     ///   1. We decommit the payload ONLY at `live_count == 0`. Every legal
-    ///      pending ring, sidecar, or spill note still counts as live until
-    ///      owner reclaim; an unpublished legal spill has not decremented it.
+    ///      publication still pending in a sidecar keeps the segment live until
+    ///      owner reclaim.
     ///   2. A late valid remote free at `live_count == 0` is impossible: it
     ///      would be a duplicate free, outside the caller contract. The bitmap
     ///      rejects some such misuse, but cannot make all duplicates safe.
@@ -68,7 +67,7 @@ impl AllocCore {
     ///
     /// ## Slot recycle (task #60)
     ///
-    /// After decommit + reset, [`decommit_empty_segment`] also releases the OS
+    /// After decommit + reset, `decommit_empty_segment` also releases the OS
     /// reservation for the segment and NULLs the table slot (via `table`). This
     /// lifts the 1024-segment hard cap: the freed slot can be reused immediately
     /// by the next `register` call, so long-running workloads never exhaust the
@@ -321,8 +320,9 @@ impl AllocCore {
     /// the full trace).
     ///
     /// Uses the exact same eligibility test as
-    /// [`finalize_orphaned_empty_segments`](Self::finalize_orphaned_empty_segments)
-    /// / [`dec_live_and_maybe_decommit`](Self::dec_live_and_maybe_decommit):
+    /// the removed `finalize_orphaned_empty_segments` heuristic (its checks are
+    /// now folded into [`release_or_pool_empty_segment`](Self::release_or_pool_empty_segment))
+    /// and [`dec_live_and_maybe_decommit`](Self::dec_live_and_maybe_decommit):
     /// `kind == Small` (excludes `Primordial` — `old_cur` is the primordial
     /// base on the very first call, before any ordinary small segment has
     /// ever been the cursor, and primordial must never be pooled/released),
@@ -502,7 +502,7 @@ impl AllocCore {
     /// the pool to zero when the workload goes quiet, so pooled retention is
     /// TEMPORARY, not merely bounded.
     ///
-    /// Called from [`reserve_small_segment`]'s cold path AFTER a pool miss — the
+    /// Called from [`reserve_small_segment`](crate::alloc_core::alloc_core::AllocCore::reserve_small_segment)'s cold path AFTER a pool miss — the
     /// natural "small churn is happening but the pool did not help this time"
     /// clock edge — and NOT on any hot alloc/free path. The trigger is chosen
     /// there rather than at the large-cache sites because a SMALL-segment

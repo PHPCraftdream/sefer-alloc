@@ -6,8 +6,16 @@ use crate::alloc_core::segment_header::{
     large_generation, large_phase, next_large_generation, pack_large_state, LargePhase,
 };
 
-/// The word remains mapped through every call. Owner transitions require the
-/// heap lease; producer publication requires the unique valid free of LIVE(g).
+/// Wrapper over ONE Large phase word, regardless of which storage backs
+/// it. The bound atomic is EITHER a physical reservation's terminal word
+/// (owner-only lifecycle transitions under the EXCLUSIVE owner's authority
+/// — a registry heap lease or a standalone core's `&mut`, including its
+/// Large cache's ownership of cached reservations; no access
+/// after OS release) OR an independent route-descriptor word
+/// (`LargeState`, System-backed), where the producer's terminal
+/// publication also runs. Domain obligations attach to the bound word,
+/// not to this type: the wrapper itself is neither a reservation credit
+/// nor a descriptor pin.
 pub struct LargeReservationState<'a> {
     word: &'a AtomicU64,
 }
@@ -18,8 +26,16 @@ impl<'a> LargeReservationState<'a> {
         Self { word }
     }
 
-    /// The successful CAS is the producer's last reservation access. The
-    /// caller must not touch the header, payload or this word afterwards.
+    /// Terminal LIVE(g) → PENDING(g) CAS. Reached (today, only) through the
+    /// route-descriptor binding (`LargeState::publish_pending`). TWO
+    /// distinct roles back this call: the ROUTE PIN keeps the INDEPENDENT
+    /// descriptor word alive up to the CAS — a descriptor capability, not
+    /// physical credit — while the caller's UNIQUE ALLOCATION CREDIT keeps
+    /// the physical RESERVATION live until a successful CAS transfers that
+    /// obligation to the owner. The successful CAS is the producer's LAST
+    /// descriptor-state access and involves no reservation read; the caller
+    /// must not touch the allocation, the descriptor, or the word
+    /// afterwards.
     // Producer/claim protocol: only registry::segment_route (alloc-global) calls it.
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
@@ -56,8 +72,16 @@ impl<'a> LargeReservationState<'a> {
             .map(|_| generation)
     }
 
-    /// Owner-only claim of the allocation still held by its local caller.
-    /// Also used by the legacy deferred stack until ingress integration.
+    /// Owner-only claim of a LIVE word — the PHYSICAL-reservation reading
+    /// of this method; every caller acts under the EXCLUSIVE owner's
+    /// authority — a registry heap lease or a standalone core's `&mut`
+    /// (issue-path adoption in `mem`, reclaim in `alloc_core_large`,
+    /// teardown in `lifecycle`; cached Large reservations held unregistered
+    /// by the running core are still owner-held). This constrains this
+    /// method's physical invocation
+    /// only: the same wrapper type is also bound to independent
+    /// route-descriptor words (`LargeState`), where the producer's terminal
+    /// PENDING CAS legitimately transitions that other word.
     #[inline(always)]
     pub fn claim_live(&self) -> Option<u64> {
         let observed = self.word.load(Ordering::Acquire);

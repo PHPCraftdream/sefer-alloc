@@ -1,4 +1,5 @@
-//! Small-path hot cluster of [`AllocCore`] (mechanical split of
+//! Small-path hot cluster of
+//! [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) (mechanical split of
 //! `alloc_core.rs`).
 //!
 //! This module wires the small-object allocation path and re-exports the

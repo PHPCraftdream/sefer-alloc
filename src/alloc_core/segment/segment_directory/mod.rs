@@ -1,4 +1,4 @@
-//! [`SegmentDirectory`] — per-class `class_nonempty` bitmap sidecar for
+//! [`SegmentDirectory`](crate::alloc_core::segment_directory::SegmentDirectory) — per-class `class_nonempty` bitmap sidecar for
 //! O(1) directory-driven segment lookup (task R7-A1).
 //!
 //! ## Design

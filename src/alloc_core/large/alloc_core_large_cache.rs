@@ -118,7 +118,8 @@ impl AllocCore {
     /// Take (remove) the entry at a COMBINED index, leaving that slot empty.
     /// Panics if `idx` addresses an empty slot or an unmaterialised
     /// extension range — callers only ever call this on an index just
-    /// proven occupied by [`large_cache_scan_bound`]/[`large_cache_slot_get`],
+    /// proven occupied by
+    /// [`Self::large_cache_scan_bound`]/[`Self::large_cache_slot_get`],
     /// mirroring the pre-existing `self.large_cache[i].take().unwrap()`
     /// call sites this replaces.
     ///

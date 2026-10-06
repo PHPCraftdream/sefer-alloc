@@ -57,7 +57,8 @@ impl AllocCore {
         Some(base)
     }
 
-    /// R30-1 (task #450): cursor-free half of [`reserve_small_segment`]'s
+    /// R30-1 (task #450): cursor-free half of
+    /// [`reserve_small_segment`](Self::reserve_small_segment)'s
     /// body — reserves+registers+initialises a fresh small segment exactly
     /// as `reserve_small_segment` does, but returns WITHOUT publishing it as
     /// `self.small_cur`.

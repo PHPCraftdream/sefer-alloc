@@ -12,6 +12,7 @@
 //! `PhantomData<fn() -> T>` keeps the handle *typed* and covariant.
 //!
 //! [`EpochHandle<T>`]: crate::concurrent::EpochHandle
+//! [`ShardedRegion<T>`]: crate::concurrent::ShardedRegion
 
 use core::marker::PhantomData;
 

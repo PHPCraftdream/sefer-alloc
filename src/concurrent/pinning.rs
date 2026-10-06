@@ -10,7 +10,7 @@
 //! also why this composes with async runtimes without "lock across `.await`"
 //! hazards (there is no lock to hold).
 //!
-//! [`core_affinity`](::core_affinity) is a safe wrapper over the OS affinity
+//! [`core_affinity`] is a safe wrapper over the OS affinity
 //! syscalls (`sched_setaffinity` on Linux, `SetThreadAffinityMask` on Windows,
 //! `thread_policy_set` on macOS). This module adds **zero `unsafe`** of its own.
 //!

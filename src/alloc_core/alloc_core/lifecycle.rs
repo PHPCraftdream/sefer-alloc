@@ -46,7 +46,7 @@ static DBG_RESERVATION_OWNER_ID_COUNTER: core::sync::atomic::AtomicU64 =
 impl LargeCacheDecayConfig {
     /// Build the decay config from a resolved [`LargeCacheConfig`].
     ///
-    /// [`LargeCacheConfig`]: crate::alloc_core::large_cache_config::LargeCacheConfig
+    /// [`LargeCacheConfig`]: crate::alloc_core::config::large_cache_config::LargeCacheConfig
     fn from_config(cfg: &crate::alloc_core::large_cache_config::LargeCacheConfig) -> Self {
         Self {
             decay_rate_bp: cfg.resolved_decay_rate_bp(),
@@ -205,7 +205,7 @@ impl AllocCore {
     }
 
     /// Compare this heap's live (resolved) cache/pool policy against a
-    /// requested [`LargeCacheConfig`]. Returns `true` when the resolved
+    /// requested [`LargeCacheConfig`](crate::LargeCacheConfig). Returns `true` when the resolved
     /// values match what [`new_with_config`](Self::new_with_config) would
     /// apply from `requested`.
     ///
@@ -376,17 +376,24 @@ impl AllocCore {
 /// heaps droppable
 ///
 /// This `drop` walks every segment in `self.table` and releases its OS
-/// reservation (`os::release_segment`) unconditionally — it does NOT perform
-/// any handshake to prove no OTHER thread is concurrently pushing onto one of
-/// these segments' cross-thread remote-free rings
-/// (`RemoteFreeRing`, the
-/// `alloc-xthread` per-segment MPSC the segment header's `owner_thread_free`
-/// stamp routes into) before unmapping. If such a push raced this `drop`, it
-/// would write into memory that is either about to be, or has already been,
-/// unmapped — a use-after-free / wild write on the remote thread's side.
+/// reservation (`os::release_segment`) unconditionally. It performs no
+/// handshake against concurrent foreign-free producers, and no
+/// quiescence argument is claimed here. What it orders is ADMISSION:
+/// `close_routes()` — the first statement — unlinks this table's routes
+/// while every reservation is still mapped, so new address lookups stop
+/// returning them. A pin taken before unlink keeps only its
+/// independently allocated descriptor/sidecar alive until the last pin
+/// release (the directory reclaims unlinked entries and sidecars at
+/// that point); a pin is a descriptor capability, NOT a reservation
+/// credit — it does not keep the segment, this core, or any user
+/// allocation alive. Outstanding allocation pointers become invalid as
+/// the walk releases their segments; the terminal protocol supplies no
+/// lifetime proof for a free published against an address whose segment
+/// or core is already gone.
 ///
-/// **Today this is reachable-but-moot, not a live bug**, for two independent
-/// reasons, EITHER of which is already sufficient on its own:
+/// **Today the unconditional release is additionally guarded twice over**,
+/// for two independent reasons, EITHER of which is already sufficient on
+/// its own:
 ///
 /// 1. **Registry heaps never reach this `drop`.** The `HeapRegistry`/
 ///    `HeapCore` substrate that `SeferAlloc`/TLS actually use lives for the
@@ -395,29 +402,32 @@ impl AllocCore {
 ///    to reach `AllocCore::drop` today is constructing a STANDALONE
 ///    `AllocCore` directly (`AllocCore::new`, bypassing the
 ///    registry entirely) and letting it go out of scope.
-/// 2. **A standalone `AllocCore` cannot be shared across threads in the
-///    first place.** `AllocCore` carries raw pointers (`table`, `small_cur`,
-///    `large_cache` entries) and has no `unsafe impl Sync for AllocCore`
-///    anywhere in this crate (verified by grep at the time of writing) — so
-///    it is `!Sync` by the ordinary auto-trait rules, and a `&AllocCore`
-///    cannot be handed to another thread to begin with. Its public free
-///    requires `&mut self`, so a standalone core has no remote-free producer
-///    that can publish while `drop` owns the core. Any outstanding allocation
-///    pointer becomes invalid when the core is dropped.
+/// 2. **A standalone `AllocCore` has no routed segments at all.** Route
+///    descriptors are attached only when construction is given an owner id
+///    (`new_with_owner` → `new_inner(Some(owner))` → `table.attach_owner`);
+///    a standalone core is built with `owner == None`, so `routes` stays
+///    `None` and nothing about its segments is reachable from the route
+///    directory. On top of that, `AllocCore` is `!Send`/`!Sync` (raw
+///    pointers, no manual impls) and its public free requires `&mut self`,
+///    so no other thread can drive the core itself. Any outstanding
+///    allocation pointer becomes invalid when the core is dropped.
 ///
-/// Either of these changes can make the race live:
+/// Either of these changes can re-open a real race window:
 /// (a) some future change makes registry heaps droppable (e.g. a
 /// decommit-when-empty or heap-teardown policy that actually frees a
-/// `HeapCore`'s `AllocCore`, not just recycles the slot), OR (b) some future
-/// change adds `unsafe impl Sync for AllocCore` (or otherwise exposes a
-/// standalone `AllocCore` for cross-thread sharing outside the registry).
-/// If EITHER lands, this `drop` needs a quiescence handshake — e.g. draining
-/// every segment's `RemoteFreeRing` under a happens-before edge that rules
-/// out a concurrent remote push, or otherwise proving no other thread holds
-/// a reference capable of routing a free into a segment this `drop` is about
-/// to unmap — before it is safe to release segments unconditionally as it
-/// does now. This note is the load-bearing reminder to add that handshake at
-/// that time; do not remove or weaken it while working on (a) or (b) above.
+/// `HeapCore`'s `AllocCore`, not just recycles the slot) — then the drop
+/// must account for producers still holding route pins, and for any future
+/// protocol that lets a producer touch reservation words again — OR (b)
+/// some future change adds `unsafe impl Sync for AllocCore` (or otherwise
+/// exposes a standalone `AllocCore` for cross-thread sharing outside the
+/// registry). If EITHER lands, this `drop` needs a quiescence argument —
+/// e.g. proving that no producer can still hold a pin capable of
+/// publishing after the last reservation is released, or draining and
+/// consuming every published record under a happens-before edge that
+/// rules out late publication — before it is safe to release segments
+/// unconditionally as it does now. This note is the load-bearing reminder
+/// to add that argument at that time; do not remove or weaken it while
+/// working on (a) or (b) above.
 impl Drop for AllocCore {
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
                           // boundary when `large-cache-extended` is on, right after
@@ -539,7 +549,7 @@ impl Drop for AllocCore {
 // `unsafe impl` that has no place outside the two named `unsafe` seams.
 
 /// `base + off` as `*mut u8`, routed through the `node` seam. The Cartographer
-/// only ever passes offsets derived from the fixed [`SegLayout`] or the bump
+/// only ever passes offsets derived from the fixed [`SegmentLayout`](crate::alloc_core::segment::segment_layout::SegmentLayout) or the bump
 /// cursor (both bounded by `SEGMENT`).
 pub(in crate::alloc_core) fn base_add(base: *mut u8, off: usize) -> *mut u8 {
     Node::offset(base, off)

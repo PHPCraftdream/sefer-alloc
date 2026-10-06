@@ -63,7 +63,7 @@ pub const STATE_UNINIT: u8 = 0;
 pub const STATE_INITIALIZING: u8 = 1;
 pub const STATE_READY: u8 = 2;
 
-/// The fallback heap storage. `MaybeUninit` until [`ensure`] runs; once
+/// The fallback heap storage. `MaybeUninit` until [`heap_ptr`] runs; once
 /// `READY`, holds a live `HeapCore` for the process lifetime (never
 /// dropped).
 ///
@@ -168,7 +168,8 @@ fn heap_ptr_impl(
         if won {
             // F-8 (R34-17/task #536): arm the init-state rollback guard BEFORE
             // the fallible init. If anything between here and the READY publish
-            // unwinds (`HeapCore::new`, the in-place `write`, `bind_thread_free`,
+            // unwinds (`HeapCore::new`, the in-place `write`, the
+            // process-static hit-counter binds,
             // or the test-injection panic below), the guard's `Drop` rolls
             // `INIT_STATE` back to `UNINIT` so loser threads stop spinning in
             // the loop below and re-race the CAS themselves. WITHOUT this guard
@@ -503,7 +504,7 @@ impl Drop for LockGuard {
 /// Mirrors the panic-safety form of [`LockGuard`] (one function down, for the
 /// spinlock): same shape, applied to the bootstrap state-machine one level
 /// above where `LockGuard` already guards the spinlock. Before this guard, an
-/// unwind out of `HeapCore::new` / the in-place `write` / `bind_thread_free`
+/// unwind out of `HeapCore::new` / the in-place `write` / the hit-counter binds
 /// left `INIT_STATE` stuck at `INITIALIZING` permanently — every subsequent
 /// `heap_ptr` loser spun unbounded in the `while ... == STATE_INITIALIZING`
 /// loop (process-wide livelock). No-panic is a project invariant (`HeapCore`
@@ -525,11 +526,11 @@ impl Drop for LockGuard {
 /// so skipping it would leak them. This guard therefore guarantees "no
 /// permanent `INITIALIZING` livelock", NOT "`Drop` always runs for an
 /// already-written `HeapCore`". As of this writing, the only unwind source in
-/// the guarded region between `write(hc)` and the `READY` publish is the
-/// `internals`-gated test-injection panic below, which is deliberately placed
-/// BEFORE `HeapCore::new` — `bind_thread_free` is a plain field assignment
-/// (`HeapCore::bind_thread_free`, `src/registry/heap_core_ownership.rs`) and
-/// cannot panic, so this post-write window is not currently reachable by any
+/// the guarded region is
+/// the `internals`-gated test-injection panic below, deliberately
+/// placed BEFORE `HeapCore::new`; the post-write steps — the in-place
+/// `write(hc)` and the plain reference-store hit-counter binds — cannot
+/// panic, so the post-write window is not currently reachable by any
 /// known panic source in the initialization path. It is, however, not
 /// structurally closed: a future change that adds fallible code between
 /// `write(hc)` and the `READY` store would silently reopen it. Closing it

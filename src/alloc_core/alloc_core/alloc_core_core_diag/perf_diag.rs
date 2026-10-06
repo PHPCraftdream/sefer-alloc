@@ -42,8 +42,11 @@ impl AllocCore {
         directory_stats::DIRECTORY_FALLBACK_SCANS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// R7-A0: process-wide count of directory bitmap words examined (A3).
-    /// Reads 0 until A3 wires the increment.
+    /// R7-A0: process-wide count of directory bitmap words examined — every
+    /// u64 word inspected by the per-class directory scan, including
+    /// all-zero words (R13-01). Relaxed load — diagnostic only. Reads 0
+    /// unless `alloc-stats` is on. Available under `internals`,
+    /// independently of `alloc-stats`.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_words_examined() -> u64 {

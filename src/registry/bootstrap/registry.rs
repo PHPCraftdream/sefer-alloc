@@ -65,7 +65,7 @@ pub struct Registry {
     /// the seam here only reserves the OS pages and dereferences the published
     /// pointer.
     ///
-    /// `pub(super)` (not private) so the sibling [`ensure`] module's
+    /// `pub(super)` (not private) so the sibling `ensure.rs` module's
     /// `dbg_rollback_chunk_sentinel_reenterable` hook can drive the live
     /// registry's chunk cells; flat-bootstrap visibility is otherwise
     /// unchanged.

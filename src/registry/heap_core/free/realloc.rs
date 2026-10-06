@@ -58,12 +58,13 @@ impl HeapCore {
     /// same O(1) ownership test `dbg_owner_id_for` uses), the resize takes the
     /// magazine-aware fast path:
     ///
-    ///   1. **A1 deferred-large drain** (`alloc-xthread` only): BEFORE the
+    ///   1. **A1 terminal large-sidecar ingress drain** (`alloc-xthread` only): BEFORE the
     ///      in-place attempt, if the NEW size classifies as Large
-    ///      (`class_for(...).is_none()`), drain this heap's deferred-free
-    ///      stack (MUST-1/A1 — a realloc-growth-only thread still reclaims
-    ///      cross-thread-freed large segments; otherwise its stack
-    ///      accumulates unboundedly). This drain is load-bearing — it runs
+    ///      (`class_for(...).is_none()`), drain this heap's terminal
+    ///      large-sidecar ingress (`drain_large_sidecar_ingress`;
+    ///      MUST-1/A1 — a realloc-growth-only thread still reclaims
+    ///      cross-thread-freed large segments; otherwise its published-frees
+    ///      backlog accumulates unboundedly). This drain is load-bearing — it runs
     ///      whether or not the in-place path succeeds.
     ///   2. **In-place attempt**: call `AllocCore::try_realloc_inplace_known_base`, which
     ///      applies the OPT-F (Small same-class) and OPT-G (Large grow-in-span)
@@ -77,26 +78,34 @@ impl HeapCore {
     /// The move leg routes through `HeapCore::alloc`/`HeapCore::dealloc`
     /// (NOT `AllocCore::realloc`'s internal alloc+copy+dealloc) so that the
     /// two ownership hooks `HeapCore::alloc` applies — segment-ownership
-    /// stamping (`stamp_segment_owner`, which under `alloc-xthread` also
-    /// writes `owner_thread_free`, the field that makes a remote free route
-    /// back here instead of leaking) and the checked drain — fire on the
+    /// stamping (`stamp_segment_owner`, which writes the segment's
+    /// `owner_state` ownership record) and the checked drain — fire on the
     /// freshly allocated block. Without them a Vec grown via realloc on
     /// thread A would live in an UNSTAMPED Large segment; when A hands it
-    /// to thread B and B drops it, `dealloc_routing` sees not-ours +
-    /// magic OK + `owner_tf == null` → silent no-op → the whole segment
-    /// (4+ MiB) and its `SegmentTable` slot leak forever (the resurrected
+    /// to thread B and B drops it, the failure mode was silent: Historically
+    /// (A1/#114), `dealloc_routing` resolved the segment as not-ours and
+    /// silently no-op'd → the whole segment
+    /// (4+ MiB) and its `SegmentTable` slot leaked forever (the resurrected
     /// A1/#114 leak-to-abort).
     ///
     /// ## Foreign pointers
     ///
     /// A `ptr` we do NOT own (a block that lives in ANOTHER heap's segment)
-    /// takes the foreign leg. R2-1: before copying, the leg validates that
-    /// `ptr` resolves to a LIVE sefer segment (segment-header magic check,
-    /// mirroring `dealloc_foreign_slow`'s first guard) AND that
-    /// `old_layout.size()` does not exceed that segment's committed span. A
-    /// bogus/foreign pointer (stack, foreign allocator, dangling) or an
-    /// oversized claim is rejected (null) BEFORE any copy — never read out of
-    /// bounds. A legitimate cross-heap sefer pointer passes both checks,
+    /// takes the foreign leg. R2-1: before copying, the leg looks `ptr` up
+    /// in the route directory and checks NUMERIC DESCRIPTOR CAPACITY — the
+    /// address must fall inside the route's payload range and
+    /// `old_layout.size()` must fit the descriptor's end (`contains_payload`).
+    /// This is NOT a live-instance identity check and NOT another owner's
+    /// committed-frontier check: the directory is keyed by address and its
+    /// end is a registration-time bound, so a stale address whose route is
+    /// still linked — or any in-range address within a Small route — can
+    /// pass. Safe access to the copied bytes rests on the CALLER's
+    /// `GlobalAlloc` contract (a live allocation paired with this exact
+    /// `old_layout`), the same contract every `realloc` implementation
+    /// relies on. A missing route or a capacity rejection returns null as
+    /// defence in depth; it is not a claim that every dangling, interior,
+    /// or bogus pointer is caught before the copy. A legitimate cross-heap
+    /// sefer pointer passes the capacity check,
     /// copies `min(old, new)`, then frees the OLD pointer via `self.dealloc`
     /// (which routes cross-thread correctly — `alloc-global`, this module's
     /// gate, unconditionally implies `alloc-xthread`, R5-01).
@@ -148,24 +157,25 @@ impl HeapCore {
                 // any move-leg alloc may carve a FRESH segment. That substrate
                 // alloc does NOT run the two ownership hooks `HeapCore::alloc`
                 // applies — segment-ownership stamping (`stamp_segment_owner`,
-                // which under `alloc-xthread` also writes `owner_thread_free`,
-                // the field that makes a remote free route back here instead
-                // of leaking) and the A1 deferred-large drain
-                // (`drain_large_deferred_free`). Without them, a Vec grown via
-                // realloc on thread A lives in an UNSTAMPED
-                // (`owner_thread_free == null`) Large segment; when A hands it
-                // to thread B and B drops it, `dealloc_routing` sees not-ours
-                // + magic OK + `owner_tf == null` → silent no-op → the whole
+                // which writes the segment's `owner_state` ownership record)
+                // and the A1 terminal large-sidecar ingress drain
+                // (`drain_large_sidecar_ingress`). Without them, a Vec grown via
+                // realloc on thread A lives in an UNSTAMPED (unowned) Large
+                // segment; when A hands it
+                // to thread B and B drops it, the failure mode was silent:
+                // Historically (A1/#114), `dealloc_routing` resolved the
+                // segment as not-ours and silently no-op'd → the whole
                 // segment (4+ MiB) and its `SegmentTable` slot leak forever
                 // (the resurrected A1/#114 leak-to-abort).
                 //
                 //   (1) A1 Large drain — BEFORE the in-place attempt, if the
                 //       NEW request classifies as Large
                 //       (`class_for(...).is_none()`, the exact predicate
-                //       `alloc` uses), drain this heap's deferred-free stack
-                //       so a realloc-growth-only thread still reclaims
-                //       cross-thread-freed large segments (otherwise its stack
-                //       accumulates unboundedly — the A1 drain-bypass leg of
+                //       `alloc` uses), drain this heap's terminal
+                //       large-sidecar ingress so a realloc-growth-only thread
+                //       still reclaims cross-thread-freed large segments
+                //       (otherwise its published-frees backlog accumulates
+                //       unboundedly — the A1 drain-bypass leg of
                 //       the bug). This drain is load-bearing and runs
                 //       regardless of whether the in-place path then succeeds.
                 #[cfg(feature = "alloc-xthread")]
@@ -566,8 +576,8 @@ impl HeapCore {
         // replicates the SAME ownership-hook bookkeeping `HeapCore::alloc`'s
         // Large branch performs, mirroring `HeapCore::alloc_zeroed`'s
         // (`heap_core/alloc/hot.rs`) own Large branch line for line: the A1
-        // deferred-large drain (`alloc-xthread`) and the `HeapOverflow` drain
-        // (`alloc-xthread` without `fastbin`) BEFORE the call, then
+        // terminal large-sidecar ingress drain (`drain_large_sidecar_ingress`,
+        // `alloc-xthread`) BEFORE the call, then
         // `stamp_segment_owner` on the result — WITHOUT this, a Vec grown via
         // promotion on thread A would live in an UNSTAMPED Large segment and
         // leak forever when thread B frees it (the A1/#114 leak-to-abort
@@ -625,9 +635,9 @@ impl HeapCore {
         // which no unregister path can act on without `live_count == 0`
         // first. `self.core.alloc_large` operates on the Large-segment
         // table/cache machinery, structurally disjoint from the Small
-        // segment `base` still belongs to; the `alloc-xthread` drains
-        // (`drain_large_deferred_free`, `drain_heap_overflow`) reclaim
-        // OTHER already-freed Large segments and never touch `base` either.
+        // segment `base` still belongs to; the `alloc-xthread` ingress drain
+        // (`drain_large_sidecar_ingress`) reclaims
+        // OTHER already-published Large segments and never touch `base` either.
         // So `contains_base(base)` is still `true` here, exactly as when the
         // caller (`realloc`) first checked it.
         //

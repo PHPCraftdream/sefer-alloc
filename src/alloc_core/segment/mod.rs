@@ -1,8 +1,8 @@
 //! The segment substrate — the per-segment metadata "header family"
 //! (`segment_header/` and its `#[path]`-moved siblings), the self-hosted
-//! [`SegmentTable`] registry, the experimental per-class
+//! [`SegmentTable`](segment_table::SegmentTable) registry, the experimental per-class
 //! [`segment_directory`] + its always-compiled [`directory_stats`] counters,
-//! the per-segment [`RemoteFreeRing`], the user-facing [`segment_layout`]
+//! the user-facing [`segment_layout`]
 //! geometry tables, and the per-segment bitmap family (`bitmap/`).
 //!
 //! All children are re-exported by `alloc_core` (at their original

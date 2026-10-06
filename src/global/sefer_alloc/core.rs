@@ -42,12 +42,23 @@ use crate::global::tls_heap::CurrentHeap;
 /// reentrant-borrow failure). `alloc`/`dealloc`/`realloc`/`alloc_zeroed`
 /// route through the per-thread heap's segment-centric `BinTable` free lists
 /// (the Phase 12.1 hot path). `alloc-global` unconditionally implies
-/// `alloc-xthread` (R5-01), so cross-thread `dealloc` always routes through
-/// the Phase 10 Treiber stack, stamped from the registry-resident heap (12.3
-/// owner stamping).
+/// `alloc-xthread` (R5-01), so a cross-thread `dealloc` is routed by ADDRESS
+/// through the process-wide route directory and never borrows another heap:
+/// the address lookup pins the block's independently allocated (System-backed)
+/// route descriptor; a ready, idle fallback heap reclaims its own block
+/// synchronously under its owner lease, and every other case performs ONE
+/// terminal publication into that pinned sidecar — an AcqRel pending-bit RMW
+/// for Small/Primordial blocks, a LIVE(g) → PENDING(g) CAS on the descriptor's
+/// independent Large state word for Large blocks. That publication is the
+/// freeing thread's LAST access to the allocation, and exactly one publication
+/// is made per freed allocation instance; the owning heap consumes the
+/// published records later in a bounded cut/reclaim pass. An address the
+/// directory cannot route (or a rejected publication) drops the free and
+/// counts `foreign_or_unroutable_frees` — defensive behavior for an invalid
+/// pointer, not permission to pass one.
 ///
 /// Thread exit recycles the slot for whole-slot reuse (Phase 12.5): the
-/// `HeapCore` and ALL its segments (plus their remote-free queues) stay
+/// `HeapCore` and ALL its segments stay
 /// whole in the slot, and the next claimer reuses them in full — nothing is
 /// abandoned or leaked. A primordial fallback heap (§2.3) serves the
 /// pre-TLS / post-teardown windows, so the face is **never-null for a
@@ -91,12 +102,13 @@ use crate::global::tls_heap::CurrentHeap;
 /// (the POSIX async-signal-safe-only rule for the child). What is **not**
 /// safe: allocating or freeing through `SeferAlloc` in the child of a
 /// multi-threaded `fork()` before `exec()` — inherited allocator state
-/// another thread was mutating at fork time can wedge the child, including
-/// on `dealloc`, via an unbounded spin (a held fallback spinlock, an
-/// in-progress overflow-sidecar/registry-chunk materialisation), or leave
-/// spill/deferred-Large segments permanently undrained, or add a bounded
-/// (~0.3–2 s) stall probing a vanished thread's heap slot before conceding
-/// to spill. See README.md's "Fork safety" section for the full contract
+/// another thread was mutating at fork time can wedge the child,
+/// including on `dealloc`: frozen locks and init/ownership states (the
+/// fallback spinlock, a route-directory shard lock, an in-progress
+/// primordial/registry-chunk materialisation) are inherited held by a
+/// thread that does not survive the fork, and terminal publications
+/// left in route sidecars have no surviving owner to drain them in the
+/// child. See README.md's "Fork safety" section for the full contract
 /// and the exact code sites; tracked in `docs/CORRECTNESS_OPEN_ITEMS.md`.
 ///
 /// ```text
@@ -142,12 +154,23 @@ impl SeferAlloc {
     /// materialized heap/shard**, not 256 MiB process-wide — a thread-per-
     /// core server with many concurrently active heaps multiplies this
     /// figure by however many of them have touched a large allocation.
-    /// Idle time alone does not reclaim any of it: decay is inline and
-    /// event-driven (there is no background thread, by design), so a
-    /// quiet thread/process retains its peak large-cache usage down to
-    /// this floor indefinitely, until either more large-alloc/dealloc
-    /// traffic drives further decay ticks or the thread exits (the one
-    /// unconditional reclamation path, `HeapCore::trim_for_recycle`).
+    /// Idle time alone does not reclaim any of it: large-cache decay is a
+    /// per-heap, inline, event-driven mechanism on the owning thread's own
+    /// allocation traffic (separate from the opt-in maintenance worker) — so a quiet thread retains its peak
+    /// large-cache usage down to this floor indefinitely, until either more of
+    /// its own large-alloc/dealloc traffic drives further decay ticks or the
+    /// thread exits (the one unconditional reclamation path,
+    /// `HeapCore::trim_for_recycle`). A process that additionally wants
+    /// ownerless reclamation must explicitly activate
+    /// `SeferAlloc::start_maintenance()`: without that activation no
+    /// autonomous worker exists; with it, the only guarantee is that
+    /// method's own contract — eventual logical reclamation of correctly
+    /// published frees in heaps remaining FREE (owning thread exited) and
+    /// the idle fallback, under fair scheduling, with no latency SLA. An
+    /// OWNED heap whose owner is merely paused is never taken over: the
+    /// worker cannot reclaim its state, so its floor persists until that
+    /// owner resumes or exits. No idle-owner RSS return is implied by decay
+    /// or by the worker.
     /// Measured in full — including the exact post-drain floor and the
     /// 2-second, zero-byte-reclaimed idle-window result — in
     /// `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md`. If a smaller
@@ -309,9 +332,9 @@ impl SeferAlloc {
     /// the TLS bind slow path when `alloc-decommit` is active.
     ///
     /// Under `not(alloc-decommit)` this delegates to the config-free
-    /// [`current_for_alloc`]; under `alloc-decommit` it passes `&self.config`
+    /// [`current_for_alloc`](crate::global::tls_heap::current_for_alloc); under `alloc-decommit` it passes `&self.config`
     /// (a single pointer load, not a value copy) into
-    /// [`current_for_alloc_with_config`]. The reference avoids
+    /// the feature-gated `current_for_alloc_with_config` resolver. The reference avoids
     /// materialising the config on the hot fast path — the dereference
     /// happens only on the cold `bind_slow_tagged_with_config` branch.
     #[inline(always)]

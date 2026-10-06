@@ -14,7 +14,7 @@
 //! [`EpochRegion`], so two writers in different shards never meet on a lock.
 //! Reads stay the untouched lock-free `EpochRegion` seqlock. **Zero new
 //! `unsafe`** appears here — all pointer work lives in the existing confined
-//! [`hand`](super::hand) organ.
+//! [`hand`](crate::concurrent::epoch::hand) organ.
 //!
 //! ## The router (7b)
 //!
@@ -47,9 +47,20 @@
 //! dropped regions are never matched again (ids are not reused) and age out
 //! by the same FIFO eviction.
 //!
+//! ### Dead-region token retention (R13-02)
+//!
+//! A claim is a `Weak` to the region's out-of-line token backing
+//! ([`TokenBlock`]): dropping the region destroys the token storage even
+//! while every claiming thread still holds a claim record. A dead claim can
+//! no longer upgrade — its `occupied == true` state died with the storage —
+//! releases nothing at thread exit, and is pruned at the next cold
+//! claim/bind. Claims on LIVE regions always upgrade and are never pruned
+//! or cap-evicted; the residual is at most one fixed-size `Weak` header per
+//! claim won since the last cold point, never the token storage.
+//!
 //! ## Cross-thread removal (7b)
 //!
-//! [`remove`](Self::remove) routes by `handle.shard`:
+//! [`remove`](ShardedRegion::remove) routes by `handle.shard`:
 //!
 //! - if it equals the CALLING thread's claimed shard → owner path
 //!   ([`EpochRegion::remove`], which takes the shard's writer mutex for
@@ -73,17 +84,20 @@
 //! `occupied`; it just resolves the slot via the seqlock). An adopting thread
 //! that reuses a freed shard drains its abandoned remote-free queue on its
 //! first op (the `EpochRegion::insert`/`remove` drain does this automatically).
+//! A claim whose region has since died is pruned at the next cold
+//! claim/bind (R13-02) — its token storage no longer exists to release.
 //!
 //! ## Why the guard is type-erased
 //!
 //! A `thread_local!` is monomorphic — there can be only one guard cell per
 //! program, but a process may host `ShardedRegion<A>` and `ShardedRegion<B>`
-//! concurrently. So the guard owns the **type-erased** `occupied` tokens
-//! (`Arc<[AtomicBool]>`, carrying no `T`) rather than an `Arc<ShardedInner<T>>`.
-//! This keeps a single TLS registry sound across multiple `T`. The `Arc` keeps
-//! the tokens alive after the region-handling `&self` borrow is gone, so the
-//! guard's `Drop` can flip the token at thread-exit even if the
-//! `ShardedRegion<T>` is dropped first (the `Arc` refcount holds the tokens).
+//! concurrently. So the guard owns **type-erased** claims (`Weak<TokenBlock>`,
+//! carrying no `T`) rather than anything mentioning `T`. This keeps a single
+//! TLS registry sound across multiple `T`. The claim is `Weak`, not strong,
+//! so the region — the backing's only strong owner — frees the token storage
+//! when it drops (R13-02), and the guard's `Drop` upgrades each claim: live
+//! regions get their token flipped at thread exit exactly as before; dead
+//! regions have nothing left to flip.
 //!
 //! ## Invariants upheld
 //!
@@ -96,7 +110,7 @@
 //!   a second `remove(h)` is a no-op `false` (the CAS returns `Stale`).
 //! - **I3 — no ABA:** `remove`/`remote_evict` bumps the slot's generation via
 //!   `AtomicSlot::try_evict_at`.
-//! - **I4 — accounting:** [`len`](Self::len)/[`is_empty`](Self::is_empty)
+//! - **I4 — accounting:** [`len`](ShardedRegion::len)/[`is_empty`](ShardedRegion::is_empty)
 //!   sum/scan the per-shard `AtomicUsize` counts. Exact only when no
 //!   concurrent mutation is in flight; under concurrent insert/remove the
 //!   result is an approximate, non-linearizable observation (see the method
@@ -109,15 +123,17 @@
 use core::cell::RefCell;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use crate::concurrent::{EpochHandle, EpochRegion, ShardedHandle};
 
 /// The `Arc`-shared interior of a [`ShardedRegion`]: the shards themselves plus
 /// the round-robin fallback cursor. The per-shard `occupied` tokens live in a
-/// SEPARATE `Arc<[AtomicBool]>` ([`ShardedRegion::tokens`]) so they can be
-/// owned by a type-erased [`ErasedGuard`] (which carries no `T`), letting a
-/// single `thread_local!` registry release any thread's claim on exit.
+/// SEPARATE out-of-line [`TokenBlock`] ([`ShardedRegion::tokens`]) so a
+/// type-erased [`ErasedGuard`] (which carries no `T`) can hold `Weak` claims
+/// against it, letting a single `thread_local!` registry release any thread's
+/// claim on exit while the token storage itself still dies with the region
+/// (R13-02).
 struct ShardedInner<T> {
     shards: Box<[EpochRegion<T>]>,
     /// Atomic round-robin cursor for the graceful-degradation fallback (when
@@ -125,10 +141,59 @@ struct ShardedInner<T> {
     next_shard: AtomicUsize,
 }
 
+/// The out-of-line per-shard `occupied`-token backing (R13-02).
+///
+/// A [`ShardedRegion`] owns the backing; TLS claims are `Weak`. An exit-release
+/// upgrade may retain it temporarily until that release completes.
+/// The final strong owner's drop destroys the boxed slot array even while
+/// dead claims retain weak references to the fixed-size header.
+/// A lingering `Weak` pins only this
+/// fixed-size header allocation, never the `slots` storage; a plain
+/// `Arc<[AtomicBool]>` claim could not do that, because `Weak<[T]>` keeps
+/// the INLINE `[T]` allocation itself alive until the last weak reference
+/// drops.
+struct TokenBlock {
+    slots: Box<[AtomicBool]>,
+}
+
+/// Undestroyed token backing count, including transient exit-release upgrades.
+/// Instrumentation for `ShardedRegion::_live_token_blocks_for_tests`
+/// (R13-02's storage-lifetime oracle); absent from builds without
+/// `internals`.
+#[cfg(feature = "internals")]
+static LIVE_TOKEN_BLOCKS: AtomicUsize = AtomicUsize::new(0);
+
+impl TokenBlock {
+    /// `n` slots, every shard FREE (`occupied == false`); a thread claims by
+    /// CASing false → true.
+    fn new(n: usize) -> Self {
+        let slots: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
+        #[cfg(feature = "internals")]
+        LIVE_TOKEN_BLOCKS.fetch_add(1, Ordering::Release);
+        Self {
+            slots: slots.into_boxed_slice(),
+        }
+    }
+}
+
+// The drop probe IS the R13-02 oracle: it runs exactly when the region's
+// token storage is destroyed, so a test can observe that destruction
+// directly (there is no consumer-visible handle to a dropped region's
+// tokens). Under non-`internals` builds there is no Drop impl and the boxed
+// slots drop directly — same storage, no observer.
+#[cfg(feature = "internals")]
+impl Drop for TokenBlock {
+    fn drop(&mut self) {
+        LIVE_TOKEN_BLOCKS.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// A type-erased thread-local guard that RELEASES every exclusively-claimed
-/// shard on `Drop` (thread exit). Each claim owns an `Arc<[AtomicBool]>` of the
-/// occupied tokens (carrying no `T`) so it can flip the token even after the
-/// region-handling `&self` borrow is gone — the `Arc` keeps the tokens alive.
+/// shard on `Drop` (thread exit). Each claim holds a `Weak` to the region's
+/// out-of-line token backing ([`TokenBlock`], carrying no `T`) so the guard
+/// can flip the token of every region still alive at thread exit, while a
+/// dropped region's token storage dies with the region instead of being
+/// pinned by this guard (R13-02).
 ///
 /// A thread may hold MORE than one exclusive claim: e.g. it bound region A's
 /// shard `i`, then (having no `MY_SHARDS` entry for region B) scanned region
@@ -137,33 +202,39 @@ struct ShardedInner<T> {
 /// `Drop`; an empty `claims` vector means the thread only ever degraded to
 /// modulo sharing (nothing to release).
 struct ErasedGuard {
-    /// Every exclusive claim THIS thread has won. Append-only across a thread's
-    /// lifetime; each is released on `Drop`. The scan in `claim_or_get_shard`
-    /// can never re-win an already-held shard (its `occupied` token is `true`),
-    /// so the list never holds a duplicate `(tokens, shard)`.
+    /// Every exclusive claim THIS thread has won. Append-only across a
+    /// thread's lifetime; each live one is released on `Drop`, and dead ones
+    /// (their region dropped) are pruned at each cold claim/bind point — see
+    /// [`prune_dead_claims`]. The scan in `claim_or_get_shard` can never
+    /// re-win an already-held shard (its `occupied` token is `true`), so the
+    /// list never holds a duplicate `(tokens, shard)`.
     claims: Vec<ErasedClaim>,
 }
 
-/// One exclusive shard claim recorded for thread-exit release: the `tokens`
-/// array the CAS was won against (a region's `Arc<[AtomicBool]>`, type-erased
-/// so a single `thread_local!` registry serves every `T`) and the shard id
-/// within it. A thread may accumulate several when it wins claims against more
-/// than one shard or more than one region's `tokens` array.
+/// One exclusive shard claim recorded for thread-exit release: a `Weak` to
+/// the token backing the CAS was won against (a region's `Arc<TokenBlock>`,
+/// type-erased so a single `thread_local!` registry serves every `T`) and the
+/// shard id within it. `Weak`, not strong, so the claim never pins a dropped
+/// region's token storage (R13-02). A thread may accumulate several when it
+/// wins claims against more than one shard or more than one region's backing.
 struct ErasedClaim {
-    tokens: Arc<[AtomicBool]>,
+    tokens: Weak<TokenBlock>,
     shard: u16,
 }
 
 impl Drop for ErasedGuard {
     fn drop(&mut self) {
-        // Release EVERY exclusively-claimed shard this thread won. We are the
-        // unique owner of each (the claiming CAS was atomic, and only THIS
-        // guard carries the claim for that `(tokens, shard)` pair). Release
-        // ordering pairs with an adopting thread's Acquire-on-success CAS, so
-        // the adopter observes the released state.
+        // Release every exclusively-claimed shard whose region is still
+        // alive; only this guard owns each claim, and the Release store
+        // pairs with an adopting thread's Acquire-on-success CAS. A claim
+        // whose region died first cannot upgrade — its storage, and the
+        // `occupied = true` state with it, is already gone (R13-02) — so
+        // there is nothing to release and no stale state to observe.
         for claim in &self.claims {
-            if let Some(occupied) = claim.tokens.get(usize::from(claim.shard)) {
-                occupied.store(false, Ordering::Release);
+            if let Some(tokens) = claim.tokens.upgrade() {
+                if let Some(occupied) = tokens.slots.get(usize::from(claim.shard)) {
+                    occupied.store(false, Ordering::Release);
+                }
             }
         }
         // If `claims` is empty we only ever degraded to modulo sharing —
@@ -171,10 +242,22 @@ impl Drop for ErasedGuard {
     }
 }
 
+/// Drops claims whose region has died (R13-02): a `Weak` whose strong count
+/// is zero names token storage that no longer exists, so the claim can never
+/// release or upgrade again and only wastes a fixed-size guard slot.
+/// Called only at the COLD claim/bind points (never on the fast path), which
+/// bounds the dead-claim residual to the churn between two cold points.
+/// Claims on live regions (strong count > 0) are always kept — this must
+/// never cap-evict or drop a live claim, whose release obligation survives
+/// until thread exit.
+fn prune_dead_claims(guard: &mut ErasedGuard) {
+    guard.claims.retain(|claim| claim.tokens.strong_count() > 0);
+}
+
 // The TLS router: `MY_SHARDS` caches per-region claimed shard ids for the fast
 // path (a short table scan); `ERASED_GUARD` holds the type-erased guard whose
 // `Drop` releases an exclusively-claimed shard on thread exit. `RefCell`
-// because `Option<ErasedGuard>` is not `Copy` (the guard owns an `Arc`).
+// because `Option<ErasedGuard>` is not `Copy` (the guard owns claims).
 thread_local! {
     static MY_SHARDS: RefCell<Vec<(u64, u16)>> = const { RefCell::new(Vec::new()) };
 }
@@ -243,10 +326,12 @@ pub struct ShardedRegion<T> {
     /// Unique instance id keying this region's per-thread shard binding.
     id: u64,
     inner: Arc<ShardedInner<T>>,
-    /// Per-shard `occupied` tokens, `Arc`-shared with every live
-    /// [`ErasedGuard`] so a thread's `Drop` can flip its token at exit. Type-
-    /// erased (no `T`) for the single-registry reason (see module docs).
-    tokens: Arc<[AtomicBool]>,
+    /// Per-shard `occupied` tokens in the out-of-line [`TokenBlock`] this
+    /// region STRONGLY owns; [`ErasedGuard`] claims hold `Weak` references,
+    /// so the token storage dies with the region (R13-02) while a thread's
+    /// `Drop` can still flip the token of every region alive at its exit.
+    /// Type-erased (no `T`) for the single-registry reason (see module docs).
+    tokens: Arc<TokenBlock>,
 }
 
 impl<T> ShardedRegion<T> {
@@ -274,16 +359,16 @@ impl<T> ShardedRegion<T> {
         let shards: Vec<EpochRegion<T>> = (0..n)
             .map(|_| EpochRegion::with_capacity(cap_per_shard))
             .collect();
-        // Every shard starts FREE (occupied == false). A thread claims by
-        // CASing false → true.
-        let tokens: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
+        // Every shard starts FREE (occupied == false) in an out-of-line
+        // backing this region strongly owns; claimant threads only ever hold
+        // `Weak` claims against it (R13-02).
         Self {
             id: NEXT_SHARDED_REGION_ID.fetch_add(1, Ordering::Relaxed),
             inner: Arc::new(ShardedInner {
                 shards: shards.into_boxed_slice(),
                 next_shard: AtomicUsize::new(0),
             }),
-            tokens: Arc::from(tokens.into_boxed_slice()),
+            tokens: Arc::new(TokenBlock::new(n)),
         }
     }
 
@@ -348,9 +433,10 @@ impl<T> ShardedRegion<T> {
     ///    release on thread exit; the shared shard stays owned by whoever did
     ///    claim it, or stays free if nobody has).
     ///
-    /// The binding (id + a type-erased [`ErasedGuard`] holding an `Arc` to the
-    /// tokens) is cached in TLS so the fast path is a plain integer read, and
-    /// the guard's `Drop` releases an exclusively-claimed shard on thread exit.
+    /// The binding (id + a type-erased [`ErasedGuard`] holding `Weak` claims
+    /// to the token backing) is cached in TLS so the fast path is a plain
+    /// integer read, and the guard's `Drop` releases an exclusively-claimed
+    /// shard of every region still alive on thread exit.
     fn claim_or_get_shard(&self) -> u16 {
         let n = self.inner.shards.len();
         if let Some(id) = self.my_shard() {
@@ -362,7 +448,7 @@ impl<T> ShardedRegion<T> {
         }
         // 1. Try to exclusively claim a FREE shard (scan in order).
         let mut claimed_exclusively: Option<u16> = None;
-        for (i, occupied) in self.tokens.iter().enumerate() {
+        for (i, occupied) in self.tokens.slots.iter().enumerate() {
             // Acquire on success: pairs with the releaser's Release store in
             // ErasedGuard::drop, so we observe the released state. Relaxed on
             // failure: we just move on to the next candidate.
@@ -384,27 +470,23 @@ impl<T> ShardedRegion<T> {
         });
         // Cache the id (fast path).
         remember_shard(self.id, id);
-        // Install (once per thread) the type-erased [`ErasedGuard`] whose `Drop`
-        // releases every exclusively-claimed shard on thread exit. The guard
-        // owns an `Arc::clone(&self.tokens)` per claim so it outlives any
-        // `&self` borrow and can flip the token at thread-exit (the `Arc`
-        // keeps the tokens alive).
+        // Install (once per thread) the type-erased [`ErasedGuard`] whose
+        // `Drop` releases every exclusively-claimed shard of a still-alive
+        // region on thread exit.
         ERASED_GUARD.with(|slot| {
-            // A guard may already exist from an EARLIER claim on this thread —
-            // possibly against a DIFFERENT region's `tokens` array (e.g. the
-            // thread had no `MY_SHARDS` entry for THIS region, so we just
-            // scanned and won a CAS against THIS region's array; see the
-            // module note "Per-region binding"). We APPEND the
-            // just-won claim rather than overwriting: every won token MUST be
-            // tracked, since only this guard's `Drop` can release it (dropping
-            // the claim here would leak the token — it would stay `occupied`
-            // forever). The scan above can never re-win an already-held shard
-            // (its token is `true`), so no duplicate is appended.
+            // APPEND, never overwrite: only this guard's `Drop` can release
+            // a won token (dropping the record would leave it `occupied`
+            // forever), and the scan above can never re-win an already-held
+            // shard (its token is `true`), so no duplicate arises. Prune
+            // first: a dead claim is bookkeeping only — its storage no
+            // longer exists — while live claims are always kept. Claims are
+            // `Weak`s (R13-02): they never pin a dropped region's storage.
             let mut slot = slot.borrow_mut();
             let guard = slot.get_or_insert_with(|| ErasedGuard { claims: Vec::new() });
+            prune_dead_claims(guard);
             if let Some(won) = claimed_exclusively {
                 guard.claims.push(ErasedClaim {
-                    tokens: Arc::clone(&self.tokens),
+                    tokens: Arc::downgrade(&self.tokens),
                     shard: won,
                 });
             }
@@ -570,27 +652,24 @@ impl<T> ShardedRegion<T> {
         // Optionally claim the `occupied` token for this shard if it is free
         // (best-effort exclusivity for the lifecycle release). Acquire on
         // success pairs with the releaser's Release store in ErasedGuard::drop.
-        let claimed_exclusively = self.tokens[usize::from(shard)]
+        let claimed_exclusively = self.tokens.slots[usize::from(shard)]
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok();
         // Record the routing binding (fast-path TLS cache).
         remember_shard(self.id, shard);
-        // Install (once per thread) the type-erased guard whose `Drop` releases
-        // every exclusively-claimed shard on thread exit. A guard may already
-        // exist from an EARLIER claim (e.g. the thread first bound a DIFFERENT
-        // region's shard); we APPEND the just-won claim rather than overwrite,
-        // so every won token is tracked and released on `Drop` (dropping the
-        // claim here would leak the token — it would stay `occupied` forever,
-        // since only this guard's `Drop` can release it, and the prior claim's
-        // `tokens` array may be a different region's). The routing binding
-        // recorded above is unaffected. The thread-per-core runner binds once
-        // at startup, so this multi-claim path is not the norm.
+        // Install (once per thread) the type-erased guard whose `Drop`
+        // releases every exclusively-claimed shard of a still-alive region
+        // on thread exit. A guard may already exist from an earlier claim:
+        // APPEND (only this guard's `Drop` can release a won token), after
+        // pruning dead claims — bounded cold-point cleanup (R13-02), never
+        // a live claim. The routing binding above is unaffected.
         ERASED_GUARD.with(|slot| {
             let mut slot = slot.borrow_mut();
             let guard = slot.get_or_insert_with(|| ErasedGuard { claims: Vec::new() });
+            prune_dead_claims(guard);
             if claimed_exclusively {
                 guard.claims.push(ErasedClaim {
-                    tokens: Arc::clone(&self.tokens),
+                    tokens: Arc::downgrade(&self.tokens),
                     shard,
                 });
             }
@@ -622,6 +701,32 @@ impl<T> ShardedRegion<T> {
     ) -> Option<(usize, usize, usize)> {
         let shard = self.inner.shards.get(usize::from(shard))?;
         Some(shard._remote_free_queue_buffer_identity_for_tests())
+    }
+
+    /// Number of undestroyed token backing objects; not an RSS measurement.
+    /// Temporary thread-exit upgrades are included until their final drop.
+    ///
+    /// Test-only lifetime oracle: construction increments and `TokenBlock::drop`
+    /// decrements this counter. Together with the out-of-line Box representation,
+    /// it detects TLS strong ownership retaining a destroyed region's tokens.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _live_token_blocks_for_tests() -> usize {
+        LIVE_TOKEN_BLOCKS.load(Ordering::Acquire)
+    }
+
+    /// Diagnostics only (R13-02): how many exclusive token claims THIS
+    /// thread's TLS guard currently records — live claims plus not-yet-
+    /// pruned dead ones. Pure length read; mutates nothing; 0 before the
+    /// first claim and during TLS teardown.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _tls_claim_count_for_tests() -> usize {
+        ERASED_GUARD
+            .try_with(|slot| slot.borrow().as_ref().map_or(0, |guard| guard.claims.len()))
+            .unwrap_or(0)
     }
 
     /// Diagnostics only: force a stale advisory hint for a valid shard.

@@ -1,4 +1,4 @@
-//! [`MagazineBitmap`] — RAD-5 (plan Phase 5-E4), **verdict: GO** (see
+//! [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap) — RAD-5 (plan Phase 5-E4), **verdict: GO** (see
 //! `docs/perf/IAI_BASELINE.md` §RAD-5 for the measurement). This bitmap IS
 //! wired into the production hot path — it is compiled unconditionally (no
 //! feature flag) and probed in O(1) on the own-thread free double-free oracle
@@ -8,7 +8,7 @@
 //! A second, orthogonal per-segment bitmap: one bit per `MIN_BLOCK`-slot,
 //! recording whether the block starting at that slot is currently RESIDENT IN
 //! THE OWNER'S MAGAZINE (per-thread tcache), as opposed to
-//! [`AllocBitmap`](super::alloc_bitmap::AllocBitmap), which records FREE vs
+//! [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap), which records FREE vs
 //! ALLOCATED. This bitmap's state is set at magazine push (own-thread free)
 //! and cleared at magazine pop (alloc hit / refill issue) or magazine flush.
 //!
@@ -55,9 +55,9 @@
 //!
 //! The bitmap MECHANISM (the `bits` field, `FOOTPRINT`, `new`, `init_in_place`,
 //! `locate`, bit test / set / clear) is identical to
-//! [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) — both are one-bit-per-
+//! [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) — both are one-bit-per-
 //! `MIN_BLOCK`-slot single-writer views — so it lives once in the private
-//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap). This type is a thin
+//! [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap). This type is a thin
 //! newtype wrapper that exposes ONLY the magazine-residency domain-named methods
 //! (`mark_magazine` / `clear_magazine` / `is_in_magazine`), so the two bitmap
 //! KINDS cannot be confused at a call site. Every method stays
@@ -68,17 +68,17 @@
 //! ## This file is PURE SAFE DATA + ARITHMETIC
 //!
 //! Every raw memory touch goes through the [`node`](crate::alloc_core::node) seam — now via
-//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap), exactly like
-//! [`AllocBitmap`](super::alloc_bitmap::AllocBitmap). There is NO `unsafe` here.
+//! [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap), exactly like
+//! [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap). There is NO `unsafe` here.
 
 use crate::alloc_core::segment_bitmap::SegmentBitmap;
 
 /// The per-segment magazine-residency bitmap view: one bit per `MIN_BLOCK`
 /// slot of the segment. A thin newtype over the shared
-/// [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap) mechanism; it owns no
+/// [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap) mechanism; it owns no
 /// memory. Carved at
 /// [`Layout::magazine_bitmap_off`](crate::alloc_core::segment_header::Layout::magazine_bitmap_off);
-/// mirrors [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) with orthogonal
+/// mirrors [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) with orthogonal
 /// semantics (see module doc).
 #[repr(transparent)]
 pub(crate) struct MagazineBitmap(SegmentBitmap);

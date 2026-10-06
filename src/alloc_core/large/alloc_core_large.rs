@@ -309,8 +309,9 @@ impl AllocCore {
                 // makes `slot.base` visible to `contains_base`/remote routing
                 // lookups, so the plain full-struct write that followed could
                 // race a concurrent remote defensive read
-                // (`SegmentHeader::magic_at`/`kind_at`/`large_size_at`/
-                // `span_usable_at`) on a stale/duplicate remote free — the same
+                // (the `magic_at`/`kind_at`/`large_size_at`/
+                // `span_usable_at` reads that existed when UBFIX-6 landed;
+                // `magic_at` has since been removed) on a stale/duplicate remote free — the same
                 // data-race class as the two `dealloc`/`reclaim_large_segment`
                 // "zero magic" sites, just in the opposite (publish) direction.
                 //
@@ -400,7 +401,8 @@ impl AllocCore {
                 // below run strictly BEFORE `self.table.register(slot.base)`
                 // (a few lines down), i.e. while `slot.base` is still absent
                 // from `SegmentTable`'s `contains_base` hash table — no
-                // cross-thread reader (`magic_at`/`kind_at`/`large_size_at`/
+                // cross-thread reader (the removed `magic_at` or the
+                // remaining `kind_at`/`large_size_at`/
                 // `span_usable_at`) can address this segment at all yet, so
                 // there is no reader to observe a torn/partial write between
                 // these 4 stores, and their relative ORDER among each other is
@@ -719,8 +721,8 @@ impl AllocCore {
     ///   permanently consumed by a segment nobody can address any more, since
     ///   we already removed it from the table above).
     ///
-    /// Called by [`drain_large_deferred_free`](crate::registry::heap_core::HeapCore)
-    /// (via the `HeapCore` cross-thread reclaim path) on the owner's
+    /// Called by the `HeapCore` terminal large-sidecar-ingress drain
+    /// (`drain_large_sidecar_ingress`) on the owner's
     /// `alloc_large` slow-path, once per queued base.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
@@ -785,10 +787,11 @@ impl AllocCore {
                 // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
                 // was `hdr_zero = hdr; hdr_zero.magic = 0; Node::write_struct(base,
                 // hdr_zero)` — a non-atomic FULL-STRUCT write racing the remote
-                // defensive field reads (`SegmentHeader::magic_at`/`kind_at`/
-                // `large_size_at`/`span_usable_at`) that can observe a live header
-                // concurrently with this owner write under a stale/duplicate
-                // remote free. `hdr` is a fresh `read_at(base)` taken at the top
+                // defensive field reads that existed when this fix landed
+                // (`magic_at`/`kind_at`/`large_size_at`/`span_usable_at`;
+                // `magic_at` has since been removed and the foreign path now
+                // resolves addresses through the route directory). `hdr` is a
+                // fresh `read_at(base)` taken at the top
                 // of this fn, so every OTHER field is already byte-identical to
                 // what's in memory — the only real effect is zeroing `magic`.
                 // Same fix as the mirror site in `AllocCore::dealloc`'s Large

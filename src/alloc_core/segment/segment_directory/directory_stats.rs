@@ -16,7 +16,7 @@
 //! | `directory_hits`              | A3 directory lookup hit | storage only|
 //! | `directory_stale_hits`        | A3 stale-positive clear | storage only|
 //! | `directory_fallback_scans`    | A3 fallback scan entry  | storage only|
-//! | `directory_words_examined`    | A3 bitmap word scan     | storage only|
+//! | `directory_words_examined`    | `find_segment_with_free_impl` per word (incl. zero words) | YES |
 //! | `dirty_segments_drained`      | A4 dirty-drain loop     | storage only|
 //! | `wasted_dirty_drains`         | R9-6 dirty-drain loop (drain produced zero sought-class blocks) | storage only|
 //! | `full_scan_slots_examined`    | `find_segment_with_free_impl` per-slot | YES |
@@ -45,8 +45,10 @@ pub(crate) static DIRECTORY_STALE_HITS: AtomicU64 = AtomicU64::new(0);
 /// increment.
 pub(crate) static DIRECTORY_FALLBACK_SCANS: AtomicU64 = AtomicU64::new(0);
 
-/// Directory bitmap words examined (A3: each u64 word inspected during a
-/// per-class bitmap scan). Reads 0 until A3 wires the increment.
+/// Directory bitmap words examined: EVERY u64 word inspected during a
+/// per-class bitmap scan, including all-zero words (R13-01) — one increment
+/// per scanned word per scanned node bucket, before the zero-word skip.
+/// Reads 0 unless `alloc-stats` is on (the increment site is gated).
 pub(crate) static DIRECTORY_WORDS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
 /// Current Small/Primordial candidates probed by the fallback in

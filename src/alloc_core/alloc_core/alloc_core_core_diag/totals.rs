@@ -1,5 +1,5 @@
 //! The always-compiled, `AllocStats`-backing diagnostic accessors of
-//! [`AllocCore`] (Sol-F1): `dbg_foreign_or_unroutable_frees`,
+//! [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) (Sol-F1): `dbg_foreign_or_unroutable_frees`,
 //! `dbg_segments_reserved_total`, `dbg_segments_released_total`. NOT
 //! `internals`-gated — see the group module doc for the rationale
 //! (mechanical split of the former flat `alloc_core_core_diag.rs`; pure code
@@ -28,7 +28,7 @@ impl AllocCore {
     /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
     /// reservations since process start (every `os::Segment::reserve`
     /// success plus NUMA-pinned reservations). Monotonic, relaxed — pairs
-    /// with [`AllocCore::dbg_segments_released_total`]; the difference is
+    /// with [`AllocCore::dbg_segments_released_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_released_total); the difference is
     /// the current process-wide live segment count. Always compiled (not
     /// feature-gated) — every build reserves segments via `os::Segment::reserve`.
     #[doc(hidden)]
@@ -39,7 +39,7 @@ impl AllocCore {
 
     /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
     /// releases since process start. Monotonic, relaxed. See
-    /// [`AllocCore::dbg_segments_reserved_total`].
+    /// [`AllocCore::dbg_segments_reserved_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_reserved_total).
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_segments_released_total() -> u64 {

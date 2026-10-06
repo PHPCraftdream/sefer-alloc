@@ -1,5 +1,5 @@
 //! R13-7 (task #277, EXPERIMENTAL `large-cache-extended`):
-//! [`LargeCacheExtension`] — a lazily-materialised sidecar that widens
+//! [`LargeCacheExtension`](crate::alloc_core::large::large_cache_extended::LargeCacheExtension) — a lazily-materialised sidecar that widens
 //! `AllocCore`'s large-segment free-cache from the fixed 8 base slots
 //! (`LARGE_CACHE_SLOTS`, `alloc_core.rs`) to `8 + LARGE_CACHE_EXTENDED_SLOTS`
 //! (8 + 32 = 40 total).

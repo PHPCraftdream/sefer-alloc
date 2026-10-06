@@ -181,7 +181,7 @@ pub(super) enum SmallFreeGuard {
 /// lost with the guard-chain history: oracles 4/6 are exact only for a
 /// block's two OWN-THREAD resting places (this class's magazine, the
 /// BinTable free list); they are blind to a block whose cross-thread free
-/// is still in-flight in its segment's `RemoteFreeRing`, undrained. Task
+/// is still in-flight in the route sidecar's pending bits, unreclaimed. Task
 /// #164 narrowed this window (all production drain paths now consult the
 /// magazine via `reclaim_offset_checked`'s `is_in_magazine` predicate) and
 /// closed a second leg (task R1, the refill-window in-out-buffer leg); the

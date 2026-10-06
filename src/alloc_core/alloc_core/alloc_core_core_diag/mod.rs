@@ -1,4 +1,4 @@
-//! Core/general diagnostics for [`AllocCore`] (mechanical split of
+//! Core/general diagnostics for [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) (mechanical split of
 //! `alloc_core.rs`, task R6-CQ-7a).
 //!
 //! This file holds the `impl AllocCore { .. }` block for the `dbg_*`
@@ -23,9 +23,9 @@
 //! `#[cfg(feature = "internals")]`, split into two blocks:
 //!
 //! 1. An UNGATED block holding exactly the three `dbg_*` accessors
-//!    [`AllocCore::dbg_foreign_or_unroutable_frees`],
-//!    [`AllocCore::dbg_segments_reserved_total`],
-//!    [`AllocCore::dbg_segments_released_total`] — these back
+//!    [`AllocCore::dbg_foreign_or_unroutable_frees`](crate::alloc_core::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees),
+//!    [`AllocCore::dbg_segments_reserved_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_reserved_total),
+//!    [`AllocCore::dbg_segments_released_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_released_total) — these back
 //!    `AllocStats::stats()` (`src/global/sefer_alloc.rs`), a stable,
 //!    always-available public API method that is NOT `internals`-gated;
 //!    gating these three would break `stats()` under plain `production`.

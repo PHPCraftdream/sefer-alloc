@@ -23,6 +23,74 @@ record.)
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 168 — Src review R13-01…04: CLOSED (2026-10-06)
+
+- **Status:** CLOSED — исправления приняты после личной верификации интегратора.
+- **Current verdict:** `directory_words_examined` считает нулевые слова;
+  TLS хранит Weak на TokenBlock с out-of-line Box, dead claims прунятся на cold
+  bind/claim; terminal rustdoc/SAFETY и private-ссылки актуализированы;
+  неиспользуемые Node::read_ptr/write_ptr удалены, mutable pool-пара сохранена.
+- **Evidence:** три новых регрессионных файла, native on/off feature controls,
+  expected-red мутанты счётчика/strong retention/no-prune/no-release,
+  installed-allocator smoke; strict public production и private all-features
+  rustdoc прошли. Полный native-набор до удаления incidental link-text oracle:
+  804 passed / 0 failed / 7 ignored. Performance A/B и Miri/Loom/Kani не запускались.
+- **Next trigger:** нет для R13-01…04; общий prose-долг 154 и принятый P1-box 164
+  остаются открытыми. Полный receipt — `docs/reviews/2026-10-06-src-review-sol-round-13.md`,
+  раздел «Принятые исправления после ревью».
+
+**Историческая карточка при заведении (не текущий status):**
+168. **[T] Src review round 13 — diagnostic contract, transient shard retention и незавершённый terminal-doc cleanup.** (Filed 2026-10-06.)
+
+    - **Status:** OPEN — review-only; исходники не исправлялись.
+    - **Current-number-or-verdict:** R13-01 (P3) native witness подтвердил
+      `directory_words_examined_delta=0` при скане пустого materialized bitmap:
+      increment стоит после `bits == 0` continue. R13-02 (P3) — сильные Arc в
+      append-only `ErasedGuard::claims` держат token-storage уничтоженных регионов
+      до thread-exit; механизм подтверждён кодом, RSS не измерен. R13-03 (P3) —
+      старые TFS/ring/spill/deferred объяснения ещё есть в public rustdoc и SAFETY
+      Node; это не найденный новый UB. R13-04 (P4) — `Node::read_ptr/write_ptr`
+      не имеют src/tests вызывающих; mutable pool-пара используется и остаётся.
+    - **Next trigger:** правка directory diagnostics → определить words counter
+      contract и empty/nonempty oracle; transient-region workload → закрыть
+      dead-region token lifetime до выхода worker-а; следующий protocol-doc
+      cleanup → исправить конкретные места §2 отчёта, удалить две мёртвые Node
+      операции после feature/cfg проверки. Общая prose-карточка 154 не закрывается.
+    - **Evidence:** `docs/reviews/2026-10-06-src-review-sol-round-13.md`
+      R13-01…04, полный native witness в приложении A. Не performance GO.
+
+### 169 — Src review R13-05: CLOSED (2026-10-06)
+
+- **Status:** CLOSED — `ShardGuard` содержит PhantomData<&mut T>.
+- **Current verdict:** shared guard требует T: Sync; lock по-прежнему допускает
+  T: Send + !Sync. Actual-source Cell-guard fixture отвергается с E0277;
+  u32 и moved Cell guard проходят positive runtime/type cases. Удаление marker-а
+  даёт успешно скомпилированный negative fixture и роняет постоянный regression.
+- **Evidence:** `tests/r13_shard_guard_auto_traits.rs`,
+  `tests/compile_fail/shard_guard_send_only_payload_not_sync/src/main.rs`;
+  receipt в `docs/reviews/2026-10-06-src-review-sol-round-13.md`.
+- **Next trigger:** нет; намеренная data race не исполнялась.
+
+**Историческая карточка при заведении (не текущий status):**
+169. **[A] Src review R13-05 — `ShardGuard<T>` получает auto-Sync без `T: Sync`.** (Filed 2026-10-06.)
+
+    - **Status:** OPEN — latent generic soundness defect (P3); текущий
+      production exploit не найден, исправление этим review-only раундом не внесено.
+    - **Current-number-or-verdict:** `ShardGuard` содержит `&ShardLock<T>`;
+      lock Sync при T:Send, поэтому guard тоже Sync при T:Send, хотя Deref
+      выдаёт `&T`. Actual-source example с Cell<u32> скомпилировал
+      `require_sync(&guard)` и shared scoped-thread access. Data race
+      намеренно не исполнялась. Текущий RouteDirectory payload — Shard,
+      а не Cell; private generic boundary остаётся неправильной.
+    - **Next trigger:** исправить auto-trait marker/bounds guard-а до добавления
+      Send-only payload. Negative compile-case `ShardGuard<Cell<u32>>: Sync`
+      должен отказать; positive u32/current Shard сохранить. Не сужать
+      корректную mutex-границу `ShardLock<T>: Sync` с T:Send до T:Sync.
+    - **Evidence:** `src/registry/segment_route/shard_lock.rs:14–27,55–67`;
+      `docs/reviews/2026-10-06-src-review-sol-round-13.md` R13-05,
+      §6.8 и полный actual-source witness в приложении B.
+
+
 - **fxx round 12 (2026-10-06) — correctness findings fixed in-round, not previously indexed.** R12-01 (P2, foreign free of a never-issued granule aborted the owner): fixed for metadata/uncarved-tail granules, `0228d150` — the interior-pointer residual is open as item 166; R12-04 (fallback-init losers spun without `yield_now`): `c4725071`; R12-06/07/08 (empty unsafe seam, contradictory seam comments, dead `tagged-index-stack` dependency): `ea47a10c` — the loom/kani model coverage residual is open as item 167; R12-09/R12-10 (stale slot/bootstrap docs, inline `#[cfg(test)]` modules, stale `allow(dead_code)`): `3cf802e6`, `516358fa`. Report: `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md`.
 
 - **CI defect (macOS): `std::sync::Mutex` в `RouteDirectory` аллоцирует `Box` при первом `lock` → рекурсия в глобальный аллокатор → переполнение стека.** CLOSED 2026-10-02, commit `b50f04f4` (`fix(perf)`): шарды RouteDirectory переведены на неаллоцирующий spin-lock (`ShardLock`); rustfmt-своп `14807327`; гейт дифференциальной диагностики на доступность segment_bases — `041cfd9e`. Не номерной пункт (не был в индексе до фикса) — заведён задним числом как closure trail.

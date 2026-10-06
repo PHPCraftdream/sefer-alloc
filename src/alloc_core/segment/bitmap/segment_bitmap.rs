@@ -1,6 +1,6 @@
-//! [`SegmentBitmap`] — the shared *mechanism* underlying the two per-segment
-//! bitmaps ([`AllocBitmap`](super::alloc_bitmap::AllocBitmap) and
-//! [`MagazineBitmap`](super::magazine_bitmap::MagazineBitmap)): one bit per
+//! [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap) — the shared *mechanism* underlying the two per-segment
+//! bitmaps ([`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) and
+//! [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap)): one bit per
 //! `MIN_BLOCK`-slot of the segment, single-writer (owner-thread-only, so plain
 //! non-atomic byte reads/writes — see each wrapper's module doc for the
 //! owner-only proof), "pure safe data + arithmetic" routing every raw memory
@@ -32,8 +32,8 @@ use crate::alloc_core::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT};
 /// The shared per-segment bitmap *mechanism*: one bit per `MIN_BLOCK`-slot of
 /// the segment. A thin view over in-segment metadata carved by the bootstrap;
 /// it owns no memory. Identical geometry and arithmetic for both
-/// [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) and
-/// [`MagazineBitmap`](super::magazine_bitmap::MagazineBitmap).
+/// [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) and
+/// [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap).
 #[repr(transparent)]
 pub(super) struct SegmentBitmap {
     /// Absolute address of the first bitmap byte (stored absolute so reads need

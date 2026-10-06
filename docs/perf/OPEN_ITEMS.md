@@ -82,14 +82,13 @@ exists; implement only if its trigger/victim materializes. **[L]** low-priority
 — an "honest reject with a revisit trigger"; not recommended now but documented
 for completeness.
 
-**Src review round 13 disposition (2026-10-06).** Для каждого существующего
-пункта сохранены текущие status/trigger: review-only раунд не проводит
-promotion/latency/Ir/RSS A/B и не открывает повторно отвергнутые эксперименты.
+**Src review round 13 and remediation disposition (2026-10-06).** Для каждого
+существующего perf-пункта сохранены status/trigger: исправления correctness/docs
+не являются promotion/latency/Ir/RSS A/B и не переоткрывают отвергнутые эксперименты.
 81 остаётся INCONCLUSIVE, 82 — НЕ СЕЙЧАС; 72 и 78 сохраняют свои measurement
-триггеры. Новые гипотезы review-документа не являются perf-gate отчётом и по Scope
-этого индекса не получают отдельные gate-карточки. Evidence:
-`docs/reviews/2026-10-06-src-review-sol-round-13.md` §5–7;
-diagnostic-contract дефект — correctness item 168, не speedup claim.
+триггеры. R13-01…05 закрыты в correctness items 168/169, включая настоящий
+words-examined diagnostic contract; speedup не заявляется. Evidence:
+`docs/reviews/2026-10-06-src-review-sol-round-13.md`, раздел «Принятые исправления после ревью».
 
 ---
 

@@ -30,9 +30,9 @@
 //!
 //! The bitmap MECHANISM (the `bits` field, `FOOTPRINT`, `new`, `init_in_place`,
 //! `locate`, bit test / set / clear) is identical to
-//! [`MagazineBitmap`](super::magazine_bitmap::MagazineBitmap) — both are one-bit-
+//! [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap) — both are one-bit-
 //! per-`MIN_BLOCK`-slot single-writer views — so it lives once in the private
-//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap). This type is a thin
+//! [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap). This type is a thin
 //! newtype wrapper that exposes ONLY the free-vs-allocated domain-named methods
 //! (`is_free` / `mark_free` / `mark_alloc`), so the two bitmap KINDS cannot be
 //! confused at a call site. Every method stays `#[inline(always)]` and forwards
@@ -44,23 +44,23 @@
 //! Every raw memory touch goes through the [`node`](crate::alloc_core::node) seam (exactly
 //! like [`PageMap`](crate::alloc_core::segment_header::PageMap) /
 //! [`BinTable`](crate::alloc_core::segment_header::BinTable)) — now via
-//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap). There is NO `unsafe`
+//! [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap). There is NO `unsafe`
 //! here.
 //!
 //! ## No atomics (single-writer)
 //!
 //! A segment's bitmap is written ONLY by the segment's owner: own-thread frees
 //! and the owner-side `reclaim_offset` drain both run on the owner. Cross-thread
-//! frees never touch the bitmap — they go through the
-//! [`RemoteFreeRing`](crate::alloc_core::remote_free_ring::RemoteFreeRing) (offsets only)
-//! and the owner sets the bit when it drains. So plain (non-atomic) byte
+//! frees never touch the bitmap — they publish offsets into the route
+//! directory's independently pinned sidecar, and the owner sets the bit when
+//! it reclaims the sidecar record. So plain (non-atomic) byte
 //! reads/writes are race-free, matching the `bump`-cursor single-writer rule.
 
 use crate::alloc_core::segment_bitmap::SegmentBitmap;
 
 /// The per-segment allocation/free bitmap view: one bit per `MIN_BLOCK`-slot of
 /// the segment. A thin newtype over the shared
-/// [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap) mechanism; it owns no
+/// [`SegmentBitmap`](crate::alloc_core::segment_bitmap::SegmentBitmap) mechanism; it owns no
 /// memory. Carved by the bootstrap at
 /// [`Layout::alloc_bitmap_off`](crate::alloc_core::segment_header::Layout::alloc_bitmap_off).
 #[repr(transparent)]

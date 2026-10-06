@@ -22,7 +22,7 @@
 mod alloc_core;
 /// Group module: the public const-buildable configuration types (Profile, LargeCacheConfig, LargeCacheMode, SmallSegmentPoolConfig).
 mod config;
-/// Group module: the large/huge allocation path — `alloc_large` + slow path + reclaim, the per-shard large-cache decay/eviction cluster, the experimental `large-cache-extended` sidecar, and the cross-thread deferred-free Treiber stack.
+/// Group module: the large/huge allocation path — `alloc_large` + slow path + reclaim, the per-shard large-cache decay/eviction cluster, the experimental `large-cache-extended` sidecar, and the per-reservation Large phase-transition state.
 mod large;
 /// Group module: OS & platform shims (os, numa, size_classes) plus the confined raw-memory unsafe seams (node, sidecar).
 mod platform;

@@ -44,9 +44,10 @@ use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 // resting places (this class's magazine + the BinTable free list).
 //
 // RESIDUAL M2 LIMIT (task #164): they do NOT cover a block whose cross-thread
-// free is still in-flight (undrained) in its segment's `RemoteFreeRing` — the
-// ring push sets neither oracle. A cross-thread double-free (own-thread free of
-// a block already queued in the ring) therefore slips past both. Pre-existing
+// free is still in-flight (published, unreclaimed) in the route sidecar's
+// pending bits — a publication sets neither oracle. A cross-thread double-free
+// (own-thread free of a block already published unreclaimed) therefore slips
+// past both. Pre-existing
 // since fastbin; Э6 neither opened nor closed it. See the RESIDUAL M2 LIMIT
 // note in `HeapCore::dealloc_own_thread`.
 
