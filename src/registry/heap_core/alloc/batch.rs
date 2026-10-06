@@ -154,12 +154,13 @@ impl HeapCore {
         // primitive reads the physical magazine bitmap itself, including the
         // residency bits held through this batch's in-flight output phase.
         if filled < want {
-            // Opportunistic drains (same placement as `refill_magazine_slow`:
-            // magazine-miss-only). `fastbin` implies `alloc-xthread`, so both
-            // exist here.
-            self.drain_large_sidecar_ingress();
+            // Same miss-only placement as `refill_magazine_slow`: bounded probe
+            // first, one full rescue sweep only if the refill comes back empty.
+            self.drain_large_sidecar_ingress_hot_bounded();
 
-            let n = self.core.refill_class_bump(c, &mut out[filled..]);
+            let n = self.refill_with_large_rescue(|heap| {
+                heap.core.refill_class_bump(c, &mut out[filled..])
+            });
             // P4 stamp-dedupe + hardened gen bump. EVERY refilled block is
             // issued to the caller here (none stay in the magazine), so all
             // get the issue touch — unlike `refill_magazine_slow`, which only
@@ -270,14 +271,27 @@ impl HeapCore {
     /// issuing the batch and considering physical Large-cache reuse.
     #[cfg(feature = "batch-api")]
     fn alloc_batch_large(&mut self, out: &mut [*mut u8], layout: Layout) -> usize {
-        // A batch-only owner must consume pending Large obligations too.
-        #[cfg(feature = "alloc-xthread")]
-        {
-            self.drain_large_sidecar_ingress();
-        }
+        // Bounded probe up front; one full rescue sweep only if the batch
+        // cannot make progress (same shape as `refill_with_large_rescue`).
+        #[cfg(feature = "fastbin")]
+        self.drain_large_sidecar_ingress_hot_bounded();
+        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
+        self.drain_large_sidecar_ingress();
 
         let mut filled = 0usize;
         for slot in out.iter_mut() {
+            #[cfg(feature = "fastbin")]
+            let p = if filled == 0 {
+                let mut first = core::ptr::null_mut();
+                let _ = self.refill_with_large_rescue(|heap| {
+                    first = heap.core.alloc(layout);
+                    usize::from(!first.is_null())
+                });
+                first
+            } else {
+                self.core.alloc(layout)
+            };
+            #[cfg(not(feature = "fastbin"))]
             let p = self.core.alloc(layout);
             if p.is_null() {
                 break;

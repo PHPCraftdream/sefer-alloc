@@ -1,0 +1,4 @@
+scenario,L,K,budget,patched_inspections,mutant_inspections,mutant_over_budget,rescues,table_slots,retire_bound
+small_batch_miss,64,1,4,4,64,16.0000,0,,
+large_batch,9,1,4,4,9,2.2500,0,,
+late_publication_small_batch,,2,4,,9,,0,11,4

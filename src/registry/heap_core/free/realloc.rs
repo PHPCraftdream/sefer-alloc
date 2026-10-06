@@ -175,6 +175,7 @@ impl HeapCore {
                         old_layout.align(),
                     );
                     if class.is_none() {
+                        // Full sweep kept: cold path, no measured cost to justify a bounded probe.
                         self.drain_large_sidecar_ingress();
                     }
                 }

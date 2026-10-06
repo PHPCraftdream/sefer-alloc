@@ -780,7 +780,10 @@ impl HeapCore {
 
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
-    fn refill_with_large_rescue(&mut self, mut refill: impl FnMut(&mut Self) -> usize) -> usize {
+    pub(super) fn refill_with_large_rescue(
+        &mut self,
+        mut refill: impl FnMut(&mut Self) -> usize,
+    ) -> usize {
         let n = refill(self);
         if n != 0 {
             return n;

@@ -1,0 +1,12 @@
+# cmd: cargo test --features production,batch-api,internals,bench-internals --test r12_05_batch_large_bounded -- --nocapture --test-threads=1
+# exit=0
+running 3 tests
+test large_batch_probes_at_most_the_hot_budget ... R12-05 large L=9 K=1 B=4 inspections=4 rescues=0
+ok
+test late_large_publication_is_retired_by_rotating_small_batch_probes ... R12-05 late publication retired after 2 misses (table=11 B=4)
+ok
+test small_batch_miss_probes_at_most_the_hot_budget ... R12-05 small L=64 K=1 B=4 inspections=4 rescues=0
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
