@@ -234,9 +234,8 @@ impl<T> OncePtrCell<T> {
     }
 }
 
-// CRATE-P7: const-capable, `core`-atomic stand-in for
-// the tagged free-list head (`tagged_index_stack::StackHead<16>`) +
-// StackStorage/StackOps binding.
+// Protocol counterpart for `tagged-index-stack`; this local mirror exists
+// because loom needs a const-capable core-atomic head implementation.
 // -----------------------------------------------------------------------
 
 use core::sync::atomic::AtomicU64;
@@ -325,8 +324,7 @@ use core::sync::atomic::AtomicU64;
 // it doubles the surface that can silently drift from the real type.
 use tagged_index_stack::{TagExhausted, TaggedIndex, TAIL};
 
-/// Const-capable stand-in for the tagged free-list head
-/// (`tagged_index_stack::StackHead<16>`) + StackStorage/StackOps binding,
+/// Const-capable local stand-in for the tagged free-list head protocol,
 /// used ONLY under `--cfg loom`, so `static REGISTRY: Registry =
 /// Registry::new()` still const-evaluates (loom's `AtomicU64::new` is
 /// non-`const`). Never on a loom-modeled interleaving — the real-type

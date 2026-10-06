@@ -1,7 +1,6 @@
 //! Registry diagnostics: the config-conflict counter, the process-wide
 //! hit-total aggregators over slot-resident W3 counters, the minted-slot
 //! high-water mark, and the UBFIX-5 test-only introspection hooks.
-#![allow(unsafe_code)]
 
 use core::sync::atomic::{AtomicU64, Ordering};
 

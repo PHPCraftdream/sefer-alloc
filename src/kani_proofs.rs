@@ -174,6 +174,7 @@ mod hand_proofs {
 // invariants hold. These harnesses ARE the regression tests for the
 // `free_slots` packing (a future INDEX_BITS change that broke round-trip or
 // let a tag bleed into the value half would fail here).
+// `tagged-index-stack` is a `cfg(any(loom, kani))` target dependency: these proofs are verification-only.
 #[cfg(all(kani, feature = "alloc-global"))]
 mod pack_proofs {
     // CRATE-P7: the `free_slots` packing now lives in the `tagged-index-stack`

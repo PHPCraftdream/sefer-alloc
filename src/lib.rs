@@ -109,7 +109,7 @@
 //   numa-shim          (crates/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
 //   once-ptr-cell      (crates/once-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
 //   size-classes       (crates/size-classes)       — const-built size-class tables       (feature: alloc-core)
-//   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack         (feature: alloc-global)
+//   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack (verification-only; not a runtime dependency)
 //   malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness  (dev-only)
 //   globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness (dev-only)
 //   proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (dev-only)
@@ -179,8 +179,8 @@
 //     trait/bridge surface, and the caller-facing push boundary
 //     (`StackOps::push_index` and `ArrayIndexStack::push`, both `unsafe fn`
 //     under a three-clause link-domain + liveness + exclusive-ownership
-//     contract). sefer's registry
-//     free_slots uses it. Pulled in under `alloc-global`.
+//     free-slot packing proofs use it under `cfg(kani)`; it is not used by
+//     sefer's runtime.
 //
 //   proc-probe    (crates/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
 //     The RESULT key=value stdout protocol + a re-export of proc-memstat's
@@ -247,8 +247,6 @@
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)
-//      * `registry::heap_registry::counters` — registry diagnostics/aggregators
-//                             over slot-resident counters. (under `alloc-global`)
 //      * `registry::segment_route::directory` — System-backed route entry,
 //                             sidecar and sorted pointer-array allocation/
 //                             reclamation; numeric foreign lookup pins under

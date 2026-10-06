@@ -93,12 +93,10 @@
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented raw-pointer TLS seam (Phase 12.3).
-// `allow` lifts the crate-level `deny` for this file only — `unsafe`
-// anywhere else in the crate is a hard error. Since Ph4b (#2092) the
-// `unsafe` surface here is empty: the only core access goes through
-// `HeapLease::core` (the sole, `pub(crate)` SAFETY seam of the typed lease,
-// a SAFE function whose S1–S4 contract is proven inside `claim.rs`), and
-// `HeapLease::drop` owns the `LIVE → FREE` Release CAS.
+// Since Ph4b (#2092), core access is safe through `HeapLease::core`; the
+// sole unsafe operation in this module is the `bench-internals`-gated
+// `dbg_restore_local_for_test` hook below. Its caller must provide a valid
+// live `HeapCore` binding for this thread.
 #![allow(unsafe_code)]
 
 use core::cell::Cell;
@@ -640,10 +638,11 @@ pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
 // safe-`pub fn`-that-touches-allocator-state hole this crate's benchmark-hook
 // rule targets. It is covered by this file's existing tier-1
 // `#![allow(unsafe_code)]` (NO item-level `#[allow(unsafe_code)]` is added, so
-// no new tier-2 site is created): `tls_heap.rs` already holds `unsafe` for the
-// lease-core handoff + `trim_for_recycle`. `dbg_dealloc_own_thread_with_base` /
-// `dbg_flush_class_only` in `heap_core_diag.rs` are the item-scoped (tier-2)
-// positive pattern this mirrors where the enclosing file is otherwise safe.
+// no new tier-2 site is created): `tls_heap.rs` keeps its module-level
+// allowance solely for this unsafe test hook; it installs an unchecked raw
+// pointer as the current thread's live binding. The item-scoped (tier-2)
+// hooks in `heap_core_diag.rs` are the positive pattern when a file is
+// otherwise safe.
 #[doc(hidden)]
 #[cfg(feature = "bench-internals")]
 pub unsafe fn dbg_restore_local_for_test(saved: *mut HeapCore) {
