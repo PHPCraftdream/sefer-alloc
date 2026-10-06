@@ -34,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   27) and `tagged-index-stack` left the `production` dependency closure (`ea47a10c`);
   correctness item 167 tracks the loom/kani model coverage that remains.
 - [test] R12-10: three inline `#[cfg(test)]` modules moved to `tests/` over a doc-hidden
-  `internals` surface; the stale `allow(dead_code)` on the Large reservation state machine is
-  removed (`516358fa`). A clippy `--all-features` lint in the new R12-01 test is fixed (`7d3b3e84`).
+  `internals` surface; the blanket `allow(dead_code)` on the Large reservation state machine is
+  gone (`516358fa`), leaving a `cfg_attr` only on the two alloc-global-only methods. A clippy `--all-features` lint in the new R12-01 test is fixed (`7d3b3e84`).
 
 ### Root allocator `src/` review round 11 (2026-09-30; remediation active)
 

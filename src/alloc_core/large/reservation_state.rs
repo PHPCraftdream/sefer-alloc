@@ -20,6 +20,8 @@ impl<'a> LargeReservationState<'a> {
 
     /// The successful CAS is the producer's last reservation access. The
     /// caller must not touch the header, payload or this word afterwards.
+    // Producer/claim protocol: only registry::segment_route (alloc-global) calls it.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn publish_pending(&self, generation: u64) -> bool {
         self.word
@@ -34,6 +36,8 @@ impl<'a> LargeReservationState<'a> {
 
     /// Only a table-scan owner with the heap lease may claim this obligation.
     /// The caller derives the canonical base from the table, never a producer.
+    // Producer/claim protocol: only registry::segment_route (alloc-global) calls it.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn claim_pending(&self) -> Option<u64> {
         let observed = self.word.load(Ordering::Acquire);
