@@ -1,10 +1,12 @@
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
+
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::LargeReservationState;
-use crate::alloc_core::segment_header::{
+use sefer_alloc::alloc_core::segment_header::{
     large_generation, large_phase, next_large_generation, next_large_generation_bounded,
     pack_large_state, LargePhase, MAX_LARGE_GENERATION,
 };
+use sefer_alloc::alloc_core::LargeReservationState;
 
 #[test]
 fn pending_is_single_admission_and_single_owner_claim() {

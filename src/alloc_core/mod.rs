@@ -42,6 +42,9 @@ mod segment;
 mod small;
 #[cfg(feature = "alloc-global")]
 pub(crate) use large::reservation_state;
+#[cfg(all(feature = "alloc-global", feature = "internals"))]
+#[doc(hidden)]
+pub use large::reservation_state::LargeReservationState;
 #[cfg(feature = "alloc-global")]
 pub(crate) use segment::remote_bitmap;
 // The former flat segment-substrate child modules now live in the `segment/`

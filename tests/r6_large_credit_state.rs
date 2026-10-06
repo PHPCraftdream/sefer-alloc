@@ -1,7 +1,9 @@
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
+
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::LargeReservationState;
-use crate::alloc_core::segment_header::{large_phase, pack_large_state, LargePhase};
+use sefer_alloc::alloc_core::segment_header::{large_phase, pack_large_state, LargePhase};
+use sefer_alloc::alloc_core::LargeReservationState;
 
 // One instance owns one credit in LIVE/PENDING/CONSUMING. Transfer to cache,
 // rollback, or release owns none; only a completed reissue creates a new one.

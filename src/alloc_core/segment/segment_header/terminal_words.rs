@@ -29,12 +29,12 @@ pub(crate) const LARGE_STATE_OFF: usize =
 pub(crate) const REMOTE_HEAD_EMPTY: u32 = u32::MAX;
 
 const PHASE_BITS: u32 = 3;
-pub(crate) const MAX_LARGE_GENERATION: u64 = u64::MAX >> PHASE_BITS;
+pub const MAX_LARGE_GENERATION: u64 = u64::MAX >> PHASE_BITS;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 #[allow(dead_code)] // Pending/Consuming belong to the next ingress stage.
-pub(crate) enum LargePhase {
+pub enum LargePhase {
     Unused = 0,
     Initializing = 1,
     Live = 2,
@@ -45,19 +45,19 @@ pub(crate) enum LargePhase {
 }
 
 #[inline(always)]
-pub(crate) const fn pack_large_state(phase: LargePhase, generation: u64) -> u64 {
+pub const fn pack_large_state(phase: LargePhase, generation: u64) -> u64 {
     assert!(generation <= MAX_LARGE_GENERATION);
     (generation << PHASE_BITS) | phase as u64
 }
 
 #[inline(always)]
-pub(crate) const fn large_generation(word: u64) -> u64 {
+pub const fn large_generation(word: u64) -> u64 {
     word >> PHASE_BITS
 }
 
 #[inline(always)]
 #[cfg_attr(not(feature = "alloc-decommit"), allow(dead_code))]
-pub(crate) const fn large_phase(word: u64) -> Option<LargePhase> {
+pub const fn large_phase(word: u64) -> Option<LargePhase> {
     match word & ((1 << PHASE_BITS) - 1) {
         0 => Some(LargePhase::Unused),
         1 => Some(LargePhase::Initializing),
@@ -71,12 +71,12 @@ pub(crate) const fn large_phase(word: u64) -> Option<LargePhase> {
 }
 
 #[inline(always)]
-pub(crate) const fn next_large_generation(generation: u64) -> Option<u64> {
+pub const fn next_large_generation(generation: u64) -> Option<u64> {
     next_large_generation_bounded(generation, MAX_LARGE_GENERATION)
 }
 
 #[inline(always)]
-pub(crate) const fn next_large_generation_bounded(generation: u64, limit: u64) -> Option<u64> {
+pub const fn next_large_generation_bounded(generation: u64, limit: u64) -> Option<u64> {
     if generation >= limit || limit > MAX_LARGE_GENERATION {
         None
     } else {
