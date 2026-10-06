@@ -211,6 +211,11 @@ impl AllocCore {
         // configuration — `mut` would be a warning under `--all-features`.
         #[cfg(feature = "alloc-segment-directory")]
         let mut periodic_revalidation_active = false;
+        // Round 12 O-4 (data only): set when this call is a routed
+        // negative-directory scan, so the outcome counters are exclusive.
+        #[cfg(feature = "alloc-stats")]
+        #[allow(unused_mut)]
+        let mut routed_miss_scan = false;
         // R11-6: compute my_node ONCE for both the directory-driven lookup
         // (node-bucket preference order) and the linear-scan NUMA two-pass
         // logic below. Moved here from the linear-scan prologue so the
@@ -396,6 +401,12 @@ impl AllocCore {
             let trust_negative = true;
             if !trust_negative {
                 periodic_revalidation_active = !rescue;
+                #[cfg(feature = "alloc-stats")]
+                if !rescue {
+                    routed_miss_scan = true;
+                    crate::alloc_core::directory_stats::ROUTED_MISS_SCANS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
             } else if !rescue {
                 self.directory_miss_streak[class_idx] =
                     self.directory_miss_streak[class_idx].saturating_add(1);
@@ -446,6 +457,8 @@ impl AllocCore {
         // NO_NODE_RAW, which is treated as "acceptable" / unknown).
         #[cfg(feature = "numa-aware")]
         let mut fallback: Option<usize> = None;
+        #[cfg(all(feature = "numa-aware", feature = "alloc-stats"))]
+        let mut fallback_was_nonempty = false;
 
         let mut from = 0;
         while let Some(i) = self.table.next_active(SegmentKind::Small, from) {
@@ -466,6 +479,11 @@ impl AllocCore {
             {
                 std::process::abort();
             }
+            // Stats only: the class bin before the drain, to tell a drain-created
+            // free block from directory lag.
+            #[cfg(feature = "alloc-stats")]
+            let was_nonempty = routed_miss_scan
+                && SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
             // Consume only this canonical candidate before inspecting its bins.
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
             match self.drain_segment_sidecar(base) {
@@ -501,6 +519,10 @@ impl AllocCore {
                         // fallback if we find nothing local, then keep scanning.
                         if fallback.is_none_or(|slot| self.table.base_at(slot).is_null()) {
                             fallback = Some(i);
+                            #[cfg(feature = "alloc-stats")]
+                            {
+                                fallback_was_nonempty = was_nonempty;
+                            }
                         }
                         continue;
                     }
@@ -508,6 +530,8 @@ impl AllocCore {
                     self.finalize_hit(
                         base,
                         class_idx,
+                        #[cfg(feature = "alloc-stats")]
+                        routed_miss_scan.then_some(was_nonempty),
                         #[cfg(feature = "alloc-segment-directory")]
                         periodic_revalidation_active,
                         #[cfg(feature = "alloc-segment-directory")]
@@ -521,6 +545,8 @@ impl AllocCore {
                     self.finalize_hit(
                         base,
                         class_idx,
+                        #[cfg(feature = "alloc-stats")]
+                        routed_miss_scan.then_some(was_nonempty),
                         #[cfg(feature = "alloc-segment-directory")]
                         periodic_revalidation_active,
                         #[cfg(feature = "alloc-segment-directory")]
@@ -558,16 +584,31 @@ impl AllocCore {
                 self.finalize_hit(
                     fb,
                     class_idx,
+                    #[cfg(feature = "alloc-stats")]
+                    routed_miss_scan.then_some(fallback_was_nonempty),
                     #[cfg(feature = "alloc-segment-directory")]
                     periodic_revalidation_active,
                     #[cfg(feature = "alloc-segment-directory")]
                     rescue,
                 );
+            } else {
+                #[cfg(feature = "alloc-stats")]
+                if routed_miss_scan {
+                    crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_NOTHING
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
             }
             fallback
         }
         #[cfg(not(feature = "numa-aware"))]
-        None
+        {
+            #[cfg(feature = "alloc-stats")]
+            if routed_miss_scan {
+                crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_NOTHING
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            }
+            None
+        }
     }
 
     /// #1994 (alloc_core review): shared "hit finalize" step reused by the
@@ -583,9 +624,19 @@ impl AllocCore {
         &mut self,
         base: *mut u8,
         class_idx: usize,
+        #[cfg(feature = "alloc-stats")] routed_scan_was_nonempty: Option<bool>,
         #[cfg(feature = "alloc-segment-directory")] periodic_revalidation_active: bool,
         #[cfg(feature = "alloc-segment-directory")] rescue: bool,
     ) {
+        // Round 12 O-4 (data only): exactly one outcome per routed miss scan.
+        #[cfg(feature = "alloc-stats")]
+        match routed_scan_was_nonempty {
+            Some(true) => crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
+            Some(false) => crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_DRAIN_CREATED_FREE
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
+            None => 0,
+        };
         // Mechanism 2 (task #51): if this segment was RETAINED in the pool
         // (empty, committed), it is now being reused — remove it from the
         // pool so it is not later re-pooled a second time (a double-entry

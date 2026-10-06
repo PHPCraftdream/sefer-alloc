@@ -225,4 +225,38 @@ impl AllocCore {
     pub fn dbg_directory_miss_self_heal() -> u64 {
         directory_stats::DIRECTORY_MISS_SELF_HEAL.load(core::sync::atomic::Ordering::Relaxed)
     }
+
+    /// Round 12 O-4: routed negative-directory scans entered (one per lookup).
+    /// Equals the sum of the three outcome accessors below. Reads 0 unless the
+    /// `alloc-stats` increment is enabled.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_routed_miss_scans() -> u64 {
+        directory_stats::ROUTED_MISS_SCANS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Round 12 O-4: routed miss scans whose hit segment's class bin was empty
+    /// before its sidecar drain and non-empty after.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_routed_miss_scan_drain_created_free() -> u64 {
+        directory_stats::ROUTED_MISS_SCAN_DRAIN_CREATED_FREE
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Round 12 O-4: routed miss scans whose hit segment's class bin was
+    /// already non-empty before the drain (directory lag).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_routed_miss_scan_bin_already_nonempty() -> u64 {
+        directory_stats::ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Round 12 O-4: routed miss scans that found no block.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_routed_miss_scan_nothing() -> u64 {
+        directory_stats::ROUTED_MISS_SCAN_NOTHING.load(core::sync::atomic::Ordering::Relaxed)
+    }
 }

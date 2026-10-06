@@ -23,6 +23,10 @@
 //! | `directory_authoritative_miss`| Trusted negative result; skipped scan only where negatives may be trusted | storage only|
 //! | `directory_miss_self_heal`    | Negative lookup scan found missed segment; routed every miss, standalone periodic | storage only|
 //! | `directory_rescue_oom_avoided`| R9-8 OOM-rescue scan found a directory-missed segment before surfacing OOM | storage only|
+//! | `routed_miss_scans`           | Routed negative-directory scan entered (one per lookup, not per slot) | storage only|
+//! | `routed_miss_scan_drain_created_free` | ...that scan hit a segment whose class bin was EMPTY before its sidecar drain and non-empty after | storage only|
+//! | `routed_miss_scan_bin_already_nonempty` | ...that scan hit a segment whose class bin was already non-empty (directory lag) | storage only|
+//! | `routed_miss_scan_nothing`    | ...that scan found no block (the directory was right) | storage only|
 
 use core::sync::atomic::AtomicU64;
 
@@ -78,3 +82,25 @@ pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);
 /// on (the increment site is gated) and `alloc-segment-directory` is active
 /// with a materialised sidecar (the rescue is gated on the directory feature).
 pub(crate) static DIRECTORY_RESCUE_OOM_AVOIDED: AtomicU64 = AtomicU64::new(0);
+
+/// Routed negative-directory scans (round 12 O-4, data only): a routed core's
+/// directory lookup found no candidate and the full fallback scan was entered
+/// (rescue scans excluded). One increment per lookup, not per slot. Invariant:
+/// equals the sum of the three outcome counters below. Reads 0 unless
+/// `alloc-stats` is on.
+pub(crate) static ROUTED_MISS_SCANS: AtomicU64 = AtomicU64::new(0);
+
+/// Outcome of a routed miss scan: it hit a segment whose class bin was EMPTY
+/// before that segment's sidecar drain and non-empty after — a terminal
+/// publication hidden behind the negative directory, the case that makes
+/// trusting the negative unsafe. Reads 0 unless `alloc-stats` is on.
+pub(crate) static ROUTED_MISS_SCAN_DRAIN_CREATED_FREE: AtomicU64 = AtomicU64::new(0);
+
+/// Outcome of a routed miss scan: it hit a segment whose class bin was already
+/// non-empty before the drain (the directory lagged; the scan self-healed it).
+/// Reads 0 unless `alloc-stats` is on.
+pub(crate) static ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY: AtomicU64 = AtomicU64::new(0);
+
+/// Outcome of a routed miss scan: no segment had a block (the directory was
+/// right). Reads 0 unless `alloc-stats` is on.
+pub(crate) static ROUTED_MISS_SCAN_NOTHING: AtomicU64 = AtomicU64::new(0);
