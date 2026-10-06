@@ -385,9 +385,11 @@ impl AllocCore {
                     }
                 }
             }
-            // Only an instance with terminal publication capability must look
-            // past a negative owner directory. Standalone cores retain their
-            // authoritative-negative cadence even in a production build.
+            // R12-03 characterization: keep the trusted-negative path disabled
+            // for routed cores because pending sidecar ingress can make the
+            // owner directory negative while a free block exists. Enable only
+            // after proving undrained terminal publication cannot hide a free
+            // block (O-4 / perf OPEN_ITEMS item 78(c)).
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
             let trust_negative = !self.table.is_routed();
             #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]

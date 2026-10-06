@@ -6,9 +6,10 @@
 //! `HeapSlot` (`heap_slot.rs`) inline-holds a `MaybeUninit<HeapCore>` whose
 //! size is feature-dependent — from ~104 B (bare `alloc-global` +
 //! `alloc-xthread`) up to tens of KiB under `production` (the `fastbin`
-//! magazine + `alloc-decommit` large-cache state, PLUS, under
-//! `alloc-xthread`, a full inline `HeapOverflow` — 24 KiB of that per slot;
-//! that inline cost is round 2's target, untouched here). A single monolithic
+//! magazine + `alloc-decommit` large-cache state). `HeapSlot` itself contains
+//! only lease state, generation, heap storage, initialisation flag, and stable
+//! diagnostic counters; deferred large frees use per-segment terminal metadata,
+//! not an inline `HeapOverflow`. A single monolithic
 //! `[HeapSlot; MAX_HEAPS]` (`MAX_HEAPS = 4096`) is therefore large enough
 //! that the WHOLE registry has to be materialised in one `aligned_vmem::
 //! reserve_aligned` call the moment ANY heap is claimed — even a process that
@@ -39,8 +40,8 @@
 //! the process lifetime: `bootstrap`'s per-chunk `ensure_slow` reserves it
 //! via `aligned_vmem::reserve_aligned` and `mem::forget`s the reservation.
 //! This is load-bearing for `heap_registry::bind_slot_counters`, which plants
-//! `&'static` references into slot fields (`&slot.remote.thread_free`,
-//! `&slot.overflow`) — those references stay valid only because the chunk
+//! `&'static` references into slot fields (`&slot.remote.tcache_hits` and
+//! `&slot.remote.large_cache_hits`) — those references stay valid only because the chunk
 //! backing them is never freed or moved.
 
 // This module is plain safe Rust — it has NO `unsafe` of its own (no

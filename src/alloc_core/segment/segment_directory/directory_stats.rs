@@ -1,7 +1,7 @@
 //! Per-class segment directory diagnostic counters (task R7-A0).
 //!
 //! Process-wide `AtomicU64` counters for observing the segment-scan and
-//! (future) directory-lookup behaviour. Storage is ALWAYS compiled under
+//! directory-lookup behaviour. Storage is ALWAYS compiled under
 //! `alloc-core` so that the `dbg_*` read accessors have a stable definition
 //! regardless of the feature set (reads return 0 when no increment was
 //! compiled in). The per-event INCREMENTS are gated behind `alloc-stats`
@@ -20,8 +20,8 @@
 //! | `dirty_segments_drained`      | A4 dirty-drain loop     | storage only|
 //! | `wasted_dirty_drains`         | R9-6 dirty-drain loop (drain produced zero sought-class blocks) | storage only|
 //! | `full_scan_slots_examined`    | `find_segment_with_free_impl` per-slot | YES |
-//! | `directory_authoritative_miss`| R8-2 authoritative-miss fast path (O(S) scan SKIPPED) | storage only|
-//! | `directory_miss_self_heal`    | R8-2 periodic re-validation found a directory-missed segment | storage only|
+//! | `directory_authoritative_miss`| Trusted negative result; skipped scan only where negatives may be trusted | storage only|
+//! | `directory_miss_self_heal`    | Negative lookup scan found missed segment; routed every miss, standalone periodic | storage only|
 //! | `directory_rescue_oom_avoided`| R9-8 OOM-rescue scan found a directory-missed segment before surfacing OOM | storage only|
 
 use core::sync::atomic::AtomicU64;
@@ -51,19 +51,18 @@ pub(crate) static DIRECTORY_WORDS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 /// index now excludes those slots before a probe.
 pub(crate) static FULL_SCAN_SLOTS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
-/// Genuine directory misses where the directory was TRUSTED (the full
-/// linear-scan fallback was SKIPPED) — R8-2 (task #215)'s authoritative-miss
-/// fast path. This is the primary observability counter for the fix: it
-/// directly measures how often the O(S) scan is now avoided.
+/// In `production` (with `alloc-global` + `alloc-xthread`), routed tables do
+/// not trust a negative directory result: discovery falls back to a full scan,
+/// so this authoritative-miss counter is not incremented there. It records
+/// trusted negatives only in configurations where that shortcut is enabled.
 pub(crate) static DIRECTORY_AUTHORITATIVE_MISS: AtomicU64 = AtomicU64::new(0);
 
-/// A periodic re-validation full scan (R8-2, task #215) found a segment the
-/// directory's own lookup had missed, and the directory bit was repaired
-/// in-place. Expected to stay at 0 in normal operation — the incrementally-
-/// maintained directory is proven correct in every scenario task #214's test
-/// suite covers. A nonzero value here in real testing/CI is a canary
-/// indicating a genuine directory-tracking bug and warrants investigation,
-/// NOT a normal/expected event to silence.
+/// A negative directory lookup followed by a full scan found a segment the
+/// directory had missed, and repaired its bit in-place. Routed lookups scan
+/// every negative; standalone lookups do so only during periodic re-validation
+/// (R8-2, task #215). Expected to stay at 0 in normal operation — a nonzero
+/// value is a canary for a directory-tracking bug and warrants investigation,
+/// not a normal event. See item 78(c).
 pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);
 
 /// R9-8 (task #230): a forced O(S) "rescue scan", run as a last resort right

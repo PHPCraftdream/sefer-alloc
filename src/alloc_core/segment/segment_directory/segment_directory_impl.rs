@@ -16,8 +16,10 @@ pub(crate) const DIRECTORY_MATERIALIZE_THRESHOLD: u32 = 32;
 /// R8-2 (task #215) / R9-8 (task #230): once the directory is materialised, a
 /// genuine directory MISS (no candidate validated) for a GIVEN class is trusted
 /// authoritative for this many consecutive misses OF THAT CLASS before a full
-/// linear-scan re-validation pass runs. The streak is tracked PER-CLASS
-/// (`AllocCore::directory_miss_streak: [u8; SMALL_CLASS_COUNT]`), so a
+/// linear-scan re-validation pass runs, for standalone tables. Routed tables
+/// always use the fallback/rescue scan after a negative lookup; they do not use
+/// the trusted-negative cadence. The streak is tracked
+/// PER-CLASS (`AllocCore::directory_miss_streak: [u8; SMALL_CLASS_COUNT]`), so a
 /// drift-affected class trips its OWN rescan promptly regardless of how often
 /// other (healthy) classes miss — directly bounding the worst case of a
 /// directory-invariant violation to `DIRECTORY_MISS_FULL_SCAN_PERIOD` wasted

@@ -464,7 +464,7 @@ impl Node {
         // registered in its owning heap's table; the CALLER must supply the
         // per-path liveness argument that the segment cannot be released under
         // this access (for the remote-free paths: the double-push guard in
-        // `alloc_core::deferred_large::push` and the "(a)/(b) indistinguishable,
+        // `alloc_core::large::reservation_state::LargeReservationState::publish_pending` and the "(a)/(b) indistinguishable,
         // dangling free → fault" reasoning in
         // `registry::heap_core::dealloc_routing`). `AtomicU8` is `Sync`, so
         // shared atomic access from any thread is race-free.
@@ -498,8 +498,9 @@ impl Node {
         // `os::release_segment`). The reference is valid only WHILE `base`'s
         // segment is registered in its owning heap's table; the CALLER must
         // supply the per-path liveness argument that the segment cannot be
-        // released under this access (for the remote-free ring paths: the
-        // double-push guard in `alloc_core::deferred_large::push` and the
+        // released under this access (for remote frees, the per-segment
+        // LIVE-to-PENDING transition is the exactly-once claim; see
+        // `LargeReservationState::publish_pending`) and the
         // "(a)/(b) indistinguishable, dangling free → fault" reasoning in
         // `registry::heap_core::dealloc_routing`). `AtomicU32` is `Sync`, so
         // shared atomic access from any thread is race-free.
@@ -572,7 +573,7 @@ impl Node {
     ///
     /// The real safety of remote accesses rests on THIN per-path liveness
     /// arguments living in OTHER files, which the caller is obliged to carry:
-    /// the double-push guard in `alloc_core::deferred_large::push`
+    /// the per-segment large-state transition from LIVE to PENDING (exactly-once claim)
     /// (`push_large_deferred_free`, "claim once") and the honest
     /// "(a) live-foreign / (b) already-released are O(1)-indistinguishable;
     /// a dangling free into a released segment is fundamentally UB" reasoning in

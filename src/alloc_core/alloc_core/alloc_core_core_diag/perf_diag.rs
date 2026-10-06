@@ -214,11 +214,12 @@ impl AllocCore {
         directory_stats::DIRECTORY_AUTHORITATIVE_MISS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// R8-2 (task #215): process-wide count of periodic re-validation full
-    /// scans that found a segment the directory had missed and repaired its
-    /// bit in-place. Expected to stay 0 in normal operation; a nonzero value
-    /// is a canary for a directory-tracking bug. Reads 0 until R8-2 wires the
-    /// increment.
+    /// Count of genuine directory misses where a full scan found a segment
+    /// the directory had missed and repaired its bit. Routed lookups scan
+    /// every negative; standalone lookups do so only during periodic
+    /// re-validation (R8-2, task #215). Expected to stay 0 normally; nonzero
+    /// is a canary for a directory-tracking bug. Reads 0 unless the
+    /// `alloc-stats` increment is enabled. See item 78(c).
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_miss_self_heal() -> u64 {

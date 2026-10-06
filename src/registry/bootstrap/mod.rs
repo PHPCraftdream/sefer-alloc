@@ -124,13 +124,8 @@
 //! `without_provenance_mut` idiom the old whole-registry `ensure_slow` used (a
 //! bare marker address, never dereferenced — only compared), so it stays
 //! strict-provenance-clean under `-Zmiri-strict-provenance`. This file's own
-//! remaining raw-pointer work is (1) casting the leaked `leak_zeroed_pages`
-//! reservation to `*mut RegistryChunk` and dereferencing the published pointer
-//! the cell hands back, and (2) the `alloc-xthread` overflow-sidecar path below
-//! (still spelled out inline — see the CRATE-P3 note in `ensure_chunk_slow`).
-//! The A1 deferred-large-free stack's exposed-provenance story
-//! (`alloc_core::deferred_large`) is untouched by this round — see that
-//! module for its own provenance documentation.
+//! remaining raw-pointer work is casting the leaked reservation to
+//! `*mut RegistryChunk` and dereferencing the published pointer.
 
 // R1-07 (src review round 1): this file is `mod.rs` — decls and
 // path-preserving re-exports only, per the "mod.rs — reexports only, no
