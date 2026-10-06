@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 13 (2026-10-06; review only)
+
+- [docs] Source review on `e90a3575`: four P3 and one P4, including an
+  actual-source `ShardGuard<Cell<u32>>: Sync` witness and an empty-directory
+  scan-counter mismatch. No new production P0/P1/P2 counterexample confirmed;
+  accepted P1-box remains. Findings tracked as correctness items 168/169.
+- [verification] Installed-allocator smoke, 17 activated regression tests,
+  production library clippy and warning-strict production rustdoc passed.
+  No Miri/Loom/Kani or performance A/B performed; no release/performance GO.
+  Report: `docs/reviews/2026-10-06-src-review-sol-round-13.md`.
+- Runtime code, defaults and production feature composition unchanged.
+  Manifest: `docs/perf/round-manifests/SRC_REVIEW_R13_MANIFEST.md`.
+
 ### Root allocator `src/` review round 12 (2026-10-06; fixes accepted)
 
 - Independent fxx source review: 0 P1, 1 P2, 4 P3, 5 P4

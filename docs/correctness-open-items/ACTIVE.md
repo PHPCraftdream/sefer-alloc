@@ -177,3 +177,21 @@ the reversal record.)
     - **Current-number-or-verdict:** `AllocCore::alloc_large` now takes a biased reservation for `align >= SEGMENT`, with distinct release token, usable metadata root and aligned payload. Registration uses the payload key and stored root. No successful-case platform matrix is claimed by this doc pass.
     - **Next trigger:** parent acceptance of `SEGMENT`, `2 * SEGMENT`, `16 * SEGMENT` success, own/foreign/fallback/batch/realloc and rollback routes, OS release and Miri provenance. Keep this card open until results are reviewed.
     - **Evidence:** `docs/LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`; `src/alloc_core/large/alloc_core_large.rs`; `src/alloc_core/platform/os.rs`; `tests/r8_large_alignment.rs`. This doc pass did not run tests.
+
+169. **[A] Src review R13-05 — `ShardGuard<T>` получает auto-Sync без `T: Sync`.** (Filed 2026-10-06.)
+
+    - **Status:** OPEN — latent generic soundness defect (P3); текущий
+      production exploit не найден, исправление этим review-only раундом не внесено.
+    - **Current-number-or-verdict:** `ShardGuard` содержит `&ShardLock<T>`;
+      lock Sync при T:Send, поэтому guard тоже Sync при T:Send, хотя Deref
+      выдаёт `&T`. Actual-source example с Cell<u32> скомпилировал
+      `require_sync(&guard)` и shared scoped-thread access. Data race
+      намеренно не исполнялась. Текущий RouteDirectory payload — Shard,
+      а не Cell; private generic boundary остаётся неправильной.
+    - **Next trigger:** исправить auto-trait marker/bounds guard-а до добавления
+      Send-only payload. Negative compile-case `ShardGuard<Cell<u32>>: Sync`
+      должен отказать; positive u32/current Shard сохранить. Не сужать
+      корректную mutex-границу `ShardLock<T>: Sync` с T:Send до T:Sync.
+    - **Evidence:** `src/registry/segment_route/shard_lock.rs:14–27,55–67`;
+      `docs/reviews/2026-10-06-src-review-sol-round-13.md` R13-05,
+      §6.8 и полный actual-source witness в приложении B.

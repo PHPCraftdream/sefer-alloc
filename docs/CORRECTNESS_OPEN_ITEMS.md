@@ -62,6 +62,13 @@ taking. **[T]** tracked-not-actioned — genuinely reproduced/confirmed but
 intentionally not yet scheduled for a fix (root-cause investigation or a
 scoping decision is the pending step, not implementation).
 
+**Round 13 src-review disposition (2026-10-06).** Все прежние карточки сохраняют
+текущий status/trigger: этот раунд только проверяет код и пишет отчёт, не закрывает
+platform/model/publication acceptance выбранными native-прогонами. P1-box (164),
+interior-free residual (166) и verification-only mirror (167) остаются как были.
+Новые наблюдения — 168 и 169; evidence:
+`docs/reviews/2026-10-06-src-review-sol-round-13.md` (§2, §6, §7).
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -438,6 +445,8 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 165 | `TRACKED_correctness_residuals.md` |
 | 166 | `TRACKED_correctness_residuals.md` |
 | 167 | `TRACKED_verification_coverage.md` |
+| 168 | `TRACKED_misc.md` |
+| 169 | `ACTIVE.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains

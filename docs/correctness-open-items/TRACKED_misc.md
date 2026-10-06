@@ -94,3 +94,22 @@ split the same day.)
     - **Current-number-or-verdict:** with `alloc-xthread` and no `fastbin` (for example `--features "alloc-global alloc-decommit internals" --lib`): `src/registry/heap_core/diag/queries.rs` lines 14 and 17 (unused imports `Layout`, `SegmentMeta`), `find_segment.rs` ~891 (`is_in_magazine` unused), and two needless `mut` at `alloc_core_large.rs` ~584 and `reserve.rs` ~181. `-D warnings` turns the first two into errors, but no per-PR row builds that combination.
     - **Next trigger:** the next edit of those files, or adding a per-PR clippy row for `alloc-global` without `fastbin` (which R5-01 made a normal, supported set).
     - **Evidence:** consultation notes in the xxs round 5 session; `cargo clippy --features "alloc-global alloc-decommit internals" --lib -- -D warnings`.
+
+168. **[T] Src review round 13 — diagnostic contract, transient shard retention и незавершённый terminal-doc cleanup.** (Filed 2026-10-06.)
+
+    - **Status:** OPEN — review-only; исходники не исправлялись.
+    - **Current-number-or-verdict:** R13-01 (P3) native witness подтвердил
+      `directory_words_examined_delta=0` при скане пустого materialized bitmap:
+      increment стоит после `bits == 0` continue. R13-02 (P3) — сильные Arc в
+      append-only `ErasedGuard::claims` держат token-storage уничтоженных регионов
+      до thread-exit; механизм подтверждён кодом, RSS не измерен. R13-03 (P3) —
+      старые TFS/ring/spill/deferred объяснения ещё есть в public rustdoc и SAFETY
+      Node; это не найденный новый UB. R13-04 (P4) — `Node::read_ptr/write_ptr`
+      не имеют src/tests вызывающих; mutable pool-пара используется и остаётся.
+    - **Next trigger:** правка directory diagnostics → определить words counter
+      contract и empty/nonempty oracle; transient-region workload → закрыть
+      dead-region token lifetime до выхода worker-а; следующий protocol-doc
+      cleanup → исправить конкретные места §2 отчёта, удалить две мёртвые Node
+      операции после feature/cfg проверки. Общая prose-карточка 154 не закрывается.
+    - **Evidence:** `docs/reviews/2026-10-06-src-review-sol-round-13.md`
+      R13-01…04, полный native witness в приложении A. Не performance GO.
