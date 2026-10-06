@@ -96,14 +96,24 @@ impl<'a> SidecarBitmap<'a> {
         }
     }
 
-    /// Producer terminal AcqRel RMW. No class, header, or reservation access;
-    /// no sidecar access is permitted after this RMW. Exactly one producer
-    /// publishes each valid allocation instance. An unpublished producer
-    /// retains its segment credit; a published one retains it until reclaim.
+    /// Producer terminal AcqRel RMW. No header or reservation access; the
+    /// class map is read (Acquire) once BEFORE the RMW, only to drop a granule
+    /// that was never issued (segment metadata, uncarved tail) instead of
+    /// publishing a record the owner's `BitmapCut::pop` would abort on. A
+    /// uniform leaf reports its class for every granule it covers, so an
+    /// interior pointer into an issued block is NOT rejected here; the producer
+    /// cannot read block geometry without touching a segment that a malformed
+    /// free may not keep alive. No sidecar access is permitted after this RMW.
+    /// Exactly one producer publishes each valid allocation instance. An
+    /// unpublished producer retains its segment credit; a published one
+    /// retains it until reclaim.
     pub(crate) fn publish(&self, offset: u32) -> bool {
         let Some(granule) = Self::granule(offset) else {
             return false;
         };
+        if self.classes.encoded(granule) == 0 {
+            return false;
+        }
         self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
         true
     }
