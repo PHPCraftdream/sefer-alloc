@@ -1,0 +1,37 @@
+=== MUTANT R-Ph3a (b): inc_live before prepare_small_issue ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.30s
+     Running tests\r11_ph3a_issue_transaction_scalar.rs (target-ph7b\debug\deps\r11_ph3a_issue_transaction_scalar-ef6aafc83b79f687.exe)
+
+running 1 test
+test scalar_issue_transactions_roll_back_before_commit_and_retry_after ... FAILED
+
+failures:
+
+---- scalar_issue_transactions_roll_back_before_commit_and_retry_after stdout ----
+
+thread 'scalar_issue_transactions_roll_back_before_commit_and_retry_after' (69124) panicked at tests\r11_ph3a_issue_transaction_scalar.rs:47:5:
+assertion `left == right` failed: prepare refusal must not move bump/live/head/frontier
+  left: Some((192544, 1, 192528, 454656))
+ right: Some((192544, 0, 192528, 454656))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    scalar_issue_transactions_roll_back_before_commit_and_retry_after
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph3a_issue_transaction_scalar`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.73s
+     Running tests\r11_ph3a_issue_transaction_scalar.rs (target-ph7b\debug\deps\r11_ph3a_issue_transaction_scalar-ef6aafc83b79f687.exe)
+
+running 1 test
+test scalar_issue_transactions_roll_back_before_commit_and_retry_after ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+BASELINE_EXIT=0

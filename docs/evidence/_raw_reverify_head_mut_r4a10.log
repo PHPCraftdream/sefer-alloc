@@ -1,0 +1,39 @@
+=== MUTANT R4a-10 Release->Relaxed ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.71s
+     Running tests\r11_ph4a_drop_ordering_pinned.rs (target-ph7b\debug\deps\r11_ph4a_drop_ordering_pinned-2249ff642ddfbd62.exe)
+
+running 2 tests
+test lease_drop_aborts_on_a_lost_cas ... ok
+test lease_drop_publishes_live_to_free_with_release ... FAILED
+
+failures:
+
+---- lease_drop_publishes_live_to_free_with_release stdout ----
+
+thread 'lease_drop_publishes_live_to_free_with_release' (77064) panicked at tests\r11_ph4a_drop_ordering_pinned.rs:41:5:
+assertion `left == right` failed: the LIVE→FREE publication must be Release (S2): ["cas_state(STATE_LIVE", "STATE_FREE", "Ordering::Relaxed", "Ordering::Relaxed"]
+  left: "Ordering::Relaxed"
+ right: "Ordering::Release"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    lease_drop_publishes_live_to_free_with_release
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph4a_drop_ordering_pinned`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.17s
+     Running tests\r11_ph4a_drop_ordering_pinned.rs (target-ph7b\debug\deps\r11_ph4a_drop_ordering_pinned-2249ff642ddfbd62.exe)
+
+running 2 tests
+test lease_drop_aborts_on_a_lost_cas ... ok
+test lease_drop_publishes_live_to_free_with_release ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+BASELINE_EXIT=0

@@ -1,0 +1,25 @@
+=== MUTANT R4a-08 initialised-gate bypass (if true) ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.03s
+     Running tests\regression_claim_oom_initialised_gate.rs (target-ph7b\debug\deps\regression_claim_oom_initialised_gate-db774be40f6afc57.exe)
+
+running 3 tests
+error: test failed, to rerun pass `--test regression_claim_oom_initialised_gate`
+
+Caused by:
+  process didn't exit successfully: `<repo>/target-ph7b\debug\deps\regression_claim_oom_initialised_gate-db774be40f6afc57.exe` (exit code: 0xc0000005, STATUS_ACCESS_VIOLATION)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+MUTANT_EXIT=5
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.30s
+     Running tests\regression_claim_oom_initialised_gate.rs (target-ph7b\debug\deps\regression_claim_oom_initialised_gate-db774be40f6afc57.exe)
+
+running 3 tests
+test reclaim_after_simulated_oom_still_materialises ... ok
+test simulated_oom_leaves_initialised_false ... ok
+test simulated_oom_does_not_leak_the_slot ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+BASELINE_EXIT=0

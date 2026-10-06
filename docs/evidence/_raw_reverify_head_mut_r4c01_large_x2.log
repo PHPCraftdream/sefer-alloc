@@ -1,0 +1,37 @@
+=== MUTANT R4C-01mut Large: fetch_add(1) -> fetch_add(2) ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.92s
+     Running tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs (target-ph7b\debug\deps\r11_ph4c_ingress_consume_exactly_once_oracle-9584f51994bbac28.exe)
+
+running 2 tests
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... FAILED
+
+failures:
+
+---- reclaim_trim_consumes_ingress_exactly_once stdout ----
+
+thread 'reclaim_trim_consumes_ingress_exactly_once' (53708) panicked at tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs:194:5:
+the re-claim ingress pass must consume the 16 pending publications exactly once (0 = trim suppressed, >= 32 = records double-consumed); observed 32
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    reclaim_trim_consumes_ingress_exactly_once
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test r11_ph4c_ingress_consume_exactly_once_oracle`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
+     Running tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs (target-ph7b\debug\deps\r11_ph4c_ingress_consume_exactly_once_oracle-9584f51994bbac28.exe)
+
+running 2 tests
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+BASELINE_EXIT=0

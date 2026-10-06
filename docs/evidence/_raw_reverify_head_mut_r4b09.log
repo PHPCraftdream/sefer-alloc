@@ -1,0 +1,39 @@
+=== MUTANT R4b-09 rollback: drop(lease) before local unpublish ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.17s
+     Running tests\r11_ph4b_local_no_drop_pinned.rs (target-ph7b\debug\deps\r11_ph4b_local_no_drop_pinned-7548e64d1d5530d7.exe)
+
+running 3 tests
+test guard_stores_the_typed_lease_option ... ok
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... FAILED
+
+failures:
+
+---- finish_bind_rollback_unpublishes_local_before_the_lease_drop stdout ----
+
+thread 'finish_bind_rollback_unpublishes_local_before_the_lease_drop' (104720) panicked at tests\r11_ph4b_local_no_drop_pinned.rs:105:5:
+rollback order regression: LOCAL := null must precede drop(lease) so a stale published pointer never outlives the released slot
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    finish_bind_rollback_unpublishes_local_before_the_lease_drop
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph4b_local_no_drop_pinned`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.49s
+     Running tests\r11_ph4b_local_no_drop_pinned.rs (target-ph7b\debug\deps\r11_ph4b_local_no_drop_pinned-7548e64d1d5530d7.exe)
+
+running 3 tests
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
+test guard_stores_the_typed_lease_option ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+BASELINE_EXIT=0

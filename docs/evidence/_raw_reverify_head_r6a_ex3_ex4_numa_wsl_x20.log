@@ -1,0 +1,1383 @@
+=== WSL x20 RUN 1/20 ===
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.228
+   Compiling zerocopy v0.8.52
+   Compiling serde v1.0.228
+   Compiling syn v2.0.118
+   Compiling zmij v1.0.21
+   Compiling getrandom v0.3.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling serde_json v1.0.150
+   Compiling crossbeam-epoch v0.9.20
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling memchr v2.8.2
+   Compiling itoa v1.0.18
+   Compiling rand_core v0.9.5
+   Compiling version_check v0.9.5
+   Compiling linux-raw-sys v0.12.1
+   Compiling bitflags v2.13.0
+   Compiling regex-syntax v0.8.11
+   Compiling once_cell v1.21.4
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling cc v1.2.65
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling derive_more-impl v2.1.1
+   Compiling slotmap v1.1.1
+   Compiling rustversion v1.0.22
+   Compiling either v1.16.0
+   Compiling rayon-core v1.13.0
+   Compiling fastrand v2.4.1
+   Compiling libmimalloc-sys v0.1.49
+   Compiling tempfile v3.27.0
+   Compiling crossbeam-deque v0.8.6
+   Compiling wait-timeout v0.2.1
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling plotters-backend v0.3.7
+   Compiling fnv v1.0.7
+   Compiling quick-error v1.2.3
+   Compiling ciborium-io v0.2.2
+   Compiling clap_lex v1.1.0
+   Compiling anstyle v1.0.14
+   Compiling bit-vec v0.8.0
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling proc-macro-error2 v2.0.1
+   Compiling bit-set v0.8.0
+   Compiling clap_builder v4.6.0
+   Compiling plotters-svg v0.3.7
+   Compiling rusty-fork v0.3.1
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling itertools v0.10.5
+   Compiling derive_more v2.1.1
+   Compiling regex-automata v0.4.14
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling num_cpus v1.17.0
+   Compiling cast v0.3.0
+   Compiling iai-callgrind v0.14.2
+   Compiling aligned-vmem v0.2.0 (<repo>/crates/aligned-vmem)
+   Compiling same-file v1.0.6
+   Compiling unarray v0.1.4
+   Compiling numa-shim v0.2.0 (<repo>/crates/numa-shim)
+   Compiling proptest v1.11.0
+   Compiling walkdir v2.5.0
+   Compiling tinytemplate v1.2.1
+   Compiling regex v1.12.4
+   Compiling criterion-plot v0.5.0
+   Compiling core_affinity v0.8.3
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling arc-swap v1.9.1
+   Compiling sefer-region v0.2.0 (<repo>/crates/sefer-region)
+   Compiling clap v4.6.1
+   Compiling rayon v1.12.0
+   Compiling ciborium v0.2.2
+   Compiling plotters v0.3.7
+   Compiling bincode v1.3.3
+   Compiling tokio-macros v2.7.0
+   Compiling is-terminal v0.4.17
+   Compiling pin-project-lite v0.2.17
+   Compiling oorandom v11.1.5
+   Compiling once-ptr-cell v0.1.0 (<repo>/crates/once-ptr-cell)
+   Compiling proc-memstat v0.1.0 (<repo>/crates/proc-memstat)
+   Compiling size-classes v0.1.0 (<repo>/crates/size-classes)
+   Compiling tagged-index-stack v0.1.0 (<repo>/crates/tagged-index-stack)
+   Compiling anes v0.1.6
+   Compiling sefer-alloc v0.3.0 (<repo>)
+   Compiling tokio v1.52.3
+   Compiling criterion v0.5.1
+   Compiling proc-probe v0.1.0 (<repo>/crates/proc-probe)
+   Compiling globalalloc-model v0.1.0 (<repo>/crates/globalalloc-model)
+   Compiling mimalloc v0.1.52
+   Compiling malloc-bench-rs v0.1.0 (<repo>/crates/malloc-bench-rs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.10s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885827) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885833) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885826) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885832) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 2/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.00s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885854) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885859) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885853) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885860) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 3/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885879) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885885) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885878) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885884) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.68s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 4/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885904) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885909) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885903) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885910) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 5/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885931) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885936) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885930) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885937) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 6/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885958) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885963) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885957) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885964) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 7/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.76s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3885983) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885988) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3885982) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3885989) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 8/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886007) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886012) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886009) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886014) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 9/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.75s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886033) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886038) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886032) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886039) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 10/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886059) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886065) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886060) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886066) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 11/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886084) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886090) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886085) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886091) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 12/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.80s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886111) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886117) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886112) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886118) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 13/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886139) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886145) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886138) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886144) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 14/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886163) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886169) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886164) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886170) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 15/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886188) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886195) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886189) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886194) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 16/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886213) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886219) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886214) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886220) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 17/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.75s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886239) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886243) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886238) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886245) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 18/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.60s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... FAILED
+test drop_on_64kib_stack_with_many_segments ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886263) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886269) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886264) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886270) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 19/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886289) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886294) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886288) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886295) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 RUN 20/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs ($HOME/target-ph7b-numa/debug/deps/r1_04_alloc_core_drop_stack_pressure-a8ca66bfb4f0c053)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... FAILED
+test drop_on_64kib_stack_bare ... FAILED
+
+failures:
+
+---- drop_on_64kib_stack_with_many_segments stdout ----
+
+thread 'drop_on_64kib_stack_with_many_segments' (3886314) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case many-segments: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886320) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- drop_on_64kib_stack_bare stdout ----
+
+thread 'drop_on_64kib_stack_bare' (3886313) panicked at tests/r1_04_alloc_core_drop_stack_pressure.rs:68:5:
+case bare: child did not exit cleanly: status=signal: 6 (SIGABRT) (core dumped)
+stdout=
+running 1 test
+
+stderr=
+thread '<unknown>' (3886319) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+
+
+
+failures:
+    drop_on_64kib_stack_bare
+    drop_on_64kib_stack_with_many_segments
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test r1_04_alloc_core_drop_stack_pressure`
+     Running tests/r6_fix_p3_numa_unknown_bucket.rs ($HOME/target-ph7b-numa/debug/deps/r6_fix_p3_numa_unknown_bucket-f971be512cf1a953)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/segment_directory_numa_high_node_ids.rs ($HOME/target-ph7b-numa/debug/deps/segment_directory_numa_high_node_ids-ae40d0b4ec785ec1)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+error: 1 target failed:
+    `--test r1_04_alloc_core_drop_stack_pressure`
+RUN_EXIT=101
+=== WSL x20 DONE ===

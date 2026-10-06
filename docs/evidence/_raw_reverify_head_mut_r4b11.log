@@ -1,0 +1,37 @@
+=== MUTANT R4b-11 Drop: mark_local_torn after lease drop ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.66s
+     Running tests\r11_ph4b_teardown_ordering_pinned.rs (target-ph7b\debug\deps\r11_ph4b_teardown_ordering_pinned-8f287b2c7967bbc2.exe)
+
+running 2 tests
+test lease_release_cas_is_release_ordered ... ok
+test teardown_stamps_torn_then_trims_then_releases_the_slot ... FAILED
+
+failures:
+
+---- teardown_stamps_torn_then_trims_then_releases_the_slot stdout ----
+
+thread 'teardown_stamps_torn_then_trims_then_releases_the_slot' (76984) panicked at tests\r11_ph4b_teardown_ordering_pinned.rs:65:5:
+mark_local_torn() must precede trim_for_recycle(): the TORN stamp must not lag owner-side mutation
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    teardown_stamps_torn_then_trims_then_releases_the_slot
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph4b_teardown_ordering_pinned`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.16s
+     Running tests\r11_ph4b_teardown_ordering_pinned.rs (target-ph7b\debug\deps\r11_ph4b_teardown_ordering_pinned-8f287b2c7967bbc2.exe)
+
+running 2 tests
+test lease_release_cas_is_release_ordered ... ok
+test teardown_stamps_torn_then_trims_then_releases_the_slot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+BASELINE_EXIT=0

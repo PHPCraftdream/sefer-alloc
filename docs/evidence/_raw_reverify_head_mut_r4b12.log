@@ -1,0 +1,76 @@
+=== MUTANT R4b-12 lease: Cell -> RefCell ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+error[E0308]: mismatched types
+    --> src\global\tls_heap.rs:521:42
+     |
+ 521 |             g.lease.borrow_mut().replace(lease.take());
+     |                                  ------- ^^^^^^^^^^^^ expected `HeapLease`, found `Option<HeapLease>`
+     |                                  |
+     |                                  arguments to this method are incorrect
+     |
+     = note: expected struct `HeapLease`
+                  found enum `Option<HeapLease>`
+help: the return type of this call is `Option<HeapLease>` due to the type of the argument passed
+    --> src\global\tls_heap.rs:521:13
+     |
+ 521 |             g.lease.borrow_mut().replace(lease.take());
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------^
+     |                                          |
+     |                                          this argument influences the return type of `replace`
+note: method defined here
+    --> D:\system_artefact\rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1955:18
+     |
+1955 |     pub const fn replace(&mut self, value: T) -> Option<T> {
+     |                  ^^^^^^^
+help: consider using `Option::expect` to unwrap the `Option<HeapLease>` value, panicking if the value is an `Option::None`
+     |
+ 521 |             g.lease.borrow_mut().replace(lease.take().expect("REASON"));
+     |                                                      +++++++++++++++++
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `sefer-alloc` (lib) due to 1 previous error
+MUTANT_EXIT=101
+=== MUTANT R4b-12 lease: Cell -> RefCell ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.74s
+     Running tests\r11_ph4b_local_no_drop_pinned.rs (target-ph7b\debug\deps\r11_ph4b_local_no_drop_pinned-7548e64d1d5530d7.exe)
+
+running 3 tests
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
+test guard_stores_the_typed_lease_option ... FAILED
+
+failures:
+
+---- guard_stores_the_typed_lease_option stdout ----
+
+thread 'guard_stores_the_typed_lease_option' (69564) panicked at tests\r11_ph4b_local_no_drop_pinned.rs:80:5:
+AbandonGuard must hold the typed HeapLease in a Cell<Option<_>> (take-then-drop teardown, no borrow state): struct AbandonGuard {
+    /// The typed lease for the heap this thread bound via
+    /// [`bind_slow_tagged`]. Read ONLY in `Drop` (never in `LOCAL`-reading
+    /// code paths). Storing it here is what makes the guard robust to
+    /// `LOCAL` being torn down first.
+    lease: core::cell::RefCell<Option<HeapLease>>,
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    guard_stores_the_typed_lease_option
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph4b_local_no_drop_pinned`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.95s
+     Running tests\r11_ph4b_local_no_drop_pinned.rs (target-ph7b\debug\deps\r11_ph4b_local_no_drop_pinned-7548e64d1d5530d7.exe)
+
+running 3 tests
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test guard_stores_the_typed_lease_option ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+BASELINE_EXIT=0

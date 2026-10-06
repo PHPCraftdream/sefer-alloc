@@ -10,7 +10,8 @@ R-PG3,cost,COST,FAIL,false,iai-плечо спайка; resolved-by-decision (AD
 R-Ph1b-native,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
 R-Ph1b-sb,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
 R-Ph1b-tb,prototype,C1,CONDITIONAL,false,прототип exact-object; не влит (ветка proto/exact-object-ph1b)
-R-Ph3a,protocol,C1,PASS|CONDITIONAL,false,waiver: строка реестра вне minimal-обоснования; метаданные см. registry.csv
+R-Ph3a-native,protocol,C1,PASS,false,"waiver: нативная часть покрыта тремя мутант-циклами Ph7b; iai выделен в отдельную строку"
+R-Ph3a-iai,protocol,C1,CONDITIONAL,false,"waiver: iai-замер не перепроверен (перезапуск iai запрещён рамками Ph7b), строка честно CONDITIONAL"
 R0-01,p1-box,C1,FAIL,false,исторический Ph0-witness P1-box
 R0-02,p1-box,C1,FAIL,false,исторический Ph0-witness P1-box
 R0-03,evidence-infra,C7,NOT_RUN,false,CI job miri-core; результата нет

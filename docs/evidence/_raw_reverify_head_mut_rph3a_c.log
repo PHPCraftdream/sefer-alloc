@@ -1,0 +1,37 @@
+=== MUTANT R-Ph3a (c): batch add_live(out.len()) ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.93s
+     Running tests\r11_ph3a_issue_transaction_batch.rs (target-ph7b\debug\deps\r11_ph3a_issue_transaction_batch-d7dac71d766539e7.exe)
+
+running 1 test
+test batch_issue_transactions_commit_only_the_prepared_run ... FAILED
+
+failures:
+
+---- batch_issue_transactions_commit_only_the_prepared_run stdout ----
+
+thread 'batch_issue_transactions_commit_only_the_prepared_run' (84064) panicked at tests\r11_ph3a_issue_transaction_batch.rs:67:5:
+assertion `left == right` failed: live credits grow by exactly k, not by out.len()
+  left: Some(421)
+ right: Some(261)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    batch_issue_transactions_commit_only_the_prepared_run
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph3a_issue_transaction_batch`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.44s
+     Running tests\r11_ph3a_issue_transaction_batch.rs (target-ph7b\debug\deps\r11_ph3a_issue_transaction_batch-d7dac71d766539e7.exe)
+
+running 1 test
+test batch_issue_transactions_commit_only_the_prepared_run ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+BASELINE_EXIT=0

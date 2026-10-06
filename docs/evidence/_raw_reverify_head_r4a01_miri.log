@@ -1,0 +1,100 @@
+=== MIRI R4a-01 strict provenance + disable-isolation ===
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling cfg-if v1.0.4
+   Compiling windows-link v0.2.1
+   Compiling zerocopy v0.8.52
+   Compiling windows-sys v0.61.2
+   Compiling getrandom v0.3.4
+   Compiling libm v0.2.16
+   Compiling serde_core v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling syn v2.0.118
+   Compiling autocfg v1.5.1
+   Compiling getrandom v0.4.3
+   Compiling crossbeam-epoch v0.9.20
+   Compiling rand_core v0.9.5
+   Compiling num-traits v0.2.19
+   Compiling version_check v0.9.5
+   Compiling once_cell v1.21.4
+   Compiling zmij v1.0.21
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling regex-syntax v0.8.11
+   Compiling serde v1.0.228
+   Compiling cc v1.2.65
+   Compiling slotmap v1.1.1
+   Compiling serde_json v1.0.150
+   Compiling rayon-core v1.13.0
+   Compiling either v1.16.0
+   Compiling fastrand v2.4.1
+   Compiling crossbeam-deque v0.8.6
+   Compiling tempfile v3.27.0
+   Compiling libmimalloc-sys v0.1.49
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling winapi-util v0.1.11
+   Compiling bit-vec v0.8.0
+   Compiling clap_lex v1.1.0
+   Compiling fnv v1.0.7
+   Compiling memchr v2.8.2
+   Compiling anstyle v1.0.14
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-backend v0.3.7
+   Compiling quick-error v1.2.3
+   Compiling wait-timeout v0.2.1
+   Compiling itoa v1.0.18
+   Compiling rusty-fork v0.3.1
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling bit-set v0.8.0
+   Compiling same-file v1.0.6
+   Compiling itertools v0.10.5
+   Compiling regex-automata v0.4.14
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling bitflags v2.13.0
+   Compiling unarray v0.1.4
+   Compiling cast v0.3.0
+   Compiling regex v1.12.4
+   Compiling tinytemplate v1.2.1
+   Compiling criterion-plot v0.5.0
+   Compiling rayon v1.12.0
+   Compiling sefer-region v0.2.0 (<repo>\crates\sefer-region)
+   Compiling clap v4.6.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling walkdir v2.5.0
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium-ll v0.2.2
+   Compiling plotters v0.3.7
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling tokio-macros v2.7.0
+   Compiling is-terminal v0.4.17
+   Compiling tagged-index-stack v0.1.0 (<repo>\crates\tagged-index-stack)
+   Compiling aligned-vmem v0.2.0 (<repo>\crates\aligned-vmem)
+   Compiling oorandom v11.1.5
+   Compiling anes v0.1.6
+   Compiling proc-memstat v0.1.0 (<repo>\crates\proc-memstat)
+   Compiling pin-project-lite v0.2.17
+   Compiling once-ptr-cell v0.1.0 (<repo>\crates\once-ptr-cell)
+   Compiling size-classes v0.1.0 (<repo>\crates\size-classes)
+   Compiling tokio v1.52.3
+   Compiling proc-probe v0.1.0 (<repo>\crates\proc-probe)
+   Compiling sefer-alloc v0.3.0 (<repo>)
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (<repo>\crates\globalalloc-model)
+   Compiling mimalloc v0.1.52
+   Compiling malloc-bench-rs v0.1.0 (<repo>\crates\malloc-bench-rs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 09s
+     Running tests\r11_ph4a_lease_miri.rs (target-ph7b\miri\x86_64-pc-windows-msvc\debug\deps\r11_ph4a_lease_miri-a7433522d5e09efa.exe)
+
+running 1 test
+test lease_claim_drop_reclaim_across_threads_under_miri ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.18s
+
+MIRI_EXIT=0

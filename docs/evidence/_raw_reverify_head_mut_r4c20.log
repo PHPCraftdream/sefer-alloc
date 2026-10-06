@@ -1,0 +1,39 @@
+=== MUTANT R4c-20 maintenance step duplicated ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.27s
+     Running tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs (target-ph7b\debug\deps\r11_ph4c_ingress_consume_exactly_once_oracle-9584f51994bbac28.exe)
+
+running 2 tests
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... FAILED
+
+failures:
+
+---- maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot stdout ----
+
+thread 'maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot' (89792) panicked at tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs:292:9:
+assertion `left == right` failed: one maintenance_pass with budget 1 must run EXACTLY 1 bounded ingress step(s); 0 = suppressed step, 2+ = double with_core / double ingress step per maintained slot
+  left: 2
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test r11_ph4c_ingress_consume_exactly_once_oracle`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.30s
+     Running tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs (target-ph7b\debug\deps\r11_ph4c_ingress_consume_exactly_once_oracle-9584f51994bbac28.exe)
+
+running 2 tests
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+BASELINE_EXIT=0

@@ -1,0 +1,51 @@
+   Compiling crossbeam-epoch v0.9.20
+   Compiling rustversion v1.0.22
+   Compiling crossbeam-deque v0.8.6
+   Compiling arc-swap v1.9.1
+   Compiling rayon-core v1.13.0
+   Compiling sefer-alloc v0.3.0 (<repo>)
+   Compiling rayon v1.12.0
+   Compiling criterion v0.5.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.10s
+     Running tests\r6_terminal_owner_drain.rs (target-ph7b\debug\deps\r6_terminal_owner_drain-dc30684979f2e392.exe)
+
+running 8 tests
+test detached_magazine_record_preserves_the_canonical_copy ... ok
+test duplicate_detached_record_does_not_retire_another_credit ... ok
+test large_pending_claim_reclaims_and_cache_reissues ... ok
+test last_small_node_finalizes_after_route_scan ... ok
+test mixed_class_and_more_than_ring_capacity ... ok
+test public_trim_consumes_small_and_large_terminal_publications ... ok
+test requested_sizes_one_through_seven_retire_once_and_reissue ... ok
+test tls_exit_runs_the_owner_sweep_before_recycle ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r8_owner_sidecar_miss.rs (target-ph7b\debug\deps\r8_owner_sidecar_miss-5a4b1e21e583ddcd.exe)
+
+running 4 tests
+test magazine_hit_does_not_sweep_sidecar_words ... ok
+test magazine_refill_miss_consumes_terminal_small_once ... ok
+test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok
+test zeroed_large_cold_path_consumes_terminal_obligation_before_cache_reuse ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\r8_terminal_global.rs (target-ph7b\debug\deps\r8_terminal_global-840ef734de0c8588.exe)
+
+running 6 tests
+test foreign_overaligned_realloc_preserves_prefix_and_failure_source ... ok
+test overalign_registration_failure_rolls_back_without_consuming_source ... ok
+test paused_foreign_producer_does_not_block_strict_trim ... ok
+test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok
+test foreign_batch_terminal_free_uses_actual_payload_routes ... ok
+
+running 1 test
+test fallback_direct_free_before_service_and_busy_terminal_publication ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+test fallback_direct_free_before_service_and_busy_terminal_publication ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

@@ -1,0 +1,623 @@
+=== WIN x20 RUN 1/20 ===
+   Compiling syn v2.0.118
+   Compiling serde_core v1.0.228
+   Compiling regex-syntax v0.8.11
+   Compiling version_check v0.9.5
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling serde v1.0.228
+   Compiling cc v1.2.65
+   Compiling zmij v1.0.21
+   Compiling slotmap v1.1.1
+   Compiling getrandom v0.4.3
+   Compiling num-traits v0.2.19
+   Compiling rustversion v1.0.22
+   Compiling rayon-core v1.13.0
+   Compiling winapi v0.3.9
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling either v1.16.0
+   Compiling fastrand v2.4.1
+   Compiling tempfile v3.27.0
+   Compiling zerocopy v0.8.52
+   Compiling libmimalloc-sys v0.1.49
+   Compiling crossbeam-deque v0.8.6
+   Compiling winapi-util v0.1.11
+   Compiling anstyle v1.0.14
+   Compiling fnv v1.0.7
+   Compiling memchr v2.8.2
+   Compiling itoa v1.0.18
+   Compiling quick-error v1.2.3
+   Compiling plotters-backend v0.3.7
+   Compiling clap_lex v1.1.0
+   Compiling ciborium-io v0.2.2
+   Compiling wait-timeout v0.2.1
+   Compiling bit-vec v0.8.0
+   Compiling clap_builder v4.6.0
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling plotters-svg v0.3.7
+   Compiling same-file v1.0.6
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling itertools v0.10.5
+   Compiling ciborium-ll v0.2.2
+   Compiling regex-automata v0.4.14
+   Compiling rand_chacha v0.9.0
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling num_cpus v1.17.0
+   Compiling bitflags v2.13.0
+   Compiling unarray v0.1.4
+   Compiling cast v0.3.0
+   Compiling aligned-vmem v0.2.0 (<repo>\crates\aligned-vmem)
+   Compiling proptest v1.11.0
+   Compiling criterion-plot v0.5.0
+   Compiling numa-shim v0.2.0 (<repo>\crates\numa-shim)
+   Compiling core_affinity v0.8.3
+   Compiling ciborium v0.2.2
+   Compiling arc-swap v1.9.1
+   Compiling regex v1.12.4
+   Compiling clap v4.6.1
+   Compiling sefer-region v0.2.0 (<repo>\crates\sefer-region)
+   Compiling tinytemplate v1.2.1
+   Compiling rayon v1.12.0
+   Compiling walkdir v2.5.0
+   Compiling plotters v0.3.7
+   Compiling tokio-macros v2.7.0
+   Compiling is-terminal v0.4.17
+   Compiling tagged-index-stack v0.1.0 (<repo>\crates\tagged-index-stack)
+   Compiling proc-memstat v0.1.0 (<repo>\crates\proc-memstat)
+   Compiling oorandom v11.1.5
+   Compiling pin-project-lite v0.2.17
+   Compiling size-classes v0.1.0 (<repo>\crates\size-classes)
+   Compiling once-ptr-cell v0.1.0 (<repo>\crates\once-ptr-cell)
+   Compiling anes v0.1.6
+   Compiling sefer-alloc v0.3.0 (<repo>)
+   Compiling tokio v1.52.3
+   Compiling globalalloc-model v0.1.0 (<repo>\crates\globalalloc-model)
+   Compiling criterion v0.5.1
+   Compiling proc-probe v0.1.0 (<repo>\crates\proc-probe)
+   Compiling mimalloc v0.1.52
+   Compiling malloc-bench-rs v0.1.0 (<repo>\crates\malloc-bench-rs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 40s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+RUN_EXIT=0
+=== WIN x20 RUN 2/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+RUN_EXIT=0
+=== WIN x20 RUN 3/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+RUN_EXIT=0
+=== WIN x20 RUN 4/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+RUN_EXIT=0
+=== WIN x20 RUN 5/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+RUN_EXIT=0
+=== WIN x20 RUN 6/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.31s
+
+RUN_EXIT=0
+=== WIN x20 RUN 7/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+RUN_EXIT=0
+=== WIN x20 RUN 8/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+RUN_EXIT=0
+=== WIN x20 RUN 9/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+RUN_EXIT=0
+=== WIN x20 RUN 10/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+RUN_EXIT=0
+=== WIN x20 RUN 11/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+RUN_EXIT=0
+=== WIN x20 RUN 12/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+RUN_EXIT=0
+=== WIN x20 RUN 13/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+RUN_EXIT=0
+=== WIN x20 RUN 14/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+RUN_EXIT=0
+=== WIN x20 RUN 15/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+RUN_EXIT=0
+=== WIN x20 RUN 16/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_with_many_segments ... ok
+test drop_on_64kib_stack_bare ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+RUN_EXIT=0
+=== WIN x20 RUN 17/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+RUN_EXIT=0
+=== WIN x20 RUN 18/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+RUN_EXIT=0
+=== WIN x20 RUN 19/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+RUN_EXIT=0
+=== WIN x20 RUN 20/20 ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running tests\r1_04_alloc_core_drop_stack_pressure.rs (target-ph7b\debug\deps\r1_04_alloc_core_drop_stack_pressure-41aa8d9dbe9f6907.exe)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_64kib_stack_bare ... ok
+test drop_on_64kib_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\r6_fix_p3_numa_unknown_bucket.rs (target-ph7b\debug\deps\r6_fix_p3_numa_unknown_bucket-8f3359f0d5b34831.exe)
+
+running 1 test
+test unknown_bucket_bit_is_cleared_after_node_gets_dedicated_bucket ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests\segment_directory_numa_high_node_ids.rs (target-ph7b\debug\deps\segment_directory_numa_high_node_ids-fde9aa798c38a3c7.exe)
+
+running 2 tests
+test ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption ... ok
+test directory_returns_local_not_foreign_for_high_node_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+RUN_EXIT=0
+=== WIN x20 DONE ===

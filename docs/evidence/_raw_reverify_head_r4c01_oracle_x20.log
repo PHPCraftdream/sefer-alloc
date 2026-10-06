@@ -1,0 +1,80 @@
+=== RUN 1 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 2 ===
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 3 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 4 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 5 ===
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 6 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 7 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 8 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 9 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 10 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 11 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 12 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 13 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 14 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 15 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 16 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 17 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 18 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 19 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== RUN 20 ===
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

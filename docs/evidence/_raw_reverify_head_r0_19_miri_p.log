@@ -1,0 +1,13 @@
+=== MIRI R0-19 permissive-provenance (P) ===
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+   Compiling aligned-vmem v0.2.0 (<repo>\crates\aligned-vmem)
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.18s
+     Running tests\r6_terminal_owner_drain.rs (target-ph7b\miri\x86_64-pc-windows-msvc\debug\deps\r6_terminal_owner_drain-bfd3e7d3e218b64f.exe)
+
+running 1 test
+test requested_sizes_one_through_seven_retire_once_and_reissue ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 8.40s
+
+MIRI_EXIT=0

@@ -1,0 +1,41 @@
+=== MUTANT R5c-11 exhausted leg: return Fallback -> panic ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.25s
+     Running tests\r11_ph5c_registry_saturation_fallback.rs (target-ph7b\debug\deps\r11_ph5c_registry_saturation_fallback-9d7d20b20f35ac81.exe)
+
+running 1 test
+error: test failed, to rerun pass `--test r11_ph5c_registry_saturation_fallback`
+
+Caused by:
+  process didn't exit successfully: `<repo>/target-ph7b\debug\deps\r11_ph5c_registry_saturation_fallback-9d7d20b20f35ac81.exe` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+MUTANT_EXIT=9
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s
+     Running tests\r11_ph5c_registry_saturation_fallback.rs (target-ph7b\debug\deps\r11_ph5c_registry_saturation_fallback-9d7d20b20f35ac81.exe)
+
+running 1 test
+test registry_saturation_routes_to_fallback_and_back ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+BASELINE_EXIT=0
+=== MUTANT R5c-11 re-run (--nocapture) ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.95s
+     Running tests\r11_ph5c_registry_saturation_fallback.rs (target-ph7b\debug\deps\r11_ph5c_registry_saturation_fallback-9d7d20b20f35ac81.exe)
+
+running 1 test
+
+thread '<unnamed>' (69368) panicked at src\global\tls_heap.rs:482:9:
+mutant: registry exhausted
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'ph5c-saturation-body' (66920) panicked at tests\r11_ph5c_registry_saturation_fallback.rs:115:21:
+producer thread panicked: Any { .. }
+error: test failed, to rerun pass `--test r11_ph5c_registry_saturation_fallback`
+
+Caused by:
+  process didn't exit successfully: `<repo>/target-ph7b\debug\deps\r11_ph5c_registry_saturation_fallback-9d7d20b20f35ac81.exe --nocapture` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+MUTANT_EXIT=9

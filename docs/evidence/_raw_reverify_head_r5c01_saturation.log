@@ -1,0 +1,9 @@
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.07s
+     Running tests\r11_ph5c_registry_saturation_fallback.rs (target-ph7b\debug\deps\r11_ph5c_registry_saturation_fallback-9d7d20b20f35ac81.exe)
+
+running 1 test
+test registry_saturation_routes_to_fallback_and_back ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+

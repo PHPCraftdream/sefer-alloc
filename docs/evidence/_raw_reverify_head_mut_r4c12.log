@@ -1,0 +1,39 @@
+=== MUTANT R4c-12 re-claim: trim_for_recycle removed ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.41s
+     Running tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs (target-ph7b\debug\deps\r11_ph4c_ingress_consume_exactly_once_oracle-9584f51994bbac28.exe)
+
+running 2 tests
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... FAILED
+
+failures:
+
+---- reclaim_trim_consumes_ingress_exactly_once stdout ----
+
+thread 'reclaim_trim_consumes_ingress_exactly_once' (76384) panicked at tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs:184:5:
+assertion `left == right` failed: the re-claim trim must run the full sidecar ingress drain EXACTLY once (0 = trim suppressed, 2+ = double consume ingress in one trim)
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    reclaim_trim_consumes_ingress_exactly_once
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test r11_ph4c_ingress_consume_exactly_once_oracle`
+MUTANT_EXIT=101
+=== BASELINE после отката ===
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s
+     Running tests\r11_ph4c_ingress_consume_exactly_once_oracle.rs (target-ph7b\debug\deps\r11_ph4c_ingress_consume_exactly_once_oracle-9584f51994bbac28.exe)
+
+running 2 tests
+test maintenance_pass_ingress_step_runs_exactly_once_per_maintained_slot ... ok
+test reclaim_trim_consumes_ingress_exactly_once ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+BASELINE_EXIT=0
