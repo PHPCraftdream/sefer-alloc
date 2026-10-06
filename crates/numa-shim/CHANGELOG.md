@@ -13,7 +13,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   recording never allocates. Under `numa-aware-mock` with sefer-alloc as the
   global allocator, `record()` runs inside the allocator; the `Vec` push
   re-entered it while the fallback heap's lock was held and spun forever.
-  `drain()` and the `CALLS_CAP` cap are unchanged.
+  `drain()` keeps its contract; `CALLS_CAP` drops from 4096 to 256 because
+  the inline log lives in every thread's static TLS and glibc carves static
+  TLS out of the thread's own stack: a 4096-slot log (~128 KiB) left the
+  64 KiB-stack threads of `tests/r1_04_alloc_core_drop_stack_pressure.rs`
+  no usable stack (stack overflow under `numa_shim_mock`). 256 slots keep
+  the per-thread TLS at ~8 KiB.
 
 ## 0.2.0 - 2026-08-25
 

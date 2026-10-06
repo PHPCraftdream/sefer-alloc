@@ -297,7 +297,12 @@ pub mod mock {
     /// exact value instead of hardcoding a mirror of it (as
     /// `tests/mock_dispatch.rs`'s own `calls_log_is_capped_not_unbounded`
     /// now does).
-    pub const CALLS_CAP: usize = 4096;
+    ///
+    /// Kept small on purpose: the log is inline in every thread's static TLS
+    /// (never heap, see `CALLS`), and glibc carves static TLS out of the
+    /// thread's own stack, so a large cap shrinks the usable stack of small-
+    /// stack threads (~32 bytes/slot; 4096 slots overflowed 64 KiB stacks).
+    pub const CALLS_CAP: usize = 256;
 
     /// One recorded invocation of a public NUMA function.
     #[non_exhaustive]
