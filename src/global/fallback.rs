@@ -192,6 +192,12 @@ fn heap_ptr_impl(
                     "deliberate panic during fallback init (F-8 test injection, R34-17/task #536)"
                 );
             }
+            // R12-04: test-only hold — keeps the winner inside INITIALIZING so
+            // losers deterministically reach the wait loop below.
+            #[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+            while DBG_HOLD_FALLBACK_INIT.load(Ordering::Acquire) {
+                std::thread::yield_now();
+            }
             // We are the sole initialiser. Construct the HeapCore in place.
             // The fallback is NOT a registry slot, so it cannot carry a slot
             // index: it carries the dedicated `OWNER_ID_FALLBACK` sentinel —
@@ -300,8 +306,21 @@ fn heap_ptr_impl(
         // fast path) or UNINIT (winner hit primordial OOM and rolled back —
         // loop back to the top and re-race the CAS ourselves, rather than
         // spinning forever waiting for a READY that will never come).
+        let mut spins: u32 = 0;
         while INIT_STATE.load(Ordering::Acquire) == STATE_INITIALIZING {
-            core::hint::spin_loop();
+            if spins < LOCK_TIGHT_SPINS {
+                spins += 1;
+                core::hint::spin_loop();
+            } else {
+                #[cfg(feature = "std")]
+                {
+                    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+                    DBG_FALLBACK_INIT_WAIT_YIELDS.fetch_add(1, Ordering::Relaxed);
+                    std::thread::yield_now();
+                }
+                #[cfg(not(feature = "std"))]
+                core::hint::spin_loop();
+            }
         }
     }
 }
@@ -699,4 +718,32 @@ pub fn dbg_panic_in_fallback_init_rolls_back() -> bool {
     // `INITIALIZING` (regression), this spins forever — the test's watchdog
     // aborts the process after a timeout.
     !heap_ptr().is_null()
+}
+
+/// R12-04: test-only hold of the fallback-init winner inside `INITIALIZING`.
+#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+static DBG_HOLD_FALLBACK_INIT: AtomicBool = AtomicBool::new(false);
+
+/// R12-04: `yield_now` calls made by losers waiting for the init winner.
+#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+static DBG_FALLBACK_INIT_WAIT_YIELDS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// `#[doc(hidden)]` test hook (R12-04) — not part of the public API. While set,
+/// the fallback-init winner stays inside `INITIALIZING` (after the CAS, before
+/// `HeapCore::new`). Process-global; the setter MUST clear it before returning.
+#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[doc(hidden)]
+pub fn dbg_set_hold_fallback_init(on: bool) {
+    DBG_HOLD_FALLBACK_INIT.store(on, Ordering::SeqCst);
+}
+
+/// `#[doc(hidden)]` test hook (R12-04) — not part of the public API. Number of
+/// `yield_now` calls losers made while waiting for the init winner: non-zero
+/// proves the wait loop yields to the scheduler past its tight-spin budget.
+#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_fallback_init_wait_yields() -> u64 {
+    DBG_FALLBACK_INIT_WAIT_YIELDS.load(Ordering::Relaxed)
 }

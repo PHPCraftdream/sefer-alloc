@@ -62,3 +62,9 @@ pub use fallback::{
     dbg_init_state, dbg_panic_in_fallback_init_rolls_back, dbg_set_inject_fallback_init_panic,
     STATE_INITIALIZING, STATE_READY, STATE_UNINIT,
 };
+
+// `#[doc(hidden)]` test-only hooks (R12-04): prove the fallback-init loser loop
+// yields to the scheduler (`tests/r12_04_fallback_init_losers_yield.rs`).
+#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[doc(hidden)]
+pub use fallback::{dbg_fallback_init_wait_yields, dbg_set_hold_fallback_init};
