@@ -47,14 +47,14 @@ fn run_child(case: usize) {
         let live = unsafe { allocator.alloc(layout) };
         assert!(!live.is_null());
         let base = live.addr() & !(SegmentLayout::SEGMENT - 1);
-        ptr_tx.send((live.addr(), base)).expect("send");
+        ptr_tx.send(base).expect("send");
         drain_rx.recv().expect("drain signal");
         // Owner-side drain of the cross-thread ingress: reaches `BitmapCut::pop`.
         allocator.trim_current_thread();
         // SAFETY: the only valid allocation of this thread.
         unsafe { allocator.dealloc(live, layout) };
     });
-    let (live, base) = ptr_rx.recv().expect("owner allocation");
+    let base = ptr_rx.recv().expect("owner allocation");
     let address = [base + 16, base + SegmentLayout::SEGMENT - 16][case];
     let before = SeferAlloc::new().stats().foreign_or_unroutable_frees;
     // This thread never allocated, so `dealloc` resolves ForeignNoBind and goes
