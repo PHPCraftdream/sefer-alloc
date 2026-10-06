@@ -1,7 +1,7 @@
 // Loom sweep of sidecar terminal publication, owner drain, registry leases,
 // and the independent workspace concurrency types. Every root model has an
-// exact feature set; cfg loom additionally requires tagged-index-stack/loom
-// whenever alloc-global brings that dependency into the build.
+// exact feature set; cfg loom additionally requires tagged-index-stack/loom in
+// EVERY root build (the crate is a cfg(any(loom, kani)) target dependency).
 //
 // Usage (from repo root):
 //   node scripts/loom.mjs
@@ -39,19 +39,19 @@ const FEATURES = {
   // crate's real-type suite IS
   // the coverage for the shipping code (the shadow model is deleted).
   loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
-  loom_sidecar_bitmap: 'alloc-core,alloc-xthread',
-  loom_terminal_large: 'alloc-core,alloc-xthread',
-  loom_terminal_owner_drain: 'alloc-core,alloc-xthread',
+  loom_sidecar_bitmap: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_terminal_large: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_terminal_owner_drain: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_registry_free_slots: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   loom_r8_maintenance_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_active_kind_index: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_registry_claim: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4a_heap_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4b_publish_recycle_drain: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
-  loom_r11_small_sidecar: 'alloc-core,alloc-xthread',
-  loom_sharded: 'experimental',
-  loom_epoch: 'experimental',
-  loom_r11_epoch_false_full: 'experimental',
+  loom_r11_small_sidecar: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_sharded: 'experimental,tagged-index-stack/loom',
+  loom_epoch: 'experimental,tagged-index-stack/loom',
+  loom_r11_epoch_false_full: 'experimental,tagged-index-stack/loom',
 };
 
 const ALL = Object.keys(FEATURES);
@@ -98,7 +98,7 @@ for (const [features, group] of byFeature) {
   const testArgs = group.flatMap((t) => ['--test', t]);
   // Workspace suites are crate-scoped. tagged-index-stack needs its optional
   // loom dependency feature as well as cfg loom; root models forward that
-  // feature explicitly in FEATURES whenever they enable alloc-global.
+  // feature explicitly in every FEATURES entry.
   const scopeArgs = isCrate
     ? crateName === 'tagged-index-stack'
       ? ['-p', crateName, '--features', 'loom']

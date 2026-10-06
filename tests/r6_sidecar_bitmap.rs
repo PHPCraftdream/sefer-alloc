@@ -161,13 +161,6 @@ mod tests {
             let (words, classes) = backing();
             let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
             match mode.as_str() {
-                // A zero class at publication time is dropped by the producer
-                // (R12-01): nothing reaches the owner, the child exits normally.
-                "pre:0" => {
-                    classes[1].store(0, Ordering::Relaxed);
-                    assert!(!map.publish(16));
-                    return;
-                }
                 "pre:255" => classes[1].store(u8::MAX, Ordering::Relaxed),
                 // The class is cleared after a valid publication: the owner's own
                 // check still rejects the record.
@@ -186,17 +179,20 @@ mod tests {
             return;
         }
 
+        // A zero class at publication time is dropped by the producer (R12-01):
+        // nothing reaches the owner. In-process: it needs no child.
+        let (words, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        classes[1].store(0, Ordering::Relaxed);
+        assert!(!map.publish(16), "zero class must be dropped at publish");
+
         let executable = std::env::current_exe().unwrap();
-        for mode in ["pre:0", "pre:255", "post:0"] {
+        for mode in ["pre:255", "post:0"] {
             let status = std::process::Command::new(&executable)
                 .args(["--exact", "tests::r6_invalid_class_aborts_without_unwind"])
                 .env(CHILD, mode)
                 .status()
                 .unwrap();
-            if mode == "pre:0" {
-                assert!(status.success(), "zero class must be dropped at publish");
-                continue;
-            }
             assert!(!status.success(), "invalid class {mode} returned normally");
             assert_ne!(status.code(), Some(101), "invalid class {mode} unwound");
         }

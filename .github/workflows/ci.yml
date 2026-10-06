@@ -3134,13 +3134,16 @@ jobs:
   loom-xthread:
     name: loom (alloc-core alloc-xthread)
     runs-on: ubuntu-latest
+    # `tagged-index-stack` is a `cfg(any(loom, kani))` target dependency of the root
+    # crate; under `--cfg loom` it is in every root build and refuses to compile
+    # without its own `loom` feature, so every root loom row forwards it.
     env:
       RUSTFLAGS: "--cfg loom"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: |
-          cargo test --release --features "alloc-core alloc-xthread" \
+          cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom" \
             --test loom_sidecar_bitmap \
             --test loom_terminal_owner_drain \
             --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
@@ -3170,7 +3173,7 @@ jobs:
       # therefore never matched, failing this step even though every test
       # in both binaries passed.
       - run: |
-          cargo test --release --features "experimental" \
+          cargo test --release --features "experimental tagged-index-stack/loom" \
             --test loom_sharded \
             --test loom_epoch \
             --test loom_r11_epoch_false_full 2>&1 | tee "$RUNNER_TEMP/loom-experimental.log"
