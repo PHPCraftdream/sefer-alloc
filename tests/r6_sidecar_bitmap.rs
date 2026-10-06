@@ -156,29 +156,49 @@ mod tests {
     #[test]
     fn r6_invalid_class_aborts_without_unwind() {
         const CHILD: &str = "SEFER_R6_SIDECAR_INVALID_CLASS_CHILD";
-        if let Some(encoded) = std::env::var_os(CHILD) {
-            let encoded: u8 = encoded.to_string_lossy().parse().unwrap();
+        if let Some(mode) = std::env::var_os(CHILD) {
+            let mode = mode.to_string_lossy().into_owned();
             let (words, classes) = backing();
             let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
-            classes[1].store(encoded, Ordering::Relaxed);
-            assert!(map.publish(16));
+            match mode.as_str() {
+                // A zero class at publication time is dropped by the producer
+                // (R12-01): nothing reaches the owner, the child exits normally.
+                "pre:0" => {
+                    classes[1].store(0, Ordering::Relaxed);
+                    assert!(!map.publish(16));
+                    return;
+                }
+                "pre:255" => classes[1].store(u8::MAX, Ordering::Relaxed),
+                // The class is cleared after a valid publication: the owner's own
+                // check still rejects the record.
+                "post:0" => {
+                    classes[1].store(1, Ordering::Relaxed);
+                    assert!(map.publish(16));
+                    classes[1].store(0, Ordering::Relaxed);
+                }
+                other => panic!("unknown child mode {other}"),
+            }
+            if mode == "pre:255" {
+                assert!(map.publish(16));
+            }
             let mut cut = map.scan(1024).unwrap().next_cut().unwrap();
             let _ = cut.pop();
             return;
         }
 
         let executable = std::env::current_exe().unwrap();
-        for encoded in [0u8, u8::MAX] {
+        for mode in ["pre:0", "pre:255", "post:0"] {
             let status = std::process::Command::new(&executable)
                 .args(["--exact", "tests::r6_invalid_class_aborts_without_unwind"])
-                .env(CHILD, encoded.to_string())
+                .env(CHILD, mode)
                 .status()
                 .unwrap();
-            assert!(
-                !status.success(),
-                "invalid class {encoded} returned normally"
-            );
-            assert_ne!(status.code(), Some(101), "invalid class {encoded} unwound");
+            if mode == "pre:0" {
+                assert!(status.success(), "zero class must be dropped at publish");
+                continue;
+            }
+            assert!(!status.success(), "invalid class {mode} returned normally");
+            assert_ne!(status.code(), Some(101), "invalid class {mode} unwound");
         }
     }
 }
