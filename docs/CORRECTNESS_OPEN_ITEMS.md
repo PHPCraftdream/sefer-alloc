@@ -69,6 +69,13 @@ platform/model/publication acceptance. P1-box (164), interior-free residual
 (166) и verification-only mirror (167) остаются как были. Evidence:
 `docs/reviews/2026-10-06-src-review-sol-round-13.md`, раздел «Принятые исправления после ревью».
 
+**Src review round 14 (2026-10-06).** R14-01…05 filed as item170 before
+remediation. For every prior card: LEAVE its current status/trigger/closed
+record; no native source review closes hardware, model, publication or
+deployment acceptance. The report's complete ID inventory includes the long
+publish-readiness tail. Known164/166/167 and general prose154 stay as recorded.
+Evidence: `docs/reviews/2026-10-06-src-review-sol-round-14.md`, appendices A/B.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -447,6 +454,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 167 | `TRACKED_verification_coverage.md` |
 | 168 | `RESOLVED.md` |
 | 169 | `RESOLVED.md` |
+| 170 | `ACTIVE.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains

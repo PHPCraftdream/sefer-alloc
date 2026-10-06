@@ -178,3 +178,10 @@ the reversal record.)
     - **Next trigger:** parent acceptance of `SEGMENT`, `2 * SEGMENT`, `16 * SEGMENT` success, own/foreign/fallback/batch/realloc and rollback routes, OS release and Miri provenance. Keep this card open until results are reviewed.
     - **Evidence:** `docs/LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`; `src/alloc_core/large/alloc_core_large.rs`; `src/alloc_core/platform/os.rs`; `tests/r8_large_alignment.rs`. This doc pass did not run tests.
 
+170. **[A] Src review round 14 — owner capability, shard lifecycle/cost and current-state documentation.**
+
+    - **Status:** OPEN — R14-01…05 confirmed; review committed before the requested wrush remediation.
+    - **Current-number-or-verdict:** P3 caller-owned internals SmallSidecar mutation race; P3 structural all-live claim-prune cost (UNMEASURED latency/Ir/RSS); P3 stale scanner/protocol evidence; native P3 late-TLS AccessError plus orphan advisory claim; P4 index census/tier/evidence drift. No new production P0/P1/P2 or speedup claim. Native owner-API reachability and late-TLS witnesses, 8 R13 regressions, installed allocator smoke and two strict rustdoc configurations observed.
+    - **Next trigger:** authorized isolated-wr work implements the five report items; parent reviews actual changes, exercises counterfactuals/tests/smoke, integrates and commits, then moves this card to RESOLVED. P1-box164, residual166/167 and general prose154 are not closure criteria here.
+    - **Evidence:** `docs/reviews/2026-10-06-src-review-sol-round-14.md`, base `d6417c6c85f9f8c124110eac77080523df06b004`.
+

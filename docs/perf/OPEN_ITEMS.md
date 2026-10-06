@@ -90,6 +90,13 @@ for completeness.
 words-examined diagnostic contract; speedup не заявляется. Evidence:
 `docs/reviews/2026-10-06-src-review-sol-round-13.md`, раздел «Принятые исправления после ревью».
 
+**Src review round 14 disposition (2026-10-06).** For every existing item,
+LEAVE current status/trigger/closed record: this source audit is not a new
+latency/Ir/RSS/hardware gate. R14's prune cost is an experimental-layer
+structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
+82 stays НЕ СЕЙЧАС, 72/78 keep their owned measurement triggers. Evidence:
+`docs/reviews/2026-10-06-src-review-sol-round-14.md`, complete appendix B.
+
 ---
 
 ## Open items
