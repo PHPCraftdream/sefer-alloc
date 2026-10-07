@@ -2,6 +2,9 @@
 //! rustc, `--error-format=json`, exactly one error with an exact code,
 //! rendered-content substrings, primary span inside the fixture's own
 //! main.rs).
+//! This harness invokes the host `rustc` directly, so it is enabled only for
+//! x86_64 test targets; cross-target CI does not feed foreign-target rlibs to
+//! the host compiler. Native CI retains these API-visibility checks.
 //!
 //! Fixtures compile against the ACTUAL BUILT crate. Artifact selection is
 //! deterministic: every `libsefer_alloc-*.rlib` / `libsefer_alloc.rlib` under
@@ -23,7 +26,7 @@
 //! - `route_registration_owner_not_sync` → exactly one E0277
 //!   (`RouteRegistration` is `!Sync` via `PhantomData<Cell<()>>`).
 
-#![cfg(all(feature = "alloc-global", feature = "internals"))]
+#![cfg(all(feature = "alloc-global", feature = "internals", target_arch = "x86_64"))]
 
 use std::path::{Path, PathBuf};
 
