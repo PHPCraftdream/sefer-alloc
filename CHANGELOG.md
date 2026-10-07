@@ -21,12 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   intrusive-spill telemetry request is closed as superseded by terminal
   sidecars; item158 remains open because `publish_empty` clears all buckets for
   a class/slot while post-drain sync still has a current-node-only clear path.
-- [test] Commits `247a52ad` and `c82c88c5` make the R14 sidecar owner-capability
-  harness accept both rustc E0433 registry phrasings and skip E0460
-  dependency-mismatched rlib candidates; the focused mixed-feature probe passed 3/3.
-- [verification] `npm run check` passed all 65 steps, including the existing
-  IAI step (85 benches). Those IAI values do not support any R15 optimization
-  claim; no separate R15 performance verdict was measured.
+- [test] Commits `247a52ad`, `c82c88c5`, and `749dbfa9` make the R14 sidecar
+  owner-capability probe skip rustc E0433 wording variants, E0460 dependency
+  mismatches, and E0463 missing-dependency candidates. The focused mixed-feature
+  test passed 3/3; no runtime source changed.
+- [verification] `npm run check` passed all 65 steps, including its existing
+  IAI step (85 benches); no IAI numbers support an R15 optimization claim.
+  The first landing CI run on SHA `714ea5b7` surfaced the E0463 harness case;
+  the test-only correction is in this round's follow-up.
 - `production` composition, defaults, and dependencies are unchanged. No
   speedup or performance promotion is claimed. Manifest:
   `docs/perf/round-manifests/SRC_REVIEW_R15_MANIFEST.md`.

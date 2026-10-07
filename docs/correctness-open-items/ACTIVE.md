@@ -164,7 +164,7 @@ the reversal record.)
     after removing a scratch worktree, rather than re-diagnosing this from
     scratch.
 
-    > **Dated update (2026-10-07, R15):** the initial `npm run check` against the shared target selected a stale pre-R14 `libsefer_alloc` for the compile-fail harness. A worktree-local target avoided that artifact, then exposed E0433 registry wording variants and E0460 dependency-version candidates. The harness now skips only those known incompatible candidates; the focused tests pass 3/3 and the complete `npm run check` passed. Item remains OPEN: per-worktree target isolation is still the required manual mitigation.
+    > **Dated update (2026-10-07, R15):** the initial `npm run check` against the shared target selected a stale pre-R14 `libsefer_alloc` for the compile-fail harness. A worktree-local target avoided that artifact; mixed candidates exposed E0433 registry wording, E0460 dependency-version mismatch, and E0463 missing-dependency diagnostics. The harness now skips only those known incompatible candidates; its three focused tests and the full 65-step `npm run check` pass. GitHub run 37644289617 on landing SHA 714 then exposed E0463; commit 749dbfa9 adds the missing case. Item remains OPEN because worktree-local target isolation is still a manual mitigation.
 
 162. **[A] Root src R6-01/R6-03, R8-01 — complete terminal ingress and autonomous ownerless reclamation.**
 
