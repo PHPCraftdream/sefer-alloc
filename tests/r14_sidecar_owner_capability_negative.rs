@@ -26,7 +26,11 @@
 //! - `route_registration_owner_not_sync` → exactly one E0277
 //!   (`RouteRegistration` is `!Sync` via `PhantomData<Cell<()>>`).
 
-#![cfg(all(feature = "alloc-global", feature = "internals", target_arch = "x86_64"))]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "internals",
+    target_arch = "x86_64"
+))]
 
 use std::path::{Path, PathBuf};
 
