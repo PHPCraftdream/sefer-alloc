@@ -339,3 +339,84 @@ Raw ownership/view решений: EntryHandle owns один counted System desc
 --features production,internals --test no_stale_doc_references --
 --test-threads=1`: **32 passed, 0 failed**. Новый report и карточка не
 заменяют тестовые/типовые safety-границы; source-wording oracle не восстанавливался.
+
+## Принятые исправления после ревью
+
+R14-01…05 закрыты в remediation-pass; item170 перенесён из `[A]` в
+`docs/correctness-open-items/RESOLVED.md`, полная closure-запись — в
+`docs/correctness-open-items/ARCHIVE.md` §170.
+
+- **R14-01:** `SmallSidecar::{prepare, issue}` стали `pub(crate)`;
+  owner-операции доступны через `RouteRegistration::{prepare_small,
+  issue_small}`. Маркер `PhantomData<Cell<()>>` сохраняет `!Sync`.
+  Production callsite сохранил abort на отсутствующем sidecar; все
+  тестовые callsites мигрированы. Три actual-crate negative fixtures
+  проверяют E0624 для shared mutators и E0277 для `RouteRegistration: Sync`,
+  positive probe отбирает feature-compatible rlib перед проверкой ошибок.
+- **R14-02:** dead-claim sweep теперь запускается на cold point только после
+  изменения wrapping `TOKEN_BACKING_DEATHS`; pre-sweep snapshot сохраняет
+  cleanup при racing death. Live release obligations не вытесняются.
+  `PRUNE_CLAIM_CHECKS` измеряет фактические per-claim strong-count checks.
+  Детерминированные тесты доказывают ноль таких проверок для живых
+  FIFO-evicted/revisited claims и ограниченную очистку после deaths.
+  **Это work-bound доказательство, не latency/Ir/RSS-замер и не speedup.**
+  Сохраняется documented край: полный `2^64`-wrap может отложить pruning
+  до следующего отличимого death hint.
+- **R14-03:** старый Rust hook tripwire отмечен историческим; действующий
+  successor — `scripts/verify-dbg-hook-safety.mjs`, wired into
+  `scripts/check-all.mjs` and CI. Текущий прогон: PASS, 141 reviewed safe,
+  30 reviewed unsafe, 78 bench-gated safe hooks. Секции 0–8
+  `docs/CROSS_THREAD_STATE_MACHINES.md` явно historical; §9 трассирует
+  текущий путь и разделяет physical Large reservation word и независимый
+  `LargeState` route descriptor. README/ARCHITECTURE unsafe inventory
+  сверены: 27 tier-1 (21 `src/`, 6 `crates/`), 103 tier-2 в 34 файлах;
+  production активирует 15 internal seams.
+- **R14-04:** routing и exit-guard TLS проверяются через `try_with` до
+  exclusive-token CAS. Late insert без доступного router TLS modulo-shares;
+  explicit late bind возвращает `false`. Claim и release-запись выполняются
+  под живым guard borrow. Четыре детерминированных TLS-order tests покрывают
+  оба teardown-order варианта, отказ explicit bind и обычный live bind.
+- **R14-05:** correctness cards пересчитаны; item170 закрыт, item171 отдельно
+  индексирует Miri residual. Perf items 79/80 оставлены в текущем
+  Recently-resolved trail с полными архивными closure; 40/41 перемещены в
+  `[A]`, 42 размечен `[D]`, item26 evidence восстановлена. Предыдущие
+  perf-verdicts/triggers сохранены.
+
+### Финальная верификация remediation
+
+На свежем изолированном target прошёл полный native набор:
+`cargo test --locked -j 2 --all-features --tests -- --test-threads=1`.
+Feature-точный regression set прошёл **62 tests**:
+`no_stale_doc_references` 32; R13 directory/shard controls 8;
+R14 late-TLS/work-bound/owner-capability 9; R6/R11 route tests 13.
+Дополнительно прошли:
+
+- `node scripts/fmt-check.mjs` — 578 файлов, 2 chunks;
+- `cargo clippy --locked -j 2 --all-features --all-targets -- -D warnings`;
+- warning-strict rustdoc `production` и `all-features` + private items;
+- `node scripts/verify-dbg-hook-safety.mjs`;
+- `cargo run --locked -j 2 --example global_allocator --features production`:
+  `sefer-alloc global allocator OK — summed 100000 ints (=4999950000) and
+  stored 10000 map entries, all through SeferAlloc`.
+
+Один промежуточный прогон `correctness_index_recently_resolved_pointers_carry_verdicts`
+поймал неверный формат/порядок нового item170 closure pointer. Pointer приведён
+к архивному заголовку и каноническому суффиксу; targeted guard и весь
+`no_stale_doc_references` (32 tests) после исправления прошли.
+
+**Miri residual — item171, не закрытый этим remediation:** `cargo +nightly-2026-10-06
+miri test --locked -j 2 --features experimental --test epoch
+single_threaded_sequence_matches_reference_model -- --exact` падает в
+pre-existing `tests/epoch.rs` при регистрации default collector:
+`crossbeam_epoch::internal::Local::element_of` (`crossbeam-epoch 0.9.20`,
+`internal.rs:562`), вызванный `Global::try_advance` при `epoch::pin()`;
+Miri выдаёт Stacked Borrows “tag does not exist”. Тот же класс ошибки
+возник и при Miri-прогоне нового late-TLS test. Текущий toolchain:
+`nightly-2026-10-06`, rustc `1.101.0-nightly (ea137335b 2026-10-05)`;
+Crossbeam также выдаёт integer-to-pointer provenance warning в
+`atomic.rs:204`. Попытка Tree Borrows на июльском Miri тоже не прошла:
+сам Crossbeam предупреждает, что его integer-to-pointer conversion там
+не поддерживается. `EpochRegion`/Cargo.lock не менялись; это не названо
+ни false-positive, ни Miri-clean. Item171 оставлен `[T]` до root-cause/
+supported-configuration решения; dependency change требует отдельной
+явной авторизации.

@@ -41,9 +41,13 @@ impl SmallSidecar {
             .unwrap_or_else(|| std::process::abort())
     }
 
-    /// Owner-only, fallible preparation before any issue transaction mutates
-    /// its freelist, bitmap, bump, live credit, directory, or output.
-    pub fn prepare(&self, offset: u32, class: u8) -> bool {
+    /// Crate-private owner-only, fallible preparation before any issue
+    /// transaction mutates its freelist, bitmap, bump, live credit, directory,
+    /// or output; public owner mutation is carried only by
+    /// `RouteRegistration::prepare_small` (which is `!Sync` via its
+    /// `PhantomData<Cell<()>>` owner marker, so exclusive-owner sharing across
+    /// threads stays type-enforced).
+    pub(crate) fn prepare(&self, offset: u32, class: u8) -> bool {
         let offset = offset as usize;
         let granule = crate::alloc_core::size_classes::MIN_BLOCK;
         offset < crate::alloc_core::os::SEGMENT
@@ -51,8 +55,11 @@ impl SmallSidecar {
             && self.classes.prepare(offset / granule, class)
     }
 
-    /// Owner-only class issue before allocation handoff.
-    pub fn issue(&self, offset: u32, class: u8) -> bool {
+    /// Crate-private owner-only class issue before allocation handoff; public
+    /// owner mutation is carried only by `RouteRegistration::issue_small` (the
+    /// `!Sync` `PhantomData<Cell<()>>` owner marker keeps exclusive-owner
+    /// sharing across threads type-enforced).
+    pub(crate) fn issue(&self, offset: u32, class: u8) -> bool {
         (self.prepared(offset, class) || self.prepare(offset, class))
             && self.bitmap().issue(offset, class)
     }

@@ -602,34 +602,43 @@ Core instructions, mandatory for all code in this repository. They
      `flush_magazine_class` prototype but left the R24-2-era
      `dbg_overflow_bitmap_clear_pass` hook it depended on in place under the
      wider gate, undiscovered until an independent review caught it.
-  4. **Point 2's "the one sanctioned exception is `dbg_push_to_ring`" is
-     superseded, not contradicted, by `tests/dbg_hook_safety_tripwire.rs`'s
-     R30-2 redesign** (task #1996 finding, verified against the live test
-     file rather than acted on blind): that test enforces a BROADER, already-
-     shipped mechanical rule — every crate-public `dbg_*` hook must be either
+  4. **Point 2's "the one sanctioned exception is `dbg_push_to_ring`" was
+     historically superseded by the R30-2 tripwire redesign; the exemption
+     policy below is the standing rule going forward.** At the time the rule
+     was written (R30-2, task #1996),
+     `tests/dbg_hook_safety_tripwire.rs` enforced a BROADER, already-shipped
+     mechanical rule — every crate-public `dbg_*` hook had to be either
      `bench-internals`-gated OR individually allowlisted in that file's
      `PURE_OBSERVERS`/`SAFE_MUTATORS` tables with a one-line invariant
      justification (read-only; or delegates to the real production code path;
      or the mutation is bounded to inert bookkeeping that cannot produce UB or
-     a wrong pointer). ~80 hooks across `src/` are allowlisted this way today.
+     a wrong pointer). ~80 hooks across `src/` were allowlisted that way.
      `dbg_fallback_lock_acquisitions`, `dbg_panic_in_with_heap_releases_lock`,
      `dbg_teardown_then_resolve_is_fallback`, and
      `dbg_teardown_then_resolve_is_foreign_no_bind` (`src/global/`) were
      flagged by an independent review as inconsistent stragglers relative to
      their `bench-internals`-gated siblings in the same files — but all four
-     are already correctly classified and justified in that allowlist (the
-     `safe_dbg_hooks_match_reviewed_allowlist` test passes), matching the
-     SAME treatment given to the ~80 other entries, none of which self-
-     document their exemption at the definition site either (the allowlist is
-     deliberately the ONE place the justification lives, not duplicated per
-     call site). Re-gating just these four behind `bench-internals` would
-     have been LESS consistent with the codebase's actual practice, not more
-     — it would single out 4 of ~84 identically-shaped exemptions for
-     different treatment for no reason tied to their actual risk. No code
-     changed for task #1996; this point is the fix — recording, in the one
-     place a future sweep reads before re-flagging the same non-issue, that
-     the tripwire's allowlist (not point 2's single named exception) is the
-     current, comprehensive resolution mechanism.
+     were correctly classified and justified in that allowlist, matching the
+     SAME treatment given to the ~80 other entries. That historical conclusion
+     stands as history only: do not re-gate those four without reason. The
+     test file was removed at the terminal cutover (commit a4245965), but
+     the reviewed tables and scanner migrated to
+     `scripts/verify-dbg-hook-safety.mjs`, wired into `scripts/check-all.mjs`
+     and `.github/workflows/ci.yml`. The standing policy going forward is
+     the R30-2 shape-independent one, not point 2's single-exception framing:
+     the default remains `bench-internals`-gating (point 2), and an exception
+     requires an individually reviewed justification of one of the R30-2
+     shapes (read-only pure observer; delegation to the real production code
+     path; mutation bounded to inert bookkeeping). The script's
+     `PURE_OBSERVERS`/`SAFE_MUTATORS`/`UNSAFE_HOOKS` tables are the current
+     authoritative inventory; they are reviewed entries, not blanket
+     grandfathering for every historical hook. The raw `unsafe fn` +
+     `# Safety` contract rules (points 1-3) remain fully in force for
+     raw-pointer-dependent hooks. The scanner checks inventory, gates and
+     contract presence; each hook's own invariant still requires review,
+     and scanner success is not a soundness proof. Point 2's `dbg_push_to_ring`
+     exception remains the historical single named one, subordinate to this
+     broader policy.
 - **A benchmark/report that sweeps a runtime configuration value across
   multiple arms (e.g. `pool_segments`, cache sizes, thread counts fed through
   `with_config`/similar) MUST report, per arm, the evidence that the arm

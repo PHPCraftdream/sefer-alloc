@@ -140,11 +140,11 @@ impl RouteSlots {
         if route.root() != base {
             std::process::abort();
         }
-        route
-            .small_sidecar()
-            .unwrap_or_else(|| std::process::abort())
-            .prepare(offset, class)
-            .then_some(IssueTransaction::prepared(index, base, offset, class))
+        let prepared = route.prepare_small(offset, class);
+        if !prepared && route.small_sidecar().is_none() {
+            std::process::abort();
+        }
+        prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
     }
 
     pub(super) fn scan_small(

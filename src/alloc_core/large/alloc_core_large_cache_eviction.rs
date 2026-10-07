@@ -279,27 +279,27 @@ impl AllocCore {
     /// method's result across every live registry slot.
     ///
     /// R31-14b (task #484, closing P2-11 filed in
-    /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 9): stays gated `alloc-decommit`
-    /// alone — NOT tightened to `all(alloc-decommit, bench-internals)` like
+    /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 9): retains `alloc-decommit`
+    /// plus `internals` gating — NOT tightened to `bench-internals` like
     /// its `HeapCore`-level sibling ([`crate::registry::HeapCore::dbg_large_cache_hits`],
     /// tightened by R31-4/task #467). The two are not the same case:
     /// `HeapCore::dbg_large_cache_hits` had zero callers outside
     /// `bench-internals`-gated examples, so CLAUDE.md's benchmark-hook rule
     /// 2 ("no production caller ⇒ MUST default to `bench-internals`-gating")
-    /// applied cleanly. THIS method has real regression-test callers that
-    /// run in a plain `production` test build without `bench-internals` —
+    /// applied cleanly. THIS method has real regression-test callers —
     /// `tests/alloc_zeroed_fresh_large_skip.rs` and
-    /// `tests/regression_large_cache_span_usable_stable.rs` both gate only
-    /// on `#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]`
-    /// and assert on this method's return value — so it does have a
-    /// production-build (test-time) caller, and tightening it would break
-    /// those tests without a compensating rewrite. It is also a zero-argument
-    /// `&self` read of an already-relaxed atomic counter (no pointer, no
-    /// mutation), allowlisted as a `PURE_OBSERVERS` entry in
-    /// `tests/dbg_hook_safety_tripwire.rs`, matching the same sanctioned
-    /// read-only shape as its `large_cache_used`/`large_cache_budget`/
-    /// `large_cache_mode` siblings in this same file, none of which are
-    /// `bench-internals`-gated either.
+    /// `tests/regression_large_cache_span_usable_stable.rs` both require
+    /// `alloc-core`, `alloc-decommit` and `internals`, but not
+    /// `bench-internals`, and assert on this method's return value.
+    /// Tightening it would break those tests without a compensating rewrite.
+    /// It is also a zero-argument `&self` read of an already-relaxed atomic
+    /// counter (no pointer, no mutation) — the hook's read-only safety argument
+    /// stands on that shape itself, not merely on inventory membership.
+    /// Its historical `PURE_OBSERVERS` entry in the removed
+    /// `tests/dbg_hook_safety_tripwire.rs` now lives in
+    /// `scripts/verify-dbg-hook-safety.mjs`, alongside its `large_cache_used`/
+    /// `large_cache_budget`/`large_cache_mode` siblings. The live scanner checks
+    /// the inventory and gates; it does not prove the observer's invariant.
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]

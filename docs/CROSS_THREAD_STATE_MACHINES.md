@@ -1,10 +1,39 @@
 # Cross-thread free as a system of state machines (the spec)
 
-**Status:** design (task #37). Written *before* implementation, deliberately.
-This document is the authoritative specification of the cross-thread-free
-protocol. Implementation must match it; the loom model checks it; both the §8
+**Status:** HISTORICAL design record (task #37). Written *before*
+implementation, deliberately.
+
+> **SUPERSEDED as the current protocol (2026-10-06, review R14-03).**
+> Sections 0–8 below describe the OLD cross-thread design world — the
+> per-segment offset ring channel, the `ABANDONED` segment state with
+> adopters, and slot-incarnation collection rules. That world is **not**
+> the shipped implementation. Everything here is retained only as a
+> historical record of the design reasoning and the two witnessed races
+> (§8 intrusive-word race, Phase-12.6 ring-ABA). It must NOT be read as
+> the authoritative specification of the current cross-thread or
+> terminal-publication protocol.
+>
+> **Current-source summary and dated design anchors:**
+> - [`REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`](REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md)
+>   — design of the now-implemented independent sidecar/registration ingress
+>   (supersedes the payload-intrusive ingress proposed in
+>   [`REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`](REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md)).
+> - [`LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`](LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md)
+>   — Large geometry, canonical identity and the four-value split
+>   (reservation token / usable root / payload / address key).
+> - [`INVARIANTS.md`](INVARIANTS.md), [`ARCHITECTURE.md`](ARCHITECTURE.md),
+>   [`GLOSSARY.md`](GLOSSARY.md) — system-wide invariants and vocabulary.
+>
+> Section 9 (at the end, after historical §8) is the current state-machine
+> summary, traced to source.
+
+This document was the authoritative specification of a cross-thread-free
+protocol *as of task #37*. Implementation has since moved on; the loom
+model checked the historical machine; both the §8
 intrusive-word race and the Phase-12.6 ring-ABA are shown below to be the **same
-invariant violation**, so fixing the invariant fixes both.
+invariant violation**, so fixing the invariant fixes both — that unified
+lesson still stands, even though the mechanism it was applied to has been
+replaced.
 
 Why this exists: Phases 8–12 drifted from the project's founding discipline
 ("dangerous memory → proven tools, don't improvise") into hand-rolled lock-free
@@ -16,7 +45,7 @@ what this is.
 
 ---
 
-## 0. The actors and what they may touch
+## 0. The actors and what they may touch *(HISTORICAL — pre-sidecar ring/ABANDONED model; see the SUPERSEDED notice above and §9 for the current protocol)*
 
 | Actor | Identity | May write |
 |---|---|---|
@@ -31,7 +60,7 @@ identity changes.
 
 ---
 
-## 1. SM-BLOCK — the allocation atom
+## 1. SM-BLOCK — the allocation atom *(HISTORICAL — §9 for the current path)*
 
 Scope: one `(segment, offset)` *within a single segment incarnation* (see
 SM-SEGMENT for "incarnation"). This is the machine whose invariant the bugs broke.
@@ -66,7 +95,7 @@ Invariants:
 
 ---
 
-## 2. SM-SEGMENT — ownership / incarnation
+## 2. SM-SEGMENT — ownership / incarnation *(HISTORICAL — the `ABANDONED`/adoption edges are not the shipped path; §9)*
 
 > **Hot-path reality (verified, task #37).** In the shipped Phase-12.5 shard
 > model, `abandon_segments` is **not called on the hot path** — thread exit does
@@ -107,7 +136,7 @@ Invariants:
 
 ---
 
-## 3. SM-SLOT — registry HeapSlot
+## 3. SM-SLOT — registry HeapSlot *(HISTORICAL — the I-SLOT-1 incarnation rule below is a design claim of the ring era, NOT a rule of the current protocol: nothing in the current source forbids a valid pending foreign publication from a previous owner thread surviving whole-heap slot reuse; see §9)*
 
 Scope: one registry slot index. `HeapCore` is materialised on first claim and
 **inherited as-is** on later claims (see `HeapRegistry::claim`).
@@ -123,7 +152,7 @@ Invariant:
 
 ---
 
-## 4. SM-CHANNEL — the cross-thread handoff (per segment)
+## 4. SM-CHANNEL — the cross-thread handoff (per segment) *(HISTORICAL — the ring channel itself was replaced by the sidecar/registration route, see §9)*
 
 This is where representation is usually argued (intrusive word vs offset ring).
 The state machine shows the argument is **secondary** — what matters is that a
@@ -161,7 +190,7 @@ Same invariant, same boundary. So the fix is **not** "intrusive vs ring"; it is
 
 ---
 
-## 5. The boundary discipline (the actual fix surface)
+## 5. The boundary discipline (the actual fix surface) *(HISTORICAL)*
 
 Exactly one of these must hold; both are valid, pick by cost:
 
@@ -183,7 +212,7 @@ acceptable.** The decision is now a measured one, not a guess.
 
 ---
 
-## 6. Verification plan (verification-first)
+## 6. Verification plan (verification-first) *(HISTORICAL)*
 
 1. Encode SM-BLOCK + SM-SEGMENT + SM-CHANNEL as a loom model over loom atomics
    (NOT the real allocator): a small number of blocks, 1 Owner that
@@ -199,7 +228,7 @@ acceptable.** The decision is now a measured one, not a guess.
 
 ---
 
-## 7. What this replaces
+## 7. What this replaces *(HISTORICAL)*
 
 - The ad-hoc Variant-2 ring stays *only* as the channel representation **if** it
   carries the life-epoch (option E); otherwise it is replaced by the intrusive
@@ -211,7 +240,7 @@ acceptable.** The decision is now a measured one, not a guess.
 
 ---
 
-## 8. Open questions for the implementation phase
+## 8. Open questions for the implementation phase *(HISTORICAL — answered by the shipped sidecar/registration design; see §9)*
 
 - (E) needs the block's alloc-epoch at *collect* time. Where is it stored — in
   the channel entry (widen to u64 `offset|gen`), or read from the segment
@@ -221,3 +250,242 @@ acceptable.** The decision is now a measured one, not a guess.
 - Interaction with M11 epoch-guard (#35) for M6 decommit: the same segment
   generation should serve both (decommit-safety and collect-safety are the same
   "don't touch a re-incarnated address" property). Unify, don't duplicate.
+
+---
+
+## 9. CURRENT authoritative anchor — the shipped cross-thread protocol (2026-10-06)
+
+This section describes current mechanisms traced against live source. The
+dated contract/design anchors are
+[`REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`](REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md),
+[`REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md`](REMOTE_FREE_SIDECAR_REVISION_2026-09-29.md)
+and
+[`LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`](LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md).
+They contain historical proposals and are not substitutes for live
+call-site evidence or acceptance receipts.
+All `file:line` references below are to the source tree at the time of
+writing and were verified by reading the files.
+
+### 9.1 Two INDEPENDENT atomic words, one shared transition vocabulary
+
+The same small wrapper type is used over two different physical words;
+do not conflate them:
+
+- **The PHYSICAL owner-only Large reservation word.** `LargePhase`
+  (`src/alloc_core/segment/segment_header/terminal_words.rs:37-45`) packs
+  `Unused=0, Initializing=1, Live=2, Pending=3, Consuming=4, Cached=5,
+  Released=6` with a generation (`pack_large_state`,
+  `terminal_words.rs:48-51`). The owner drives it under its exclusive
+  authority — a registry heap lease or a standalone core's `&mut`
+  (`LargeReservationState` doc,
+  `src/alloc_core/large/reservation_state.rs:9-18`):
+  `Live → Consuming` via `claim_live`
+  (`reservation_state.rs:86-101`; call sites
+  `src/alloc_core/large/alloc_core_large.rs:730-735`,
+  `src/alloc_core/alloc_core/lifecycle.rs:525-526`), then either
+  `Consuming → Cached` (`cache_consumed`,
+  `reservation_state.rs:104-106`, used at `alloc_core_large.rs:805`) or
+  `Consuming → Released` (`release_consumed`,
+  `reservation_state.rs:110-112`, `alloc_core_large.rs:830`,
+  `lifecycle.rs:529`). Cached reuse advances the **generation without
+  wrap**: `Cached(g) → Initializing(g+1)` via `begin_reuse`, which
+  returns `None` at `MAX_LARGE_GENERATION = u64::MAX >> PHASE_BITS`
+  (`reservation_state.rs:128-143`; `terminal_words.rs:32,74-84`), then
+  `Initializing → Live` after the owner completes layout/table reset
+  (`finish_reuse`, `reservation_state.rs:147-149`). Eviction/rollback
+  edges: `Cached → Released` (`release_cached`,
+  `reservation_state.rs:116-118`; call sites
+  `alloc_core_large.rs:258-263`,
+  `alloc_core_large_cache_eviction.rs:50,241`,
+  `lifecycle.rs:60-66`) and `Initializing → Released` on cache-hit
+  rollback before user issuance (`release_initializing`,
+  `reservation_state.rs:120-124`; `alloc_core_large.rs:459-464`).
+- **The INDEPENDENT `LargeState`-backed route descriptor word** — a
+  `System`-allocated descriptor (`LargeState`,
+  `src/registry/segment_route/large_state.rs:8-64`; allocated by `System`
+  at registration, `src/registry/segment_route/directory.rs:69-75`;
+  `LargeState::new()` starts at `Live` with generation 1,
+  `large_state.rs:14-17`). This is the production
+  **foreign-publication** path: a remote producer performs the terminal
+  strong CAS `LIVE(g) → PENDING(g)` with success `AcqRel` / failure
+  `Acquire` (`publish_pending`, `reservation_state.rs:42-51`; reached
+  only through `registry::segment_route`, per
+  `reservation_state.rs:39-40`, via `RoutePin::publish_large`,
+  `src/registry/segment_route/pin.rs:57-62`, and
+  `LargeState::publish_pending`, `large_state.rs:24-28`). The owner's
+  table-scan claim is `RouteSlots::claim_large_pending`
+  (`src/alloc_core/segment/segment_table/route_slots.rs:189-200`),
+  driving `PENDING(g) → CONSUMING(g)` via `LargeState::claim_pending`
+  (`large_state.rs:30-32`; `claim_pending`,
+  `reservation_state.rs:58-73`; reached through
+  `RouteRegistration::claim_large_pending`,
+  `src/registry/segment_route/registration.rs:51-53`). `AllocCore` then
+  separately claims the **PHYSICAL** reservation word
+  `LIVE(g) → CONSUMING(g)` (`claim_live`,
+  `alloc_core_large.rs:730-735`), unregisters the **TABLE** entry
+  (`alloc_core_large.rs:740`; segment removal in
+  `src/alloc_core/segment/segment_table/segment_table_impl.rs:514-516`)
+  and drops the `RouteRegistration` (`RouteRegistration::drop →
+  directory.remove`, `registration.rs:78-81`) **before** caching the
+  physical reservation (`alloc_core_large.rs:805-821`). The unlinked old
+  descriptor survives only while old pins hold refcounts, then is freed
+  (`EntryHandle::drop`, `directory.rs:210-225`). Reuse advances the
+  **PHYSICAL** word `Cached(g) → Initializing(g+1) → Live(g+1)`
+  (`alloc_core_large.rs:249-264`; `finish_large_reuse` at
+  `alloc_core_large.rs:483`, via `terminal_words.rs:145-160`) and
+  registers a FRESH descriptor — `LargeState::new()` again starts at
+  `Live` with generation 1 (`directory.rs:69-75`) — plus a new
+  registration incarnation.
+
+**What NOT to claim (explicit non-claims, R14-03):**
+
+- NOT all nine primitive transitions of `LargePhase` run on the
+  descriptor word in production. On the **descriptor**, the production
+  surface is exactly `LIVE → PENDING` (producer) then `PENDING →
+  CONSUMING` followed by owner unlink of the table entry. The
+  cache/reuse/rollback/generation-saturation transitions
+  (`Consuming → Cached`, `Cached → Initializing → Live`, `Cached →
+  Released`, `Initializing → Released`) belong to the **PHYSICAL**
+  reservation word, not the descriptor. The extra `LargeState` methods
+  (`cache_consumed`/`begin_reuse`/`finish_reuse`/`release_cached`,
+  `large_state.rs:34-50`) have **no production callers** — they are a
+  local/testing façade and must not be presented as production. There is
+  no type named `SystemLargeState` anywhere in source; the type is
+  `LargeState`, a `System`-allocated descriptor (`directory.rs:72`).
+- **A descriptor pin is NOT a reservation credit.** `RoutePin` is "a
+  counted descriptor and sidecar capability, not a reservation credit;
+  no allocator-origin root is accessible through a producer pin"
+  (`pin.rs:4-5`; same distinction in
+  `reservation_state.rs:17-18` and
+  `src/registry/segment_route/small_sidecar.rs:105-109`). What keeps the
+  physical reservation alive is the producer's unique *allocation*
+  credit, transferred to the owner by the successful `Pending` CAS
+  (`reservation_state.rs:29-38`).
+- **The pin `Drop` is storage-only.** After terminal publication the
+  pin "touches only the independently allocated descriptor/sidecar"
+  (`pin.rs:37-38`); it never reads or writes the reservation — a
+  metadata-only refcount update on the independent descriptor is not a
+  reservation touch. The old §8 intrusive-word race (owner vs remote
+  contending over the block's first word) has no direct analogue on this
+  path — the terminal word is never written through a producer-side
+  intrusive free-list link — but this contrast does **not** discharge
+  the accepted P1-box correctness defect (item 164, §9.7): an
+  established paused-witness `Box` remains red under Miri SB/TB, and no
+  soundness all-clear follows from the mechanism difference.
+- **The old SM-SLOT rule (I-SLOT-1) does NOT forbid a valid pending
+  foreign publication from a previous owner thread after whole-heap
+  slot reuse.** I-SLOT-1 was a design invariant of the ring/ABANDONED
+  era (§2–§3); the current protocol protects cross-lifetime frees by
+  registration incarnation and generation, not by that rule (§9.2,
+  §9.3).
+
+### 9.2 Registration incarnation — a no-address capability, not stale-pointer validation
+
+Route directory entries carry a monotonically increasing `incarnation`
+(`next_incarnation`, `src/registry/segment_route/directory.rs:700,825-830`),
+stamped at registration. `lookup`
+(`directory.rs:868-888`) takes **only** the address — no expected old
+incarnation is supplied. Under one shard lock it pins the **current**
+entry, then aborts on an internal pointer/incarnation **self-check**
+mismatch (`directory.rs:882-886`). That is snapshot
+identity/refcount consistency, **not** validation of an arbitrary
+caller-supplied stale pointer against an expected value: an arbitrary
+stale pointer at the same VA is not distinguishable by lookup alone —
+an address is not proof of allocation ownership (the pin safety contract
+says so explicitly, `pin.rs:44`). A pre-existing old pin retains its old
+independent descriptor after unlink; that is not automatically a current
+capability. What ordinarily prevents premature reuse is the valid unsafe
+caller's **unique allocation credit**, held until terminal publication
+(`reservation_state.rs:29-38`). Generation/incarnation numbers alone do
+**not** prevent double free. A `RoutePin` exposes the incarnation as a
+number only (`pin.rs:17-19`) — it is a capability over the *descriptor*,
+not over reservation memory, and grants no address/root
+(`pin.rs:4-5,20-23`: capacity validation reads only the independent
+immutable descriptor).
+
+### 9.3 Terminal publication at the last user allocation touch
+
+The successful terminal CAS is the producer's **last descriptor-state
+access**, not an access to reservation bytes (`reservation_state.rs:35-38`).
+It transfers the unique allocation credit; the caller must not access or
+free the allocation or reservation afterwards, nor access the terminal
+publication state again (`pin.rs:40-44,53-56`). The consumed `RoutePin`'s
+`Drop` is a separate storage-lifetime operation: it reads/updates
+refcounts on the INDEPENDENT descriptor and may free the System-allocated
+sidecar ("touches only the independently allocated descriptor/sidecar",
+`pin.rs:37-38`). That metadata-only `Drop` is not a reservation touch or
+another terminal-state access.
+Small/Primordial use the sidecar bitmap `fetch_or` terminal publication
+(`src/registry/segment_route/small_sidecar.rs:148-150` delegates to
+`src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:99-118`, with the
+RMW at `:117`); Large uses the `Live → Pending` CAS
+above. Nothing in production waits on, or is scheduled by, the producer
+after publication; the Miri-only pause gates
+(`src/registry/heap_core_xthread/routing.rs`,
+`TerminalPublicationGate` under `cfg(miri)`,
+`src/registry/segment_route/terminal_publication_gate.rs`) are test
+machinery, not production.
+
+### 9.4 Typed heap lease — OWNED/FREE maintenance excludes paused OWNED
+
+Slot states are plain constants `STATE_EMPTY=0, STATE_OWNED=1,
+STATE_INITIALIZING=2, STATE_FREE=3, STATE_MAINTENANCE=4`
+(`src/registry/heap_slot.rs:89-99`). A successful state CAS grants exclusive
+mutation authority: recycled slots use `FREE → STATE_LIVE` (= OWNED)
+(`src/registry/heap_registry/claim.rs:239-244`); first claims use
+`EMPTY → INITIALIZING` (`claim.rs:221-234`) and publish
+`INITIALIZING → LIVE` after materialization (`claim.rs:295-306`). Both
+return a typed `HeapLease` (`claim.rs:339-344,459`). `STATE_LIVE → STATE_FREE`
+is published with `Release` only after all mutable accesses (`claim.rs:531`). The
+maintenance worker acquires a `MaintenanceLease` via `FREE →
+MAINTENANCE` only (`try_maintenance_at`, `claim.rs:83-95`; back-edge
+`MAINTENANCE → FREE` at `claim.rs:425-426`). Consequently the
+ownerless-maintenance guarantee is conditioned on the heap being `FREE`:
+a paused producer holding its heap in `OWNED` is **never** stolen by
+timeout (contract §1, `REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`);
+maintenance scans only materialized `FREE` slots.
+
+### 9.5 Reservation credits vs descriptor pins
+
+Restating §9.1 as the boundary rule: a *reservation credit* is the
+outstanding-allocation obligation that keeps physical reservation bytes
+mapped and un-reusable; it is transferred to the owner by the terminal
+CAS and discharged exactly once by owner reclaim. A *descriptor pin*
+(`RoutePin`, `EntryHandle`) only keeps the independently allocated
+route descriptor/sidecar alive; the directory reclaims a retired entry
+on the last pin (`directory.rs:214`, `mod.rs:11`: "Pins do not keep
+reservation memory alive"). Strict trim does not wait for producers or
+pins: reservation finalization depends on discharged credits, not on
+independent descriptor refcounts.
+
+### 9.6 Cache / release / rollback paths and generation saturation
+
+After descriptor `Pending → Consuming`, the owner separately claims the
+physical word `Live → Consuming` and unlinks the route. Only that physical
+word then takes `Consuming → Cached` or `Consuming → Released`, while mapped
+and before OS release (`alloc_core_large.rs:730–740,805–830`).
+Cache hit reissues via `Cached → Initializing(g+1) → Live(g+1)`
+(generation advance without wrap; `reservation_state.rs:128-149`,
+physical call sites `alloc_core_large.rs:251` and `terminal_words.rs:145-160`).
+Cache-hit failure before issuance rolls back to `Initializing → Released`
+(`reservation_state.rs:120-124`); eviction of a cached entry is
+`Cached → Released` (`reservation_state.rs:114-118`).
+Generation saturation is handled by returning `None` from
+`next_large_generation` at `MAX_LARGE_GENERATION` (`terminal_words.rs:74-84`)
+— the reservation is retired rather than wrapping
+(`reservation_state.rs:126-133`); the packing function asserts the
+bound (`terminal_words.rs:49`).
+
+### 9.7 Correctness residual — item 164 (P1-box) is owner-accepted, NOT fixed
+
+Correctness item 164 in
+[`docs/correctness-open-items/TRACKED_correctness_residuals.md`](correctness-open-items/TRACKED_correctness_residuals.md)
+(the accepted P1-box (correctness item 164) per the Ph3c path-(b)
+decision of 2026-10-05, and re-confirmed owner-accepted not-fixed by the
+round-14 review `docs/reviews/2026-10-06-src-review-sol-round-14.md`)
+remains open: an established `Box` paused-witness is red under Miri
+SB/TB because the intrusive free-list link is written into the body of
+a freed Small block while the freeing by-value `Box` frame is still
+live. **No Miri-clean or UB-free claim may be read into this document**
+or into the current protocol it describes; native/loom evidence does
+not discharge this residual.

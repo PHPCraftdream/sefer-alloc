@@ -70,11 +70,13 @@ platform/model/publication acceptance. P1-box (164), interior-free residual
 `docs/reviews/2026-10-06-src-review-sol-round-13.md`, раздел «Принятые исправления после ревью».
 
 **Src review round 14 (2026-10-06).** R14-01…05 filed as item170 before
-remediation. For every prior card: LEAVE its current status/trigger/closed
-record; no native source review closes hardware, model, publication or
-deployment acceptance. The report's complete ID inventory includes the long
-publish-readiness tail. Known164/166/167 and general prose154 stay as recorded.
-Evidence: `docs/reviews/2026-10-06-src-review-sol-round-14.md`, appendices A/B.
+remediation and are now CLOSED after source, type-boundary, and runtime
+verification; the closure pointer is in `RESOLVED.md`, with full narrative
+in `ARCHIVE.md`. A separate Miri failure on the existing experimental
+`EpochRegion`/`crossbeam-epoch 0.9.20` path is tracked as item171; it is not
+attributed to the R14 changes and is not hidden or called resolved. All
+other prior-card statuses/triggers remain unchanged. Evidence:
+`docs/reviews/2026-10-06-src-review-sol-round-14.md`, closure receipt.
 
 ---
 
@@ -152,22 +154,29 @@ one became).
 **The cost this split has to justify, and how it is paid:** a thematic
 filename is NOT a one-hop lookup by item number the way `TRACKED_044_093.md`
 was — a reader who knows only "item 61" cannot derive its filename from the
-number alone. The table below is the fix: it is the complete, mechanically
-verified item-N -> file map for EVERY `[T]`-tier number (including the
-`59a`/`59b` sub-items), built by grouping this file's own category
-assignments, not hand-typed. **A reader or script citing an item by number
-looks it up in this table** (or greps `docs/correctness-open-items/*.md`
-directly, which still works and needs no table at all).
+number alone. The table below is the complete
+item-N → file map for every `[T]`-tier number (including `59a`/`59b`) and
+**`ACTIVE.md`** holds current `[A]` cards; `RESOLVED.md` keeps item 170's
+closure pointer. The `[T]` table includes item 171's Miri investigation
+card. A reader or script citing a `[T]` item by number looks it up here (or greps
+`docs/correctness-open-items/*.md` directly).
 
-**The nine `[T]`-tier files, their criterion, and their card count:**
+**The nine `[T]`-tier files, their criteria and numbered-card totals (including retained closed records):**
 
 - **`docs/correctness-open-items/TRACKED_hook_safety.md`** (4 cards) --
-  bench-internals `dbg_*` hook safety & the tripwire scanner. Criterion: the
-  safety/soundness of a `dbg_*`/`bench-internals` measurement hook that
-  touches live allocator state, its `unsafe`/feature-gating correctness, or
-  the `tests/dbg_hook_safety_tripwire.rs` scanner's own coverage of that
-  hazard class — the R25-1 lineage (R29-7/8/17, R30-1/2, R31-4/14b,
-  R31-15). Evidence this is a real, cohesive axis: items 5/7/8/9 are four
+  live `dbg_*` hook safety and scanner coverage, plus historical records of
+  the former Rust tripwire. Criterion: the safety/soundness of a
+  `dbg_*`/`bench-internals` measurement hook that touches live allocator
+  state, its `unsafe`/feature-gating correctness, or scanner coverage of
+  that hazard class — the R25-1 lineage
+  (R29-7/8/17, R30-1/2, R31-4/14b, R31-15). The old
+  `tests/dbg_hook_safety_tripwire.rs` was removed at the terminal
+  sidecar/owner-maintenance cutover (commit `a4245965`), but the reviewed
+  allowlists and scanner live in `scripts/verify-dbg-hook-safety.mjs`, wired
+  into `scripts/check-all.mjs` and `.github/workflows/ci.yml`. Old Rust
+  scanner line references and run receipts are historical, not current
+  execution evidence. Scanner presence does not close the hook-safety
+  residual class or prove individual hook invariants. Evidence this is a real, cohesive axis: items 5/7/8/9 are four
   consecutive rounds (R29 through R31) of the SAME bug class recurring and
   being re-fixed — `dbg_decomp_full_cycle`'s dangling cursor (item 5),
   `dbg_decomp_reserve_and_keep`/`_release`'s mint-then-redeem hazard
@@ -176,23 +185,23 @@ directly, which still works and needs no table at all).
   scoping/`needs_drop`/scanner-name-prefix follow-ups (item 9) — not four
   unrelated findings that happen to mention `dbg_`.
 - **`docs/correctness-open-items/TRACKED_verification_coverage.md`**
-  (5 cards) — miri / loom / kani proof coverage. Criterion: whether an
-  `unsafe` seam or algorithmic invariant has (or lacks) interpreter/
-  model-checker PROOF coverage — distinct from ordinary CI gate wiring (a
-  test exists but does not run under some job) and from platform empirical
-  verification (real hardware, not a formal tool). Evidence: items 17/18
-  name specific seams/proofs miri/kani never reached; items 41/61/84 are
-  the miri-job's own creation and a documented loss of two of its
-  guards — all five are about the PROOF TOOL's reach, not about a job
-  merely being unwired (that is category 4 below).
+  (7 numbered records: 5 open + 2 retained closed) — miri / loom / kani
+  proof coverage. Criterion: whether an `unsafe` seam or algorithmic invariant
+  has (or lacks) interpreter/model-checker PROOF coverage — distinct from
+  ordinary CI gate wiring (a test exists but does not run under some job) and
+  from platform empirical verification (real hardware, not a formal tool).
+  Evidence: items 17/18 name specific seams/proofs miri/kani never reached;
+  41/61 are closed miri-job wiring gaps; 84 records two ignored source-text
+  guards; 167 records a verification-only protocol/runtime mismatch; 171
+  records an observed Miri failure in the existing experimental epoch path.
 - **`docs/correctness-open-items/TRACKED_platform_contracts.md`**
   (14 cards) — per-OS/arch runtime contracts (aligned-vmem, numa-shim).
   Criterion: whether code behaves correctly on a specific OS/architecture
   (HugeTLB, Darwin `madvise`, Windows large pages, BSD/Android/tvOS/
   watchOS/MIPS, page-size constants, numa-shim syscalls), or whether that
   OS-specific behavior has been empirically verified on real hardware
-  versus only reasoned-from-spec. Evidence: this is the single largest
-  cohesive cluster in the material — items 43/47/60 are explicitly framed
+  versus only reasoned-from-spec. Evidence: this cross-platform cluster
+  includes items 43/47/60, explicitly framed
   by their own filing task as "REASONED-FROM-SPEC, never empirically
   executed" for a named OS family; 48/52/53/58/59/59a/59b are one
   continuous HugeTLB/Darwin-decommit investigation across many rounds; 6/26
@@ -205,15 +214,15 @@ directly, which still works and needs no table at all).
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
   to whether the underlying OS behavior is platform-verified (category 3)
-  or proof-verified (category 2). This is the largest category by card
-  count because it is where the R22-3 "flagged in a commit body, reached
-  no index" failure mode recurs most: items 80/82/87 are explicitly filed
+  or proof-verified (category 2). This recurring category captures the
+  R22-3 "flagged in a commit body, reached no index" failure mode:
+  items 80/82/87 are explicitly filed
   as records of exactly that recurrence for three different scripts;
   50/51/54/55/64/65/70/72/73/74/76/88/92 are each "a real test exists, but
   no gate runs it, or runs it under the wrong profile/feature set"; 19/25
   are the same shape for MSRV and a compile-fail harness specifically.
 - **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (3
-  open cards; resolved cards remain as closure pointers) — flaky /
+  open cards + 8 retained resolved records) — flaky /
   order-dependent / scheduler-sensitive tests. Criterion:
   a test that fails intermittently because of timing, thread ordering, or
   shared process-wide state — an ACTUALLY-OBSERVED nondeterministic
@@ -225,19 +234,18 @@ directly, which still works and needs no table at all).
   Windows linker-path failure and verified short-path fix. This separates
   test execution nondeterminism from "nothing runs this test" (category 4).
 - **`docs/correctness-open-items/TRACKED_correctness_residuals.md`**
-  (5 cards) — documented-but-unproven panic-/unwind-safety residuals in
+  (5 open cards + 3 retained closed/resolved records) — documented-but-unproven panic-/unwind-safety residuals in
   shipping code. Criterion: a known, honestly-recorded gap in a
   panic-safety or unwind-safety guarantee of shipping (non-hook,
   non-platform-specific) code — a residual the code's OWN doc comments
-  already name, not yet a proven live bug. Evidence: items 22/23 are both
-  literally transcribed from a shipping type's own doc-comment "what this
-  guard does NOT guarantee" section (`RemoteFreeRing::DrainHeadPublish`,
-  `InitStateGuard`); 16 is the release-notes counterpart for the same
-  `dealloc_foreign_routing` residual class; 66 is `Reservation`'s
-  committed-length contract being documented-not-checked, the same
-  "doc-comment names a residual" shape.
-- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (16
-  cards) — crates.io publish-readiness: metadata, naming, dependencies,
+  already name, not yet a proven live bug. Evidence: 22/23 originated in
+  doc-comment limitations of the then-shipping ring/fallback guards;
+  those historical records do not assert that RemoteFreeRing still ships.
+  16 is its resolved release-notes counterpart; 66 records the resolved
+  Reservation committed-length contract. Current open statuses remain explicit
+  in the tier file rather than inferred from these historical examples.
+- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (55
+  numbered cards) — crates.io publish-readiness: metadata, naming, dependencies,
   NO-GO audits. Criterion: a decision or blocker that gates a crate's
   crates.io publication — naming/description/license/dependency
   one-way-door decisions, semver-coupling decisions, or a NO-GO verdict
@@ -265,7 +273,8 @@ directly, which still works and needs no table at all).
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (8 cards) --
+- **`docs/correctness-open-items/TRACKED_misc.md`** (6 open cards + 2
+  retained closed/resolved pointers) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -276,9 +285,8 @@ directly, which still works and needs no table at all).
   unsafe-ANNOTATION style at ordinary FFI call sites, not about a
   `bench-internals` measurement hook (category 1's actual criterion) or a
   CI-wiring gap (both hooks in item 49 already compile and run today; the
-  gap is only that edition 2024 would make the implicit form a hard
-  error). Two cards, two unrelated reasons, correctly NOT merged into one
-  invented "code hygiene" category of convenience.
+  gap is only that edition 2024 would make the implicit form a hard error).
+  The remaining cards have their individually stated subjects and triggers.
 - **`docs/correctness-open-items/ACTIVE.md`** — the **[A]** tier: active
   cards, a real next step a round should consider taking. Small (6 cards
   at split time). Unchanged by this task.
@@ -297,16 +305,17 @@ OPEN-item content this file's own "Round start" convention rule (above)
 already requires reading end-to-end; `RESOLVED.md` and `ARCHIVE.md` are
 consulted on demand, exactly as before.
 
-**Item-number -> file lookup table (task #1222, mechanically generated from
-this file's own category assignments — not hand-typed).** Covers EVERY `[T]`-tier number, including `59a`/`59b`. The count is
-deliberately not typed here — it moved 70 -> 71 the day it was first
-written. Compare against these two commands, which must agree:
+**Item-number -> file lookup table.** It covers every `[T]`-tier number,
+including `59a`/`59b`, plus retained closure pointers. Item 170 points to
+`RESOLVED.md`; item 171 is the new `[T]` verification card. Other `[A]`
+citations resolve directly in `ACTIVE.md`. The total is deliberately not
+typed here. Compare the two `[T]` numbered-record counts; the second excludes
+`RESOLVED.md` and counts only `TRACKED_*.md` destinations:
 
 ```text
 grep -hE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_*.md | wc -l
-grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
+grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_ITEMS.md
 ```
-
 
 | Item | File |
 | --- | --- |
@@ -454,15 +463,16 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 167 | `TRACKED_verification_coverage.md` |
 | 168 | `RESOLVED.md` |
 | 169 | `RESOLVED.md` |
-| 170 | `ACTIVE.md` |
+| 170 | `RESOLVED.md` |
+| 171 | `TRACKED_verification_coverage.md` |
 
 **Citing an item going forward:** the established convention --
-`` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
+`` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
 correct; this file stays the canonical citation target precisely so nothing
-downstream needs to learn a new path. A reader or script that needs the
-card body consults the lookup table above (or, if the item number is
-unknown ahead of time, greps `docs/correctness-open-items/*.md`, which is
-the only meaningful behavior change versus grepping the old monolith).
+downstream needs to learn a new path. A reader resolves an `[A]` card in
+`ACTIVE.md`; a `[T]` card or retained closure pointer resolves through the
+table. If its tier or number is unknown, grep `docs/correctness-open-items/*.md`
+directly.
 
 **Card census (task #1217, 2026-08-20; re-derived after task #1221's
 number-range re-split; re-derived again, unchanged in total, after task
@@ -477,23 +487,14 @@ grep -hcE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED_*.md
 grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/correctness-open-items/TRACKED_*.md | wc -l
 ```
 
-**5 `[A]`-tier cards** (1, 2, 11, 13, 62) **+ the `[T]`-tier cards**
-(5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
-76, 78-97, plus 85 which sits out of numeric order between 46 and 90 in
-`TRACKED_publish_readiness.md`; "between 47 and 48" was true only of the
-pre-#1222 files and rotted at the thematic re-split — corrected at #1239)
-**= the total open-card count, deliberately not typed here** — for the
-same reason the lookup-table block above refuses to type its count (a
-number typed in prose is a second copy of a fact), and with this very sum
-as the proof: task #1233 added card 94 and extended this sentence's range
-label `78-93 -> 78-94` without re-adding the total, so the typed number
-went stale in the same commit that un-typed the lookup-table count. The
-third command above prints the total directly; it must equal the first
-command's output plus the sum of the second's. Beyond the cards: 40
-"Recently resolved" pointer lines resolving into 38 archive entries (two
-archive item-number collisions, `3` appearing twice, predate this split
-and are inherited unchanged — see `docs/correctness-open-items/ARCHIVE.md`'s
-own "Structure" section).
+The three commands count **numbered records**, including retained CLOSED /
+RESOLVED records; they do not calculate an open-only total. The `[A]` tier
+currently contains 1, 2, 11, 13, 62, 162, and 163. The `[T]` IDs are the
+table rows targeting `TRACKED_*.md`, not its resolution pointers or the
+historical 78–97 range from the initial split. For actionable state, read
+each card's current Status / Next trigger. The complete R14 round-start
+inventory is preserved in `docs/reviews/2026-10-06-src-review-sol-round-14.md`
+appendix B, including the publish-readiness tail.
 Items 1-4's original flaky-test cards are separately already-resolved
 stub pointers inside the `[T]` tier's own intro text (now duplicated
 verbatim at the top of `TRACKED_test_flakiness.md`, the file whose theme

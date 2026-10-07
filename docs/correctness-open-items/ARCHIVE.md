@@ -1760,3 +1760,82 @@ text. Newer closure narratives are added with their item numbers and dates.)*
 
 
   **CLOSED 2026-08-23, task #1288** (option (a) of the task #1264 recommendation, executed): `mock` is no longer a Cargo feature — the recording mock backend is compiled in only by the build-time `--cfg numa_shim_mock` flag (`RUSTFLAGS="--cfg numa_shim_mock"`), mirroring aligned-vmem's task #962 conversion (item 42's already-closed aligned-vmem half, RESOLVED.md entry 42a). The cfg still applies build-graph-wide once set; what changed is WHO can set it: only the top-level build invoker via an explicit RUSTFLAGS/build-script choice, never a transitive dependency through Cargo's additive feature-unification, and never `--all-features`/docs.rs/`cargo add` by accident. Semver: breaking against published 0.1.0's `--features mock` surface — recorded as the fourth breaking change in `crates/numa-shim/CHANGELOG.md`'s Unreleased "Removed" section (rides the same already-breaking next release as the three task-#1274 changes; the version number itself remains the open F1 owner decision, task #1262). Cross-crate consumers migrated: root `numa-aware-mock` is now a marker feature (`["numa-aware"]`); 7 of the 8 root test files mentioning `numa-aware-mock` were re-gated to also require `numa_shim_mock` (the 8th, r12_1_directory_scan_no_aliasing, mentions the feature only in a still-valid doc comment and needed no change) (6 run under the cfg, alloc_core_reentrancy SKIPS under the cfg); ci.yml rows converted with task-#1101-style sentinel greps. Commit: the task #1288 commit on branch numa-shim/1288-mock-cfg-migration.
+## 170 — Src review round 14 findings: CLOSED (2026-10-06)
+
+**Closure:** R14-01…05 were implemented in the isolated R14 remediation
+worktree and personally verified before integration. The source-review report
+was committed first as `7be5539629df34881840e89ccbc47bbcb43bb1bb`; its
+append-only closure receipt is
+`docs/reviews/2026-10-06-src-review-sol-round-14.md`.
+
+- **R14-01 — owner capability boundary:** `SmallSidecar::prepare/issue` are
+  now `pub(crate)`. Public `RouteRegistration::{prepare_small, issue_small}`
+  are the owner-facing API; `RouteRegistration` remains `!Sync` through its
+  `PhantomData<Cell<()>>`. All source/test callers were migrated. The missing
+  sidecar still aborts at the allocator's fatal invariant boundary. Three
+  actual-crate compile-fail cases require E0624 for the shared sidecar
+  mutators and E0277 for `RouteRegistration: Sync`; the positive fixture
+  qualifies candidate rlibs before interpreting a negative diagnostic.
+- **R14-02 — cold claim-prune work:** a wrapping `AtomicU64` death hint makes
+  a cold point scan claims only after an observed token-backing death. The
+  hint is snapshotted before a sweep so a racing death retriggers cleanup;
+  live release obligations are never cap-evicted. An `internals` counter
+  records actual per-claim strong-count checks. Tests prove zero checks for
+  FIFO-evicted/revisited live regions and exact bounded sweeps after transient
+  backings die. The feature is experimental; no latency/Ir/RSS measurement or
+  speedup claim was made. A full 2^64-death wrap can alias the saved hint and
+  delay pruning until a later observed change.
+- **R14-03 — current documentation:** the removed Rust hook tripwire is
+  explicitly historical. Its live successor is
+  `scripts/verify-dbg-hook-safety.mjs`, wired in both `scripts/check-all.mjs`
+  and CI; the report reran it successfully (141 reviewed safe, 30 reviewed
+  unsafe, 78 bench-gated safe hooks). The old cross-thread machine is labeled
+  historical, with a source-traced current section distinguishing the
+  physical Large reservation word from the independent route descriptor.
+  Unsafe-seam inventory counts and current references were corrected.
+- **R14-04 — late TLS destruction:** both routing and exit-guard TLS are
+  checked fallibly before any exclusive token CAS. A late ordinary insert
+  modulo-shares when router TLS is unavailable; an explicit late bind returns
+  false. A normal live thread still binds/releases shard 0. Four deterministic
+  TLS-order tests cover both teardown orders and the live positive control.
+- **R14-05 — indexes:** perf items 79/80's full closures now live in the
+  existing archive with their recent-resolution pointers retained; items
+  40/41 are in `[A]`, item 42 uses the `[D]` tier key, and item 26's cited
+  evidence is complete. Correctness census/tier counts were re-derived;
+  item 170 moved out of `[A]` into the closure trail. A separate, pre-existing
+  `EpochRegion` Miri failure was recorded as item 171 and was not attributed
+  to or hidden by this closure.
+
+**Verification:** the fresh-target command
+`cargo test --locked -j 2 --all-features --tests -- --test-threads=1`
+passed. The feature-precise regression set passed **62 tests** across
+`no_stale_doc_references` (32), the R13 directory/shard controls (8),
+R14 late-TLS/work-bound/owner-capability tests (9), and R6/R11 route tests
+(13). `node scripts/fmt-check.mjs` passed all 578 files in two chunks;
+all-features/all-targets Clippy with `-D warnings` passed; production public
+and all-features private warning-strict rustdoc passed. The installed
+allocator smoke printed `sefer-alloc global allocator OK — summed 100000
+ints (=4999950000) and stored 10000 map entries, all through SeferAlloc.`
+No `production` composition/default/dependency/version changed.
+
+**Open separately:** item 171 remains OPEN. Current nightly Miri reproduces a
+Stacked Borrows failure in the existing `crossbeam-epoch 0.9.20` default
+collector path, including from the pre-existing `tests/epoch.rs` test. No
+`cfg(miri)` skip, suppression, or dependency change was used.
+
+**Historical card at filing (not current status):**
+170. **[A] Src review round 14 — owner capability, shard lifecycle/cost and current-state documentation.** (Filed and CLOSED 2026-10-06.)
+
+    - **Status:** OPEN — R14-01…05 confirmed; review committed before the
+      requested remediation.
+    - **Current-number-or-verdict:** P3 caller-owned internals SmallSidecar
+      mutation race; P3 structural all-live claim-prune cost (UNMEASURED
+      latency/Ir/RSS); P3 stale scanner/protocol evidence; native P3 late-TLS
+      AccessError plus orphan advisory claim; P4 index census/tier/evidence
+      drift. No new production P0/P1/P2 or speedup claim.
+    - **Next trigger:** implement the five report items, personally verify
+      counterfactuals/tests/smoke, then move this card to RESOLVED. P1-box
+      item 164, residual item 166, verification item 167 and general prose
+      item 154 were not closure criteria.
+    - **Evidence at filing:** `docs/reviews/2026-10-06-src-review-sol-round-14.md`,
+      base `d6417c6c85f9f8c124110eac77080523df06b004`.

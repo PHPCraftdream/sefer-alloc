@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an `unsafe` seam or algorithmic invariant has (or lacks) interpreter/model-checker PROOF coverage (miri, loom, kani) -- distinct from ordinary CI gate wiring (a test that exists but does not run under some job) and from platform empirical verification (real hardware, not a formal tool).
 
-**Card count:** 5.
+**Card count:** 7 numbered records (5 open; 2 retained closed).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -198,3 +198,10 @@ split the same day.)
     - **Current-number-or-verdict:** `tagged-index-stack` ушёл из графа `production` (`[target.'cfg(any(loom, kani))'.dependencies]`, commit `ea47a10c`); зеркало `StackHead`/`StackStorage`/`StackOps` в `src/registry/bootstrap/loom_shim.rs` и `pack_proofs` в `src/kani_proofs.rs` остаются, loom-модели `loom_registry_free_slots`/`loom_r11_registry_claim` проходят. Само покрытие упаковки есть и в самом крате.
     - **Next trigger:** следующая правка loom/kani-джоба либо возврат указательного стека в реестр. Если стек не вернётся — вариант (б): удалить зеркало (`loom_shim.rs`) и `pack_proofs` со стороны sefer, оставив одну строку в документации.
     - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-08 и §5.6; `src/registry/bootstrap/loom_shim.rs`, `src/kani_proofs.rs`; `Cargo.toml` (`[target.'cfg(any(loom, kani))'.dependencies]`).
+
+171. **[T, filed 2026-10-06, R14] Miri rejects the existing experimental `EpochRegion` path while initializing `crossbeam-epoch 0.9.20`'s default collector.**
+
+    - **Status:** OPEN — observed interpreter failure; whether this is a project/dependency aliasing defect or a model/toolchain incompatibility is not established. No failure suppression or false-positive classification.
+    - **Current-number-or-verdict:** The pre-existing `tests/epoch.rs::single_threaded_sequence_matches_reference_model` fails under current `nightly-2026-10-06` Miri (rustc `1.101.0-nightly`, `ea137335b`) with Stacked Borrows UB in `crossbeam_epoch::internal::Local::element_of` (`internal.rs:562`), reached through `Local::register` → `Global::try_advance` during `epoch::pin()`. Exact command: `cargo +nightly-2026-10-06 miri test --locked -j 2 --features experimental --test epoch single_threaded_sequence_matches_reference_model -- --exact`. The same failure class occurred in the R14 late-TLS Miri attempt. Crossbeam also emits an integer-to-pointer provenance warning at `atomic.rs:204`. The project `EpochRegion` source and dependency versions were unchanged by R14. A separate Tree Borrows diagnostic on the older July Miri run also failed, with Crossbeam warning that its integer-to-pointer conversion is unsupported there; it is not evidence of a passing configuration.
+    - **Next trigger:** isolate a minimal `crossbeam-epoch 0.9.20` reproducer and determine an upstream-fixed version or supported Miri configuration. Do not `cfg(miri)`-skip the failing behavior or suppress UB; any dependency-version change needs explicit authorization.
+    - **Evidence:** `docs/reviews/2026-10-06-src-review-sol-round-14.md`, “Miri residual”; existing test command and crossbeam stack trace recorded there.

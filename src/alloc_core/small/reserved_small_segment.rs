@@ -179,20 +179,20 @@ impl ReservedSmallSegment {
     /// name prefix, so a raw-pointer-returning method named without the
     /// `dbg_` prefix was invisible to that tripwire even though it returns
     /// exactly the shape (a raw pointer out of a measurement-only type) the
-    /// tripwire exists to enumerate. The R31-4 retrofit that moved this
+    /// tripwire existed to enumerate. The R31-4 retrofit that moved this
     /// pointer-return off `dbg_decomp_reserve_and_keep` (which the tripwire
     /// DID scan) onto this method silently narrowed the tripwire's
-    /// coverage; the `dbg_` prefix restores it without widening the
+    /// coverage; the `dbg_` prefix restored it without widening the
     /// scanner itself. The repeated `#[cfg(...)]` immediately below
     /// (redundant with the enclosing `impl` block's own gate, kept anyway)
-    /// is required for the SAME reason as the rename: the tripwire's
-    /// `scan_file` reads the attribute block immediately preceding each
-    /// `pub fn dbg_*` line, not the enclosing `impl`'s attributes — this
-    /// was the exact gap the rename surfaced (`cargo test --features
-    /// "production bench-internals alloc-stats" --test
-    /// dbg_hook_safety_tripwire` failed with "NEW unaccounted-for SAFE,
-    /// non-bench-internals-gated hooks: ...::dbg_base" until this
-    /// per-method `#[cfg]` was added).
+    /// was required by that Rust tripwire: its `scan_file` read the attribute
+    /// block immediately preceding each `pub fn dbg_*` line, not the
+    /// enclosing `impl`'s attributes. The rename surfaced that gap until the
+    /// per-method gate was added. The Rust test was later removed at the
+    /// terminal cutover (commit a4245965), but the live successor
+    /// `scripts/verify-dbg-hook-safety.mjs` retains prefix-based enumeration
+    /// and recognizes enclosing scope/module gates. The repeated gate is
+    /// retained, not required by that successor's attribute handling.
     #[doc(hidden)]
     #[must_use]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]

@@ -147,22 +147,6 @@ structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
    > this evidence. See `docs/perf/R31_2_POOL_CAP_THRESHOLD_SWEEP_GATE.md`
    > for the full sweep + a candidate (not proven) explanation.
 
-79. **PG-2/PG-3 — off-body учёт свободных блоков (Ph2 ADR → Ph3c): CLOSED — NO-GO, путь (б).**
-
-   > **Current state**
-   > - **Status:** CLOSED — NO-GO (2026-10-05). Off-body учёт отменён: B/B2/B3-прототипы и исправленный интегрированный B3 (шаг 1′) провалили пред-регистрированные пределы; PG-3-регрессия оказалась артефактом скана (PG-3r), но кандидат B3 по цене refill/hot не проходит.
-   > - **Current number/verdict:** шаг 1′ — hot Ir +3.639% / EstCycles +2.517% (≤ 1.02), refill/flush Ir +20.902% / EstCycles +13.038% (≤ 1.20 / ≤ 1.10), A/A чист; P1 закрывался спайком (Miri paused 4/4 зелёные), но не принят к production → P1-box (принятый известный дефект).
-   > - **Next trigger:** нет (переоткрытие только по внешней причине: решение Rust о protector'ах `Box`, нативное воспроизведение, новое решение владельца).
-   > - **Evidence:** `docs/perf/PH3C_B3P_STEP1PRIME_IAI.md`, `docs/design/2026-10-05-adr-addendum-ph3c-path-b.md`; полный нарратив — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `79`.
-
-80. **Скан pending-bitmap на refill-промахе: CLOSED — патч S влит (`perf(runtime)`).**
-
-   > **Current state**
-   > - **Status:** CLOSED (2026-10-05) — патч S влит коммитом `18d76472` (+ гейт импортов `ccb668d4`): скан pending-bitmap начинается с первого слова payload, слова метаданных больше не свопаются.
-   > - **Current number/verdict:** PG-3r iai (85 бенчей, A/A 0.000%): hot ΔIr −0.003…+0.017%, cold/recycle −0.46…−1.23%; мутант (+1 слово) краснит `r8_owner_sidecar_miss`. Пропуск ПУСТЫХ payload-слов (summary-bitmap) не делался — триггера нет.
-   > - **Next trigger:** нет (новая карточка, если пустые payload-слова станут видимой ценой refill в iai-атрибуции).
-   > - **Evidence:** `docs/perf/PG3R_SCAN_PATCH_IAI.md`; полный нарратив — `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `80`.
-
 81. **Ph6b — wall-clock оси A/B (bench-table, MT) остались INCONCLUSIVE: судья с глобальной A/A-полосой, WSL2-хост шумит сильнее предела.**
 
    > **Current state**
@@ -170,6 +154,76 @@ structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
    > - **Current number/verdict:** bench-table geomean C/B 0.9743 (≤ 1.05), MT geomean Mops C/B 1.1267 (≥ 0.95); две ячейки INCONCLUSIVE по шум-правилу: MT mstress T=8 (Mops C/B 0.6991) и `global_alloc_churn/*/1024B` (C/B 1.2405). Перемер оркестратора на тихой машине (MT 30+30, bench 60+60 чередующихся прогонов): значимых различий нет (p = 0.929 / 0.725), но bootstrap 95% CI для churn/1024B [0.855, 1.269] включает предел 1.10 — wall-clock на этом хосте эффект до +27% не исключает.
    > - **Next trigger:** владелец требует безусловный GO по wall-clock → повтор на нативной Windows или на тихом хосте с судьёй, сравнивающим каждую ячейку со СВОЕЙ полосой/мощностью (не с глобальным max по ячейкам) и 60+ прогонами на ячейку; либо новое подозрение на регрессию churn/1024B/MT T=8 из iai-атрибуции.
    > - **Evidence:** `docs/perf/PH6B_COST_AB.md` §3.2/§3.3/§7/§9; `docs/perf/PH6B_COST_AB_summary.csv`; `scripts/ph6b_cost_ab_table.mjs`, `scripts/ph6b_mt_rerun_table.mjs`, `scripts/ph6b_bt_rerun_table.mjs`; сырьё `docs/perf/_raw_ph6b_*.log`.
+
+**Placement note (2026-10-06, src-review round 14 remediation R14-05):** item 40 below was physically listed inside the `[D]` tier while carrying an `[A]` active label; moved here into the `[A]` tier per its existing label. Status, verdict, and trigger unchanged.
+
+40. **R30_7 CSV-naming mismatch — `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`
+    cites `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv` (missing the
+    `_GATE` suffix); same defect class as R32-4/R32-5 (F8), left unfixed when
+    R33-11's check (h) surfaced it.**
+
+    > **Current state**
+    > - **Status:** [A] active — trivially fixable; filed because R33-11's
+    >   `verify-gate-report.mjs` check (h) surfaced this third instance of the
+    >   same-base-name defect class but R33-11 (task #516) declined to rename it
+    >   unasked (it was pre-existing, not introduced by R32). The Round-33
+    >   review's G4 [P3] notes the CHANGELOG rounded all three check (h) warnings
+    >   off as "legitimate cross-references" when one of the three is not.
+    > - **Current number/verdict:** `ls docs/perf/ | grep R30_7` shows exactly one
+    >   report and one CSV whose basenames differ only by the missing `_GATE` —
+    >   i.e. this is the report's OWN companion, misnamed (not a legitimate
+    >   cross-reference to another report's CSV).
+    > - **Next trigger:** rename `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv`
+    >   → `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE_summary.csv` and update
+    >   its two citations — a one-commit fix. The lowest-effort task in this index.
+    > - **Evidence:** `docs/reviews/2026-08-03-round33-readonly-review.md` §6 G4;
+    >   `docs/reviews/2026-08-04-release-stabilization-audit.md` (confirms the
+    >   mismatch persists at audit time).
+
+41. **R33-8's live-`git rev-parse HEAD` fallback silently emits the PARENT
+    commit for a new report generated inside its own landing commit — a
+    convention gap, not yet codified.**
+
+    > *(Placement note, 2026-10-06, R14-05: this card previously sat physically
+    > in the [D] tier while carrying an [A] status — the same placement defect
+    > item 40 had. Only physical placement moved; status, verdict, and trigger
+    > are unchanged.)*
+
+    > **Current state**
+    > - **Status:** [A] active — convention needs documenting; the one observed
+    >   instance (R33-12's CSV `doc_commit` = parent `f51ec37`, corrected to
+    >   landing `96ae245` in R34-2/task #521) is fixed, but the underlying
+    >   mechanism will recur silently on every future same-commit report.
+    > - **Current number/verdict:** R33-8 (task #513, commit `b537770`) replaced
+    >   the loud `'UNFILLED_PLACEHOLDER_40_HEX'` sentinel with
+    >   `process.argv[2] || execSync('git rev-parse HEAD')`. For HISTORICAL CSVs
+    >   this is strictly better (15/15 re-derive CLEAN, Round-33 review §5). But
+    >   for a NEW report generated inside its own landing commit, `git rev-parse
+    >   HEAD` returns the pre-commit parent — a plausible 40-hex SHA that passes
+    >   check (b) (40-hexness) and check (g) (sentinel-scan), so nothing detects
+    >   the off-by-one. R33-12 was the first new report after the change and
+    >   exhibited exactly this (`doc_commit` = `f51ec37` = parent of `96ae245`).
+    > - **Convention (decided R34-2/task #521):** for a NEW report, the
+    >   recommended sequence is R33-6's pattern — commit the harness/example
+    >   FIRST (`5bd7c04`), measure at that HEAD, then commit the report — so
+    >   `git rev-parse HEAD` at derive time is already the correct (harness)
+    >   commit, not a pre-report parent. If a same-commit report is unavoidable,
+    >   pass the eventual landing SHA explicitly as `argv[2]` in a follow-up
+    >   correction commit (the old workflow, now without the sentinel). The one
+    >   combination to avoid is a `landing_commit`/`doc_commit` column populated
+    >   by the `git rev-parse HEAD` fallback inside a report's own landing commit
+    >   — that is the off-by-one state.
+    > - **Next trigger:** a future round either (a) codifies this convention in
+    >   CLAUDE.md's R14-10 summary-CSV section (one sentence: "for a new report,
+    >   commit the harness first or pass the SHA explicitly"), or (b) adds a
+    >   check to `verify-gate-report.mjs` that flags a `doc_commit`/`landing_commit`
+    >   equal to `HEAD^` (the parent) — cheap to compute, catches the exact
+    >   off-by-one class.
+    > - **Evidence:** `docs/reviews/2026-08-03-round33-readonly-review.md` §5 G3;
+    >   R34-2/task #521's correction of `R32_3_REALLOC_REDUNDANT_CONTAINS_BASE_GATE_summary.csv`'s
+    >   `doc_commit` (`f51ec37` → `96ae245`, via re-running
+    >   `scripts/r32_3_realloc_redundant_contains_base_summary.mjs 96ae245…`).
+
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
@@ -411,6 +465,15 @@ structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
    >   the post-fix net effect on a long-lived small-segment churn workload
    >   was not).
    > - **Evidence:** `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §6 (lines 231–238, the
+   >   small-segment-lazy-commit exclusion bullet and the closing caveat: the
+   >   sibling "full former `alloc-lazy-commit` behaviour" is "explicitly NOT
+   >   part of this recommendation — its decommit/recommit correctness surface
+   >   on every pool eviction remains materially larger and is left opt-in",
+   >   followed by "This is a recommendation, not a decision — the orchestrator
+   >   has NOT been asked to include `primordial-lazy-commit` in
+   >   `production = [...]`"). [Sentence completed 2026-10-06, src-review round
+   >   14 remediation R14-05, verified against the cited file's §6 lines
+   >   231–238.]
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D26`.
 
 28. **R13-6 — `exact-span-large` CONDITIONAL-GO, not promoted; owner entry
@@ -1039,74 +1102,16 @@ structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
    >   telemetry, and a gate showing substantially less than the 24 ms / 65 ms
    >   cliff at controlled RSS — NOT another synthetic ceiling.
 
-40. **R30_7 CSV-naming mismatch — `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`
-    cites `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv` (missing the
-    `_GATE` suffix); same defect class as R32-4/R32-5 (F8), left unfixed when
-    R33-11's check (h) surfaced it.**
-
-    > **Current state**
-    > - **Status:** [A] active — trivially fixable; filed because R33-11's
-    >   `verify-gate-report.mjs` check (h) surfaced this third instance of the
-    >   same-base-name defect class but R33-11 (task #516) declined to rename it
-    >   unasked (it was pre-existing, not introduced by R32). The Round-33
-    >   review's G4 [P3] notes the CHANGELOG rounded all three check (h) warnings
-    >   off as "legitimate cross-references" when one of the three is not.
-    > - **Current number/verdict:** `ls docs/perf/ | grep R30_7` shows exactly one
-    >   report and one CSV whose basenames differ only by the missing `_GATE` —
-    >   i.e. this is the report's OWN companion, misnamed (not a legitimate
-    >   cross-reference to another report's CSV).
-    > - **Next trigger:** rename `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv`
-    >   → `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE_summary.csv` and update
-    >   its two citations — a one-commit fix. The lowest-effort task in this index.
-    > - **Evidence:** `docs/reviews/2026-08-03-round33-readonly-review.md` §6 G4;
-    >   `docs/reviews/2026-08-04-release-stabilization-audit.md` (confirms the
-    >   mismatch persists at audit time).
-
-41. **R33-8's live-`git rev-parse HEAD` fallback silently emits the PARENT
-    commit for a new report generated inside its own landing commit — a
-    convention gap, not yet codified.**
-
-    > **Current state**
-    > - **Status:** [A] active — convention needs documenting; the one observed
-    >   instance (R33-12's CSV `doc_commit` = parent `f51ec37`, corrected to
-    >   landing `96ae245` in R34-2/task #521) is fixed, but the underlying
-    >   mechanism will recur silently on every future same-commit report.
-    > - **Current number/verdict:** R33-8 (task #513, commit `b537770`) replaced
-    >   the loud `'UNFILLED_PLACEHOLDER_40_HEX'` sentinel with
-    >   `process.argv[2] || execSync('git rev-parse HEAD')`. For HISTORICAL CSVs
-    >   this is strictly better (15/15 re-derive CLEAN, Round-33 review §5). But
-    >   for a NEW report generated inside its own landing commit, `git rev-parse
-    >   HEAD` returns the pre-commit parent — a plausible 40-hex SHA that passes
-    >   check (b) (40-hexness) and check (g) (sentinel-scan), so nothing detects
-    >   the off-by-one. R33-12 was the first new report after the change and
-    >   exhibited exactly this (`doc_commit` = `f51ec37` = parent of `96ae245`).
-    > - **Convention (decided R34-2/task #521):** for a NEW report, the
-    >   recommended sequence is R33-6's pattern — commit the harness/example
-    >   FIRST (`5bd7c04`), measure at that HEAD, then commit the report — so
-    >   `git rev-parse HEAD` at derive time is already the correct (harness)
-    >   commit, not a pre-report parent. If a same-commit report is unavoidable,
-    >   pass the eventual landing SHA explicitly as `argv[2]` in a follow-up
-    >   correction commit (the old workflow, now without the sentinel). The one
-    >   combination to avoid is a `landing_commit`/`doc_commit` column populated
-    >   by the `git rev-parse HEAD` fallback inside a report's own landing commit
-    >   — that is the off-by-one state.
-    > - **Next trigger:** a future round either (a) codifies this convention in
-    >   CLAUDE.md's R14-10 summary-CSV section (one sentence: "for a new report,
-    >   commit the harness first or pass the SHA explicitly"), or (b) adds a
-    >   check to `verify-gate-report.mjs` that flags a `doc_commit`/`landing_commit`
-    >   equal to `HEAD^` (the parent) — cheap to compute, catches the exact
-    >   off-by-one class.
-    > - **Evidence:** `docs/reviews/2026-08-03-round33-readonly-review.md` §5 G3;
-    >   R34-2/task #521's correction of `R32_3_REALLOC_REDUNDANT_CONTAINS_BASE_GATE_summary.csv`'s
-    >   `doc_commit` (`f51ec37` → `96ae245`, via re-running
-    >   `scripts/r32_3_realloc_redundant_contains_base_summary.mjs 96ae245…`).
-
 42. **R32-8's `DECAY_CLOCK_CHECK_STRIDE = 64` retention bound does NOT hold
     over consecutive sparse decay intervals — PARTIALLY RESOLVED by R34-11
     catch-up loop; peak gap still stride-bound.**
 
     > **Current state**
-    > - **Status:** [P] partially resolved — R34-11 (task #530) added a bounded
+    > - **Status:** [D] partially resolved (label note 2026-10-06, src-review round 14
+    >   remediation R14-05: the former "[P]" label was not a tier in this file's tier key,
+    >   which defines only [A]/[D]/[L]; relabelled to [D] — deferred, implement only if
+    >   the remaining adaptive-stride trigger materializes — as the most conservative
+    >   existing tier preserving the item's scope and trigger) — R34-11 (task #530) added a bounded
     >   catch-up loop (`DECAY_CATCHUP_MAX_STEPS = 8`) that substantially reduces
     >   the gap persistence and final gap. The PEAK gap (4 segments at
     >   events=1) remains stride-bound (the throttled arm cannot read the clock

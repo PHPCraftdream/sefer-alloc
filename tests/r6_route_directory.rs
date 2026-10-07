@@ -62,7 +62,7 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
     let route = directory
         .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
-    assert!(route.small_sidecar().unwrap().issue(0, 0));
+    assert!(route.issue_small(0, 0));
     let old_pin = directory.lookup(root).unwrap();
     let old_sidecar_addr = core::ptr::from_ref(route.small_sidecar().unwrap()).addr();
     let old_incarnation = route.incarnation();
@@ -113,7 +113,7 @@ fn published_pin_cleanup_survives_reservation_unmap() {
     let route = directory
         .register(root, SEGMENT, root, 2, RouteKind::Small)
         .unwrap();
-    assert!(route.small_sidecar().unwrap().issue(0, 0));
+    assert!(route.issue_small(0, 0));
     let pin = directory.lookup(root).unwrap();
     // SAFETY: the owned model block at offset zero is issued and transferred once.
     assert!(unsafe { pin.publish_small(0) });

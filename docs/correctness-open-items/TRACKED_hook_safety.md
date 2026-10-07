@@ -1,4 +1,4 @@
-# Correctness / CI-debt open items -- [T] Tracked tier -- bench-internals `dbg_*` hook safety & the tripwire scanner
+# Correctness / CI-debt open items -- [T] Tracked tier -- bench-internals `dbg_*` hook safety & scanner coverage
 
 **Part of the split index.** This file holds the full text of every **[T]**
 (tracked, not yet actioned) card whose subject matches this file's own
@@ -10,7 +10,7 @@ tier, `docs/correctness-open-items/RESOLVED.md` for the closure trail, and
 the sibling `[T]`-tier files (`TRACKED_verification_coverage.md`, `TRACKED_platform_contracts.md`, `TRACKED_ci_gate_coverage.md`, `TRACKED_test_flakiness.md`, `TRACKED_correctness_residuals.md`, `TRACKED_publish_readiness.md`, `TRACKED_process_record.md`, `TRACKED_misc.md`) for the rest of
 the tier.
 
-**Criterion for this file:** A card belongs here if it is about the safety/soundness of a `dbg_*`/`bench-internals` measurement hook that touches live allocator state, its `unsafe`/feature-gating correctness, or the `tests/dbg_hook_safety_tripwire.rs` scanner's own coverage of that hazard class -- the R25-1 lineage (R29-7/8/17, R30-1/2, R31-4/14b, R31-15).
+**Criterion for this file:** A card belongs here if it is about the safety/soundness of a `dbg_*`/`bench-internals` measurement hook that touches live allocator state, its `unsafe`/feature-gating correctness, or scanner coverage of that hazard class -- the R25-1 lineage (R29-7/8/17, R30-1/2, R31-4/14b, R31-15). The former `tests/dbg_hook_safety_tripwire.rs` was removed at the terminal sidecar/owner-maintenance cutover (commit `a4245965`), but its reviewed policy tables and scanner migrated to `scripts/verify-dbg-hook-safety.mjs`. That live scanner holds the authoritative `PURE_OBSERVERS`/`SAFE_MUTATORS`/`UNSAFE_HOOKS` inventory and is wired into `scripts/check-all.mjs` and `.github/workflows/ci.yml`. Old Rust scanner line references and run receipts below are dated history, not current execution evidence. Scanner presence does not close the hook-safety residual class or prove individual hook invariants; no card's status/trigger changes because of the migration.
 
 **Card count:** 4.
 
@@ -208,6 +208,13 @@ split the same day.)
      R29-9 tripwire's own coverage (task #440), not yet a confirmed live
      soundness hole.
 
+     **[Migration note, 2026-10-06:]** the Rust tripwire was removed at
+     the terminal cutover (commit `a4245965`), but the reviewed scanner and
+     allowlists now live in `scripts/verify-dbg-hook-safety.mjs`. Rust
+     scanner line references and R30-2 run receipts below are historical;
+     consult the successor for current coverage. Migration does not close
+     the hook-safety residual class.
+
      **[FIXED, R30-2/task #451, 2026-07-30.]** Confirmed the scope gap was
      real and live, not merely theoretical: R30-1 (task #450, commit
      `25433c3`) found and fixed a CONFIRMED soundness bug
@@ -369,8 +376,13 @@ split the same day.)
    of the R25-1/R29-7/R29-8/R29-17/R30-1 "safe `dbg_*` hook touches live
    allocator state unsoundly" bug class, or (b) any future task adding a
    SECOND mint-then-redeem raw-pointer `dbg_*` pair to the inventory
-   (enumerated in `tests/dbg_hook_safety_tripwire.rs`), at which point one
-   handle type amortizes across both pairs. Full crate-wide hook
+   (historically enumerated in `tests/dbg_hook_safety_tripwire.rs`, now in
+   `scripts/verify-dbg-hook-safety.mjs`), at which point one handle type
+   amortizes across both pairs. **[Migration note, 2026-10-06:]** the Rust
+   tripwire was removed at the terminal cutover (commit `a4245965`), but the
+   inventory remains live in the successor script. Trigger (b)'s substance
+   is unchanged: consult that inventory and inspect the actual hook bodies
+   for a second mint-then-redeem pair. Full crate-wide hook
    relocation into one module — the OTHER piece of the architecture this
    task evaluated — was declined outright, not deferred: measured at
    102-139 distinct `tests/`/`examples/`/`benches/` files touched (4-5x the
@@ -574,6 +586,16 @@ split the same day.)
      P2-2 (the review's own text is the only source cited here — this
      entry is a filing, not an independent confirmation).
 
+   **[Migration note, 2026-10-06:]** the Rust scanner line references
+   above (`has_bench_internals_cfg` at `tests/dbg_hook_safety_tripwire.rs:657`
+   and the Next trigger's gate-list reference) are dated history. That
+   test was removed at the terminal cutover (commit `a4245965`); current
+   allowlists and gate parsing live in `scripts/verify-dbg-hook-safety.mjs`
+   (`attributesRequire`/`invalidBenchAttribute`/`verifyHooks`). P2-1/P2-2
+   were fixed and re-verified in R31-4 (below); their src-side hook-gating
+   contracts remain in force, with successor coverage requiring its own
+   current execution evidence.
+
    **[FIXED, R31-4/task #467, commit `ca9aba9`, 2026-07-31.]**
    Both claims independently re-verified before fixing, per the "Next
    trigger" instruction above.
@@ -720,6 +742,18 @@ split the same day.)
    - **Evidence:** `docs/reviews/2026-07-31-r31-full-review.md` §7 P2-4,
      P2-5, P2-11, P2-12 (the review's own text is the only source cited
      here — this entry is a filing, not an independent confirmation).
+
+   **[Migration note, 2026-10-06:]** the Rust scanner line references
+   above (`PURE_OBSERVERS` at `tests/dbg_hook_safety_tripwire.rs:213` and
+   `scan_file` at `:814`) are dated history: the test was removed at the
+   terminal cutover (commit `a4245965`). The current `PURE_OBSERVERS`
+   inventory in `scripts/verify-dbg-hook-safety.mjs` still lists
+   `AllocCore::dbg_large_cache_hits`; its `scanFile` retains `dbg_*`
+   enumeration and recognizes enclosing scope/module gates. Re-verification
+   now targets that script and the live definitions, not the old Rust
+   scanner. P2-4/P2-5/P2-11/P2-12 were fixed and re-verified in R31-14b/
+   R31-15 (below); the src-side contracts remain in force. The successor
+   supplements direct invariant review rather than replacing it.
 
    **[FIXED, R31-14b/task #484, 2026-07-31.]**
    All four claims independently re-verified before fixing, per the "Next

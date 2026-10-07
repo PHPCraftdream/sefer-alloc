@@ -757,3 +757,4 @@ full closure trail".
   files still carry the oversized ladder unpatched (listed in item 146). The
   gate is usable again, which was the goal — the underlying questions are
   tracked, not closed by a green run.
+- 170. **[A] Src review round 14 — owner capability, shard lifecycle/cost and current-state documentation.** (Filed and CLOSED 2026-10-06.) — full closure narrative in `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure trail" (now `docs/correctness-open-items/ARCHIVE.md` §170); evidence: `docs/reviews/2026-10-06-src-review-sol-round-14.md`.

@@ -147,16 +147,17 @@ small, single-responsibility crates that can be audited in complete isolation.
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
-The current tree has **26** tier-1 `#![allow(unsafe_code)]` files (20 in
+The current tree has **27** tier-1 `#![allow(unsafe_code)]` files (21 in
 `src/`, 6 in `crates/`) and **103** item-scoped allows across **34** files.
-The ordinary `production` build activates 16 internal tier-1 seams;
+The ordinary `production` build activates 15 internal tier-1 seams;
 `--cfg loom` adds its bootstrap shim, while `batch-api`,
 `large-cache-extended` and `experimental` add optional seams. See
 [README §Where unsafe lives](../README.md#where-unsafe-lives-the-complete-list)
 for the path-by-path current inventory. In particular,
 `registry::segment_route::directory` owns System-backed route entries and
-pins, and `registry::heap_registry::maintenance` owns the exclusive
-maintenance handoff. Neither the removed overflow sidecar nor the old
+pins; the maintenance lease's confined unsafe handoff lives in
+`registry::heap_registry::claim`. The `maintenance` module itself is safe
+composition. Neither the removed overflow sidecar nor the old
 remote inbox is an active seam. `numa-aware` adds no internal unsafe seam;
 its wrapper delegates to `numa-shim`.
 
@@ -486,7 +487,7 @@ do not certify the terminal-sidecar snapshot.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (365 files) |
+| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (368 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri | Selected provenance/aliasing checks; snapshot execution pending | `scripts/miri.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
 | loom | Bounded interleavings; snapshot execution pending | **Root (13 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |

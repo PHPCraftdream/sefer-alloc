@@ -20,7 +20,7 @@ fn system_backed_route_metadata_does_not_reenter_global_allocator() {
     let route = directory
         .register(root, SEGMENT, root, 23, RouteKind::Small)
         .unwrap();
-    assert!(route.small_sidecar().unwrap().issue(0, 0));
+    assert!(route.issue_small(0, 0));
     let pin = directory.lookup(root).unwrap();
     assert_eq!(pin.owner(), 23);
     // SAFETY: the test owns the issued standalone block and transfers it once.

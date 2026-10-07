@@ -677,7 +677,6 @@ hard compile error in every configuration:
 | [`src/registry/bootstrap/loom_shim.rs`](src/registry/bootstrap/loom_shim.rs) | R1-07: `--cfg loom`-only const-capable stand-in for `once_ptr_cell::OncePtrCell` / the tagged free-list head (loom's real atomics have no const constructor, so the const `static REGISTRY` initializer needs this shim under loom builds) — `unsafe impl Send`/`Sync` for the `AtomicPtr`-backed cell + three `NonNull::new_unchecked` sites, each proved by the preceding `is_ready` check; never on a loom-modeled interleaving itself | `alloc-global`, and only under `--cfg loom` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | file owns the lease-claim path: slot picking + the `FREE → LIVE` CAS (`claim_lease` / `claim_lease_with_config`), OOM push-back, the config-conflict rollback guard, and `HeapLease` (its `Drop` performs the `LIVE → FREE` Release CAS) — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell`. The legacy raw-pointer surface (`claim` / `claim_with_config` / `unsafe fn recycle` / `HeapLease::into_raw`) was removed (task #2119) | `alloc-global` |
-| [`src/registry/heap_registry/maintenance.rs`](src/registry/heap_registry/maintenance.rs) | Exclusive maintenance lease handoff for finite ownerless sweeps. Since Ph4c (task #2107) `MaintenanceLease::with_core` is a safe `pub(crate)` constructor — no longer `pub unsafe`. | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
 | [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
 | [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, atomic initialization and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
@@ -687,14 +686,16 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **sixteen**:
++ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
 `alloc_core::platform::{os, node, sidecar}` and
 `alloc_core::segment::segment_table::route_slots`;
 `global::{sefer_alloc::global_alloc, tls_heap, fallback}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
-`registry::heap_registry::{claim, maintenance}`, and
+`registry::heap_registry::claim`, and
 `registry::segment_route::{directory, shard_lock, small_sidecar}` and
 `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
+`registry::heap_registry::maintenance` is safe composition; its lease's
+confined unsafe handoff lives in `claim`, not in a separate tier-1 seam.
 The `--cfg loom` bootstrap shim is
 additional only in Loom builds; `batch-api`, `large-cache-extended` and
 `experimental` each have separate optional seams. The removed ring, inbox,
@@ -1369,17 +1370,17 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **365 integration test files**,
+needs its acceptance run. The present tree contains **368 integration test files**,
 **82 example binaries**, **23 benches**, and **13 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 Counts cover root `*.rs` targets in each folder, excluding nested fixtures
-and support modules. The test tree also contains 11 nested Rust source files.
+and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (365 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (368 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (82 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (23 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

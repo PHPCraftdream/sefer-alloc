@@ -14,8 +14,8 @@ fn publication_after_word_cut_waits_for_next_bounded_scan() {
         .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
     let sidecar = route.small_sidecar().unwrap();
-    assert!(sidecar.issue(0, 0));
-    assert!(sidecar.issue(16, 0));
+    assert!(route.issue_small(0, 0));
+    assert!(route.issue_small(16, 0));
     // SAFETY: the test owns this live aligned reservation and has issued its
     // disjoint 16-byte block at offset 0 exactly once; no other free occurs.
     assert!(unsafe { directory.lookup(root).unwrap().publish_small(0) });

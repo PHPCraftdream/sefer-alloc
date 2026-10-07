@@ -23,8 +23,15 @@ impl RouteRegistration<'_> {
     pub fn small_sidecar(&self) -> Option<&SmallSidecar> {
         self.entry.small_sidecar()
     }
-    /// Owner-only publication; false means this is not a valid Small issue.
-    pub(crate) fn issue_small(&self, offset: u32, class: u8) -> bool {
+    /// Owner-only, fallible preparation before an issue transaction mutates
+    /// anything. False means preparation failed; no side effect is kept.
+    pub fn prepare_small(&self, offset: u32, class: u8) -> bool {
+        self.small_sidecar()
+            .is_some_and(|sidecar| sidecar.prepare(offset, class))
+    }
+    /// Owner-only class issue before allocation handoff; false means this is
+    /// not a valid Small issue.
+    pub fn issue_small(&self, offset: u32, class: u8) -> bool {
         self.small_sidecar()
             .is_some_and(|sidecar| sidecar.issue(offset, class))
     }

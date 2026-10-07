@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a known, honestly-recorded gap in a panic-safety or unwind-safety guarantee of shipping (non-hook, non-platform-specific) code -- a residual the code's own doc comments already name, not yet a proven live bug.
 
-**Card count:** 6.
+**Card count:** 8 numbered records in this file (re-counted 2026-10-06, src-review round 14 remediation R14-05; the previous "6" was stale). Composition: 5 open [T] cards (items 22, 23, 155, 164, 166) + 3 closed/resolved records retained for lookup (items 16, 66, and 165); closure evidence is routed through `RESOLVED.md`/`ARCHIVE.md`, with item 165's dated history retained below.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four

@@ -53,10 +53,21 @@
 //! ([`TokenBlock`]): dropping the region destroys the token storage even
 //! while every claiming thread still holds a claim record. A dead claim can
 //! no longer upgrade — its `occupied == true` state died with the storage —
-//! releases nothing at thread exit, and is pruned at the next cold
-//! claim/bind. Claims on LIVE regions always upgrade and are never pruned
-//! or cap-evicted; the residual is at most one fixed-size `Weak` header per
-//! claim won since the last cold point, never the token storage.
+//! releases nothing at thread exit, and is eligible for pruning at cold
+//! claim/bind points after an observed change in the global wrapping death
+//! hint. Claims on LIVE regions always upgrade and are never pruned or
+//! cap-evicted; each retained dead claim costs a fixed-size `Weak` header,
+//! never the token storage. Unrelated region deaths can also trigger sweeps.
+//! Saving the pre-sweep hint preserves a racing death for a later cold
+//! point that observes it; a full 2^64-death wrap can alias the saved hint
+//! and delay pruning until another observed change (R14-02).
+//!
+//! ### Late TLS destructors (R14-04)
+//!
+//! Late inserts keep an available cached binding or modulo-share on a cold
+//! miss, without acquiring an unrecordable token. Explicit
+//! [`bind_current_thread_to_shard`](ShardedRegion::bind_current_thread_to_shard)
+//! returns `false` if either router TLS cell is destroyed (R14-04).
 //!
 //! ## Cross-thread removal (7b)
 //!
@@ -84,8 +95,9 @@
 //! `occupied`; it just resolves the slot via the seqlock). An adopting thread
 //! that reuses a freed shard drains its abandoned remote-free queue on its
 //! first op (the `EpochRegion::insert`/`remove` drain does this automatically).
-//! A claim whose region has since died is pruned at the next cold
-//! claim/bind (R13-02) — its token storage no longer exists to release.
+//! A claim whose region has since died is eligible for cold claim/bind
+//! pruning after an observed death-hint change (R13-02/R14-02) — its token
+//! storage no longer exists to release.
 //!
 //! ## Why the guard is type-erased
 //!
@@ -163,6 +175,16 @@ struct TokenBlock {
 #[cfg(feature = "internals")]
 static LIVE_TOKEN_BLOCKS: AtomicUsize = AtomicUsize::new(0);
 
+/// Wrapping token-death hint: unchanged means no claim checks at a cold point.
+/// Any region's death can trigger a sweep, including unrelated regions.
+/// Release/Acquire makes an observed death's zero strong count visible.
+static TOKEN_BACKING_DEATHS: AtomicU64 = AtomicU64::new(0);
+
+/// `internals` work-bound oracle (R14-02): how many per-claim
+/// `strong_count` checks `prune_dead_claims` has performed process-wide.
+#[cfg(feature = "internals")]
+static PRUNE_CLAIM_CHECKS: AtomicUsize = AtomicUsize::new(0);
+
 impl TokenBlock {
     /// `n` slots, every shard FREE (`occupied == false`); a thread claims by
     /// CASing false → true.
@@ -176,14 +198,18 @@ impl TokenBlock {
     }
 }
 
-// The drop probe IS the R13-02 oracle: it runs exactly when the region's
-// token storage is destroyed, so a test can observe that destruction
-// directly (there is no consumer-visible handle to a dropped region's
-// tokens). Under non-`internals` builds there is no Drop impl and the boxed
-// slots drop directly — same storage, no observer.
-#[cfg(feature = "internals")]
+// The drop probe runs exactly when the region's token storage is destroyed:
+// it records the death in the global death-generation counter (see
+// `prune_dead_claims`) and — under `internals` — maintains the R13-02
+// live-backing oracle counter. The boxed slots drop identically in both
+// builds.
 impl Drop for TokenBlock {
     fn drop(&mut self) {
+        // A full 2^64-death cycle can alias the saved hint and delay weak-header
+        // pruning until another observed death. Token storage still drops,
+        // and live claims remain retained for exit release.
+        TOKEN_BACKING_DEATHS.fetch_add(1, Ordering::Release);
+        #[cfg(feature = "internals")]
         LIVE_TOKEN_BLOCKS.fetch_sub(1, Ordering::Release);
     }
 }
@@ -204,11 +230,14 @@ impl Drop for TokenBlock {
 struct ErasedGuard {
     /// Every exclusive claim THIS thread has won. Append-only across a
     /// thread's lifetime; each live one is released on `Drop`, and dead ones
-    /// (their region dropped) are pruned at each cold claim/bind point — see
-    /// [`prune_dead_claims`]. The scan in `claim_or_get_shard` can never
-    /// re-win an already-held shard (its `occupied` token is `true`), so the
-    /// list never holds a duplicate `(tokens, shard)`.
+    /// (their region dropped) are pruned at each cold claim/bind point —
+    /// but only after an observed token-backing death (R14-02). The scan in
+    /// `claim_or_get_shard` can never re-win an already-held shard (its
+    /// `occupied` token is `true`), so the list never holds a duplicate
+    /// `(tokens, shard)`.
     claims: Vec<ErasedClaim>,
+    /// Pre-sweep death hint; a racing death retriggers the next cold sweep.
+    last_death_epoch_seen: u64,
 }
 
 /// One exclusive shard claim recorded for thread-exit release: a `Weak` to
@@ -242,16 +271,20 @@ impl Drop for ErasedGuard {
     }
 }
 
-/// Drops claims whose region has died (R13-02): a `Weak` whose strong count
-/// is zero names token storage that no longer exists, so the claim can never
-/// release or upgrade again and only wastes a fixed-size guard slot.
-/// Called only at the COLD claim/bind points (never on the fast path), which
-/// bounds the dead-claim residual to the churn between two cold points.
-/// Claims on live regions (strong count > 0) are always kept — this must
-/// never cap-evict or drop a live claim, whose release obligation survives
-/// until thread exit.
+/// Sweep dead weak claims only after an observed backing death.
+/// Acquire pairs with the death's Release; save the pre-sweep hint so a
+/// racing death retriggers cleanup. Live exit-release obligations stay intact.
 fn prune_dead_claims(guard: &mut ErasedGuard) {
-    guard.claims.retain(|claim| claim.tokens.strong_count() > 0);
+    let death_epoch = TOKEN_BACKING_DEATHS.load(Ordering::Acquire);
+    if death_epoch == guard.last_death_epoch_seen {
+        return;
+    }
+    guard.claims.retain(|claim| {
+        #[cfg(feature = "internals")]
+        PRUNE_CLAIM_CHECKS.fetch_add(1, Ordering::Relaxed);
+        claim.tokens.strong_count() > 0
+    });
+    guard.last_death_epoch_seen = death_epoch;
 }
 
 // The TLS router: `MY_SHARDS` caches per-region claimed shard ids for the fast
@@ -428,15 +461,16 @@ impl<T> ShardedRegion<T> {
     /// 1. Scan the `occupied` tokens for a FREE shard; atomically claim it via
     ///    `compare_exchange(false → true)`. The first free shard wins.
     /// 2. If NO shard is free, fall back to modulo round-robin (graceful
-    ///    degradation: share a shard, still correct). In this case NO exclusive
-    ///    claim is recorded (the guard's `shard` is `None` — nothing to
-    ///    release on thread exit; the shared shard stays owned by whoever did
-    ///    claim it, or stays free if nobody has).
+    ///    degradation: share a shard, still correct); no exclusive claim is
+    ///    recorded — nothing to release on thread exit.
     ///
     /// The binding (id + a type-erased [`ErasedGuard`] holding `Weak` claims
     /// to the token backing) is cached in TLS so the fast path is a plain
     /// integer read, and the guard's `Drop` releases an exclusively-claimed
     /// shard of every region still alive on thread exit.
+    ///
+    /// A late TLS destructor keeps a cached route or modulo-shares, without
+    /// acquiring an unrecordable exclusive claim (R14-04).
     fn claim_or_get_shard(&self) -> u16 {
         let n = self.inner.shards.len();
         if let Some(id) = self.my_shard() {
@@ -446,51 +480,48 @@ impl<T> ShardedRegion<T> {
                 return id;
             }
         }
-        // 1. Try to exclusively claim a FREE shard (scan in order).
+        // Probe before CAS: destroyed TLS cannot record/release a new token.
+        let router_intact =
+            MY_SHARDS.try_with(|_| ()).is_ok() && ERASED_GUARD.try_with(|_| ()).is_ok();
         let mut claimed_exclusively: Option<u16> = None;
-        for (i, occupied) in self.tokens.slots.iter().enumerate() {
-            // Acquire on success: pairs with the releaser's Release store in
-            // ErasedGuard::drop, so we observe the released state. Relaxed on
-            // failure: we just move on to the next candidate.
-            if occupied
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-            {
-                claimed_exclusively =
-                    Some(u16::try_from(i).expect("shard index fits u16: n <= u16::MAX"));
-                break;
-            }
+        if router_intact {
+            ERASED_GUARD.with(|slot| {
+                let mut slot = slot.borrow_mut();
+                let guard = slot.get_or_insert_with(|| ErasedGuard {
+                    claims: Vec::new(),
+                    last_death_epoch_seen: TOKEN_BACKING_DEATHS.load(Ordering::Acquire),
+                });
+                prune_dead_claims(guard);
+                // Claim and append before leaving the guard borrow.
+                // Held tokens cannot be won twice; Acquire pairs with exit Release.
+                for (i, occupied) in self.tokens.slots.iter().enumerate() {
+                    if occupied
+                        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                        .is_ok()
+                    {
+                        let won = u16::try_from(i).expect("shard index fits u16: n <= u16::MAX");
+                        guard.claims.push(ErasedClaim {
+                            tokens: Arc::downgrade(&self.tokens),
+                            shard: won,
+                        });
+                        claimed_exclusively = Some(won);
+                        break;
+                    }
+                }
+            });
         }
-        // 2. Graceful degradation: no free shard → modulo round-robin. The
-        //    ticket is monotonic; modulo spreads across shards.
+        // 2. Graceful degradation: no free shard (or no intact router TLS) →
+        //    modulo round-robin. The ticket is monotonic; modulo spreads
+        //    across shards.
         let id = claimed_exclusively.unwrap_or_else(|| {
             let ticket = self.inner.next_shard.fetch_add(1, Ordering::Relaxed);
             u16::try_from(ticket % n)
                 .expect("shard id fits u16: ticket%n where n<=u16::MAX cannot exceed u16::MAX")
         });
-        // Cache the id (fast path).
-        remember_shard(self.id, id);
-        // Install (once per thread) the type-erased [`ErasedGuard`] whose
-        // `Drop` releases every exclusively-claimed shard of a still-alive
-        // region on thread exit.
-        ERASED_GUARD.with(|slot| {
-            // APPEND, never overwrite: only this guard's `Drop` can release
-            // a won token (dropping the record would leave it `occupied`
-            // forever), and the scan above can never re-win an already-held
-            // shard (its token is `true`), so no duplicate arises. Prune
-            // first: a dead claim is bookkeeping only — its storage no
-            // longer exists — while live claims are always kept. Claims are
-            // `Weak`s (R13-02): they never pin a dropped region's storage.
-            let mut slot = slot.borrow_mut();
-            let guard = slot.get_or_insert_with(|| ErasedGuard { claims: Vec::new() });
-            prune_dead_claims(guard);
-            if let Some(won) = claimed_exclusively {
-                guard.claims.push(ErasedClaim {
-                    tokens: Arc::downgrade(&self.tokens),
-                    shard: won,
-                });
-            }
-        });
+        if router_intact {
+            // Cache the id (fast path).
+            remember_shard(self.id, id);
+        }
         id
     }
 
@@ -621,9 +652,9 @@ impl<T> ShardedRegion<T> {
     ///
     /// # Returns
     ///
-    /// - `true` if `shard < shard_count()` — the binding was recorded. (Whether
-    ///   the OS also honored a concurrent `core_affinity` pin is separate and
-    ///   best-effort; this method only concerns the *routing* binding.)
+    /// - `true` if `shard < shard_count()` and router TLS is intact.
+    ///   This records routing only; any OS affinity pin remains best-effort.
+    /// - `false` during router TLS teardown; no token or binding is acquired.
     /// - `false` if `shard >= shard_count()` — rejected, no binding recorded.
     ///   This is the chosen contract (over `Result` / clamping) because an
     ///   out-of-range shard id is a caller bug that should be surfaced, not
@@ -649,24 +680,24 @@ impl<T> ShardedRegion<T> {
         if usize::from(shard) >= self.inner.shards.len() {
             return false;
         }
-        // Optionally claim the `occupied` token for this shard if it is free
-        // (best-effort exclusivity for the lifecycle release). Acquire on
-        // success pairs with the releaser's Release store in ErasedGuard::drop.
-        let claimed_exclusively = self.tokens.slots[usize::from(shard)]
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok();
+        // Refuse before CAS if the binding or exit guard cannot be retained.
+        if MY_SHARDS.try_with(|_| ()).is_err() || ERASED_GUARD.try_with(|_| ()).is_err() {
+            return false;
+        }
         // Record the routing binding (fast-path TLS cache).
         remember_shard(self.id, shard);
-        // Install (once per thread) the type-erased guard whose `Drop`
-        // releases every exclusively-claimed shard of a still-alive region
-        // on thread exit. A guard may already exist from an earlier claim:
-        // APPEND (only this guard's `Drop` can release a won token), after
-        // pruning dead claims — bounded cold-point cleanup (R13-02), never
-        // a live claim. The routing binding above is unaffected.
+        // Append won claims; only exit releases live tokens. Never cap-evict.
+        // A failed best-effort CAS still records the requested routing binding.
         ERASED_GUARD.with(|slot| {
             let mut slot = slot.borrow_mut();
-            let guard = slot.get_or_insert_with(|| ErasedGuard { claims: Vec::new() });
+            let guard = slot.get_or_insert_with(|| ErasedGuard {
+                claims: Vec::new(),
+                last_death_epoch_seen: TOKEN_BACKING_DEATHS.load(Ordering::Acquire),
+            });
             prune_dead_claims(guard);
+            let claimed_exclusively = self.tokens.slots[usize::from(shard)]
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok();
             if claimed_exclusively {
                 guard.claims.push(ErasedClaim {
                     tokens: Arc::downgrade(&self.tokens),
@@ -727,6 +758,17 @@ impl<T> ShardedRegion<T> {
         ERASED_GUARD
             .try_with(|slot| slot.borrow().as_ref().map_or(0, |guard| guard.claims.len()))
             .unwrap_or(0)
+    }
+
+    /// Diagnostics only (R14-02): how many per-claim `strong_count` checks
+    /// the process-global dead-claim sweeps have performed so far. Pure
+    /// counter; 0 until a token backing has died. Gated to `internals` like
+    /// the other test observers; used by the R14-02 work-bound oracle.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _prune_claim_checks_for_tests() -> usize {
+        PRUNE_CLAIM_CHECKS.load(Ordering::Relaxed)
     }
 
     /// Diagnostics only: force a stale advisory hint for a valid shard.

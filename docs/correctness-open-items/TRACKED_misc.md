@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card lands here only if it does not share the defining criterion of any category above. Each card here is a genuine one-off: item 45 is a numa-shim RefCell-vs-Cell defensive-coding/panic-safety nit (not an OS-contract question, not a hook, not flakiness); item 49 is an aligned-vmem edition-2021-vs-2024 explicit-unsafe{}-block hygiene item (about FFI call-site annotation style, not about a dbg_* hook, a platform contract, or CI wiring).
 
-**Card count:** 4.
+**Card count (re-derived 2026-10-06, src-review round 14 remediation R14-05):** 8 numbered cards in this file -- 6 open [T] cards (items 154, 157, 158, 159, 160, 161) + 2 CLOSED/resolved pointers retained for lookup (items 45 and 49; full closure records are in `RESOLVED.md` and `ARCHIVE.md`).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four

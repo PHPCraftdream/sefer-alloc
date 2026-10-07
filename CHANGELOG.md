@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 14 (2026-10-06; remediation accepted)
+
+- [docs] Source review on `d6417c6c`: four confirmed P3 findings and one P4,
+  with no new production P0/P1/P2 confirmed; owner-accepted P1-box remains.
+  Findings and full source inventory: `docs/reviews/2026-10-06-src-review-sol-round-14.md`.
+- [correctness fix] R14-01 seals `SmallSidecar` prepare/issue behind its
+  non-Sync owner registration and migrates existing callers; actual-crate
+  negative compiler fixtures pin both mutators and the owner auto-trait.
+- [correctness fix] R14-04 avoids orphaning advisory shard claims during
+  late TLS destruction; late inserts modulo-share and explicit late binds
+  are refused.
+- [perf(opt-in)] R14-02 gates the experimental dead-claim sweep on observed
+  token-backing death. A checked per-claim counter verifies the live-only
+  work bound and cleanup after death. No latency/Ir/RSS number or speedup is
+  claimed.
+- [docs] R14-03 marks the removed Rust hook tripwire as historical and names
+  its live MJS successor; corrects the superseded cross-thread state-machine
+  record. R14-05 repairs current tier/census/evidence placement.
+- [verification, tracked] Miri reports Stacked Borrows UB in the existing
+  `crossbeam-epoch 0.9.20` collector path, reproduced with the pre-existing
+  `EpochRegion` test; tracked as correctness item 171, not attributed to R14
+  changes and not suppressed.
+- `production` feature composition/defaults and dependency versions are
+  unchanged. R14-01 migrates a production call site to the same typed owner
+  operation without changing allocator semantics; no production performance
+  result or promotion claim. Manifest:
+  `docs/perf/round-manifests/SRC_REVIEW_R14_MANIFEST.md`.
+
 ### Root allocator `src/` review round 13 (2026-10-06; fixes accepted)
 
 - [docs] Source review on `e90a3575`: four P3 and one P4, including an

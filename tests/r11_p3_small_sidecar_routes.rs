@@ -33,22 +33,22 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
 
     for (offset, class) in [(0, 0), (16, 0), (LEAF as u32, 0)] {
-        assert!(sidecar.prepare(offset, class));
-        assert!(sidecar.issue(offset, class));
+        assert!(route.prepare_small(offset, class));
+        assert!(route.issue_small(offset, class));
     }
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
-    assert!(sidecar.prepare(32, 1));
-    assert!(sidecar.issue(32, 1));
+    assert!(route.prepare_small(32, 1));
+    assert!(route.issue_small(32, 1));
     assert_eq!(sidecar.class_at_for_test(0), Some(0));
     assert_eq!(sidecar.class_at_for_test(32), Some(1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 1);
 
     SmallSidecar::fail_spill_after_for_test(1);
-    assert!(!sidecar.prepare(LEAF as u32 + 16, 1));
+    assert!(!route.prepare_small(LEAF as u32 + 16, 1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 1);
     assert_eq!(sidecar.class_at_for_test(LEAF as u32), Some(0));
-    assert!(sidecar.prepare(LEAF as u32 + 16, 1));
-    assert!(sidecar.issue(LEAF as u32 + 16, 1));
+    assert!(route.prepare_small(LEAF as u32 + 16, 1));
+    assert!(route.issue_small(LEAF as u32 + 16, 1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 2);
 
     let pinned_after_terminal = directory.lookup(root).unwrap();
@@ -119,10 +119,10 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
     assert_eq!(directory.live_route_census_for_test(), (0, 1, 0));
     for leaf in 0..LEAVES {
         let offset = (leaf * LEAF) as u32;
-        assert!(sidecar.prepare(offset, 0));
-        assert!(sidecar.issue(offset, 0));
-        assert!(sidecar.prepare(offset + 16, 1));
-        assert!(sidecar.issue(offset + 16, 1));
+        assert!(route.prepare_small(offset, 0));
+        assert!(route.issue_small(offset, 0));
+        assert!(route.prepare_small(offset + 16, 1));
+        assert!(route.issue_small(offset + 16, 1));
         for published in [offset, offset + 16] {
             let ptr = root.with_addr(root.addr() + published as usize);
             let pin = directory.lookup(ptr).unwrap();
