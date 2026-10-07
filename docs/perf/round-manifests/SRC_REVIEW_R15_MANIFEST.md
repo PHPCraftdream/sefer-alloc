@@ -1,13 +1,15 @@
 # Source review round 15 manifest — commits, impact & verdicts
 
-**Scope:** Round-15 work commits in two ranges: the initial report wave after base `b1a1e4f9ad232e7a3aef6e7b8b488c5b27eddfe9` through `021977689c89804eda909f6ec9aca64adf74c4d9`, and the CI follow-up after the first closing manifest commit `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` through `6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb`. The work-commit rows are derived from:
+**Scope:** Round-15 work commits in four ranges: the initial report wave after base `b1a1e4f9ad232e7a3aef6e7b8b488c5b27eddfe9` through `021977689c89804eda909f6ec9aca64adf74c4d9`; the first CI follow-up after closing manifest `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` through `6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb`; the cross-target follow-up after closing manifest `d5fb531bb13b065968b014007dc8e2fef114b724` through `024c3e8f726eccb355017444b34991d9f1337d07`; and the rustfmt follow-up after `024c3e8f726eccb355017444b34991d9f1337d07` through `b24a181f6db5c5e804622b2a074a699107e1679f`. The work-commit rows are derived from:
 
 ```text
 git log --reverse --format="%H|%cI|%s" b1a1e4f9ad232e7a3aef6e7b8b488c5b27eddfe9..021977689c89804eda909f6ec9aca64adf74c4d9
 git log --reverse --format="%H|%cI|%s" 714ea5b73c0a5558913a4af5d7b8048042fdd2e6..6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb
+git log --reverse --format="%H|%cI|%s" d5fb531bb13b065968b014007dc8e2fef114b724..024c3e8f726eccb355017444b34991d9f1337d07
+git log --reverse --format="%H|%cI|%s" 024c3e8f726eccb355017444b34991d9f1337d07..b24a181f6db5c5e804622b2a074a699107e1679f
 ```
 
-The first closing manifest commit (`714ea5b7`) and this updated closing artifact are intentionally outside the work-commit ranges, avoiding self-reference.
+The prior closing manifests (`714ea5b7` and `d5fb531b`) and this updated closing artifact are intentionally outside the work-commit ranges, avoiding self-reference.
 
 ## §1. Work commits
 
@@ -18,6 +20,9 @@ The first closing manifest commit (`714ea5b7`) and this updated closing artifact
 | 3 | `021977689c89804eda909f6ec9aca64adf74c4d9` | `2026-10-07T17:17:26+02:00` | `docs` | `record src review round 15` | XS review report, current-state index dispositions, and changelog; no runtime source change |
 | 4 | `749dbfa914657d7096e0e910b40b08bf8c3c4b36` | `2026-10-07T19:44:30+02:00` | `test` | `skip missing-dependency probe candidates` | Compile-fail candidate filter skips E0463 dependency-not-found variants; no runtime change |
 | 5 | `6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb` | `2026-10-07T21:00:58+02:00` | `docs` | `record R15 CI probe follow-up` | Records the first landing-CI failure, test-only correction, and current follow-up state; no runtime source change |
+| 6 | `20b7c443843c76848d657c54e96bec32dde3c8d4` | `2026-10-07T22:41:15+02:00` | `test` | `gate host-rustc probe to x86_64` | Compile-fail harness excludes cross-target test binaries whose rlibs cannot be inspected by host rustc; no runtime change |
+| 7 | `024c3e8f726eccb355017444b34991d9f1337d07` | `2026-10-07T22:47:27+02:00` | `docs` | `record R15 cross-target probe follow-up` | Records the E0461 cross-target failure and test-only target guard; no runtime source change |
+| 8 | `b24a181f6db5c5e804622b2a074a699107e1679f` | `2026-10-07T22:55:00+02:00` | `test` | `format host-rustc probe gate` | Applies rustfmt to the cross-target guard; no behavior change |
 
 ## §2. Default-feature and measurement impact
 
@@ -40,9 +45,9 @@ The first closing manifest commit (`714ea5b7`) and this updated closing artifact
 
 ## §4. Final verification
 
-- `npm run check` — **passed all 65 steps** from the isolated review worktree using its worktree-local target after the E0463 candidate-filter fix. The process-local empty `RUSTC_WRAPPER` and `CARGO_BUILD_RUSTC_WRAPPER` values bypassed the machine-level sccache wrapper; no global Cargo configuration changed.
-- Focused `r14_sidecar_owner_capability_negative` mixed-feature test — **3 passed** after all candidate-classifier fixes.
+- `npm run check` — **passed all 65 steps** from the isolated review worktree using its worktree-local target after the E0463/E0461 candidate-filter and target-gate fixes, plus the rustfmt correction. The process-local empty `RUSTC_WRAPPER` and `CARGO_BUILD_RUSTC_WRAPPER` values bypassed the machine-level sccache wrapper; no global Cargo configuration changed.
+- Focused `r14_sidecar_owner_capability_negative` mixed-feature test — **3 passed** after all candidate-classifier and target-guard fixes.
 - Temporary R15 native witnesses — **2 passed** (panic-tail destructor skip and primordial rollback counter mismatch); their source was removed. These are receipts, not permanent regressions.
 - Correctness-index count check — **149** ACTIVE/TRACKED headings; **140** `[T]` headings and **140** item-to-file lookup rows.
-- GitHub Actions run `37644289617` on initial landing SHA `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` exposed E0463 in the owner-capability probe's candidate scan. The test-only follow-up classifies the missing-dependency candidate; no allocator runtime/source failure was observed.
+- GitHub Actions run `37644289617` on initial landing SHA `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` exposed E0463; run `37681398463` on landing SHA `d5fb531bb13b065968b014007dc8e2fef114b724` exposed E0461 from invoking host rustc on an aarch64 rlib. Test-only fixes in `749dbfa9` and `20b7c443` address both candidate-selection failures; no allocator runtime/source failure was observed.
 - No Miri, Loom, Kani, NUMA runtime witness, or R15-specific performance judge was run. The unmeasured optimization hypotheses remain proposals only.
