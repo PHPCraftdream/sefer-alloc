@@ -173,7 +173,10 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
                 let message = error.get("message").and_then(as_str).unwrap_or_default();
                 match code {
                     Some("E0432") => message == "unresolved import `sefer_alloc::registry`",
-                    Some("E0433") => message.contains("could not find `registry` in `sefer_alloc`"),
+                    Some("E0433") => {
+                        message == "cannot find `registry` in `sefer_alloc`"
+                            || message == "could not find `registry` in `sefer_alloc`"
+                    }
                     Some("E0603") => message == "module `registry` is private",
                     _ => false,
                 }
