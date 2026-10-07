@@ -164,6 +164,8 @@ the reversal record.)
     after removing a scratch worktree, rather than re-diagnosing this from
     scratch.
 
+    > **Dated update (2026-10-07, R15):** the initial `npm run check` against the shared target selected a stale pre-R14 `libsefer_alloc` for the compile-fail harness. A worktree-local target avoided that artifact, then exposed E0433 registry wording variants and E0460 dependency-version candidates. The harness now skips only those known incompatible candidates; the focused tests pass 3/3 and the complete `npm run check` passed. Item remains OPEN: per-worktree target isolation is still the required manual mitigation.
+
 162. **[A] Root src R6-01/R6-03, R8-01 — complete terminal ingress and autonomous ownerless reclamation.**
 
     - **Status:** OPEN — concrete P1 acceptance blocker: both Miri borrowing models reject the real paused installed-Box frame. Terminal ingress/service and the R11 storage/preflight change are implemented; this failure is under active repair, not a future-task deferral.
@@ -183,5 +185,19 @@ the reversal record.)
     - **Current-number-or-verdict:** `AllocCore::alloc_large` now takes a biased reservation for `align >= SEGMENT`, with distinct release token, usable metadata root and aligned payload. Registration uses the payload key and stored root. No successful-case platform matrix is claimed by this doc pass.
     - **Next trigger:** parent acceptance of `SEGMENT`, `2 * SEGMENT`, `16 * SEGMENT` success, own/foreign/fallback/batch/realloc and rollback routes, OS release and Miri provenance. Keep this card open until results are reviewed.
     - **Evidence:** `docs/LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`; `src/alloc_core/large/alloc_core_large.rs`; `src/alloc_core/platform/os.rs`; `tests/r8_large_alignment.rs`. This doc pass did not run tests.
+
+172. **[A] Src review R15-01 — `EpochRegion::drop` skips remaining live values when a destructor panics.** (Filed 2026-10-07.)
+
+    - **Status:** OPEN — confirmed resource leak for ordinary unwinding in the deprecated `experimental` tier; `ShardedRegion` inherits it.
+    - **Current-number-or-verdict:** `EpochRegion::drop` walks slots manually; `AtomicSlot::drop_value` nulls then drops the pointee. A panic exits the loop, and later `Atomic` handles do not own their pointees. Parent's temporary native witness observed one panicking destructor and a later live value whose destructor was skipped; no permanent regression or fix is included in this review round.
+    - **Next trigger:** add an integration regression covering unwind-tail exactly-once cleanup, then make each live slot retain cleanup ownership or guard the unprocessed tail. Preserve null-before-transfer and idempotence; cover `experimental` and `pinning`.
+    - **Evidence:** `docs/reviews/2026-10-07-src-review-xs-round-15.md` §2 R15-01 and parent verification receipt; `src/concurrent/epoch/epoch_region.rs:682–692`; `src/concurrent/epoch/hand.rs:526–540,584–591`.
+
+173. **[A] Src review R15-02 — primordial route-attachment rollback misses the root release counter.** (Filed 2026-10-07.)
+
+    - **Status:** OPEN — confirmed diagnostics-accounting defect on a fallible `alloc-global` bootstrap path, including `production`; the mapping itself is released by RAII.
+    - **Current-number-or-verdict:** successful `Segment::reserve` increments `SEGMENTS_RESERVED_TOTAL`; failed `attach_owner` drops `Primordial` before ownership transfer, and `vmem::Reservation::drop` releases the mapping without calling root `os::release_segment`. Parent's temporary isolated witness observed reservation delta +1 and release delta 0 on injected first-registration refusal. No source fix or permanent regression is included in this review round.
+    - **Next trigger:** account owning `Segment` rollback/unwind exactly once while preserving the existing explicit release after transfer; permanently test primordial and fallback registration refusal, success/retry, and Small/Large rollback counter controls.
+    - **Evidence:** `docs/reviews/2026-10-07-src-review-xs-round-15.md` §2 R15-02 and parent verification receipt; `src/alloc_core/alloc_core/lifecycle.rs:255–282`; `src/alloc_core/platform/os.rs:217–228,557–565`; `crates/aligned-vmem/src/reservation.rs:1546–1567`.
 
 

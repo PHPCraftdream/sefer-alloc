@@ -78,6 +78,17 @@ attributed to the R14 changes and is not hidden or called resolved. All
 other prior-card statuses/triggers remain unchanged. Evidence:
 `docs/reviews/2026-10-06-src-review-sol-round-14.md`, closure receipt.
 
+**Src review round 15 (2026-10-07).** R15-01 and R15-02 are filed as active
+items 172/173 after parent-run temporary witnesses confirmed the unwind-tail
+drop leak and primordial rollback counter mismatch. R15-03 adds current prose
+examples to item154. Item157 is CLOSED/SUPERSEDED: its legacy intrusive-spill
+telemetry subject no longer exists in the current root allocator; its closure
+record is in `RESOLVED.md`. Item158 remains open: all-bucket `publish_empty`
+and current-node-only post-drain sync clearing are distinguished; no NUMA
+runtime witness was run. All other prior-card statuses and triggers remain
+unchanged; item158's next trigger was narrowed to the sync-only clear path.
+Evidence: `docs/reviews/2026-10-07-src-review-xs-round-15.md`.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -273,8 +284,8 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (6 open cards + 2
-  retained closed/resolved pointers) --
+- **`docs/correctness-open-items/TRACKED_misc.md`** (5 open cards + 2
+  retained closed/resolved pointers; item157 moved to `RESOLVED.md` in R15) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -288,12 +299,12 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   gap is only that edition 2024 would make the implicit form a hard error).
   The remaining cards have their individually stated subjects and triggers.
 - **`docs/correctness-open-items/ACTIVE.md`** — the **[A]** tier: active
-  cards, a real next step a round should consider taking. Small (6 cards
-  at split time). Unchanged by this task.
+  cards, a real next step a round should consider taking. 8 cards currently
+  (6 at split time + R15 items172/173).
 - **`docs/correctness-open-items/RESOLVED.md`** — the "Recently resolved
-  (closure trail — do not re-list as open)" section: one-line pointers per
-  closed item, each resolving further into `ARCHIVE.md`'s full narrative.
-  Unchanged by this task.
+  (closure trail)" section: current review closures may carry their full
+  narratives inline; older moved entries have one-line pointers to
+  `ARCHIVE.md`.
 - **`docs/correctness-open-items/ARCHIVE.md`** — the full dated historical
   closure narratives. Consulted on demand, not part of the mandatory
   round-start read. Unchanged by this task.
@@ -306,11 +317,12 @@ already requires reading end-to-end; `RESOLVED.md` and `ARCHIVE.md` are
 consulted on demand, exactly as before.
 
 **Item-number -> file lookup table.** It covers every `[T]`-tier number,
-including `59a`/`59b`, plus retained closure pointers. Item 170 points to
-`RESOLVED.md`; item 171 is the new `[T]` verification card. Other `[A]`
-citations resolve directly in `ACTIVE.md`. The total is deliberately not
-typed here. Compare the two `[T]` numbered-record counts; the second excludes
-`RESOLVED.md` and counts only `TRACKED_*.md` destinations:
+including `59a`/`59b`, plus retained closure pointers. Item157 moved to
+`RESOLVED.md` in R15; items168–170 remain the R13/R14 closure pointers, and
+item171 is the `[T]` verification card. Other `[A]` citations resolve directly
+in `ACTIVE.md`. The total is deliberately not typed here. Compare the two `[T]`
+numbered-record counts; the second excludes `RESOLVED.md` and counts only
+`TRACKED_*.md` destinations:
 
 ```text
 grep -hE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_*.md | wc -l
@@ -452,7 +464,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 154 | `TRACKED_misc.md` |
 | 155 | `TRACKED_correctness_residuals.md` |
 | 156 | `TRACKED_ci_gate_coverage.md` |
-| 157 | `TRACKED_misc.md` |
+| 157 | `RESOLVED.md` |
 | 158 | `TRACKED_misc.md` |
 | 159 | `TRACKED_misc.md` |
 | 160 | `TRACKED_misc.md` |

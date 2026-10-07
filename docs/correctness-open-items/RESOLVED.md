@@ -1,23 +1,15 @@
 # Correctness / CI-debt open items — Recently resolved (closure trail)
 
-**Part of the split index.** This file holds the full "Recently
-resolved" pointer trail — the closure trail described by
-`docs/CORRECTNESS_OPEN_ITEMS.md`'s convention rule 2 ("When you
-close an item: move its entry to §'Recently resolved'"). Each pointer
-resolves further into `docs/correctness-open-items/ARCHIVE.md`'s full
-closure narratives. Start at `docs/CORRECTNESS_OPEN_ITEMS.md` for the
-purpose/scope/convention header and the complete item-number → file
-lookup table; see `docs/correctness-open-items/ACTIVE.md`
-and `docs/correctness-open-items/TRACKED_hook_safety.md` /
-`TRACKED_verification_coverage.md` / `TRACKED_platform_contracts.md` /
-`TRACKED_ci_gate_coverage.md` / `TRACKED_test_flakiness.md` /
-`TRACKED_correctness_residuals.md` / `TRACKED_publish_readiness.md` /
-`TRACKED_process_record.md` / `TRACKED_misc.md`
-(split by THEME, task #1222, 2026-08-20 — superseding task #1221's
-same-day item-number-range split) for the open tiers.
-(Split 2026-08-20, task #1217, reversing item 86's 2026-08-19 deferral
-— see `docs/CORRECTNESS_OPEN_ITEMS.md` item 86 for the reversal
-record.)
+**Part of the split index.** This file holds the recently resolved closure
+trail. Recent review closures may retain full narrative here; older moved
+entries point to `docs/correctness-open-items/ARCHIVE.md`.
+
+Start at `docs/CORRECTNESS_OPEN_ITEMS.md` for the purpose/scope/convention
+header, complete item-number → file lookup table, and links to `ACTIVE.md`
+and the nine thematic `TRACKED_*.md` files that hold open items. The `[T]`
+tier was split by theme in task #1222 (2026-08-20), superseding task #1221's
+same-day item-number-range split. The split reversed item 86's
+2026-08-19 deferral; see item 86 for the reversal record.
 
 ---
 
@@ -758,3 +750,19 @@ full closure trail".
   gate is usable again, which was the goal — the underlying questions are
   tracked, not closed by a green run.
 - 170. **[A] Src review round 14 — owner capability, shard lifecycle/cost and current-state documentation.** (Filed and CLOSED 2026-10-06.) — full closure narrative in `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure trail" (now `docs/correctness-open-items/ARCHIVE.md` §170); evidence: `docs/reviews/2026-10-06-src-review-sol-round-14.md`.
+
+### 157 — retired intrusive-spill telemetry request: CLOSED/SUPERSEDED (2026-10-07)
+
+- **Status:** CLOSED — the specific third-tier intrusive-spill mechanism in the original request no longer exists in the current root allocator.
+- **Current verdict:** R15 source review found no live `RemoteFreeRing`/`HeapOverflow` type, `cross_thread_frees_lost`/`ring_overflows` field, or `dbg_spill_ledger_for_test` observer in `src/`. The current foreign Small/Primordial path publishes through `RouteDirectory` pins into terminal sidecars; `AllocStats` reports current route/reclaim signals but does not describe spill pressure. The old request therefore has no current mechanism to instrument. This closure does not decide whether operators need a distinct metric for current sidecar capacity or pressure.
+- **Next trigger:** none for the retired intrusive spill tier. File a separate item only if an operational workload identifies a specific current-sidecar metric requirement.
+- **Evidence:** `docs/reviews/2026-10-07-src-review-xs-round-15.md` §5 and parent source check; `src/registry/heap_core_xthread/routing.rs:26–65`; `src/registry/segment_route/pin.rs:45–62`; `src/global/alloc_stats.rs:108–151`.
+
+**Historical card at filing (not current state):**
+
+157. **[T] `AllocStats` has no public counter for third-tier (intrusive spill) cross-thread free pressure.** (Filed 2026-09-28, oxx R2-04 follow-up.)
+
+    - **Status:** OPEN — deferred; would add public API.
+    - **Current-number-or-verdict:** after R2-09, `cross_thread_frees_lost` is legacy and always `0`, and `ring_overflows` counts only first-tier misses. It cannot tell a free rescued by `HeapOverflow`/retry from one that went to the spill. Only the `internals`/`bench-internals`-gated `HeapCore::dbg_spill_ledger_for_test` sees spill traffic. The `ring_overflows` doc then said so (commit `c4c86584`).
+    - **Next trigger:** an operator or benchmark that needs to see spill pressure in production builds; `AllocStats` being `#[non_exhaustive]` made an additive field possible.
+    - **Evidence at filing:** `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` §R2-04; the then-current `src/global/alloc_stats.rs`.

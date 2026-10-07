@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 15 (2026-10-07; read-only review)
+
+- [review] XS source review found two P3 issues and one P4 documentation
+  contradiction; no new P0/P1/P2 was confirmed. Full findings, limits,
+  optimization hypotheses, and inherited-item dispositions:
+  `docs/reviews/2026-10-07-src-review-xs-round-15.md`.
+- [correctness, tracked] R15-01 and R15-02 are open as correctness items
+  172/173 after temporary parent witnesses confirmed the unwind-tail
+  destructor skip and primordial rollback counter mismatch. Source fixes and
+  permanent regressions are not part of this review round.
+- [docs/index] R15-03 updates prose-debt item154; item157's obsolete
+  intrusive-spill telemetry request is closed as superseded by terminal
+  sidecars; item158 remains open because `publish_empty` clears all buckets for
+  a class/slot while post-drain sync still has a current-node-only clear path.
+- [test] Commits `247a52ad` and `c82c88c5` make the R14 sidecar owner-capability
+  harness accept both rustc E0433 registry phrasings and skip E0460
+  dependency-mismatched rlib candidates; the focused mixed-feature probe passed 3/3.
+- [verification] `npm run check` passed all 65 steps, including the existing
+  IAI step (85 benches). Those IAI values do not support any R15 optimization
+  claim; no separate R15 performance verdict was measured.
+- `production` composition, defaults, and dependencies are unchanged. No
+  speedup or performance promotion is claimed. Manifest:
+  `docs/perf/round-manifests/SRC_REVIEW_R15_MANIFEST.md`.
+
 ### Root allocator `src/` review round 14 (2026-10-06; remediation accepted)
 
 - [docs] Source review on `d6417c6c`: four confirmed P3 findings and one P4,
