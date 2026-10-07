@@ -148,9 +148,9 @@ fn full_context(fixture: &Path, candidate: &Path, output: &std::process::Output)
     )
 }
 
-/// Filters the candidate rlibs: a candidate is COMPATIBLE when the positive
-/// probe compiles; only missing/private registry-path failures are skipped.
-/// Uncoded failures, resolution failures and crashes are hard harness errors.
+/// Filters candidate rlibs through a positive probe. Skip only known
+/// feature-incompatible registry and dependency-version diagnostics; all
+/// other failures remain hard harness errors.
 fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<PathBuf> {
     let mut compatible = Vec::new();
     for (index, candidate) in candidates.iter().enumerate() {
@@ -176,6 +176,10 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
                     Some("E0433") => {
                         message == "cannot find `registry` in `sefer_alloc`"
                             || message == "could not find `registry` in `sefer_alloc`"
+                    }
+                    Some("E0460") => {
+                        message.starts_with("found possibly newer version of crate `")
+                            && message.ends_with("` which `sefer_alloc` depends on")
                     }
                     Some("E0603") => message == "module `registry` is private",
                     _ => false,
