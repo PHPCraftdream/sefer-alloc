@@ -164,7 +164,7 @@ the reversal record.)
     after removing a scratch worktree, rather than re-diagnosing this from
     scratch.
 
-    > **Dated update (2026-10-07, R15):** the initial `npm run check` against the shared target selected a stale pre-R14 `libsefer_alloc` for the compile-fail harness. A worktree-local target avoided that artifact; mixed candidates exposed E0433 registry wording, E0460 dependency-version mismatch, and E0463 missing-dependency diagnostics. The harness now skips only those known incompatible candidates; its three focused tests and the full 65-step `npm run check` pass. GitHub run 37644289617 on landing SHA 714 then exposed E0463; commit 749dbfa9 adds the missing case. Item remains OPEN because worktree-local target isolation is still a manual mitigation.
+    > **Dated update (2026-10-07, R15):** the initial `npm run check` against the shared target selected a stale pre-R14 `libsefer_alloc` for the compile-fail harness. A worktree-local target avoided that artifact; mixed candidates exposed E0433 registry wording, E0460 dependency-version mismatch, and E0463 missing-dependency diagnostics. Run 37681398463 on landing SHA d5fb531bb13b065968b014007dc8e2fef114b724 then exposed E0461 when host `rustc` probed an aarch64 rlib; commit 20b7c443 gates this harness to x86_64 targets. The focused tests and full 65-step `npm run check` pass. Item remains OPEN because worktree-local target isolation is still a manual mitigation.
 
 162. **[A] Root src R6-01/R6-03, R8-01 — complete terminal ingress and autonomous ownerless reclamation.**
 
