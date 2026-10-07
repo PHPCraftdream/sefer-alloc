@@ -1,12 +1,13 @@
 # Source review round 15 manifest — commits, impact & verdicts
 
-**Scope:** Round-15 work commits after base `b1a1e4f9ad232e7a3aef6e7b8b488c5b27eddfe9` through `021977689c89804eda909f6ec9aca64adf74c4d9`. The table is derived from:
+**Scope:** Round-15 work commits in two ranges: the initial report wave after base `b1a1e4f9ad232e7a3aef6e7b8b488c5b27eddfe9` through `021977689c89804eda909f6ec9aca64adf74c4d9`, and the CI follow-up after the first closing manifest commit `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` through `6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb`. The work-commit rows are derived from:
 
 ```text
 git log --reverse --format="%H|%cI|%s" b1a1e4f9ad232e7a3aef6e7b8b488c5b27eddfe9..021977689c89804eda909f6ec9aca64adf74c4d9
+git log --reverse --format="%H|%cI|%s" 714ea5b73c0a5558913a4af5d7b8048042fdd2e6..6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb
 ```
 
-This manifest is the separate closing artifact and is intentionally outside that work-commit range, avoiding a self-referential row.
+The first closing manifest commit (`714ea5b7`) and this updated closing artifact are intentionally outside the work-commit ranges, avoiding self-reference.
 
 ## §1. Work commits
 
@@ -15,6 +16,8 @@ This manifest is the separate closing artifact and is intentionally outside that
 | 1 | `247a52ad2f81381b775b7fa955d8f7c1f7aeef74` | `2026-10-07T09:41:43+02:00` | `test` | `accept current rustc feature-probe wording` | Compile-fail harness accepts both rustc E0433 registry-resolution wordings; no runtime change |
 | 2 | `c82c88c54dfae4cf65775851f829e2d7899db15a` | `2026-10-07T17:15:07+02:00` | `test` | `skip dependency-mismatched probe candidates` | Compile-fail candidate filter skips E0460 dependency-version variants; no runtime change |
 | 3 | `021977689c89804eda909f6ec9aca64adf74c4d9` | `2026-10-07T17:17:26+02:00` | `docs` | `record src review round 15` | XS review report, current-state index dispositions, and changelog; no runtime source change |
+| 4 | `749dbfa914657d7096e0e910b40b08bf8c3c4b36` | `2026-10-07T19:44:30+02:00` | `test` | `skip missing-dependency probe candidates` | Compile-fail candidate filter skips E0463 dependency-not-found variants; no runtime change |
+| 5 | `6b407dd8e65a85e82f9e46091c5735fa0e1a4ebb` | `2026-10-07T21:00:58+02:00` | `docs` | `record R15 CI probe follow-up` | Records the first landing-CI failure, test-only correction, and current follow-up state; no runtime source change |
 
 ## §2. Default-feature and measurement impact
 
@@ -37,8 +40,9 @@ This manifest is the separate closing artifact and is intentionally outside that
 
 ## §4. Final verification
 
-- `npm run check` — **passed all 65 steps** from the isolated review worktree using its worktree-local target. The process-local empty `RUSTC_WRAPPER` and `CARGO_BUILD_RUSTC_WRAPPER` variables bypassed the machine-level sccache wrapper; no global Cargo configuration changed.
-- Focused `r14_sidecar_owner_capability_negative` mixed-feature test — **3 passed** after both candidate-classifier fixes.
+- `npm run check` — **passed all 65 steps** from the isolated review worktree using its worktree-local target after the E0463 candidate-filter fix. The process-local empty `RUSTC_WRAPPER` and `CARGO_BUILD_RUSTC_WRAPPER` values bypassed the machine-level sccache wrapper; no global Cargo configuration changed.
+- Focused `r14_sidecar_owner_capability_negative` mixed-feature test — **3 passed** after all candidate-classifier fixes.
 - Temporary R15 native witnesses — **2 passed** (panic-tail destructor skip and primordial rollback counter mismatch); their source was removed. These are receipts, not permanent regressions.
 - Correctness-index count check — **149** ACTIVE/TRACKED headings; **140** `[T]` headings and **140** item-to-file lookup rows.
+- GitHub Actions run `37644289617` on initial landing SHA `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` exposed E0463 in the owner-capability probe's candidate scan. The test-only follow-up classifies the missing-dependency candidate; no allocator runtime/source failure was observed.
 - No Miri, Loom, Kani, NUMA runtime witness, or R15-specific performance judge was run. The unmeasured optimization hypotheses remain proposals only.
