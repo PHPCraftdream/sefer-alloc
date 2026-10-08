@@ -3388,6 +3388,97 @@ fn decomp_os_roundtrip_8x() {
     }
 }
 
+// R16 item83: N=1, full old/new payload touch; preservation is checked
+// separately by activation, never by a measured verification scan. Prefix
+// omits realloc/new touch and frees OLD layout through the same teardown.
+#[cfg(target_os = "linux")]
+fn r16_perf83_round(old_size: usize, new_size: Option<usize>) {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let old_layout = Layout::from_size_align(old_size, 16).unwrap();
+    let mut ptr = (*heap).alloc(old_layout);
+    assert!(!ptr.is_null(), "item83 initial allocation");
+    // SAFETY: ptr owns old_size writable bytes with old_layout in this heap.
+    unsafe { core::ptr::write_bytes(black_box(ptr), 0x5A, old_size) };
+    let mut final_layout = old_layout;
+    if let Some(size) = new_size {
+        // SAFETY: ptr is live and old_layout is its exact allocation layout.
+        let resized = unsafe { (*heap).realloc(ptr, old_layout, size) };
+        if resized.is_null() {
+            // SAFETY: failed realloc leaves the original allocation live.
+            unsafe { (*heap).dealloc(ptr, old_layout) };
+            panic!("item83 realloc failed");
+        }
+        ptr = resized;
+        final_layout = Layout::from_size_align(size, 16).unwrap();
+        // SAFETY: successful realloc supplies size writable bytes.
+        unsafe { core::ptr::write_bytes(black_box(ptr), 0x5A, size) };
+    }
+    black_box(ptr);
+    // SAFETY: ptr is the single live result, freed once with its current layout.
+    unsafe { (*heap).dealloc(ptr, final_layout) };
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_shrink_8_to_6mib() {
+    r16_perf83_round(8388608, Some(6291456));
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_shrink_8_to_6mib_prefix() {
+    r16_perf83_round(8388608, None);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_shrink_8_to_4p5mib() {
+    r16_perf83_round(8388608, Some(4718592));
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_shrink_8_to_4p5mib_prefix() {
+    r16_perf83_round(8388608, None);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_shrink_8_to_3mib() {
+    r16_perf83_round(8388608, Some(3145728));
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_shrink_8_to_3mib_prefix() {
+    r16_perf83_round(8388608, None);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_grow_6_to_8mib() {
+    r16_perf83_round(6291456, Some(8388608));
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_grow_6_to_8mib_prefix() {
+    r16_perf83_round(6291456, None);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_equal_8mib() {
+    r16_perf83_round(8388608, Some(8388608));
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn realloc_large_equal_8mib_prefix() {
+    r16_perf83_round(8388608, None);
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -3450,6 +3541,16 @@ library_benchmark_group!(
         large_cache_free_slot_search_prefill_only,
         large_cache_free_slot_search_cycle_only,
         realloc_grow,
+        realloc_large_shrink_8_to_6mib,
+        realloc_large_shrink_8_to_6mib_prefix,
+        realloc_large_shrink_8_to_4p5mib,
+        realloc_large_shrink_8_to_4p5mib_prefix,
+        realloc_large_shrink_8_to_3mib,
+        realloc_large_shrink_8_to_3mib_prefix,
+        realloc_large_grow_6_to_8mib,
+        realloc_large_grow_6_to_8mib_prefix,
+        realloc_large_equal_8mib,
+        realloc_large_equal_8mib_prefix,
         cold_alloc_free_256x16b,
         cold_alloc_free_256x16b_2n,
         cold_alloc_free_256x16b_4n,

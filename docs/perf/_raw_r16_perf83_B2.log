@@ -1,0 +1,139 @@
+# TRUNCATED — omitted build progress/unselected benches; selected current-run metrics/table rows retained verbatim.
+# Reproduce: node scripts/r16_perf83_iai.mjs --run B2 (fresh no-overwrite receipt location required).
+# Sanitized full-output SHA-256: 7f705995703c4ee59584a4b08c150beb3a6c3c945b730967ea3e695bd9965881
+perf_gate_iai::perf_gate::dealloc_realloc_burst_1088_16b_n17
+  Instructions:                      344181|344181               (No change)
+  L1 Hits:                           491111|491111               (No change)
+  L2 Hits:                              172|172                  (No change)
+  RAM Hits:                            1253|1253                 (No change)
+  Total read+write:                  492536|492536               (No change)
+  Estimated Cycles:                  535826|535826               (No change)
+perf_gate_iai::perf_gate::large_alloc_free_cycle
+  Instructions:                       49809|49809                (No change)
+  L1 Hits:                            94125|94125                (No change)
+  L2 Hits:                              186|186                  (No change)
+  RAM Hits:                            1107|1107                 (No change)
+  Total read+write:                   95418|95418                (No change)
+  Estimated Cycles:                  133800|133800               (No change)
+perf_gate_iai::perf_gate::large_cache_prefill_only_4mib
+  Instructions:                       58797|58797                (No change)
+  L1 Hits:                           107067|107067               (No change)
+  L2 Hits:                              168|168                  (No change)
+  RAM Hits:                            1095|1095                 (No change)
+  Total read+write:                  108330|108330               (No change)
+  Estimated Cycles:                  146232|146232               (No change)
+perf_gate_iai::perf_gate::large_cache_hit_only_4mib
+  Instructions:                       60100|60100                (No change)
+  L1 Hits:                           108923|108923               (No change)
+  L2 Hits:                              168|168                  (No change)
+  RAM Hits:                            1111|1111                 (No change)
+  Total read+write:                  110202|110202               (No change)
+  Estimated Cycles:                  148648|148648               (No change)
+perf_gate_iai::perf_gate::large_cache_free_slot_search_prefill_only
+  Instructions:                       63607|63607                (No change)
+  L1 Hits:                           113353|113353               (No change)
+  L2 Hits:                              169|169                  (No change)
+  RAM Hits:                            1220|1220                 (No change)
+  Total read+write:                  114742|114742               (No change)
+  Estimated Cycles:                  156898|156898               (No change)
+perf_gate_iai::perf_gate::large_cache_free_slot_search_cycle_only
+  Instructions:                       75140|75140                (No change)
+  L1 Hits:                           129685|129685               (No change)
+  L2 Hits:                              169|169                  (No change)
+  RAM Hits:                            1241|1241                 (No change)
+  Total read+write:                  131095|131095               (No change)
+  Estimated Cycles:                  173965|173965               (No change)
+perf_gate_iai::perf_gate::realloc_grow
+  Instructions:                      582733|582733               (No change)
+  L1 Hits:                          1195459|1195459              (No change)
+  L2 Hits:                             4423|4423                 (No change)
+  RAM Hits:                           70961|70961                (No change)
+  Total read+write:                 1270843|1270843              (No change)
+  Estimated Cycles:                 3701209|3701209              (No change)
+perf_gate_iai::perf_gate::realloc_large_shrink_8_to_6mib
+  Instructions:                    14729652|14729652             (No change)
+  L1 Hits:                         29224516|29224516             (No change)
+  L2 Hits:                            98031|98031                (No change)
+  RAM Hits:                          132673|132673               (No change)
+  Total read+write:                29455220|29455220             (No change)
+  Estimated Cycles:                34358226|34358226             (No change)
+perf_gate_iai::perf_gate::realloc_large_shrink_8_to_6mib_prefix
+  Instructions:                     8437961|8437961              (No change)
+  L1 Hits:                         16739622|16739622             (No change)
+  L2 Hits:                              163|163                  (No change)
+  RAM Hits:                          132199|132199               (No change)
+  Total read+write:                16871984|16871984             (No change)
+  Estimated Cycles:                21367402|21367402             (No change)
+perf_gate_iai::perf_gate::realloc_large_shrink_8_to_4p5mib
+  Instructions:                    13156788|13156788             (No change)
+  L1 Hits:                         26103363|26103363             (No change)
+  L2 Hits:                            73561|73561                (No change)
+  RAM Hits:                          132568|132568               (No change)
+  Total read+write:                26309492|26309492             (No change)
+  Estimated Cycles:                31111048|31111048             (No change)
+perf_gate_iai::perf_gate::realloc_large_shrink_8_to_4p5mib_prefix
+  Instructions:                     8437961|8437961              (No change)
+  L1 Hits:                         16739622|16739622             (No change)
+  L2 Hits:                              163|163                  (No change)
+  RAM Hits:                          132199|132199               (No change)
+  Total read+write:                16871984|16871984             (No change)
+  Estimated Cycles:                21367402|21367402             (No change)
+perf_gate_iai::perf_gate::realloc_large_shrink_8_to_3mib
+  Instructions:                    11932344|11932344             (No change)
+  L1 Hits:                         23429694|23429694             (No change)
+  L2 Hits:                            57477|57477                (No change)
+  RAM Hits:                          222524|222524               (No change)
+  Total read+write:                23709695|23709695             (No change)
+  Estimated Cycles:                31505419|31505419             (No change)
+perf_gate_iai::perf_gate::realloc_large_shrink_8_to_3mib_prefix
+  Instructions:                     8437961|8437961              (No change)
+  L1 Hits:                         16739622|16739622             (No change)
+  L2 Hits:                              163|163                  (No change)
+  RAM Hits:                          132199|132199               (No change)
+  Total read+write:                16871984|16871984             (No change)
+  Estimated Cycles:                21367402|21367402             (No change)
+perf_gate_iai::perf_gate::realloc_large_grow_6_to_8mib
+  Instructions:                    15424059|15424059             (No change)
+  L1 Hits:                         30116290|30116290             (No change)
+  L2 Hits:                            81937|81937                (No change)
+  RAM Hits:                          345521|345521               (No change)
+  Total read+write:                30543748|30543748             (No change)
+  Estimated Cycles:                42619210|42619210             (No change)
+perf_gate_iai::perf_gate::realloc_large_grow_6_to_8mib_prefix
+  Instructions:                     6340809|6340809              (No change)
+  L1 Hits:                         12578086|12578086             (No change)
+  L2 Hits:                              210|210                  (No change)
+  RAM Hits:                           99384|99384                (No change)
+  Total read+write:                12677680|12677680             (No change)
+  Estimated Cycles:                16057576|16057576             (No change)
+perf_gate_iai::perf_gate::realloc_large_equal_8mib
+  Instructions:                    16826784|16826784             (No change)
+  L1 Hits:                         33386029|33386029             (No change)
+  L2 Hits:                           130661|130661               (No change)
+  RAM Hits:                          132809|132809               (No change)
+  Total read+write:                33649499|33649499             (No change)
+  Estimated Cycles:                38687649|38687649             (No change)
+perf_gate_iai::perf_gate::realloc_large_equal_8mib_prefix
+  Instructions:                     8437973|8437973              (No change)
+  L1 Hits:                         16739641|16739641             (No change)
+  L2 Hits:                              165|165                  (No change)
+  RAM Hits:                          132198|132198               (No change)
+  Total read+write:                16872004|16872004             (No change)
+  Estimated Cycles:                21367396|21367396             (No change)
+  dealloc_realloc_burst_1088_16b_n17              344,181       491,111           172         1,253       535,826             -
+  large_alloc_free_cycle                           49,809        94,125           186         1,107       133,800             -
+  large_cache_prefill_only_4mib                    58,797       107,067           168         1,095       146,232             -
+  large_cache_hit_only_4mib                        60,100       108,923           168         1,111       148,648             -
+  large_cache_free_slot_search_prefill_only        63,607       113,353           169         1,220       156,898             -
+  large_cache_free_slot_search_cycle_only          75,140       129,685           169         1,241       173,965             -
+  realloc_grow                                    582,733     1,195,459         4,423        70,961     3,701,209      33,307.8
+  realloc_large_shrink_8_to_6mib               14,729,652    29,224,516        98,031       132,673    34,358,226             -
+  realloc_large_shrink_8_to_6mib_prefix         8,437,961    16,739,622           163       132,199    21,367,402             -
+  realloc_large_shrink_8_to_4p5mib             13,156,788    26,103,363        73,561       132,568    31,111,048             -
+  realloc_large_shrink_8_to_4p5mib_prefix       8,437,961    16,739,622           163       132,199    21,367,402             -
+  realloc_large_shrink_8_to_3mib               11,932,344    23,429,694        57,477       222,524    31,505,419             -
+  realloc_large_shrink_8_to_3mib_prefix         8,437,961    16,739,622           163       132,199    21,367,402             -
+  realloc_large_grow_6_to_8mib                 15,424,059    30,116,290        81,937       345,521    42,619,210             -
+  realloc_large_grow_6_to_8mib_prefix           6,340,809    12,578,086           210        99,384    16,057,576             -
+  realloc_large_equal_8mib                     16,826,784    33,386,029       130,661       132,809    38,687,649             -
+  realloc_large_equal_8mib_prefix               8,437,973    16,739,641           165       132,198    21,367,396             -
