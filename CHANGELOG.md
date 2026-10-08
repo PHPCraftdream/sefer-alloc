@@ -45,8 +45,14 @@ composition, defaults and dependencies are unchanged.
   was also unreliable when clean roots lacked that file with `RUSTC_WRAPPER`
   empty. Final fix: compiler verdict, not host-layout inference. Item175 is
   FIXED IN TREE / CI CONFIRMATION PENDING and stays OPEN until green CI.
-  Current-linked rlib identity remains unproven; stale-source E0599/E0624
-  in reused target dirs remain hard errors, not fixed here (CI uses clean dirs).
+  Current-linked rlib identity remains unproven. A pre-probe freshness filter
+  now excludes reused-target-dir candidates only when their readable mtime is
+  strictly older than the newest readable mtime among recursive `src/**/*.rs`,
+  `Cargo.toml` and optional `build.rs`; metadata/mtime failures and unreadable
+  directories are ignored. Unknown candidate mtimes are retained; no readable
+  source timestamp means no exclusion. Stale exclusions are logged and counted;
+  an empty filtered set hard fails with a rebuild instruction. Newer or
+  unknown-mtime incompatible artifacts still hard fail, including E0599/E0624.
 - [docs/index] Items 172, 173, 174, 176 moved to `RESOLVED.md`; item154 gets a
   follow-up note (listed prose examples fixed, `segment_route`
   `allow(dead_code)` removed, structural debt remains); perf item84 closed,

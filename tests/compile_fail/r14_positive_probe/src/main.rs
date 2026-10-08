@@ -19,10 +19,16 @@
 //! are nonempty, every candidate is foreign, and none is compatible. Empty
 //! candidate sets and all-feature-incompatible sets hard fail. With a usable
 //! current native artifact the checks run, including on native arm64.
-//! Other failures (including stale-source E0599/E0624 in reused target dirs)
-//! are hard errors; only the exact count-matched uncoded abort summary is
-//! allowed. Compatible candidates are not proven linked into the current test
-//! build.
+//! Before this probe runs, the harness excludes candidates with readable mtimes
+//! strictly older than the newest readable mtime among recursive src/**/*.rs,
+//! Cargo.toml and optional build.rs. Individual metadata/mtime failures and
+//! unreadable directories are ignored; unknown candidate mtimes are retained,
+//! and no readable source timestamp means no exclusion. Every stale-source
+//! exclusion is logged and counted; an empty filtered set hard fails with a
+//! rebuild instruction. Other probe failures, including E0599/E0624 from newer
+//! or unknown-mtime incompatible artifacts, remain hard errors; only the exact
+//! count-matched uncoded abort summary is allowed. Compatible candidates are
+//! not proven linked into the current test build.
 
 fn positive(route: &sefer_alloc::registry::segment_route::RouteRegistration<'_>) {
     route.prepare_small(0, 0);

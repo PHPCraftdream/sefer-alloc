@@ -18,7 +18,15 @@
 //! Artifact selection is
 //! deterministic: every `libsefer_alloc-*.rlib` / `libsefer_alloc.rlib` under
 //! the deps directory (the parent of `current_exe()`, which cargo places
-//! under `<profile>/deps/`) is a candidate, sorted by path. A positive probe
+//! under `<profile>/deps/`) is collected, sorted by path. Before probing,
+//! candidates with a readable mtime strictly older than the newest readable
+//! mtime among recursively scanned src/**/*.rs, Cargo.toml and optional build.rs
+//! are excluded and logged as stale-source. Unreadable directories and individual
+//! metadata/mtime failures are ignored; unknown candidate mtimes are retained,
+//! and no readable source timestamp means no exclusion. An empty filtered set
+//! hard fails with a rebuild instruction, never skips. This is a freshness
+//! filter, not proof that a candidate was linked into the current test build.
+//! A positive probe
 //! fixture (`tests/compile_fail/r14_positive_probe`) decides per candidate
 //! whether the build is internals-compatible: success → COMPATIBLE, failure
 //! with only these restricted coded messages → skipped:
@@ -37,7 +45,8 @@
 //! with no compatible candidates skips the test; empty sets and all-feature-
 //! incompatible sets hard fail. Only the exact count-matched uncoded abort
 //! summary is allowed;
-//! anything else → hard harness failure. Each negative fixture is then run
+//! anything else (including E0599/E0624 from newer or unknown-mtime
+//! incompatible artifacts) → hard harness failure. Each negative fixture is then run
 //! against EVERY compatible variant, each with its own out-dir, and must
 //! yield exactly one coded error of the expected code with the expected
 //! rendered substrings and a primary span exactly in the fixture's own file.
@@ -53,6 +62,7 @@
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 fn rustc_command() -> std::ffi::OsString {
     std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into())
@@ -113,9 +123,91 @@ fn deps_dir() -> PathBuf {
         .to_path_buf()
 }
 
-/// All `libsefer_alloc` rlib candidates under the deps directory, sorted by
-/// path for determinism (no mtime heuristics).
-fn candidate_rlibs(deps: &Path) -> Vec<PathBuf> {
+/// Exclude only artifacts known to predate a readable source timestamp.
+fn candidate_is_stale(
+    candidate_mtime: Option<SystemTime>,
+    newest_source: Option<SystemTime>,
+) -> bool {
+    matches!((candidate_mtime, newest_source), (Some(candidate), Some(source)) if candidate < source)
+}
+
+fn readable_modified(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Missing metadata and unreadable directories contribute no exclusion evidence.
+fn newest_source_modified(manifest: &Path) -> Option<SystemTime> {
+    fn scan(directory: &Path, newest: &mut Option<SystemTime>) {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let path = entry.path();
+            if kind.is_dir() {
+                scan(&path, newest);
+            } else if kind.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                *newest = (*newest).max(readable_modified(&path));
+            }
+        }
+    }
+
+    let mut newest = readable_modified(&manifest.join("Cargo.toml"))
+        .max(readable_modified(&manifest.join("build.rs")));
+    scan(&manifest.join("src"), &mut newest);
+    newest
+}
+
+#[test]
+fn candidate_freshness_keeps_equal_newer_and_unknown_timestamps() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("r14_freshness_{}_{unique}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let result = std::panic::catch_unwind(|| {
+        let source_time = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let source = directory.join("source.rs");
+        std::fs::File::create(&source)
+            .unwrap()
+            .set_modified(source_time)
+            .unwrap();
+        let newest = readable_modified(&source);
+        assert_eq!(newest, Some(source_time));
+        for (name, time, stale) in [
+            ("old.rlib", source_time - Duration::from_secs(60), true),
+            ("equal.rlib", source_time, false),
+            ("new.rlib", source_time + Duration::from_secs(60), false),
+        ] {
+            let path = directory.join(name);
+            std::fs::File::create(&path)
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+            let modified = readable_modified(&path);
+            assert_eq!(modified, Some(time));
+            assert_eq!(candidate_is_stale(modified, newest), stale, "{name}");
+            assert!(!candidate_is_stale(modified, None), "{name}");
+        }
+        let unknown = readable_modified(&directory.join("absent.rlib"));
+        assert_eq!(unknown, None);
+        assert!(!candidate_is_stale(unknown, newest));
+        assert!(!candidate_is_stale(unknown, None));
+    });
+    std::fs::remove_dir_all(&directory).unwrap();
+    if let Err(payload) = result {
+        std::panic::resume_unwind(payload);
+    }
+}
+
+/// Source-fresh or unknown-mtime rlibs under deps, sorted by path.
+fn candidate_rlibs(deps: &Path, tag: &str) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = std::fs::read_dir(deps)
         .unwrap_or_else(|error| panic!("failed to read deps dir {}: {error}", deps.display()))
         .map(|entry| {
@@ -138,6 +230,27 @@ fn candidate_rlibs(deps: &Path) -> Vec<PathBuf> {
         })
         .collect();
     candidates.sort();
+    let newest_source = newest_source_modified(Path::new(env!("CARGO_MANIFEST_DIR")));
+    let mut stale_skipped = 0usize;
+    candidates.retain(|candidate| {
+        if candidate_is_stale(readable_modified(candidate), newest_source) {
+            stale_skipped += 1;
+            eprintln!(
+                "R14 {tag}: skip stale-source candidate={}",
+                candidate.display()
+            );
+            false
+        } else {
+            true
+        }
+    });
+    eprintln!("R14 {tag}: {stale_skipped} stale-source candidates skipped");
+    assert!(
+        !candidates.is_empty(),
+        "R14 {tag}: current build not found under {} after source-freshness filtering; \
+         rebuild the crate with alloc-global + internals features",
+        deps.display()
+    );
     candidates
 }
 
@@ -421,7 +534,11 @@ fn shared_sidecar_prepare_is_not_callable_from_outside_the_crate() {
         "compile-fail fixture missing from checkout: {}",
         fixture.display()
     );
-    let variants = compatible_variants("prepare", &probe_fixture(), &candidate_rlibs(&deps_dir()));
+    let variants = compatible_variants(
+        "prepare",
+        &probe_fixture(),
+        &candidate_rlibs(&deps_dir(), "prepare"),
+    );
     if variants.is_empty() {
         return;
     }
@@ -443,7 +560,11 @@ fn shared_sidecar_issue_is_not_callable_from_outside_the_crate() {
         "compile-fail fixture missing from checkout: {}",
         fixture.display()
     );
-    let variants = compatible_variants("issue", &probe_fixture(), &candidate_rlibs(&deps_dir()));
+    let variants = compatible_variants(
+        "issue",
+        &probe_fixture(),
+        &candidate_rlibs(&deps_dir(), "issue"),
+    );
     if variants.is_empty() {
         return;
     }
@@ -465,7 +586,11 @@ fn route_registration_shared_reference_must_not_be_sync() {
         "compile-fail fixture missing from checkout: {}",
         fixture.display()
     );
-    let variants = compatible_variants("sync", &probe_fixture(), &candidate_rlibs(&deps_dir()));
+    let variants = compatible_variants(
+        "sync",
+        &probe_fixture(),
+        &candidate_rlibs(&deps_dir(), "sync"),
+    );
     if variants.is_empty() {
         return;
     }
