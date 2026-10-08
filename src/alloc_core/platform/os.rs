@@ -45,15 +45,15 @@ use aligned_vmem as vmem;
 /// balanced live-count atomic: every increment/decrement pair would need to
 /// be threaded through every segment-owning code path (small heap,
 /// large-cache, decommit recycle, cross-thread reclaim) and a single missed
-/// decrement anywhere silently desyncs the counter forever. Two
-/// increment-only counters can never desync — worst case a path is missed
-/// and BOTH totals under-count, which is self-evident (reserved stops
-/// growing while segments keep flowing) rather than silently wrong.
+/// decrement anywhere silently desyncs the counter forever. The two totals
+/// likewise require every counted reservation to pair with exactly one release,
+/// either through owning [`Segment`] destruction or [`release_segment`] after
+/// ownership transfer.
 pub(crate) static SEGMENTS_RESERVED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// Process-wide count of successful OS segment releases (every
-/// [`release_segment`] call with a non-null reservation). Monotonic,
-/// relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
+/// [`release_segment`] call with a non-null reservation, or owning [`Segment`]
+/// destruction). Monotonic, relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
 pub(crate) static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// Process-wide count of failed segment-reservation constructors, including
@@ -163,6 +163,13 @@ pub(crate) fn segment_base_of_ptr(ptr: *mut u8) -> *mut u8 {
 /// `Segment` is `Send` (but not `Sync`): the span is owned exclusively by the
 /// sending thread. `&Segment` grants only read access to the metadata.
 pub struct Segment(vmem::Reservation);
+
+impl Drop for Segment {
+    fn drop(&mut self) {
+        // Reservation's RAII release bypasses release_segment on bootstrap rollback.
+        SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 impl Segment {
     /// Reserve a checked biased Large window. The original release token keeps
