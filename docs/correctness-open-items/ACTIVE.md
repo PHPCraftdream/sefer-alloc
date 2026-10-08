@@ -166,6 +166,8 @@ the reversal record.)
 
     > **Dated update (2026-10-07, R15):** the initial `npm run check` against the shared target selected a stale pre-R14 `libsefer_alloc` for the compile-fail harness. A worktree-local target avoided that artifact; mixed candidates exposed E0433 registry wording, E0460 dependency-version mismatch, and E0463 missing-dependency diagnostics. Run 37681398463 on landing SHA d5fb531bb13b065968b014007dc8e2fef114b724 then exposed E0461 when host `rustc` probed an aarch64 rlib; commit 20b7c443 gates this harness to x86_64 targets. The focused tests and full 65-step `npm run check` pass. Item remains OPEN because worktree-local target isolation is still a manual mitigation.
 
+    > **Dated correction (2026-10-08, R16 independent verification of R15):** the update above misattributes the E0461 failure to the second run. CI run `37644289617` on `714ea5b7` already failed BOTH `test (aarch64-unknown-linux-gnu)` (E0461, host `rustc` probing an aarch64 rlib) and `test (x86_64-unknown-linux-gnu)` (E0463). `749dbfa9` fixed only the latter, so E0461 persisted into run `37681398463`. The `20b7c443` x86_64 gate also removed the harness from the native macOS arm64 job (3 tests before, 0 after) — tracked as `[T]` item 175. Status of this item unchanged.
+
 162. **[A] Root src R6-01/R6-03, R8-01 — complete terminal ingress and autonomous ownerless reclamation.**
 
     - **Status:** OPEN — concrete P1 acceptance blocker: both Miri borrowing models reject the real paused installed-Box frame. Terminal ingress/service and the R11 storage/preflight change are implemented; this failure is under active repair, not a future-task deferral.
@@ -193,12 +195,16 @@ the reversal record.)
     - **Next trigger:** add an integration regression covering unwind-tail exactly-once cleanup, then make each live slot retain cleanup ownership or guard the unprocessed tail. Preserve null-before-transfer and idempotence; cover `experimental` and `pinning`.
     - **Evidence:** `docs/reviews/2026-10-07-src-review-xs-round-15.md` §2 R15-01 and parent verification receipt; `src/concurrent/epoch/epoch_region.rs:682–692`; `src/concurrent/epoch/hand.rs:526–540,584–591`.
 
+    > **Dated update (2026-10-08, R16):** independently re-confirmed on `6a0d47f6` by a temporary witness (removed): with a panicking value in slot 0 and a live value in slot 1, the outer `catch_unwind` caught the panic, the panicking destructor ran once and the later value's destructor ran 0 times; the no-panic control dropped both. Status and trigger unchanged. Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md` appendix A; independent-verification section of the R15 report.
+
 173. **[A] Src review R15-02 — primordial route-attachment rollback misses the root release counter.** (Filed 2026-10-07.)
 
     - **Status:** OPEN — confirmed diagnostics-accounting defect on a fallible `alloc-global` bootstrap path, including `production`; the mapping itself is released by RAII.
     - **Current-number-or-verdict:** successful `Segment::reserve` increments `SEGMENTS_RESERVED_TOTAL`; failed `attach_owner` drops `Primordial` before ownership transfer, and `vmem::Reservation::drop` releases the mapping without calling root `os::release_segment`. Parent's temporary isolated witness observed reservation delta +1 and release delta 0 on injected first-registration refusal. No source fix or permanent regression is included in this review round.
     - **Next trigger:** account owning `Segment` rollback/unwind exactly once while preserving the existing explicit release after transfer; permanently test primordial and fallback registration refusal, success/retry, and Small/Large rollback counter controls.
     - **Evidence:** `docs/reviews/2026-10-07-src-review-xs-round-15.md` §2 R15-02 and parent verification receipt; `src/alloc_core/alloc_core/lifecycle.rs:255–282`; `src/alloc_core/platform/os.rs:217–228,557–565`; `crates/aligned-vmem/src/reservation.rs:1546–1567`.
+
+    > **Dated update (2026-10-08, R16):** independently re-confirmed on `6a0d47f6` by a temporary witness (removed): after `RouteDirectory::fail_next_registration_for_test()`, `HeapRegistry::dbg_claim_lease()` returned `None` with `segments_reserved_total` +1 and `segments_released_total` +0; the retry control was +1/+0 with ownership transferred. R16 also checked every other `Segment::reserve*` site: each pairs `mem::forget` with an explicit `release_segment`, so this primordial `attach_owner` exit is the only unaccounted RAII release found. Status and trigger unchanged. Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §2 and appendix A.
 
 174. **[A] Src review R16-01 — two release `.expect`s on `GlobalAlloc` free/trim paths are missing from the no-panic contract's "four release tripwires".** (Filed 2026-10-08.)
 

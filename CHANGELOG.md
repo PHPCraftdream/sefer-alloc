@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   R14 regressions passed 9/9, and three counterfactual mutants were each
   caught. No source, test, feature, or dependency change; no speedup is
   claimed. Manifest: `docs/perf/round-manifests/SRC_REVIEW_R16_MANIFEST.md`.
+- [review, R15 verification] An append-only independent verification of
+  round 15 confirms R15-01/02/03, the inventory numbers and the dispositions.
+  It corrects the R15 CI narrative: E0461 was already red in run
+  `37644289617` alongside E0463. It records the arm64 coverage loss (item175)
+  and the missed item22 supersession. Corrections are in item13, the R15
+  manifest §5 and the R15 report's appended section.
 
 ### Root allocator `src/` review round 15 (2026-10-07; read-only review)
 

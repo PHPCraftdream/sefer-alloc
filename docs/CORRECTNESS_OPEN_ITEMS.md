@@ -97,7 +97,11 @@ without a static bound). Item 22 is CLOSED/SUPERSEDED: its `RemoteFreeRing`
 subject no longer exists; its closure record is in `RESOLVED.md`. Items
 172/173 stay open; R16 reproduced both with its own executed witness. Item 154
 gains evidence only. All other statuses and triggers remain unchanged.
-Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md`.
+Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md`. The
+independent verification of round 15 is appended to
+`docs/reviews/2026-10-07-src-review-xs-round-15.md`; it corrects R15's CI
+narrative (E0461 was already red in run `37644289617`) in item 13 and in
+the R15 manifest, and adds re-confirmation notes to items 172/173.
 
 ---
 

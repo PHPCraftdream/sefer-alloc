@@ -51,3 +51,10 @@ The prior closing manifests (`714ea5b7` and `d5fb531b`) and this updated closing
 - Correctness-index count check — **149** ACTIVE/TRACKED headings; **140** `[T]` headings and **140** item-to-file lookup rows.
 - GitHub Actions run `37644289617` on initial landing SHA `714ea5b73c0a5558913a4af5d7b8048042fdd2e6` exposed E0463; run `37681398463` on landing SHA `d5fb531bb13b065968b014007dc8e2fef114b724` exposed E0461 from invoking host rustc on an aarch64 rlib. Test-only fixes in `749dbfa9` and `20b7c443` address both candidate-selection failures; no allocator runtime/source failure was observed.
 - No Miri, Loom, Kani, NUMA runtime witness, or R15-specific performance judge was run. The unmeasured optimization hypotheses remain proposals only.
+
+## §5. Independent verification correction (R16, 2026-10-08; append-only)
+
+- §4's CI sentence attributes E0461 to the second run. In fact run `37644289617` on `714ea5b7` already failed both `test (aarch64-unknown-linux-gnu)` (E0461) and `test (x86_64-unknown-linux-gnu)` (E0463). `749dbfa9` fixed only E0463, so E0461 recurred in run `37681398463`; run `37704825252` on `6a0d47f6` is green.
+- The `20b7c443` x86_64 gate also removed the R14-01 harness from the native macOS arm64 job (3 tests at `714ea5b7`, 0 at `6a0d47f6`). This is tracked as correctness item 175 (R16-02).
+- §4's census line (149 ACTIVE/TRACKED records; 140 `[T]` headings and lookup rows) is correct. The thin index's "8 ACTIVE cards" text was not: there were 9. It is corrected in round 16 (now 10 with item 174).
+- Full verdicts: the "Независимая проверка (oxx, 2026-10-08)" section at the end of `docs/reviews/2026-10-07-src-review-xs-round-15.md`.

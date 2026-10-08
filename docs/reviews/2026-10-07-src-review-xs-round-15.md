@@ -459,3 +459,50 @@ Derived anchored-attribute census: **21 module-level allows and 83 item-scoped a
 | `src/registry/heap_core_xthread/routing.rs` | 9, 24 |
 | `src/registry/heap_core_xthread/sidecar_drain.rs` | 55, 91 |
 | `src/registry/segment_route/pin.rs` | 45, 57 |
+
+## Независимая проверка (oxx, 2026-10-08)
+
+Раздел дописан без изменения текста выше (append-only). Проверяющий — oxx (Claude Opus 5.5, effort=max), один контекст, без суб-агентов, в изолированном worktree от `6a0d47f62b14eb724e027ab37054ad16037aa185`.
+
+**Что прочитано:** этот отчёт целиком; `docs/perf/round-manifests/SRC_REVIEW_R15_MANIFEST.md`; все коммиты `b1a1e4f9..6a0d47f6` (`git log`, `git show`, `--stat`); записи R15 в `CHANGELOG.md`, `docs/CORRECTNESS_OPEN_ITEMS.md`, `ACTIVE.md`, `RESOLVED.md`, `TRACKED_misc.md`. `git diff b1a1e4f9..6a0d47f6 -- src/` пуст, поэтому код базы раунда (`b1a1e4f9`) и проверяемого дерева совпадают побайтно. Строки ниже относятся к обоим.
+
+### Вердикты по находкам
+
+| Находка | Вердикт | Обоснование |
+|---|---|---|
+| R15-01 | **CONFIRMED** (P3, достижимость, места, рекомендация) | `epoch_region.rs:682–692` вызывает `drop_value` в цикле; `hand.rs:526–540` обнуляет указатель и дропает значение; у `AtomicSlot` нет `Drop` (`hand.rs:584–591`). Собственный исполненный witness: паника в слоте 0 → `caught=true panicking_drops=1 later_live_drops=0`; контроль без паники `1/1`. Порядок слотов из отчёта (первая вставка → слот 1) подтверждён. Для `ShardedRegion` вывод сделан по включению `EpochRegion`-шардов; отдельным запуском **НЕ ПРОВЕРЕНО** |
+| R15-02 | **CONFIRMED** (P3, места, механизм) | `lifecycle.rs:274–277`: `attach_owner(..)?` роняет `Primordial`; поле `segment` дропается раньше `table`; у `SegmentTable` нет `Drop`, а `routes` после отказа — `None`, так что use-after-unmap нет. RAII-освобождение идёт мимо `SEGMENTS_RELEASED_TOTAL` (`os.rs:557–566`). Собственный witness: reserved +1 / released +0; повтор +1/+0. Проверены все остальные места `Segment::reserve*`: пары `forget` + `release_segment` согласованы, так что дефект единственный. Fallback-вариант и Small/Large-откаты не запускались — **НЕ ПРОВЕРЕНО**, как и отмечено в отчёте. `crates/aligned-vmem/src/reservation.rs:1546–1567` не перечитывал |
+| R15-03 | **CONFIRMED** (P4) | Текст `sharded_region.rs:644–651` и `registry/mod.rs:50–54` совпадает с цитатой. Дополнение: тот же `pub mod segment_route` помечен `#[allow(dead_code)]` (`registry/mod.rs:53`), хотя модуль живой в production; это маскирует действительно мёртвые элементы. Добавлено к item 154 |
+
+### Вердикты по прочим пунктам проверки
+
+| Пункт | Вердикт | Обоснование и поправки |
+|---|---|---|
+| §3, исправления R14 (`62b16ce9`) и закрытие R14-01…05 | **CONFIRMED** для R14-01/02/04 (исполнено); **PARTIAL** для R14-03/05 (только чтение) | Прочитан src-диф (6 файлов). 9 R14-тестов на неизменённом дереве — 9 passed. Контрфактуальные мутанты, каждый пойман и откачен `git checkout --`: `pub fn prepare` → падает только prepare-фикстура (`exit Some(0)`), issue/Sync-фикстуры зелёные, то есть запечатаны независимо; без раннего выхода в `prune_dead_claims` → `78 vs 0` проверок и `3 vs 2` sweep; `router_intact = true` → два late-TLS теста красные (`left: 1, right: 0`; TLS AccessError). Строки таблицы §3 сверены: `small_sidecar.rs:50,62`, `registration.rs:12,28,34`. Остаток: `SmallSidecar::scan` остался `pub &self` с doc «Owner-only»; это безвредно, потому что слово забирается целиком атомарным `swap`, и не возвращает дефект R14-01 |
+| CI follow-up `247a52ad` (E0433) | **CONFIRMED**, не ослабляет | Добавлено точное совпадение второй формулировки rustc |
+| `c82c88c5` (E0460) | **CONFIRMED** | Пропускаются только устаревшие кандидаты, чьи зависимости перезаписаны под той же хэш-меткой файла |
+| `749dbfa9` (E0463) | **CONFIRMED**; механизм уточнён | По логу run `37644289617`, job `test (x86_64-unknown-linux-gnu)`: `can't find crate for rustversion which sefer_alloc depends on`. Под `--target` proc-macro `rustversion` (через `arc-swap`, `experimental`) лежит в host-deps, а кандидат из шага `--features experimental` его требует. Пропуск корректен |
+| `20b7c443` / `b24a181f` | **PARTIAL**: E0461 устранён, но утверждение «Native CI retains these API-visibility checks» **ОПРОВЕРГНУТО** | macOS job (`macos-26-arm64`, host `aarch64-apple-darwin`) исполнял харнесс 3/3 на `714ea5b7` (job `112870910476`) и 0 на `6a0d47f6` (job `113076568267`). Гейт по архитектуре — неточная замена условия «host == target». Дополнительно: модульный doc и doc позитивной пробы перечисляют устаревшие коды пропуска; нет проверки, что совместима именно текущая сборка. Заведено как correctness item 175 (R16-02). `b24a181f` — только rustfmt |
+| Вакуумность после follow-up'ов | **CONFIRMED не вакуумны** на x86_64 | Мутант `pub fn prepare` роняет тест; на arm64 тест не исполняется вовсе (см. выше) |
+| Числа §1 и приложений A/C | **CONFIRMED** | Скрипт: 168 файлов, 43 317 физических строк, 17 034 непустых строк, не начинающихся с `//`. Все 168 строк приложения A совпали по физическим строкам; сумма «tracked excerpt lines» 18 629 сходится арифметически. Что именно показывал ридер, проверить нельзя — **НЕ ПРОВЕРЕНО**. Unsafe: 21 + 83 командой CLAUDE.md; выборочно сверены строки `os.rs:28`, `directory.rs:3`, `shard_lock.rs:6`, `routing.rs:9,24`, `pin.rs:45,57` |
+| Версии в §1 | **CONFIRMED** | `Cargo.lock`: crossbeam-epoch 0.9.20, arc-swap 1.9.1, slotmap 1.1.1, aligned-vmem 0.2.0, numa-shim 0.2.0, once-ptr-cell 0.1.0, size-classes 0.1.0, sefer-region 0.2.0, sefer-alloc 0.3.0; edition 2021, MSRV 1.93 |
+| §5, таблицы disposition | **PARTIAL** | Perf-список из 74 ID совпал с заголовками файла. Списки correctness по файлам и перепись (148 → 149; 140 `[T]` и 140 строк lookup) верны. **Пропущено:** item 22 (`RemoteFreeRing::DrainHeadPublish`) оставлен открытым, хотя его тип отсутствует в `src/` — та же логика, по которой закрыт 157. Закрыт как superseded в R16. **Ошибки индекса:** тонкий индекс писал «8 cards currently» при 9 фактических ACTIVE-карточках, а список «`[A]` tier currently contains 1, 2, 11, 13, 62, 162, and 163» не включал 172/173. Оба исправлены R16 (теперь 10 карточек с item 174) |
+| §4, гипотезы | **CONFIRMED** как применимые | Двойной `guard.find` (`directory.rs:884`); повторный `canonical_block_of` (`dealloc_own_base.rs:347` после `routing.rs:22`); копия слов директории (`os.rs:706–724`); death-hint. Пункт 5 (`profile.rs`, три публичных типа) — **НЕ ПРОВЕРЕНО** |
+| «Candidates not promoted» (§4) | **НЕ ПРОВЕРЕНО** | Насыщение decay в 32-битной арифметике, wrap FIFO `seq` — не перепроверялись |
+| §6 «что запускалось» | **PARTIAL** | Утверждения автора «ничего не запускалось» согласуются с отчётом. Временные witness'ы родителя удалены и по коммиту не воспроизводятся, но их результат подтверждён независимыми witness'ами R16. «`npm run check` passed all 65 steps» и «IAI 85 benches» — **НЕ ПРОВЕРЕНО** (не перезапускалось) |
+| §6.3 и манифест §4, CI-нарратив | **ОПРОВЕРГНУТО по порядку событий** | В отчёте и манифесте сказано, что run `37644289617` «exposed E0463», а второй run `37681398463` «exposed E0461». На деле первый run уже имел **два** красных job'а: `test (aarch64-unknown-linux-gnu)` с E0461 (`couldn't find crate sefer_alloc with expected target triple x86_64-unknown-linux-gnu`) и `test (x86_64-unknown-linux-gnu)` с E0463. `749dbfa9` исправил только второй, и E0461 повторился во втором run. Та же ошибка — в датированной записи ACTIVE item 13 |
+| Статус CI | **CONFIRMED** | `6a0d47f6`: CI `37704825252` success (50 jobs success, 4 skipped), Kani `37704825276` success. `714ea5b7`: `37644289617` failure (2 jobs). `d5fb531b`: `37681398463` failure (1 job). У коммитов R14 (`7be55396`, `62b16ce9`, `b1a1e4f9`) собственных прогонов нет: первым их проверил красный `37644289617`; последний зелёный до R15 — `37505286215` на `d6417c6c` |
+
+### Внесённые изменения статусов и записей (этот коммит)
+
+- `docs/correctness-open-items/ACTIVE.md`: датированная поправка к записи item 13 (CI-нарратив, append-only); датированные записи независимого подтверждения к items 172 и 173. Статусы без изменений.
+- `docs/perf/round-manifests/SRC_REVIEW_R15_MANIFEST.md`: добавлен §5 с поправкой CI-нарратива и ссылкой на этот раздел (append-only).
+- `docs/CORRECTNESS_OPEN_ITEMS.md` (абзац R16) и `CHANGELOG.md` (запись R16): ссылка на эту проверку.
+- Раньше, коммитом записи R16: закрытие item 22 и исправление переписи ACTIVE; новые items 174–176.
+
+### Исполненные проверки и пределы
+
+- `cargo test --locked --features "production internals bench-internals experimental" --test zz_r16_review_witness -- --test-threads=1 --nocapture` (временный файл, удалён; код — в приложении A отчёта R16) → 4 passed.
+- `cargo test --locked --features "production internals bench-internals experimental" --test r14_sidecar_owner_capability_negative --test r14_shard_late_tls_teardown --test r14_shard_prune_work_bound -- --test-threads=1` → 9 passed; с тремя мутантами → 5 failed / 4 passed, ровно ожидаемые; после `git checkout --` дерево чистое.
+- Только чтение CI: `gh run list --commit <sha>`, `gh run view <id> --json jobs`, `gh run view <id> --log-failed`, `gh run view --job <id> --log`.
+- Пределы: Windows x86_64 host, debug-профиль, rustc 1.97.0. Не запускались Miri/Loom/Kani/TSan, release, MSRV, полный `npm run check`, aarch64/macOS локально. Feature-набор R15 (`alloc-global,internals,bench-internals`) не повторялся: использован более широкий набор с `production` и `experimental`.
