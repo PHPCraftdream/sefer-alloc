@@ -215,8 +215,7 @@ impl<T> EpochRegion<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         u32::try_from(capacity).expect("capacity overflows u32 index space");
         let slots: Vec<AtomicSlot<T>> = (0..capacity).map(|_| AtomicSlot::vacant()).collect();
-        // Free list starts with every slot, in ascending index order so the
-        // first inserts claim the lowest indices.
+        // Free list starts in ascending index order; pop claims highest indices first.
         let free: Vec<u32> = (0..capacity)
             .map(|i| u32::try_from(i).expect("index fits u32 (checked above)"))
             .collect();
@@ -685,9 +684,29 @@ impl<T> Drop for EpochRegion<T> {
     /// self` proves no reader or writer can race, so each occupied slot's value
     /// is taken and dropped directly. Values already `remove`d/`remote_evict`d
     /// were handed to `crossbeam-epoch` and are reclaimed at an epoch boundary.
+    /// Unwinding destructor panics are isolated per slot; after cleanup the first
+    /// is resumed unless an outer panic was already unwinding. Secondary payloads
+    /// are forgotten because their drop glue may panic. Abort-mode panics and
+    /// panicking panic hooks cannot be isolated.
     fn drop(&mut self) {
+        let already_unwinding = std::thread::panicking();
+        let mut first_panic = None;
         for slot in &mut self.slots {
-            slot.drop_value();
+            // AssertUnwindSafe: exclusive slot is emptied before its destructor and never reused.
+            if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                slot.drop_value();
+            })) {
+                if !already_unwinding && first_panic.is_none() {
+                    first_panic = Some(payload);
+                } else {
+                    // Unknown payload drop glue can panic: leak secondary payloads,
+                    // including all cleanup panics during an existing outer unwind.
+                    std::mem::forget(payload);
+                }
+            }
+        }
+        if let Some(payload) = first_panic {
+            std::panic::resume_unwind(payload);
         }
     }
 }
