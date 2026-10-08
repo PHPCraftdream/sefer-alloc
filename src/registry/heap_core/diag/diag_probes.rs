@@ -212,8 +212,7 @@ impl HeapCore {
     /// `dealloc_routing` caller already has it in hand from its own
     /// `contains_base` check.
     ///
-    /// Per this file's other `dbg_push_to_ring`-style hooks, this is an
-    /// `unsafe fn`: it forwards the identical [`HeapCore::dealloc`]
+    /// This is an `unsafe fn`: it forwards the identical [`HeapCore::dealloc`]
     /// caller-pointer contract (`ptr` is null or a live, exactly-once-freed
     /// start pointer previously returned by this heap's `alloc` for the same
     /// `layout`; `base` is that pointer's true segment base) — the same
@@ -245,7 +244,7 @@ impl HeapCore {
         feature = "bench-internals"
     ))]
     #[inline(always)]
-    #[allow(unsafe_code)] // R23-3: `unsafe fn` boundary, mirrors `dbg_push_to_ring`/`HeapCore::dealloc`.
+    #[allow(unsafe_code)] // Forwards HeapCore::dealloc's caller-pointer contract.
     pub unsafe fn dbg_dealloc_own_thread_with_base(
         &mut self,
         ptr: *mut u8,

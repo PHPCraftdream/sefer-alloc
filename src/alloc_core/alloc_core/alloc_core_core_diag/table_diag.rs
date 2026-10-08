@@ -254,11 +254,10 @@ impl AllocCore {
     /// `contains_base`), so an `id` inconsistent with the segment's true slot
     /// can make a later lookup land on the WRONG slot — corrupting the O(1)
     /// lookup for BOTH the stamped segment and the segment whose id was
-    /// borrowed. This is the same "writes raw / load-bearing metadata" class
-    /// that made [`dbg_unregister`](Self::dbg_unregister) /
-    /// [`dbg_recycle`](Self::dbg_recycle) (task #101 / R4-MS-3) and
-    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (R6-MS-4) `unsafe fn` in
-    /// this file: `#[doc(hidden)]` only hides from generated docs, it does NOT
+    /// borrowed. This has the same raw-metadata safety boundary as
+    /// [`dbg_unregister`](Self::dbg_unregister) and
+    /// [`dbg_recycle`](Self::dbg_recycle), the unsafe teardown hooks below:
+    /// `#[doc(hidden)]` only hides from generated docs, it does NOT
     /// restrict Rust reachability, so a fully-safe call could overwrite the
     /// field with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
     /// CRITICAL). The `contains_base_ro` assert below only proves the segment

@@ -249,9 +249,10 @@ impl SeferAlloc {
     /// post-cut publications can wait for the next call. Reservation release
     /// still follows the build's cache/decommit policy.
     ///
-    /// This is the owner-side sidecar contract, not a claim that the legacy
-    /// foreign `dealloc` ring/overflow/stack has already been converted, nor an
-    /// autonomous ownerless-reclamation guarantee. Trim still skips fallback.
+    /// Foreign frees publish through route-directory pins into terminal
+    /// sidecars; the owner performs a bounded cut per word and reclaims the
+    /// detached records without waiting for producers. This is not autonomous
+    /// ownerless reclamation. Trim still skips fallback.
     pub fn trim_current_thread(&self) {
         if let Some(heap) = current_for_trim() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a

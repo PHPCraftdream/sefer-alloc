@@ -3,9 +3,8 @@
 //! `heap_core_diag.rs`).
 //!
 //! This file holds the first half of the `impl HeapCore { .. }` block: the
-//! inspection test hooks (`dbg_owner_id_for`, `dbg_tcache_count`, etc.)
-//! through the ring-push / coarse-only simulation hooks (`dbg_push_to_ring`,
-//! `dbg_drain_all_rings`, `dbg_push_coarse_only_entry`). The promotion /
+//! inspection test hooks (`dbg_owner_id_for`, `dbg_tcache_count`, etc.).
+//! The promotion /
 //! hardened-defensive-noop counters, the `contains_base` family, the `unsafe`
 //! delegation wrappers, and the `dbg_decomp_*` family live in the sibling
 //! `diag_probes` module. Pure code-movement sibling of `heap_core.rs`; no

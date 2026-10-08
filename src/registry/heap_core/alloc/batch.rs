@@ -215,11 +215,9 @@ impl HeapCore {
     /// classification hoist (the TLS lookup is amortised at the `SeferAlloc`
     /// wrapper, not here).
     ///
-    /// G3 added Large/Small routing: Large-classified batches delegate to
-    /// `alloc_batch_large` (drain-equipped), Small batches carry the same
-    /// unconditional `drain_heap_overflow` prelude the scalar non-`fastbin`
-    /// path has, so batch correctness/retention behaviour now matches N
-    /// scalar `alloc` calls on the reclamation axis too.
+    /// Large batches delegate to `alloc_batch_large` for terminal sidecar
+    /// housekeeping. Small batches use `AllocCore::alloc_with_class`, whose
+    /// free-list discovery consumes routed candidate sidecars on misses.
     ///
     /// # ⚠ EXPERIMENTAL / UNSTABLE
     ///
@@ -240,10 +238,9 @@ impl HeapCore {
         let align = layout.align();
         let class = SizeClasses::class_for(size, align);
 
-        // G3 (P2): Large-classified batches must take the SAME drain-equipped
-        // Large loop the fastbin batch uses — delegate the whole call to
-        // `alloc_batch_large` (which performs the `drain_large_deferred_free`
-        // housekeeping) instead of duplicating a second generic loop here.
+        // Large batches share `alloc_batch_large`: it uses
+        // `drain_large_sidecar_ingress` without fastbin, or a bounded probe
+        // followed by a no-progress rescue sweep with fastbin.
         if class.is_none() {
             return self.alloc_batch_large(out, layout);
         }

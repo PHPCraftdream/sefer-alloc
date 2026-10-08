@@ -75,13 +75,10 @@ impl AllocCore {
     /// For each wanted slot we prefer an EXISTING free block and bump-carve ONLY
     /// when no free block remains:
     ///   1. Drain free blocks first — `pop_free(small_cur)`, and on a miss
-    ///      `find_segment_with_free` (which lazily drains each owned segment's
-    ///      remote-free ring, reclaiming cross-thread frees). This MUST run
-    ///      before any bump-carve: if we carved first, freed blocks sitting in
-    ///      the per-segment rings/BinTables would go stale, the rings would back
-    ///      up (RSS drift), and the xthread ring-reclaim expectations (A1) would
-    ///      break — a freed remote block must be reused, not stranded while we
-    ///      grow the bump cursor.
+    ///      `find_segment_with_free` (which consumes terminal sidecar cuts for
+    ///      routed candidates). This MUST run before any bump-carve: reusable
+    ///      blocks in sidecars/BinTables must not be stranded while we grow
+    ///      the bump cursor.
     ///   2. For the remaining slots, bump-carve DIRECTLY into `out` via
     ///      `carve_block` — no `dealloc_small`, no BinTable push, no subsequent
     ///      `pop_free`. `carve_block` already does `inc_live` + bump + page-map +
@@ -173,17 +170,11 @@ impl AllocCore {
         debug_assert!(block_size >= NODE_SIZE);
         let want = out.len();
         let mut filled = 0usize;
-        // Once the whole-heap free scan (`find_segment_with_free`) reports NO
-        // free block of this class anywhere AND has drained every owned
-        // segment's remote-free ring, there is nothing more to reclaim for the
-        // rest of THIS refill: our own frees cannot happen mid-refill, and
-        // remote frees that arrive now land in the (already-scanned) rings and
-        // are deferred to the NEXT refill's drain — exactly the amortisation
-        // the retired `carve_block_with_refill` used (it also drained/scanned
-        // once, then carved its whole batch). Latching this avoids re-running
-        // the O(segments) scan + ring drain on every carved block of a cold
-        // storm; correctness is unchanged because the drain still runs at
-        // least once BEFORE any carve (source order preserved).
+        // Once `find_segment_with_free` reports no reusable block of this
+        // class, latch the miss for this refill. Own frees cannot happen
+        // mid-refill; concurrent terminal publications after a candidate's
+        // cut can wait for the next discovery pass. This avoids repeating
+        // discovery on every carved block while preserving free-before-bump.
         let mut free_exhausted = false;
         while filled < want {
             // 1. FREE-DRAIN FIRST (order is non-negotiable — see doc). Prefer

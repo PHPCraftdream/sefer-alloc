@@ -603,14 +603,10 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 
 // ── R7-A1: directory sidecar VM reservation ────────────────────────────────
 //
-// The `SegmentDirectory` sidecar is materialized via the shared owner-only
-// sidecar primitive (`alloc_core::sidecar`, R14-9/task #294), which itself
-// wraps `aligned_vmem::leak_zeroed_pages` (M5-clean: direct OS syscall, no
-// `std::alloc`/`Box`/`Vec`; the reservation is leaked for the process
-// lifetime — same discipline as `RegistryChunk` / `HeapOverflowSidecar`).
-// Owner-only: the pointer lives in `AllocCore` and only the owning thread
-// ever dereferences it (no cross-thread race, no CAS protocol needed —
-// simpler than the `HeapOverflow` sidecar, which IS cross-thread).
+// The owner-only `SegmentDirectory` uses `reserve_zeroed_with` and an
+// `AccountedSidecar` token that releases its VM reservation with `AllocCore`.
+// Only the owning thread dereferences it; no cross-thread CAS publication
+// is needed for this directory pointer.
 
 /// Reserve and construct a [`crate::alloc_core::segment_directory::SegmentDirectory`] sidecar. Returns
 /// `Some((ptr, sidecar))` on success — `ptr` is the fully-valid initial

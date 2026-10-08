@@ -234,10 +234,9 @@ impl AllocCore {
         //   2. kind is Small/Primordial
         //   3. BinTable head for class_idx is STILL non-null
         //
-        // Before inspecting the BinTable, the candidate's remote-free ring
-        // is drained (P1-a), preserving the Variant-2 drain + decommit /
-        // pool hysteresis (P1-b) + ring_drain_head refresh (P1-d).
-        // On a valid hit, `unpool_if_present(base)` is called (P1-c).
+        // Before inspecting the BinTable, routed candidates consume terminal
+        // sidecar cuts. Route borrows end before decommit/pool finalization.
+        // On a valid hit, `unpool_if_present(base)` is called.
         //
         // On a directory MISS (no set bit yields a valid hit), R8-2 (task
         // #215) makes the directory AUTHORITATIVE in the common case: the
@@ -381,7 +380,7 @@ impl AllocCore {
                         bits &= bits - 1; // clear lowest set bit
                         let slot_idx = w * 64 + j;
 
-                        // Validate this candidate (base, kind, ring drain,
+                        // Validate this candidate (base, kind, sidecar drain,
                         // BinTable head) — the SINGLE choke point shared with
                         // the non-NUMA path so the criteria are byte-for-byte
                         // identical.
@@ -671,7 +670,7 @@ impl AllocCore {
     /// `slot_idx`) for `class_idx`. This is the SINGLE choke point for
     /// candidate validation — called by both the flat (non-NUMA) and
     /// node-indexed (NUMA) directory scans so the validation criteria are
-    /// byte-for-byte identical (base non-null, Small/Primordial kind, ring
+    /// byte-for-byte identical (base non-null, Small/Primordial kind, sidecar
     /// drain, BinTable head non-null). Returns `Some(base)` on a valid hit;
     /// returns `None` (after self-healing any stale bit) if the candidate is
     /// stale/empty/decommitted, so the caller continues to the next candidate.

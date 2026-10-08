@@ -1,5 +1,5 @@
-//! Process-wide route directory: HeapCore segment registration is connected;
-//! foreign-free ingress remains on the existing path.
+//! Process-wide route directory connects HeapCore segment registration to
+//! foreign-free terminal publication through descriptor pins and sidecars.
 //!
 //! Blocking progress: lookup takes one shard mutex and binary-searches a
 //! sorted block index, then one fixed-capacity sorted block. Registration

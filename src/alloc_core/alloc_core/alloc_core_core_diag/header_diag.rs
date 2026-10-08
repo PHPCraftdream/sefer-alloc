@@ -132,11 +132,10 @@ impl AllocCore {
     /// outside {0,1,2} decodes to `Unknown`, whose `dealloc` arm is a documented
     /// no-op — see [`dealloc`](AllocCore::dealloc) — so stamping such a byte and
     /// then `dealloc`-ing exercises that no-op path, not a mis-route.) This is
-    /// the same "writes raw / load-bearing metadata" class that made
-    /// [`dbg_unregister`](Self::dbg_unregister) /
-    /// [`dbg_recycle`](Self::dbg_recycle) (task #101 / R4-MS-3) and
-    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (R6-MS-4) `unsafe fn` in
-    /// this file: `#[doc(hidden)]` only hides from generated docs, it does NOT
+    /// the same raw-metadata safety boundary as
+    /// [`dbg_unregister`](Self::dbg_unregister) and
+    /// [`dbg_recycle`](Self::dbg_recycle) in `alloc_core_core_diag::table_diag`:
+    /// `#[doc(hidden)]` only hides from generated docs, it does NOT
     /// restrict Rust reachability, so a fully-safe call could overwrite the byte
     /// with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
     /// CRITICAL). The `contains_base_ro` assert below only proves the segment

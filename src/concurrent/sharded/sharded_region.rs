@@ -641,14 +641,13 @@ impl<T> ShardedRegion<T> {
     /// Explicitly binds the CALLING thread to a SPECIFIC shard `id` (Phase 7c,
     /// `pinning`), overriding the lazy round-robin/scan-free claim.
     ///
-    /// After this returns `true`, the calling thread's subsequent
-    /// [`insert`](Self::insert)/[`get_with`](Self::get_with)/[`remove`](Self::remove)
-    /// route to shard `id` directly (the TLS router trusts a cached, in-range
-    /// binding on the fast path). This is what makes the `shard == core`
-    /// topology deterministic: a thread-per-core runner pins thread *i* to core
-    /// *i* and binds it to shard *i*, so each thread owns exactly the shard
-    /// matching its core — maximal cache locality, no cross-shard contention,
-    /// and (because the hot path holds no lock) naturally async-safe.
+    /// After this returns `true`, subsequent [`insert`](Self::insert) calls
+    /// use the cached shard binding. [`get_with`](Self::get_with) and
+    /// [`remove`](Self::remove) still address `handle.shard`; the binding only
+    /// selects owner versus remote removal. The token claim is best-effort,
+    /// not exclusive ownership or an OS affinity guarantee. Insert and owner
+    /// removal take the writer mutex; remote removal can take the queue mutex.
+    /// Binding therefore promises neither nonblocking nor async-safe execution.
     ///
     /// # Returns
     ///

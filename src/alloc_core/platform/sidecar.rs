@@ -49,12 +49,10 @@
 //! alongside the sidecar pointer and dropping the core drops the token,
 //! releasing the span back to the OS exactly once (the release is counted by
 //! `platform::sidecar_stats`' process-wide reservation/release counters, the
-//! R2-12 acceptance oracle). The only spans still reserved for the process
-//! lifetime are the explicitly-sanctioned process-global ones: registry
-//! heaps' sidecars (never dropped, bounded by `MAX_HEAPS`) and the
-//! cross-thread-published sidecars (`dirty_by_class`'s `PerClassDirty`,
-//! `registry::bootstrap`'s `HeapOverflowSidecar`), each of which documents
-//! its own process-global justification at its reservation site.
+//! R2-12 acceptance oracle). Registry heaps retain their owner sidecars for
+//! their process-static slot lifetime, bounded by `MAX_HEAPS`. Terminal route
+//! descriptors and ingress sidecars have separate refcounted storage; they
+//! are reclaimed after unlink when the last descriptor pin is dropped.
 //!
 //! Because the span can now be released while the process lives, the
 //! references [`deref`]/[`deref_mut`] hand out are OWNER-TIED, not

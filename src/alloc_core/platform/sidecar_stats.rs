@@ -12,10 +12,9 @@
 //! AccountedSidecar` token, released with the owning `AllocCore`). These
 //! counters are the fix's acceptance oracle: across a churn lifecycle,
 //! releases must equal reservations per sidecar kind, so after the last drop
-//! every owner-scoped span is accounted released and only the
-//! explicitly-sanctioned process-global spans (registry-slot-lifetime
-//! sidecars, the cross-thread-published `PerClassDirty`/
-//! `HeapOverflowSidecar`) remain reserved.
+//! every owner-scoped span is accounted released. Registry heaps retain
+//! owner sidecars for their process-static slot lifetime. Refcounted terminal
+//! route descriptors and ingress sidecars have separate storage accounting.
 //!
 //! ## The three breakouts
 //!

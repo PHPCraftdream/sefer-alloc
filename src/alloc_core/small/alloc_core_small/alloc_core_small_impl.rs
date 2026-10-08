@@ -653,12 +653,9 @@ impl AllocCore {
     ) -> Option<*mut u8> {
         let segment = self.small_cur;
         let mut meta = SegmentMeta::new(segment);
-        // Field-specific bump read/write (task #33 root-cause fix): the Owner
-        // touches ONLY the `bump` field, never the cross-thread-read header
-        // fields. A full-struct `write_header` here rewrote `magic`/`kind`/
-        // `owner_thread_free` too, racing a Remote's full-struct `read_at` in
-        // `dealloc_routing` (the §11 data race). `bump` is owner-only (no
-        // Remote reads it), so a plain field write is race-free.
+        // Read/write only the owner-only `bump` field, never the whole header.
+        // Terminal foreign frees use route descriptors and independent sidecars;
+        // they do not read this bump cursor.
         let bump = meta.bump_of();
         let aligned_bump = align_up(bump, block_size);
         if aligned_bump + block_size > SEGMENT {

@@ -47,10 +47,9 @@ mod heap_core_xthread;
 pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
-// Unconnected Stage 3 substrate; exposed only through the existing
-// doc-hidden `internals` test surface.
+// Production segment registration and foreign-free terminal routing;
+// external access uses the doc-hidden `internals` surface.
 #[doc(hidden)]
-#[allow(dead_code)]
 pub mod segment_route;
 
 #[doc(hidden)]

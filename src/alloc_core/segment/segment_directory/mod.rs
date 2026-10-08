@@ -76,14 +76,11 @@
 //! ## Lazy materialisation
 //!
 //! NOT placed inline in every `AllocCore` / `HeapSlot`. Instead, a plain
-//! `*mut SegmentDirectory` in `AllocCore` starts null and is populated via
-//! the same M5-clean direct-VM reservation pattern R6 established in
-//! `registry::bootstrap` / `registry::heap_overflow`
-//! (`aligned_vmem::reserve_aligned` + `mem::forget`). The directory is
-//! owner-only (single-writer, single-reader — the owning thread), so no
-//! `AtomicPtr` or CAS protocol is needed (unlike the `HeapOverflow` sidecar,
-//! which is cross-thread and needs CAS-publish). The VM reservation and raw
-//! pointer dereference live in the existing `alloc_core::os`
+//! `*mut SegmentDirectory` in `AllocCore` starts null and is populated through
+//! `reserve_zeroed_with`, with an `AccountedSidecar` owning the VM reservation.
+//! The directory is owner-only (single-writer, single-reader — the owning
+//! thread), so its pointer needs no `AtomicPtr` or CAS publication protocol.
+//! VM reservation and raw pointer dereference live in `alloc_core::os`'s
 //! `#![allow(unsafe_code)]` seam (`reserve_directory_sidecar` /
 //! `deref_directory_sidecar[_mut]`).
 //!
@@ -98,8 +95,8 @@
 //! null and the mechanism is simply off (falls back to the linear scan).
 //! Never abort.
 //!
-//! Pointer stable until heap death; `mem::forget`-leaked for the process
-//! lifetime (same discipline as `RegistryChunk` / `HeapOverflowSidecar`).
+//! Pointer stable until the owning `AllocCore` drops its sidecar token;
+//! standalone cores release this reservation, registry-slot cores persist.
 
 #[path = "segment_directory_impl.rs"]
 mod segment_directory_impl;

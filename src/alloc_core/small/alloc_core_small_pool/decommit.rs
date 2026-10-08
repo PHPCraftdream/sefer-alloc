@@ -177,8 +177,8 @@ impl AllocCore {
         // frontier is not touched (it is SEGMENT throughout on the eager path).
         // This keeps the feature-OFF behaviour byte-identical.
         //
-        // Metadata and the remote-free ring are NEVER decommitted: they live in
-        // `[0, meta_end)`, which is entirely below the decommit range.
+        // Metadata in `[0, meta_end)` is outside the decommit range.
+        // Terminal ingress lives in independent sidecars, not this payload.
         #[cfg(feature = "small-segment-lazy-commit")]
         {
             // R8-6 (task #219): the decommit boundary must be REAL-OS-page-
