@@ -480,10 +480,13 @@ impl HeapCore {
                     // `flush_class`/`flush_run`; this bitmap's clear happens
                     // here since `AllocCore` has no magazine concept).
                     for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
-                        let (fbase, _) = self
-                            .core
-                            .canonical_block_of(flushed)
-                            .unwrap_or_else(|| std::process::abort());
+                        // Allocator-issued magazine pointers preserve provenance: Small/Primordial roots are exact; Large is excluded.
+                        let fbase = crate::alloc_core::os::segment_base_of_ptr(flushed);
+                        debug_assert_eq!(
+                            self.core.canonical_root_for(flushed),
+                            Some(fbase),
+                            "overflow magazine block must map to its segment base"
+                        );
                         let foff = (flushed.addr() - fbase.addr()) as u32;
                         SegmentMeta::new(fbase)
                             .magazine_bitmap()
