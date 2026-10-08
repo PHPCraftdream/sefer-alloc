@@ -22,10 +22,8 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_is_decommitted_for(&self, ptr: *mut u8) -> Option<bool> {
-        let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base_ro(base) {
-            return None;
-        }
+        let candidate = os::segment_base_of_ptr(ptr);
+        let base = self.table.canonical_base_of(candidate)?;
         if !matches!(
             SegmentHeader::kind_at(base),
             SegmentKind::Small | SegmentKind::Primordial

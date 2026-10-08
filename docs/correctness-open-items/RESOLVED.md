@@ -15,6 +15,20 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 177 — Src review R17-UNS-01: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the R18 P1 remediation commit.
+- **Current verdict:** `AllocCore::dbg_is_decommitted_for` now uses the address-derived
+  segment base only as a numeric lookup key, then reads kind/decommit metadata
+  through `SegmentTable::canonical_base_of`'s stored pointer. Its safe signature,
+  gates, and `None` lookup-miss behavior are unchanged.
+- **Evidence:** `tests/decommit_miri_cycle.rs::dbg_is_decommitted_for_sound_under_provenance_less_input`;
+  focused native run passed (1 test), positive `node scripts/miri.mjs
+  decommit_miri_cycle` passed (2 tests), and the old caller-derived implementation
+  failed the Miri revert control with a no-provenance pointer-arithmetic error at
+  `src/alloc_core/platform/node.rs:416`. Restored native/Miri runs passed.
+- **Next trigger:** none for this diagnostic provenance defect.
+
 ### 175 — Src review R16-02: CLOSED (2026-10-08)
 
 - **Status:** CLOSED — confirmed by green CI: run `37776932309` (SHA `eda25f97`) and run `37783258647` (SHA `b5247602`, final implementation), both Kani green. Commits `6f568c25` (first gate, rejected), `eda25f97` (compiler-verdict gate), `b5247602` (source-freshness filter).

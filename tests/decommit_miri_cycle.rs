@@ -25,6 +25,29 @@ use sefer_alloc::alloc_core::AllocCore;
 use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
 #[test]
+fn dbg_is_decommitted_for_sound_under_provenance_less_input() {
+    let mut ac = AllocCore::new().expect("primordial");
+    let layout = Layout::from_size_align(64, 8).unwrap();
+    let real = ac.alloc(layout);
+    assert!(!real.is_null());
+    assert_eq!(ac.dbg_is_decommitted_for(real), Some(false));
+
+    // The Phase-2 Miri revert control observed a strict-provenance failure
+    // when the old implementation read metadata through this address-only key.
+    let forged = core::ptr::without_provenance_mut::<u8>(real.addr());
+    assert_eq!(ac.dbg_is_decommitted_for(forged), Some(false));
+    assert_eq!(ac.dbg_is_decommitted_for(core::ptr::null_mut()), None);
+    assert_eq!(
+        ac.dbg_is_decommitted_for(core::ptr::without_provenance_mut::<u8>(1)),
+        None
+    );
+
+    // SAFETY: real is live with this layout and freed once; forged is never
+    // dereferenced by the test.
+    unsafe { ac.dealloc(real, layout) };
+}
+
+#[test]
 fn decommit_recommit_cycle_bookkeeping() {
     let before = AllocCore::dbg_decommit_count();
     // Mechanism 2 (task #51): DISABLE the empty-small-segment pool for this

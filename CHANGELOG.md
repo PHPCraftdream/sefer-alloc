@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 18 remediation (2026-10-09)
+
+Runtime improvements this round: 0. The P1 change repairs a safe internal
+diagnostic hook; no production feature composition or allocator algorithm
+changed.
+
+- [correctness fix] `AllocCore::dbg_is_decommitted_for` now resolves the input
+  address to the segment table's canonical stored pointer before reading
+  metadata. The focused `decommit_miri_cycle` regression passes natively and
+  under strict-provenance Miri; restoring the caller-derived metadata access
+  fails Miri with a no-provenance diagnostic, then the fixed implementation
+  passes again.
+
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 
 Runtime improvements this round: 1 (one deterministic Ir saving on an

@@ -348,12 +348,12 @@ consulted on demand, exactly as before.
 
 **Item-number -> file lookup table.** It covers every `[T]`-tier number,
 including `59a`/`59b`, plus retained closure pointers. Item157 moved to
-`RESOLVED.md` in R15 and item22 in R16; items168–170 remain the R13/R14
-closure pointers, item171 is the `[T]` verification card, items 172–176 are
-R16 closures held in `RESOLVED.md`. Other `[A]` citations resolve directly
-in `ACTIVE.md`. The total is deliberately not typed here. Compare the two `[T]`
-numbered-record counts; the second excludes `RESOLVED.md` and counts only
-`TRACKED_*.md` destinations:
+`RESOLVED.md` in R15 and item22 in R16; items168–170 remain R13/R14 closure
+pointers, item171 is the `[T]` verification card, items172–176 are R16 closures,
+and item177 is the R17 provenance closure in `RESOLVED.md`. Other `[A]`
+citations resolve directly in `ACTIVE.md`. The total is deliberately not typed
+here. Compare the two `[T]` numbered-record counts; the second excludes
+`RESOLVED.md` and counts only `TRACKED_*.md` destinations:
 
 ```text
 grep -hE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_*.md | wc -l
@@ -513,6 +513,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 174 | `RESOLVED.md` |
 | 175 | `RESOLVED.md` |
 | 176 | `RESOLVED.md` |
+| 177 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
