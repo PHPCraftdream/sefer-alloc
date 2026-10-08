@@ -15,6 +15,44 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 179 — Src review R17-UNS-05: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the R18 hardened generation-table cutover.
+- **Current verdict:** the write-only hardened generation-table API and its
+  issue-time bump callsites are removed. The only integer-to-pointer
+  reconstruction cited by R17-UNS-05 was part of that removed generation bump;
+  the batch refill no longer reconstructs a pointer from its address.
+- **Evidence:** the generation-table module, layout accessors, initializers,
+  writers, and table-only tests are deleted. Source/tests/README/DURABILITY
+  searches found no `gen_at`, `bump_gen`, or generation-table symbols;
+  `cargo test --test no_stale_doc_references --features "production internals"`
+  passed (31 tests). No RSS/Ir result is claimed.
+- **Next trigger:** none for the removed batch provenance path.
+
+### 178 — Src review R17-SEC-02: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by R18's hardened freelist-state validation.
+- **Current verdict:** hardened scalar and batch drains validate the head and
+  each continuation's in-segment offset, payload geometry, class alignment,
+  bump frontier, free bitmap, and magazine residency before mutation; direct
+  self-cycles and batch cycles reject. The non-hardened hot path remains
+  unchanged; this addresses corruption containment after invalid allocator
+  access, not a safe-caller exploit.
+- **Evidence:** `regression_freelist_next_validation` passed 6/6 in debug and
+  release; `regression_batch_freelist_drain` passed 3/3 hardened and 4/4
+  production; `no_stale_doc_references` passed 31/31. Removing continuation
+  free-state validation made both scalar and one-slot batch tests fail (batch
+  drained 1 instead of 0). Replacing out-of-segment continuation handling made
+  the scalar test fail and caused the batch path to fail earlier with checked
+  subtraction overflow in the batch commit's raw `next`-to-offset conversion,
+  before dereferencing the forged address. Removing the direct self-link check
+  made the scalar self-cycle test fail; batch still rejected the cycle through
+  its independent preflight. Every mutation was restored and the positive
+  regressions passed.
+  The first run found a test-oracle issue only: refill left a valid prior tail,
+  so the test now snapshots and preserves it instead of assuming an empty list.
+- **Next trigger:** none for the reviewed hardened head/continuation guard.
+
 ### 177 — Src review R17-UNS-01: CLOSED (2026-10-09)
 
 - **Status:** CLOSED by the R18 P1 remediation commit.

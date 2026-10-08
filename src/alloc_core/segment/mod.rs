@@ -20,19 +20,9 @@ pub(crate) mod segment_directory;
 /// `PageMap`/`BinTable`/`Layout`/`SegmentMeta` (`mod.rs` +
 /// `descriptors.rs` + `layout_asserts.rs`), the `#[path]`-moved
 /// field-accessor siblings (`segment_header_layout.rs`,
-/// `segment_header_meta_fields.rs`, `segment_header_views.rs`), and the
-/// `hardened`-gated generation-table accessors
-/// (`segment_header_gen_table.rs`).
+/// `segment_header_meta_fields.rs`, `segment_header_views.rs`).
 #[doc(hidden)]
 pub mod segment_header;
-/// X7 Ф1 (task #189) generation-table byte-level accessors (`gen_at`/
-/// `bump_gen`/`init_gen_table_in_place`) — split out of `segment_header.rs`
-/// (task R6-CQ-7c). Compiled only under `hardened` (every item in the file is
-/// `#[cfg(feature = "hardened")]`), so the module declaration itself is gated
-/// the same way.
-#[cfg(feature = "hardened")]
-#[path = "segment_header/segment_header_gen_table.rs"]
-pub(crate) mod segment_header_gen_table;
 #[path = "segment_header/segment_header_layout.rs"]
 pub(crate) mod segment_header_layout;
 #[path = "segment_header/segment_header_meta_fields.rs"]

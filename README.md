@@ -729,20 +729,14 @@ item-scoped regions.
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs) | 1 | `dbg_stamp_kind_byte` (raw metadata write) — `unsafe fn` boundary |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 1 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
 | [`src/alloc_core/large/alloc_core_large_cache.rs`](src/alloc_core/large/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
-| [`src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs`](src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs) | 1 | Internal generation-table call-site block (hardened path) |
-| [`src/alloc_core/small/alloc_core_small/reserve.rs`](src/alloc_core/small/alloc_core_small/reserve.rs) | 1 | Internal `init_gen_table_in_place` call-site block (in `reserve_small_segment`), hardened path |
 | [`src/alloc_core/small/alloc_core_small/find_segment.rs`](src/alloc_core/small/alloc_core_small/find_segment.rs) | 1 | `find_segment_with_free_impl` — calls the `unsafe fn`s `os::read_directory_node_bucket` / `os::read_directory_class_words` (R17-2, task #319) |
 | [`src/alloc_core/small/alloc_core_small/directory.rs`](src/alloc_core/small/alloc_core_small/directory.rs) | 3 | `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/small/alloc_core_small_diag.rs`](src/alloc_core/small/alloc_core_small_diag.rs) | 5 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations |
 | [`src/alloc_core/small/alloc_core_small_magazine.rs`](src/alloc_core/small/alloc_core_small_magazine.rs) | 1 | `flush_class` — `unsafe fn` boundary (caller-pointer contract) |
 | [`src/alloc_core/small/alloc_core_small_pool/decommit.rs`](src/alloc_core/small/alloc_core_small_pool/decommit.rs) | 1 | `dbg_force_decommit_retain_for` (R29-8, task #439, gated `bench-internals`) — `unsafe fn` boundary: decommits a caller-pointer's segment payload via `decommit_empty_segment_impl` with NO `live_count` check, so the `live_count == 0` precondition lives in the `# Safety` contract, not the body |
 | [`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`](src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs) | 5 | The R29-3 (task #434) segment-lifecycle-decomposition `unsafe fn` boundary `dbg_decomp_decommit_payload` (decommit a caller-supplied segment base's payload) — gated `bench-internals`, forwarding its `# Safety` contract verbatim to the `HeapCore`-level delegation of the same name in `heap_core/diag/diag_probes.rs`; plus the R31-6 (task #469) sibling `unsafe fn` boundary `dbg_decomp_recommit_payload` (recommit a caller-supplied segment base's payload — a real `VirtualAlloc(MEM_COMMIT)` on Windows, a documented no-op on Unix/miri — the counterpart `examples/r29_3_decomposition_gate.rs`'s Measurement B re-fault loop was missing, which crashed that example on Windows); plus `dbg_decomp_release` — `unsafe fn` again as of R31-15 (task #486): R31-4's move-consuming `ReservedSmallSegment` handle closed unforgeability and double-release but NOT owner-binding (a handle reserved on one `AllocCore` could be released on a DIFFERENT `AllocCore`, both safe API calls, corrupting the wrong heap's pool/directory/`SegmentTable` state — a CONFIRMED P0 soundness defect), so the `# Safety` contract ("handle reserved on THIS SAME `AllocCore`, still live/unreleased") is back, layered with a release-build (non-`debug_assert!`) owner-id check as defence-in-depth (see `src/alloc_core/small/reserved_small_segment.rs`'s module doc, "Owner-binding" section); plus two task #504 (F11 step 2) `unsafe fn` boundaries, `dbg_decomp_win_commit_only` (commits a caller-supplied segment base's `[PAGE, SEGMENT)` range — documented raw-pointer precondition) and `dbg_decomp_win_release_only` (releases a caller-supplied `(reservation_ptr, reservation_len)` pair — same double-release/wrong-reservation hazard class as `dbg_decomp_release`), both gated `bench-internals`, isolating `VirtualAlloc(MEM_RESERVE)` from `VirtualAlloc(MEM_COMMIT)` for the Windows-native decomposition gate. |
-| [`src/alloc_core/alloc_core/bootstrap.rs`](src/alloc_core/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` (primordial carve, hardened path) |
 | [`src/alloc_core/alloc_core/sidecar_test_hooks.rs`](src/alloc_core/alloc_core/sidecar_test_hooks.rs) | 1 | Test-only terminal-sidecar publication boundary. |
 | [`src/alloc_core/segment/segment_directory/segment_directory_impl.rs`](src/alloc_core/segment/segment_directory/segment_directory_impl.rs) | 2 | `init_node_ids_raw` variants — raw fixup of not-yet-valid sidecar storage. |
-| [`src/alloc_core/segment/segment_header/segment_header_gen_table.rs`](src/alloc_core/segment/segment_header/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
-| [`src/registry/heap_core/alloc/hot.rs`](src/registry/heap_core/alloc/hot.rs) | 4 | Internal generation-table call-site blocks in the magazine issue paths (hardened path). |
-| [`src/registry/heap_core/alloc/batch.rs`](src/registry/heap_core/alloc/batch.rs) | 2 | Internal `bump_gen` call-site blocks in `alloc_batch` (both feature variants) (hardened path) |
 | [`src/registry/heap_core/free/dealloc_batch.rs`](src/registry/heap_core/free/dealloc_batch.rs) | 8 | Batch free caller-pointer boundaries and internal scalar/flush calls. |
 | [`src/registry/heap_core/diag/diag_probes.rs`](src/registry/heap_core/diag/diag_probes.rs) | 8 | `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) / `dbg_clear_magazine_on_hit` (R29-10, task #441, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) — plus the R29-3 `dbg_decomp_decommit_payload`/`dbg_decomp_recommit_payload` (R31-6, task #469) delegations (gated `bench-internals`); see the R24-6/R25-1 note below the table. (`dbg_decomp_release`'s delegation is `unsafe fn` again as of R31-15/task #486 — forwards the identical `# Safety` contract; see the `alloc_core_small_pool/decomp_hooks.rs` row above for why.) Plus two task #504 (F11 step 2) delegations, `dbg_decomp_win_commit_only`/`dbg_decomp_win_release_only` (gated `bench-internals`), forwarding their identical `# Safety` contracts from the `alloc_core_small_pool/decomp_hooks.rs` originals. |
 | [`src/registry/heap_core/free/dealloc.rs`](src/registry/heap_core/free/dealloc.rs) | 2 | `dealloc` — `unsafe fn` boundary (caller-pointer contract) + internal call-site block into `AllocCore::dealloc` |
@@ -758,7 +752,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **103** tier-2 item-scoped allows across **34**
+`src/`, 6 in `crates/`) plus **91** tier-2 item-scoped allows across **28**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1370,7 +1364,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **372 integration test files**,
+needs its acceptance run. The present tree contains **369 integration test files**,
 **83 example binaries**, **23 benches**, and **13 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1380,7 +1374,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (372 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (369 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (83 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (23 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

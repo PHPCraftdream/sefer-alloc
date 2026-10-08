@@ -436,22 +436,6 @@ impl AllocCore {
             base,
             SegLayout::magazine_bitmap_off(),
         ));
-        // X7 Ф3 (task #191): zero the per-segment generation table under
-        // `hardened`. Compiled ONLY under `hardened`; under any other feature
-        // the table does not exist and this call is absent (byte-identical to
-        // the pre-X7 build). Closes the carried-over Ф1 gap: without this
-        // zeroing, a `gen_at`/`bump_gen` Relaxed load on a never-written cell
-        // is UB. NOT re-zeroed on decommit-reset (plan §2.2: generation
-        // numbering is continuous across decommit-reset by design).
-        #[cfg(feature = "hardened")]
-        {
-            // SAFETY: `base` is a live, exclusively-owned segment whose
-            // generation table is carved and writable.
-            #[allow(unsafe_code)]
-            unsafe {
-                crate::alloc_core::segment_header::init_gen_table_in_place(base)
-            };
-        }
         // R7-A1: check whether the segment count has crossed the directory
         // materialisation threshold. If so, materialize the sidecar and do
         // the one-time rebuild. This is a lazy, one-shot operation: once the

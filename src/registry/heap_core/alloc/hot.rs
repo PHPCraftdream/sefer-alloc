@@ -29,21 +29,10 @@ impl HeapCore {
     /// HIT (a fresh refill's issued block never sets this bit to begin with,
     /// so only the two hit arms, `alloc` and `alloc_small_zeroed_via_magazine`,
     /// need this) clears the physical magazine-residency bit set on admission.
-    /// Resolves the stored segment root;
-    /// returns `(base, off)` so an
-    /// immediately-following `hardened` generation bump
-    /// ([`bump_gen_on_issue`](Self::bump_gen_on_issue)) can reuse them instead
-    /// of re-deriving `base` via a second `segment_base_of_ptr` call — before
-    /// this task both hit arms recomputed `base`/`off` independently for the
-    /// clear and the hardened bump back to back, a real (if small)
-    /// double-computation this extraction closes as a side effect of
-    /// deduplication, not a separate fix.
+    /// Resolves the stored segment root and clears its residency bit.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
-    pub(in crate::registry::heap_core) fn clear_magazine_on_issue(
-        &self,
-        issued: *mut u8,
-    ) -> (*mut u8, usize) {
+    pub(in crate::registry::heap_core) fn clear_magazine_on_issue(&self, issued: *mut u8) {
         let base = os::segment_base_of_ptr(issued);
         debug_assert_eq!(
             self.core.canonical_root_for(issued),
@@ -54,29 +43,6 @@ impl HeapCore {
         SegmentMeta::new(base)
             .magazine_bitmap()
             .clear_magazine(off as u32);
-        (base, off)
-    }
-
-    /// Task #2000: the shared "bump the block's generation at magazine issue"
-    /// step (X7 Ф3, task #191) — six near-identical inline copies of this
-    /// exact call existed across `hot.rs`/`batch.rs`/`diag_probes.rs` before
-    /// this task. The block leaves the allocator's bookkeeping (the
-    /// magazine) and enters the caller's hands at this life transition;
-    /// compiled ONLY under `hardened` (non-hardened builds never call this —
-    /// every call site keeps its own `#[cfg(feature = "hardened")]` guard).
-    ///
-    /// # Safety
-    ///
-    /// `base` must be a live, exclusively-owned segment; `off` must be a
-    /// MIN_BLOCK-aligned offset of a real block within it — the same
-    /// precondition every inlined call site this replaces already
-    /// documented locally.
-    #[cfg(feature = "hardened")]
-    #[inline(always)]
-    #[allow(unsafe_code)]
-    pub(super) unsafe fn bump_gen_on_issue(base: *mut u8, off: usize) {
-        // SAFETY: forwarded from this fn's own contract, documented above.
-        unsafe { crate::alloc_core::segment_header::bump_gen(base, off) };
     }
 
     /// Task #2002: the shared tail of [`refill_magazine_slow`](Self::refill_magazine_slow)
@@ -87,8 +53,7 @@ impl HeapCore {
     /// were byte-for-byte identical: given `n` freshly-refilled blocks now
     /// resident in `tcache.classes[c].slots[0..n]`, stamp each distinct
     /// source segment (P4 hoist + Э11 stamp-dedupe), mark the first `n-1` as
-    /// magazine-resident (RAD-5), pop the last (`slots[n-1]`) for the caller,
-    /// and (hardened only) bump its generation at issue.
+    /// magazine-resident (RAD-5), pop the last (`slots[n-1]`) for the caller.
     ///
     /// # Preconditions
     ///
@@ -135,26 +100,7 @@ impl HeapCore {
                 .magazine_bitmap()
                 .mark_magazine(poff);
         }
-        let issued = self.tcache.classes[c].slots[new_cnt];
-        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. The block
-        // leaves the allocator's bookkeeping (the magazine) and enters the
-        // caller's hands — this is the life transition. This is the refill
-        // path's issue point (the refill fills n slots, then pops ONE off the
-        // top for the caller; the remaining n-1 are still allocator-owned in
-        // the magazine and are bumped on THEIR respective pops). Compiled ONLY
-        // under `hardened`; non-hardened is byte-identical.
-        #[cfg(feature = "hardened")]
-        {
-            let base = os::segment_base_of_ptr(issued);
-            let off = (issued as usize) - (base as usize);
-            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
-            // MIN_BLOCK-aligned offset.
-            #[allow(unsafe_code)]
-            unsafe {
-                Self::bump_gen_on_issue(base, off);
-            }
-        }
-        issued
+        self.tcache.classes[c].slots[new_cnt]
     }
 
     /// Allocate `layout.size()` bytes satisfying `layout.align()`. Returns a
@@ -355,33 +301,14 @@ impl HeapCore {
                         }
                         // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
                         // magazine-residency bit — this block leaves the
-                        // magazine for the caller. THE HOT PATH: unlike the
-                        // `hardened`-only gen-table bump below, this runs on
+                        // magazine for the caller. THE HOT PATH: this runs on
                         // EVERY magazine hit under `production`, so it forces
                         // a `segment_base_of_ptr` + bitmap read-modify-write
                         // that this path previously did not pay AT ALL. See
                         // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
                         // measured cost of this specific store on
                         // `small_churn_16b` et al.
-                        #[cfg_attr(not(feature = "hardened"), allow(unused_variables))]
-                        let (base, off) = self.clear_magazine_on_issue(issued);
-                        // X7 Ф3 (task #191) touch (a): bump the generation at
-                        // ISSUE. The block leaves the allocator's bookkeeping
-                        // (the magazine) and enters the caller's hands — this
-                        // is the life transition. Compiled ONLY under
-                        // `hardened`; non-hardened is byte-identical (the
-                        // `cfg(not)` branch is a bare passthrough).
-                        #[cfg(feature = "hardened")]
-                        {
-                            // SAFETY: `base`/`off` describe the block just
-                            // cleared above — a live, exclusively-owned
-                            // segment and a MIN_BLOCK-aligned offset within
-                            // it (`clear_magazine_on_issue`'s own contract).
-                            #[allow(unsafe_code)]
-                            unsafe {
-                                Self::bump_gen_on_issue(base, off);
-                            }
-                        }
+                        self.clear_magazine_on_issue(issued);
                         return issued;
                     }
 
@@ -496,19 +423,7 @@ impl HeapCore {
             let bit = 1u16 << new_cnt;
             let is_virgin = (self.tcache.classes[c].virgin_mask & bit) != 0;
             self.tcache.classes[c].virgin_mask &= !bit;
-            #[cfg_attr(not(feature = "hardened"), allow(unused_variables))]
-            let (base, off) = self.clear_magazine_on_issue(issued);
-            #[cfg(feature = "hardened")]
-            {
-                // SAFETY: `base`/`off` describe the block just cleared
-                // above — a live, exclusively-owned segment and a
-                // MIN_BLOCK-aligned offset within it
-                // (`clear_magazine_on_issue`'s own contract).
-                #[allow(unsafe_code)]
-                unsafe {
-                    Self::bump_gen_on_issue(base, off);
-                }
-            }
+            self.clear_magazine_on_issue(issued);
             // F7 (task #495): NO stamp here — same P4 reasoning as `alloc`'s
             // own magazine-hit arm above. Every block that can ever sit in
             // the magazine was placed there by one of exactly three
@@ -604,8 +519,8 @@ impl HeapCore {
         self.tcache.classes[c].virgin_mask = virgin_mask & retained_bits_mask;
         let issued_bit = 1u16 << new_cnt;
         let is_virgin = (virgin_mask & issued_bit) != 0;
-        // Task #2002: stamp-dedupe / mark_magazine / count / hardened
-        // bump_gen tail, shared verbatim with `refill_magazine_slow` — see
+        // Task #2002: stamp-dedupe / mark_magazine / count tail,
+        // shared verbatim with `refill_magazine_slow` — see
         // `finish_magazine_refill`'s own doc for the full rationale.
         let issued = self.finish_magazine_refill(c, n);
         (issued, is_virgin)
@@ -772,8 +687,8 @@ impl HeapCore {
         if n == 0 {
             return ::core::ptr::null_mut();
         }
-        // Task #2002: stamp-dedupe / mark_magazine / count / hardened
-        // bump_gen tail, shared verbatim with `refill_magazine_slow_virgin`
+        // Task #2002: stamp-dedupe / mark_magazine / count tail,
+        // shared verbatim with `refill_magazine_slow_virgin`
         // — see `finish_magazine_refill`'s own doc for the full rationale.
         self.finish_magazine_refill(c, n)
     }

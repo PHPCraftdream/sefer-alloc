@@ -369,7 +369,50 @@ impl AllocCore {
                 .is_some()
     }
 
-    /// Pop a free block; `Err` is an uncommitted class-spill OOM.
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    fn valid_free_node(segment: *mut u8, off: u32, class_idx: usize) -> bool {
+        let offset = off as usize;
+        let meta = SegmentMeta::new(segment);
+        let start = match SegmentHeader::kind_at(segment) {
+            crate::alloc_core::segment_header::SegmentKind::Primordial => {
+                crate::alloc_core::segment_header::Layout::primordial_meta_end()
+            }
+            crate::alloc_core::segment_header::SegmentKind::Small => {
+                crate::alloc_core::segment_header::Layout::small_meta_end()
+            }
+            _ => return false,
+        };
+        let size = SizeClasses::block_size(class_idx);
+        offset >= start
+            && offset < SEGMENT
+            && offset.is_multiple_of(size)
+            && offset
+                .checked_add(size)
+                .is_some_and(|end| end <= meta.bump_of() && end <= SEGMENT)
+            && meta.alloc_bitmap().is_free(off)
+            && !meta.magazine_bitmap().is_in_magazine(off)
+    }
+
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    fn free_continuation(
+        segment: *mut u8,
+        off: u32,
+        class_idx: usize,
+        next: *mut u8,
+    ) -> Result<u32, ()> {
+        if next.is_null() {
+            return Ok(FREE_LIST_NULL);
+        }
+        let next_off = Node::continuation_offset(segment, next).ok_or(())?;
+        if next_off == off || !Self::valid_free_node(segment, next_off, class_idx) {
+            return Err(());
+        }
+        Ok(next_off)
+    }
+
+    /// Pop a free block; `Err` leaves the class head and bitmap unchanged.
     #[inline(always)]
     fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
         let mut meta = SegmentMeta::new(segment);
@@ -378,44 +421,21 @@ impl AllocCore {
         if head_off == FREE_LIST_NULL {
             return Ok(None);
         }
+        #[cfg(feature = "hardened")]
+        if !Self::valid_free_node(segment, head_off, class_idx) {
+            return Err(());
+        }
         let block_ptr = Node::deref(segment, head_off as usize);
         let Some(block_nn) = NonNull::new(block_ptr) else {
             return Ok(None);
         };
         let next = Node::read_next(block_nn);
-        // UBFIX-7 (M-3, `docs/reviews/2026-07-10-ub-audit-final-synthesis.md`):
-        // the intrusive freelist `next` word lives INSIDE the block itself, so
-        // it is writable by the user for as long as the block is (legitimately
-        // or via a use-after-free) in their hands. Before this guard, a
-        // corrupted `next` — e.g. left over from a UAF write into an
-        // already-freed block — was trusted unconditionally: the very next
-        // line turned it into a segment-relative offset via raw pointer
-        // subtraction, which is only sound if `next` actually lies inside
-        // `segment`. A `next` pointing outside the segment produces a garbage
-        // `u32` offset (wrapping/overflowing arithmetic), and the NEXT
-        // `pop_free`/`drain_freelist_batch` call derefs THAT offset via
-        // `Node::deref` (`segment.add(off)`), an out-of-bounds `add` — UB per
-        // `node.rs`'s SAFETY contract — and hands the caller a wild pointer
-        // dressed up as a legitimate block.
-        //
-        // `hardened`-gated (mimalloc `MI_SECURE`-style): validate `next` is
-        // either null or resolves to THIS segment's base before trusting it as
-        // a chain continuation; a mismatch TRUNCATES the chain here (treated
-        // as `FREE_LIST_NULL`) rather than being dereferenced. This never runs
-        // on the production (non-hardened) hot path — zero added instructions
-        // there, byte-identical to the pre-fix code under `cfg(not(hardened))`.
         #[cfg(feature = "hardened")]
-        let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-            next
-        } else {
-            core::ptr::null_mut()
-        };
+        let new_head = Self::free_continuation(segment, head_off, class_idx, next)?;
+        #[cfg(not(feature = "hardened"))]
         let new_head = if next.is_null() {
             FREE_LIST_NULL
         } else {
-            // Compute the offset of `next` relative to this segment. `next`
-            // is an absolute pointer into the same segment (free lists are
-            // per-segment), so offset = next - segment.
             (next as usize - segment as usize) as u32
         };
         let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
@@ -442,25 +462,6 @@ impl AllocCore {
         // payload and thus recommits.
         meta.inc_live();
         tx.commit(&self.table);
-        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
-        // hands a block directly to the caller (it is the non-magazine substrate
-        // pop, reachable from `alloc_small`). Under `hardened` (which implies
-        // `fastbin`), `HeapCore::alloc` routes small blocks through the magazine
-        // and never reaches here — but a direct `AllocCore` consumer (or a future
-        // config change) could, so the bump is placed at this issue point for
-        // correctness and defense-in-depth. The magazine refill path uses
-        // `drain_freelist_batch` (which fills `out`, NOT issuing to a caller), so
-        // blocks pulled into the magazine are NOT bumped here — they are bumped
-        // on their later magazine pop. Compiled ONLY under `hardened`.
-        #[cfg(feature = "hardened")]
-        {
-            // SAFETY: `segment` is a live, exclusively-owned segment;
-            // `head_off` is a MIN_BLOCK-aligned offset of a live block.
-            #[allow(unsafe_code)]
-            unsafe {
-                crate::alloc_core::segment_header::bump_gen(segment, head_off as usize)
-            };
-        }
         Ok(Some(block_ptr))
     }
 
@@ -548,8 +549,14 @@ impl AllocCore {
             // bitmap, live count and output remain unchanged; promoted leaves
             // are valid uniform copies and may be reused by a later retry.
             let mut probe = head_off;
+            #[cfg(feature = "hardened")]
+            let mut slow = head_off;
             let mut probed = 0usize;
             while probed < out.len() && probe != FREE_LIST_NULL {
+                #[cfg(feature = "hardened")]
+                if !Self::valid_free_node(segment, probe, class_idx) {
+                    return Err(());
+                }
                 let block = Node::deref(segment, probe as usize);
                 let Some(nn) = NonNull::new(block) else {
                     break;
@@ -563,16 +570,34 @@ impl AllocCore {
                 }
                 let next = Node::read_next(nn);
                 #[cfg(feature = "hardened")]
-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-                    next
-                } else {
-                    core::ptr::null_mut()
-                };
-                probe = if next.is_null() {
-                    FREE_LIST_NULL
-                } else {
-                    (next as usize - segment as usize) as u32
-                };
+                {
+                    let next_off = Self::free_continuation(segment, probe, class_idx, next)?;
+                    if next_off == bt.head(class_idx) {
+                        return Err(());
+                    }
+                    probe = next_off;
+                    if probed % 2 == 1 {
+                        let slow_block =
+                            NonNull::new(Node::deref(segment, slow as usize)).ok_or(())?;
+                        slow = Self::free_continuation(
+                            segment,
+                            slow,
+                            class_idx,
+                            Node::read_next(slow_block),
+                        )?;
+                    }
+                    if probe != FREE_LIST_NULL && probe == slow {
+                        return Err(());
+                    }
+                }
+                #[cfg(not(feature = "hardened"))]
+                {
+                    probe = if next.is_null() {
+                        FREE_LIST_NULL
+                    } else {
+                        (next as usize - segment as usize) as u32
+                    };
+                }
                 probed += 1;
             }
             let mut bm = meta.alloc_bitmap();
@@ -590,17 +615,6 @@ impl AllocCore {
                 // block body is never written on the pop path, so this is race-free
                 // against ourselves.
                 let next = Node::read_next(block_nn);
-                // UBFIX-7 (M-3): validate `next` before trusting it as a chain
-                // continuation — see `pop_free`'s identical guard for the full
-                // rationale. `hardened`-gated; a mismatch truncates the chain
-                // (this iteration's `head_off` becomes NULL below, which the
-                // loop condition then exits on) instead of being dereferenced.
-                #[cfg(feature = "hardened")]
-                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
-                    next
-                } else {
-                    core::ptr::null_mut()
-                };
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);

@@ -1,10 +1,6 @@
 use super::*;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os::PAGE;
-#[cfg(feature = "hardened")]
-use crate::alloc_core::os::SEGMENT;
-#[cfg(feature = "hardened")]
-use crate::alloc_core::size_classes::MIN_BLOCK;
 // Only the `page-map-diag`-gated `PageClass` items below consume this.
 #[cfg(feature = "page-map-diag")]
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
@@ -138,27 +134,6 @@ pub const fn unpack_owner_id(word: u64) -> u32 {
 /// The number of pages in one segment (`SEGMENT / PAGE` = 1024 for the default
 /// 4 MiB / 4 KiB pair). The `PageMap` has exactly this many entries.
 pub(crate) const PAGES_PER_SEGMENT: usize = crate::alloc_core::os::SEGMENT / PAGE;
-
-/// X7 Ф1 (task #189): the byte footprint of the per-segment **generation
-/// table** — the hardened remote-free staleness guard. One byte per
-/// `MIN_BLOCK` granule of the WHOLE segment, so every segment-relative offset
-/// `off` indexes a unique cell at `off >> MIN_BLOCK_SHIFT` without needing a
-/// payload-vs-metadata bounds distinction (the metadata granules' cells are
-/// simply never read/written — no block starts there, exactly like the
-/// [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap) discipline). For the
-/// default 4 MiB / 16 B pair this is `4 MiB / 16 = 262 144` bytes = 256 KiB
-/// (64 pages) — the ~6–7% metadata overhead the X7 plan §1/§2.1 budgets.
-///
-/// Computed from the constants (not a hardcoded literal) so it cannot drift if
-/// `SEGMENT` / `MIN_BLOCK` change. `MIN_BLOCK` divides `SEGMENT` (both are
-/// powers of two), so the division is exact — no rounding is needed.
-///
-/// Compiled ONLY under `#[cfg(feature = "hardened")]`; outside that feature the
-/// generation table does not exist and the segment byte layout is unchanged.
-#[cfg(feature = "hardened")]
-#[doc(hidden)]
-#[allow(dead_code)] // wired in Ф1; consumed by Ф2/Ф3 + the layout test
-pub const GEN_TABLE_FOOTPRINT: usize = SEGMENT / MIN_BLOCK;
 
 /// Kind of a segment. Lives in the header so `segment_of(ptr)` immediately
 /// tells the Cartographer how to handle a pointer into this segment.
@@ -748,16 +723,3 @@ impl SegmentHeader {
         )
     }
 }
-
-/// X7 Ф1 (task #189) — the generation-table byte-level accessors moved to
-/// [`segment_header_gen_table`](super::super::segment_header_gen_table) (task
-/// R6-CQ-7c's split); re-exported at this path (doc-hidden test-only
-/// forwarder — CLAUDE.md's "one file, one export" exception category 1) so
-/// existing callers of `sefer_alloc::alloc_core::segment_header::{gen_at,
-/// bump_gen, GEN_TABLE_FOOTPRINT}` (e.g. `tests/regression_gen_table_layout.rs`,
-/// `tests/regression_gen_table_lifecycle_seams.rs`,
-/// `tests/regression_gen_wrap_boundary.rs`,
-/// `tests/regression_r2_3_gen_table_index_guard.rs`) do not need to change
-/// their import path.
-#[cfg(feature = "hardened")]
-pub use super::super::segment_header_gen_table::{bump_gen, gen_at, init_gen_table_in_place};

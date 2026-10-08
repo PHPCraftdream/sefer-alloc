@@ -268,9 +268,10 @@ fn alloc_into_first_segment(a: &mut AllocCore, count: usize) -> Vec<(*mut u8, us
 /// from the first one's — i.e. this never asserts a fixed carve count
 /// holds; it discovers how many actually fit in the fresh segment under
 /// the CURRENT build's exact feature combination (segment/metadata
-/// footprint varies by feature set, e.g. `hardened`'s per-`MIN_BLOCK`-granule
-/// generation table — see the module doc's R22-2/post-R22-follow-up
-/// note). Returns `(carved, spilled)`: `carved` holds only the objects
+/// footprint varies by feature set, including `medium-classes-wide`, `numa-aware`,
+/// and `small-segment-lazy-commit`; hardened no longer adds the removed
+/// write-only generation table. See the module doc's R22-2/post-R22-follow-up
+/// note. Returns `(carved, spilled)`: `carved` holds only the objects
 /// that landed in the first segment (in call order), and `spilled` is
 /// `true` iff fewer than `count` objects fit (i.e. the `count`-th call
 /// would have, or did, spill into a new segment) — callers that need an
@@ -329,11 +330,11 @@ fn alloc_sized_into_first_segment(
 /// design (R22-2) hardcoded "a fresh segment fits exactly 9 objects of
 /// `SCENARIO_3_OLD_SIZE` (384 KiB)" — true under
 /// `production,medium-classes,alloc-stats`, but NOT under `--all-features`,
-/// where the segment's usable payload shrinks (additional per-block
-/// metadata — `hardened`'s per-`MIN_BLOCK`-granule generation table, and
-/// possibly `medium-classes-wide`/`numa-aware`/`small-segment-lazy-commit`'s
-/// own overhead — leaves room for only 8), so the hardcoded "9" panicked
-/// (`alloc #8 landed in a DIFFERENT segment`). Rather than feature-gate a
+/// where the usable payload was smaller: the then-present hardened
+/// generation table (removed in R18 because it had no runtime reader), plus
+/// other feature metadata, left room for only 8 objects; the old hardcoded
+/// "9" panicked (`alloc #8 landed in a DIFFERENT segment`).
+/// Rather than feature-gate a
 /// second hardcoded constant (equally brittle to the NEXT feature
 /// combination), the test now derives "how many objects of
 /// `SCENARIO_3_OLD_SIZE` fit in a fresh segment" from the real allocator

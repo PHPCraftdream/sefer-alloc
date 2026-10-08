@@ -2790,28 +2790,6 @@ fn oxx_r2_07_forbid_unsafe_code_claims_are_accurate() {
 }
 
 #[test]
-fn oxx_r2_07_bootstrap_unsafe_block_claim_is_accurate() {
-    let path = src_dir()
-        .join("alloc_core")
-        .join("alloc_core")
-        .join("bootstrap.rs");
-    let flat = doc_prose(&path);
-    assert!(
-        !flat.contains("there is NO `unsafe` block in this file. So"),
-        "src/alloc_core/alloc_core/bootstrap.rs: stale oxx R2-07 claim \
-         reintroduced — under `hardened`, `primordial()` carries one \
-         `#[allow(unsafe_code)] unsafe {{ .. }}` call to \
-         `init_gen_table_in_place`",
-    );
-    assert!(
-        flat.contains("hardened") && flat.contains("init_gen_table_in_place"),
-        "src/alloc_core/alloc_core/bootstrap.rs must name the `hardened`-only \
-         `unsafe` block as the sanctioned exception to its otherwise-pure- \
-         safe-composition posture (oxx R2-07)",
-    );
-}
-
-#[test]
 fn oxx_r2_07_alloc_core_mod_seam_inventory_is_accurate() {
     let path = src_dir().join("alloc_core").join("mod.rs");
     let flat = doc_prose(&path);

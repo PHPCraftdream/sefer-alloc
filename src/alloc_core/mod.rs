@@ -57,16 +57,6 @@ pub(crate) use segment::directory_stats;
 pub(crate) use segment::segment_directory;
 #[doc(hidden)]
 pub use segment::segment_header;
-// `allow(unused_imports)`: a `mod` declaration (this file's pre-reorg form)
-// is exempt from the unused-imports lint, but the equivalent module
-// re-export is not. `segment_header_gen_table`'s only in-crate consumer is
-// `segment_header`'s own `pub use super::segment_header_gen_table::...`
-// forwarder, which resolves through `segment`'s module declaration, not
-// through this re-export — so under `hardened` the name would otherwise
-// warn. Same allow-with-explanation discipline as `platform::sidecar`.
-#[cfg(feature = "hardened")]
-#[allow(unused_imports)]
-use segment::segment_header_gen_table;
 // `allow(unused_imports)`: same discipline — these three siblings' ITEMS are
 // consumed via `alloc_core::segment_header::...` paths, never via these
 // module names; the re-exports exist purely to keep the old

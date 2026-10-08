@@ -8,18 +8,7 @@
 //! back at itself. After this, the safe Cartographer can mutate metadata
 //! through normal `node`-seam writes with no further bootstrap-time writes.
 //!
-//! ## This file is PURE SAFE COMPOSITION (with one named `hardened` exception)
-//!
-//! Every raw memory touch goes through the [`os`](super::super::os) seam (segment
-//! reservation) and the [`node`](super::super::node) seam (typed writes). The
-//! bootstrap composes those already-proven `unsafe` primitives in safe code —
-//! there is NO `unsafe` block in this file without `hardened`. Under
-//! `hardened`, `primordial()` carries one item-scoped, individually
-//! documented tier-2 `#[allow(unsafe_code)] unsafe { .. }` call to
-//! `init_gen_table_in_place` (zeroing the per-segment generation table — see
-//! that call site's own `// SAFETY:` comment); this is the sanctioned
-//! tier-2 exception to this file's otherwise-pure-safe-composition posture,
-//! not a violation of it (oxx R2-07).
+//! ## This file is pure safe composition
 
 use super::super::os::Segment;
 use super::super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
@@ -192,23 +181,6 @@ pub(crate) fn primordial() -> Option<Primordial> {
         base,
         Layout::magazine_bitmap_off(),
     ));
-    // X7 Ф3 (task #191): zero the per-segment generation table under
-    // `hardened`. Compiled ONLY under `hardened`; under any other feature the
-    // table does not exist and this call is absent (byte-identical to the
-    // pre-X7 build). Without this zeroing, a `gen_at`/`bump_gen` Relaxed load
-    // on a never-written cell is UB (miri-confirmed during Ф1) — the carried-
-    // over Ф1 gap this call closes. The table is NOT re-zeroed on
-    // decommit-reset: the X7 plan §2.2 fixes generation numbering as
-    // CONTINUOUS across decommit-reset, so old generations persist intentionally.
-    #[cfg(feature = "hardened")]
-    {
-        // SAFETY: `base` is a live, exclusively-owned segment whose
-        // generation table is carved and writable.
-        #[allow(unsafe_code)]
-        unsafe {
-            super::super::segment_header::init_gen_table_in_place(base)
-        };
-    }
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
     //    segment's own base (self-reference). The write goes through `Node`.
     let reg_slots = base_plus(base, reg_off) as *mut *mut u8;

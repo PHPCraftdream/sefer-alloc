@@ -129,18 +129,6 @@ impl HeapCore {
                 );
             }
             let issued = self.tcache.classes[c].slots[new_cnt];
-            // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE.
-            #[cfg(feature = "hardened")]
-            {
-                let base = os::segment_base_of_ptr(issued);
-                let off = (issued as usize) - (base as usize);
-                // SAFETY: `base` is a live, exclusively-owned segment; `off`
-                // is a MIN_BLOCK-aligned offset.
-                #[allow(unsafe_code)]
-                unsafe {
-                    Self::bump_gen_on_issue(base, off);
-                }
-            }
             out[filled] = issued;
             filled += 1;
         }
@@ -161,11 +149,7 @@ impl HeapCore {
             let n = self.refill_with_large_rescue(|heap| {
                 heap.core.refill_class_bump(c, &mut out[filled..])
             });
-            // P4 stamp-dedupe + hardened gen bump. EVERY refilled block is
-            // issued to the caller here (none stay in the magazine), so all
-            // get the issue touch — unlike `refill_magazine_slow`, which only
-            // bumps the one popped block (the n-1 retained are bumped on
-            // their later pops).
+            // Stamp each distinct refilled source segment.
             let mut prev_base = usize::MAX;
             for &p in &out[filled..(filled + n)] {
                 if !p.is_null() {
@@ -173,16 +157,6 @@ impl HeapCore {
                     if base != prev_base {
                         self.stamp_segment_owner(p);
                         prev_base = base;
-                    }
-                    #[cfg(feature = "hardened")]
-                    {
-                        let off = (p as usize) - base;
-                        // SAFETY: `base` is a live, exclusively-owned segment;
-                        // `off` is a MIN_BLOCK-aligned offset.
-                        #[allow(unsafe_code)]
-                        unsafe {
-                            Self::bump_gen_on_issue(base as *mut u8, off);
-                        }
                     }
                 }
             }
@@ -203,7 +177,7 @@ impl HeapCore {
         // regress: this loop does exactly the same number of RMWs the
         // old per-pop clear did, just batched at the end.
         for &p in &out[..magazine_drained] {
-            let _ = self.clear_magazine_on_issue(p);
+            self.clear_magazine_on_issue(p);
         }
 
         filled

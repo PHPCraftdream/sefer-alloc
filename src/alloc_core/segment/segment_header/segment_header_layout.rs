@@ -2,8 +2,6 @@
 //! `segment_header.rs`, task R6-CQ-7c).
 
 use crate::alloc_core::os::{MAX_REALISTIC_PAGE_SIZE, PAGE};
-#[cfg(feature = "hardened")]
-use crate::alloc_core::segment_header::GEN_TABLE_FOOTPRINT;
 use crate::alloc_core::segment_header::{
     align_up, align_up_const, BinTable, Layout, PageMap, SegmentHeader,
 };
@@ -47,17 +45,12 @@ impl Layout {
     const fn owner_metadata_end() -> usize {
         Self::magazine_bitmap_off() + crate::alloc_core::magazine_bitmap::MagazineBitmap::FOOTPRINT
     }
-    /// Offset of the hardened owner generation table.
-    #[cfg(feature = "hardened")]
-    pub(crate) const fn gen_table_off() -> usize {
-        Self::owner_metadata_end()
-    }
     /// End of the small-segment metadata (page-aligned past the last metadata
     /// region). Payload carving begins here.
     ///
     /// Owner metadata contains the header, page map, bins and allocation/
-    /// magazine bitmaps; hardened adds its owner generation table. Remote
-    /// ingress is an independently allocated sidecar, never in this window.
+    /// magazine bitmaps. Remote ingress is an independently allocated sidecar,
+    /// never in this window.
     ///
     /// R8-6 (task #219): this is the **TIGHT** payload/metadata boundary —
     /// aligned only to `PAGE` (4 KiB), matching every other offset in this
@@ -79,14 +72,7 @@ impl Layout {
     }
     /// End of owner metadata before final page rounding.
     const fn small_meta_end_pre_runstack() -> usize {
-        #[cfg(feature = "hardened")]
-        {
-            Self::gen_table_off() + GEN_TABLE_FOOTPRINT
-        }
-        #[cfg(not(feature = "hardened"))]
-        {
-            Self::owner_metadata_end()
-        }
+        Self::owner_metadata_end()
     }
     /// Primordial owner registry begins after all small owner metadata.
     pub(crate) const fn primordial_registry_off() -> usize {

@@ -47,17 +47,6 @@ const _: () = assert!(
         + crate::alloc_core::os::MAX_REALISTIC_PAGE_SIZE
         <= crate::alloc_core::os::SEGMENT
 );
-// X7 Ф1 (task #189): under `hardened` the generation table (~256 KiB / 64 pages)
-// is carved into segment metadata, shifting `small_meta_end` up by that much.
-// This is exactly the capacity risk the X7 plan §4 "Risks" calls out ("Ёмкость
-// сегмента под hardened меняет геометрию"). The assertion above (ungated) already
-// re-checks under every feature config, but this hardened-only assert pins the
-// LARGER value explicitly — load-bearing, not decorative: if a future change to
-// `GEN_TABLE_FOOTPRINT` or the upstream layout pushed the hardened
-// `small_meta_end` past `SEGMENT`, the crate would fail to compile under
-// `--features hardened` here rather than silently overflowing the payload.
-#[cfg(feature = "hardened")]
-const _: () = assert!(Layout::small_meta_end() + PAGE <= crate::alloc_core::os::SEGMENT);
 const _: () =
     assert!(crate::alloc_core::size_classes::MIN_BLOCK >= crate::alloc_core::node::NODE_SIZE);
 // Phase 35: adding the `live_count` / `decommitted` fields must NOT push the

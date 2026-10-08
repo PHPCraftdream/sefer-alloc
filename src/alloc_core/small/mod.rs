@@ -28,8 +28,7 @@ pub(super) mod alloc_core_small_magazine;
 /// discipline as `platform::numa`/`platform::dirty_by_class`.
 #[cfg(feature = "alloc-decommit")]
 pub(super) mod alloc_core_small_pool;
-/// Cross-thread (ring-drain) small-path reclaim — `reclaim_offset` and its
-/// `hardened` generation-checked variant.
+/// Owner-only retirement of terminal Small sidecar records.
 pub(super) mod alloc_core_small_reclaim;
 /// RAD-5 (plan Phase 5-E4), verdict GO — the typed, non-forgeable,
 /// move-consumed handle for the `dbg_decomp_reserve_and_keep`/

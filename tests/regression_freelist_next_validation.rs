@@ -24,27 +24,26 @@
 //!
 //! ## The fix
 //!
-//! `hardened`-gated (mimalloc `MI_SECURE`-style): before trusting a non-null
-//! `next`, verify `segment_base_of_ptr(next) == segment`. On mismatch, the
-//! chain is TRUNCATED at that point (treated as `FREE_LIST_NULL`) instead of
-//! being dereferenced — the corrupted tail is dropped, never followed.
+//! `hardened`-gated: before dereferencing a head or continuation, validate its
+//! segment range, payload geometry, class alignment, bump frontier, free bitmap,
+//! and magazine residency. Invalid state rejects the pop or entire batch without
+//! mutating the head, bitmap, live credits, or output. The non-hardened hot path
+//! retains its existing checks and arithmetic.
 //!
 //! ## Counterfactual (RED without the guard)
 //!
-//! Temporarily removing the `#[cfg(feature = "hardened")] let next = if
-//! next.is_null() || os::segment_base_of_ptr(next) == segment { next } else {
-//! core::ptr::null_mut() };` block in any of the three call sites in
-//! `alloc_core_small.rs` (`pop_free`, and both branches of
-//! `drain_freelist_batch`) makes the corresponding test below fail: the
-//! corrupted `next` is accepted as the new head, and the FOLLOWING alloc
-//! either panics (debug assertions / segfault under a real corrupt address)
-//! or — with the small in-bounds-but-wrong-segment offset used here — hands
-//! back a pointer that is NOT the anchor block, tripping the "wild pointer
-//! returned" assertion. With the guard restored, the corrupted tail is
-//! dropped and the allocator stays healthy.
+//! Removing `valid_free_node` from `pop_free` and `try_drain_freelist_batch`, or
+//! removing `free_continuation`'s range/free-state validation, lets an
+//! out-of-segment or still-allocated link be installed or followed. The scalar
+//! tests then return a non-null block or change the head/bitmap instead of
+//! rejecting; the batch tests require a one-slot output so a later head check
+//! cannot mask a missing continuation check. With the guards present, rejection
+//! leaves the chain unchanged, and restoring a valid tail permits the original
+//! free blocks to be issued exactly once.
 //!
-//! Gated to `hardened` (implies `fastbin`): only that build compiles the
-//! guard and the `dbg_corrupt_freelist_head_next` test hook.
+//! The corruption hooks are gated to `hardened` (which implies `fastbin`) and
+//! `internals`. Corruption scenarios model invalid prior access/state, not a
+//! supported safe-caller behavior.
 
 #![cfg(all(feature = "hardened", feature = "internals"))]
 
@@ -55,169 +54,215 @@ use sefer_alloc::alloc_core::{AllocCore, SegmentLayout};
 const SEGMENT: usize = SegmentLayout::SEGMENT;
 
 /// `pop_free` (the single-block substrate pop, reachable directly from
-/// `AllocCore::alloc` on a free-list hit) must not follow a `next` pointer
-/// that was corrupted to point outside the owning segment.
+/// `AllocCore::alloc` on a free-list hit) must reject an out-of-segment
+/// continuation without mutating the head or bitmap.
 #[test]
 fn pop_free_rejects_out_of_segment_next() {
     let mut ac = AllocCore::new().expect("primordial reservation");
-
-    // 16 B / 8-align -> the finest small class.
     let layout = Layout::from_size_align(16, 8).unwrap();
-
-    // Build a short free list: alloc two blocks, free both (LIFO), so the
-    // head is `b`, and `b.next == a` (the second-oldest free entry).
+    let anchor = ac.alloc(layout);
     let a = ac.alloc(layout);
     let b = ac.alloc(layout);
-    assert!(!a.is_null() && !b.is_null());
-    assert_ne!(a, b);
-    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-    unsafe { ac.dealloc(a, layout) };
-    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-    unsafe { ac.dealloc(b, layout) };
+    assert!(!anchor.is_null() && !a.is_null() && !b.is_null());
+    let base = SegmentLayout::segment_base_of(anchor.addr());
+    assert_eq!(SegmentLayout::segment_base_of(a.addr()), base);
+    assert_eq!(SegmentLayout::segment_base_of(b.addr()), base);
 
-    // Sanity: the free list head is `b` (LIFO).
-    assert_eq!(ac.dbg_freelist_head_for(a, 0), {
-        let base = a as usize & !(SEGMENT - 1);
-        (b as usize - base) as u32
-    });
+    // The initial refill may leave a pre-existing tail behind a and b.
+    let tail_before = ac.dbg_freelist_head_for(anchor, 0);
 
-    // Corrupt `b`'s `next` word (the head's chain pointer) with an address
-    // computed by flipping the segment-alignment bit of `b` itself — this is
-    // guaranteed to resolve to a DIFFERENT segment base than `b`'s own
-    // segment (out-of-segment), while still being a plausible-looking
-    // pointer value (not a wild address like `0x1`), simulating a realistic
-    // UAF corruption.
-    let corrupt_next = (b as usize ^ SEGMENT) as *mut u8;
-    // SAFETY: the ptr arg is a live allocation owned by the receiver.
-    let corrupted = unsafe { ac.dbg_corrupt_freelist_head_next(b, 0, corrupt_next) };
+    // SAFETY: a and b are live allocations from this core with matching layouts.
+    unsafe {
+        ac.dealloc(a, layout);
+        ac.dealloc(b, layout);
+    }
+    let head_before = ac.dbg_freelist_head_for(anchor, 0);
+    let credits_before = ac.dbg_live_count_for(anchor);
+    assert_eq!(head_before, (b.addr() - base) as u32);
+    assert!(ac.dbg_is_free_for(a) && ac.dbg_is_free_for(b));
+    assert!(!ac.dbg_is_free_for(anchor));
+
+    let corrupt_next = (b.addr() ^ SEGMENT) as *mut u8;
+    // SAFETY: anchor is a live allocation used only to identify its owned segment.
+    assert!(unsafe { ac.dbg_corrupt_freelist_head_next(anchor, 0, corrupt_next) });
+
     assert!(
-        corrupted,
-        "test setup: free list for class 0 must be non-empty"
+        ac.alloc(layout).is_null(),
+        "pop_free must reject an untrusted continuation before issuing the head"
     );
+    assert_eq!(ac.dbg_freelist_head_for(anchor, 0), head_before);
+    assert_eq!(ac.dbg_live_count_for(anchor), credits_before);
+    assert!(ac.dbg_is_free_for(a) && ac.dbg_is_free_for(b));
 
-    // Popping `b` must succeed (the head itself is untouched — only its
-    // `next` field was corrupted) and must NOT dereference the corrupted
-    // `next`: the guard truncates the chain, so the free list must now be
-    // EMPTY (head == FREE_LIST_NULL) rather than pointing at a garbage
-    // offset derived from `corrupt_next`.
-    let popped = ac.alloc(layout);
-    assert_eq!(
-        popped, b,
-        "pop_free must still return the legitimate head block"
-    );
+    // SAFETY: anchor is live; restore the free head's original valid link.
+    assert!(unsafe { ac.dbg_corrupt_freelist_head_next(anchor, 0, a) });
+    let popped_b = ac.alloc(layout);
+    let popped_a = ac.alloc(layout);
+    assert_eq!(popped_b, b);
+    assert_eq!(popped_a, a);
+    assert_eq!(ac.dbg_freelist_head_for(anchor, 0), tail_before);
 
-    const FREE_LIST_NULL: u32 = u32::MAX;
-    assert_eq!(
-        ac.dbg_freelist_head_for(a, 0),
-        FREE_LIST_NULL,
-        "GUARD BROKEN: pop_free trusted a `next` pointer outside its segment \
-         and installed a garbage offset as the new freelist head instead of \
-         truncating the corrupted chain"
-    );
-
-    // The allocator must remain healthy: further allocations of this class
-    // succeed and are never the stale `a` block re-derived from a garbage
-    // offset by coincidence being handed out twice, nor null.
-    let mut issued = vec![b];
+    let mut issued = vec![anchor, popped_b, popped_a];
     for _ in 0..64 {
         let p = ac.alloc(layout);
         assert!(!p.is_null(), "post-corruption alloc returned null");
         issued.push(p);
     }
     let distinct: std::collections::HashSet<usize> = issued.iter().map(|&p| p as usize).collect();
-    assert_eq!(
-        distinct.len(),
-        issued.len(),
-        "DUPLICATE POINTER after next-pointer corruption — the truncated \
-         chain leaked or a wild pointer was reissued"
-    );
-
+    assert_eq!(distinct.len(), issued.len());
     for p in issued {
-        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        // SAFETY: every pointer in issued is live exactly once with this layout.
         unsafe { ac.dealloc(p, layout) };
     }
 }
 
-/// `drain_freelist_batch` (the batch pop feeding the magazine refill path)
-/// must apply the identical guard: a corrupted `next` mid-chain truncates the
-/// walk instead of being dereferenced on the following iteration.
+/// `drain_freelist_batch` must reject the whole batch when the head's
+/// continuation is out of segment, preserving all free-list state.
 #[test]
 fn drain_freelist_batch_rejects_out_of_segment_next() {
     let mut ac = AllocCore::new().expect("primordial reservation");
-    let class_idx = 0usize; // 16 B class, matches dbg_carve_batch's direct class-0 carve
-
-    // Carve three blocks directly (bypassing the magazine) and free all three
-    // in order a, b, c -> LIFO free list head is c, then b, then a.
-    let mut carved = [core::ptr::null_mut::<u8>(); 3];
-    let n = ac.dbg_carve_batch(class_idx, &mut carved);
-    assert_eq!(n, 3, "expected to carve exactly 3 fresh blocks");
-    let [a, b, c] = carved;
-    assert!(!a.is_null() && !b.is_null() && !c.is_null());
-
+    let class_idx = 0usize;
     let layout = Layout::from_size_align(16, 8).unwrap();
-    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-    unsafe { ac.dealloc(a, layout) };
-    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-    unsafe { ac.dealloc(b, layout) };
-    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-    unsafe { ac.dealloc(c, layout) };
+    let mut carved = [core::ptr::null_mut::<u8>(); 4];
+    assert_eq!(ac.dbg_carve_batch(class_idx, &mut carved), 4);
+    let [anchor, a, b, c] = carved;
+    let base = SegmentLayout::segment_base_of(anchor.addr());
+    assert!([a, b, c]
+        .into_iter()
+        .all(|p| SegmentLayout::segment_base_of(p.addr()) == base));
 
-    // Head is `c`; chain is c -> b -> a -> NULL. Corrupt `c`'s `next` (which
-    // currently points at `b`) to an out-of-segment address.
-    let corrupt_next = (c as usize ^ SEGMENT) as *mut u8;
-    // SAFETY: the ptr arg is a live allocation owned by the receiver.
-    let corrupted = unsafe { ac.dbg_corrupt_freelist_head_next(c, class_idx, corrupt_next) };
-    assert!(corrupted, "test setup: free list must be non-empty");
+    // SAFETY: these three blocks are live allocations from this core.
+    unsafe {
+        ac.dealloc(a, layout);
+        ac.dealloc(b, layout);
+        ac.dealloc(c, layout);
+    }
+    let head_before = ac.dbg_freelist_head_for(anchor, class_idx);
+    let credits_before = ac
+        .dbg_live_count_for(anchor)
+        .expect("live count for owned segment");
+    assert_eq!(head_before, (c.addr() - base) as u32);
+    assert!(ac.dbg_is_free_for(a) && ac.dbg_is_free_for(b) && ac.dbg_is_free_for(c));
+    assert!(!ac.dbg_is_free_for(anchor));
 
-    // Drain up to 8 blocks (more than the 3 available) — the walk must stop
-    // at `c` (the only block whose `next` is trustworthy) rather than
-    // dereferencing the corrupted `next` to "reach" a bogus second entry.
-    let mut out: [*mut u8; 8] = [core::ptr::null_mut(); 8];
-    // SAFETY: the first arg is a live allocation owned by the receiver.
-    let popped = unsafe { ac.dbg_drain_freelist_batch(c, class_idx, &mut out) };
+    let corrupt_next = (c.addr() ^ SEGMENT) as *mut u8;
+    // SAFETY: anchor is live and identifies this exclusively-owned segment.
+    assert!(unsafe { ac.dbg_corrupt_freelist_head_next(anchor, class_idx, corrupt_next) });
+    let mut rejected = [core::ptr::null_mut::<u8>(); 1];
+    // SAFETY: anchor is a live allocation in this core's owned segment.
+    let drained = unsafe { ac.dbg_drain_freelist_batch(anchor, class_idx, &mut rejected) };
+    assert_eq!(drained, 0, "invalid continuation must reject the batch");
+    assert_eq!(rejected, [core::ptr::null_mut()]);
+    assert_eq!(ac.dbg_freelist_head_for(anchor, class_idx), head_before);
+    assert_eq!(ac.dbg_live_count_for(anchor), Some(credits_before));
+    assert!(ac.dbg_is_free_for(a) && ac.dbg_is_free_for(b) && ac.dbg_is_free_for(c));
 
-    assert_eq!(
-        popped, 1,
-        "GUARD BROKEN: drain_freelist_batch followed a corrupted out-of-\
-         segment `next` pointer instead of truncating the chain at the \
-         first untrustworthy link"
-    );
-    assert_eq!(out[0], c);
+    // SAFETY: anchor is live; restore the head's original valid link.
+    assert!(unsafe { ac.dbg_corrupt_freelist_head_next(anchor, class_idx, b) });
+    let mut out = [core::ptr::null_mut::<u8>(); 8];
+    // SAFETY: anchor is a live allocation in this core's owned segment.
+    let popped = unsafe { ac.dbg_drain_freelist_batch(anchor, class_idx, &mut out) };
+    assert_eq!(popped, 3);
+    assert_eq!(&out[..3], &[c, b, a]);
+    assert_eq!(ac.dbg_freelist_head_for(anchor, class_idx), u32::MAX);
+    assert!(!ac.dbg_is_free_for(a) && !ac.dbg_is_free_for(b) && !ac.dbg_is_free_for(c));
+    assert_eq!(ac.dbg_live_count_for(anchor), Some(credits_before + 3));
 
-    // The freelist must now be empty (truncated), NOT pointing at a garbage
-    // offset derived from `corrupt_next` — `b` and `a` are or­phaned from the
-    // linked list by the truncation (a known, documented containment
-    // trade-off: corruption drops the REST of the chain rather than risking
-    // an OOB deref), but the allocator itself must stay healthy: it must not
-    // crash and must not hand out any wild/duplicate pointer afterward.
-    const FREE_LIST_NULL: u32 = u32::MAX;
-    assert_eq!(
-        ac.dbg_freelist_head_for(c, class_idx),
-        FREE_LIST_NULL,
-        "freelist head must be NULL after the corrupted chain was truncated"
-    );
-
-    // Allocator stays healthy: further allocs succeed, are distinct, and
-    // none of them is a wild pointer derived from `corrupt_next`.
-    let mut issued = vec![c];
+    let mut issued = vec![anchor, a, b, c];
     for _ in 0..64 {
         let p = ac.alloc(layout);
         assert!(!p.is_null(), "post-corruption alloc returned null");
-        assert_ne!(
-            p, corrupt_next,
-            "a wild pointer derived from the corrupted `next` was issued"
-        );
         issued.push(p);
     }
     let distinct: std::collections::HashSet<usize> = issued.iter().map(|&p| p as usize).collect();
-    assert_eq!(
-        distinct.len(),
-        issued.len(),
-        "DUPLICATE POINTER after next-pointer corruption in drain_freelist_batch"
-    );
-
+    assert_eq!(distinct.len(), issued.len());
     for p in issued {
-        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        // SAFETY: every pointer in issued is live exactly once with this layout.
         unsafe { ac.dealloc(p, layout) };
     }
+}
+/// A same-segment continuation may still be invalid because it is allocated,
+/// or cyclic because it points back to the free head. Range-only validation
+/// misses both; hardened validation must reject before changing allocator state.
+fn continuation_is_rejected(batch: bool, self_cycle: bool) {
+    let mut ac = AllocCore::new().expect("primordial reservation");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let class_idx = 0;
+    let mut blocks = [core::ptr::null_mut(); 2];
+    assert_eq!(ac.dbg_carve_batch(class_idx, &mut blocks), 2);
+    let [live, head] = blocks;
+    assert_eq!(
+        SegmentLayout::segment_base_of(live.addr()),
+        SegmentLayout::segment_base_of(head.addr())
+    );
+
+    // SAFETY: head is live with this layout and is freed exactly once below.
+    unsafe { ac.dealloc(head, layout) };
+    let head_before = ac.dbg_freelist_head_for(live, class_idx);
+    let credits_before = ac.dbg_live_count_for(live);
+    assert!(ac.dbg_is_free_for(head));
+    assert!(!ac.dbg_is_free_for(live));
+
+    // SAFETY: live anchors this owned segment; the hook writes the supplied
+    // continuation into the valid free-list head.
+    let next = if self_cycle { head } else { live };
+    assert!(unsafe { ac.dbg_corrupt_freelist_head_next(live, class_idx, next) });
+    if batch {
+        // One slot makes the continuation check itself observable; with two,
+        // a later head check could mask a missing continuation guard.
+        let mut out = [core::ptr::null_mut(); 1];
+        // SAFETY: live anchors this exclusively-owned segment.
+        let drained = unsafe { ac.dbg_drain_freelist_batch(live, class_idx, &mut out) };
+        assert_eq!(drained, 0, "invalid continuation must reject the batch");
+        assert_eq!(
+            out,
+            [core::ptr::null_mut()],
+            "rejection must preserve output"
+        );
+    } else {
+        assert!(
+            ac.alloc(layout).is_null(),
+            "invalid continuation must reject scalar pop"
+        );
+    }
+
+    assert_eq!(ac.dbg_freelist_head_for(live, class_idx), head_before);
+    assert_eq!(ac.dbg_live_count_for(live), credits_before);
+    assert!(ac.dbg_is_free_for(head));
+    assert!(!ac.dbg_is_free_for(live));
+
+    // SAFETY: live anchors the still-valid head; restore its original null tail.
+    assert!(unsafe { ac.dbg_corrupt_freelist_head_next(live, class_idx, core::ptr::null_mut()) });
+    assert_eq!(
+        ac.alloc(layout),
+        head,
+        "valid control must reissue the head"
+    );
+    assert!(!ac.dbg_is_free_for(head));
+    assert_eq!(ac.dbg_freelist_head_for(live, class_idx), u32::MAX);
+    // SAFETY: both allocations are live with this layout and freed exactly once.
+    unsafe {
+        ac.dealloc(head, layout);
+        ac.dealloc(live, layout);
+    }
+}
+
+#[test]
+fn pop_rejects_allocated_continuation_without_mutation() {
+    continuation_is_rejected(false, false);
+}
+
+#[test]
+fn drain_rejects_allocated_continuation_without_mutation() {
+    continuation_is_rejected(true, false);
+}
+
+#[test]
+fn drain_rejects_self_cycle_without_mutation() {
+    continuation_is_rejected(true, true);
+}
+
+#[test]
+fn pop_rejects_self_cycle_without_mutation() {
+    continuation_is_rejected(false, true);
 }

@@ -59,6 +59,16 @@ pub(crate) const NODE_SIZE: usize = size_of::<*mut u8>();
 pub(crate) struct Node;
 
 impl Node {
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    pub(crate) fn continuation_offset(base: *mut u8, next: *mut u8) -> Option<u32> {
+        let off = next.addr().checked_sub(base.addr())?;
+        if off >= crate::alloc_core::os::SEGMENT {
+            return None;
+        }
+        u32::try_from(off).ok()
+    }
+
     /// Store `next` into the first word of the free block at `block`.
     ///
     /// After this, [`read_next`](Self::read_next)`(block)` returns `next`.
@@ -414,39 +424,6 @@ impl Node {
         // `off <= isize::MAX`, and a non-wrapping result in that allocation or
         // one-past. `add` does not dereference the result.
         unsafe { base.add(off) }
-    }
-
-    /// Return a `&'static AtomicU8` view over the single byte at `base + off`.
-    /// X7 Ф1 (task #189): used by the per-segment generation table — one
-    /// `AtomicU8` per `MIN_BLOCK` granule, the hardened remote-free staleness
-    /// guard. The table lives in segment metadata under `#[cfg(feature =
-    /// "hardened")]`; the owner writes Relaxed (single-writer at issue time —
-    /// Ф3), remote reads Relaxed (also Ф3). Mirrors [`atomic_u32_at`]; the
-    /// segment-lifetime reasoning is identical, only the field width is 1 byte
-    /// (and `AtomicU8` has no alignment requirement beyond 1).
-    #[cfg_attr(not(feature = "hardened"), allow(dead_code))]
-    #[allow(dead_code)] // wired in X7 Ф1; consumed by Ф2/Ф3 + the gen-table layout test
-    #[inline(always)]
-    pub(crate) fn atomic_u8_at(base: *mut u8, off: usize) -> &'static core::sync::atomic::AtomicU8 {
-        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU8;
-        // SAFETY: caller guarantees `base` is a live segment or test buffer and `off` is
-        // the offset of a byte within a metadata region at `base`, with
-        // `off + 1` in-bounds. LIFETIME (see the `'static` note on
-        // [`atomic_u64_at`] for the full argument): the `'static` here is NOT
-        // "the segment is mapped for the whole process" — Large segments are
-        // released mid-process (`AllocCore::reclaim_large_segment` /
-        // large-cache eviction → `os::release_segment`), and no `HeapCore` is
-        // ever dropped. The reference is valid only while the MAPPED backing
-        // is held by its
-        // exclusive owner (a registry heap lease, a standalone core's `&mut`, or
-        // the owner's Large cache holding an unregistered cached reservation) and
-        // never after `os::release_segment`; the hardened generation-table paths
-        // at `segment_header_gen_table.rs` run on live, owner-held reservations.
-        // The producer terminal-publication path never reads these physical
-        // words — it targets the route directory's independent descriptor
-        // word. `AtomicU8` is `Sync`, so
-        // shared atomic access from any thread is race-free.
-        unsafe { &*ptr }
     }
 
     /// Return a `&'static AtomicU32` view over the 4 aligned bytes at

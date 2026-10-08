@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Root allocator `src/` review round 18 remediation (2026-10-09)
 
-Runtime improvements this round: 0. The P1 change repairs a safe internal
-diagnostic hook; no production feature composition or allocator algorithm
-changed.
+Runtime improvements this round: 0 in the production default. R18 fixes an
+internal diagnostic and hardens opt-in free-list checks; it removes an unused
+hardened metadata table. Production feature composition is unchanged; no
+speed or RSS improvement is claimed.
 
 - [correctness fix] `AllocCore::dbg_is_decommitted_for` now resolves the input
   address to the segment table's canonical stored pointer before reading
@@ -19,6 +20,16 @@ changed.
   under strict-provenance Miri; restoring the caller-derived metadata access
   fails Miri with a no-provenance diagnostic, then the fixed implementation
   passes again.
+
+- [correctness fix] Hardened free-list pops and batch drains validate node
+  geometry, allocation/magazine state, and continuation links before mutation.
+  Six targeted regressions passed in debug and release; allocated-link, forged
+  out-of-segment-link, and self-cycle revert controls failed as intended.
+- [correctness fix] Removed the hardened per-segment generation table after
+  confirming it had no runtime reader. Its 256 KiB derived footprint, writers,
+  layout accessors, and table-only tests are gone; this is not a measured RSS
+  or instruction-count claim. Current README, architecture, and durability
+  inventories reflect the removal.
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 
