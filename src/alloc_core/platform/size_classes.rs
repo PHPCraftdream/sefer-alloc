@@ -210,6 +210,12 @@ pub(crate) const SIZE_CLASS_TABLE: [usize; TABLE_LEN] =
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
 pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
 
+// changed_classes uses one u64 mask bit per small class.
+const _: () = assert!(
+    SMALL_CLASS_COUNT <= u64::BITS as usize,
+    "SMALL_CLASS_COUNT exceeds the changed_classes u64 mask"
+);
+
 /// The largest small size class. Allocations `<=` this (with alignment `<=`
 /// [`SMALL_ALIGN_MAX`]) are served by the small free-list path.
 pub(crate) const SMALL_MAX: usize = SIZE_CLASS_TABLE[TABLE_LEN - 1];
