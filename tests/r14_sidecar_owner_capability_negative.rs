@@ -2,17 +2,34 @@
 //! rustc, `--error-format=json`, exactly one error with an exact code,
 //! rendered-content substrings, primary span inside the fixture's own
 //! main.rs).
-//! This harness invokes the host `rustc` directly, so it is enabled only for
-//! x86_64 test targets; cross-target CI does not feed foreign-target rlibs to
-//! the host compiler. Native CI retains these API-visibility checks.
+//! This harness invokes RUSTC (or rustc) directly. A runtime gate reads its
+//! `host:` from one `rustc -vV` per negative check and normalizes both path
+//! separators; CACHEDIR.TAG or .rustc_info.json above `<profile>/deps` marks
+//! a native target root; otherwise that directory's basename is the target.
+//! Native and explicit host targets run on every
+//! architecture. Missing/nonrunning rustc and foreign targets explicitly skip
+//! (foreign skips print both triples); malformed successful output fails.
+//! Native roots missing both markers are treated as foreign by basename.
 //!
-//! Fixtures compile against the ACTUAL BUILT crate. Artifact selection is
+//! Fixtures compile against compatible built artifacts; these candidates
+//! are not proven to be the rlib linked into the current test build.
+//! Artifact selection is
 //! deterministic: every `libsefer_alloc-*.rlib` / `libsefer_alloc.rlib` under
 //! the deps directory (the parent of `current_exe()`, which cargo places
 //! under `<profile>/deps/`) is a candidate, sorted by path. A positive probe
 //! fixture (`tests/compile_fail/r14_positive_probe`) decides per candidate
 //! whether the build is internals-compatible: success → COMPATIBLE, failure
-//! with only missing/private `registry` import errors → skipped,
+//! with only these restricted coded messages → skipped:
+//! - E0432: "unresolved import `sefer_alloc::registry`".
+//! - E0433: "cannot find `registry` in `sefer_alloc`" or
+//!   "could not find `registry` in `sefer_alloc`".
+//! - E0460: prefix "found possibly newer version of crate `" and suffix
+//!   "` which `sefer_alloc` depends on".
+//! - E0463: prefix "can't find crate for `" and suffix
+//!   " which `sefer_alloc` depends on".
+//! - E0603: "module `registry` is private".
+//!
+//! Only the exact count-matched uncoded abort summary is allowed;
 //! anything else → hard harness failure. Each negative fixture is then run
 //! against EVERY compatible variant, each with its own out-dir, and must
 //! yield exactly one coded error of the expected code with the expected
@@ -26,13 +43,229 @@
 //! - `route_registration_owner_not_sync` → exactly one E0277
 //!   (`RouteRegistration` is `!Sync` via `PhantomData<Cell<()>>`).
 
-#![cfg(all(
-    feature = "alloc-global",
-    feature = "internals",
-    target_arch = "x86_64"
-))]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, PartialEq, Eq)]
+enum RuntimeGate {
+    Permit { host: String, target: String },
+    ForeignTarget { host: String, target: String },
+    MissingRustc,
+}
+
+fn runtime_gate(
+    executable: &str,
+    rustc_stdout: Option<&str>,
+    is_target_dir_root: &dyn Fn(&str) -> bool,
+) -> Result<RuntimeGate, String> {
+    let Some(stdout) = rustc_stdout else {
+        return Ok(RuntimeGate::MissingRustc);
+    };
+    let hosts: Vec<_> = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("host:"))
+        .collect();
+    if hosts.len() != 1 || hosts[0].split_whitespace().count() != 1 {
+        return Err(format!("malformed successful rustc -vV output: {stdout:?}"));
+    }
+    let host = hosts[0].trim();
+    let normalized = executable.replace('\\', "/");
+    let components: Vec<_> = normalized.split('/').collect();
+    if components.len() < 4
+        || components[components.len() - 2] != "deps"
+        || components[components.len() - 3].is_empty()
+        || components[components.len() - 4].is_empty()
+        || components.last() == Some(&"")
+    {
+        return Err(format!(
+            "unsupported test executable layout: {executable:?}"
+        ));
+    }
+    let above_profile = components[components.len() - 4];
+    let directory = components[..components.len() - 3].join("/");
+    let target = if is_target_dir_root(&directory) {
+        host
+    } else {
+        above_profile
+    };
+    let host = host.to_owned();
+    let target = target.to_owned();
+    Ok(if host == target {
+        RuntimeGate::Permit { host, target }
+    } else {
+        RuntimeGate::ForeignTarget { host, target }
+    })
+}
+
+fn rustc_command() -> std::ffi::OsString {
+    std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into())
+}
+
+fn permit_fixture(tag: &str) -> bool {
+    let executable = std::env::current_exe().expect("current_exe is resolvable");
+    let output = std::process::Command::new(rustc_command())
+        .arg("-vV")
+        .output();
+    let stdout = match &output {
+        Ok(output) if output.status.success() => Some(
+            std::str::from_utf8(&output.stdout).expect("successful rustc -vV stdout must be UTF-8"),
+        ),
+        _ => None,
+    };
+    let is_target_dir_root = |dir: &str| {
+        let is_root = Path::new(dir).join("CACHEDIR.TAG").exists()
+            || Path::new(dir).join(".rustc_info.json").exists();
+        eprintln!("R14 {tag}: target directory={dir} is_target_dir_root={is_root}");
+        is_root
+    };
+    match runtime_gate(&executable.to_string_lossy(), stdout, &is_target_dir_root)
+        .unwrap_or_else(|error| panic!("{tag}: {error}"))
+    {
+        RuntimeGate::Permit { host, target } => {
+            eprintln!("R14 {tag}: permit host={host} target={target}");
+            true
+        }
+        RuntimeGate::ForeignTarget { host, target } => {
+            eprintln!("R14 {tag}: skip foreign target host={host} target={target}");
+            false
+        }
+        RuntimeGate::MissingRustc => {
+            eprintln!("R14 {tag}: skip missing/nonrunning rustc: {output:?}");
+            false
+        }
+    }
+}
+
+#[test]
+fn runtime_gate_synthetic_controls() {
+    for separator in ["/", "\\"] {
+        for host in ["aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+            let stdout = format!("rustc test\nhost: {host}\nrelease: test\n");
+            for (directory, profile, binary) in [
+                ("/tmp/target", "debug", "test"),
+                ("/tmp/x86_64-native-cache", "debug", "test"),
+                ("/tmp/native-target-cache", "custom", "test"),
+                ("C:/build/native-target-dir", "release", "test.exe"),
+            ] {
+                let path = format!("{directory}/{profile}/deps/{binary}");
+                assert_eq!(
+                    runtime_gate(&path.replace('/', separator), Some(&stdout), &|dir| {
+                        assert_eq!(dir, directory);
+                        true
+                    }),
+                    Ok(RuntimeGate::Permit {
+                        host: host.into(),
+                        target: host.into()
+                    })
+                );
+            }
+            let directory = format!("C:/build/target/{host}");
+            let path = format!("{directory}/debug/deps/test.exe");
+            assert_eq!(
+                runtime_gate(&path.replace('/', separator), Some(&stdout), &|dir| {
+                    assert_eq!(dir, directory);
+                    false
+                }),
+                Ok(RuntimeGate::Permit {
+                    host: host.into(),
+                    target: host.into()
+                })
+            );
+            for target in [
+                "arm-linux-androideabi",
+                "thumbv7em-none-eabihf",
+                "aarch64-apple-ios",
+                "wasm32-unknown-unknown",
+                "x86_64-unknown-none",
+                "aarch64-unknown-linux-gnu",
+                "riscv64gc-unknown-linux-gnu",
+                "armv7-unknown-linux-gnueabihf",
+                "x86_64-unknown-linux-gnu",
+            ] {
+                let directory = format!("/tmp/target/{target}");
+                let path = format!("{directory}/release/deps/test");
+                assert_eq!(
+                    runtime_gate(&path.replace('/', separator), Some(&stdout), &|dir| {
+                        assert_eq!(dir, directory);
+                        false
+                    }),
+                    Ok(RuntimeGate::ForeignTarget {
+                        host: host.into(),
+                        target: target.into()
+                    })
+                );
+            }
+            for (directory, profile, binary) in [
+                ("/tmp/target", "debug", "test"),
+                ("/tmp/x86_64-native-cache", "debug", "test"),
+                ("/tmp/native-target-cache", "custom", "test"),
+                ("C:/build/native-target-dir", "release", "test.exe"),
+            ] {
+                let path = format!("{directory}/{profile}/deps/{binary}");
+                // Without either marker, a native directory is conservatively foreign.
+                assert_eq!(
+                    runtime_gate(&path.replace('/', separator), Some(&stdout), &|dir| {
+                        assert_eq!(dir, directory);
+                        false
+                    }),
+                    Ok(RuntimeGate::ForeignTarget {
+                        host: host.into(),
+                        target: directory.rsplit('/').next().unwrap().into()
+                    })
+                );
+            }
+        }
+        assert_eq!(
+            runtime_gate(
+                &"C:/build/target/debug/deps/test.exe".replace('/', separator),
+                None,
+                &|_| panic!("missing rustc must not query the directory")
+            ),
+            Ok(RuntimeGate::MissingRustc)
+        );
+    }
+    // Any single nonempty host string is accepted, without a triple whitelist.
+    assert_eq!(
+        runtime_gate(
+            "/tmp/target/debug/deps/test",
+            Some("host: nonsense"),
+            &|_| true
+        ),
+        Ok(RuntimeGate::Permit {
+            host: "nonsense".into(),
+            target: "nonsense".into()
+        })
+    );
+    for stdout in [
+        "",
+        "release: test",
+        "host:",
+        "host:   ",
+        "host: two strings",
+        "host: x86_64-pc-windows-msvc\nhost: aarch64-apple-darwin",
+    ] {
+        assert!(
+            runtime_gate("/tmp/target/debug/deps/test", Some(stdout), &|_| {
+                panic!("malformed rustc output must not query the directory")
+            })
+            .is_err()
+        );
+    }
+    for path in [
+        "/tmp/test",
+        "/debug/deps/test",
+        "/tmp/target//deps/test",
+        "/tmp/target/debug/deps/",
+    ] {
+        assert!(
+            runtime_gate(path, Some("host: aarch64-apple-darwin"), &|_| {
+                panic!("invalid layout must not query the directory")
+            })
+            .is_err()
+        );
+    }
+}
 
 /// Canonical fixture path in a rustc-comparable form (`\\?\` prefix stripped,
 /// separators normalized to `/`).
@@ -128,8 +361,12 @@ fn error_diagnostics(stderr: &str, context: &str) -> Vec<serde_json::Value> {
 fn run_rustc(fixture: &Path, candidate: &Path, out_dir: &Path) -> std::process::Output {
     std::fs::create_dir_all(out_dir)
         .unwrap_or_else(|error| panic!("failed to create {}: {error}", out_dir.display()));
-    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
-    std::process::Command::new(rustc)
+    eprintln!(
+        "R14 fixture execution: {} candidate={}",
+        fixture.display(),
+        candidate.display()
+    );
+    std::process::Command::new(rustc_command())
         .arg(fixture)
         .arg("--edition=2021")
         .arg("--emit=metadata")
@@ -172,6 +409,7 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
                 "the positive probe exited 0 but reported errors:\n{}",
                 full_context(probe, candidate, &output)
             );
+            eprintln!("R14 {tag}: compatible candidate={}", candidate.display());
             compatible.push(candidate.clone());
         } else if output.status.code() == Some(1)
             && !errors.is_empty()
@@ -213,6 +451,11 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
          bench-internals features first",
         deps_dir().display(),
         candidates
+    );
+    eprintln!(
+        "R14 {tag}: {} compatible candidates of {}",
+        compatible.len(),
+        candidates.len()
     );
     compatible
 }
@@ -323,6 +566,9 @@ fn assert_fixture_fails(
 #[test]
 #[cfg(not(miri))]
 fn shared_sidecar_prepare_is_not_callable_from_outside_the_crate() {
+    if !permit_fixture("prepare") {
+        return;
+    }
     let fixture = canonicalize_fixture(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/compile_fail/small_sidecar_shared_prepare_not_callable/src/main.rs"),
@@ -346,6 +592,9 @@ fn shared_sidecar_prepare_is_not_callable_from_outside_the_crate() {
 #[test]
 #[cfg(not(miri))]
 fn shared_sidecar_issue_is_not_callable_from_outside_the_crate() {
+    if !permit_fixture("issue") {
+        return;
+    }
     let fixture = canonicalize_fixture(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/compile_fail/small_sidecar_shared_issue_not_callable/src/main.rs"),
@@ -369,6 +618,9 @@ fn shared_sidecar_issue_is_not_callable_from_outside_the_crate() {
 #[test]
 #[cfg(not(miri))]
 fn route_registration_shared_reference_must_not_be_sync() {
+    if !permit_fixture("sync") {
+        return;
+    }
     let fixture = canonicalize_fixture(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/compile_fail/route_registration_owner_not_sync/src/main.rs"),
