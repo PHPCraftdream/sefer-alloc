@@ -185,13 +185,14 @@
 //! plus the always-compiled [`AllocStats::config_conflicts`] counter (a
 //! former debug-build `debug_assert!` there unwound out of
 //! `GlobalAlloc::alloc` — R2-08, `tests/regression_r2_08_globalalloc_no_unwind.rs`).
-//! The one deliberate process kill on the alloc path is a direct
-//! `std::process::abort()` (registry chunk-materialisation OOM,
-//! `registry/bootstrap/registry.rs`), which neither unwinds nor runs the
-//! panic hook. What remains panic-capable on these paths is internal-invariant
-//! checking only — the `debug_assert!`s, bounds-checked indexing / `expect`s
-//! on internally-derived indices (e.g. a size-class index), and the four
-//! release tripwires above — none of which a contract-respecting caller
+//! Deliberate process kills use direct `std::process::abort()`: registry
+//! chunk-materialisation OOM (`registry/bootstrap/registry.rs`) and a missing
+//! magazine root during overflow-flush or `flush_all_tcache`. These neither
+//! unwind nor run the panic hook. What remains panic-capable on these paths
+//! is internal-invariant checking only — the `debug_assert!`s, bounds-checked
+//! indexing / `expect`s on internally-derived indices (e.g. a size-class
+//! index), and the four release tripwires above — none of which a
+//! contract-respecting caller
 //! (valid non-zero-size `Layout`, live pointer, any configuration) can reach
 //! without a bug in this crate having already corrupted allocator metadata.
 //! Should one ever fire, its outcome is whatever the panic runtime does on

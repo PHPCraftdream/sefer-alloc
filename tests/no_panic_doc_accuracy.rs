@@ -208,3 +208,364 @@ fn no_panic_doc_is_qualified() {
          resolution rather than a retained debug assertion"
     );
 }
+
+// Conservative lexical guard, not a Rust parser/feature resolver. Unknown
+// feature predicates remain visible (both feature branches are audited).
+const RELEASE_SCAN_FILES: &[&str] = &[
+    "registry/heap_core/free/dealloc_own_base.rs",
+    "registry/heap_core/free/dealloc.rs",
+    "registry/heap_core/state/tcache_flush.rs",
+    "registry/heap_core/state/ownership.rs",
+    "registry/heap_core/alloc/hot.rs",
+    "alloc_core/large/alloc_core_large_cache.rs",
+    "alloc_core/alloc_core/mem/realloc_fastpath.rs",
+];
+
+// (file, exact source message, count, one-line reason). No magazine exceptions.
+const RELEASE_ALLOWLIST: &[(&str, &str, usize, &str)] = &[
+    (
+        "alloc_core/large/alloc_core_large_cache.rs",
+        "large_cache_slot_take: empty base slot",
+        1,
+        "Documented occupancy tripwire for a proven occupied base slot.",
+    ),
+    (
+        "alloc_core/large/alloc_core_large_cache.rs",
+        "large_cache_slot_take: empty extension slot",
+        1,
+        "Documented occupancy tripwire for a proven occupied extension slot.",
+    ),
+    (
+        "alloc_core/large/alloc_core_large_cache.rs",
+        "large_cache_slot_take: idx out of base range with extension disabled",
+        1,
+        "Documented take range tripwire when the extension is disabled.",
+    ),
+    (
+        "alloc_core/large/alloc_core_large_cache.rs",
+        "large_cache_slot_set: idx out of base range with extension disabled",
+        1,
+        "Documented insertion range tripwire when the extension is disabled.",
+    ),
+];
+
+#[derive(Debug)]
+struct Token {
+    text: String,
+    line: usize,
+    message: Option<String>,
+}
+
+fn panic_tokens(source: &str) -> Vec<Token> {
+    let b = source.as_bytes();
+    let (mut i, mut line) = (0, 1);
+    let mut out = Vec::new();
+    while i < b.len() {
+        let (start, token_line) = (i, line);
+        if b[i].is_ascii_whitespace() {
+            line += usize::from(b[i] == b'\n');
+            i += 1;
+            continue;
+        }
+        if b[i..].starts_with(b"//") {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if b[i..].starts_with(b"/*") {
+            let mut depth = 1;
+            i += 2;
+            while i < b.len() && depth != 0 {
+                if b[i..].starts_with(b"/*") {
+                    depth += 1;
+                    i += 2;
+                } else if b[i..].starts_with(b"*/") {
+                    depth -= 1;
+                    i += 2;
+                } else {
+                    line += usize::from(b[i] == b'\n');
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        let prefix = i + usize::from(matches!(b[i], b'b' | b'c'));
+        let mut quote = prefix + 1;
+        if b.get(prefix) == Some(&b'r') {
+            while b.get(quote) == Some(&b'#') {
+                quote += 1;
+            }
+        }
+        let raw = b.get(prefix) == Some(&b'r') && b.get(quote) == Some(&b'"');
+        let mut message = None;
+        if raw || b.get(prefix) == Some(&b'"') {
+            let hashes = if raw { quote - prefix - 1 } else { 0 };
+            let opening = if raw { quote } else { prefix };
+            i = opening + 1;
+            let content = i;
+            while i < b.len() {
+                if b[i] == b'"'
+                    && (!raw || b.get(i + 1..i + 1 + hashes) == Some(&b[prefix + 1..quote]))
+                {
+                    // Preserve escape spelling, rather than interpreting Rust.
+                    message = Some(source[content..i].to_owned());
+                    i += 1 + hashes;
+                    break;
+                }
+                if !raw && b[i] == b'\\' {
+                    i += 1;
+                    if i == b.len() {
+                        break;
+                    }
+                }
+                line += usize::from(b[i] == b'\n');
+                i += 1;
+            }
+        } else if b[i] == b'\'' && i + 1 < b.len() {
+            // Characters are inert; lifetimes such as 'static are not chars.
+            let width = source[i + 1..].chars().next().unwrap().len_utf8();
+            let end = if b[i + 1] == b'\\' {
+                source[i + 2..].find('\'').map(|n| i + 2 + n)
+            } else {
+                Some(i + 1 + width)
+            };
+            if let Some(end) = end.filter(|&end| b.get(end) == Some(&b'\'')) {
+                line += source[i..=end].bytes().filter(|&c| c == b'\n').count();
+                i = end + 1;
+            } else {
+                i += 1;
+            }
+        } else if b[i].is_ascii_alphabetic() || b[i] == b'_' {
+            i += 1;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+        } else {
+            i += source[i..].chars().next().unwrap().len_utf8();
+        }
+        out.push(Token {
+            text: source[start..i].to_owned(),
+            line: token_line,
+            message,
+        });
+    }
+    out
+}
+
+fn token_group_end(tokens: &[Token], start: usize) -> usize {
+    let mut stack = Vec::new();
+    for (i, t) in tokens.iter().enumerate().skip(start) {
+        if t.message.is_some() {
+            continue;
+        }
+        match t.text.as_str() {
+            "(" => stack.push(")"),
+            "[" => stack.push("]"),
+            "{" => stack.push("}"),
+            ")" | "]" | "}" => {
+                assert_eq!(
+                    stack.pop(),
+                    Some(t.text.as_str()),
+                    "unbalanced source at line {}",
+                    t.line
+                );
+                if stack.is_empty() {
+                    return i;
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unterminated group at line {}", tokens[start].line);
+}
+
+// Three-valued evaluation: suppress only definitely false release cfgs.
+fn release_cfg(tokens: &[Token]) -> Option<bool> {
+    let first = tokens.first()?.text.as_str();
+    if tokens.len() == 1 {
+        return match first {
+            "test" | "debug_assertions" => Some(false),
+            _ => None,
+        };
+    }
+    if tokens.get(1)?.text != "(" || tokens.last()?.text != ")" {
+        return None;
+    }
+    let inner = &tokens[2..tokens.len() - 1];
+    if first == "not" {
+        return release_cfg(inner).map(|v| !v);
+    }
+    if !matches!(first, "all" | "any") {
+        return None;
+    }
+    let (mut begin, mut depth) = (0, 0usize);
+    let mut values = Vec::new();
+    for (i, t) in inner.iter().enumerate() {
+        match t.text.as_str() {
+            "(" => depth += 1,
+            ")" => depth -= 1,
+            "," if depth == 0 => {
+                values.push(release_cfg(&inner[begin..i]));
+                begin = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if begin < inner.len() {
+        values.push(release_cfg(&inner[begin..]));
+    }
+    let decisive = first == "any";
+    if values.contains(&Some(decisive)) {
+        Some(decisive)
+    } else if values.iter().all(Option::is_some) {
+        Some(!decisive)
+    } else {
+        None
+    }
+}
+
+fn release_panic_sites(source: &str) -> Vec<(usize, String, String)> {
+    let ts = panic_tokens(source);
+    let mut sites = Vec::new();
+    let mut i = 0;
+    while i < ts.len() {
+        let text = ts[i].text.as_str();
+        if text == "#" && ts.get(i + 1).is_some_and(|t| t.text == "[") {
+            let end = token_group_end(&ts, i + 1);
+            let attr = &ts[i + 2..end];
+            if attr.first().is_some_and(|t| t.text == "cfg")
+                && attr.get(1).is_some_and(|t| t.text == "(")
+                && attr.last().is_some_and(|t| t.text == ")")
+                && release_cfg(&attr[2..attr.len() - 1]) == Some(false)
+            {
+                i = end + 1;
+                while i + 1 < ts.len() && ts[i].text == "#" && ts[i + 1].text == "[" {
+                    i = token_group_end(&ts, i + 1) + 1;
+                }
+                // Attached item/block/statement; signature groups don't end it.
+                while i < ts.len() {
+                    match ts[i].text.as_str() {
+                        "{" => {
+                            i = token_group_end(&ts, i) + 1;
+                            break;
+                        }
+                        ";" => {
+                            i += 1;
+                            break;
+                        }
+                        "(" | "[" => i = token_group_end(&ts, i) + 1,
+                        _ => i += 1,
+                    }
+                }
+                continue;
+            }
+            i = end + 1;
+            continue;
+        }
+        let macro_call = ts.get(i + 1).is_some_and(|t| t.text == "!")
+            && ts
+                .get(i + 2)
+                .is_some_and(|t| matches!(t.text.as_str(), "(" | "[" | "{"));
+        if text.starts_with("debug_assert") && macro_call {
+            i = token_group_end(&ts, i + 2) + 1;
+            continue;
+        }
+        let expect = text == "expect"
+            && i > 0
+            && ts[i - 1].text == "."
+            && ts.get(i + 1).is_some_and(|t| t.text == "(");
+        if expect || (matches!(text, "panic" | "unreachable") && macro_call) {
+            let open = i + if expect { 1 } else { 2 };
+            let end = token_group_end(&ts, open);
+            let message = ts[open + 1..end]
+                .iter()
+                .find_map(|t| t.message.clone())
+                .unwrap_or_else(|| "<nonliteral or absent message>".to_owned());
+            sites.push((ts[i].line, text.to_owned(), message));
+            // Keep scanning arguments to report nested calls too.
+        }
+        i += 1;
+    }
+    sites
+}
+
+#[test]
+fn production_release_panic_sites_match_explicit_allowlist() {
+    let mut found = Vec::new();
+    let mut errors = Vec::new();
+    for &file in RELEASE_SCAN_FILES {
+        for (line, kind, message) in release_panic_sites(&read_src(file)) {
+            if !RELEASE_ALLOWLIST
+                .iter()
+                .any(|&(f, m, _, _)| file == f && message == m)
+            {
+                errors.push(format!(
+                    "{}:{line}: {kind}: {message:?}",
+                    src_path(file).display()
+                ));
+            }
+            found.push((file, line, kind, message));
+        }
+    }
+    for &(file, message, count, reason) in RELEASE_ALLOWLIST {
+        assert!(!reason.is_empty() && !reason.contains('\n'));
+        let actual = found
+            .iter()
+            .filter(|(f, _, _, m)| *f == file && m == message)
+            .count();
+        if actual != count {
+            errors.push(format!(
+                "{}: {message:?}: expected {count}, found {actual}; {reason}",
+                src_path(file).display()
+            ));
+        }
+    }
+    let inventory = found
+        .iter()
+        .map(|(file, line, kind, message)| {
+            format!("{}:{line}: {kind}: {message:?}", src_path(file).display())
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(errors.is_empty(), "Unexpected release panic sites / allowlist drift:\n{}\nALL scanned release sites:\n{inventory}", errors.join("\n"));
+}
+
+#[test]
+fn release_panic_scanner_handles_strings_comments_and_cfg() {
+    let source = r####"
+// .expect("comment")
+/* panic!("block comment") /* nested */ */
+const S: &str = r###"panic!("raw string") // inert"###;
+let c = '(';
+let lifetime: &'static str = "unreachable!(fake)";
+debug_assert_eq!(value.expect("debug macro"), 1);
+#[cfg(test)]
+#[inline]
+fn tests() { panic!("test item"); }
+#[cfg(all(feature = "production", debug_assertions))]
+{ value.expect("debug block"); }
+#[cfg(any(test, debug_assertions))]
+fn debug_only() { panic!("debug item"); }
+#[cfg(not(debug_assertions))]
+{ value
+    .expect(
+        "release // message with \"quotes\" and )",
+    ); }
+#[cfg(any(test, feature = "production"))]
+fn maybe_release() { unreachable!(r#"raw release"#); }
+panic!();
+"####;
+    let sites = release_panic_sites(source);
+    assert_eq!(sites.len(), 3, "{sites:?}");
+    assert_eq!(
+        sites[0],
+        (
+            17,
+            "expect".to_owned(),
+            r#"release // message with \"quotes\" and )"#.to_owned()
+        )
+    );
+    assert_eq!(sites[1].2, "raw release");
+    assert_eq!(sites[2].2, "<nonliteral or absent message>");
+}

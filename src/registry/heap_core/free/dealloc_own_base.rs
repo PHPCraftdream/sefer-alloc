@@ -483,7 +483,7 @@ impl HeapCore {
                         let (fbase, _) = self
                             .core
                             .canonical_block_of(flushed)
-                            .expect("magazine slot belongs to a live segment");
+                            .unwrap_or_else(|| std::process::abort());
                         let foff = (flushed.addr() - fbase.addr()) as u32;
                         SegmentMeta::new(fbase)
                             .magazine_bitmap()
