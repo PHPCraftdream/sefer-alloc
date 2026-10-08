@@ -36,24 +36,19 @@ composition, defaults and dependencies are unchanged.
   against T=12). No runtime change; revisit needs an owner decision on the
   observable behaviour and a fresh pre-registration. Report, raw logs,
   summary CSV and identity bundle: `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md`.
-- [test, CI] The R14-01 compile-fail harness now uses rustc's E0461
-  foreign-rlib verdict for `sefer_alloc`, with no architecture, layout or
-  marker gate. With a usable current native artifact, native arm64 runs the
-  checks again; only a nonempty all-foreign candidate set with no compatible
-  candidates skips. The first `CACHEDIR.TAG` gate (`6f568c25`) failed CI run
-  `37770561319` on `9c846e81`; the intermediate `.rustc_info.json`-only gate
-  was also unreliable when clean roots lacked that file with `RUSTC_WRAPPER`
-  empty. Final fix: compiler verdict, not host-layout inference. Item175 is
-  FIXED IN TREE / CI CONFIRMATION PENDING and stays OPEN until green CI.
-  Current-linked rlib identity remains unproven. A pre-probe freshness filter
-  now excludes reused-target-dir candidates only when their readable mtime is
-  strictly older than the newest readable mtime among recursive `src/**/*.rs`,
-  `Cargo.toml` and optional `build.rs`; metadata/mtime failures and unreadable
-  directories are ignored. Unknown candidate mtimes are retained; no readable
-  source timestamp means no exclusion. Stale exclusions are logged and counted;
-  an empty filtered set hard fails with a rebuild instruction. Newer or
-  unknown-mtime incompatible artifacts still hard fail, including E0599/E0624.
-- [docs/index] Items 172, 173, 174, 176 moved to `RESOLVED.md`; item154 gets a
+- [test, CI] The R14-01 compile-fail harness no longer infers host/target from
+  the architecture, target-directory layout or markers. A candidate rlib built
+  for another target fails the positive probe with rustc's E0461 and is
+  skipped explicitly (the test skips only when every candidate is foreign and
+  none is compatible); a candidate older than the crate's newest source file is
+  skipped as stale-source, which fixes a local failure in long-lived target
+  directories. Native arm64 runs the checks again (item175, CLOSED). The first
+  gate (`6f568c25`, `CACHEDIR.TAG` as root marker) turned the `cross test`
+  aarch64 job red on its first CI run (E0461); it was replaced by `eda25f97`
+  and hardened by `b5247602`. CI is green on both (macOS arm64 and cross
+  aarch64 each run 5 tests). Current-linked rlib identity remains unproven by
+  design.
+- [docs/index] Items 172, 173, 174, 175, 176 moved to `RESOLVED.md`; item154 gets a
   follow-up note (listed prose examples fixed, `segment_route`
   `allow(dead_code)` removed, structural debt remains); perf item84 closed,
   item83 re-carded as an `[L]` revisit item. Manifest:

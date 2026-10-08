@@ -50,7 +50,7 @@ This closing manifest is intentionally outside that range, avoiding self-referen
 git log --reverse --format="%H|%cI|%s" fe171d9e74d7617476e4097d9f9ee9de251a02d0..9831adccf0e75b1335dc840d2f556b823ddfe49a
 ```
 
-The close-out commit that records this section and the index moves is intentionally outside that range, avoiding self-reference. Everything below is local until the owner pushes.
+The close-out commit that records this section and the index moves is intentionally outside that range, avoiding self-reference. The range was pushed on the owner's command; its CI outcome is recorded in §6.
 
 | # | SHA | Commit time (`%cI`) | Prefix (R30-12) | Category |
 |---|---|---|---|---|
@@ -82,7 +82,7 @@ The close-out commit that records this section and the index moves is intentiona
 | R15-01 / correctness item 172 | **CLOSED** (`486f5ace`) | regression test; old loop red with `later_live_drops=0` |
 | R15-02 / correctness item 173 | **CLOSED** (`32cacc97`) | regression test; red without the `Drop` increment (`reserved_delta=1 released_delta=0`) |
 | R16-01 / correctness item 174 | **CLOSED** (`9df9f6b8`, then `b707d196`) | the release `.expect`s no longer exist; scanner pins the allowlist |
-| R16-02 / correctness item 175 | **FIXED IN TREE, CI CONFIRMATION PENDING** (`6f568c25`) | local 4/4; the macOS arm64 job must run the harness again after a push; card stays `[T]` |
+| R16-02 / correctness item 175 | **CLOSED** after two CI iterations (`6f568c25` rejected, then `eda25f97` + `b5247602`, §6) | first gate turned CI red; final gate green on macOS arm64 and cross aarch64 |
 | R16-03 / correctness item 176 | **CLOSED** (`222e913d`) | compile-time assertion |
 | Correctness item 154 (R15-03) | **OPEN, partial progress** (`c8b9344a`) | listed examples fixed; structural prose debt and the parent `allow(dead_code, unused_imports)` near `src/lib.rs:482` remain |
 | Perf item 84 | **GO, SHIPPED** (`b707d196`) | `docs/perf/R16_PERF84_FLUSH_ROOT_MASK_GATE.md`; closure narrative in `OPEN_ITEMS_ARCHIVE.md` |
@@ -93,5 +93,26 @@ The close-out commit that records this section and the index moves is intentiona
 - Each code change was reviewed line by line by the integrator and its tests rerun natively; where a runtime test applies it was checked red against the old code (items 172, 173) or against a mutant (item 175's `pub fn prepare`, perf 84 and perf 83 mutants, restored by copy-back and verified). Perf 84 and perf 83 numbers were re-measured independently with a forced rebuild (a first perf 84 re-measurement was discarded because cargo had not rebuilt after a copy; the second matched).
 - Linux `clippy -D warnings` over `--all-features`, `production,internals` and `production,bench-internals,internals,alloc-stats` (all targets) found one `needless_late_init` in the perf 83 RSS probe, invisible to the Windows clippy; it was fixed before the perf 83 commit (report §7 item 5).
 - `node scripts/verify-commit-prefixes.mjs` PASS over the range plus this close-out; `no_stale_doc_references` 32/32 after the count sync.
-- Correctness census after the close-out: ACTIVE **7** numbered cards (items 1, 2, 11, 13, 62, 162, 163); `TRACKED_*.md` **140** numbered records and **140** lookup rows to `TRACKED_*.md` (item 176 left the tier, item 175 stayed).
-- Not run: Miri, Loom, Kani, TSan, MSRV, full `npm run check`, benchmarks beyond the deterministic iai rows, wall-clock, non-Windows/non-WSL hosts for the new tests (CI is the confirmation). Nothing was pushed.
+- Correctness census after the close-out: ACTIVE **7** numbered cards (items 1, 2, 11, 13, 62, 162, 163); `TRACKED_*.md` **139** numbered records and **139** lookup rows to `TRACKED_*.md` (items 175 and 176 left the tier at the close-out).
+- Not run locally: Miri, Loom, Kani, TSan, MSRV, full `npm run check`, benchmarks beyond the deterministic iai rows, wall-clock, non-Windows/non-WSL hosts for the new tests (CI was the confirmation, see §6).
+
+## §6. CI outcome and the two fixes after the push (2026-10-08)
+
+**Honest record:** the push of `9c846e81` landed with CI **red**: job `test (aarch64-unknown-linux-gnu)` (`cross test`) failed 3 of 4 tests of `r14_sidecar_owner_capability_negative` with E0461 (run `37770561319`; 49 other jobs and Kani green). Cause: the first host == target gate (`6f568c25`, §5) trusted `CACHEDIR.TAG` as the target-root marker, but cargo writes that file into every `<root>/<triple>` directory. This was the residual flagged for item 175 (CI is the only confirmation), and it materialised. Local checks had run on a host == target layout only.
+
+The follow-up range is derived from:
+
+```text
+git log --reverse --format="%H|%cI|%s" 9c846e812c8baf467c5929a681c4f8e737e17b5f..b524760284c4cae0720aa28e35145f6896f40455
+```
+
+The commit that records this section is outside that range.
+
+| # | SHA | Commit time (`%cI`) | Prefix (R30-12) | Category |
+|---|---|---|---|---|
+| 1 | `eda25f972c8eff91082fa1a0b99f88c061269663` | `2026-10-08T14:26:01+02:00` | `test` | compiler-verdict gate (E0461) replaces the layout/marker gate of `6f568c25`; fixes the red `cross test` aarch64 job |
+| 2 | `b524760284c4cae0720aa28e35145f6896f40455` | `2026-10-08T15:15:55+02:00` | `test` | source-freshness filter for stale `libsefer_alloc-*.rlib` candidates; fixes a local failure in long-lived target directories |
+
+- **Net `production` impact: none** (test-only commits; `src/`, `Cargo.*` and `.github/` unchanged). No `perf(runtime)` or `perf(opt-in)` commit in this range, no measured Ir/wall-clock/RSS claim, raw perf logs committed: **0 files**.
+- **CI verdicts on the landing SHAs:** `eda25f97` run `37776932309` success (50 jobs success, 4 scheduled jobs skipped) with Kani `37776932388` success; `b5247602` run `37783258647` success (same counts) with Kani `37783258732` success. In both, `test macos (production)` (native arm64) and `test (aarch64-unknown-linux-gnu)` execute the harness (`running 4 tests` / 4 passed at `eda25f97`, `running 5 tests` / 5 passed at `b5247602`).
+- **Process note:** the rush reviewer FAILed the first resumed session because the orchestrator delegated work to a worker contrary to the instruction, and the second because it had no edit tools without a worker; both were resolved by allowing exactly one sequential worker, with the diff, reproductions and counterfactuals re-run independently by the integrator.

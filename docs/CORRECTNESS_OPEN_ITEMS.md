@@ -103,11 +103,12 @@ independent verification of round 15 is appended to
 narrative (E0461 was already red in run `37644289617`) in item 13 and in
 the R15 manifest, and adds re-confirmation notes to items 172/173.
 
-**Round 16 follow-up close-out (2026-10-08).** Items 172, 173, 174 and 176 are
-CLOSED (commits `486f5ace`, `32cacc97`, `9df9f6b8` + `b707d196`, `222e913d`);
-their narratives are in `RESOLVED.md`. Item 175 is fixed in tree (`6f568c25`)
-but stays open as a `[T]` card until a CI run after the push shows the macOS
-arm64 job executing the harness again. Item 154 keeps its OPEN status with a
+**Round 16 follow-up close-out (2026-10-08).** Items 172, 173, 174, 175 and 176
+are CLOSED (commits `486f5ace`, `32cacc97`, `9df9f6b8` + `b707d196`,
+`6f568c25` + `eda25f97` + `b5247602`, `222e913d`); their narratives are in
+`RESOLVED.md`. Item 175 closed only after two CI iterations: the first gate
+turned the `cross test` aarch64 job red and was replaced; green CI (macOS arm64
+and cross aarch64 both running the harness) confirmed the final one. Item 154 keeps its OPEN status with a
 follow-up note: `c8b9344a` fixed the listed R15/R16 examples and removed the
 `segment_route` `allow(dead_code)`, the structural prose debt remains. Perf
 item 84 shipped (GO) and perf item 83 is a pre-registered NO-GO; see
@@ -243,8 +244,8 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (24
-  cards; item 175 added in R16) — local/CI gate wiring & sentinel/guard-script coverage.
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (23
+  cards; item 175 was added in R16 and closed the same day, now in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
@@ -348,9 +349,8 @@ consulted on demand, exactly as before.
 **Item-number -> file lookup table.** It covers every `[T]`-tier number,
 including `59a`/`59b`, plus retained closure pointers. Item157 moved to
 `RESOLVED.md` in R15 and item22 in R16; items168–170 remain the R13/R14
-closure pointers, item171 is the `[T]` verification card, items 172–174 and
-176 are R16 closures held in `RESOLVED.md`, and item175 is the R16 `[T]` CI
-card (fixed in tree, CI confirmation pending). Other `[A]` citations resolve directly
+closure pointers, item171 is the `[T]` verification card, items 172–176 are
+R16 closures held in `RESOLVED.md`. Other `[A]` citations resolve directly
 in `ACTIVE.md`. The total is deliberately not typed here. Compare the two `[T]`
 numbered-record counts; the second excludes `RESOLVED.md` and counts only
 `TRACKED_*.md` destinations:
@@ -511,7 +511,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 172 | `RESOLVED.md` |
 | 173 | `RESOLVED.md` |
 | 174 | `RESOLVED.md` |
-| 175 | `TRACKED_ci_gate_coverage.md` |
+| 175 | `RESOLVED.md` |
 | 176 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
