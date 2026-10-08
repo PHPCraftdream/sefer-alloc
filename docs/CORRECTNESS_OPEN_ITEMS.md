@@ -89,6 +89,16 @@ runtime witness was run. All other prior-card statuses and triggers remain
 unchanged; item158's next trigger was narrowed to the sync-only clear path.
 Evidence: `docs/reviews/2026-10-07-src-review-xs-round-15.md`.
 
+**Src review round 16 (2026-10-08).** R16-01 is filed as active item 174
+(two release `expect`s on `GlobalAlloc` free/trim paths outside the no-panic
+contract's enumeration); R16-02 as item 175 (the R15 x86_64 gate dropped the
+R14-01 checks from native macOS arm64); R16-03 as item 176 (u64 class mask
+without a static bound). Item 22 is CLOSED/SUPERSEDED: its `RemoteFreeRing`
+subject no longer exists; its closure record is in `RESOLVED.md`. Items
+172/173 stay open; R16 reproduced both with its own executed witness. Item 154
+gains evidence only. All other statuses and triggers remain unchanged.
+Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md`.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -219,8 +229,8 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (23
-  cards) — local/CI gate wiring & sentinel/guard-script coverage.
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (24
+  cards; item 175 added in R16) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
@@ -245,13 +255,14 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   Windows linker-path failure and verified short-path fix. This separates
   test execution nondeterminism from "nothing runs this test" (category 4).
 - **`docs/correctness-open-items/TRACKED_correctness_residuals.md`**
-  (5 open cards + 3 retained closed/resolved records) — documented-but-unproven panic-/unwind-safety residuals in
+  (4 open cards + 3 retained closed/resolved records; item 22 moved to
+  `RESOLVED.md` in R16) — documented-but-unproven panic-/unwind-safety residuals in
   shipping code. Criterion: a known, honestly-recorded gap in a
   panic-safety or unwind-safety guarantee of shipping (non-hook,
   non-platform-specific) code — a residual the code's OWN doc comments
-  already name, not yet a proven live bug. Evidence: 22/23 originated in
-  doc-comment limitations of the then-shipping ring/fallback guards;
-  those historical records do not assert that RemoteFreeRing still ships.
+  already name, not yet a proven live bug. Evidence: 23 originated in a
+  doc-comment limitation of the fallback init guard; its former sibling
+  22 (the retired ring guard) was closed as superseded in R16.
   16 is its resolved release-notes counterpart; 66 records the resolved
   Reservation committed-length contract. Current open statuses remain explicit
   in the tier file rather than inferred from these historical examples.
@@ -284,8 +295,9 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (5 open cards + 2
-  retained closed/resolved pointers; item157 moved to `RESOLVED.md` in R15) --
+- **`docs/correctness-open-items/TRACKED_misc.md`** (6 open cards + 2
+  retained closed/resolved pointers; item157 moved to `RESOLVED.md` in R15;
+  item176 added in R16) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -299,8 +311,10 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   gap is only that edition 2024 would make the implicit form a hard error).
   The remaining cards have their individually stated subjects and triggers.
 - **`docs/correctness-open-items/ACTIVE.md`** — the **[A]** tier: active
-  cards, a real next step a round should consider taking. 8 cards currently
-  (6 at split time + R15 items172/173).
+  cards, a real next step a round should consider taking. 10 numbered cards
+  currently (re-derived in R16 with the census command below: items 1, 2,
+  11, 13, 62, 162, 163, 172, 173, 174; R15 recorded "8", but its own count
+  was 9).
 - **`docs/correctness-open-items/RESOLVED.md`** — the "Recently resolved
   (closure trail)" section: current review closures may carry their full
   narratives inline; older moved entries have one-line pointers to
@@ -318,8 +332,9 @@ consulted on demand, exactly as before.
 
 **Item-number -> file lookup table.** It covers every `[T]`-tier number,
 including `59a`/`59b`, plus retained closure pointers. Item157 moved to
-`RESOLVED.md` in R15; items168–170 remain the R13/R14 closure pointers, and
-item171 is the `[T]` verification card. Other `[A]` citations resolve directly
+`RESOLVED.md` in R15 and item22 in R16; items168–170 remain the R13/R14
+closure pointers, item171 is the `[T]` verification card, and items 175/176
+are the R16 `[T]` cards. Other `[A]` citations resolve directly
 in `ACTIVE.md`. The total is deliberately not typed here. Compare the two `[T]`
 numbered-record counts; the second excludes `RESOLVED.md` and counts only
 `TRACKED_*.md` destinations:
@@ -345,7 +360,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 19 | `TRACKED_ci_gate_coverage.md` |
 | 20 | `TRACKED_process_record.md` |
 | 21 | `TRACKED_process_record.md` |
-| 22 | `TRACKED_correctness_residuals.md` |
+| 22 | `RESOLVED.md` |
 | 23 | `TRACKED_correctness_residuals.md` |
 | 24 | `TRACKED_publish_readiness.md` |
 | 25 | `TRACKED_ci_gate_coverage.md` |
@@ -477,6 +492,8 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 169 | `RESOLVED.md` |
 | 170 | `RESOLVED.md` |
 | 171 | `TRACKED_verification_coverage.md` |
+| 175 | `TRACKED_ci_gate_coverage.md` |
+| 176 | `TRACKED_misc.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
@@ -501,7 +518,7 @@ grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/corre
 
 The three commands count **numbered records**, including retained CLOSED /
 RESOLVED records; they do not calculate an open-only total. The `[A]` tier
-currently contains 1, 2, 11, 13, 62, 162, and 163. The `[T]` IDs are the
+currently contains 1, 2, 11, 13, 62, 162, 163, 172, 173, and 174. The `[T]` IDs are the
 table rows targeting `TRACKED_*.md`, not its resolution pointers or the
 historical 78–97 range from the initial split. For actionable state, read
 each card's current Status / Next trigger. The complete R14 round-start

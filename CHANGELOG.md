@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 16 (2026-10-08; read-only review)
+
+- [review] oxx source review on `6a0d47f6` found three P4 issues and no new
+  P0/P1/P2/P3. Report, executed witnesses, mutants and limits:
+  `docs/reviews/2026-10-08-src-review-oxx-round-16.md`.
+- [correctness, tracked] R16-01 → item174: two release `expect`s on
+  `GlobalAlloc` dealloc/trim paths sit outside the no-panic contract's
+  "four tripwires". R16-02 → item175: the R15 x86_64 gate stopped the R14-01
+  API-visibility checks on native macOS arm64 (3 tests ran before, 0 after,
+  per CI logs). R16-03 → item176: the `u64` class-change mask has no static
+  `SMALL_CLASS_COUNT <= 64` bound.
+- [docs/index] Item22 (the retired `RemoteFreeRing` replay residual) is
+  CLOSED/SUPERSEDED; item154 gains current prose examples; the thin index's
+  `[A]` count and list are corrected (10 cards). Perf hypotheses 83 (Large
+  shrink always moves) and 84 (overflow-flush root lookup) are filed as
+  unmeasured `[L]` items.
+- [verification] Temporary witnesses re-confirmed R15-01 (panic tail: 1 drop,
+  later value 0) and R15-02 (reserved +1 / released 0), then were removed.
+  R14 regressions passed 9/9, and three counterfactual mutants were each
+  caught. No source, test, feature, or dependency change; no speedup is
+  claimed. Manifest: `docs/perf/round-manifests/SRC_REVIEW_R16_MANIFEST.md`.
+
 ### Root allocator `src/` review round 15 (2026-10-07; read-only review)
 
 - [review] XS source review found two P3 issues and one P4 documentation

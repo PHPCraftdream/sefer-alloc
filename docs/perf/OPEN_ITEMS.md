@@ -97,6 +97,14 @@ structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
 82 stays НЕ СЕЙЧАС, 72/78 keep their owned measurement triggers. Evidence:
 `docs/reviews/2026-10-06-src-review-sol-round-14.md`, complete appendix B.
 
+**Src review round 16 disposition (2026-10-08).** Every existing item keeps
+its status/trigger/closed record (round 15 also changed none). Two new
+UNMEASURED hypotheses are filed as `[L]` items 83 (Large realloc always
+moves on shrink) and 84 (overflow-flush root resolution via table lookup
+instead of the R12-02 segment mask); neither is a speedup claim. The O(L)
+scalar Large-alloc sweep stays owned by item 78(c). Evidence:
+`docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4–§5.
+
 ---
 
 ## Open items
@@ -3031,6 +3039,20 @@ structural finding, not production promotion evidence. 81 stays INCONCLUSIVE,
     - **Current-number-or-verdict:** в `production` (`alloc-global` + `alloc-xthread`) `trust_negative = !table.is_routed()` ложно, поэтому каждый промах класса идёт в полный скан активных Small-слотов с `drain_segment_sidecar` на каждого кандидата; `dbg_directory_authoritative_miss()` в `production` тождественно 0 (теперь запинено `tests/r12_03_routed_directory_negative.rs`). Доверять промаху небезопасно: (1) директория хранит биты локального `BinTable`, а не remote pending, так что терминальная публикация может скрыть свободный блок (сценарий (b) `tests/r12_o4_routed_miss_counters.rs`: бит 0, `BinTable` пуст, drain создаёт свободный блок); (2) dirty-флаг не закрывает окно приостановленного производителя; (3) `is_routed()` — свойство экземпляра таблицы, не всего `production`. Пункты 70 и 78(b) — неизмеренные гипотезы, не NO-GO. ЧАСТОТА исходов на реальной нагрузке НЕ измерена: тест лишь классифицирует три сценария.
     - **Next trigger:** профиль/iai-атрибуция показывает существенную цену routed negative-miss скана; на целевой нагрузке `dbg_routed_miss_scans` против `dbg_routed_miss_scan_nothing` даёт потолок выигрыша (доля NOTHING). Плюс выбранный сигнал с доказанным протоколом paused-publication (loom/Miri-witness). Затем гейт по R30-8: оракул активации `dbg_directory_authoritative_miss` > 0, метрика `dbg_full_scan_slots_examined`.
     - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-03 и O-4; `src/alloc_core/small/alloc_core_small/find_segment.rs` (комментарий у `trust_negative`); `tests/r12_03_routed_directory_negative.rs`; `tests/r12_o4_routed_miss_counters.rs`; commits `3cf802e6`, `5ee118d2`.
+
+83. **[L] oxx R16 H1 — a Large `realloc` that shrinks always moves and copies.** (Filed 2026-10-08, src review round 16.)
+
+    - **Status:** OPEN — hypothesis only; nothing measured, no win claimed.
+    - **Current-number-or-verdict:** `realloc_inplace_fast_path_known_base` keeps Large blocks in place only when growing (`src/alloc_core/alloc_core/mem/realloc_fastpath.rs:291`, `if new_eff >= old_eff`). Every shrink takes `HeapCore::realloc`'s move leg (`src/registry/heap_core/free/realloc.rs:336–407`): fresh reservation, copy of `min(old, new)`, free of the old span. A temporary R16 witness observed an 8 MiB → 6 MiB shrink returning a new address (`moved=true`, 6 MiB copied). Possible design: keep the block for moderate shrinks, optionally decommitting the tail; the RSS-retention axis must be measured alongside latency.
+    - **Next trigger:** a workload with frequent large `shrink_to_fit`/`truncate`. Gate on the real `#[global_allocator]` (`GlobalAlloc::realloc`): latency and RSS/commit in the same regime, `RELOC_INPLACE_LARGE_CALLS` versus move-count as the path-activation oracle, A/B against an immutable source identity.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H1 and appendix A (W3).
+
+84. **[L] oxx R16 H2 — magazine overflow-flush and `flush_all_tcache` resolve each slot's root via the segment table, unlike the R12-02 masked issue path.** (Filed 2026-10-08, src review round 16.)
+
+    - **Status:** OPEN — hypothesis only; nothing measured. Correctness-coupled with correctness item 174 (the same loops hold release `expect`s).
+    - **Current-number-or-verdict:** `dealloc_own_thread_with_base`'s overflow branch (`src/registry/heap_core/free/dealloc_own_base.rs:482–491`) and `flush_all_tcache` (`src/registry/heap_core/state/tcache_flush.rs:86–95`) call `canonical_block_of` for every flushed slot, while `clear_magazine_on_issue` (`src/registry/heap_core/alloc/hot.rs:43–58`, R12-02 `7232598b`) masks the allocator-derived pointer and only `debug_assert`s the canonical root. Applying the same mask would drop `FLUSH_N` table/own-cache probes per overflow event. This is not perf item 1's exhausted per-block `flush_class` region: it is the lookup loop that precedes `flush_class`.
+    - **Next trigger:** the fix for correctness item 174, or a magazine-overflow cost round. Gate: `npm run iai` churn benches with an overflow-event count as the path-activation oracle, ±10 raw-Ir kill gate on the standard small benches, measured at the `HeapCore`/`GlobalAlloc` layer.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H2; `docs/perf/R12_02_MAGAZINE_MASK_GATE.md` (the issue-side precedent).
 
 ## Recently resolved (closure trail — do not re-list as open)
 

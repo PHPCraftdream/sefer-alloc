@@ -766,3 +766,54 @@ full closure trail".
     - **Current-number-or-verdict:** after R2-09, `cross_thread_frees_lost` is legacy and always `0`, and `ring_overflows` counts only first-tier misses. It cannot tell a free rescued by `HeapOverflow`/retry from one that went to the spill. Only the `internals`/`bench-internals`-gated `HeapCore::dbg_spill_ledger_for_test` sees spill traffic. The `ring_overflows` doc then said so (commit `c4c86584`).
     - **Next trigger:** an operator or benchmark that needs to see spill pressure in production builds; `AllocStats` being `#[non_exhaustive]` made an additive field possible.
     - **Evidence at filing:** `docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md` §R2-04; the then-current `src/global/alloc_stats.rs`.
+
+### 22 — retired `RemoteFreeRing::DrainHeadPublish` in-flight replay residual: CLOSED/SUPERSEDED (2026-10-08)
+
+- **Status:** CLOSED — the ring, its `DrainHeadPublish` guard and the `reclaim`-closure drain loop this residual described no longer exist in the root allocator.
+- **Current verdict:** R16 source review found no `RemoteFreeRing`/`DrainHeadPublish` type or `remote_free_ring` module in `src/` (only historical comment mentions, e.g. `src/lib.rs:120`). The current owner drain detaches a whole pending word before reclaiming (`BitmapScan::next_cut` `swap(0, AcqRel)`, `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs:66–79`) and `reclaim_sidecar_record` (`src/alloc_core/small/alloc_core_small_reclaim.rs:21–68`) has no panic source — invalid records abort. The old "reclaim may run twice for the in-flight element after a resumed unwind" shape is therefore structurally gone; the current residual on a hypothetical unwind would be at-most-once (detached bits lost, credits retained), which no current path can reach. Same supersession logic as item 157 (R15).
+- **Next trigger:** none for the retired ring. File a new item only if a future drain change introduces a panic-capable step between the word cut and record retirement.
+- **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §5; `grep -rn "RemoteFreeRing\|DrainHeadPublish" src/` (comment mentions only).
+
+**Historical card at filing (not current state):**
+
+22. **[T, filed 2026-08-05, task #575/H5, `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H5] `RemoteFreeRing::DrainHeadPublish`'s panic-safety guard is unwind-safe for already-fully-processed elements but NOT exactly-once for the element in flight when a panic occurs — a documented residual (Sol-F5, task #567) never cross-filed into this index.**
+
+    - **Status:** OPEN, residual — not a proven bug, no known reachable
+      trigger, filed for tracking per this index's own convention (a
+      doc-comment naming a follow-up must also be cross-filed here so a
+      future round inherits it without re-deriving from the source).
+    - **Current-number-or-verdict:** by inspection, the current production
+      `reclaim` closures (`AllocCore::reclaim_offset` /
+      `AllocCore::reclaim_offset_checked`,
+      `src/alloc_core/small/alloc_core_small_reclaim.rs`) do not panic after
+      mutating state on their current code paths — no `unwrap`/`expect`/
+      `panic!`/unchecked indexing on the mutation-bearing paths. This is an
+      observation about the code AS WRITTEN, not a structural guarantee: the
+      type system does not prevent a future `reclaim` closure from
+      panicking after a mutation. `RemoteFreeRing::drain`'s loop body calls
+      `reclaim(off)` BEFORE clearing the slot and BEFORE
+      advancing/publishing `h` — so a reclaim that mutates state and then
+      panics leaves the slot non-empty and `h` one short; a
+      `catch_unwind`-resuming caller would re-pass that same `off` to
+      `reclaim`, i.e. `reclaim` could run twice for the in-flight element.
+    - **Why not currently exploitable:** any unwind that escapes through the
+      `GlobalAlloc` entry points still aborts the process
+      (`src/global/sefer_alloc.rs`'s panic-tripwire docs), so this replay
+      window is reachable only through a direct/internal `catch_unwind`
+      around `drain` — not through ordinary allocator usage.
+    - **What would close it structurally:** a two-phase/idempotent reclaim
+      protocol (clear-then-reclaim, or a reclaim that can be safely retried
+      against an already-cleared slot), or an explicit poison/skip policy
+      for the in-flight element on unwind — out of scope for the
+      `DrainHeadPublish` guard itself, which only ever publishes `h` values
+      fully advanced past a cleared slot.
+    - **Next trigger:** reopen and design the two-phase protocol if a future
+      `reclaim` closure gains fallible/panicking code on a mutation-bearing
+      path, or if a direct/internal `catch_unwind` caller around `drain` is
+      ever added to production code (currently none exists).
+    - **Evidence:** `src/alloc_core/segment/remote_free_ring/mod.rs`'s
+      `DrainHeadPublish` doc comment (the "Exact contract (Sol-F5, task
+      #567 ...)" section, ~lines 861-900);
+      `docs/reviews/2026-08-05-sol-release-readonly-review.md` finding F5;
+      `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding
+      H5.

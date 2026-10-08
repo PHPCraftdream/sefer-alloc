@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card lands here only if it does not share the defining criterion of any category above. Each card here is a genuine one-off: item 45 is a numa-shim RefCell-vs-Cell defensive-coding/panic-safety nit (not an OS-contract question, not a hook, not flakiness); item 49 is an aligned-vmem edition-2021-vs-2024 explicit-unsafe{}-block hygiene item (about FFI call-site annotation style, not about a dbg_* hook, a platform contract, or CI wiring).
 
-**Card count (re-derived 2026-10-07, src-review round 15):** 7 numbered cards in this file — 5 open [T] cards (items 154, 158, 159, 160, 161) + 2 CLOSED/resolved pointers retained for lookup (items 45 and 49; full closure records are in `RESOLVED.md` and `ARCHIVE.md`). Item 157 was superseded by the current terminal-sidecar architecture; see `RESOLVED.md`.
+**Card count (re-derived 2026-10-08, src-review round 16):** 8 numbered cards in this file — 6 open [T] cards (items 154, 158, 159, 160, 161, 176) + 2 CLOSED/resolved pointers retained for lookup (items 45 and 49; full closure records are in `RESOLVED.md` and `ARCHIVE.md`). Item 157 was superseded by the current terminal-sidecar architecture; see `RESOLVED.md`.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -62,6 +62,8 @@ split the same day.)
 
     - **R15 evidence update (2026-10-07):** R15-03 confirms current examples of the existing prose debt: `sharded_region.rs:644–651` overstates binding/locking guarantees, and `registry/mod.rs:50–54` still labels live production routing unconnected. These do not satisfy the dedicated documentation-round trigger; status remains OPEN.
 
+    - **R16 evidence update (2026-10-08):** further current examples, not a closure: hidden `dbg_stamp_*` docs still cite the removed `dbg_push_to_ring` as an `unsafe fn` "in this file" (`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs:138`, `table_diag.rs:260`; strict rustdoc skips `#[doc(hidden)]` items); `registry/mod.rs:53` keeps `#[allow(dead_code)]` on the live production `segment_route` module; `SeferAlloc::trim_current_thread`'s doc still contrasts itself with a "legacy foreign `dealloc` ring/overflow/stack" (`src/global/sefer_alloc/diag.rs:252–254`); `dec_live_and_maybe_decommit` no longer decrements. Status and trigger unchanged. Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4.
+
 158. **[T] xa XA-18: under `numa-aware`, a node promoted from the unknown bucket to a dedicated bucket leaves its old directory bits in the unknown bucket.** (Filed 2026-09-28. Found by `docs/reviews/2026-09-21-200601-src-review-xa.md` XA-18 (P3), which no index recorded; re-flagged by `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §3.)
 
     - **Status:** OPEN — directory accuracy/perf residual, not memory corruption. Established by code reading in both reviews; no test has run it.
@@ -92,3 +94,9 @@ split the same day.)
     - **Next trigger:** the next edit of those files, or adding a per-PR clippy row for `alloc-global` without `fastbin` (which R5-01 made a normal, supported set).
     - **Evidence:** consultation notes in the xxs round 5 session; `cargo clippy --features "alloc-global alloc-decommit internals" --lib -- -D warnings`.
 
+176. **[T, filed 2026-10-08, src review R16-03] The `changed_classes: u64` drain mask relies on `SMALL_CLASS_COUNT <= 64` without a static check.**
+
+    - **Status:** OPEN — P4 latent maintainability hazard; no runtime fault today (maximum `SMALL_CLASS_COUNT` is 58 with `medium-classes-wide`).
+    - **Current-number-or-verdict:** `changed_classes |= 1u64 << record.class` at `src/alloc_core/alloc_core/sidecar_drain.rs:139,220` and `src/alloc_core/small/alloc_core_small/find_segment.rs:156` feeds `sync_directory_for_segment_classes` (`src/alloc_core/small/alloc_core_small/directory.rs:238–261`) and the live-credit release gate. The only static class-count bound is `SMALL_CLASS_COUNT < u8::MAX` (`src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:29`). With 65+ classes a debug build would panic and a release build would mask the shift, syncing the wrong class's directory bit.
+    - **Next trigger:** any change to the size-class ladder, or the next edit of these drain sites: add `const _: () = assert!(SMALL_CLASS_COUNT <= u64::BITS as usize);` next to the idiom (or widen the mask). Oracle: a 65-class configuration fails to compile; current configurations are unaffected.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §2 R16-03; `src/alloc_core/platform/size_classes.rs:36–39,159–162`.

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a known, honestly-recorded gap in a panic-safety or unwind-safety guarantee of shipping (non-hook, non-platform-specific) code -- a residual the code's own doc comments already name, not yet a proven live bug.
 
-**Card count:** 8 numbered records in this file (re-counted 2026-10-06, src-review round 14 remediation R14-05; the previous "6" was stale). Composition: 5 open [T] cards (items 22, 23, 155, 164, 166) + 3 closed/resolved records retained for lookup (items 16, 66, and 165); closure evidence is routed through `RESOLVED.md`/`ARCHIVE.md`, with item 165's dated history retained below.
+**Card count:** 7 numbered records in this file (re-counted 2026-10-08, src-review round 16). Composition: 4 open [T] cards (items 23, 155, 164, 166) + 3 closed/resolved records retained for lookup (items 16, 66, and 165); closure evidence is routed through `RESOLVED.md`/`ARCHIVE.md`, with item 165's dated history retained below. Item 22 (the retired `RemoteFreeRing::DrainHeadPublish` residual) was CLOSED/SUPERSEDED in R16 and moved to `RESOLVED.md`.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -71,48 +71,6 @@ split the same day.)
     resolved" / renumbered (that structural cleanup, spanning several
     pre-existing item-numbering gaps in this file, is task M2/#623's
     broader scope, not duplicated here item-by-item).
-
-22. **[T, filed 2026-08-05, task #575/H5, `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H5] `RemoteFreeRing::DrainHeadPublish`'s panic-safety guard is unwind-safe for already-fully-processed elements but NOT exactly-once for the element in flight when a panic occurs — a documented residual (Sol-F5, task #567) never cross-filed into this index.**
-
-    - **Status:** OPEN, residual — not a proven bug, no known reachable
-      trigger, filed for tracking per this index's own convention (a
-      doc-comment naming a follow-up must also be cross-filed here so a
-      future round inherits it without re-deriving from the source).
-    - **Current-number-or-verdict:** by inspection, the current production
-      `reclaim` closures (`AllocCore::reclaim_offset` /
-      `AllocCore::reclaim_offset_checked`,
-      `src/alloc_core/small/alloc_core_small_reclaim.rs`) do not panic after
-      mutating state on their current code paths — no `unwrap`/`expect`/
-      `panic!`/unchecked indexing on the mutation-bearing paths. This is an
-      observation about the code AS WRITTEN, not a structural guarantee: the
-      type system does not prevent a future `reclaim` closure from
-      panicking after a mutation. `RemoteFreeRing::drain`'s loop body calls
-      `reclaim(off)` BEFORE clearing the slot and BEFORE
-      advancing/publishing `h` — so a reclaim that mutates state and then
-      panics leaves the slot non-empty and `h` one short; a
-      `catch_unwind`-resuming caller would re-pass that same `off` to
-      `reclaim`, i.e. `reclaim` could run twice for the in-flight element.
-    - **Why not currently exploitable:** any unwind that escapes through the
-      `GlobalAlloc` entry points still aborts the process
-      (`src/global/sefer_alloc.rs`'s panic-tripwire docs), so this replay
-      window is reachable only through a direct/internal `catch_unwind`
-      around `drain` — not through ordinary allocator usage.
-    - **What would close it structurally:** a two-phase/idempotent reclaim
-      protocol (clear-then-reclaim, or a reclaim that can be safely retried
-      against an already-cleared slot), or an explicit poison/skip policy
-      for the in-flight element on unwind — out of scope for the
-      `DrainHeadPublish` guard itself, which only ever publishes `h` values
-      fully advanced past a cleared slot.
-    - **Next trigger:** reopen and design the two-phase protocol if a future
-      `reclaim` closure gains fallible/panicking code on a mutation-bearing
-      path, or if a direct/internal `catch_unwind` caller around `drain` is
-      ever added to production code (currently none exists).
-    - **Evidence:** `src/alloc_core/segment/remote_free_ring/mod.rs`'s
-      `DrainHeadPublish` doc comment (the "Exact contract (Sol-F5, task
-      #567 ...)" section, ~lines 861-900);
-      `docs/reviews/2026-08-05-sol-release-readonly-review.md` finding F5;
-      `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding
-      H5.
 
 23. **[T, filed 2026-08-05, task #575/H5, `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H5] `InitStateGuard`'s unwind rollback does not distinguish a pre-write unwind (nothing to clean up) from a post-write unwind (a live `HeapCore` already sits in `FALLBACK`) — a documented residual (Sol-F6, task #568) never cross-filed into this index.**
 

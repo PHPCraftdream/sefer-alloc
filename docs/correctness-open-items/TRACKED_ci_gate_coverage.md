@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 23.
+**Card count:** 24 (item 175 added 2026-10-08, src-review round 16).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -311,3 +311,10 @@ split the same day.)
 151. **[T, CLOSED] `cargo fmt --all -- --check` (the local `npm run check` gate's rustfmt step) fails deterministically on Windows with "The filename or extension is too long. (os error 206)".** — CLOSED 2026-09-27. cargo-fmt collects one entry-point file per Cargo target (496 across this workspace's 11 members) into a single rustfmt invocation; the absolute paths alone sum to ~42 KB, over Windows' ~32,767-char CreateProcess argv limit — reproduced even for `cargo fmt -p sefer-alloc -- --check` (root package alone), so per-package looping is not a sufficient fix. Fixed by `scripts/fmt-check.mjs`, which on win32 enumerates targets via `cargo metadata` and invokes `rustfmt --check` directly in argv-budgeted chunks (equivalent coverage: every member, every target kind); non-Windows behavior unchanged (thin passthrough to plain `cargo fmt --all -- --check`). Full closure evidence: `RESOLVED.md` item 151 and `ARCHIVE.md` item 151.
 
 156. **[T, CLOSED 2026-09-30] Root rustdoc broken links and missing warning-strict CI gate.** Code and gate wiring accepted in `1ecb8a55` and `0bc0b691`; full scoped evidence and historical filing are in `RESOLVED.md` / `ARCHIVE.md` item 156. Remote CI was not executed; closure concerns the repaired links and implemented gate, not a remote-green claim.
+
+175. **[T, filed 2026-10-08, src review R16-02] The R15 `target_arch = "x86_64"` gate on `tests/r14_sidecar_owner_capability_negative.rs` silently dropped the R14-01 API-visibility checks from the native macOS arm64 job.**
+
+    - **Status:** OPEN — P4 CI-coverage regression; the property is platform-independent and still checked on native Linux/Windows x86_64.
+    - **Current-number-or-verdict:** observed in CI (read-only): run `37644289617` (SHA `714ea5b7`), job `112870910476` (`test macos (production)`, image `macos-26-arm64`, host `aarch64-apple-darwin`) ran the harness, 3/3 ok; run `37704825252` (SHA `6a0d47f6`), job `113076568267` reports `0 passed` for the same binary. The failure being guarded was host ≠ target (`cross test --target aarch64-unknown-linux-gnu`, E0461), not the architecture; the file doc's "Native CI retains these API-visibility checks" (`:5–7`) is false for arm64. The module doc (`:14–16`) and `tests/compile_fail/r14_positive_probe/src/main.rs:1–7` still list only the registry-path skip codes, though E0460/E0463 are now skipped too, and the harness asserts only that SOME candidate is compatible (`:209–216`), not the current build.
+    - **Next trigger:** the next edit of this harness or of the macOS/multi-arch jobs: gate on a runtime host-vs-target comparison instead of `target_arch`, restore native arm64, update both docs, and assert that the current build's rlib is among the compatible candidates. Oracle: the macOS log shows `running 3 tests` again, and the R14-01 mutant (`pub fn prepare`) fails there.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §2 R16-02 and appendix D; commits `20b7c443`, `b24a181f`.
