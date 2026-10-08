@@ -15,6 +15,34 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 176 — Src review R16-03: CLOSED (2026-10-08)
+
+- **Status:** CLOSED — commit `222e913d`.
+- **Current verdict:** `src/alloc_core/platform/size_classes.rs` now carries `const _: () = assert!(SMALL_CLASS_COUNT <= u64::BITS as usize)` next to `SMALL_CLASS_COUNT`. A ladder of 65 or more small classes is a build error in every configuration instead of a silently masked `1u64 << class` in the `changed_classes` drain masks (`sidecar_drain.rs`, `find_segment.rs`). Current configurations are unaffected (maximum 58 with `medium-classes-wide`).
+- **Evidence:** the assertion itself is the oracle (a violating ladder cannot compile, so no runtime test applies); review `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §2 R16-03.
+- **Next trigger:** none.
+
+### 174 — Src review R16-01: CLOSED (2026-10-08)
+
+- **Status:** CLOSED — commits `9df9f6b8` (abort + scanner) and `b707d196` (perf item 84, segment-mask root resolution).
+- **Current verdict:** the two release `.expect`s on the `GlobalAlloc` free/trim paths (`dealloc_own_base.rs` overflow flush, `tcache_flush.rs` `flush_all_tcache`) first became aborts (the owner-only abort-not-panic convention), then disappeared: both loops now derive the root with `os::segment_base_of_ptr` and only `debug_assert!` that the segment table agrees (slots enter the magazine after `contains_base`, and Small/Primordial roots are SEGMENT-aligned). The no-panic contract text in `src/global/sefer_alloc/mod.rs` was updated in both commits. `tests/no_panic_doc_accuracy.rs` gained a lexical scan of the `GlobalAlloc`-reachable files whose release `expect`/`panic!`/`unreachable!` sites must equal an explicit allowlist (the four large-cache tripwires), plus a scanner self-test, so a new release panic site in that set is a test failure.
+- **Evidence:** `tests/no_panic_doc_accuracy.rs` (`production_release_panic_sites_match_explicit_allowlist` and the scanner self-test); `docs/perf/R16_PERF84_FLUSH_ROOT_MASK_GATE.md`.
+- **Next trigger:** none; the scanner is lexical, not a proof of no-panic.
+
+### 173 — Src review R15-02: CLOSED (2026-10-08)
+
+- **Status:** CLOSED — commit `32cacc97`.
+- **Current verdict:** `impl Drop for Segment` (`src/alloc_core/platform/os.rs`) counts its own release in `SEGMENTS_RELEASED_TOTAL`. Every path that hands the reservation on already `mem::forget`s the `Segment` and counts through `release_segment`, so nothing is counted twice; the primordial `attach_owner` failure (the only unaccounted RAII release found by R16 across all `Segment::reserve*` sites) now balances reserve and release.
+- **Evidence:** `tests/r15_02_primordial_attach_failure_accounting.rs` (refused attach balances; retry and slot reuse keep the +1 live balance); without the `Drop` increment it is red with `reserved_delta=1 released_delta=0`. The 22 test files that read the segment counters stayed green.
+- **Next trigger:** none.
+
+### 172 — Src review R15-01: CLOSED (2026-10-08)
+
+- **Status:** CLOSED — commit `486f5ace`.
+- **Current verdict:** `EpochRegion::drop` (`src/concurrent/epoch/epoch_region.rs`) drops every slot under `catch_unwind`; the first panic is resumed after the walk, and secondary payloads (and payloads raised during an outer unwind) are forgotten because their drop glue may itself panic. `ShardedRegion`, which inherited the leak, is fixed by the same `Drop`. The `with_capacity` free-list comment was corrected in the same commit.
+- **Evidence:** `tests/r15_01_epoch_region_drop_panic_isolation.rs` (no-panic control, first, last and both slots panicking); the old loop is red with `later_live_drops=0`.
+- **Next trigger:** none. The `experimental` tier remains deprecated; the separate Miri failure on this path stays tracked as item 171.
+
 ### 168 — Src review R13-01…04: CLOSED (2026-10-06)
 
 - **Status:** CLOSED — исправления приняты после личной верификации интегратора.

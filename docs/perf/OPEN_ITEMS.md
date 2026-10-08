@@ -105,6 +105,14 @@ instead of the R12-02 segment mask); neither is a speedup claim. The O(L)
 scalar Large-alloc sweep stays owned by item 78(c). Evidence:
 `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4–§5.
 
+**Src review round 16 follow-up (2026-10-08).** Both hypotheses were measured.
+Item 84 shipped (GO, `perf(runtime)` `b707d196`) and moved to "Recently
+resolved". Item 83 computed NO-GO under its pre-registered gate (target rows and
+RSS strongly favourable, one existing control moved 14 Ir against T=12) and
+stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
+`docs/perf/R16_PERF84_FLUSH_ROOT_MASK_GATE.md`,
+`docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md`.
+
 ---
 
 ## Open items
@@ -3040,19 +3048,12 @@ scalar Large-alloc sweep stays owned by item 78(c). Evidence:
     - **Next trigger:** профиль/iai-атрибуция показывает существенную цену routed negative-miss скана; на целевой нагрузке `dbg_routed_miss_scans` против `dbg_routed_miss_scan_nothing` даёт потолок выигрыша (доля NOTHING). Плюс выбранный сигнал с доказанным протоколом paused-publication (loom/Miri-witness). Затем гейт по R30-8: оракул активации `dbg_directory_authoritative_miss` > 0, метрика `dbg_full_scan_slots_examined`.
     - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-03 и O-4; `src/alloc_core/small/alloc_core_small/find_segment.rs` (комментарий у `trust_negative`); `tests/r12_03_routed_directory_negative.rs`; `tests/r12_o4_routed_miss_counters.rs`; commits `3cf802e6`, `5ee118d2`.
 
-83. **[L] oxx R16 H1 — a Large `realloc` that shrinks always moves and copies.** (Filed 2026-10-08, src review round 16.)
+83. **[L] oxx R16 H1 — a Large `realloc` that shrinks always moves and copies.** (Filed 2026-10-08, src review round 16; measured 2026-10-08.)
 
-    - **Status:** OPEN — hypothesis only; nothing measured, no win claimed.
-    - **Current-number-or-verdict:** `realloc_inplace_fast_path_known_base` keeps Large blocks in place only when growing (`src/alloc_core/alloc_core/mem/realloc_fastpath.rs:291`, `if new_eff >= old_eff`). Every shrink takes `HeapCore::realloc`'s move leg (`src/registry/heap_core/free/realloc.rs:336–407`): fresh reservation, copy of `min(old, new)`, free of the old span. A temporary R16 witness observed an 8 MiB → 6 MiB shrink returning a new address (`moved=true`, 6 MiB copied). Possible design: keep the block for moderate shrinks, optionally decommitting the tail; the RSS-retention axis must be measured alongside latency.
-    - **Next trigger:** a workload with frequent large `shrink_to_fit`/`truncate`. Gate on the real `#[global_allocator]` (`GlobalAlloc::realloc`): latency and RSS/commit in the same regime, `RELOC_INPLACE_LARGE_CALLS` versus move-count as the path-activation oracle, A/B against an immutable source identity.
-    - **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H1 and appendix A (W3).
-
-84. **[L] oxx R16 H2 — magazine overflow-flush and `flush_all_tcache` resolve each slot's root via the segment table, unlike the R12-02 masked issue path.** (Filed 2026-10-08, src review round 16.)
-
-    - **Status:** OPEN — hypothesis only; nothing measured. Correctness-coupled with correctness item 174 (the same loops hold release `expect`s).
-    - **Current-number-or-verdict:** `dealloc_own_thread_with_base`'s overflow branch (`src/registry/heap_core/free/dealloc_own_base.rs:482–491`) and `flush_all_tcache` (`src/registry/heap_core/state/tcache_flush.rs:86–95`) call `canonical_block_of` for every flushed slot, while `clear_magazine_on_issue` (`src/registry/heap_core/alloc/hot.rs:43–58`, R12-02 `7232598b`) masks the allocator-derived pointer and only `debug_assert`s the canonical root. Applying the same mask would drop `FLUSH_N` table/own-cache probes per overflow event. This is not perf item 1's exhausted per-block `flush_class` region: it is the lookup loop that precedes `flush_class`.
-    - **Next trigger:** the fix for correctness item 174, or a magazine-overflow cost round. Gate: `npm run iai` churn benches with an overflow-event count as the path-activation oracle, ±10 raw-Ir kill gate on the standard small benches, measured at the `HeapCore`/`GlobalAlloc` layer.
-    - **Evidence:** `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H2; `docs/perf/R12_02_MAGAZINE_MASK_GATE.md` (the issue-side precedent).
+    - **Status:** NO-GO under the pre-registered gate (commit `edf882cf`, `bench`); no runtime change shipped (`git diff -- src` empty). Kept as an `[L]` revisit item, not closed: the target axes were strongly favourable and the only failure is one control row.
+    - **Current-number-or-verdict:** candidate B kept a Large block in place on `realloc` while `new_eff * 2 >= old_eff`, rewriting only `large_size` (no tail decommit). Measured on `HeapCore::realloc` (`production bench-internals internals`), callgrind Ir with frozen snapshots and A = C0 identity, RSS in 9 fresh processes per arm and scenario. 8 -> 6 MiB: -694401 Ir (14729652/15424053), median RSS 10555392/16855040 B. 8 -> 4.5 MiB: -521409 Ir (13156788/13678197), median RSS 10547200/15282176 B. 20-cycle 8 <-> 6 MiB lifetime VmHWM maximum 10563584/16863232 B. Below-half shrink, growth, equal size and all five prefix controls moved by at most 3 Ir. The existing control `realloc_grow` moved -14 Ir against T = max(10, max |C0 - A1|) = 12, so the two-sided control gate computes NO-GO. The deviation is deterministic and in B's favour (INFERRED: code shape of the shared Large branch), and the gate was not re-read after the data. An independent re-measurement from the frozen patch reproduced -694401 / -521409 / -14 Ir. Not measured: wall-clock, a real `#[global_allocator]`, `Vec` throughput, non-Linux, `numa-aware`, `exact-span-large`/`large-reserved-capacity`, multi-threaded or foreign-realloc workloads.
+    - **Next trigger:** a revisit needs two things decided BEFORE any new run: (1) an owner decision that `realloc` may keep the address on a Large shrink that retains at least half the size (an observable behaviour change; payload content and `Layout` contracts are unchanged); (2) a fresh pre-registration whose control rule is stated up front, e.g. a candidate whose grow/equal path executes the identical instruction stream, or a one-sided control gate that bounds only regressions. A post-hoc re-reading of this result does not qualify. The candidate patch is reproducible from `candidate.patch` inside the gzipped identity bundle.
+    - **Evidence:** `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md` (+ `_summary.csv`, `_identity.json.gz`, `docs/perf/_raw_r16_perf83_{A1,A2,B1,B2,C0,rss}.log`); `scripts/r16_perf83_iai.mjs`, `scripts/r16_perf83_gate_table.mjs`; `tests/r16_perf83_activation.rs`; `examples/r16_perf83_large_shrink_rss.rs`; `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H1 and appendix A (W3).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
@@ -3061,6 +3062,7 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
+- **oxx R16 H2 (item 84) — magazine overflow-flush and `flush_all_tcache` resolved each slot's root through the segment table instead of the segment-base mask.** Closed 2026-10-08, GO, commit `b707d196` (`perf(runtime)`; harness and report `87f486a2`, `bench`): overflow event -146 Ir (65270/65416), 32-slot overflow -292 Ir (dose-response exact, 2 x 146), `flush_all_tcache` of 16 blocks -260 Ir (53949/54209), every control within T = 12 Ir, deterministic callgrind Ir only (no wall-clock, no RSS); `docs/perf/R16_PERF84_FLUSH_ROOT_MASK_GATE.md`.
 - **fxx R12-02 / O-1 — `clear_magazine_on_issue` used a table lookup instead of the segment-base mask.** Closed 2026-10-06, commit `7232598b` (`perf(runtime)`): per-hit 22.5625 -> 12.1875 Ir (361/16 -> 195/16), `small_churn_16b` -1.082% (630/58,201 Ir), deterministic iai only; `docs/perf/R12_02_MAGAZINE_MASK_GATE.md`.
 - **fxx R12-05 / O-2 — unbounded Large sweep on `alloc_batch` misses and in `alloc_batch_large` (residual of R11 P3-1).** Closed 2026-10-06, commit `2600b337` (`perf(opt-in)`, `batch-api`): bounded probe + one rescue sweep like the scalar path; 64 active Large routes -> 4 inspections per Small batch miss instead of 64; `realloc` deliberately keeps its full sweep (no measured cost); `docs/perf/R12_05_BATCH_LARGE_BOUNDED_GATE.md`.
 - **80** — скан pending-bitmap с первого слова payload (патч S): влит `18d76472` (2026-10-05); см. `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `80`.

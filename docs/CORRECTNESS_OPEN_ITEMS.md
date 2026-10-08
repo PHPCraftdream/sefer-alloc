@@ -103,6 +103,16 @@ independent verification of round 15 is appended to
 narrative (E0461 was already red in run `37644289617`) in item 13 and in
 the R15 manifest, and adds re-confirmation notes to items 172/173.
 
+**Round 16 follow-up close-out (2026-10-08).** Items 172, 173, 174 and 176 are
+CLOSED (commits `486f5ace`, `32cacc97`, `9df9f6b8` + `b707d196`, `222e913d`);
+their narratives are in `RESOLVED.md`. Item 175 is fixed in tree (`6f568c25`)
+but stays open as a `[T]` card until a CI run after the push shows the macOS
+arm64 job executing the harness again. Item 154 keeps its OPEN status with a
+follow-up note: `c8b9344a` fixed the listed R15/R16 examples and removed the
+`segment_route` `allow(dead_code)`, the structural prose debt remains. Perf
+item 84 shipped (GO) and perf item 83 is a pre-registered NO-GO; see
+`docs/perf/OPEN_ITEMS.md`. Evidence: `docs/perf/round-manifests/SRC_REVIEW_R16_MANIFEST.md`.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -299,9 +309,9 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (6 open cards + 2
+- **`docs/correctness-open-items/TRACKED_misc.md`** (5 open cards + 2
   retained closed/resolved pointers; item157 moved to `RESOLVED.md` in R15;
-  item176 added in R16) --
+  item176 was added in R16 and moved to `RESOLVED.md` at the R16 close-out) --
   residual, does not fit any category above. Per this task's brief: a
   card that does not fit is collected here, NOT forced into the
   closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
@@ -315,10 +325,11 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   gap is only that edition 2024 would make the implicit form a hard error).
   The remaining cards have their individually stated subjects and triggers.
 - **`docs/correctness-open-items/ACTIVE.md`** — the **[A]** tier: active
-  cards, a real next step a round should consider taking. 10 numbered cards
-  currently (re-derived in R16 with the census command below: items 1, 2,
-  11, 13, 62, 162, 163, 172, 173, 174; R15 recorded "8", but its own count
-  was 9).
+  cards, a real next step a round should consider taking. 7 numbered cards
+  currently (re-derived at the R16 close-out with the census command below:
+  items 1, 2, 11, 13, 62, 162, 163; items 172, 173, 174 moved to
+  `RESOLVED.md` as CLOSED; R15 recorded "8", but its own count was 9, and R16
+  recorded 10 before those closures).
 - **`docs/correctness-open-items/RESOLVED.md`** — the "Recently resolved
   (closure trail)" section: current review closures may carry their full
   narratives inline; older moved entries have one-line pointers to
@@ -337,8 +348,9 @@ consulted on demand, exactly as before.
 **Item-number -> file lookup table.** It covers every `[T]`-tier number,
 including `59a`/`59b`, plus retained closure pointers. Item157 moved to
 `RESOLVED.md` in R15 and item22 in R16; items168–170 remain the R13/R14
-closure pointers, item171 is the `[T]` verification card, and items 175/176
-are the R16 `[T]` cards. Other `[A]` citations resolve directly
+closure pointers, item171 is the `[T]` verification card, items 172–174 and
+176 are R16 closures held in `RESOLVED.md`, and item175 is the R16 `[T]` CI
+card (fixed in tree, CI confirmation pending). Other `[A]` citations resolve directly
 in `ACTIVE.md`. The total is deliberately not typed here. Compare the two `[T]`
 numbered-record counts; the second excludes `RESOLVED.md` and counts only
 `TRACKED_*.md` destinations:
@@ -496,8 +508,11 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 169 | `RESOLVED.md` |
 | 170 | `RESOLVED.md` |
 | 171 | `TRACKED_verification_coverage.md` |
+| 172 | `RESOLVED.md` |
+| 173 | `RESOLVED.md` |
+| 174 | `RESOLVED.md` |
 | 175 | `TRACKED_ci_gate_coverage.md` |
-| 176 | `TRACKED_misc.md` |
+| 176 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
@@ -522,7 +537,7 @@ grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/corre
 
 The three commands count **numbered records**, including retained CLOSED /
 RESOLVED records; they do not calculate an open-only total. The `[A]` tier
-currently contains 1, 2, 11, 13, 62, 162, 163, 172, 173, and 174. The `[T]` IDs are the
+currently contains 1, 2, 11, 13, 62, 162, and 163. The `[T]` IDs are the
 table rows targeting `TRACKED_*.md`, not its resolution pointers or the
 historical 78–97 range from the initial split. For actionable state, read
 each card's current Status / Next trigger. The complete R14 round-start

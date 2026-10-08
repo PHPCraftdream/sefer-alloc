@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Root allocator `src/` review round 16 follow-up (2026-10-08)
+
+Runtime improvements this round: 1 (one deterministic Ir saving on an
+always-on `production` path; no wall-clock or RSS claim). Production feature
+composition, defaults and dependencies are unchanged.
+
+- [correctness fix] `EpochRegion::drop` now drops each live slot under
+  `catch_unwind`, so a panicking destructor no longer leaks the remaining
+  values (item172, `experimental` tier). `Drop for Segment` counts its own
+  release, so a refused primordial `attach_owner` no longer skews
+  `SEGMENTS_RELEASED_TOTAL` (item173). A compile-time assertion bounds
+  `SMALL_CLASS_COUNT` by the `u64` class mask (item176). All with regression
+  tests where a runtime test applies.
+- [correctness fix] The two release `.expect`s on the `GlobalAlloc`
+  free/trim flush loops (item174) first became aborts, then disappeared with
+  the segment-mask change below; the no-panic contract text is updated and
+  `no_panic_doc_accuracy` now scans the `GlobalAlloc`-reachable files for
+  release panic sites against an explicit allowlist.
+- [perf, runtime] Magazine overflow-flush and `flush_all_tcache` resolve each
+  slot's segment root with the segment-base mask (the R12-02 issue-side
+  pattern) instead of a segment-table lookup (perf item84, GO):
+  -146 Ir per overflow event, -260 Ir for a 16-block `flush_all_tcache`,
+  controls unchanged, callgrind Ir on `HeapCore` only.
+- [measurement] Large `realloc` shrink-in-place (perf item83): candidate
+  measured and reverted, NO-GO under its pre-registered gate (8 -> 6 MiB
+  -694401 Ir and 0.63x RSS, but the `realloc_grow` control moved -14 Ir
+  against T=12). No runtime change; revisit needs an owner decision on the
+  observable behaviour and a fresh pre-registration. Report, raw logs,
+  summary CSV and identity bundle: `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md`.
+- [test, CI] The R14-01 compile-fail harness gates on host == target (read
+  from `rustc -vV` and the target-directory markers) instead of
+  `target_arch`, so native arm64 runs it again; confirmation is pending the
+  first CI run after the push (item175 stays open until then).
+- [docs/index] Items 172, 173, 174, 176 moved to `RESOLVED.md`; item154 gets a
+  follow-up note (listed prose examples fixed, `segment_route`
+  `allow(dead_code)` removed, structural debt remains); perf item84 closed,
+  item83 re-carded as an `[L]` revisit item. Manifest:
+  `docs/perf/round-manifests/SRC_REVIEW_R16_MANIFEST.md` §5.
+
 ### Root allocator `src/` review round 16 (2026-10-08; read-only review)
 
 - [review] oxx source review on `6a0d47f6` found three P4 issues and no new
