@@ -36,10 +36,17 @@ composition, defaults and dependencies are unchanged.
   against T=12). No runtime change; revisit needs an owner decision on the
   observable behaviour and a fresh pre-registration. Report, raw logs,
   summary CSV and identity bundle: `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md`.
-- [test, CI] The R14-01 compile-fail harness gates on host == target (read
-  from `rustc -vV` and the target-directory markers) instead of
-  `target_arch`, so native arm64 runs it again; confirmation is pending the
-  first CI run after the push (item175 stays open until then).
+- [test, CI] The R14-01 compile-fail harness now uses rustc's E0461
+  foreign-rlib verdict for `sefer_alloc`, with no architecture, layout or
+  marker gate. With a usable current native artifact, native arm64 runs the
+  checks again; only a nonempty all-foreign candidate set with no compatible
+  candidates skips. The first `CACHEDIR.TAG` gate (`6f568c25`) failed CI run
+  `37770561319` on `9c846e81`; the intermediate `.rustc_info.json`-only gate
+  was also unreliable when clean roots lacked that file with `RUSTC_WRAPPER`
+  empty. Final fix: compiler verdict, not host-layout inference. Item175 is
+  FIXED IN TREE / CI CONFIRMATION PENDING and stays OPEN until green CI.
+  Current-linked rlib identity remains unproven; stale-source E0599/E0624
+  in reused target dirs remain hard errors, not fixed here (CI uses clean dirs).
 - [docs/index] Items 172, 173, 174, 176 moved to `RESOLVED.md`; item154 gets a
   follow-up note (listed prose examples fixed, `segment_route`
   `allow(dead_code)` removed, structural debt remains); perf item84 closed,
