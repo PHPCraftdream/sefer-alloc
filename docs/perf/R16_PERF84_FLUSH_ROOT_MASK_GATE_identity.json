@@ -1,0 +1,47 @@
+{
+  "correctness_receipt": {
+    "accepted": true,
+    "source": "Parent orchestrator supplied command/results; worker did not invent or rerun these receipts",
+    "focused_tests_passed": 20,
+    "broad_targets": 34,
+    "broad_executed_binaries_passed": true,
+    "feature_gated_zero_test_targets": ["r14_4_promotion_free_correctness", "r25_4_dealloc_batch_multi_flush_oracle", "r26_5_dealloc_batch_per_block_partition"],
+    "exact_object_proto_narrow_exit": 0,
+    "no_panic_tests_passed": 4,
+    "clippy_exit": 0,
+    "rustfmt_exit": 0,
+    "diff_check_exit": 0
+  },
+  "base_sha": "265a571abc67323792334dc4dc5452fc59328d19",
+  "tree_sha": "75fcf7356bb177cf77a75c9ec293148281eff737",
+  "a_input_sha256": "3239a60a7630f65cd81f681e1098ad39f11cdd1318b910937e6f280ed6bd590b",
+  "b_input_sha256": "f065f5d4405cfe685b47e513c673f316fc8feb6f0e59dcc69d684cec8bc85789",
+  "candidate_patch_sha256": "6b8a75790e0b61c39977d87154eb83831d07111e278db6558e3528538bc4381f",
+  "bench_patch_sha256": "c2950fee308ca87574926b750ae9c8c033dc82884979245273342849da3af0c7",
+  "features": "production bench-internals internals",
+  "cpu": "11th Gen Intel Core i7-11800H @ 2.30GHz",
+  "os": "Linux 6.18.33.2-microsoft-standard-WSL2 x86_64 GNU/Linux",
+  "rustc": "1.98.1 48a229ceaefd4985c50990b14116b6d856af0985 LLVM22.1.8",
+  "target": "x86_64-unknown-linux-gnu",
+  "runner": "0.14.2",
+  "valgrind": "3.22.0",
+  "raw_sha256": {
+    "A1": "7cc8eb3ef9fba79b9ddf6237284b9e3e1098205133f3502d4d75e99abb25f7e9",
+    "A2": "dcbce1878137d12cec0342ef8f3e004aae37b84bccbfd3c0aca86e33c4e094d8",
+    "C0": "5137f2e0870cebb752d7645e1724c4ff323668a16fa870572082e5e13bf65bf9",
+    "B1": "b35094dba849359178642f15f227de3d4a4d2668d46253a8450a9770371ceec3",
+    "B2": "7a5c66438e94ff8f43d71dfec0b00f61acf7a0f476bb8f597899127216d4e155"
+  },
+  "full_sanitized_sha256": {
+    "A1": "c5a1fdab835b897271924124e7506f72182164b0619f39fe643fa19e686eaa43",
+    "A2": "ebd37be899b1d46539e3379df6184fe8c930e657ca34b0581b0670c4c1240bf3",
+    "C0": "a812575fc176ae5fc83e508cbcb5db153b4992d71531d13485713b6cab055562",
+    "B1": "e422ca7d6601e99105271cef981f7c99a273d557d07f0f4b4548cede2171e6d9",
+    "B2": "f85cc900da803bde2c6cc57ed03d2e167c635a05571c02f10b81c4dfcfe62c62"
+  },
+  "a_manifest_file_sha256": "85e8c5736c0e84abf7b6705a16c63d18b0e5d7cf1e6c68f2ff5227d12337e076",
+  "bench_sha256": "1bff70774aac20a85a2f77b083618c948905898cd531078ea8620f77620fe1a2",
+  "harness_sha256": "b218264ec5acb1592bacd1527c4615300bb179705d55ab411ec07df6fea4504e",
+  "c0_manifest_file_sha256": "85e8c5736c0e84abf7b6705a16c63d18b0e5d7cf1e6c68f2ff5227d12337e076",
+  "b_manifest_file_sha256": "7d74a674f2914fa26a103dee079e1a8ffa13c5d3ea2283c0d5dbf5b4e2eb8072"
+}

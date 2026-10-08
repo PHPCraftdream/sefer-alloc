@@ -1146,6 +1146,54 @@ fn dealloc_flush_class_only_16b() {
     unsafe { (*heap).dbg_flush_class_only(class_idx, &flush_input) };
 }
 
+// R16 item 84: shared setup leaves exactly sixteen resident blocks. The
+// prefix is a negative control; only its partner executes production flush-all.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread", feature = "fastbin"))]
+#[library_benchmark]
+fn dealloc_flush_all_tcache_16b_prefix() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let class = heap.dbg_class_for(layout).expect("16 B class");
+    let mut ptrs = [core::ptr::null_mut(); 16];
+    for slot in &mut ptrs {
+        *slot = heap.alloc(layout);
+        assert!(!slot.is_null());
+    }
+    assert_eq!(heap.dbg_tcache_count(class), 0);
+    for &ptr in &ptrs {
+        // SAFETY: non-null live block allocated by this exclusively owned
+        // heap with this layout; each distinct allocation is freed once.
+        unsafe { heap.dealloc(ptr, layout) };
+    }
+    assert_eq!(heap.dbg_tcache_count(class), 16);
+    black_box(&ptrs);
+}
+
+#[cfg(all(target_os = "linux", feature = "alloc-xthread", feature = "fastbin"))]
+#[library_benchmark]
+fn dealloc_flush_all_tcache_16b() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let class = heap.dbg_class_for(layout).expect("16 B class");
+    let mut ptrs = [core::ptr::null_mut(); 16];
+    for slot in &mut ptrs {
+        *slot = heap.alloc(layout);
+        assert!(!slot.is_null());
+    }
+    assert_eq!(heap.dbg_tcache_count(class), 0);
+    for &ptr in &ptrs {
+        // SAFETY: non-null live block allocated by this exclusively owned
+        // heap with this layout; each distinct allocation is freed once.
+        unsafe { heap.dealloc(ptr, layout) };
+    }
+    assert_eq!(heap.dbg_tcache_count(class), 16);
+    black_box(&ptrs);
+    heap.dbg_flush_all();
+    assert_eq!(heap.dbg_tcache_count(class), 0);
+}
+
 // ---------------------------------------------------------------------------
 // R29-10 (task #441) -- isolate the ALLOC-hit `clear_magazine` block's Ir cost,
 // the alloc-side sub-mechanism R3's honest-reject (docs/perf/IAI_BASELINE.md)
@@ -3364,6 +3412,8 @@ library_benchmark_group!(
         dealloc_free_only_16b_n32,
         dealloc_flush_class_only_16b_prefix,
         dealloc_flush_class_only_16b,
+        dealloc_flush_all_tcache_16b_prefix,
+        dealloc_flush_all_tcache_16b,
         alloc_clear_magazine_only_16b_prefix,
         alloc_clear_magazine_only_16b,
         alloc_zeroed_calloc_virgin_64k_prefix,

@@ -1,0 +1,16 @@
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.72s
+     Running tests\r16_perf84_activation.rs (target\debug\deps\r16_perf84_activation-f22c458c39af0a1e.exe)
+
+running 1 test
+test overflow_boundaries_and_flush_all_activation ... activation frees=16 overflow_events=0 before_flush=16 after_flush=0
+
+thread 'overflow_boundaries_and_flush_all_activation' (109172) panicked at src\registry\heap_core\free\dealloc_own_base.rs:485:25:
+assertion `left == right` failed: overflow magazine block must map to its segment base
+  left: Some(0x1c947400000)
+ right: Some(0x1c947400010)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test r16_perf84_activation`
+
+Caused by:
+  process didn't exit successfully: `<repo>/target\debug\deps\r16_perf84_activation-f22c458c39af0a1e.exe --test-threads=1 --nocapture` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
