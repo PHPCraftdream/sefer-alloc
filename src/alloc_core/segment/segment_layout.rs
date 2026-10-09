@@ -149,10 +149,10 @@ impl SegmentLayout {
     /// Exposed so tests can reason about the metadata/payload boundary without
     /// depending on the private `segment_header::Layout` module.
     ///
-    /// R8-6 (task #219): this is the **TIGHT** metadata boundary — aligned
-    /// only to `PAGE` (4 KiB). The decommit/recommit-safe boundary is
-    /// [`small_decommit_start`](Self::small_decommit_start) (a runtime value,
-    /// real-OS-page-aligned). See that method's doc for the full rationale.
+    /// R8-6 (task #219): this is the **TIGHT** metadata boundary, aligned only
+    /// to `PAGE` (4 KiB). The decommit/recommit-safe boundary is a runtime
+    /// value aligned to the real OS page size; its test-only forwarder requires
+    /// `internals`.
     pub const SMALL_META_END: usize = crate::alloc_core::segment_header::Layout::small_meta_end();
 
     /// The end of the primordial segment's metadata region (page-aligned past
@@ -163,7 +163,8 @@ impl SegmentLayout {
     /// R8-6 (task #219): like [`SMALL_META_END`](Self::SMALL_META_END), this is
     /// the **TIGHT** metadata boundary (4 KiB aligned); the
     /// decommit/recommit-safe boundary is
-    /// [`primordial_decommit_start`](Self::primordial_decommit_start).
+    /// a runtime-value, real-OS-page-aligned boundary, exposed only through the
+    /// `internals`-gated test forwarder.
     pub const PRIMORDIAL_META_END: usize =
         crate::alloc_core::segment_header::Layout::primordial_meta_end();
 

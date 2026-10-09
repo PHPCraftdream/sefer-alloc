@@ -75,9 +75,11 @@ impl AllocCore {
 
     /// TEST-ONLY (Phase 2): force a decay tick by rewinding `last_decay_tick`
     /// to be exactly `decay_interval` in the past, then calling
-    /// `maybe_decay_large_cache`. This causes the interval check to pass
-    /// unconditionally on the very next call, without sleeping. Safe to call
-    /// multiple times — each call produces exactly one decay step.
+    /// `maybe_decay_large_cache`. This primes the next call for a clock read
+    /// without sleeping. A zero interval processes one step; a nonzero
+    /// interval processes up to eight due steps if additional time elapses
+    /// between rewinding the timer and reading the clock. Calls at or below
+    /// headroom remain no-ops unless the diagnostic clock override is enabled.
     ///
     /// Concretely: for a test with `decay_interval = 10s` this makes it
     /// appear as if 10 s have elapsed since the last tick, so the subsequent
@@ -89,14 +91,13 @@ impl AllocCore {
     /// forcing seam BYPASSES that throttle — it primes
     /// `large_cache_decay_op_count` to exactly one call short of the stride
     /// boundary, so the immediately-following `maybe_decay_large_cache` call
-    /// is GUARANTEED to land on a real clock read regardless of how many (or
-    /// how few) organic calls happened before it. This preserves the
-    /// documented "safe to call multiple times — each call produces exactly
-    /// one decay step" contract exactly as it held before this task —
+    /// passes the stride throttle regardless of how many (or how few)
+    /// organic calls happened before it. This guarantees a clock
+    /// read when past the headroom guard, not exactly one decay step or an
+    /// eviction: bounded catch-up still applies, and a step can be a no-op.
+    /// See `docs/perf/R34_11_CATCHUP_DECAY_GATE.md` §1 for the accepted policy;
     /// `tests/large_cache_decay.rs` and R29-13's forced-convergence loop
-    /// (`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` §1.6) both depend on
-    /// every single call reliably firing a real decay tick, never on
-    /// whichever call happens to land on a stride boundary by chance.
+    /// (`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` §1.6) use this seam.
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
@@ -124,7 +125,7 @@ impl AllocCore {
     /// (which are process-global and therefore flaky in parallel runs).
     ///
     /// - `rate_bp`: decay rate in basis points (100 = 1%, 1000 = 10%).
-    /// - `interval_ms`: minimum ms between ticks (0 = fire on every eligible call — bypasses the R32-8 stride throttle, R2-18).
+    /// - `interval_ms`: elapsed-time period for counting due steps, not minimum spacing between invocations. Nonzero intervals use bounded catch-up (up to eight steps, timer advanced by `due * interval`, remaining debt retained); 0 runs one step on every eligible call and bypasses the R32-8 stride throttle (R2-18).
     /// - `headroom`: target cache size in bytes.
     #[cfg(feature = "internals")]
     #[doc(hidden)]
@@ -135,9 +136,8 @@ impl AllocCore {
             decay_interval: core::time::Duration::from_millis(interval_ms),
             headroom_bytes: headroom,
         };
-        // Reset the tick timer so the new interval is observed from this
-        // moment forward (avoids a stale timer confusing the first post-config
-        // call).
+        // Clear the tick timer: the first eligible nonzero-interval check
+        // primes it without decay; a zero interval primes and decays.
         self.last_decay_tick = None;
     }
 

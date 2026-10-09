@@ -312,7 +312,7 @@ use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .budget_bytes(512 * 1024 * 1024)      // 512 MiB hard ceiling per shard
     .headroom_bytes(64 * 1024 * 1024)     //  64 MiB anti-thrash floor
-    .decay_interval_ms(200)               // 200 ms between decay ticks
+    .decay_interval_ms(200)               // 200 ms per due decay interval
     .decay_rate_percent(25)               //  25 % of excess released per tick
     .mode(LargeCacheMode::Lazy);          // inline decay; maintenance is separate
 
@@ -326,15 +326,22 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 |---|---|---|
 | `.budget_bytes(N)` | `None` (unbounded) | Per-shard hard ceiling on total cached bytes. Set to your container's RSS limit. FIFO eviction fires before admitting a new span that would exceed the limit. `0` ⇒ cache disabled (nothing is cached). |
 | `.headroom_bytes(N)` | `256 MiB` | Anti-thrash floor — the decay step does NOT release bytes below this level. Higher headroom = more memory retained between ticks (less aggressive trimming). |
-| `.decay_interval_ms(N)` | `1000` ms | Minimum wall-clock interval between consecutive decay ticks. A tick computes `excess = cached − headroom` and releases `excess × rate` back to the OS. |
+| `.decay_interval_ms(N)` | `1000` ms | Monotonic elapsed-time period for counting due decay steps, not minimum spacing between invocations. Each eligible clock check processes up to eight due intervals; the timer advances by `due × interval`, retaining the remainder and excess whole-interval debt for later invocations. A step computes the current excess and FIFO-evicts whole spans toward `excess × rate`. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
-| `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: each large alloc/free checks if the interval has elapsed; if so, one decay step runs inline. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
+| `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: above headroom, the first eligible call primes a nonzero-interval timer; subsequent clock checks occur every 64th eligible large alloc/free and process bounded catch-up inline. A zero interval bypasses the stride and runs one step per eligible call, including the first. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The model is **"allocate fast, release slowly"**: each tick removes a
 constant fraction of the current excess, so the cache approaches the
 headroom aggressively when far above it and gently when near it —
 self-damping, no oscillation. An idle process pays nothing (the tick
 is gated by the very next large alloc/free).
+
+Bounded catch-up is the accepted [R34-11 design](docs/perf/R34_11_CATCHUP_DECAY_GATE.md#1-the-fix-code-change).
+After a long idle, more than eight due intervals leave debt for later eligible
+clock checks: another batch can run without a fresh full interval after the
+previous batch. Calls at or below headroom do not advance the timer, so returning
+excess can encounter that debt. This is not a per-batch minimum-spacing guarantee.
+
 
 `SeferAlloc::new()` is equivalent to
 `SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`. Want to set
@@ -1464,15 +1471,16 @@ runtime parse errors.
 |---|---|---|
 | `budget_bytes(n)` | `None` (**unbounded**) | Per-shard ceiling on total cached bytes. `0` = cache disabled (every span released to the OS immediately). **Unset = no admission limit**; FIFO eviction fires only when this is set and the new span would exceed it. |
 | `decay_rate_percent(n)` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS per tick. Range `[1, 100]`, clamped. |
-| `decay_interval_ms(n)` | `1000` (1 s) | Minimum wall-clock ms between two consecutive decay ticks. A tick fires inline on the next large alloc/free after the interval elapsed. Idle processes pay nothing. |
+| `decay_interval_ms(n)` | `1000` (1 s) | Monotonic elapsed-time period for due steps, not minimum spacing between batches. A clock check processes up to eight due intervals and advances the timer by `due × interval`; excess debt remains for later invocations. See the bounded catch-up policy in [Parameters](#parameters). Idle processes pay nothing. |
 | `headroom_bytes(n)` | `256 MiB` | Floor below which the decay is a no-op (anti-thrashing pad). |
 | `mode(m)` | `LargeCacheMode::Lazy` | `LargeCacheMode::Lazy` is the default and only variant. The enum is `#[non_exhaustive]`, reserved for a future background-scavenger mode as a non-breaking addition. |
 
 The model is "**allocate fast, release slowly**": on a large `free`, the
-span is admitted to the cache (subject to budget); on each subsequent large
-op, the excess over `headroom` exponentially decays to the OS at the chosen
-rate. Self-damping: aggressive far from target, gentle near target, no
-oscillation. The default `budget=None` (unbounded) admits any span; if you
+span is admitted to the cache (subject to budget); subsequent eligible large
+ops trigger clock checks and bounded catch-up as described above. Each due step
+recomputes the excess over `headroom` and applies the chosen decay rate. No step
+runs before its interval is due, but several steps can run in one invocation.
+The default `budget=None` (unbounded) admits any span; if you
 want a hard RSS ceiling (containers, mobile), add
 `.budget_bytes(512 * 1024 * 1024)` to your config (or whatever fits).
 

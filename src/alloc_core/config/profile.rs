@@ -186,10 +186,17 @@ pub enum LargeCachePolicy {
     /// shipped in the SAME task (a monotonic op-counter that only actually
     /// reads the clock every ~64th call once past headroom) reduces this
     /// specific function's own elapsed contribution by ~62-73 % in the
-    /// above-headroom regime this policy targets, at the cost of decay
-    /// ticks firing up to ~63 large ops later than before (never earlier,
-    /// never more aggressively) — see that report §4 for the exact
-    /// trade. The residual cost after the fix is smaller but NOT zero: this
+    /// above-headroom regime this policy targets, at the cost of delaying
+    /// clock checks by up to 63 eligible large ops — see that report §4 for
+    /// the original trade. R34-11 subsequently added bounded catch-up:
+    /// each eligible clock check processes up to eight due intervals and
+    /// advances the timer by `due * interval`, retaining excess interval debt
+    /// for later checks (`docs/perf/R34_11_CATCHUP_DECAY_GATE.md` §1).
+    /// No step runs before its interval is due, but multiple steps can run
+    /// together, and remaining debt can trigger another batch without a
+    /// fresh full interval. Decay is therefore not guaranteed to be less
+    /// aggressive per invocation than the original single-step policy.
+    /// The residual cost after the fix is smaller but NOT zero: this
     /// policy still pays materially more clock reads than
     /// [`LargeCachePolicy::Default`] at 256 MiB headroom, whose working set
     /// in most measured workloads never crosses the floor at all.

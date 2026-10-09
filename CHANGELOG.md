@@ -86,6 +86,16 @@ composition is unchanged; no speed or RSS improvement is claimed.
   fourteen temporary source controls were detected and restored. No allocator
   behavior or performance claim changed.
 
+- [docs] Corrected `LargeCacheConfig` decay docs to describe the monotonic
+  due-step interval, bounded catch-up (up to eight steps per eligible clock
+  check), retained debt after long idle, stride checks, and below-headroom
+  timer behavior. README and source comments no longer promise minimum
+  spacing or one step per call. Strict rustdoc builds and
+  `no_stale_doc_references` pass. Rustdoc links to `internals`-gated
+  SegmentLayout test forwarders use prose references, so the production docs
+  build without `internals`. No runtime behavior or performance was measured.
+
+
 
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)

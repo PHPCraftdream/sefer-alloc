@@ -47,7 +47,7 @@ use crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig
 /// providing an anti-thrashing floor.
 pub(crate) const DEFAULT_HEADROOM_BYTES: usize = 256 * 1024 * 1024;
 
-/// Default decay interval: 1000 ms (1 second between ticks).
+/// Default decay interval: 1000 ms (1 second per due interval).
 pub(crate) const DEFAULT_DECAY_INTERVAL_MS: u64 = 1000;
 
 /// Default decay rate: 10 % per tick, expressed as a percentage.
@@ -188,7 +188,9 @@ pub struct LargeCacheConfig {
     /// this level. `None` uses the default (256 MiB).
     pub(crate) headroom_bytes: Option<usize>,
 
-    /// Minimum wall-clock milliseconds between consecutive decay ticks.
+    /// Elapsed-time period used to count due decay steps, in milliseconds.
+    /// This is not a minimum spacing between invocations: bounded catch-up
+    /// can process several due steps in one invocation.
     /// `None` uses the default (1000 ms).
     pub(crate) decay_interval_ms: Option<u32>,
 
@@ -304,15 +306,26 @@ impl LargeCacheConfig {
         self
     }
 
-    /// Set the minimum wall-clock interval between decay ticks, in
-    /// milliseconds.
+    /// Set the elapsed-time period used to count due decay steps, in
+    /// milliseconds, measured with a monotonic clock.
+    ///
+    /// For a nonzero interval, the first eligible call primes the timer.
+    /// Subsequent eligible clock checks process `due = min(elapsed / interval, 8)`
+    /// steps inline and advance the stored timer by `due * interval`, not to
+    /// the current time. The sub-interval remainder and any whole intervals
+    /// beyond the cap remain due for later invocations. Catch-up batches can
+    /// therefore run without a fresh full interval between them; this is not
+    /// a minimum spacing guarantee. Calls at or below headroom leave the timer
+    /// unchanged, so excess returning later can encounter accumulated debt.
+    /// See `docs/perf/R34_11_CATCHUP_DECAY_GATE.md` §1 for the accepted design.
     ///
     /// A value of `0` means "tick on every eligible large alloc/free" (useful
     /// for testing; zero ms is accepted): every event that finds the cache
     /// above its headroom floor decays in that same call — the first eligible
     /// event included (no timer-priming pass) — and the clock-read stride
     /// throttle described on [`LargeCacheMode::Lazy`] is bypassed entirely.
-    /// Higher values reduce the frequency of decay checks and OS calls.
+    /// Higher values mean fewer due intervals for the same elapsed time;
+    /// they do not change the clock-read stride.
     ///
     /// Default: 1000 ms (1 second).
     #[must_use]
@@ -340,14 +353,15 @@ impl LargeCacheConfig {
     /// Set the cache operating mode.
     ///
     /// - `LargeCacheMode::Lazy` (default and currently the only variant):
-    ///   event-driven — a decay tick fires inline on a large alloc/free once
-    ///   the interval has elapsed. To keep the hot path free of clock reads,
-    ///   once the cache is above its headroom floor the clock is consulted on
-    ///   at most every 64th such event, so a tick that comes due fires up to
-    ///   63 events late (never early). A zero `decay_interval_ms`
-    ///   configuration bypasses this throttle and ticks on every eligible
-    ///   event, the first one included. No background thread; idle processes
-    ///   pay nothing.
+    ///   event-driven — due decay steps run inline on a large alloc/free.
+    ///   To limit clock reads, once the cache is above headroom and the timer
+    ///   is primed, the clock is consulted every 64th such event. Each check
+    ///   processes up to eight due intervals using the bounded catch-up policy
+    ///   described on [`decay_interval_ms`](Self::decay_interval_ms); remaining
+    ///   debt can trigger another batch at a later check without a fresh full
+    ///   interval. A zero `decay_interval_ms` configuration bypasses the stride
+    ///   and runs one step on every eligible event, the first one included.
+    ///   No background thread; idle processes pay nothing.
     ///
     /// `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future
     /// background-scavenger mode to be added as a non-breaking change; today
