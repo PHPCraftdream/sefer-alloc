@@ -103,7 +103,7 @@
 - **Сознательно не повышенные security-кандидаты:** high-alignment VA amplification связано с correctness **163**/perf **53**; unsafe misuse не повышено до safe exploit. Numeric hash harness API и gated corruption hooks не объявлены unsound лишь за raw pointer. **164/166/171** не regraded и не claimed fixed.
 - **Внетематические/исторические наблюдения:** старые CI fuzz leaks/red gated bodies, counters/bench tables, Darwin advisory behavior и future-platform утверждения не установлены как current runtime outcomes независимо. Они сохраняют контекст исходных обзоров/owners, не превращены в новые invented issues. Конкретные stale paths/contracts консолидированы в formal prose/counter/feature/coverage entries.
 
-**Прочие open cards намеренно оставлены без изменения.** Это статический синтез, не исполнение triggers, новая task queue, remediation, release acceptance или perf gate.
+**Прочие open cards и гипотезы сохранены без изменений, кроме явно перечисленных ниже R18 updates.** Это не новое исполнение performance/coverage triggers и не release acceptance.
 
 ## Обновление R18 — CQ §2.15(1), таблица поколений
 
@@ -113,3 +113,30 @@
 [P3](2026-10-08-src-review-xxs-round-17-P3.md); полное закрытие занесено в
 `docs/perf/OPEN_ITEMS_ARCHIVE.md`. Исходные OPT-гипотезы приложения A остаются
 без P-оценок; измерений RSS/Ir и speedup не заявлено.
+
+## Обновление R18 — CQ-12, dead-shape realloc parameter
+
+Только две подтверждённые dead-shape части частично закрыты. У
+`AllocCore::safe_payload_read_span` удалён параметр `own_segment` и никогда
+невызывавшаяся false-ветвь: все три текущих caller'а сначала доказывают
+собственное владение сегментом. Lazy-commit path по-прежнему читает
+`committed_payload_end`; eager path ограничивает span `SEGMENT`. Ownership и
+plain-store ограничения теперь описаны непосредственно в контракте метода.
+Внутренний `SizeClasses::is_huge` wrapper и единственная устаревшая ссылка на
+него также удалены; member-crate API не менялся.
+
+Оркестратор независимо запустил три разрешённых тестовых набора:
+`oxx_r2_02_realloc_lazy_commit_frontier` — 1 passed, 1 intentional ignored;
+четыре production realloc targets — 14 passed; три non-lazy targets — 4
+passed. В последнем наборе `regression_inplace_large_realloc` компилируется с
+0 тестов из-за отсутствия требуемого `internals`; это не считается покрытием
+этого сценария. Единственный revert-control под lazy cfg заменил frontier на
+`SEGMENT`: child завершился Windows status `0xc0000005`, родитель отверг
+результат сообщением `child must exit cleanly`. Восстановленный тест снова
+прошёл 1/1. Targeted rustfmt, `git diff --check`, `cargo check --lib` и строгий
+Clippy на `production internals` прошли.
+
+Это **не закрывает CQ-12 целиком**: другие упомянутые review suppressions не
+аудировались здесь. CQ-10, CQ-11 и CQ-13 остаются без изменений; ни
+рефакторинг дублированных safety-последовательностей, ни измерения speed/code
+size не заявлены. Остальные гипотезы приложения A–C не реализованы.

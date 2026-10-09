@@ -54,6 +54,13 @@ improvement is claimed.
   Debug/release boundary regressions pass; restoring the unconditional
   increment reproduces the debug overflow. No latency result is claimed.
 
+- [maintenance] Removed the unused `own_segment` argument/false branch from
+  the realloc read-span helper after confirming all three callers prove owner
+  access; removed the unused private `SizeClasses::is_huge` forwarder. The
+  lazy-frontier regression and production realloc targets passed; substituting
+  the eager `SEGMENT` bound in the lazy path reproduced the child access fault.
+  This cleanup makes no measured speed claim; other CQ-12 suppressions remain.
+
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 
 Runtime improvements this round: 1 (one deterministic Ir saving on an

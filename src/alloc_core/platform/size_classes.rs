@@ -279,7 +279,7 @@ pub(crate) static SIZE2CLASS: [u8; S2C_LEN] = *SC.size2class();
 
 /// A classifier over [`SIZE_CLASS_TABLE`]. A zero-sized forwarder to the crate
 /// scheme [`SC`] — kept so the in-tree `SizeClasses::class_for(..)` /
-/// `::block_size(..)` / `::is_huge(..)` call sites compile unchanged.
+/// `::block_size(..)` call sites compile unchanged.
 ///
 /// All methods are `const` pure arithmetic — no allocations, no panics on the
 /// lookup path FOR IN-CONTRACT INPUTS (task #755's closing review, F6:
@@ -332,14 +332,6 @@ impl SizeClasses {
     #[must_use]
     pub(crate) const fn block_size(idx: usize) -> usize {
         SC.block_size(idx)
-    }
-
-    /// Whether a `size` request is "huge" (gets the dedicated-segment huge
-    /// policy in future phases). For Phase 8 this is purely informational.
-    #[must_use]
-    #[allow(dead_code)] // Phase 10 (M6) consumes this; kept for that.
-    pub(crate) const fn is_huge(size: usize) -> bool {
-        SC.is_huge(size)
     }
 }
 

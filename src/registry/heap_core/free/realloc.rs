@@ -328,12 +328,12 @@ impl HeapCore {
                 //       `contains_base`. The write side is always safe (`copy
                 //       <= new_size`); the read is bounded here.
                 //
-                //       `own_segment = true`: `self.core.contains_base(base)`
+                //       Ownership: `self.core.contains_base(base)`
                 //       above proved `base` is one of THIS heap's own
                 //       segments, so this is a same-thread read of the
                 //       owner-only commit frontier (R2-02) — see
                 //       `safe_payload_read_span`'s doc.
-                if old_layout.size() > AllocCore::safe_payload_read_span(base, block, true) {
+                if old_layout.size() > AllocCore::safe_payload_read_span(base, block) {
                     return core::ptr::null_mut();
                 }
                 let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
@@ -553,10 +553,9 @@ impl HeapCore {
         // block's actual committed span, not the caller-supplied
         // `old_layout.size()` — a bogus layout must not drive an OOB read.
         // `base` was already proven live by the caller's `contains_base`
-        // check, which is also an ownership proof (`own_segment = true`,
-        // R2-02) — see `safe_payload_read_span`'s doc.
-        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr, true) {
-            return None;
+        // check, which is also an ownership proof (R2-02) — see
+        // `safe_payload_read_span`'s doc.
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
         }
         // Pad target = `new_size` (no artificial padding beyond the caller's
         // request) — see this function's doc comment for the measured

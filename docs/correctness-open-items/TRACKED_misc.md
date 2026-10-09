@@ -55,10 +55,10 @@ split the same day.)
 
 154. **[T] Task-history prose in `src/` doc comments outweighs the code.** (Filed 2026-09-28, src review round 1 finding R1-11, residual part.)
 
-    - **Status:** OPEN — deferred. The mechanical parts of R1-11 are done: `heap_overflow` split under the cap and the shared `HeapRegistry::claim_impl` (commit `2630b090`), plus the `tests/src_file_size_cap.rs` tripwire that enforces the 1000-line cap.
-    - **Current-number-or-verdict:** the review measured about 20,000 `///`/`//!` lines against about 15,600 code lines in `src/`. Much of the prose is task history (`R6-OPT-P0-4`, `task #136`, ...) duplicated across files; the earlier R2-23 and R3-4 findings were stale prose of exactly this kind.
+    - **Status:** OPEN — broad task-history prose debt remains deferred. R18 removed two specific dead/stale surfaces but did not perform the dedicated docs migration.
+    - **Current-number-or-verdict:** no current source-wide prose/code census was run. The earlier ~20,000 comment lines / ~15,600 code lines are filing-time measurements, not current totals. R18 removed the unused `own_segment` realloc-bound branch and its false-path rationale, plus the unused private `SizeClasses::is_huge` wrapper and stale forwarder mention.
     - **Next trigger:** a dedicated docs round that moves history into `docs/` (ADR-style) and leaves invariants and SAFETY reasoning in the code, one module per commit. Pure doc diffs, but several tests `include_str!` source files and pin phrases, so rerun the doc tripwires after each module.
-    - **Evidence:** review §R1-11.
+    - **Evidence:** review §R1-11; the scoped R18 cleanup and residuals are in `docs/reviews/2026-10-08-src-review-xxs-round-17-P5.md`, "Обновление R18 — CQ-12".
 
     - **R15 evidence update (2026-10-07):** R15-03 confirms current examples of the existing prose debt: `sharded_region.rs:644–651` overstates binding/locking guarantees, and `registry/mod.rs:50–54` still labels live production routing unconnected. These do not satisfy the dedicated documentation-round trigger; status remains OPEN.
 

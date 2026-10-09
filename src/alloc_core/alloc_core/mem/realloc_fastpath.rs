@@ -5,11 +5,10 @@
 //! and `try_realloc_inplace_known_base`.
 //!
 //! oxx R2-02 (`docs/reviews/2026-09-28-154558-src-review-oxx-round-2.md`):
-//! `safe_payload_read_span` gained an `own_segment` parameter so an
-//! own-segment Small/Primordial caller gets the exact lazy-commit frontier
-//! bound instead of the coarse, lazy-commit-unaware `SEGMENT`-wide one — see
-//! that method's own doc for the full rationale. Every other item in this
-//! file is unchanged (pure code movement from the original split).
+//! `safe_payload_read_span` bounds owner-segment Small/Primordial reads by
+//! the exact lazy-commit frontier instead of a coarse `SEGMENT`-wide bound.
+//! Its private API requires a live, mapped segment owned by the caller — see
+//! that method's doc for the full rationale.
 
 use core::alloc::Layout;
 
@@ -56,84 +55,45 @@ impl AllocCore {
     /// commit frontier (R2-02: `safe_payload_read_span` treating a
     /// lazily-committed segment as fully committed let a bogus/oversized
     /// `old_layout.size()` pass this guard and drive `Node::copy_nonoverlapping`
-    /// straight into an unmapped page — an access violation, exactly the
-    /// class of bug this guard exists to prevent). See `own_segment`'s doc
-    /// below for how the two call-site shapes (own-segment vs. foreign) are
-    /// each bounded soundly.
+    /// class of bug this guard exists to prevent). The caller must own the
+    /// segment so the owner-only frontier can be read without a race.
     ///
     /// In all cases the result is an upper bound on the bytes that can be
     /// read from `payload` without faulting or escaping the segment's OS
     /// allocation; the move legs reject (`old_layout.size() >` this value)
     /// before any copy rather than reading past the segment.
     ///
-    /// # `own_segment`
+    /// # Ownership requirement
     ///
-    /// `true` iff the CALLING thread is this segment's owner (every
-    /// own-segment call site proves this the same way it proves `base` is
-    /// live: `AllocCore::contains_base`/`HeapCore::contains_base`, which are
-    /// only ever called through `&mut self` by the thread that currently has
-    /// exclusive access to that `AllocCore`/`HeapCore` — its registry slot
-    /// claim, or the fallback `LockGuard` — so a `contains_base(base) == true`
-    /// proof IS an ownership proof). `false` is a coarse NON-OWNER branch
-    /// that NO current caller exercises:
-    /// every call site is an owner path passing `own_segment == true`. The
-    /// cross-heap foreign realloc leg does not call this header-reading
-    /// helper at all — it validates via the route directory's descriptor —
-    /// and a route lookup must never be cited as the mapping/ownership
-    /// proof this branch would need.
+    /// The calling thread MUST own the segment. `contains_base(base)` through
+    /// exclusive access to the owning `AllocCore`/`HeapCore` — its registry
+    /// slot claim or fallback `LockGuard` — proves ownership and mapping.
+    /// The cross-heap foreign realloc leg validates via the route directory's
+    /// descriptor and does not call this header-reading helper; a route pin
+    /// is not a mapping/ownership proof for this API.
     ///
-    /// For a Small/Primordial segment this selects the bound:
-    ///   - `own_segment == true`: the OWNER-ONLY `committed_payload_end`
-    ///     frontier (`SegmentMeta::committed_payload_end_of`) — exact, not
-    ///     just an upper bound. Reading it here is a same-thread,
-    ///     single-writer read (only the owning thread ever writes this
-    ///     field — segment init, grow-on-carve, decommit-on-empty — via
-    ///     plain, non-atomic stores), so there is no concurrent writer and
-    ///     no race. It is also never smaller than any legally-carved block's
-    ///     own end: `carve_block`'s grow-on-carve step
-    ///     (`alloc_core_small_impl.rs`) commits `[frontier, new_frontier)`
-    ///     and raises the frontier BEFORE advancing `bump`, so for every
-    ///     block ever handed to a caller, the frontier was `>=` that block's
-    ///     `off + block_size` at hand-out time and only ever grows
-    ///     afterwards; the field is reset to a fresh frontier only via
-    ///     decommit-on-empty (`live_count == 0`, i.e. no legal block exists
-    ///     to violate). A correct caller's `old_layout.size()` is therefore
-    ///     never rejected by this tightening.
-    ///   - `own_segment == false`: the coarse `SEGMENT`-wide bound. No
-    ///     atomic view of `committed_payload_end` exists (its writers use
-    ///     plain `Node::write_usize`, not an atomic store), and building one
-    ///     would mean converting every writer — segment init
-    ///     (`bootstrap.rs`), grow-on-carve and decommit-on-empty
-    ///     (`alloc_core_small_impl.rs`/`decommit.rs`) — to atomic stores as
-    ///     well (a plain-store writer racing an atomic-load reader is still
-    ///     a data race under the same memory model); that is a
-    ///     cross-cutting change out of scope for this defence-in-depth fix.
-    ///     Reading the owner-only frontier from a non-owner thread would
-    ///     therefore be a genuine data race (UB), not merely a stale read.
-    ///
-    ///     This branch is retained for shape only: it has no caller today
-    ///     and would require its OWN independent mapping/ownership proof —
-    ///     a route-directory pin is a descriptor capability, not such
-    ///     proof.
+    /// Small/Primordial reads use the OWNER-ONLY `committed_payload_end`
+    /// frontier (`SegmentMeta::committed_payload_end_of`). Its writers use
+    /// plain, non-atomic stores during segment init, grow-on-carve, and
+    /// decommit-on-empty, so exclusive owner access is required to avoid a
+    /// data race. Grow-on-carve commits and raises the frontier BEFORE
+    /// advancing `bump`, so it covers every legally-carved block's end.
+    /// The frontier only resets on decommit-on-empty (`live_count == 0`),
+    /// when no legal block remains. A correct `old_layout.size()` is
+    /// therefore never rejected by this tightening.
     ///
     /// # Preconditions
     ///
-    /// `base` MUST already be proven to be a live, mapped segment via
-    /// `contains_base(base)` — the proof every current caller holds (all
-    /// call sites are owner paths passing `own_segment == true`); the
-    /// `false` branch has no caller and no separate proof path today.
-    /// This method reads `kind`/`span_usable`/`committed_payload_end` header
-    /// fields at `base`, which is only sound for a mapped segment.
+    /// `base` MUST already be proven to be a live, mapped segment owned by
+    /// the calling thread. This method reads `kind`/`span_usable`/
+    /// `committed_payload_end` header fields at `base`, which is only sound
+    /// under that ownership/mapping proof.
     #[inline]
-    pub(crate) fn safe_payload_read_span(
-        base: *mut u8,
-        payload: *mut u8,
-        own_segment: bool,
-    ) -> usize {
+    pub(crate) fn safe_payload_read_span(base: *mut u8, payload: *mut u8) -> usize {
         let seg_span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
             SegmentHeader::span_usable_at(base)
         } else {
-            Self::small_committed_bound(base, own_segment)
+            Self::small_committed_bound(base)
         };
         let off = (payload as usize).wrapping_sub(base as usize);
         seg_span.saturating_sub(off)
@@ -142,17 +102,15 @@ impl AllocCore {
     /// Small/Primordial half of [`safe_payload_read_span`](Self::safe_payload_read_span) — split out
     /// purely so the cfg-gated tightening (R2-02) reads as one small,
     /// independently-named unit. See that method's doc for the full
-    /// `own_segment` rationale.
+    /// caller ownership requirement.
     #[inline]
-    fn small_committed_bound(base: *mut u8, own_segment: bool) -> usize {
+    fn small_committed_bound(base: *mut u8) -> usize {
         #[cfg(any(
             feature = "primordial-lazy-commit",
             feature = "small-segment-lazy-commit"
         ))]
         {
-            if own_segment {
-                return SegmentMeta::new(base).committed_payload_end_of();
-            }
+            SegmentMeta::new(base).committed_payload_end_of()
         }
         #[cfg(not(any(
             feature = "primordial-lazy-commit",
@@ -161,10 +119,10 @@ impl AllocCore {
         {
             // Neither lazy-commit feature is compiled: the whole segment is
             // always committed on reserve (eager path), so `SEGMENT` is
-            // exact regardless of `own_segment`.
-            let _ = (base, own_segment);
+            // exact for the caller's owned segment.
+            let _ = base;
+            os::SEGMENT
         }
-        os::SEGMENT
     }
 
     /// Single source of truth for the OPT-F / OPT-G in-place realloc fast
