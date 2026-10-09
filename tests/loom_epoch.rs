@@ -10,23 +10,29 @@
 //! ordering between a `generation` counter and a `value` — using
 //! `loom::sync::atomic` (NOT crossbeam). It asserts the core safety property:
 //!
-//! > A reader using the seqlock protocol (load gen → load value → re-load gen;
-//! > accept only if both gens match AND equal the expected generation) NEVER
-//! > resolves a value belonging to a different generation.
+//! > A reader using a valid minted handle and the seqlock protocol
+//! > (load gen → load value → re-load gen; accept only if both gens match AND
+//! > equal the handle's expected generation) must not resolve a value belonging
+//! > to a different generation.
 //!
-//! This mirrors `AtomicSlot::read_with` exactly. The writer mirrors
-//! `AtomicSlot::install` (write value, generation unchanged) and
-//! `AtomicSlot::evict` (swap value to a tombstone, then bump generation).
+//! This is a handwritten shadow model using Loom atomics, not actual
+//! `EpochRegion` or `AtomicSlot` coverage or an implementation refinement proof.
+//! It abstracts `install` as a Release value store with generation unchanged,
+//! and `try_evict_at` as a generation CAS before tombstoning the value; a failed
+//! CAS leaves the value untouched.
 //!
-//! # What rests on miri, NOT loom
+//! Readers use a valid generation-0 handle established by installation before
+//! spawning. Peeking an arbitrary current generation is not handle minting:
+//! between the CAS and tombstone swap, the new generation can coexist with the
+//! old value, but no handle for that new generation has yet been minted.
+//! Reinstallation here occurs only after eviction completes. Free-list/queue
+//! reuse, saturation/retirement, and reclamation are outside this model.
 //!
-//! The **reclamation correctness** (the `guard.defer_destroy` / epoch-advance
-//! lifetime proof in `src/concurrent/epoch/hand.rs`) is NOT modelled here. That
-//! rests on the `crossbeam-epoch` crate's correctness plus `miri`, which
-//! verifies our `unsafe` dereferences against real epoch guards. loom models
-//! ordering; miri models lifetime/aliasing. (See the final report: miri cannot
-//! run the epoch tests because crossbeam-epoch 0.9.18's global collector is
-//! itself not miri-clean — an upstream limitation, not our code.)
+//! # Reclamation is outside this model
+//!
+//! No crossbeam epoch guards, pointer dereferences, `guard.defer_destroy`, or
+//! epoch-advance lifetime behavior are exercised. Ordering checks here do not
+//! establish reclamation correctness, actual-type safety, or liveness.
 //!
 //! # How to run
 //!
@@ -34,7 +40,7 @@
 //! `--cfg loom`:
 //!
 //! ```sh
-//! RUSTFLAGS="--cfg loom" cargo test --features experimental --test loom_epoch
+//! RUSTFLAGS="--cfg loom" cargo test --features "experimental tagged-index-stack/loom" --test loom_epoch -- --test-threads=1
 //! ```
 
 #![cfg(loom)]
@@ -47,7 +53,7 @@ use loom::thread;
 /// that loads this resolves to `None` (I2 — tombstone).
 const VACANT: usize = 0;
 
-/// The shared publication state, mirroring a single `AtomicSlot<T>`:
+/// Abstract publication state inspired by a single `AtomicSlot<T>`:
 /// a generation counter and a value word. We use `AtomicUsize` for the value
 /// (not a raw pointer) because loom models *ordering*, not freeing — the value
 /// is a stand-in for the "pointee contents" a real reader would observe.
@@ -67,24 +73,33 @@ impl PubState {
         }
     }
 
-    /// Mirror of `AtomicSlot::install`: store the value (Release). Generation
+    /// Abstract `AtomicSlot::install`: store the value (Release). Generation
     /// is unchanged — a handle minted now carries the current generation.
     fn install(&self, value: usize) {
         self.value.store(value, Ordering::Release);
     }
 
-    /// Mirror of `AtomicSlot::evict`: swap value to VACANT (AcqRel), then bump
-    /// generation (Release). Returns the generation the slot will have AFTER
-    /// eviction (for the writer to record).
-    fn evict(&self) -> u64 {
-        self.value.swap(VACANT, Ordering::AcqRel);
-        let g = self.generation.load(Ordering::Acquire);
-        // Saturation omitted in the model (loom explores few steps).
-        self.generation.store(g + 1, Ordering::Release);
-        g
+    /// Abstract `AtomicSlot::try_evict_at`: strong generation CAS (AcqRel on
+    /// success, Acquire on failure), then swap value to VACANT (AcqRel) only
+    /// on success. Failure leaves the value untouched. No outcome/reclamation
+    /// accounting is modelled. u64 saturation is explicitly omitted: these
+    /// bounded scenarios only transition 0 → 1 → 2.
+    fn evict(&self, expected_gen: u64) {
+        if self
+            .generation
+            .compare_exchange(
+                expected_gen,
+                expected_gen + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            self.value.swap(VACANT, Ordering::AcqRel);
+        }
     }
 
-    /// Mirror of `AtomicSlot::read_with` with the **seqlock validation**:
+    /// Abstract reader with **seqlock validation**:
     /// load gen (g1) → load value → re-load gen (g2); accept only if
     /// `g1 == expected_gen && g1 == g2`. Returns the resolved value or `None`.
     fn read_with(&self, expected_gen: u64) -> Option<usize> {
@@ -126,21 +141,15 @@ impl PubState {
     }
 }
 
-/// loom model-check: 1 writer + 1 reader over a single `(generation, value)`
-/// publication. The writer churns install → evict cycles (publishing a tagged
-/// value, then tombstoning it and bumping the generation), modelling the real
-/// `insert`/`remove` churn across a generation boundary. The reader probes with
-/// the seqlock protocol. The assertion: a reader NEVER resolves a value to a
-/// generation it does not belong to — every resolved value equals the tag the
-/// writer published at the reader's observed generation.
+/// Bounded shadow check: 1 writer + 1 reader over `(generation, value)`.
+/// Install generation 0 before spawning to establish a valid handle. The
+/// reader retains that handle while the writer evicts, reinstalls at generation
+/// 1, and evicts again. Every resolved value must match the handle's tag.
+/// No synchronization is added after spawning; the reader races the writer.
 ///
-/// **Bounded exploration** (`preemption_bound = 3`) keeps the check to a few
-/// seconds while still covering every interleaving with up to 3 preemptions —
-/// enough to expose the torn read this protocol must prevent (verified:
-/// removing the seqlock re-check in `read_with` makes loom fail here).
-/// Unbounded exploration of this model is combinatorially explosive and
-/// impractical for the dev loop. A single reader suffices: the hazard is
-/// reader-vs-writer, not reader-vs-reader.
+/// `preemption_bound = 3` limits exploration. The missing-g2 negative control
+/// below is intended to expose a torn read within that bound; its outcome is
+/// not established by static reasoning or compilation.
 #[test]
 fn publication_protocol_never_yields_a_mismatched_value() {
     let mut builder = loom::model::Builder::new();
@@ -157,11 +166,12 @@ fn publication_protocol_never_yields_a_mismatched_value() {
         const WRITER_TAG: usize = 7;
         let make_value = |gen: u64| usize::try_from(gen).unwrap_or(0) * STEP + WRITER_TAG;
 
+        // Establish a valid generation-0 handle before the reader can run.
+        state.install(make_value(0));
         let reader = thread::spawn(move || {
             for _ in 0..2 {
-                // Peek the generation the reader will pass as `expected_gen`
-                // (mirrors a real handle minted at some generation), then read.
-                let expected = r_state.generation.load(Ordering::Acquire);
+                // Retain the minted handle; a generation peek is not minting.
+                let expected = 0;
                 if let Some(v) = r_state.read_with(expected) {
                     // A resolved value must equal the tag for `expected`; a torn
                     // read would surface a value from a different generation.
@@ -174,13 +184,10 @@ fn publication_protocol_never_yields_a_mismatched_value() {
             }
         });
 
-        // Writer (main loom thread): churn install → evict across a generation
-        // boundary (gen 0 → 1 → 2), the minimum to exhibit install/evict/
-        // reinstall while the reader is mid-read.
-        for target_gen in 0..2_u64 {
-            state.install(make_value(target_gen));
-            state.evict();
-        }
+        // Reuse only after eviction completes, never between CAS and swap.
+        state.evict(0);
+        state.install(make_value(1));
+        state.evict(1);
 
         reader.join().expect("reader panicked");
     });
@@ -190,29 +197,19 @@ fn publication_protocol_never_yields_a_mismatched_value() {
 // Counterfactual — `read_with` WITHOUT the seqlock g2 re-check.
 // =========================================================================
 
-/// COUNTERFACTUAL for `publication_protocol_never_yields_a_mismatched_value`:
-/// proves the harness is non-vacuous by running the SAME 1-writer/1-reader
-/// thread structure against a DELIBERATELY BROKEN reader (`read_with_no_recheck`)
-/// that accepts a value based on `g1 == expected_gen` alone, WITHOUT re-loading
-/// `generation` to confirm no evict-and-reinstall happened between the g1 load
-/// and the value load.
+/// Negative control for `publication_protocol_never_yields_a_mismatched_value`:
+/// the same valid generation-0 handle and 1-writer/1-reader scenario, but with
+/// `read_with_no_recheck` deliberately omitting g2 validation.
 ///
-/// This directly backs the file's existing doc-comment claim (line 118 of the
-/// positive test: "removing the seqlock re-check in `read_with` makes loom fail
-/// here") — the claim was previously asserted only in prose; this test makes it
-/// an executable regression.
+/// Intended witness: the reader loads g1 = 0; the writer completes eviction
+/// (CAS 0 → 1, swap to VACANT) and installs `make_value(1) = 1007`; the reader
+/// loads 1007 and returns it for expected generation 0, whose tag is 7.
+/// The assertion should panic with "torn read". No post-spawn handoff orders
+/// the reader after eviction or reinstall.
 ///
-/// The race loom finds: (a) reader loads `expected = generation = 0`; (b) reader
-/// loads `g1 = 0`, passes the check; (c) writer evicts gen 0 (→ gen 1, value =
-/// VACANT) then installs `make_value(1) = 1007` (value = 1007, gen still 1);
-/// (d) reader loads `value = 1007`; (e) WITHOUT the g2 re-check the reader
-/// returns `Some(1007)`, which mismatches `make_value(expected) = make_value(0)
-/// = 7` — the assertion fires.
-///
-/// `#[should_panic]` because loom explores all interleavings with
-/// `preemption_bound = 3` and FINDS the one where the broken reader surfaces a
-/// torn read. If this passes (does not panic), the counterfactual is vacuous
-/// and the harness is broken.
+/// `#[should_panic]` requires the intended assertion signature. Whether Loom
+/// finds this witness with `preemption_bound = 3` requires execution; if it
+/// does not panic, the negative-control test fails.
 #[test]
 #[should_panic(expected = "torn read")]
 fn counterfactual_no_recheck_yields_torn_read() {
@@ -226,9 +223,11 @@ fn counterfactual_no_recheck_yields_torn_read() {
         const WRITER_TAG: usize = 7;
         let make_value = |gen: u64| usize::try_from(gen).unwrap_or(0) * STEP + WRITER_TAG;
 
+        // Establish a valid generation-0 handle before the reader can run.
+        state.install(make_value(0));
         let reader = thread::spawn(move || {
             for _ in 0..2 {
-                let expected = r_state.generation.load(Ordering::Acquire);
+                let expected = 0;
                 // BROKEN reader: no g2 re-check.
                 if let Some(v) = r_state.read_with_no_recheck(expected) {
                     assert_eq!(
@@ -240,10 +239,10 @@ fn counterfactual_no_recheck_yields_torn_read() {
             }
         });
 
-        for target_gen in 0..2_u64 {
-            state.install(make_value(target_gen));
-            state.evict();
-        }
+        // Reuse only after eviction completes, never between CAS and swap.
+        state.evict(0);
+        state.install(make_value(1));
+        state.evict(1);
 
         reader.join().expect("reader panicked");
     });

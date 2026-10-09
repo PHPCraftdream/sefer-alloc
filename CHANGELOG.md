@@ -108,6 +108,13 @@ composition is unchanged; no speed or RSS improvement is claimed.
   first with the intended diagnostic, followed by the existing `AtomicU64`
   import errors. CI target coverage is unchanged; no runtime behavior changed.
 
+- [test] Corrected the Epoch Loom shadow to advance the generation CAS before
+  tombstoning the value, and updated item 160 to record the separate
+  `QueueProtocol` shadow while retaining the actual-type/refinement gap. The
+  two epoch-model and four queue-model Loom tests pass; no production algorithm,
+  actual-type proof, or liveness claim changed.
+
+
 
 
 

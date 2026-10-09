@@ -82,12 +82,12 @@ split the same day.)
     - **Next trigger:** a platform or container (restricted cpuset) that reports an empty list. The fix is to return `None`, with a test through the seam that supplies the ids.
     - **Evidence:** `docs/reviews/2026-09-29-091221-src-review-xxs-sol-round-5.md` "Неподтверждённые риски".
 
-160. **[T] `EpochRegion::remote_free_pending` is a Relaxed hint read before the queue mutex; no loom model covers it.** (Filed 2026-09-29, xxs round 5, unconfirmed risk.)
+160. **[T] `EpochRegion::remote_free_pending` is a Relaxed hint; a shadow Loom model exists, but actual-type coverage/refinement remains open.** (Filed 2026-09-29, xxs round 5, unconfirmed risk.)
 
-    - **Status:** OPEN — unconfirmed; the review found no lost-index schedule by code reading, but did not run a weak-memory model.
-    - **Current-number-or-verdict:** `src/concurrent/epoch/epoch_region.rs` (~lines 339-375, 573-588) reads `remote_free_pending` with Relaxed as a hint before taking the mutex. The review's code reasoning covers push/drain races, but a full weak-memory and liveness argument was not made; no loom model exists for this hint.
-    - **Next trigger:** before claiming or ruling out a lost remote-free index: a directed loom model of push versus drain over the hint and the queue.
-    - **Evidence:** xxs round 5 review "Неподтверждённые риски"; existing `tests/loom_epoch.rs` covers other epoch protocols.
+    - **Status:** OPEN — two shadow models execute, but implementation-to-model refinement remains unproved; no production lost-index or liveness proof follows.
+    - **Current-number-or-verdict:** `src/concurrent/epoch/epoch_region.rs` reads the Relaxed hint before the queue mutex, clears it under that mutex, and publishes a positive hint after enqueue releases the lock. Insertion forces queue inspection before reporting full when the local free list is empty and the hint-only drain skipped inspection. `tests/loom_r11_epoch_false_full.rs` is a handwritten `QueueProtocol` with Relaxed `pending`/`done` atomics and Loom Mutex/Vec state, not actual `EpochRegion`/`AtomicSlot` instrumentation. The four scenarios cover completed enqueue with a negative hint, the expected-panic hint-only control, overlapping enqueue/reuse, and benign false/spurious-true hints. `tests/loom_epoch.rs` is a separate generation/value shadow; R18 corrected its eviction order to generation CAS before value swap. R18 executed both targets: 2 epoch-shadow tests and 4 queue-shadow tests passed, including their expected-panic controls. Neither run refines the shadows to production types.
+    - **Next trigger:** actual-type Loom instrumentation, or an explicit reviewed implementation-to-model refinement mapping including retirement/reuse and forced queue inspection. Keep any liveness claim separate; bounded shadow scenarios do not constitute a liveness proof.
+    - **Evidence:** xxs round 5 review "Неподтверждённые риски"; `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-CON-03 and its R18 update; `tests/loom_r11_epoch_false_full.rs`; `tests/loom_epoch.rs`; `.github/workflows/ci.yml` selects the queue shadow and sentinels (wiring, not an execution receipt).
 
 161. **[T] Warnings in feature combinations that no `-D warnings` row builds.** (Filed 2026-09-29, found by the R5-01 design consultation; reproduced on the pre-R5-01 tree too.)
 
