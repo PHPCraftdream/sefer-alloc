@@ -48,8 +48,7 @@
 //! this bitmap (magazine push/pop/flush/refill are all owner-thread
 //! operations by construction — the magazine itself is a per-`HeapCore`,
 //! single-writer structure). Cross-thread frees never touch it directly;
-//! they are visible to the owner only after a ring-drain, which runs on the
-//! owner thread.
+//! their sidecar publications are consumed by owner-side reclamation.
 //!
 //! ## Dedup (task #98 / R4-6)
 //!
@@ -114,9 +113,9 @@ impl MagazineBitmap {
     }
 
     /// Whether the block at segment offset `off` is currently magazine-resident.
-    /// O(1): one byte load + one mask. This is the O(1) replacement for the
-    /// O(count) in-magazine scan (own-thread free path) / cross-class scan
-    /// (`reclaim_offset_checked`'s `is_in_magazine` predicate).
+    /// O(1): one byte load + one mask, replacing historical magazine scans.
+    /// `reclaim_sidecar_record` checks this current residency state before
+    /// payload writes and returns false for a magazine-resident record.
     #[inline(always)]
     pub(crate) fn is_in_magazine(&self, off: u32) -> bool {
         self.0.test(off)

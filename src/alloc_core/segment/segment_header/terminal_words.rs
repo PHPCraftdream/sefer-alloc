@@ -33,7 +33,7 @@ pub const MAX_LARGE_GENERATION: u64 = u64::MAX >> PHASE_BITS;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
-#[allow(dead_code)] // Pending/Consuming belong to the next ingress stage.
+#[allow(dead_code)] // Variants are used across feature-gated Large lifecycle paths.
 pub enum LargePhase {
     Unused = 0,
     Initializing = 1,

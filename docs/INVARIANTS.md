@@ -53,75 +53,80 @@ resolved by updating the canonical copy.
 
 ## Allocator invariants (Phase 8+, `alloc-core`)
 
-These hold for the segment substrate / allocator faces (`AllocCore` and the
-future `GlobalAlloc` face). I1–I7 continue to hold for the Handle face. Spec
-source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
+These apply to the raw-pointer allocator faces (`AllocCore` and `SeferAlloc`)
+under their enabled features and caller contracts. The re-exported
+`sefer_region::Region`/`Handle` face retains its separate canonical I1–I7
+contract; those guarantees are not raw-pointer substrate guarantees. The
+Phase 8 design origin is `docs/ALLOC_PLAN.md` §4; current contracts must match
+the implementation.
 
 - **M1 — validity.** Every pointer returned by `alloc(layout)` is non-null
   (unless OOM), valid for `layout.size()` bytes, and aligned to `layout.align()`.
-- **M2 — no double-free / no UAF.** A pointer is live from its `alloc` until its
-  `dealloc`; freeing twice against **LIVE/MAPPED** memory, or freeing a foreign
-  pointer, never corrupts the allocator — it is detected and no-op'd, never UB.
-  A double-free against memory that has already been decommitted (and thus
-  unmapped by the OS) is outside M2's scope: the pre-reuse `off >= bump`
-  stale-free guard (#138) is the substrate-level check that catches the common
-  reuse-window cases before the block can be handed out again. **Residual M2
-  limit — ring↔magazine cross-thread double-free residual limit of M2** (task
-  R2 / #154; real fix task #164): a block whose cross-thread free is still
-  in-flight (queued in a segment's `RemoteFreeRing`, not yet drained by the
-  owner) sets NEITHER own-thread oracle (it is not in the magazine's `slots`
-  scan and the BinTable `is_free` bitmap still reads it as allocated), so a
-  concurrent own-thread double-free of the same block is not detected.
-  Pinned by `tests/regression_xthread_double_free_residual.rs`; modelled by
-  `tests/loom_magazine_ring_compose.rs`. Full note in
-  `docs/FASTBIN_DESIGN.md`.
+- **M2 — allocation lifetime and defensive rejection.** A successful allocation
+  remains live until its one valid deallocation. Unsafe `dealloc` and `realloc`
+  calls require a currently live allocation and the exact required layout.
+  Foreign, stale, interior, and double-freed pointers violate that caller
+  contract; defensive checks do not guarantee universal detection, no-op
+  behavior, or freedom from UB under misuse.
 
-  > **UB-vs-soundness distinction (task #202/#213).** A double-free or UAF
-  > through the crate's own `unsafe fn dealloc`/`realloc` (or via manual
-  > `GlobalAlloc` trait calls) is *documented caller UB* under the `unsafe fn`
-  > contract — identical in kind to std's own `GlobalAlloc::dealloc` contract,
-  > and to every other allocator (System / jemalloc / mimalloc). It is **not** a
-  > soundness bug reachable from safe code. This framing is established precedent
-  > in `tests/regression_xthread_double_free_residual.rs:71-89`; the task #202
-  > SIGSEGV (fixed in `f165ced`) is a concrete worked example: the bug was a
-  > cfg-gated path reachable only through deliberate `unsafe` misuse, not a
-  > violation of M1/M3 that safe callers could hit. The real soundness boundary
-  > depends on M1 (validity) and M3 (no overlap): as long as `alloc` never
-  > hands out aliasing pointers, no purely-safe `Box`/`Vec`/`Rc`/`Arc` usage can
-  > trigger memory corruption — empirically confirmed by
-  > `tests/stress_safe_surface_no_aliasing.rs` (task #212, `403e216`).
+  Small sidecar reclamation checks current allocation-bitmap and magazine-
+  residency state before mutation. These checks do not identify a former
+  allocation instance after reissue. Own-thread duplicate free/reissue before
+  pending sidecar reclamation is outside the caller contract. The former ring
+  residual test and composition model are absent from the current tree and
+  provide no current coverage claim. `docs/FASTBIN_DESIGN.md` retains the
+  historical ring design context.
 
-- **M3 — no overlap (soundness-critical).** Two simultaneously-live allocations never share a byte. This is the invariant the crate's "impossible from safe code" soundness claim rests on: as long as `alloc` never hands out a pointer aliasing a still-live allocation, no combination of purely-safe `Box`/`Vec`/`Rc`/`Arc` usage can trigger a double-free or UAF, regardless of what `unsafe` misuse elsewhere in the process might do — safe code cannot reach the misuse path. Proven structurally (two independent static code-reading passes during task #202's investigation found no violation path) and at runtime by `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes spanning small/medium/Large paths; pure-safe-API sentinel + address-sorted overlap tracking; zero M1/M3 violations across 30+ independent runs).
-- **M4 — alignment & size fidelity.** The class chosen always satisfies size and
-  alignment; large/huge allocations honour alignment up to `SEGMENT` (4 MiB) via
-  a dedicated segment. Requests with `align >= SEGMENT` are rejected with `null`
-  by design (task #130) — the dedicated-segment path cannot satisfy them.
-- **M5 — reentrancy-freedom (load-bearing).** No entry point on the
-  alloc/dealloc path allocates through the global allocator, takes a global lock
-  that could deadlock against itself, or recurses. Proven structurally (no
-  `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path — metadata self-hosts
-  in segment memory) and at runtime by `tests/alloc_core_reentrancy.rs` (a
-  counting global allocator observes a zero delta across an `AllocCore`
-  workload). Under `miri` the `os` aperture falls back to `std::alloc` as a
-  test-instrumentation path (`#[cfg(miri)]` only); the M5 runtime proof runs
-  WITHOUT miri so the production path's freedom from `std::alloc` is still shown.
-- **M6 — OS return (Phase 10).** Memory freed back to empty segments is
-  eventually returned to the OS (decommit); steady-state RSS does not grow
-  unboundedly under churn. Eager decommit was implemented in Phase 35 (feature
-  `alloc-decommit`, part of the `production` bundle): an empty small segment's
-  payload pages are decommitted when its live-block count drops to zero and
-  recommitted on first reuse.
-- **M7 — owner routing.** A pointer's owning segment is found in O(1) via
-  `segment_of(ptr) = ptr & ~(SEGMENT-1)`; cross-thread free (Phase 10) reaches
-  exactly the owning heap and reclaims exactly once.
-- **M8 — generational coherence (Handle face).** A stale `Handle` into reused
-  memory does not resolve to a live value within the segment substrate's own
-  generation-reuse budget (I3 carried onto the segment substrate). NOTE
-  (2026-08-07): I3's own bound above is `sefer_region`/`slotmap`'s 32-bit
-  wrap, roughly `2^31` reuse cycles of one *slot* — that specific figure is
-  NOT re-asserted here for the segment substrate, which uses its own
-  generation/tag mechanism, not `slotmap`, and has not been independently
-  re-measured for this document.
+  > **UB-vs-soundness distinction (task #202/#213).** Deliberate double-free or
+  > UAF through unsafe allocator calls is a caller-contract violation, not by
+  > itself a defect reachable through contract-respecting safe allocation APIs.
+  > Historically, task #202's SIGSEGV (fixed in `f165ced`) concerned a cfg-gated
+  > path reached through deliberate unsafe misuse, not a safe-caller M1/M3
+  > violation. The safe allocator boundary requires valid allocations, no
+  > overlap, and correct lifetime handling; unrelated unsafe corruption is
+  > outside that guarantee. Task #212 (`403e216`) recorded safe-surface
+  > observations in `tests/stress_safe_surface_no_aliasing.rs`, not a universal
+  > proof against unsafe misuse.
+
+- **M3 — no overlap (soundness-critical).** Two simultaneously-live allocations never share a byte. This is the invariant the crate's "impossible from safe code" soundness claim rests on: as long as `alloc` never hands out a pointer aliasing a still-live allocation, no combination of purely-safe `Box`/`Vec`/`Rc`/`Arc` usage can trigger a double-free or UAF, under contract-respecting allocator use; unrelated `unsafe` corruption elsewhere in the process is outside this guarantee. Historical evidence: (two independent static code-reading passes during task #202's investigation found no violation path) and runtime observations from `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes spanning small/medium/Large paths; pure-safe-API sentinel + address-sorted overlap tracking; zero M1/M3 violations across 30+ independent runs).
+- **M4 — alignment & size fidelity.** Successful allocations satisfy the
+  requested size and alignment. Large requests with `align >= SEGMENT` use a
+  biased reservation with an explicit payload offset. Checked-geometry,
+  capacity, or reservation failure may return null; high alignment alone is
+  not rejected.
+- **M5 — installed-global reentrancy freedom (load-bearing).** Allocator paths
+  must not allocate through the installed global allocator or recursively
+  acquire their own initialization or ownership resources. Segment metadata
+  uses VM-backed storage; independent route metadata and mixed class leaves
+  use `System` directly. Direct `System` allocation is not recursion through
+  `SeferAlloc`; this invariant prohibits neither all allocation nor all locks.
+  The historical counting-global workload in `tests/alloc_core_reentrancy.rs`
+  observes installed-global calls, not independent `System` allocation.
+  Miri uses a separate backing-allocation instrumentation path.
+- **M6 — bounded cold retention and OS release.** Under `alloc-decommit`, newly
+  empty Small segments may remain registered with their existing committed
+  pages and free lists in the bounded hysteresis pool. Disabled or full pooling
+  releases the whole reservation. Cold trim releases pooled Small segments and
+  cached Large spans. The explicit decommit-retain test hook instead decommits
+  payload pages and resets metadata while retaining the reservation; reuse may
+  recommit pages as needed. That test-hook decommit/recommit cycle is not the
+  production committed-pool policy. Historically, Phase 35 introduced eager
+  decommit. Decommit, reservation release, and immediate RSS reduction are
+  distinct effects; no unconditional wall-clock reclamation deadline is promised.
+- **M7 — owner routing and exactly-once reclamation.** Segment masking supplies
+  an address lookup key, not necessarily the canonical reservation root for
+  biased Large allocations. Own-path table lookup recovers the allocator-held
+  root and block pointer. A valid foreign free pins an independent route
+  descriptor and transfers one terminal obligation for owner reclamation; the
+  idle fallback may instead reclaim synchronously under exclusive ownership.
+  Exactly-once accounting assumes the caller transfers the current allocation
+  only once.
+- **M8 — Handle coherence is a separate contract.** Public `Region` and `Handle`
+  are re-exported from `sefer-region`; stale-handle rejection and instance
+  isolation follow canonical I3/I7 and their stated limits. Raw
+  `AllocCore`/`SeferAlloc` pointers carry no equivalent stale-pointer Handle
+  guarantee. Large terminal lifecycle generations govern reservation-state
+  transitions, not general raw-pointer stale-use detection.
 
 ## Why handles, not pointers
 

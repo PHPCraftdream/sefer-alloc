@@ -36,20 +36,14 @@
 //!   path, so O(40) vs O(a-few-buckets) is noise (see `LARGE_CACHE_SLOTS`'s
 //!   own doc: the existing O(LARGE_CACHE_SLOTS) scan is "cheap" at 8 and stays
 //!   cheap at 40 for the same reason).
-//! - It mirrors an ALREADY-ESTABLISHED codebase pattern for exactly this
-//!   shape of problem — a fixed inline array that is enough for the common
-//!   case, backed by a lazily-materialised, `leak_zeroed_pages`-reserved
-//!   sidecar that only costs anything once the workload genuinely needs it
-//!   (`directory_sidecar`/`SegmentDirectory` in `segment_directory.rs`, and
-//!   `dirty_by_class`/`PerClassDirty` in `dirty_by_class.rs`). Reusing the
-//!   pattern means zero-overhead-when-off is automatic (same argument those
-//!   two modules' docs already make) and reviewers already know the shape.
+//! - It uses the owner-only lazy sidecar pattern shared with
+//!   `SegmentDirectory`: reserve only when needed, construct a typed value,
+//!   and retain an `AccountedSidecar` token for release with the owner.
 //!
 //! ## Owner-only — plain `*mut`, NOT `OncePtrCell`
 //!
-//! Unlike `dirty_by_class`'s `PerClassDirty` (written by ANY cross-thread
-//! producer via a remote free, hence `OncePtrCell`'s CAS-publish protocol),
-//! the large-cache is exactly like `directory_sidecar`/`SegmentDirectory`:
+//! Like `SegmentDirectory`, the large-cache extension is owner-only.
+//! Foreign-free ingress uses independent pinned route storage. The cache is
 //! touched ONLY by this `AllocCore`'s owning thread (`alloc_large`/`dealloc`/
 //! `reclaim_large_segment` all run on the single owning thread). `AllocCore`
 //! is deliberately NEITHER `Send` NOR `Sync` (see the "NOTE: `AllocCore` is
@@ -80,9 +74,10 @@
 //!
 //! `LARGE_CACHE_EXTENDED_SLOTS = 32` gives 8 (base, always resident) + 32
 //! (lazy) = 40 total slots — inside the "32-64 entries" range the task brief
-//! names, chosen at the low end: each slot is `size_of::<CachedLarge>()`
-//! bytes (six machine words), and the sidecar is reserved via
-//! `leak_zeroed_pages` (whole-PAGE granularity) only once a workload's
+//! names, chosen at the low end: storage is
+//! `LARGE_CACHE_EXTENDED_SLOTS * size_of::<Option<CachedLarge>>()` bytes,
+//! rounded to whole pages and owned by `AccountedSidecar`. It is reserved
+//! only once a workload's
 //! working set of DISTINCT Large sizes genuinely exceeds 8 — a rare
 //! configuration outside the exact-span-large-plus-wide-working-set scenario
 //! this task targets. 32 extra slots comfortably covers the "16-32 distinct
@@ -124,23 +119,22 @@ use crate::alloc_core::alloc_core::CachedLarge;
 pub(crate) const LARGE_CACHE_EXTENDED_SLOTS: usize = 32;
 
 /// The lazily-materialised large-cache extension sidecar. See the module doc
-/// for the full design. Owner-only (no atomics — mirrors `SegmentDirectory`,
-/// not `PerClassDirty`).
+/// for the full design. Owner-only, non-atomic storage.
 pub(crate) struct LargeCacheExtension {
     pub(in crate::alloc_core) slots: [Option<CachedLarge>; LARGE_CACHE_EXTENDED_SLOTS],
 }
 
 /// Reserve and construct a [`LargeCacheExtension`] sidecar via direct OS VM
-/// reservation (M5-clean — `AllocCore`'s alloc path must not recurse into
-/// `std::alloc`/`Vec`/`Box`; see `alloc_core.rs`'s module doc). Returns
+/// reservation without allocating through the installed global allocator.
+/// Returns
 /// `Some((ptr, sidecar))` on success — `ptr` is valid until the caller drops
 /// `sidecar`, the [`AccountedSidecar`](crate::alloc_core::sidecar::AccountedSidecar)
 /// token that OWNS the span, which the caller (the owning `AllocCore`, via its
 /// `large_cache_extension_vm` field) must store alongside the pointer so the
 /// span is released with the core (R2-12; the span is NO longer "valid for the
 /// process lifetime"). `ptr` is EXPLICITLY typed-initialised via
-/// [`crate::alloc_core::sidecar::reserve`] — the OS-zeroed bytes
-/// `leak_zeroed_pages` hands back are never trusted as-is to already encode
+/// [`crate::alloc_core::sidecar::reserve`] — the OS-zeroed reservation bytes
+/// are never trusted as-is to already encode
 /// an all-`None` `[Option<CachedLarge>; _]`; whether `Option`'s all-zero
 /// bytes form a valid niche encoding for a given payload type is an
 /// UNSPECIFIED, rustc-version- and layout-dependent detail of `repr(Rust)`,

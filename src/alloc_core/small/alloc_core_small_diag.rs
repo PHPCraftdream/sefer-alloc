@@ -359,9 +359,9 @@ impl AllocCore {
     /// TEST-ONLY (UBFIX-3, H-1/M-1 counterfactual): the segment-relative
     /// payload lower bound for `ptr`'s segment — the same `payload_start`
     /// (`Layout::primordial_meta_end()` for a primordial segment, else
-    /// `Layout::small_meta_end()`) the H-1 guard in `dealloc_small`/
-    /// `reclaim_offset`/`reclaim_offset_checked`/`flush_run` rejects offsets
-    /// below. Exposed so a regression test can construct a metadata-region
+    /// `Layout::small_meta_end()`) checked by `dealloc_small`,
+    /// `reclaim_sidecar_record`, and `flush_run` before payload writes.
+    /// Exposed so a regression test can construct a metadata-region
     /// address (`base + k` for `k < payload_start`) without hardcoding the
     /// crate's private layout constants (`segment_header::Layout` is
     /// `pub(crate)`, unreachable from `tests/`).

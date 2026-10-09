@@ -55,10 +55,10 @@ split the same day.)
 
 154. **[T] Task-history prose in `src/` doc comments outweighs the code.** (Filed 2026-09-28, src review round 1 finding R1-11, residual part.)
 
-    - **Status:** OPEN — broad task-history prose debt remains deferred. R18 removed two specific dead/stale surfaces but did not perform the dedicated docs migration.
-    - **Current-number-or-verdict:** no current source-wide prose/code census was run. The earlier ~20,000 comment lines / ~15,600 code lines are filing-time measurements, not current totals. R18 removed the unused `own_segment` realloc-bound branch and its false-path rationale, plus the unused private `SizeClasses::is_huge` wrapper and stale forwarder mention.
+    - **Status:** OPEN — broad task-history prose debt remains deferred. R18 corrected targeted source contracts/counter documentation and removed two dead surfaces, but did not perform the dedicated docs migration.
+    - **Current-number-or-verdict:** no current source-wide prose/code census was run. The earlier ~20,000 comment lines / ~15,600 code lines are filing-time measurements, not current totals. R18 corrected specific allocator lifecycle, `INVARIANTS.md`, counter, module and inventory claims; the complete remaining prose debt was not inventoried.
     - **Next trigger:** a dedicated docs round that moves history into `docs/` (ADR-style) and leaves invariants and SAFETY reasoning in the code, one module per commit. Pure doc diffs, but several tests `include_str!` source files and pin phrases, so rerun the doc tripwires after each module.
-    - **Evidence:** review §R1-11; the scoped R18 cleanup and residuals are in `docs/reviews/2026-10-08-src-review-xxs-round-17-P5.md`, "Обновление R18 — CQ-12".
+    - **Evidence:** review §R1-11; R18's scoped changes and residuals are recorded in `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` and `docs/reviews/2026-10-08-src-review-xxs-round-17-P5.md`.
 
     - **R15 evidence update (2026-10-07):** R15-03 confirms current examples of the existing prose debt: `sharded_region.rs:644–651` overstates binding/locking guarantees, and `registry/mod.rs:50–54` still labels live production routing unconnected. These do not satisfy the dedicated documentation-round trigger; status remains OPEN.
 

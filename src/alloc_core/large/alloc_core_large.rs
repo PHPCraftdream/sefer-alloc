@@ -102,16 +102,14 @@ impl AllocCore {
     /// place the allocation at the first page-aligned offset past the header,
     /// register the segment, and return the allocation pointer.
     ///
-    /// **OPT-E (alloc-decommit):** before going to the OS, check the
-    /// `large_cache` for a previously-freed segment that is large enough to
-    /// satisfy the request. A cache hit avoids the full OS round-trip
-    /// (mmap/VirtualAlloc + registration) at the cost of one recommit call
-    /// (Windows only; unix is a no-op after MADV_DONTNEED).
+    /// **OPT-E (alloc-decommit):** search the Large cache before reserving new
+    /// memory. A hit avoids OS reservation and recommit, but still refreshes
+    /// allocation metadata and registers the reused segment.
     ///
-    /// **Phase 2 (alloc-decommit):** runs one lazy decay tick before serving
-    /// the request. Cost: one `Instant::now()` + one duration compare on the
-    /// common path; actual eviction only when the interval has elapsed AND the
-    /// cache is over the headroom target.
+    /// **Phase 2 (alloc-decommit):** check lazy decay before serving the request.
+    /// At or below headroom, skip the clock read; otherwise checks are stride-
+    /// throttled, except for a zero interval. An elapsed check may run multiple
+    /// bounded catch-up steps.
     ///
     /// # Freshness signal (task #221 / R8-8; miri fix R9-1)
     ///

@@ -1,6 +1,6 @@
 //! The segment substrate — the per-segment metadata "header family"
 //! (`segment_header/` and its `#[path]`-moved siblings), the self-hosted
-//! [`SegmentTable`](segment_table::SegmentTable) registry, the experimental per-class
+//! [`SegmentTable`](segment_table::SegmentTable) registry, the feature-gated per-class
 //! [`segment_directory`] + its always-compiled [`directory_stats`] counters,
 //! the user-facing [`segment_layout`]
 //! geometry tables, and the per-segment bitmap family (`bitmap/`).
@@ -9,11 +9,9 @@
 //! visibility/cfg parity) so every one stays reachable at its existing
 //! `alloc_core::<name>` module path.
 
-/// R7-A1: per-class `class_nonempty` bitmap sidecar for O(1)
-/// directory-driven segment lookup. Feature-gated behind
-/// `alloc-segment-directory` (experimental, off by default). The module
-/// defines the `SegmentDirectory` struct, the materialisation threshold
-/// constant, and the one-time rebuild routine. Lookup wiring is A3 scope.
+/// R7-A1: per-class bitmap directory used by segment discovery.
+/// Enabled by `alloc-segment-directory`, including the `production` bundle.
+/// Defines `SegmentDirectory`, its materialisation threshold, and rebuild.
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) mod segment_directory;
 /// Group module: the per-segment metadata family — `SegmentHeader`/
@@ -45,7 +43,7 @@ pub(crate) mod bitmap;
 /// inventory.
 #[path = "segment_directory/directory_stats.rs"]
 pub(crate) mod directory_stats;
-/// Experimental non-intrusive remote-free ingress; not a production route.
+/// Non-intrusive remote-free bitmap ingress used by production Small sidecars.
 #[allow(dead_code)]
 pub(crate) mod remote_bitmap;
 /// The per-segment geometry tables (`SegmentLayout`), moved unchanged.

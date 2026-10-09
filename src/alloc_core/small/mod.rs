@@ -25,7 +25,7 @@ pub(super) mod alloc_core_small_magazine;
 /// only the root re-export): the file's `use` block is not feature-gated and
 /// every item in it is, so compiling it under `alloc-decommit`-off configs
 /// would only produce unused-import warnings — an intrinsic gate, same
-/// discipline as `platform::numa`/`platform::dirty_by_class`.
+/// discipline as `platform::numa`.
 #[cfg(feature = "alloc-decommit")]
 pub(super) mod alloc_core_small_pool;
 /// Owner-only retirement of terminal Small sidecar records.

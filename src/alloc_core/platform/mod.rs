@@ -11,10 +11,9 @@ pub(crate) mod os;
 /// R14-9 (task #294): the owner-only lazily-materialised sidecar primitive
 /// (`reserve`/`deref`/`deref_mut`) shared by `os.rs`'s `SegmentDirectory`
 /// reservation and `large_cache_extended.rs`'s `LargeCacheExtension`
-/// reservation. A named `unsafe` seam (two documented reasons: typed
-/// `ptr::write` init, and the `&'static [mut] T` deref boundary). See the
-/// module doc for why `PerClassDirty` (cross-thread-published via
-/// `OncePtrCell`) is NOT migrated onto this type.
+/// reservation. Named unsafe seam for reservation initialization and
+/// owner-tied dereference; see its module-level safety rationale.
+/// Foreign-free route sidecars use separate pinned storage.
 pub(crate) mod sidecar;
 /// R2-12: process-wide reservation/release accounting for the owner-only
 /// sidecars (`sidecar.rs`'s `AccountedSidecar` token) — the leak-fix

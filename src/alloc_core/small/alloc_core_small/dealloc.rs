@@ -53,9 +53,10 @@ impl AllocCore {
         // DIFFERENT bit that reads "allocated") → `write_next` into mid-block →
         // free-list corruption. Rejected here as a no-op. A `%` by a
         // non-power-of-two `block_size` per small free — a paid check, so
-        // `hardened`-gated (default OFF), never on the production hot path. The
-        // CROSS-THREAD leg is already covered UNCONDITIONALLY by
-        // `reclaim_offset`'s identical `off % block_size` defence-in-depth.
+        // `hardened`-gated (default OFF), never on the production hot path.
+        // Owner-side cross-thread reclamation uses `reclaim_sidecar_record`:
+        // it validates payload start, class alignment and checked block end
+        // against current bump before payload dereference; invalid geometry aborts.
         #[cfg(feature = "hardened")]
         if !(off as usize).is_multiple_of(SizeClasses::block_size(class_idx)) {
             return;
@@ -133,11 +134,9 @@ impl AllocCore {
         // the owner, so the counter stays single-writer.
         // Task #60 (slot recycle) / Mechanism 2: if the segment emptied,
         // `release_or_pool_empty_segment` either retains it in the pool (kept
-        // committed + registered) or releases it (reset + `table.recycle`) —
-        // `dealloc_small` is NOT inside a ring drain (no stale ring entries
-        // arrive here for `base` on the own-thread path), so on the release
-        // branch the metadata is readable, the slot can be NULLed, and the OS
-        // reservation can be released right away.
+        // committed + registered) or releases it (reset + `table.recycle`).
+        // Own-thread deallocation holds no route scan borrow; the release leg
+        // can recycle the table entry and reservation after the eligibility check.
         #[cfg(feature = "alloc-decommit")]
         if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
             let _ = self.release_or_pool_empty_segment(base);

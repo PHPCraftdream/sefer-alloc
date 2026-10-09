@@ -105,36 +105,20 @@ impl AllocCore {
         true
     }
 
-    /// PERF-4 (task #14): the production decommit-on-empty primitive. Every
-    /// production caller that observes a
-    /// segment empty (`dealloc_small`, the ring-drain in `find_segment_with_free`,
-    /// `flush_run`) calls `self.table.recycle(base)` the instant decommit fires —
-    /// and `recycle` returns the ENTIRE reservation to the OS
-    /// (`os::release_segment` → `MEM_RELEASE` / `munmap`), which supersedes the
-    /// payload `decommit_pages` call and discards every metadata page. On that
-    /// path the only load-bearing action is `meta.set_bump(payload_start)`: within
-    /// a single ring drain, subsequent stale ring entries for the same `base` are
-    /// rejected by the `off >= bump` guard in `reclaim_offset` BEFORE they ever
-    /// consult the alloc bitmap / bin table / page map (see the guard ordering in
-    /// `reclaim_offset` / `dealloc_small`). Everything the full reset does beyond
-    /// `set_bump` — the `os::decommit_pages` syscall on ~4 MiB of payload, zeroing
-    /// 49 `BinTable` heads, re-marking ~1 KiB of page-map entries, the 32 KiB
-    /// `AllocBitmap` byte-wise re-init — produces state
-    /// that is unmapped microseconds later by the release. This variant elides all
-    /// of it. The `set_decommitted(true)` flag is likewise unnecessary (the slot
-    /// is about to be NULLed), but is kept cheap-and-harmless for semantic parity
-    /// with the guard used by `dec_live_and_maybe_decommit`. See the checkpoint
+    /// PERF-4 (task #14): release-leg metadata reset for an empty Small segment.
+    /// Pool admission retains committed pages and intact free lists without
+    /// this reset. When release follows, reset the bump cursor and flag,
+    /// skipping payload decommit and full metadata initialization before
+    /// the whole reservation is recycled. Historical investigation:
     /// `docs/checkpoints/2026-07-08-perf4-decommit-churn-investigation.md`.
     #[cfg(feature = "alloc-decommit")]
     pub(super) fn decommit_empty_segment_for_release(meta: &mut SegmentMeta, base: *mut u8) {
         Self::decommit_empty_segment_impl(meta, base, true);
     }
 
-    /// Shared body of the decommit variants. `release_follows == true` means
-    /// the caller recycles (releases the whole reservation to the OS) immediately
-    /// after this returns, so every metadata reset except the `bump` cursor is
-    /// dead work and is skipped. `release_follows == false` is the full reset that
-    /// leaves the segment in the table for a future recommit-on-reuse carve.
+    /// `release_follows == true` selects the minimal reset before whole-
+    /// reservation release. The retain-reset branch is exercised by the
+    /// explicit decommit-retain test hook, not production pool admission.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     fn decommit_empty_segment_impl(meta: &mut SegmentMeta, base: *mut u8, release_follows: bool) {
@@ -144,21 +128,17 @@ impl AllocCore {
         DECOMMIT_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let payload_start = SegLayout::small_meta_end();
         if release_follows {
-            // Release-follows fast path: the ONLY load-bearing action is resetting
-            // the bump cursor so the intra-drain `off >= bump` stale-ring guard
-            // still fires; the whole reservation is about to go back to the OS.
+            // Reset the bump cursor and flag before whole-reservation release;
+            // no payload decommit or full metadata reset is needed.
             meta.set_bump(payload_start);
             meta.set_decommitted(true);
             return;
         }
         // B3 (R7 Workstream B): lazy-commit-aware retain decommit.
         //
-        // Under `small-segment-lazy-commit` (R12-9, task #260: gated on this
-        // sub-feature specifically — this function is reachable ONLY for
-        // `SegmentKind::Small` segments, never `Primordial`; see
-        // `dec_live_and_maybe_decommit`'s "NEVER decommit the PRIMORDIAL
-        // segment" guard, the sole route by which a segment reaches this
-        // `release_follows == false` arm), decommit ONLY the payload pages
+        // The explicit decommit-retain hook selects this Small-only branch.
+        // Under `small-segment-lazy-commit` (R12-9, task #260), decommit only
+        // the payload pages
         // ABOVE the initial lazy chunk: `[meta_end + LAZY_FIRST_CHUNK,
         // SEGMENT)`. The initial chunk `[meta_end, meta_end +
         // LAZY_FIRST_CHUNK)` stays committed so the reused segment is
@@ -204,13 +184,14 @@ impl AllocCore {
             // range.
             os::decommit_pages(base, SegLayout::small_decommit_start(), SEGMENT);
         }
-        // 2a. Reset the bump cursor to the payload start (segment is blank). This
-        //     is the load-bearing reset for the post-decommit stale-free guard:
-        //     after this, every prior block offset in the payload is `>= bump`, so
-        //     a late free / double-free / stale reclaim targeting this segment is
-        //     rejected by the `off >= bump` check in `dealloc_small` /
-        //     `reclaim_offset` BEFORE it writes a `next` pointer into a (now
-        //     decommitted / unmapped) payload page.
+        // 2a. Reset bump to the payload start. Before reuse, `dealloc_small`
+        // rejects prior payload offsets with `off >= bump`, then checks current
+        // free state. `reclaim_sidecar_record` instead validates payload start,
+        // class alignment and checked block end against bump before payload
+        // dereference; invalid geometry aborts. Its current free/residency guards
+        // reject already-free or magazine-resident records. These checks do not
+        // guarantee detection of all late/double/stale frees after reissue;
+        // such misuse remains outside the unsafe caller contract.
         meta.set_bump(payload_start);
         // 2b. Empty every class free list.
         let mut bt = meta.bin_table();

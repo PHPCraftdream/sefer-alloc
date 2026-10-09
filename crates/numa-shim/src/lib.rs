@@ -1516,11 +1516,11 @@ mod platform {
     /// task #777 (rust-intel audit round-closing review, finding F1, HIGH):
     /// task #723's original design cached `Vec<Vec<u8>>` -- ~65 heap
     /// allocations inside the `OnceLock::get_or_init` initializer.
-    /// `current_node()` is reachable from `AllocCore::alloc` (via
-    /// `current_node_cached` on a cache miss, inside `reserve_small_segment`
-    /// / `alloc_large_slow`), and the parent `sefer-alloc` crate's own `M5`
-    /// invariant declares that entire path allocation-free/reentrancy-free
-    /// specifically so it never re-enters the global allocator. Under a real
+    /// `current_node()` is reachable from `AllocCore::alloc` through NUMA
+    /// lookup on reservation paths. The parent allocator's M5 contract requires
+    /// this initializer not to allocate through the installed global allocator
+    /// or re-enter its own topology cache; it does not prohibit independent
+    /// `System` allocation elsewhere in the allocator. Under a real
     /// `#[global_allocator] = SeferAlloc` + `numa-aware` deployment on
     /// Linux, the FIRST allocation needing a NUMA lookup would have
     /// triggered heap allocation, which re-enters `GlobalAlloc::alloc`,

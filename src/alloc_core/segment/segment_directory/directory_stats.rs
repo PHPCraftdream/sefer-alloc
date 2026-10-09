@@ -5,44 +5,40 @@
 //! `alloc-core` so that the `dbg_*` read accessors have a stable definition
 //! regardless of the feature set (reads return 0 when no increment was
 //! compiled in). The per-event INCREMENTS are gated behind `alloc-stats`
-//! (matching the crate's established pattern for `FOREIGN_OR_UNROUTABLE_FREES`,
-//! `tcache_hits`, `large_cache_hits` -- the hot path carries no bookkeeping
-//! unless the caller explicitly opts in).
+//! (matching the opt-in `tcache_hits` and `large_cache_hits` diagnostics).
+//! Foreign-route rejection counts have separate, unconditional increments.
 //!
-//! ## Counter inventory
+//! ## Current counter inventory
 //!
-//! | Counter                       | Incremented by          | Live in A0? |
-//! |-------------------------------|-------------------------|-------------|
-//! | `directory_hits`              | A3 directory lookup hit | storage only|
-//! | `directory_stale_hits`        | A3 stale-positive clear | storage only|
-//! | `directory_fallback_scans`    | A3 fallback scan entry  | storage only|
-//! | `directory_words_examined`    | `find_segment_with_free_impl` per word (incl. zero words) | YES |
-//! | `dirty_segments_drained`      | A4 dirty-drain loop     | storage only|
-//! | `wasted_dirty_drains`         | R9-6 dirty-drain loop (drain produced zero sought-class blocks) | storage only|
-//! | `full_scan_slots_examined`    | `find_segment_with_free_impl` per-slot | YES |
-//! | `directory_authoritative_miss`| Trusted negative result; skipped scan only where negatives may be trusted | storage only|
-//! | `directory_miss_self_heal`    | Negative lookup scan found missed segment; routed every miss, standalone periodic | storage only|
-//! | `directory_rescue_oom_avoided`| R9-8 OOM-rescue scan found a directory-missed segment before surfacing OOM | storage only|
-//! | `routed_miss_scans`           | Routed negative-directory scan entered (one per lookup, not per slot) | storage only|
-//! | `routed_miss_scan_drain_created_free` | ...that scan hit a segment whose class bin was EMPTY before its sidecar drain and non-empty after | storage only|
-//! | `routed_miss_scan_bin_already_nonempty` | ...that scan hit a segment whose class bin was already non-empty (directory lag) | storage only|
-//! | `routed_miss_scan_nothing`    | ...that scan found no block (the directory was right) | storage only|
+//! All increments require `alloc-stats` and the applicable discovery path.
+//!
+//! | Counter | Incremented by |
+//! |---------|----------------|
+//! | `directory_hits` | Validated directory lookup hit |
+//! | `directory_stale_hits` | Stale-positive rejection and clear |
+//! | `directory_fallback_scans` | Directory fallback scan entry |
+//! | `directory_words_examined` | Per-class bitmap word inspected, including zero words |
+//! | `full_scan_slots_examined` | Small/Primordial fallback candidate probe |
+//! | `directory_authoritative_miss` | Trusted negative skipping fallback; not routed production |
+//! | `directory_miss_self_heal` | Negative lookup scan found and repaired a missed segment |
+//! | `directory_rescue_oom_avoided` | Forced rescue found a missed free block before OOM |
+//! | `routed_miss_scans` | Routed negative-directory scan entry, excluding rescue |
+//! | `routed_miss_scan_drain_created_free` | Hit bin empty before sidecar drain, nonempty after |
+//! | `routed_miss_scan_bin_already_nonempty` | Hit bin already nonempty before drain |
+//! | `routed_miss_scan_nothing` | Routed miss scan found no block |
 
 use core::sync::atomic::AtomicU64;
 
-/// Segment directory lookup hits (A3: a directory query found a non-empty
-/// segment and the validation succeeded). Reads 0 until A3 wires the
-/// increment.
+/// Segment directory lookup hits: a candidate passed validation.
+/// Reads 0 unless the applicable `alloc-stats` increment path is enabled.
 pub(crate) static DIRECTORY_HITS: AtomicU64 = AtomicU64::new(0);
 
-/// Stale directory hits (A3: a directory query found a set bit whose segment's
-/// BinTable head was actually empty -- the bit was cleared and the scan
-/// continued). Reads 0 until A3 wires the increment.
+/// Stale directory hits: a candidate failed validation and its bit was
+/// cleared. Reads 0 unless the applicable `alloc-stats` path is enabled.
 pub(crate) static DIRECTORY_STALE_HITS: AtomicU64 = AtomicU64::new(0);
 
-/// Directory fallback scans (A3: the directory query found nothing and the
-/// guarded linear-scan fallback was entered). Reads 0 until A3 wires the
-/// increment.
+/// Directory fallback scans entered after a negative query.
+/// Reads 0 unless the applicable `alloc-stats` increment path is enabled.
 pub(crate) static DIRECTORY_FALLBACK_SCANS: AtomicU64 = AtomicU64::new(0);
 
 /// Directory bitmap words examined: EVERY u64 word inspected during a
@@ -68,7 +64,7 @@ pub(crate) static DIRECTORY_AUTHORITATIVE_MISS: AtomicU64 = AtomicU64::new(0);
 /// every negative; standalone lookups do so only during periodic re-validation
 /// (R8-2, task #215). Expected to stay at 0 in normal operation — a nonzero
 /// value is a canary for a directory-tracking bug and warrants investigation,
-/// not a normal event. See item 78(c).
+/// not a normal event. See perf open item 82.
 pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);
 
 /// R9-8 (task #230): a forced O(S) "rescue scan", run as a last resort right

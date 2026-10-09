@@ -4,10 +4,11 @@
 //!
 //! ## What the pool is
 //!
-//! Without this pool, the instant a small segment's `live_count` reaches zero
-//! (own-thread free, cross-thread ring drain, or a batched flush) its payload
-//! is decommitted, its OS reservation released (`MEM_RELEASE` / `munmap`), and
-//! its `SegmentTable` slot recycled. A workload that churns a working set
+//! Without this pool, an eligible empty, non-current Small segment
+//! (after own-thread free, owner-side sidecar reclaim, or batched flush)
+//! has its whole OS reservation released (`MEM_RELEASE` / `munmap`) and
+//! its `SegmentTable` slot recycled, without a separate payload decommit.
+//! A workload that churns a working set
 //! across a segment boundary (allocate N blocks, free them, reallocate N
 //! blocks, …) therefore pays a full OS reserve → carve → release → re-reserve
 //! cycle every oscillation — the exact shape the `working_set_cycle` bench

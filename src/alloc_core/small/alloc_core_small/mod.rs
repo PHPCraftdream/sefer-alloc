@@ -14,7 +14,7 @@
 // WHOLE file is `alloc-segment-directory`-gated content: gating the
 // declaration keeps its compiled-file set identical to when the code lived
 // directly in `alloc_core_small.rs` (same intrinsic-gate discipline as
-// `platform::numa`/`platform::dirty_by_class`).
+// `platform::numa`).
 #[path = "dealloc.rs"]
 mod dealloc;
 

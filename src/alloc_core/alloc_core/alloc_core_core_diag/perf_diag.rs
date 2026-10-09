@@ -18,24 +18,24 @@ impl AllocCore {
     // Reads 0 when the increment was not compiled in. See
     // `directory_stats.rs` for the counter inventory.
 
-    /// R7-A0: process-wide count of directory lookup hits (A3). Reads 0 until
-    /// A3 wires the increment.
+    /// R7-A0: process-wide directory lookup hits. Reads 0 unless the
+    /// applicable `alloc-stats` increment path is enabled.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_hits() -> u64 {
         directory_stats::DIRECTORY_HITS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// R7-A0: process-wide count of stale directory hits (A3). Reads 0 until
-    /// A3 wires the increment.
+    /// R7-A0: process-wide stale directory hits. Reads 0 unless the
+    /// applicable `alloc-stats` increment path is enabled.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_stale_hits() -> u64 {
         directory_stats::DIRECTORY_STALE_HITS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// R7-A0: process-wide count of directory fallback scans (A3). Reads 0
-    /// until A3 wires the increment.
+    /// R7-A0: process-wide directory fallback scans. Reads 0 unless the
+    /// applicable `alloc-stats` increment path is enabled.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_fallback_scans() -> u64 {
@@ -198,19 +198,18 @@ impl AllocCore {
         ]
     }
 
-    /// R7-A0: process-wide count of slots examined by
-    /// `find_segment_with_free_impl` (the linear scan). This is the primary
-    /// scan-cost counter -- it is LIVE in A0 (incremented per slot visited
-    /// under `alloc-stats`).
+    /// R7-A0: current Small/Primordial fallback candidates examined by
+    /// `find_segment_with_free_impl`. Incremented before each candidate probe
+    /// under `alloc-stats`; historical A0 also counted skipped high-water slots.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_full_scan_slots_examined() -> u64 {
         directory_stats::FULL_SCAN_SLOTS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// R8-2 (task #215): process-wide count of genuine directory misses where
-    /// the directory was TRUSTED authoritative and the O(S) linear-scan
-    /// fallback was SKIPPED. Reads 0 until R8-2 wires the increment.
+    /// R8-2 (task #215): trusted negative directory results that skip fallback
+    /// scanning. Routed production discovery does not trust negatives.
+    /// Reads 0 unless the applicable `alloc-stats` path is enabled.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_authoritative_miss() -> u64 {
@@ -222,7 +221,7 @@ impl AllocCore {
     /// every negative; standalone lookups do so only during periodic
     /// re-validation (R8-2, task #215). Expected to stay 0 normally; nonzero
     /// is a canary for a directory-tracking bug. Reads 0 unless the
-    /// `alloc-stats` increment is enabled. See item 78(c).
+    /// `alloc-stats` increment is enabled. See perf open item 82.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_directory_miss_self_heal() -> u64 {

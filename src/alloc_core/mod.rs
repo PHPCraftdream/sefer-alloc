@@ -3,11 +3,11 @@
 //!
 //! Re-exports only — no logic lives here (per the one-export-per-file rule).
 //! Tier-1 `#![allow(unsafe_code)]` seams in this tree (oxx R2-07) are
-//! `platform::{os,node,sidecar}`, `large::large_cache_extended`, and
-//! `segment::segment_table::route_slots`. Otherwise-safe files also carry
-//! individually documented tier-2 `#[allow(unsafe_code)]` items (e.g.
-//! `alloc_core::bootstrap`'s `hardened`-only gen-table init and
-//! `alloc_core::lifecycle`'s large-cache-extension teardown). Do not
+//! `platform::{os,node,sidecar}`, `large::large_cache_extended`,
+//! `segment::segment_table::route_slots`, and
+//! `segment::remote_bitmap::sidecar_bitmap::leaf_classes`.
+//! Otherwise-safe files carry documented tier-2 `#[allow(unsafe_code)]`
+//! items, including owner-side sidecar dereference. Do not
 //! hand-count these — per `CLAUDE.md`'s "Active rules" unsafe-inventory
 //! convention, the self-verifying, comment-proof command
 //! `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/alloc_core` enumerates

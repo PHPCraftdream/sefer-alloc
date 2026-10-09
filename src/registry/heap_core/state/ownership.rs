@@ -26,14 +26,14 @@ impl HeapCore {
     /// `last_stamped_segment` caches the base of the most recently stamped
     /// segment. On a cache hit the function performs only a **Relaxed** load
     /// of `owner_state` and compares it with `self.id`. If they match, we
-    /// know the segment is already stamped → return immediately with NO
-    /// Release-store (the expensive part on x86 — an `MFENCE`-equivalent).
-    /// On a miss or on a ownership mismatch the original slow path runs.
+    /// know the segment is already stamped and return without a Release store.
+    /// A miss or ownership mismatch takes the Acquire-load/conditional-store
+    /// slow path; this makes no instruction-stream or fence-cost claim.
     ///
     /// The Relaxed load is safe because:
     /// - This is the **owning thread** — the single writer of `owner_state`
     ///   on this segment. A Relaxed load cannot race with our own prior
-    ///   Release-store (same thread → SC-in-program-order).
+    ///   store under the exclusive-owner discipline.
     /// - A cache miss (base changed or Relaxed-load mismatch) falls through
     ///   to the slow path which restores the Acquire/Release protocol.
     #[inline(always)]
@@ -47,13 +47,12 @@ impl HeapCore {
         // OPT-C fast path: cache-hit check.
         //
         // If the cached segment base matches the current allocation's segment
-        // base, do a cheap Relaxed load of `owner_state` to confirm ownership.
-        // If ownership is confirmed → early return (no Release-store, no memory
-        // fence). If ownership is not confirmed (e.g., segment was recycled and
-        // reset to OWNER_ID_NONE) → fall through to the slow path below.
+        // base, load `owner_state` with Relaxed ordering to confirm ownership.
+        // If confirmed, return without a Release store. Otherwise (e.g., after
+        // recycle/reset to OWNER_ID_NONE), take the slow path below.
         // -----------------------------------------------------------------------
         if base == self.last_stamped_segment && !self.last_stamped_segment.is_null() {
-            // Cache hit: re-check ownership with a cheaper Relaxed load.
+            // Cache hit: re-check ownership with a Relaxed load.
             // Owner-only read (we are the sole writer of owner_state on OUR
             // segments), so Relaxed ordering is race-free here.
             let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
@@ -76,9 +75,8 @@ impl HeapCore {
         let cur = owner_atomic.load(Ordering::Acquire);
         if unpack_owner_id(cur) != self.id {
             let me = pack_owner(OWNER_STATE_LIVE, self.id, 0);
-            // Release: publishes the stamp so any concurrent cross-thread
-            // reader of `owner_state` (diagnostic probes; the owner fast
-            // path's re-read) observes a complete value.
+            // Store the owner stamp with Release ordering. Foreign-free routing
+            // reads the independent descriptor, not this field.
             owner_atomic.store(me, Ordering::Release);
         }
 

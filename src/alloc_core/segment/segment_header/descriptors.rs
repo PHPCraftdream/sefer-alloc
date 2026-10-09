@@ -323,10 +323,9 @@ impl SegmentMeta {
     ///
     /// # Caller's contract
     ///
-    /// `self.base` MUST be a live small/primordial segment base with a valid
-    /// header at offset 0 (the caller — cross-thread free routing / owner
-    /// stamping — guarantees this; the segment is registered and has a valid
-    /// header).
+    /// `self.base` must name a live Small/Primordial segment with a valid
+    /// header at offset 0. Owner stamping and diagnostic callers must
+    /// establish this before obtaining the atomic view.
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn owner_state_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {

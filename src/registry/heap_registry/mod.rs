@@ -12,12 +12,9 @@
 
 // R1-07 (src review round 1): this file is `mod.rs` — decls and re-exports
 // only, per the "mod.rs — reexports only, no code" rule — so it carries NO
-// `#![allow(unsafe_code)]` of its own; a module-level allow here previously
-// duplicated the allow each child below already carries independently.
-// [`claim`], [`counters`], and [`stack`] each have their OWN tier-1
-// `#![allow(unsafe_code)]` seam (`claim.rs` documents the pointer handoff
-// `*mut HeapCore` out of a slot's `UnsafeCell`; every `unsafe` block across
-// the three files carries its own `// SAFETY:` proof).
+// `#![allow(unsafe_code)]` of its own. The former module-level allow
+// duplicated child allowances. `claim` owns the tier-1 unsafe pointer handoff
+// from a slot's `UnsafeCell`; `counters` and `stack` are safe composition.
 mod claim;
 mod counters;
 mod maintenance;

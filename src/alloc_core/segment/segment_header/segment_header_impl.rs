@@ -33,9 +33,8 @@ pub(crate) const SEGMENT_MAGIC: u32 = 0x5E_F5_E0_01;
 //                              always 0 now.
 //   bits [1..32]  : owner_id — the owning heap's registry slot index
 //                              (MAX_HEAPS = 4096 ≪ 2^31, so 31 bits is ample)
-//   bits [32..63] : generation — the coherence key read by cross-thread free
-//                                routing (a stale pointer reading an old
-//                                generation is routed to the slow path).
+//   bits [32..63] : generation — retained packing field, initialized to zero;
+//                                not used for foreign-free routing.
 //
 // The packing is plain data (laid down / read through the `node` seam, like
 // the rest of the header) so this file stays `unsafe`-free.
@@ -279,14 +278,11 @@ pub(crate) struct SegmentHeader {
     /// R4-5; the bit is retained only for layout stability), and
     /// `generation` is always `0` for the same reason. The LIVE value this
     /// word carries is the owning heap's slot index (`owner_heap_id`),
-    /// stamped at claim time and read by cross-thread free routing to
-    /// recognise ownership. Stored as a plain `u64` so the `#[repr(C)] Copy`
-    /// `SegmentHeader` remains a plain bit-pattern (the bootstrap lays it down
-    /// via `Node::write_struct`, and `SegmentMeta::header` reads it back as a
-    /// unit). Cross-thread readers access it through the dedicated
-    /// [`owner_state_atomic`](SegmentMeta::owner_state_atomic) view (`&AtomicU64`
-    /// at the same fixed offset), because a plain struct-field read would
-    /// race a concurrent owner-stamp store.
+    /// stamped by the owner after allocation and read by owner-stamp checks
+    /// and diagnostic probes. Stored as a plain `u64` for header snapshots;
+    /// the dedicated [`owner_state_atomic`](SegmentMeta::owner_state_atomic)
+    /// view accesses the same byte range atomically. Foreign-free routing
+    /// reads the independent route descriptor, not this field.
     pub owner_state: u64,
     /// Sanity magic — every segment starts with this. A computed segment base
     /// that does not have this magic is not one of our segments (foreign ptr).
@@ -299,13 +295,13 @@ pub(crate) struct SegmentHeader {
     /// Phase 35 (M6 decommit): the **owner-only** count of live (carved-and-not-
     /// free) blocks in this small/primordial segment. Incremented when a block
     /// is handed to the caller (`pop_free` / `carve_block`), decremented when a
-    /// block is freed (`dealloc_small` / `reclaim_offset`). When it reaches zero
-    /// the segment is empty and (under `alloc-decommit`) its payload pages are
-    /// returned to the OS.
+    /// block is freed (`dealloc_small` / `reclaim_sidecar_record`). At zero,
+    /// the segment is empty; `alloc-decommit` policy may retain its committed
+    /// pages in the bounded pool or release the whole reservation.
     ///
     /// **Not atomic — owner-only.** Every mutation runs on the segment's owner:
     /// own-thread alloc/free AND the owner-side sidecar-ingress reclaim
-    /// (`reclaim_offset`).
+    /// (`reclaim_sidecar_record`).
     /// The cross-thread freer NEVER touches this field (it publishes an offset into
     /// the route sidecar's pending bits; the owner decrements when it reclaims). So a plain
     /// `u32` field, accessed through its `offset_of!` offset like `bump`, is
@@ -315,14 +311,14 @@ pub(crate) struct SegmentHeader {
     /// Present in every build. This exactly-once ledger is correctness state
     /// under alloc-xthread as well as alloc-decommit; page policy is separate.
     pub live_count: u32,
-    /// Phase 35 (M6 decommit): owner-only flag (0 / 1) recording whether this
-    /// segment's payload pages are currently DECOMMITTED (returned to the OS).
-    /// Set when `live_count` hits zero and the payload is decommitted+reset;
-    /// cleared when the segment is reselected for carving and the payload is
-    /// recommitted. Present in every layout, used only under `alloc-decommit`.
+    /// Owner-only reset/decommit flag (0 / 1). The release-leg reset sets it
+    /// before whole-reservation release; the explicit retain-decommit hook
+    /// sets it while retaining metadata for reuse. Production pool admission
+    /// leaves it false and retains existing committed pages and free lists.
+    /// Present in every layout, used under `alloc-decommit`.
     pub decommitted: u32,
-    /// The segment kind (primordial / small / large). Decides dealloc routing.
-    /// Read on every cross-thread dealloc-routing dispatch.
+    /// Segment kind used by owner-side allocation, deallocation and reclaim.
+    /// Foreign-free dispatch uses `RouteKind` from the pinned descriptor.
     pub kind: SegmentKind,
 
     // ── Cold set: bytes 41.. (Large-only / teardown-only / unregister-only,
@@ -335,14 +331,11 @@ pub(crate) struct SegmentHeader {
     pub large_align: usize,
     /// Explicit allocation start relative to the canonical usable root.
     pub payload_offset: usize,
-    /// For large/huge segments: the PHYSICAL committed usable span of this
-    /// segment (`n_segments * SEGMENT`, computed once from the ORIGINAL OS
-    /// reservation). Set exactly once — at the segment's initial OS
-    /// reservation (`alloc_large_slow`) or when a cached segment is reused
-    /// for a smaller request on a cache HIT (`alloc_large`'s hit path, where
-    /// it is carried forward verbatim from the cached slot's `usable_size`,
-    /// i.e. the physical span of the segment being reused) — and NEVER
-    /// recomputed from `large_size`/`large_align`.
+    /// For Large segments, the current committed usable span from the
+    /// canonical root. Initialized on reservation, carried forward on cache
+    /// reuse, and increased after successful reserved-capacity growth. It is
+    /// not necessarily a whole-SEGMENT multiple or the full reserved VA
+    /// extent; never reconstruct it from `large_size`/`large_align`.
     ///
     /// This exists because `large_size`/`large_align` describe the CURRENT
     /// allocation living in the segment, which on a cache hit can be smaller
@@ -353,10 +346,9 @@ pub(crate) struct SegmentHeader {
     /// UNDER-reports the physical span for a reused-and-shrunk segment,
     /// corrupting the `large_cache` byte-budget accounting (`
     /// large_cache_used_bytes` and the cache-hit size-ratio matching) and
-    /// causing unbounded RSS amplification. `span_usable` is the single
-    /// stable source of truth for "how many bytes of OS memory does this
-    /// segment actually occupy" across the segment's whole cache lifetime
-    /// (fresh-reserve → N× cache-hit-reuse → deposit).
+    /// causing unbounded RSS amplification. `span_usable` supplies current
+    /// committed-span accounting across reserve, growth, cache reuse and
+    /// deposit; it does not describe the full OS reservation.
     ///
     /// Unused for small/primordial (zero — inert, like `large_size`).
     pub span_usable: usize,

@@ -26,9 +26,8 @@
 //!
 //! **`Registry` itself is now small enough to be a plain `static` again**:
 //! once the giant inline array is gone, `Registry` is just
-//! `chunks: [AtomicPtr<RegistryChunk>; NUM_CHUNKS]` (64 pointers = 512 bytes
-//! at `NUM_CHUNKS = 64`) plus the existing `count`/`free_slots` atomics — all
-//! const-initialisable, so `ensure()` is now a plain `&'static Registry`
+//! `chunks: [OncePtrCell<RegistryChunk>; NUM_CHUNKS]` plus claim/scan/hint
+//! control words — all const-initialisable. `ensure()` is a plain `&'static Registry`
 //! return with NO CAS, NO sentinel dance, and NO OOM-abort path at the
 //! REGISTRY level at all (OOM can now only happen at PER-CHUNK
 //! materialisation time — see `ensure_chunk_slow`'s OOM handling, which is
@@ -161,9 +160,9 @@
 //   materialisation slow path, and the test-only dbg hooks.
 // - [`chunk`] — `RegistryChunk` (the former `registry_chunk.rs`, moved
 //   verbatim; the module path becomes `bootstrap::chunk`).
-// - [`loom_shim`] — the `#[cfg(loom)]` const-capable atomics shim (formerly
-//   an inner module; the `bootstrap::loom_shim` path is preserved for
-//   `heap_registry`'s cfg-gated `StackStorage` impl).
+// - [`loom_shim`] — the `#[cfg(loom)]` const-capable `OncePtrCell` stand-in
+//   needed by the static initializer. Its separate local stack mirror has
+//   no current source caller; root stack models use the member crate directly.
 mod chunk;
 mod ensure;
 #[cfg(loom)]

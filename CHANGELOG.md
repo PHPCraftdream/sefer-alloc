@@ -10,10 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Root allocator `src/` review round 18 remediation (2026-10-09)
 
 Runtime improvements this round: 0 in the production default. R18 repairs an
-internal diagnostic, enables NUMA-only compilation, adds defensive free bounds,
-bounds fallback spin counters, hardens opt-in freelists, and removes an unused
-hardened table. Production feature composition is unchanged; no speed or RSS
-improvement is claimed.
+internal diagnostic, enables NUMA-only compilation, reconciles current source
+contracts, adds defensive free bounds, bounds fallback spin counters, hardens
+opt-in freelists, and removes an unused hardened table. Production feature
+composition is unchanged; no speed or RSS improvement is claimed.
 
 - [correctness fix] `AllocCore::dbg_is_decommitted_for` now resolves the input
   address to the segment table's canonical stored pointer before reading
@@ -60,6 +60,12 @@ improvement is claimed.
   lazy-frontier regression and production realloc targets passed; substituting
   the eager `SEGMENT` bound in the lazy path reproduced the child access fault.
   This cleanup makes no measured speed claim; other CQ-12 suppressions remain.
+
+- [docs] Updated `INVARIANTS.md`, source protocol notes, unsafe inventories and
+  diagnostic-counter descriptions to match current owner-side sidecar, pool/
+  release and Large-cache paths. Removed stale ring-era callers and unsupported
+  locality/fence assertions; no runtime path changed. The documentation tripwire
+  passed 31/31.
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 

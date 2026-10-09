@@ -61,36 +61,12 @@
 //! the type system structurally prevents a reference from outliving the
 //! span's release.
 //!
-//! ## Scope: owner-only, NOT the `dirty_by_class`/`PerClassDirty` shape
+//! ## Scope: owner-only
 //!
-//! `PerClassDirty` (`alloc_core::dirty_by_class`) is published CROSS-THREAD
-//! (any thread's remote free can be the first to materialise it), so it needs
-//! a CAS-publish state machine (`once_ptr_cell::OncePtrCell`) — a genuinely
-//! different concern (concurrent race over WHO materialises) from this
-//! module's (a single owning thread's typed init + deref discipline once the
-//! pointer already exists). `OncePtrCell` is itself an independently
-//! loom-verified seam crate (`crates/once-ptr-cell`); folding its CAS
-//! protocol into this primitive would either weaken that verification
-//! surface or duplicate it. `PerClassDirty` keeps `OncePtrCell` for
-//! publication and is NOT migrated onto this module's `reserve`/`deref`/
-//! `deref_mut` at all — two independent reasons:
-//!
-//! 1. its payload is all-`AtomicU64`, for which all-zero IS a valid initial
-//!    state (no niche/padding concerns — unlike `CachedLarge`'s bag of bare
-//!    pointer/integer fields), so it needs neither [`reserve`]'s `ptr::write`
-//!    nor [`reserve_zeroed_with`]'s fixup closure;
-//! 2. it is NEVER dereferenced as `&mut` anywhere in this crate (every
-//!    mutation goes through `fetch_or`/`swap` on the atomics themselves), so
-//!    the aliasing hazard [`deref`]/[`deref_mut`]'s `unsafe fn` boundary
-//!    exists to guard against does not apply — `dirty_by_class.rs`'s
-//!    `ensure_per_class_dirty`/`get_per_class_dirty` stay ordinary safe `fn`s
-//!    (see that module's own audit note for the full argument).
-//!
-//! (The R2-12 ownership fix does not change this: `PerClassDirty` is
-//! materialised by whichever cross-thread producer wins the CAS race, so no
-//! single owner could hold a release token — it stays a documented
-//! process-global leak, bounded by `MAX_HEAPS` slots. See that module's own
-//! R2-12 note.)
+//! This primitive serves owner-only directory and large-cache sidecars.
+//! Foreign-free ingress uses independently pinned route descriptors and
+//! `SmallSidecar` storage, not this primitive. Route storage is reclaimed
+//! after unlink and the last descriptor pin.
 //!
 //! ## API shape
 //!

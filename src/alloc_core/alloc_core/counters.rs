@@ -362,23 +362,16 @@ pub(crate) const fn promotion_byte_bucket(bytes: usize) -> usize {
     }
 }
 
-/// Process-wide count of `dealloc` calls that DROPPED a free because it
-/// violates the `GlobalAlloc` contract: a foreign pointer, a double free
-/// against an already-released segment, or (under `alloc-xthread`) a
-/// cross-thread free whose `Layout` does not match the live segment's
-/// occupant. Best-effort: a pointer into unmapped memory faults on the header
-/// read before reaching these checks. Surfaced as
+/// Process-wide count of frees dropped because address-only lookup found no
+/// matching live route or the pinned terminal sidecar rejected publication.
+/// Not an exhaustive invalid-free or layout-mismatch detector; callers still
+/// must provide a current allocation and exact layout. Surfaced as
 /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
 /// via [`AllocCore::dbg_foreign_or_unroutable_frees`](crate::alloc_core::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees).
 ///
-/// Two disjoint increment sites feed it (no double counting):
-/// - [`AllocCore::dealloc`](crate::alloc_core::alloc_core::AllocCore::dealloc)'s foreign branch, gated on `alloc-stats` (a
-///   standalone `AllocCore` pays nothing by default); unreachable under
-///   `alloc-global`, since `HeapCore::dealloc_routing` already proved
-///   `contains_base`.
-/// - the cold drop branches of `HeapCore::dealloc_foreign_routing`,
-///   unconditional, reached through the `crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES`
-///   re-export (`alloc-xthread`).
+/// `HeapCore::publish_foreign` increments route-rejection branches
+/// unconditionally. Standalone `AllocCore::dealloc` counts its rejected
+/// foreign branch when `alloc-stats` is enabled.
 ///
 /// A healthy program keeps this at `0`. Relaxed: diagnostic only.
 #[cfg(feature = "alloc-core")]

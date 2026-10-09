@@ -185,9 +185,8 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
     table
 };
 
-/// PERF-PASS-5 (G7/FP2, task #53): one size class's magazine — `count` and
-/// `slots` bundled together so a magazine push/pop touches ONE cache line
-/// instead of two.
+/// PERF-PASS-5 (G7/FP2, task #53): one size class's magazine, with its
+/// depth counter adjacent to its pointer array.
 ///
 /// Before this change, `Tcache` stored `slots: [[*mut u8; CAP]; N]` and
 /// `count: [u16; N]` as two SEPARATE top-level arrays (`count` ~6 KiB away
@@ -197,17 +196,17 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
 /// single "check depth, touch top-of-stack" operation. Grouping `count` and
 /// `slots` into one `PerClass` struct and using `[PerClass; N]` puts a
 /// class's depth counter directly adjacent to (in front of) its own pointer
-/// stack, so both live in the same 8-byte-aligned region and — for the
-/// common case where a hit/push touches only the top few slots — the SAME
-/// 64-byte cache line.
+/// stack. Physical cache-line sharing depends on placement and the slot
+/// accessed. Full-capacity alternating Small alloc/free can use depth 15↔16
+/// and `slots[15]` at offset 128, outside the counter's 64-byte line.
 ///
 /// `count` is `u8`, not `u16`: `TCACHE_CAP` (16) fits comfortably in a `u8`
 /// (max 255), and every accumulation of `count` is compared against
 /// `TCACHE_CAP` (16) or `FLUSH_N` (8) before use — see the call sites in
 /// `free/dealloc_own_base.rs` (`cnt + 1`, `remaining + 1` after a half-flush) — so no
-/// arithmetic on this path ever approaches the `u8` range limit. Shrinking
-/// `count` from `u16` to `u8` also shrinks `PerClass` by 1 byte per class
-/// (49 classes × 1 byte saved), a minor bonus on top of the locality win.
+/// arithmetic on this path ever approaches the `u8` range limit. The smaller
+/// field does not reduce this `repr(C)` struct's size: padding still places
+/// `slots` at offset 8.
 ///
 /// F4 (task #496): `#[repr(C)]` + this DECLARATION order (`count`,
 /// `virgin_mask`, `slots`) is load-bearing, not decorative. Without
@@ -217,10 +216,9 @@ pub(crate) static FREE_PARK_CAP: [u8; SMALL_CLASS_COUNT] = {
 /// small fields LAST — verified empirically via `core::mem::offset_of!`:
 /// `offset_of(slots) == 0`, `offset_of(count) == 128` (no `virgin_mask`) /
 /// `130` (with it), `offset_of(virgin_mask) == 128`. That placed `count`
-/// 128+ bytes from `slots[0]` — always a DIFFERENT 64-byte cache line from
-/// the shallow-magazine top-of-stack accesses (`count` 1-3, the documented
-/// churn-workload common case) this struct's own doc comment above claims
-/// are colocated. `#[repr(C)]` fixes the field order to declaration order:
+/// 128+ bytes from `slots[0]`, outside its 64-byte line. That historical
+/// shallow-slot observation does not describe full-capacity churn.
+/// `#[repr(C)]` fixes the field order to declaration order:
 /// `count` at offset 0, `virgin_mask` (when present) at offset 2 (1 pad
 /// byte after the u8 `count` — `virgin_mask`'s `u16` needs 2-byte alignment,
 /// so the compiler inserts one padding byte at offset 1), `slots`
@@ -233,7 +231,7 @@ pub(crate) struct PerClass {
     /// Current magazine depth for this class (0..=`TCACHE_CAP`). `u8`: see
     /// the [`PerClass`] doc for why `TCACHE_CAP` (16) safely fits. F4: kept
     /// FIRST in declaration order under `#[repr(C)]` so it lands at struct
-    /// offset 0, directly adjacent to `slots[0]`'s cache line.
+    /// offset 0, preceding the pointer array at offset 8.
     pub(crate) count: u8,
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
@@ -289,10 +287,9 @@ pub(crate) struct PerClass {
 
 // F4 (task #496): pin the `#[repr(C)]` layout claim made in this struct's
 // doc comment with the same `const _: () = assert!(...)` pattern this file
-// already uses for `TCACHE_CAP <= 16` above — so a future field reorder (or
-// an accidental removal of `#[repr(C)]`) that breaks the documented
-// one-cache-line locality fails the build instead of silently regressing
-// again the way the missing `#[repr(C)]` did originally.
+// already uses for `TCACHE_CAP <= 16` above. A field reorder or removal of
+// `#[repr(C)]` that changes these offsets fails the build. The assertions
+// pin field offsets, not one-line access or a measured performance benefit.
 //
 // R2-17 (docs/reviews/2026-09-22-120730-src-review-xa-round-2.md §R2-17): the `slots`-at-offset-8 premise is a 64-bit truth by virtue of the
 // crate-root R2-17 target gate in `src/lib.rs`, which rejects any
@@ -303,7 +300,7 @@ pub(crate) struct PerClass {
 // offset 4). The assert itself stays UNCONDITIONAL on purpose: if the
 // crate-root gate is ever removed or weakened, this pin must keep failing
 // loudly instead of silently admitting a 32-bit magazine layout that the
-// documented one-cache-line locality argument never covered.
+// pinned 64-bit field-offset contract never covered.
 const _: () = assert!(
     ::core::mem::offset_of!(PerClass, count) == 0,
     "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"

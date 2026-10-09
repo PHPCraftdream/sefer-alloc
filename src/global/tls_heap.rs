@@ -131,12 +131,10 @@ thread_local! {
     /// [`AbandonGuard`] releases the slot (via the [`HeapLease`]'s `LIVE → FREE`
     /// Drop) AND stamps this cell to [`TORN`]
     /// (via [`mark_local_torn`]) BEFORE releasing it, so a post-teardown
-    /// read never observes the stale pre-release pointer. Some other
-    /// thread-local's `Drop` (declared before `LOCAL`, hence destroyed
-    /// after it — reverse declaration order) can legitimately still
-    /// allocate/deallocate after `GUARD` has dropped; every resolver checks
-    /// for `TORN` and routes such a call to the fallback heap instead of
-    /// dereferencing this stale slot.
+    /// read never observes the stale pre-release pointer. Other TLS destructors
+    /// may allocate/deallocate after `GUARD` drops; destructor order is
+    /// unspecified. Resolvers route `TORN` or unavailable TLS to fallback
+    /// instead of dereferencing the stale slot.
     ///
     /// Stored as `Cell<*mut HeapCore>` (not `RefCell`) so there is no
     /// borrow state to fail under reentrancy: reading is a single load.
@@ -478,13 +476,9 @@ fn finish_bind(lease: Option<HeapLease>) -> CurrentHeap {
         // Registry exhausted or primordial OOM: fall back, never null.
         return CurrentHeap::Fallback;
     };
-    // Nested bind (re-entrancy): an allocation made INSIDE the outer claim —
-    // e.g. NUMA topology initialisation — re-enters the global allocator on
-    // this thread while `LOCAL` is still null, and that inner call completes
-    // a full bind (publishes `LOCAL`, arms `GUARD`) before the outer claim
-    // returns. Keep the inner bind and release the outer lease: publishing
-    // the outer heap over it would orphan the inner slot (still LIVE, never
-    // recycled) and reroute this thread's inner blocks as foreign.
+    // If a nested allocation during the outer claim already bound this
+    // thread, retain that binding and release the outer lease. Replacing it
+    // would orphan the inner slot and reroute its blocks as foreign.
     if let Ok(current) = LOCAL.try_with(|c| c.get()) {
         if !current.is_null() && current != TORN {
             drop(lease); // LIVE → FREE; allocates nothing, no TLS.

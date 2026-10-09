@@ -10,14 +10,14 @@ impl SegmentMeta {
     // `bump_of`/`set_bump`: a single-word load/store at the field's
     // `offset_of!` offset through the `node` seam, so this file stays
     // `unsafe`-free. Owner-only (the owning thread is the sole mutator of
-    // both fields — own-thread alloc/free and the owner-side ring drain;
+    // both fields — own-thread alloc/free and owner-side sidecar reclaim;
     // the cross-thread freer never touches them), so a plain field
     // read/write is race-free, exactly as for `bump`.
     //
     // Transition                 Credit       Owner action
     // virgin/free -> issued       +1           carve or freelist pop (also refill)
     // issued -> held/published    0            user/magazine/private/inbox/detached
-    // held -> allocator free      -1           local free, ring reclaim, batch flush
+    // held -> allocator free      -1           local free, sidecar reclaim, batch flush
     // failed issue / pool reuse   0            no issue, or free state remains free
     // Primordial uses the same transitions; decommit is separate policy.
     // -------------------------------------------------------------------

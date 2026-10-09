@@ -302,10 +302,11 @@ impl AllocCore {
                     // reservation is reused as-is for a smaller request), so
                     // recomputing "usable size" from size/align here
                     // under-reports the true span and corrupts the
-                    // large-cache byte-budget accounting. `span_usable` is
-                    // set once at the segment's original OS reservation and
-                    // carried forward verbatim through every cache-hit reuse
-                    // (see `SegmentHeader::span_usable` doc). R12-4:
+                    // large-cache byte-budget accounting. `span_usable` starts
+                    // at the initial committed span and can grow after successful
+                    // incremental commit under `large-reserved-capacity`.
+                    // Cache accounting carries the current committed span,
+                    // never a reconstruction from logical size/align. R12-4:
                     // `reserved_capacity` is carried forward the same way
                     // (never recomputed) — see `CachedLarge::reserved_capacity`'s
                     // doc. The field is present in every build's layout

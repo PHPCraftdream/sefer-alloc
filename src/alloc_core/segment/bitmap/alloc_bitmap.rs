@@ -50,7 +50,7 @@
 //! ## No atomics (single-writer)
 //!
 //! A segment's bitmap is written ONLY by the segment's owner: own-thread frees
-//! and the owner-side `reclaim_offset` drain both run on the owner. Cross-thread
+//! and `reclaim_sidecar_record` both run on the owner. Cross-thread
 //! frees never touch the bitmap — they publish offsets into the route
 //! directory's independently pinned sidecar, and the owner sets the bit when
 //! it reclaims the sidecar record. So plain (non-atomic) byte

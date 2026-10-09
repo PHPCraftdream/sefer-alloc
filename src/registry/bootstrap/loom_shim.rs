@@ -29,7 +29,10 @@
 //! REGISTRY` initializer). It is NEVER on a loom-modeled interleaving
 //! (sefer's loom tests do not touch chunk cells), so it needs no loom
 //! atomics for the interleavings themselves — only for this same
-//! const-constructor constraint.
+//! const-constructor constraint. The local `StackHead`/`StackOps` mirror is
+//! separate, retained under the same cfg but unused by current source callers.
+//! The root `loom_registry_free_slots` test imports `tagged_index_stack`
+//! directly; it does not exercise this local mirror.
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicPtr, Ordering};
@@ -234,8 +237,9 @@ impl<T> OncePtrCell<T> {
     }
 }
 
-// Protocol counterpart for `tagged-index-stack`; this local mirror exists
-// because loom needs a const-capable core-atomic head implementation.
+// Retired registry's local tagged-stack protocol mirror, retained under
+// `cfg(loom)`. Unlike OncePtrCell above, it is not needed by the current
+// static initializer and has no current source caller or root test consumer.
 // -----------------------------------------------------------------------
 
 use core::sync::atomic::AtomicU64;
@@ -247,23 +251,22 @@ use core::sync::atomic::AtomicU64;
 // H-2 running-tag empty transition, the same CAS orderings with ONE
 // deliberate divergence (note 6 below), same RAD-1 lazy links —
 // `store_next` only ever fires inside `push_index`)
-// but is NOT a byte-for-byte replica of the shipped type. Deliberate
-// divergences, each irrelevant to what the shim is FOR — model-checking
-// free_slots' head protocol in the root crate's loom CI jobs (deliberately
-// no hardcoded count — a "THREE" here already went stale once):
+// but is NOT a byte-for-byte replica of the shipped type. This verification-
+// only mirror describes the former tagged-stack head protocol, not current registry
+// FREE discovery or production storage binding. Deliberate divergences
+// (no hardcoded count — a "THREE" here already went stale once):
 //   1. no CAS-retry backoff — the shipped `push_index`/`pop_index` spin
 //      `1 << spins.min(BACKOFF_SPIN_CAP)` times between retries; the shim
 //      retries immediately, forever. The backoff is a pure LATENCY device:
 //      `core::hint::spin_loop()` touches no atomic and adds no interleaving
 //      loom could explore, so copying it in would add zero protocol content.
-//   2. no `push_index` release-active `index < INDEX_MASK` guard — the guard
-//      catches a caller-contract violation the registry's own construction
-//      excludes here: only slot indices `< MAX_HEAPS (4096)` are ever
-//      pushed, well under `INDEX_MASK (65535)`. Dead code in this shim.
+//   2. no `push_index` release-active `index < INDEX_MASK` guard — the former
+//      registry consumer restricted pushes to slot indices `< MAX_HEAPS
+//      (4096)`, below `INDEX_MASK (65535)`. That consumer is historical.
 //   3. no `pop_index` release-active rule-4 guard on `load_next`'s result —
-//      same reasoning: `HeapSlot::next_free` is written ONLY by the shipped
-//      `push_index` (with `TAIL` or a previously-admitted index), so the
-//      guard's condition is unsatisfiable for this consumer.
+//      the former registry's links were written only by `push_index`, using
+//      `TAIL` or a previously-admitted index. No current registry link
+//      binding is verified by this mirror.
 //   4. no CAS-retry counting — the shipped `push_index`/`pop_index` each
 //      increment a process-global telemetry counter
 //      (`PUSH_RETRY_COUNT` / `POP_RETRY_COUNT`: plain
@@ -271,10 +274,9 @@ use core::sync::atomic::AtomicU64;
 //      `fetch_add(1)` on the CAS-retry `Err(actual)` arm, read by nothing
 //      in the algorithm) so tests can assert the retry branch was actually
 //      reached; the shim has no counterpart. Retry bookkeeping is pure
-//      activation telemetry with no bearing on the head-word CAS protocol
-//      the shim exists to model-check, and a bare
-//      `core::sync::atomic::AtomicU64` head carries no such metadata to
-//      replicate.
+//      activation telemetry with no bearing on the mirrored head protocol;
+//      the retained local `core::sync::atomic::AtomicU64` head has no such
+//      metadata. No current root model exercises this mirror.
 //   5. the shipped `push_index`/`pop_index` now pack through the
 //      crate-PRIVATE truncating fast path (`pack_truncating`); this
 //      shim cannot name that private item, so it packs through the
@@ -311,10 +313,10 @@ use core::sync::atomic::AtomicU64;
 //      publish/recycle authority epoch — freshly minted or obtained from
 //      one successful pop — consumed by the push's own CAS). This is an
 //      intentional, documented divergence of the test
-//      shim, not lockstep drift: the loom model checks the head protocol,
-//      not the `unsafe` boundary, and the shim's callers are the same
-//      registry paths whose SAFETY proofs (see `heap_registry/stack.rs`'s
-//      `push_free_slot`) discharge the real contract. The P1-1 seal
+//      shim, not lockstep drift: a head-protocol mirror does not verify the
+//      caller's unsafe storage obligations. The former registry
+//      `push_free_slot` binding is historical, not a current implementor.
+//      The P1-1 seal
 //      (`-> Result<(), TagExhausted>`, refusing once the tag reaches
 //      `TaggedIndex::TAG_MAX`) is now part of the real protocol this
 //      shim mirrors, so it is NOT listed as a divergence — see the shim's
@@ -324,13 +326,9 @@ use core::sync::atomic::AtomicU64;
 // it doubles the surface that can silently drift from the real type.
 use tagged_index_stack::{TagExhausted, TaggedIndex, TAIL};
 
-/// Const-capable local stand-in for the tagged free-list head protocol,
-/// used ONLY under `--cfg loom`, so `static REGISTRY: Registry =
-/// Registry::new()` still const-evaluates (loom's `AtomicU64::new` is
-/// non-`const`). Never on a loom-modeled interleaving — the real-type
-/// verification is the crate's own `loom_aba` suite. Fixed at
-/// `INDEX_BITS = 16` (the only width the registry uses), so it needs no
-/// const generic beyond mirroring the real type's parameter.
+/// Local tagged-stack mirror retained under `--cfg loom`, with no current
+/// source caller. Not the registry's FREE head or static-initializer shim.
+/// Root stack models import the member crate directly, not this type.
 pub(crate) struct StackHead<const INDEX_BITS: u32> {
     head: AtomicU64,
 }
@@ -374,8 +372,8 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
 // `pub(crate)`, used only under `--cfg loom`, and never a public
 // extension point — the 2026-09-01 unsafe-trait decision on the real
 // `tagged_index_stack::StackStorage` does not reach it. It stays a
-// plain, safe trait, while the REAL impl in `heap_registry/stack.rs` is an
-// `unsafe impl` of the real trait.
+// plain, safe trait; the former registry's real `unsafe impl` is historical,
+// not a current production binding.
 /// Mirror of the real `tagged_index_stack::StackStorage` trait: one
 /// implementor owns the head↔links binding.
 pub(crate) trait StackStorage<const INDEX_BITS: u32> {

@@ -179,7 +179,7 @@ impl AllocCore {
         while filled < want {
             // 1. FREE-DRAIN FIRST (order is non-negotiable — see doc). Prefer
             //    free blocks from the current segment, then from any owned
-            //    segment (which also drains remote rings → xthread reclaim).
+            //    segment (which also consumes terminal sidecar publications).
             //
             //    Э7 (task #161): drain the segment's freelist in ONE walk via
             //    `drain_freelist_batch` instead of one `pop_free` per block —
@@ -187,7 +187,7 @@ impl AllocCore {
             //    per-block loop. The end-state (bitmap bits, live_count,
             //    freelist head) is byte-identical to the per-block path. Source
             //    order is UNCHANGED: current segment's freelist, then the
-            //    ring-draining whole-heap scan, then bump-carve.
+            //    sidecar-draining discovery scan, then bump-carve.
             //
             //    E1 (task W4): once `free_exhausted` is latched there is nothing
             //    left to reclaim for the rest of this refill (proof below), so we
@@ -212,10 +212,9 @@ impl AllocCore {
                     filled += n;
                     continue;
                 }
-                // `find_segment_with_free` runs the A1 ring-drain (reclaiming
-                // cross-thread frees into the per-segment BinTables) BEFORE it
-                // returns a base — that ordering is preserved: we call the batch
-                // drain only on the base it hands back.
+                // `find_segment_with_free` consumes sidecar publications before
+                // returning a usable base. Batch freelist drain uses that base
+                // only after discovery's pool/release decision.
                 // All discovery paths use the owner primitive's physical
                 // free/magazine guards; no caller closure or output scan is needed.
                 let found_seg = self.find_segment_with_free(class_idx);
@@ -230,8 +229,8 @@ impl AllocCore {
                         continue;
                     }
                 }
-                // Scan found nothing (and drained all rings): stop re-scanning
-                // AND re-draining for the remainder of this refill; carve only.
+                // Discovery found no free block in this pass: stop re-scanning
+                // for this refill; later publications wait for a later pass.
                 free_exhausted = true;
             }
             // 2. No free block anywhere: batched bump-carve DIRECTLY into `out`
@@ -337,10 +336,9 @@ impl AllocCore {
     /// Push a batch of blocks of class `class_idx` back onto their owning
     /// segments' `BinTable`s.
     ///
-    /// Each block undergoes EXACTLY the same transition as a single
-    /// `dealloc_small`: off>=bump guard + `is_free` (M2 double-free) +
-    /// `write_next`/`set_head` + `mark_free` + `dec_live_and_maybe_decommit`
-    /// (+ `table.recycle` on decommit if fired).
+    /// Accepted blocks are linked and marked free, then their credits are
+    /// retired in one batch. The eligibility check selects pool/release policy;
+    /// it does not itself decommit or recycle the segment.
     ///
     /// Per-block base is derived per-block via `os::segment_base_of_ptr`
     /// (the magazine CAN hold blocks from multiple segments).
@@ -354,23 +352,19 @@ impl AllocCore {
     /// `segment_base_of_ptr` (ONE mask-compare per block, NO sorting) yields
     /// long runs; a scattered magazine degrades to runs of length 1 — still
     /// correct. For each run (all sharing one `base`) we hoist the metadata
-    /// views (`SegmentMeta::new`, `bin_table`, `alloc_bitmap`, and — under
-    /// decommit — the `bump_of` LOAD) ONCE and write the freelist head ONCE,
+    /// views (`SegmentMeta::new`, `bin_table`, `alloc_bitmap`, and the
+    /// `bump_of` load) ONCE and write the freelist head ONCE,
     /// instead of once per block.
     ///
-    /// ### The TWO guards STAY per-block (they are NOT tautologies)
+    /// ### Current-state guards remain per-block
     ///
-    /// 1. `is_free(off)` — a REAL guard: under the documented #164 residual, a
-    ///    cross-thread free of a magazine-resident block routes via the ring →
-    ///    `reclaim_offset` marks it FREE on the BinTable while it still sits in
-    ///    the magazine; this flush must then SKIP it (`is_free == true`) or the
-    ///    freelist gets a duplicate. So the run-local chain links ONLY blocks
-    ///    that PASS `is_free`.
-    /// 2. `off >= bump` (decommit stale-free) — the COMPARE stays per-block;
-    ///    only the `bump_of()` LOAD is hoisted. A flush never carves, so `bump`
-    ///    cannot advance during a flush; and a decommit-reset of `bump` can only
-    ///    happen at the LAST accepted block of a run (see the decommit proof
-    ///    below), after which there is no further block in the run to mis-judge.
+    /// `flush_run` checks the payload lower bound, `off >= bump`, and
+    /// `is_free(off)` before linking each block. The bump load is hoisted:
+    /// a flush does not carve, and pool/release policy runs after the run.
+    /// `reclaim_sidecar_record` returns false for an already-free or magazine-
+    /// resident record before payload writes; it does not mark a resident
+    /// block free behind the magazine. These checks are defense in depth,
+    /// not a universal duplicate or stale-allocation guarantee.
     ///
     /// ### Splice — provably byte-identical to N sequential `dealloc_small`s
     ///
@@ -387,25 +381,16 @@ impl AllocCore {
     /// `write_next` writes the identical `next`, every `mark_free` sets the
     /// identical bit, `set_head` lands on the identical value ⇒ byte-identical.
     ///
-    /// ### Decommit — deferred `dec_live`/decommit is EQUIVALENT
+    /// ### Batched credit retirement and pool/release eligibility
     ///
-    /// Within a same-segment run, `live_count` starts at the segment's current
-    /// count `L` and drops by one per accepted block. Every un-flushed
-    /// same-segment block (still handed out to the user, still in the magazine,
-    /// or later in this/another run) counts as live, so `live` reaches 0 iff the
-    /// run flushes ALL `L` remaining live blocks — and then ONLY at the LAST
-    /// accepted block. The per-block path likewise only decommits at the block
-    /// that brings `live` to 0. So running `dec_live_and_maybe_decommit`
-    /// per-accepted-block here (AFTER the run's `set_head`, matching the
-    /// sequential order where each block's dec-then-decommit follows its own
-    /// `set_head`) fires decommit on exactly the same block, exactly once, and
-    /// `table.recycle` exactly when it fired. If decommit DOES fire at the last
-    /// accepted block, `decommit_empty_segment` re-NULLs every class head
-    /// (including this one) and zeroes the bitmap — wiping the chain we just
-    /// spliced. That wipe is CORRECT and identical to the sequential path (whose
-    /// last block's decommit does the same after its own `set_head`); there is
-    /// no subsequent block in the run to be affected, since `live` can only reach
-    /// 0 at the last.
+    /// Under the caller contract, every unflushed block still carries a credit.
+    /// After linking accepted blocks, `flush_run` subtracts `accepted_count`
+    /// once and checks the resulting live count. An empty, non-current Small
+    /// segment that is not already reset is eligible for pool/release policy.
+    /// Pool admission preserves the chain and committed pages; the release leg
+    /// resets metadata and recycles the whole reservation. Neither the credit
+    /// subtraction nor the eligibility helper performs payload decommit.
+    ///
     /// # Safety
     ///
     /// The caller must honour the batch-free contract for every entry in
@@ -524,12 +509,12 @@ impl AllocCore {
     }
 
     /// Flush ONE run of blocks that all share segment `base` (Э8). See
-    /// `flush_class` for the byte-identical / decommit-equivalence proofs. Every
+    /// `flush_class` for splice and batched-credit policy reasoning. Every
     /// block in `run` is non-null and has `segment_base_of_ptr(block) == base`.
     ///
     /// L-4 (UBFIX-11): returns `true` iff this run's flush triggered
     /// `release_or_pool_empty_segment(base)` (i.e. the segment reached
-    /// `live_count == 0` and was recycled — pooled or released). `flush_class`
+    /// `live_count == 0` and was pooled or released). `flush_class`
     /// uses this to record `base` and skip any LATER same-`base` run within
     /// the same call, instead of re-touching a segment whose metadata may now
     /// be unmapped (released leg) or whose state a blind re-run must not
@@ -583,8 +568,7 @@ impl AllocCore {
             if (off as usize) >= bump {
                 continue;
             }
-            // Guard 2 (per-block): M2 double-free — skip a block already free
-            // (e.g. a ring-DF'd magazine resident marked free by reclaim).
+            // Guard 2 (per-block): skip a block whose current bitmap state is free.
             if bm.is_free(off) {
                 continue;
             }
@@ -624,12 +608,8 @@ impl AllocCore {
             }
         }
 
-        // E3 (task W4): batched `dec_live` (AFTER `set_head`, matching the
-        // sequential ordering). `live` can only reach 0 at the LAST accepted
-        // block (see `flush_run`'s doc), so one `sub_live(accepted_count)` + a
-        // single decommit check is byte-identical to the former per-accepted-block
-        // `dec_live_and_maybe_decommit` loop — at most one decommit fires, on the
-        // same transition, under the same proviso. Recycle the slot if it fired.
+        // E3 (task W4): retire accepted credits once, after `set_head`.
+        // The following eligibility check only selects pool/release policy.
         SegmentMeta::new(base).sub_live(accepted_count as u32);
         #[cfg(feature = "alloc-decommit")]
         {

@@ -30,55 +30,31 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use super::segment_state_reconciliation::SegmentStateReconciliation;
 
 impl AllocCore {
-    /// Phase 35 (M6 decommit) — policy check after owner-side credit retirement
-    /// by `dealloc_small` or `reclaim_offset`. If the segment just went empty
-    /// (`live_count == 0`) AND is not the
-    /// current carve target (`base != small_cur`), returns the segment's payload
-    /// pages to the OS, resets the segment, releases the OS reservation, and
-    /// recycles the table slot (task #60, variant B).
+    /// Phase 35 origin (M6): eligibility check used by `dealloc_small`,
+    /// `drain_segment_sidecar`, and full/bounded `drain_sidecar_ingress` paths
+    /// after owner-side credit retirement. Magazine flush uses the separate
+    /// batch helper.
+    /// Returns true only for an empty, non-current Small segment that is not
+    /// already reset. This helper does not decrement credits, reset metadata,
+    /// decommit pages, release reservations, or recycle table slots.
+    /// The owner then applies `release_or_pool_empty_segment`.
     ///
-    /// **Self-less** (associated fn) so the self-less `reclaim_offset` can call
-    /// it; the `small_cur` snapshot and `table` raw pointer are threaded in from
-    /// the owner. The raw pointer is sound because `AllocCore` is single-owner
-    /// (owner thread is the sole writer of its segments' metadata and table).
+    /// ## Why legal frees need no payload epoch barrier
     ///
-    /// ## Why M6 is decommit-safe WITHOUT an M11 epoch barrier (design §1)
+    /// The original intrusive design wrote `next` inside a remotely freed
+    /// block and proposed `crossbeam-epoch` (design §2.5). That design and the
+    /// intermediate ring/spill variants are retired. Current producers write
+    /// independently pinned route sidecars, never reservation payload bytes.
+    /// A valid outstanding publication retains its credit until owner reclaim;
+    /// a segment cannot become empty while that credit remains. Duplicate or
+    /// stale frees violate the caller contract; current bitmap/residency checks
+    /// reject some misuse, not all allocation instances after reissue.
     ///
-    /// The original plan (§2.5) reached for `crossbeam-epoch` because the OLD
-    /// intrusive cross-thread-free model wrote the free-list `next` pointer INSIDE
-    /// the block — a late cross-thread freer could write into a page we had just
-    /// decommitted (UAF / write-to-unmapped). Today the cross-thread freer never
-    /// writes block bytes at all: publication targets the route directory's
-    /// independently pinned sidecar (the intermediate ring/spill variants from
-    /// Phases 12.6–R2-09 are gone). No epoch is needed for legal frees:
-    ///
-    ///   1. We decommit the payload ONLY at `live_count == 0`. Every legal
-    ///      publication still pending in a sidecar keeps the segment live until
-    ///      owner reclaim.
-    ///   2. A late valid remote free at `live_count == 0` is impossible: it
-    ///      would be a duplicate free, outside the caller contract. The bitmap
-    ///      rejects some such misuse, but cannot make all duplicates safe.
-    ///   3. `reclaim` (drain) and `decommit` both run owner-side, so they are
-    ///      serialized on the owning thread — there is no reclaim-vs-decommit race
-    ///      on one segment.
-    ///
-    /// ⇒ No UAF, no write to decommitted memory. `crossbeam-epoch` is NOT needed;
-    /// none is added. (Full argument: `docs/PHASE35_DECOMMIT_DESIGN.md` §1.)
-    ///
-    /// ## Slot recycle (task #60)
-    ///
-    /// After decommit + reset, `decommit_empty_segment` also releases the OS
-    /// reservation for the segment and NULLs the table slot (via `table`). This
-    /// lifts the 1024-segment hard cap: the freed slot can be reused immediately
-    /// by the next `register` call, so long-running workloads never exhaust the
-    /// table. Both the OS release and the slot NULL happen atomically inside
-    /// `decommit_empty_segment`; there is no window where the OS segment is
-    /// released but the slot is still non-NULL.
-    /// Returns `true` if decommit fired (the segment became empty, was
-    /// decommitted, and needs slot recycling). The caller is responsible for
-    /// calling `self.table.recycle(base)` when `true` is returned — but ONLY
-    /// after any in-progress ring drain for `base` has completed, so that
-    /// stale ring entries can still read the (still-committed) metadata.
+    /// Owner drains consume detached records and drop every route scan borrow
+    /// before the pool/release decision. Pooling preserves committed pages and
+    /// free lists; the release leg resets metadata and recycles the reservation.
+    /// This ordering, not stale-ring metadata access, governs finalization.
+    /// Historical design: `docs/PHASE35_DECOMMIT_DESIGN.md` §1.
     #[cfg(feature = "alloc-decommit")]
     #[inline(always)]
     pub(crate) fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
@@ -103,41 +79,19 @@ impl AllocCore {
         if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
             return false;
         }
-        // Mechanism 2 (task #51): the reset (`decommit_empty_segment_for_release`)
-        // is NO LONGER performed here. This fn is self-less (called from the
-        // self-less `reclaim_offset`), so it cannot consult the per-`AllocCore`
-        // pool. It now reports ONLY "this segment just emptied and is eligible
-        // for release-or-pool"; the `&mut self` caller then routes to
-        // [`release_or_pool_empty_segment`](Self::release_or_pool_empty_segment),
-        // which either pools it (leaving `bump`/free-lists intact so the blocks
-        // stay reusable) or does the release-follows reset + `table.recycle`.
-        // Moving the reset to the caller is what makes pooling correct: the
-        // former in-place `set_bump(payload_start)` would push every freed
-        // block's offset `>= bump`, making a pooled segment's free-list blocks
-        // unreachable.
+        // Mechanism 2 (task #51): eligibility only; the owner caller applies
+        // pool/release policy. Pool admission keeps bump and free lists intact.
+        // Historically, resetting bump here made pooled free blocks unreachable.
         true
     }
 
-    /// E3 (task W4) — batched dec-then-maybe-decommit for a same-segment flush
-    /// run. `flush_run` has already subtracted `k` accepted credits in one
-    /// `sub_live`; this method makes the SAME decommit decision the
-    /// per-block loop would make.
-    ///
-    /// ## Policy-equivalent to `k` sequential retire-and-check calls
-    ///
-    /// `flush_run`'s doc already proves that within a same-segment run `live`
-    /// can only reach 0 at the LAST accepted block (every still-un-flushed
-    /// same-segment block counts as live, so the segment empties iff the run
-    /// flushes ALL its remaining live blocks — and then only at block `k`). So:
-    ///   - The final `live_count` was set by `flush_run` before this check.
-    ///   - Decommit fires at most once, on the SAME transition (the k-th block
-    ///     that brings `live` to 0), under the SAME proviso
-    ///     (`live == 0 && base != small_cur && !is_decommitted && kind == Small`)
-    ///     — the per-block loop's earlier iterations all had `live > 0` and so
-    ///     never entered the decommit branch. Checking the proviso ONCE on the
-    ///     post-`sub_live` value therefore reproduces the loop exactly.
-    ///
-    /// Returns `true` iff decommit fired (caller runs `table.recycle`).
+    /// E3 (task W4): eligibility after `flush_run` has subtracted `k`
+    /// accepted credits with one `sub_live`, following its free-list splice.
+    /// Checks the same empty/non-current/Small/not-reset conditions as the
+    /// scalar helper; it neither retires credits nor decommits or releases.
+    /// Under the caller contract, earlier sequential retire-and-check calls
+    /// would still have outstanding credits. The owner applies pool/release
+    /// policy only when this final-state check returns true.
     #[cfg(feature = "alloc-decommit")]
     #[inline(always)]
     pub(in crate::alloc_core) fn dec_live_batch_and_maybe_decommit(
@@ -171,17 +125,15 @@ impl AllocCore {
     /// RELEASE it (the pre-Mechanism-2 behaviour: release-follows reset +
     /// `table.recycle`).
     ///
-    /// Called from every site that observes a small segment reach
-    /// `live_count == 0` — `dealloc_small`, the ring-drain in
-    /// `find_segment_with_free_impl`, `flush_run`, and the test-only
-    /// `dbg_drain_all_rings_impl` — in place of the former unconditional
-    /// `self.table.recycle(base)`.
+    /// Owner deallocation, magazine flush, and terminal sidecar reclamation
+    /// route newly empty Small segments through this policy, replacing the
+    /// former unconditional `self.table.recycle(base)`.
     ///
     /// ## Admission rule (bounded, synchronous — no reliance on a later tick)
     ///
     /// If the pool is enabled (`pool_cap > 0`) and NOT already full
     /// (`pooled_count < pool_cap`), the segment is admitted: pushed onto the
-    /// pool array and left EXACTLY as it was the instant it emptied — still
+    /// owner-only pool list and left EXACTLY as it was the instant it emptied — still
     /// registered in the `SegmentTable`, pages still committed, `bump` wherever
     /// it was (near segment end, fully carved), `decommitted == false`, every
     /// class free list still populated with the blocks that were just freed.
@@ -214,37 +166,15 @@ impl AllocCore {
     /// keeps `regression_c3_unbounded_recycle`'s bound tight and predictable:
     /// at most `pool_cap` retained, ever).
     ///
-    /// ## Stale-ring-while-pooled soundness (no special-casing needed)
+    /// ## Sidecar reclamation while pooled
     ///
-    /// A pooled segment stays a NORMAL registered small segment — it is scanned
-    /// by `find_segment_with_free_impl`'s ring drain exactly like any other, and
-    /// receives NO "skip while pooled" treatment. This is sound because at
-    /// `live_count == 0` EVERY block in the segment is already free, so any
-    /// cross-thread free arriving for one of its offsets is necessarily a
-    /// DOUBLE-FREE of an already-free block. `reclaim_offset` handles that with
-    /// its existing bitmap `is_free` guard (a no-op that returns `false` BEFORE
-    /// any `write_next`) — the SAME guard that already protected an
-    /// about-to-be-decommitted empty segment (design §1.2). Crucially, because
-    /// pooling does NOT reset `bump` (unlike the release path), the `off >= bump`
-    /// guard does NOT fire for the segment's real block offsets; the `is_free`
-    /// guard is what catches the double-free. Both are no-ops, both touch only
-    /// never-decommitted metadata, and the payload stays committed the whole
-    /// time — so there is no UAF and no write to unmapped memory (the M6 §1
-    /// safety argument holds verbatim, and is in fact STRICTLY weaker to satisfy
-    /// here since the payload is never even decommitted while pooled). Once the
-    /// segment is un-pooled (reused via `find_segment_with_free`) and allocation
-    /// resumes, its `live_count` rises and it behaves as an ordinary registered
-    /// segment. Most empty-observing sites `continue`/return unconditionally
-    /// after this call and ignore the return value; the one exception is the
-    /// ring-drain in `find_segment_with_free_impl` (its `RingDrainOutcome::
-    /// Decommitted { pooled }` variant), which needs to know whether `base`
-    /// is still a live, registered,
-    /// fully-committed segment (pooled — `true`) or gone/unmapped (released —
-    /// `false`) to decide whether it is safe to keep inspecting `base`'s
-    /// `BinTable` for the class this scan is looking for (R1-03, src review
-    /// round 1: a segment that empties DURING the very drain that is
-    /// searching for a free block must not be skipped just because it also
-    /// happened to cross the pool-admission threshold in the same call).
+    /// Pooled segments remain registered with their existing committed pages
+    /// and free lists intact. `reclaim_sidecar_record` rejects records already
+    /// free or magazine-resident before payload mutation. These current-state
+    /// checks are defense in depth, not an allocation-generation guarantee.
+    /// After reclamation empties a segment, callers may inspect its metadata
+    /// only if it was retained rather than released (R1-03: a segment emptied
+    /// during discovery can still supply a free block when pooled).
     ///
     /// Returns `true` if `base` was admitted to the pool (still valid,
     /// registered, committed — its `BinTable` may be inspected), `false` if it
@@ -419,10 +349,8 @@ impl AllocCore {
     /// `decommit_empty_segment_for_release` + `self.table.recycle(base)`). This
     /// helper is the reset half, kept self-less so the release branch of
     /// `release_or_pool_empty_segment` and the pool-eviction path can share it.
-    /// It is byte-identical to the pre-Mechanism-2 release path: it performs the
-    /// release-follows fast reset (`set_bump(payload_start)` +
-    /// `set_decommitted(true)`) so the intra-drain `off >= bump` stale-ring
-    /// guard still fires before the whole reservation goes back to the OS.
+    /// It resets `bump` and `decommitted` before whole-reservation release;
+    /// no payload decommit or full metadata reset is needed.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     fn release_empty_segment_now(meta: &mut SegmentMeta, base: *mut u8) {

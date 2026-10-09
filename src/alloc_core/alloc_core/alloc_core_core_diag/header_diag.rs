@@ -328,8 +328,8 @@ impl AllocCore {
     /// `payload_virgin` bit of `ptr`'s segment, or `None` if `ptr` is foreign
     /// / not a small or primordial segment. Lets tests assert the bit's state
     /// directly (e.g. after a fresh reservation, or after forcing the
-    /// decommit-retain regression path via
-    /// [`dbg_force_decommit_retain`](Self::dbg_force_decommit_retain)).
+    /// decommit-retain regression path with `dbg_force_decommit_retain_for`
+    /// under `bench-internals`).
     ///
     /// R2-05 (independent src review round 2, task #2007): reads through the
     /// table's own STORED (canonical) pointer, not `ptr`'s caller-derived

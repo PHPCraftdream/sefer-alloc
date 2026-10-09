@@ -494,7 +494,7 @@ impl AllocCore {
                 // every other live segment gets below, so a segment that just
                 // emptied (and therefore has every one of its blocks free)
                 // can be reused as a hit in this very scan, not only on a
-                // later call (see `RingDrainOutcome::Decommitted`'s doc).
+                // later call (see `SidecarDrainOutcome::Decommitted`'s doc).
                 #[cfg(feature = "alloc-decommit")]
                 SidecarDrainOutcome::Decommitted { pooled: false } => continue,
                 #[cfg(feature = "alloc-decommit")]

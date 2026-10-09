@@ -278,18 +278,9 @@ impl AllocCore {
             .load(core::sync::atomic::Ordering::Relaxed)
     }
 
-    /// R15-1 (task #303) TEST-ONLY: `segment_directory::WORDS_PER_CLASS`
-    /// (`= MAX_SEGMENTS / 64`) — the per-class word count of the
-    /// `class-aware-dirty` sidecar (`PerClassDirty`) and, by construction,
-    /// also the word count of the coarse per-segment `dirty_segments`
-    /// bitmap (`registry::heap_slot::DIRTY_BITMAP_WORDS` mirrors this same
-    /// formula independently — see that constant's doc comment). Added so
-    /// measurement harnesses (`examples/r13_9_class_aware_dirty_sidecar_rss.rs`)
-    /// can report the REAL sidecar footprint instead of a hardcoded literal
-    /// that silently goes stale whenever `MAX_SEGMENTS` changes (exactly
-    /// what happened across the R14-7 raise: the example's own comment and
-    /// printed line hardcoded `16`, the pre-raise value, and did not notice
-    /// the post-raise value is `64`).
+    /// R15-1 (task #303) TEST-ONLY: bitmap words per class in
+    /// `SegmentDirectory` (`MAX_SEGMENTS / 64`). Exposes directory geometry
+    /// without duplicating a literal.
     #[cfg(feature = "alloc-segment-directory")]
     #[doc(hidden)]
     #[must_use]

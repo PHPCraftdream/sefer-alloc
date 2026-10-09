@@ -217,11 +217,10 @@ impl AllocCore {
     /// old block in its own class) — correct, just not zero-copy. Growth
     /// (`new_class > old_class`) and Large on either side also fall
     /// through.
-    /// In-place realloc fast paths for a pointer whose segment base has already
-    /// been proven live in this `AllocCore`'s table. This is the same logic as
-    /// [`realloc_inplace_fast_path_known_base`](Self::realloc_inplace_fast_path_known_base), split so
-    /// `HeapCore::realloc` can reuse its own `contains_base(base)` proof instead
-    /// of probing the segment table again.
+    /// In-place realloc for a caller that has already established ownership.
+    /// This still probes `canonical_base_of` to recover the allocator-held
+    /// root, validate the supplied base, and reconstruct the block pointer;
+    /// it does not eliminate the table lookup.
     #[inline]
     pub(super) fn realloc_inplace_fast_path_known_base(
         &mut self,
@@ -499,10 +498,9 @@ impl AllocCore {
         true
     }
 
-    /// Try the two in-place realloc fast paths (Large grow-in-span, Small same-class), but the
-    /// caller has already proven `base` is live in this core's segment table.
-    /// Used by `HeapCore::realloc` to avoid a duplicate `contains_base` probe
-    /// after its own ownership check.
+    /// Try in-place realloc after the caller's ownership check. The helper
+    /// still probes `canonical_base_of` to validate the base and recover the
+    /// allocator-held root and block pointer.
     #[cfg(feature = "alloc-global")]
     pub(crate) fn try_realloc_inplace_known_base(
         &mut self,

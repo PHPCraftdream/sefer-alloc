@@ -39,9 +39,10 @@
 //! hit rates, cross-thread reclaim diagnostics, and cumulative
 //! segment/heap totals (`segments_reserved_total - segments_released_total`
 //! is the live segment count — the field to alert on for a segment leak;
-//! `foreign_or_unroutable_frees` counts frees dropped for violating the
-//! `GlobalAlloc` contract — foreign pointer, already-released segment,
-//! layout mismatch — and is always populated, no `alloc-stats` needed).
+//! `foreign_or_unroutable_frees` counts address-only route lookup failures
+//! or rejected terminal publications, without requiring `alloc-stats`).
+//! It is not an exhaustive invalid-free or layout-mismatch detector;
+//! callers must still provide a current allocation and exact layout.
 //! `stats()` is lock-free and allocation-free, but its cost is
 //! feature-dependent: without `alloc-stats` it is a handful of relaxed atomic
 //! loads (O(1)); with `alloc-stats` on, the two hit counters are summed by an
@@ -101,8 +102,9 @@
 // ── Workspace: ten independently-publishable companion crates ────────────────
 //
 // The workspace extracted ten building blocks that can also be used
-// standalone. Six are pulled into sefer-alloc's runtime dep tree under named
-// feature gates; the other four are dev-only infra:
+// standalone. Five are runtime dependencies, with allocator companions
+// selected by features; four are development infrastructure, and
+// `tagged-index-stack` is verification-only:
 //
 //   sefer-region       (crates/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
 //   aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
@@ -178,9 +180,8 @@
 //     (whose three hooks are `unsafe fn`), the sealed `SealedStorage`
 //     trait/bridge surface, and the caller-facing push boundary
 //     (`StackOps::push_index` and `ArrayIndexStack::push`, both `unsafe fn`
-//     under a three-clause link-domain + liveness + exclusive-ownership
-//     free-slot packing proofs use it under `cfg(kani)`; it is not used by
-//     sefer's runtime.
+//     requiring link-domain, liveness, and exclusive-ownership obligations).
+//     Root packing proofs use it under `cfg(kani)`; sefer's runtime does not.
 //
 //   proc-probe    (crates/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
 //     The RESULT key=value stdout protocol + a re-export of proc-memstat's
@@ -235,15 +236,15 @@
 //                             and the per-chunk materialisation slow path
 //                             (`ensure_chunk_slow`). (under `alloc-global`)
 //      * `registry::bootstrap::loom_shim` — `--cfg loom`-only const-capable
-//                             `OncePtrCell`/`StackHead` stand-ins (loom's real
-//                             atomics have no const constructor, so the
-//                             `static REGISTRY` initializer needs this shim
-//                             under loom builds); `unsafe impl Send/Sync` +
-//                             `NonNull::new_unchecked`. Never on a
-//                             loom-modeled interleaving itself — see the
-//                             shim's own module doc. (under `alloc-global`,
+//                             `OncePtrCell` stand-in needed by `static REGISTRY`;
+//                             `unsafe impl Send/Sync` + `NonNull::new_unchecked`.
+//                             Its separate local stack mirror has no current
+//                             source caller; root stack tests import the member
+//                             crate directly. The cell shim is not on a modeled
+//                             interleaving. (under `alloc-global`,
 //                             AND only when built with `--cfg loom`)
-//      * `registry::heap_slot`     — `Sync`/`Send` impls + `UnsafeCell` hand-off.
+//      * `registry::heap_slot`     — `Sync` impl + `UnsafeCell` hand-off;
+//                             `HeapSlot` is deliberately not `Send`.
 //                             (under `alloc-global`)
 //      * `registry::heap_registry::claim` — `*mut HeapCore` pointer handoff out
 //                             of a slot (the `FREE → LIVE` claim). (under `alloc-global`)

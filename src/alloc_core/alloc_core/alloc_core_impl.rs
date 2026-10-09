@@ -162,26 +162,24 @@ pub(in crate::alloc_core) struct LargeCacheDecayConfig {
 
 /// One entry in the large-segment free-cache.
 ///
-/// Invariant: `base` is SEGMENT-aligned, `reservation` was returned by the OS,
-/// `usable_size` equals the `usable` computed in `alloc_large` at the time the
-/// segment was first reserved (i.e. `n_segments * SEGMENT`). The segment's OS
-/// reservation is still live (not yet released to the OS). Pages are kept
-/// COMMITTED (no decommit on deposit) so that a cache hit requires no recommit.
+/// A live OS reservation retained with its SEGMENT-aligned canonical usable
+/// root. Cache admission requires `large_align < SEGMENT`; biased Large
+/// reservations with `align >= SEGMENT` are not cached. `usable_size` is the
+/// committed usable span at deposit; `reserved_capacity` is the reserved
+/// usable extent. Pages stay committed, so a hit requires no recommit.
 ///
-/// When a cache hit occurs, the caller MUST:
-///   1. Re-register `base` in the `SegmentTable`.
-///   2. Write a fresh `SegmentHeader` over the old one (pages already committed).
-///   3. Return `Node::deref(base, hdr_aligned)` to the caller.
+/// On a hit, establish the new lifecycle generation, refresh allocation-
+/// specific header fields before registration, publish the reservation as
+/// live, and return the allocator-derived pointer at its payload offset.
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) struct CachedLarge {
     /// Start of the original OS reservation.
     pub(in crate::alloc_core) reservation: *mut u8,
     /// Total size of the OS reservation.
     pub(in crate::alloc_core) reservation_len: usize,
-    /// SEGMENT-aligned base of the segment (the "usable" start).
+    /// Canonical usable root of the reservation.
     pub(in crate::alloc_core) base: *mut u8,
-    /// The `usable` bytes this reservation covers — `n_segments * SEGMENT` for
-    /// the original allocation. Used to match incoming requests.
+    /// Committed usable bytes at deposit, used for matching and byte accounting.
     pub(in crate::alloc_core) usable_size: usize,
     /// R12-4 (feature `large-reserved-capacity`): the segment's total
     /// RESERVED VA span at the time it was deposited (`>= usable_size`) —
@@ -345,9 +343,9 @@ pub struct AllocCore {
     /// never overflowed, or the feature is off, or sidecar OOM — all three
     /// are indistinguishable and all three mean "cache is capped at the base
     /// 8 slots", exactly the pre-existing behaviour). Owner-only (plain
-    /// `*mut`, not `AtomicPtr` — mirrors `directory_sidecar`, not
-    /// `dirty_by_class`; see `large_cache_extended`'s module doc for why no
-    /// `OncePtrCell` is needed here). Dereferenced via
+    /// `*mut`, not `AtomicPtr` — mirrors `directory_sidecar`, unlike the
+    /// former, retired `dirty_by_class` publisher). Owner-only initialization
+    /// needs no `OncePtrCell`. Dereferenced via
     /// `large_cache_extended::deref_large_cache_extension[_mut]` (owner-tied
     /// since R2-12).
     #[cfg(feature = "large-cache-extended")]
@@ -520,8 +518,7 @@ pub struct AllocCore {
     /// currently linked into the pool list" — `pool_next`/`pool_prev` are
     /// both `null` for the pool's sole entry (head==tail) or for a
     /// not-currently-pooled segment (see `release_or_pool_empty_segment` for
-    /// the stale-ring-while-pooled soundness argument, unchanged by this
-    /// restructure).
+    /// current sidecar-reclamation guards while pooled).
     ///
     /// [`SmallSegmentPoolConfig`]: crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig
     #[cfg(feature = "alloc-decommit")]

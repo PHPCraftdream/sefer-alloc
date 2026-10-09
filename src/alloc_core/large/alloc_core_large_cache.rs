@@ -421,11 +421,10 @@ impl AllocCore {
 
     // ── Phase 2 — lazy decay helpers ─────────────────────────────────────────
 
-    /// Check whether enough wall-clock time has elapsed since the last decay
-    /// tick; if so, run one decay step. Called at the top of both
-    /// `alloc_large` and the large-dealloc branch so the "tax" on each large
-    /// operation is, in the common case, a cheap counter compare —
-    /// nanosecond-range overhead, negligible against OS reservation costs.
+    /// Check eligible Large operations for lazy decay. Headroom and stride
+    /// guards may skip the clock read; when intervals are due, run up to
+    /// `DECAY_CATCHUP_MAX_STEPS` catch-up steps. A zero interval selects one
+    /// step per eligible call.
     ///
     /// R32-8 (task #499, F9): the ORIGINAL guard here was "is
     /// `large_cache_used_bytes <= headroom_bytes`, skip the clock read

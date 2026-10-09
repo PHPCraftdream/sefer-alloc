@@ -274,3 +274,32 @@
   Мутант восстановлен, положительные прогоны прошли.
 - **Граница:** сценарий намеренно нарушает unsafe deallocation contract и
   проверяет defense-in-depth, а не safe-caller exploit. Speedup не измерялся.
+
+## Результат документальной коррекции R18 — F2
+
+- **CON-06/CQ-04 и LOG-03/VER-08/CQ-03: частично закрыты в scope source prose.**
+  Удалены present-tense описания удалённого `PerClassDirty`/ring reclaim,
+  исправлены owner/route boundaries, pool-retention versus release, `live_count`
+  call paths и `INVARIANTS.md` M2/M4–M8. Historical design references остаются
+  явно историческими. `src/global/sefer_alloc/mod.rs` no-panic contrast и
+  тестовый комментарий о `span_usable` сохранены для своих scope; это не
+  объявлено полным source-wide census.
+- **CQ-08/SEC-05, CQ-05/CQ-06: исправлена текущая документация.**
+  Counter docs теперь описывают реальные increment gates и ограниченные
+  dropped-free semantics; module/unsafe inventories отражают production
+  directory, terminal sidecars и `HeapSlot`'s `Sync`-but-not-`Send` contract.
+  Runtime counters, attributes и workflows не менялись.
+- **PRF-05/PRF-06: документационные несоответствия исправлены.**
+  Tcache offsets больше не обещают one-line locality; known-base realloc docs
+  признают повторный canonical-root lookup/validation. Ни cache layout, ни
+  realloc probe не менялись; latency, code-size и speedup claims не добавлены.
+- **Verification:** `no_stale_doc_references` — 31/31; targeted Rust 2021
+  rustfmt на изменённых Rust-файлах, `cargo check --lib`,
+  `cargo clippy --lib --features "production internals" -- -D warnings` и
+  passed. Две попытки с настроенным sccache завершились OS error 10054 при
+  компиляции Criterion до старта теста; повторная проверка с `RUSTC_WRAPPER=`
+  прошла. Изменённых тестов нет; новых runtime/performance утверждений нет.
+- **Residual boundary:** `R17-LIF-02/LIF-03`, `VER-07` и
+  `API-06(a,b)` no-panic surface остаётся за F4. Остальные verification-only
+  findings и CI-only wiring gaps не закрыты этим prose patch; workflow файлы не
+  тронуты.

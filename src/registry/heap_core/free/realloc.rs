@@ -363,20 +363,20 @@ impl HeapCore {
                 // entire time `self.alloc` runs. Every path that can
                 // unregister a segment from the table requires the segment
                 // to be EMPTY (`live_count == 0`) first:
-                //   - `AllocCore::dec_live_and_maybe_decommit`
-                //     (`alloc_core_small_pool.rs`) returns `false` unless
-                //     `live == 0`; only a `true` return routes the caller to
-                //     `release_or_pool_empty_segment`, which is the ONLY
-                //     path that can reach `SegmentTable::recycle`/
-                //     `unregister`. Every one of its call sites
-                //     (`dealloc_small`, the ring-drain loops in
-                //     `find_segment_with_free_impl`, `flush_run` via
-                //     `dec_live_batch_and_maybe_decommit`) is therefore also
-                //     gated on the segment having just gone empty.
-                //   - `drain_small_pool` (`alloc_core_small_pool.rs`) only
+                //   - `dec_live_and_maybe_decommit`
+                //     (`src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs`)
+                //     returns `false` unless `live == 0`; its own-thread free
+                //     and sidecar-drain callers route an eligible segment to
+                //     `release_or_pool_empty_segment`.
+                //   - `flush_run` uses the separate
+                //     `dec_live_batch_and_maybe_decommit` check before routing.
+                //     All these paths retire owner-side credits before any
+                //     release or pool decision.
+                //   - `drain_small_pool`
+                //     (`src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs`)
                 //     recycles segments already sitting in the empty-segment
-                //     hysteresis pool (which a segment enters only via the
-                //     same empty-transition above).
+                //     hysteresis pool (which they enter only after an
+                //     empty-transition).
                 //   - The large-cache `evict_at_least`/`evict_one_oldest`/
                 //     `evict_all` paths (`alloc_core_large_cache.rs`) operate
                 //     on cached (already-freed, already-unregistered-at-

@@ -14,8 +14,10 @@ use crate::alloc_core::alloc_core::counters::FOREIGN_OR_UNROUTABLE_FREES;
 /// which calls them unconditionally under plain `--features production`.
 /// See this file's module doc for the full rationale.
 impl AllocCore {
-    /// DIAGNOSTIC: process-wide count of `dealloc` calls that dropped a free
-    /// (foreign pointer, already-released segment, layout mismatch). Backs
+    /// DIAGNOSTIC: process-wide dropped frees: no matching live address route,
+    /// or rejected terminal publication. Not an exhaustive invalid-free or
+    /// layout-mismatch detector; callers still owe a live allocation and exact
+    /// layout. Backs
     /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees);
     /// see [`FOREIGN_OR_UNROUTABLE_FREES`]. A relaxed load. Reads `0` under a
     /// bare `alloc-core` build unless `alloc-stats` is on.

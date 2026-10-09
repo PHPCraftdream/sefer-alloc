@@ -130,7 +130,7 @@ impl Registry {
     /// # OOM
     ///
     /// If an unmaterialised chunk is passed and its reservation fails, this
-    /// method aborts. Claim and free paths use the fallible accessor.
+    /// method aborts. Lease claim uses the fallible accessor.
     #[inline]
     pub(crate) fn slot(&self, idx: usize) -> &'static HeapSlot {
         debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
@@ -141,31 +141,11 @@ impl Registry {
         unsafe { chunk.slots.get_unchecked(slot_in_chunk) }
     }
 
-    /// Fallible variant of [`slot`](Self::slot) for claim and free paths.
-    /// Returns `None` when the owning chunk has not yet
-    /// been materialised AND the OS refuses the VM reservation, instead of
-    /// aborting. Every free-path caller already has a defensive "unstamped /
-    /// garbled owner id" early-return two lines above its call site; the
-    /// `None` case folds into that same graceful bail.
-    ///
-    /// A failed new claim can use the already-live fallback heap, so claim
-    /// must not call the infallible accessor. Existing-heap callers can use
-    /// `slot()` after proving their chunk was previously materialised.
-    ///
-    /// **F-3 context (documented, not fixed):** the two production callers —
-    /// `resolve_dirty_bit_target` and `resolve_heap_overflow` in
-    /// `heap_core_xthread` — read `owner_id` from *foreign* segment
-    /// memory with only an `idx < MAX_HEAPS` range check before indexing the
-    /// registry. A garbled-but-in-range id therefore triggers a FRESH OS
-    /// reservation of a registry chunk on the dealloc path. By itself this is
-    /// harmless (the chunk is a small leaked reservation that a future
-    /// `claim_lease()` would have materialised anyway), but it is the same input
-    /// that reaches this OOM branch — which is exactly why the free path must
-    /// not abort here. For a single legitimate cross-thread free the segment
-    /// cannot be released under the freer (the block holds `live_count >= 1`
-    /// until the owner's drain), so there is no additional UAF window; the
-    /// residual risk is the same caller-contract-violation surface (double
-    /// free / stale pointer) every allocator has.
+    /// Fallible variant of [`slot`](Self::slot) for lease claim and probes.
+    /// Returns `None` if an unmaterialised chunk cannot be reserved.
+    /// A failed claim can select the already-live fallback heap; callers
+    /// may use `slot()` after proving the chunk was materialised.
+    /// Foreign-free routing uses pinned route descriptors, not this accessor.
     #[inline]
     pub(crate) fn slot_or_none(&self, idx: usize) -> Option<&'static HeapSlot> {
         debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");

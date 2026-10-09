@@ -176,19 +176,13 @@ pub(super) enum SmallFreeGuard {
 ///    free list. Order 4-then-6 is load-bearing (unflushed resting place
 ///    first, flushed resting place second) — do NOT reorder.
 ///
-/// **RESIDUAL M2 LIMIT (cross-thread double-free, task #164/X7) — NOT
-/// covered by this guard chain**, documented here so it is not silently
-/// lost with the guard-chain history: oracles 4/6 are exact only for a
-/// block's two OWN-THREAD resting places (this class's magazine, the
-/// BinTable free list); they are blind to a block whose cross-thread free
-/// is still in-flight in the route sidecar's pending bits, unreclaimed. Task
-/// #164 narrowed this window (all production drain paths now consult the
-/// magazine via `reclaim_offset_checked`'s `is_in_magazine` predicate) and
-/// closed a second leg (task R1, the refill-window in-out-buffer leg); the
-/// remaining re-issue-before-drain leg is pinned RED by
-/// `residual_xthread_double_free_no_corruption` (`#[ignore]`d) — full fix
-/// tracked as task X7 (hardened, generational ring entry;
-/// `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4).
+/// **Residual M2 limit:** these guards recognize current magazine residency
+/// and free-list state, not an earlier allocation instance. They do not
+/// guarantee detection of own-thread duplicate free/reissue before a pending
+/// sidecar record is reclaimed. That schedule violates the unsafe deallocation
+/// contract. Task #164/X7's ring guard and residual-test references are
+/// historical, not current coverage; see
+/// `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4 for that design history.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[inline(always)]
 #[allow(unused_variables)] // `c`/`layout`/`base` each go unused under some feature subsets.
