@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 24 (item 175 added 2026-10-08, src-review round 16).
+**Card count:** 28 numbered records.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -310,3 +310,38 @@ split the same day.)
 151. **[T, CLOSED] `cargo fmt --all -- --check` (the local `npm run check` gate's rustfmt step) fails deterministically on Windows with "The filename or extension is too long. (os error 206)".** — CLOSED 2026-09-27. cargo-fmt collects one entry-point file per Cargo target (496 across this workspace's 11 members) into a single rustfmt invocation; the absolute paths alone sum to ~42 KB, over Windows' ~32,767-char CreateProcess argv limit — reproduced even for `cargo fmt -p sefer-alloc -- --check` (root package alone), so per-package looping is not a sufficient fix. Fixed by `scripts/fmt-check.mjs`, which on win32 enumerates targets via `cargo metadata` and invokes `rustfmt --check` directly in argv-budgeted chunks (equivalent coverage: every member, every target kind); non-Windows behavior unchanged (thin passthrough to plain `cargo fmt --all -- --check`). Full closure evidence: `RESOLVED.md` item 151 and `ARCHIVE.md` item 151.
 
 156. **[T, CLOSED 2026-09-30] Root rustdoc broken links and missing warning-strict CI gate.** Code and gate wiring accepted in `1ecb8a55` and `0bc0b691`; full scoped evidence and historical filing are in `RESOLVED.md` / `ARCHIVE.md` item 156. Remote CI was not executed; closure concerns the repaired links and implemented gate, not a remote-green claim.
+
+187. **[T] Dedicated worker/fallback TSan targets and path activation are missing.**
+
+    - **Status:** OPEN — confirmed static CI selection gap; NOT verified by execution in this phase, not a demonstrated data race.
+    - **Current-number-or-verdict:** TSan selects race/global/TLS/counter/realloc/boundary targets, not `r8_autonomous_maintenance`, `r9_bounded_background_maintenance`, `r3_1_fallback_remote_free`, `r11_ph5c_registry_saturation_fallback`, or `r8_terminal_global`. Selected TLS stress may incidentally reach fallback; absence of dedicated targets does not prove fallback never runs. Item 17 owns fallback proof coverage, item 186 pin acquisition modeling, item 162 terminal acceptance.
+    - **Next trigger:** a sanitizer/maintenance CI edit: select dedicated workloads and assert successful maintenance startup, worker visits and fallback-path activation before interpreting TSan results; preserve incidental-versus-targeted coverage distinction.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-CON-04(b); `.github/workflows/ci.yml` TSan selectors; `tests/tls_heap_teardown_ordering_stress.rs`; `src/global/maintenance_service.rs` worker/fallback visit.
+
+189. **[T] Evidence freshness checker lacks protected-source scope invalidation.**
+
+    - **Status:** OPEN — confirmed static tool/checker scope gap; NOT verified by execution in this phase. This is CI evidence hygiene, not a formal-proof claim.
+    - **Current-number-or-verdict:** `verify-evidence-registry.mjs` extracts cited test references and compares test blobs against source SHA; registry rows have no explicit protected-src scope. Source-only behavioral changes can leave those checked blobs unchanged. Other receipt/identity/status checks can still reject a row; historical source-pinned PASS is not fictitious and “CI green by construction” is too broad.
+    - **Next trigger:** a registry/checker edit: define protected-source scope and invalidation policy, then demonstrate a source-only mutant is rejected while unrelated edits and authentic historical receipts remain classified correctly.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-02; `scripts/verify-evidence-registry.mjs` test-reference/blob checks; `docs/evidence/registry.csv`; `docs/reviews/2026-10-05-ph7-evidence-registry-receipt.md` scope limitation.
+
+190. **[T] Miri inventory, local runner and CI classification lack parity.**
+
+    - **Status:** OPEN — confirmed static automation/record mismatch; NOT verified by execution in this phase, not a new interpreter failure.
+    - **Current-number-or-verdict:** `r11_ph4a_lease_miri`, `r11_ph4b_lease_miri` and `regression_r2_06_header_race_miri` exist but are not named by local/CI automation. Six historical PASS rows belong to the two lease files; the header row is **KNOWN-RED**, not a seventh PASS. Local runner has four local-only targets, adds `experimental` to `region_invariants` unlike CI, and expects paused success/COMPLETE where CI has four exact expected-red signature/site wrappers. Inventory prose names `r8_global_box_provenance` instead of harness-free `miri_global_box_acceptance`; header/ring/thread-free/decommit descriptions retain stale mechanisms. Historical manual execution is not erased by absent automation. Items **17** (proof residual), **164** (accepted Box defect), and **171** (experimental epoch failure) remain separate and unchanged.
+    - **Next trigger:** a Miri inventory/runner/gate edit: reconcile target, features and wrappers; classify lease PASS versus header KNOWN-RED explicitly; correct descriptions to current paths and validate completion/expected-red oracles without suppressing UB. Keep item 197's shipping hardened-batch feature oracle separate.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-03; `scripts/miri.mjs`, `.github/workflows/ci.yml`, `docs/evidence/registry.csv`; the three named test files, `tests/decommit_miri_cycle.rs`, README/ARCHITECTURE Miri inventory.
+
+195. **[T] Powerset fail-fast/skipped-member and negative-feature MSRV coverage gaps.**
+
+    - **Status:** OPEN — confirmed static CI gaps with independent subclaims; NOT verified by execution in this phase. No current failing-combination count or MSRV-incompatible code is established.
+    - **Current-number-or-verdict:** (a) weekly/manual root Linux depth-two `cargo hack check --no-dev-deps` lacks keep-going, so failure can stop remaining combinations and skip the following aligned-vmem member step; old 205/390 and unchecked/warning totals are historical, not current counts. (b) MSRV checks/test-builds all-features and Windows runtime production do not establish negative-feature MSRV combinations. Item **19** owns historical check/test and runtime caveats, **95** the deliberate below-all-targets root scope, **107** exact NUMA strict-Clippy coverage, **161** warnings; none owns these two subclaims.
+    - **Next trigger:** **(a)** next powerset scheduling/step edit: choose continuation/independent-member policy and obtain full attempted/failed/skipped accounting with a controlled failing member. **(b)** next MSRV/feature-matrix edit: select explicit negative-feature checks/test-builds and verify them on pinned MSRV, with a feature-gated incompatibility control. Disposition each independently; closing one does not close the other or items 19/95/107/161.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-API-02; `.github/workflows/ci.yml` feature-powerset, msrv and msrv-runtime-windows jobs; `scripts/check-matrix.mjs` NUMA row.
+
+198. **[T] Unsupported 64-bit-atomic target diagnostic has no automated root coverage.**
+
+    - **Status:** OPEN — confirmed static CI diagnostic-coverage gap; NOT verified by execution in this phase. The API-07 gate correction is implemented, not reopened here.
+    - **Current-number-or-verdict:** `src/lib.rs` now rejects `experimental` (including implying `pinning`) without `target_has_atomic = "64"`. The historical PowerPC compile check belongs to the gate correction, not a new run or ongoing CI receipt; CI remains unchanged and has no root unsupported-atomic diagnostic oracle. Pointer-width CAS alone is insufficient. No runtime/platform-success implication follows from an intentional compile rejection.
+    - **Next trigger:** a portability/CI edit: automate an actual std target with pointer atomics but no 64-bit atomics, asserting the intended feature/capability diagnostic for experimental/pinning, plus a supported-target control. Do not turn the implemented gate correction into a new closed card.
+    - **Evidence:** current `src/lib.rs` experimental atomic-width gate; `.github/workflows/ci.yml` target selectors; `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-API-07 is the pre-correction finding, not current evidence that the gate is missing. Historical PowerPC execution is not independently reproduced by this Markdown phase.

@@ -114,6 +114,14 @@ composition is unchanged; no speed or RSS improvement is claimed.
   two epoch-model and four queue-model Loom tests pass; no production algorithm,
   actual-type proof, or liveness claim changed.
 
+- [docs] Reconciled R17 P4 verification/platform findings with existing
+  correctness owners and filed the still-open residual cards 185–199. Item 18
+  now distinguishes its historical 19-harness Kani closure from the current
+  13-harness tree; the P4 report includes the 34-finding crosswalk and next
+  triggers. Workflow-only gaps remain OPEN; no workflow or runtime changes.
+  The full default suite passed (96 tests, 1 ignored).
+
+
 
 
 

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an `unsafe` seam or algorithmic invariant has (or lacks) interpreter/model-checker PROOF coverage (miri, loom, kani) -- distinct from ordinary CI gate wiring (a test that exists but does not run under some job) and from platform empirical verification (real hardware, not a formal tool).
 
-**Card count:** 7 numbered records (5 open; 2 retained closed).
+**Card count:** 12 numbered records (9 open; 3 retained closed/resolved).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -141,22 +141,24 @@ split the same day.)
       resolution K11's own filing offered as an alternative to full
       harness-writing.
 
-18. **[T, filed 2026-08-04, R34-2/task #521] kani proves only the smallest
-    seam and a deprecated tier — two highest-value CBMC-reachable properties
-    are unproven (`docs/reviews/2026-08-04-release-stabilization-audit.md` G4
-    [low]).** `src/kani_proofs.rs` covers `alloc_core::node` primitives and
-    `concurrent::hand` (the research tier). The two unproven high-value
-    properties are: (a) the ring's wrap arithmetic — that
-    `t.wrapping_sub(h) < RING_CAP` is an invariant of the push/drain pair
-    across the `u32::MAX → 0` boundary; and (b) `pack_entry`/`unpack_entry`
-    (both hardened and non-hardened packings) round-trip and never produce
-    `RING_SLOT_EMPTY` over the full real input ranges. Both are pure
-    arithmetic with no pointers — ideal kani targets — and both are currently
-    protected only by unit tests plus `const _: () = assert!` on the *bounds*,
-    not on the *round trip*.
+18. **[T, filed 2026-08-04, R34-2/task #521] Historical filing snapshot:
+    Kani covered the Node seam and experimental hand protocol but had not yet
+    proved two then-current pure ring/packing properties**
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md` G4 [low]).
+    At that filing, `src/kani_proofs.rs` covered `alloc_core::node` primitives
+    and `concurrent::hand` (the research tier). The two properties identified
+    then were: (a) the ring's wrap arithmetic — that `t.wrapping_sub(h) <
+    RING_CAP` was an invariant of the push/drain pair across the
+    `u32::MAX → 0` boundary; and (b) `pack_entry`/`unpack_entry` (both
+    hardened and non-hardened packings) round-tripped and never produced
+    `RING_SLOT_EMPTY` over the full real input ranges. Both were pure arithmetic
+    with no pointers and were then protected only by unit tests plus
+    `const _: () = assert!` on the *bounds*, not on the *round trip*.
 
-    **Status: RESOLVED (2026-08-06, task #611/K16, commit `772b36d`).** Both
-    (a) and (b) now have real, verified Kani proofs in `src/kani_proofs.rs`:
+    **Status: RESOLVED (2026-08-06, task #611/K16, commit `772b36d`).**
+    Closure retained; the following proof counts and execution receipts describe
+    the **historical 2026-08 tree**, not current coverage. Both
+    (a) and (b) then had real, verified Kani proofs in `src/kani_proofs.rs`:
     `ring_wrap_proofs` (2 harnesses, generalising
     `tests/regression_ring_cursor_wrap.rs`'s hand-picked wrap-boundary values
     into an exhaustive proof over every `u32` head and every occupancy
@@ -169,13 +171,32 @@ split the same day.)
     (a deliberately injected off-by-one bug was caught as `FAILURE`, then
     reverted and reverified `SUCCESS`).
 
-    **Also discovered and fixed in the same task**: Kani had NEVER been
+    **Historical wiring correction in the same task**: Kani had NEVER been
     wired into any CI job before this — the 13 pre-existing proof harnesses
     in `src/kani_proofs.rs` (`node_proofs`, `hand_proofs`, `pack_proofs`)
     were never continuously re-verified either, only run by hand at
     authoring time. Added a new `kani` CI job running all 19 harnesses
-    (13 pre-existing + 6 new) per-PR — measured at ~30s total, comparable to
-    this workflow's existing miri jobs.
+    (13 pre-existing + 6 ring harnesses) per-PR — **historical runtime
+    measurement** of ~30s total, comparable to that workflow's miri jobs;
+    neither this timing nor that 19-harness inventory is a current receipt.
+
+    **Current static snapshot (2026-10-09; NOT verified by execution in this
+    phase):** `src/kani_proofs.rs` declares **13 = 9 Node local-buffer +
+    2 vacant AtomicSlot + 2 TaggedIndex packing** proofs. Their gates are
+    `alloc-core`, `experimental`, and `alloc-global`, respectively, under
+    `cfg(kani)`. The 6 ring proofs are retired with the ring protocol. Node
+    primitives are production-used, but these harnesses do not model caller
+    bounds/exclusivity/lifetimes; the hand proofs do not model concurrency.
+    Packing binds `TaggedIndex<16>`, not the shipping registry's numeric-slot
+    discovery algorithm. **Item 167 stays OPEN** for that verification-only
+    mismatch; no new closure or status transition follows from this snapshot.
+    Main `.github/workflows/ci.yml`'s `kani` job selects all three groups with
+    `cargo kani --features "alloc-core experimental alloc-global"`;
+    standalone `.github/workflows/kani.yml` selects node (`alloc-core`) and
+    hand (`experimental`) only. Its “kept apart” comment and the registry-
+    packing comments in source/main CI are not proof or execution evidence.
+    Evidence: those executable workflow rows and source declarations;
+    `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-04.
 
 41. **CLOSED** by task #1057 (dedicated per-PR `aligned-vmem-miri` CI job added). See "Recently resolved" in RESOLVED.md for the full closure narrative.
 
@@ -205,3 +226,38 @@ split the same day.)
     - **Current-number-or-verdict:** The pre-existing `tests/epoch.rs::single_threaded_sequence_matches_reference_model` fails under current `nightly-2026-10-06` Miri (rustc `1.101.0-nightly`, `ea137335b`) with Stacked Borrows UB in `crossbeam_epoch::internal::Local::element_of` (`internal.rs:562`), reached through `Local::register` → `Global::try_advance` during `epoch::pin()`. Exact command: `cargo +nightly-2026-10-06 miri test --locked -j 2 --features experimental --test epoch single_threaded_sequence_matches_reference_model -- --exact`. The same failure class occurred in the R14 late-TLS Miri attempt. Crossbeam also emits an integer-to-pointer provenance warning at `atomic.rs:204`. The project `EpochRegion` source and dependency versions were unchanged by R14. A separate Tree Borrows diagnostic on the older July Miri run also failed, with Crossbeam warning that its integer-to-pointer conversion is unsupported there; it is not evidence of a passing configuration.
     - **Next trigger:** isolate a minimal `crossbeam-epoch 0.9.20` reproducer and determine an upstream-fixed version or supported Miri configuration. Do not `cfg(miri)`-skip the failing behavior or suppress UB; any dependency-version change needs explicit authorization.
     - **Evidence:** `docs/reviews/2026-10-06-src-review-sol-round-14.md`, “Miri residual”; existing test command and crossbeam stack trace recorded there.
+
+186. **[T] Route pin acquisition under shard-lock versus unlink/last-pin release lacks model coverage.**
+
+    - **Status:** OPEN — confirmed static model gap; NOT verified by execution in this phase, not a demonstrated race.
+    - **Current-number-or-verdict:** `loom_r11_small_sidecar` starts with registration and producer pins already acquired (`refs = 2`); channel-ordered native lifecycle tests do not model acquisition under the directory shard-lock racing unlink and last-pin drop. Item 17's fallback proof residual and item 162's terminal acceptance remain separate.
+    - **Next trigger:** a route-lifetime/model change: model the acquisition/unlink/last-drop schedule, bind it to the real lock/refcount protocol, and review positive plus negative controls before claiming coverage.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-CON-04(a); `tests/loom_r11_small_sidecar.rs`, `tests/r6_route_directory.rs`; `src/registry/segment_route/directory.rs` pin increment/drop and locked lookup/remove.
+
+188. **[T] Ordering pin does not bind production ClassLeaves publication.**
+
+    - **Status:** OPEN — confirmed static source-binding gap; NOT verified by execution in this phase. Current orderings are not declared wrong.
+    - **Current-number-or-verdict:** `r11_ph5b_c5_sidecar_ordering_pinned` pins Dense backing, while shipping `SmallSidecar::bitmap` uses `from_leaves`. The mixed-pointer shadow/negative control exists, but does not pin `leaf_classes.rs`'s Release publication and Acquire consumption.
+    - **Next trigger:** a ClassLeaves/publication or pin-test edit: bind production source orderings and demonstrate that a production-only ordering mutant is rejected, separately from copied-model controls.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-01; `tests/r11_ph5b_c5_sidecar_ordering_pinned.rs`, `tests/loom_r11_small_sidecar.rs`; `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs` and `small_sidecar.rs`.
+
+192. **[T] Hash backshift proptest uses generic insert, not production identity insert.**
+
+    - **Status:** OPEN — confirmed static oracle mismatch; NOT verified by execution in this phase, not a demonstrated hash defect.
+    - **Current-number-or-verdict:** `segment_table_backshift_proptest` calls `SegmentHashHarness::insert` → `hash_insert`; production uses `hash_insert_identity`. The harness already exposes the real identity-insert seam, so “no production test seam” is false. Corruption containment is item 191, not this oracle mismatch.
+    - **Next trigger:** a hash/proptest edit: drive identity insert through randomized insertion/deletion/backshift and check canonical identity against a reference, with a production-path mutant control.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-09; `tests/segment_table_backshift_proptest.rs`; `src/alloc_core/segment/segment_table/harness.rs` insert/identity-insert delegates.
+
+193. **[T] Shipping HeapCore/SeferAlloc lacks a premerge randomized op-stream differential oracle.**
+
+    - **Status:** OPEN — confirmed static coverage gap; NOT verified by execution in this phase, not absence of production tests generally.
+    - **Current-number-or-verdict:** per-PR `alloc_core_differential`/`heap_differential` adapt AllocCore below the shipping magazine. `heap_core_ops` fuzzes direct SeferAlloc in one thread, but CI's premerge fuzz step builds only; execution is scheduled/manual. Deterministic/MT tests and item 162's end-to-end acceptance are separate evidence.
+    - **Next trigger:** a shipping allocator verification/gate edit: add a bounded HeapCore/SeferAlloc randomized differential with data/lifetime/realloc checks and production-path negative controls; identify the actual premerge execution row.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-10; `tests/alloc_core_differential.rs`, `tests/heap_differential.rs`, `fuzz/fuzz_targets/heap_core_ops.rs`; `.github/workflows/ci.yml` fuzz-build/fuzz-run.
+
+197. **[T] Shipping hardened+batch strict-provenance Miri coverage remains absent.**
+
+    - **Status:** OPEN — confirmed static feature-coverage gap; NOT verified by execution in this phase, not an established current UB.
+    - **Current-number-or-verdict:** local and CI Miri selectors do not select `hardened` + `batch-api` together. Native hardened-batch rows are not interpreter evidence. R17-UNS-05's generation-table pointer reconstruction was deleted and closed as item 179; this card concerns surviving shipping refill/drain behavior, not that removed path. Item 190 owns runner classification, not this feature oracle.
+    - **Next trigger:** a hardened/batch or Miri coverage edit: execute a bounded real shipping refill/drain under strict provenance with explicit feature/path activation and appropriate negative controls; preserve item 164's known-red distinction.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-UNS-05 and R18 closure boundary; `RESOLVED.md` item 179; `scripts/miri.mjs`, `.github/workflows/ci.yml`; `src/registry/heap_core/alloc/batch.rs`.

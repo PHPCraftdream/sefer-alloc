@@ -114,6 +114,12 @@ follow-up note: `c8b9344a` fixed the listed R15/R16 examples and removed the
 item 84 shipped (GO) and perf item 83 is a pre-registered NO-GO; see
 `docs/perf/OPEN_ITEMS.md`. Evidence: `docs/perf/round-manifests/SRC_REVIEW_R16_MANIFEST.md`.
 
+**R18 coverage reconciliation (2026-10-09).** Items 185–199 are filed and
+mapped to their actual thematic cards; counts include retained closed records.
+Item 199 owns only API-05's public feature-sensitive SegmentLayout geometry
+contract. Existing statuses/triggers are unchanged; no new closure or runtime
+verification is claimed. Evidence: `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md`, R18 appendix.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -221,7 +227,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   scoping/`needs_drop`/scanner-name-prefix follow-ups (item 9) — not four
   unrelated findings that happen to mention `dbg_`.
 - **`docs/correctness-open-items/TRACKED_verification_coverage.md`**
-  (7 numbered records: 5 open + 2 retained closed) — miri / loom / kani
+  (12 numbered records: 9 open + 3 retained closed) — miri / loom / kani
   proof coverage. Criterion: whether an `unsafe` seam or algorithmic invariant
   has (or lacks) interpreter/model-checker PROOF coverage — distinct from
   ordinary CI gate wiring (a test exists but does not run under some job) and
@@ -231,7 +237,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   guards; 167 records a verification-only protocol/runtime mismatch; 171
   records an observed Miri failure in the existing experimental epoch path.
 - **`docs/correctness-open-items/TRACKED_platform_contracts.md`**
-  (14 cards) — per-OS/arch runtime contracts (aligned-vmem, numa-shim).
+  (17 cards) — per-OS/arch runtime contracts (aligned-vmem, numa-shim).
   Criterion: whether code behaves correctly on a specific OS/architecture
   (HugeTLB, Darwin `madvise`, Windows large pages, BSD/Android/tvOS/
   watchOS/MIPS, page-size constants, numa-shim syscalls), or whether that
@@ -244,7 +250,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (23
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (28
   cards; item 175 was added in R16 and closed the same day, now in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
@@ -310,7 +316,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
   taxonomy record gaps; 86 is this very index's own split-deferral
   decision and its reversal — a record about the index, not about code.
-- **`docs/correctness-open-items/TRACKED_misc.md`** (5 open cards + 2
+- **`docs/correctness-open-items/TRACKED_misc.md`** (7 open cards + 2
   retained closed/resolved pointers; item157 moved to `RESOLVED.md` in R15;
   item176 was added in R16 and moved to `RESOLVED.md` at the R16 close-out) --
   residual, does not fit any category above. Per this task's brief: a
@@ -350,7 +356,8 @@ consulted on demand, exactly as before.
 including `59a`/`59b`, plus retained closure pointers. Item157 moved to
 `RESOLVED.md` in R15 and item22 in R16; items168–170 remain R13/R14 closure
 pointers, item171 is the `[T]` verification card, items172–176 are R16 closures,
-and items177–184 are R17 closures in `RESOLVED.md`. Other `[A]` citations
+and items177–184 are R17 closures in `RESOLVED.md`. New items185–199
+are thematic `[T]` entries in the destinations below. Other `[A]` citations
 resolve directly in `ACTIVE.md`. The total is deliberately not typed here.
 Compare the two `[T]` numbered-record counts; the second excludes
 `RESOLVED.md` and counts only `TRACKED_*.md` destinations:
@@ -521,6 +528,21 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 182 | `RESOLVED.md` |
 | 183 | `RESOLVED.md` |
 | 184 | `RESOLVED.md` |
+| 185 | `TRACKED_platform_contracts.md` |
+| 186 | `TRACKED_verification_coverage.md` |
+| 187 | `TRACKED_ci_gate_coverage.md` |
+| 188 | `TRACKED_verification_coverage.md` |
+| 189 | `TRACKED_ci_gate_coverage.md` |
+| 190 | `TRACKED_ci_gate_coverage.md` |
+| 191 | `TRACKED_misc.md` |
+| 192 | `TRACKED_verification_coverage.md` |
+| 193 | `TRACKED_verification_coverage.md` |
+| 194 | `TRACKED_platform_contracts.md` |
+| 195 | `TRACKED_ci_gate_coverage.md` |
+| 196 | `TRACKED_platform_contracts.md` |
+| 197 | `TRACKED_verification_coverage.md` |
+| 198 | `TRACKED_ci_gate_coverage.md` |
+| 199 | `TRACKED_misc.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains

@@ -303,3 +303,320 @@
   `API-06(a,b)` no-panic surface остаётся за F4. Остальные verification-only
   findings и CI-only wiring gaps не закрыты этим prose patch; workflow файлы не
   тронуты.
+
+## R18 — сверка покрытия и durable handover (2026-10-09)
+
+Phase1: **NOT verified by execution**. Эта Phase1 — статическая сверка отчёта,
+карточек и исторических handover, а не исполненная проверка исправлений.
+Наблюдаемые `HEAD` и локальная `main` совпали:
+`689755101a393f794496ff5c5c29c9ea39870d07` (`68975510`). Это не remote/CI verdict.
+Исходный префикс, 34 вопроса, severity, диспозиции и история выше сохранены;
+новой переоценки P нет. Здесь не запускались tests/builds/models/runtime/scripts;
+после Markdown-правки разрешён только `git diff --check`.
+
+После интеграции карточки **185–199 filed**, item→file map согласован с
+crosswalk и тематическими destinations ниже. Существующие **OPEN/RESOLVED
+статусы не изменены; newly closed items нет**. Каноническая ссылка остаётся
+`docs/CORRECTNESS_OPEN_ITEMS.md`, затем тематический файл/карточка.
+Workflow changes запрещены здесь и отложены до отдельного разрешения.
+
+### Crosswalk: все 34 канонических заголовка, включая merged ID
+
+В таблице префикс каждого ID — `R17-`; «точный» относится только к названному
+subclaim. Related карточка не подменяет exact owner. Исправленные исторические
+findings без точной исторической карточки связаны с завершённым R18 commit и
+receipt ниже, а не с выдуманным OPEN issue.
+
+| № | Оригинальный заголовок / merged ID | Точное соответствие по subclaim и граница |
+| --- | --- | --- |
+| 1 | CON-01 / LIF-01 — Windows exit/locks | **185**, platform hypothesis. 152 POSIX fork и 162 terminal/service acceptance лишь related, не Windows shutdown proof. |
+| 2 | CON-03 — «модели нет» / actual-type | **160 OPEN**: запись исправлена, QueueProtocol существует; actual-type/refinement остаётся. VER-05 corrected shadow также отражён в 160; исполнение shadow не закрывает этот owner. |
+| 3 | CON-04 — route lifetime / sanitizer | (a) acquisition/unlink → **186**; (b) targeted worker/fallback TSan → **187**; (c) fallback INIT_STATE+lock+guard combination proof → **17**, существующий accepted residual. OncePtrCell не доказывает комбинацию; 162 только related. |
+| 4 | CON-05 — exact-object spin-lock | Нет exact correctness-gap owner. Не заводится новая карточка: performance hypothesis без установленного valid-use correctness/CI/model gap; не graded anew и не измеренный выигрыш backoff/filter. |
+| 5 | CON-06 / CQ-04 — удалённые протоколы в прозе | **154 OPEN**, broad prose debt; scoped F2 correction выше, не полный census/migration. |
+| 6 | PRF-05 — PerClass locality | Проза → **154**, scoped F2 correction; perf 18/44 лишь related history. Нет optimization proof. |
+| 7 | PRF-06 — known-base duplicate probe | Проза → **154**, scoped F2 correction; canonical-root validation не признана лишней. Нет exact optimization owner/измерения. |
+| 8 | VER-01 — Dense pin vs ClassLeaves | **188**, production leaf source-ordering pin; существующий Dense pin не заменяет его. 162 related acceptance. |
+| 9 | VER-02 — evidence freshness | **189**, protected src-scope invalidation в CI/evidence judge; tests/identity/receipt checks остаются полезными. |
+| 10 | VER-03 / UNS §4 — Miri inventory/runner | **190**, inventory/local-runner/CI classification. 17 proof class, **164** accepted Box failure и **171** experimental interpreter failure — отдельные limits, не closure этой карточки. |
+| 11 | VER-04 / CQ §2.14 — Kani/registry summaries | **18 RESOLVED** — исторические ring proofs; current count отдельно ниже. **167 OPEN** — verification-only stack/runtime mismatch. Не новая failed proof. |
+| 12 | VER-05 — epoch eviction shadow | Исправлено **68975510** + исторический model receipt ниже; exact исторического OPEN owner не было. **160 OPEN** хранит corrected shadow и actual-type/refinement residual; missing-recheck control не eviction-order-revert. |
+| 13 | VER-06 / CQ-09 / API-03 / UNS-04 — hidden surface/scanner/reasons | Scoped исправление **f384eb0f** + hooks receipt: gates, selector, reviewed reasons. 5/7/8/9 related hook-safety lineage, не точная историческая карточка всех subclaims. 154 не exact new-selector/total-API census owner. |
+| 14 | LIF-02 / VER-07 / CQ-07 / API-06(a,b) — process-kill prose | Scoped исправление **a7d3ff09** + F4 receipt. 154 broad prose related, 174 CLOSED для старого panic defect, не все abort paths. API-06(c) остаётся отдельным P3, не поглощён. |
+| 15 | LIF-03 / scanner part VER-07 — release-panic lexical scope | Scoped исправление **a7d3ff09** + F4 receipt; 11 selected files, не полный call graph. 174 historical closure не exact owner расширенного scanner. |
+| 16 | LOG-03 / VER-08 / CQ-03 — INVARIANTS/M2 | **154** для prose и scoped F2 correction. M2 invalid-caller schedule не становится valid-use defect; **163**, **164**, **166** остаются отдельными acceptance/borrowing/hardening limits. |
+| 17 | CQ-02 — magazine upper tail | **181 CLOSED**, unconditional bump guard; существующий receipt выше, defense-in-depth, не legal-pointer exploit. |
+| 18 | CQ-05 — production labelled experimental | **154**, scoped F2 module/docs correction; runtime warning census не следует из текста. |
+| 19 | CQ-06 — secondary unsafe inventories | **154** prose correction; **167** отдельно verification-only mirror. Confinement attributes не объявлены сломанными. |
+| 20 | CQ-08 / SEC-05 — counter docs | **154**, scoped F2 correction; perf 82 — related trust history, не новый измеренный counter/speed result. |
+| 21 | VER-09 — cold metadata | Corruption containment → **191**; randomized identity insertion → **192**. `insert_root_for_key` → `hash_insert_identity` seam существует, но текущий backshift proptest вызывает `insert`/`hash_insert`. |
+| 22 | VER-10 — opstream below shipping magazine | **193**, shipping HeapCore/SeferAlloc randomized differential; 162 related end-to-end acceptance. Fuzz build/scheduled run не per-PR oracle. |
+| 23 | VER-11 — native weak memory | **194**, root platform evidence; member native-arm job не general root acceptance. |
+| 24 | UNS-02 — invalid enum teardown contract | Scoped исправление **f384eb0f** + hooks receipt. 5/7/8/9 related, не exact card. Нет исполненного invalid-enum Miri witness. |
+| 25 | UNS-03 — metadata tag extent | Scoped contract correction **f384eb0f** + hooks receipt, не SB/TB narrow-tag outcome. 164 related borrowing sensitivity, не exact hooks owner. |
+| 26 | UNS-05 — hardened batch int→ptr | **179 CLOSED** для удалённого generation-table пути, существующий receipt выше. Независимое shipping hardened+batch Miri coverage → **197**, не reopening удаления. |
+| 27 | API-02 — powerset fail-fast/MSRV | **195** — fail-fast, skipped later member, negative-feature MSRV. **95 OPEN** только root all-targets boundary; **107 OPEN** NUMA-only strict Clippy; **161 OPEN** перечисленные warnings. **19 RESOLVED** — test-build/runtime история, НЕ negative-feature owner. |
+| 28 | API-04 — NUMA eager/no-rescue | Scoped docs correction **8ac3f93d** + API receipt; 154 related prose, perf 26/29 related policies. Не исполнены stale-negative/OOM/committed-byte hypotheses. |
+| 29 | API-05 — feature docs/render | Scoped docs correction **8ac3f93d** + API receipt; remaining public `SegmentLayout::SMALL_MAX` / `SIZE_CLASS_TABLE` / `SIZE2CLASS` feature-sensitive geometry contract → **199 OPEN**. **156 CLOSED** strict-rustdoc wiring does not close it; 154 broad structural prose migration is not its exact owner. Curated table/docs.rs policy are not defects; no total census, all-features render or `doc(cfg)` mandated. |
+| 30 | API-07 — AtomicU64 requirement | Capability gate исправлен **22285f56** + atomic receipt; automated unsupported-target coverage → **198**. 43/60 related platform contracts, не exact gate owner. |
+| 31 | API-08 — OS-keyed TLS bootstrap | **196**, platform hypothesis; 43/60 только related reasoned-from-spec. |
+| 32 | API-09 — external CoreId | Scoped docs correction **8ac3f93d** + API receipt; explicit naming/coupling vs inference различены, reexport/version не менялись. 159 empty-list risk только related. |
+| 33 | LIF-04 — PinnedRunner spawn panic docs | Scoped docs correction **8ac3f93d** + API receipt; OS spawn refusal не исполнялся. 159 не exact owner этого docs subclaim. |
+| 34 | SEC-03 — own Large exact payload | Нет exact correctness-gap owner; **166** foreign Small лишь related. Новая карточка не заводится: invalid-caller hardening proposal без установленного valid-use correctness/CI/model gap; не graded anew, cost/speed не заявлены. |
+
+После исправления API-05 **sensitive constants/availability не объявлены
+blanket fixed**. Политические границы: production-only docs.rs и curated feature
+table сами по себе не defect; нет требования total feature census,
+all-features render или `doc(cfg)`. Повторное чтение public docs/forwarders
+`src/alloc_core/segment/segment_layout.rs:62–92` и cfg/derivation
+`src/alloc_core/platform/size_classes.rs:108–162,203–225,278` подтверждает
+конкретный documentation residual, теперь **199 OPEN / TRACKED_misc.md**:
+`SMALL_MAX`, `SIZE_CLASS_TABLE` и `SIZE2CLASS` меняют geometry с
+`medium-classes` / `medium-classes-wide`, но public associated-item docs не
+объясняют требование использовать geometry включённого build. Item154 —
+broad structural prose migration, не exact feature-geometry owner; CLOSED
+156 — strictdoc links/wiring, не semantic closure. Прежнего exact owner этого
+subclaim не было, поэтому заведён 199, а не расширен 154 или переоткрыт 156.
+Availability-аннотации не объявлены blanket fixed и не предписаны этой
+карточкой. Runtime/compile failure этим не установлен.
+
+**Сохраняемые limits:** 154 остаётся OPEN для structural prose migration, без
+нового total feature/render/selector census. 163 — high-alignment end-to-end
+acceptance; 164 — ACCEPTED KNOWN DEFECT P1-box, не MODEL-LIMIT; 166 — invalid
+foreign Small interior-pointer hardening; 171 — наблюдённый experimental
+Crossbeam Miri failure, не исправленный shadow model. Ни один из этих статусов
+не меняется этой сверкой.
+
+### Переносимые исторические receipts (не свежий запуск)
+
+Прочитаны read-only внешние scratch handover:
+`D:/dev/rust/sefer-alloc/.rush/stdin/r18-p4-hooks-phase2.out:1`,
+`r18-f4-no-panic-phase2.out:1`, `r18-p4-api-phase2.out:1`,
+`r18-p4-atomic64-phase2.out:1`, `r18-p4-model-fidelity-phase2.out:1`
+(последние четыре — в том же каталоге). Это **historical handover-reported
+results**, JSON с final_text/review, не полные raw stdout receipts. Receipts
+подтверждены после просмотра полных historical handovers; это не fresh
+execution здесь. Scratch не
+tracked; существенные команды, результаты и ограничения перенесены здесь,
+чтобы handover не зависел от доступности scratch. Review read-only тоже не
+равен свежему исполнению. Коммиты crosswalk идентифицируют landed fixes, а не
+доказывают, что прежний run выполнен непосредственно на нынешнем HEAD.
+
+**Hooks / f384eb0f.** Каждый target отдельно, два полных прохода:
+`CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --all-features --test <target>`.
+В каждом проходе 29 passed, 0 failed/ignored/filtered:
+
+| Target | Passed в каждом проходе |
+| --- | ---: |
+| kind_at_strict_decode | 3 |
+| regression_stamp_metadata_unsafe_boundary | 2 |
+| regression_batch_freelist_drain | 4 |
+| lazy_initial_commit_page_sizes | 2 |
+| segment_meta_page_alignment | 3 |
+| sharded | 3 |
+| r11_p4_3_sharded_per_region_binding | 2 |
+| r13_sharded_dead_region_retention | 3 |
+| regression_r2_15_virgin_mask_zeroed_and_bounded | 5 |
+| regression_r2_21_epoch_drain_buffer_reuse | 2 |
+
+Исторически exit 0 у обеих scanner selftests/full scans:
+`node scripts/verify-dbg-hook-safety.mjs --self-test`,
+`node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs --self-test`,
+и тех же двух команд без `--self-test`.
+`node scripts/verify-internals-negative-boundary.mjs` exit 0: **только
+representative `dbg_carve_batch`**, без internals ожидаемый E0599/101, с
+internals 0; не compile-fail каждого newly gated метода.
+
+Четыре behavioral controls (Cargo prefix тот же) дали exit 101, восстановлены
+и положительно перепроверены:
+
+| Mutant | Exact filtered command suffix после `cargo test -j 2 --all-features` | Reported red |
+| --- | --- | --- |
+| kind fallback Unknown → Small | `--test kind_at_strict_decode kind_at_rejects_corrupt_discriminant` | corrupt byte 0x03: tag 1 вместо Unknown 3 |
+| omit stamp Node::write_u8 | `--test regression_stamp_metadata_unsafe_boundary dbg_stamp_kind_byte_is_unsafe_fn_boundary_and_restore_honoring_path_works` | stamp landed: 2 вместо 153 |
+| omit batch bm.mark_alloc | `--test regression_batch_freelist_drain drained_blocks_are_allocated_and_double_free_noop_16b` | drained block still marked FREE |
+| retain old final head | `--test regression_batch_freelist_drain partial_and_bounded_drain_set_head_correct` | partial drain m=20: 0 вместо 20; обнаружено раньше bounded-continuation assertion |
+
+Пять gate-removal controls отклонены full safety scanner (exit 1,
+`reviewed hook missing internals gate`): SegmentLayout `small_decommit_start`,
+EpochRegion `_remote_free_queue_buffer_identity_for_tests`, ShardedRegion
+`_reset_my_shard_binding_for_tests` и `_remote_free_queue_buffer_identity_for_tests`,
+AllocCore `refill_class_bump_virgin`. Отдельное удаление `_for_tests?$|` из
+selector отклонено selftest (exit 1, отсутствует `owner_state_for_test`). Всё
+восстановлено до следующих Rust commands; final scans/check/clippy exit 0.
+Final `cargo check --lib --features "production internals"` и
+`cargo clippy --lib --features "production internals" -- -D warnings` прошли.
+Reported scanner inventory: 206 reviewed safe, 33 reviewed unsafe, 101
+bench-gated safe; 149 hidden AllocCore APIs — исторические числа, не fresh census.
+Unknown-kind no-op не запускался под misrouting mutant. Нет Miri invalid-enum
+teardown/narrow-tag witness и нет general soundness/perf proof.
+
+**F4 / a7d3ff09.** С `CARGO_TARGET_DIR=target RUSTC_WRAPPER=`:
+`cargo test -j 2 --test no_panic_doc_accuracy --features "production internals"`
+и та же команда с `--release`: каждая 4/4, exit 0.
+`cargo check --test no_panic_doc_accuracy --features "production internals"`,
+`cargo clippy --test no_panic_doc_accuracy --features "production internals" -- -D warnings`
+и `cargo check --lib --features "production internals"` прошли.
+14 **lexical source-text** controls дали 101 (0 passed, 1 failed, 3 filtered):
+`<=`→`<`, inserted assert/assert_eq/assert_ne/unwrap, duplicate assertion,
+release→debug assertion, old four-tripwire heading, single-kill claim,
+blanket pointer-no-op claim, matcher omissions unwrap/assert/assert_eq/assert_ne.
+Первоначальный const assert_eq E0015 не засчитан; повтор с inactive
+exact-object-proto branch пойман lexical scanner. Первые два controls повторены
+с полным intervening acceptance после замечания о sequence. Mutants restored,
+final debug/release 4/4. Scope — 11 selected files, representative abort list,
+не total abort census/call graph/no-unwind proof. **Deliberate allocator panic
+или abort не исполнялся**; explicit abort и panicking check не отождествляются.
+
+**API / 8ac3f93d.** Historical docs-only result:
+`CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo check --lib` и
+`CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo clippy --lib -- -D warnings` прошли;
+strict `RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --features production` и
+та же команда `--features "production pinning"` прошли (Cargo env тот же).
+`cargo test -j 2 --test no_stale_doc_references` **bare**: 32 passed, 0 failed.
+Scope links resolved; CoreId — inline code, **не hyperlink**, проверки его
+link resolution нет. Tripwire не охраняет всю исправленную прозу. Никаких
+feature values/deps/versions/reexports/runtime changes, spawn-refusal или
+TLS/RSS/latency witness этот handover не заявляет.
+
+**Atomic / 22285f56.** Historical host checks для каждого из experimental,
+pinning: `CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo check --lib --no-default-features --features <feature>`
+и соответствующий `cargo clippy --lib --no-default-features --features <feature> -- -D warnings`
+exit 0. Оба PowerPC negative checks exit **101**, сначала intended diagnostic:
+
+> sefer-alloc: `experimental` (including `pinning`, which implies it) requires 64-bit atomics (target_has_atomic = "64"). Choose a target with this capability or disable `experimental` and features that imply it.
+
+После него по три AtomicU64 unresolved-import errors. Exact target triple
+не восстановлен из прочитанного handover, поэтому здесь не изобретён.
+Проверен compile-time capability contract, не runtime fallback и не CI support
+proof; automation residual — 198.
+
+**Model / 68975510.** Historical exact commands:
+
+```text
+RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test --features "experimental tagged-index-stack/loom" --test loom_epoch -- --test-threads=1
+RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test --features "experimental tagged-index-stack/loom" --test loom_r11_epoch_false_full -- --test-threads=1
+```
+
+Exit 0: соответственно **2** и **4** passed, 0 failed/ignored. Expected-panic
+`counterfactual_no_recheck_yields_torn_read` — reader missing-generation-recheck,
+**не eviction-order-revert control**. Hint-only negative control ожидаемо
+паникует `false-full after completed enqueue`. Никакой revert mutation не
+добавлен. Оба handwritten shadows: не actual-type/refinement/reclamation/
+no-lost-index/liveness proof. 160 остаётся OPEN.
+
+**Kani reconciliation.** Текущие source declarations в `src/kani_proofs.rs`:
+**13 = 9 Node + 2 vacant AtomicSlot + 2 TaggedIndex packing**. Ring declarations
+удалены; прежние 6 ring / 19 total относятся к историческому closure **18**
+(772b36d, executed WSL2 receipt и off-by-one control), не текущему run.
+Main CI job выбирает `cargo kani --features "alloc-core experimental alloc-global"`;
+standalone `kani.yml` — два subsets `cargo kani --features alloc-core` и
+`cargo kani --features experimental`. Comments/wiring **не execution** и не
+доказательство registry runtime packing: **167 OPEN**.
+
+### Остатки 185–199: почему deferred и следующий trigger
+
+Все перечисленные ниже owners остаются незакрытыми. Baseline команды следующего
+раздела сами по себе не создают отсутствующий oracle.
+
+| Owner / destination `docs/correctness-open-items/` | Конкретная причина остатка | Next trigger / нужное новое evidence |
+| --- | --- | --- |
+| 185 / TRACKED_platform_contracts.md | CON-01/LIF-01: shutdown ordering вне repo; valid schedule не установлен | External Windows runner, std/OS identity и actual shutdown schedule/held-lock timeout; не гипотетический hook. |
+| 186 / TRACKED_verification_coverage.md | CON-04a: refs=2 model начинает после acquisition | Reviewed acquisition-under-shard-lock vs unlink/last-pin model + sensitive negative control. |
+| 187 / TRACKED_ci_gate_coverage.md | CON-04b: dedicated worker/fallback targets/path activation не установлены | Отдельное разрешение TSan workload и workflow wiring, worker startup/fallback activation receipt, не incidental TLS visit. |
+| 188 / TRACKED_verification_coverage.md | VER-01: Dense text pin не читает leaf publication | Pin реальных Release/Acquire ClassLeaves sites и leaf-only source mutant, затем model correspondence. |
+| 189 / TRACKED_ci_gate_coverage.md | VER-02: judge invalidates cited tests, не protected src-scope | Reviewed protected-source mapping и source-only behavioral mutant; separately authorized CI integration. |
+| 190 / TRACKED_ci_gate_coverage.md | VER-03: inventory/local/CI targets и expected-red classification расходятся | Target-by-target runner/registry reconciliation, exact model/profile/signature receipts; separately authorized wiring. |
+| 191 / TRACKED_misc.md | VER-09: release guards после corruption/invariant violation не uniform | Bounded isolated capacity/duplicate/full-probe corruption controls и containment policy; не valid-use exploit assertion. |
+| 192 / TRACKED_verification_coverage.md | VER-09: existing seam есть, proptest использует old insert | Randomized `hash_insert_identity` через existing seam + identity/removal oracle/negative control; baseline old test не закрывает. |
+| 193 / TRACKED_verification_coverage.md | VER-10: randomized adapter ниже shipping magazine | Bounded shipping HeapCore/SeferAlloc opstream differential с activation и sensitive mutant; deterministic tests/fuzz build недостаточны. |
+| 194 / TRACKED_platform_contracts.md | VER-11: YAML/cross/QEMU не устанавливает native weak-memory evidence | External native runner architecture/std/toolchain identity, actual schedule/litmus receipt для root; member timing не подмена. |
+| 195 / TRACKED_ci_gate_coverage.md | API-02: fail-fast skips later member; MSRV только positive superset | Authorized isolated powerset/member completion evidence и negative-feature MSRV rows; сохранить 95 all-targets decision. |
+| 196 / TRACKED_platform_contracts.md | API-08: first-access OS-keyed std TLS path отсутствует в repo | External supported-target runner, std identity/TLS cfg/first-access allocation schedule; не invented runtime oracle. |
+| 197 / TRACKED_verification_coverage.md | UNS-05: removed generation path ≠ shipping hardened+batch coverage | Bounded actual batch-refill Miri oracle в нужных features/model с activation, независимо от удалённой таблицы. |
+| 198 / TRACKED_ci_gate_coverage.md | API-07: ручной historical compile rejection ≠ automation | Восстановить exact unsupported std target/cfg identity, pin intended diagnostic в separately authorized automated compile-negative row. |
+| 199 / TRACKED_misc.md | API-05: public constants docs omit enabled-build geometry; 154 broad migration and 156 closed wiring are not exact owners | Next public-contract/docs pass: document medium/wide effects on all three constants and derive geometry from enabled features; review cfg/derivation, without mandating doc(cfg), total table census or docs.rs policy change. |
+
+### Proposed Phase2 commands — НЕ запускались в этой сверке
+
+Это компактный план baseline/reverification, не обещание закрыть missing
+oracles 185–199. Исполнять отдельно с разрешением; workflow changes и новые
+runtime/model/test implementations здесь forbidden/deferred. Cargo commands
+ниже используют фактические target/features; shell syntax — POSIX/WSL env
+assignments. **Cwd всех proposed Phase2 commands, включая оба strict doc builds:**
+`D:/dev/rust/sefer-alloc/worktrees/r18-p4-coverage-index` — dedicated worktree.
+Нет full `npm run check`, benchmark/perf gate.
+
+```text
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --features production
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --features "production pinning"
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --test no_stale_doc_references
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo check --lib
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo clippy --lib -- -D warnings
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --features "production internals" --test no_panic_doc_accuracy
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --release --features "production internals" --test no_panic_doc_accuracy
+node scripts/verify-dbg-hook-safety.mjs --self-test
+node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs --self-test
+node scripts/verify-dbg-hook-safety.mjs
+node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= node scripts/verify-internals-negative-boundary.mjs
+node scripts/verify-evidence-registry.mjs --strict
+node scripts/evidence-registry-selftest.mjs
+node scripts/generate-evidence-registry-md.mjs --check
+git diff --check
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --features "production internals" --test r11_ph5b_c5_sidecar_ordering_pinned
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --features "alloc-core internals" --test segment_table_backshift_proptest
+RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test --features "experimental tagged-index-stack/loom" --test loom_epoch -- --test-threads=1
+RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test --features "experimental tagged-index-stack/loom" --test loom_r11_epoch_false_full -- --test-threads=1
+```
+
+Для hooks — отдельно каждая из десяти exact targets таблицы с полным command
+prefix `CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --all-features --test`
+и именем из строки (без execution loop/script). Scope — перечисленные behavioral
+regressions, не narrow-tag/invalid-enum proof. Strict docs — render выбранных
+features, не total availability/feature census. no_stale/no_panic — lexical
+selected scope; scanners — inventory/gates/reasons, downstream — только
+`dbg_carve_batch`. Evidence strict+selftest+generator check — нынешние judge
+правила/Markdown drift, не protected src-scope invalidation (189).
+Dense ordering baseline **не leaf pin 188**; backshift proptest baseline
+**не identity-insertion oracle 192**, хотя production identity seam существует.
+Loom — shadows с описанными reader/hint controls, не actual-type/refinement 160.
+
+Только Linux/WSL с установленным Kani (не Windows), proposed:
+
+```text
+cargo kani --features "alloc-core experimental alloc-global"
+```
+
+Ожидаемый scope — нынешние 13 declarations/feature gates, а не исторические
+ring proofs или shipping intrusive-stack refinement. Не запускать setup/install
+в рамках этой Markdown-задачи.
+
+Optional direct missing-lease Miri baselines (имена и features подтверждены
+headers существующих файлов), отдельно при наличии разрешённого nightly:
+
+```text
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo miri test --features "alloc-global alloc-xthread internals" --test r11_ph4a_lease_miri
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo +nightly miri test --features "alloc-global alloc-xthread internals" --test r11_ph4b_lease_miri
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= MIRIFLAGS=-Zmiri-strict-provenance cargo miri test --features "alloc-global alloc-xthread internals" --test r11_ph4a_lease_miri
+CARGO_TARGET_DIR=target RUSTC_WRAPPER= MIRIFLAGS=-Zmiri-strict-provenance cargo +nightly miri test --features "alloc-global alloc-xthread internals" --test r11_ph4b_lease_miri
+```
+
+Это direct manual lease lifecycle scope, без known-red wrapper и без обещания
+expected-red closure. Ph4a header использует `cargo miri` (нужен уже выбранный
+Miri-capable toolchain); Ph4b — `cargo +nightly miri`. Это не CI closure 190, не hardened+batch 197,
+не P1-box 164 и не experimental Crossbeam 171. Для Windows-exit/TLS/native
+weak-memory нужны внешние runner/std identities и реальные schedules; готовой
+runtime-команды/оракула для них здесь не изобретено. Для unsupported-target
+automation 198 exact triple сначала нужно восстановить, не угадывать.
+
+## R18 Phase-2 documentation-suite receipt (2026-10-09)
+
+After transferring the P4 index/reconciliation Markdown to main:
+
+- `CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2 --test no_stale_doc_references` — 31 passed, 0 failed.
+- `CARGO_TARGET_DIR=target RUSTC_WRAPPER= cargo test -j 2` — 96 passed across 364 harnesses, 1 ignored.
+
+These are documentation-index consistency and default-feature suite receipts,
+not closure evidence for the new cards 185–199. No workflow, runtime, Miri,
+Kani, or new model coverage was exercised here; their listed triggers remain open.

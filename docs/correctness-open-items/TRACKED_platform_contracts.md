@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether code behaves correctly on a specific OS or architecture (HugeTLB, Darwin madvise, Windows large pages, BSD/Android/tvOS/watchOS/MIPS, page-size constants, numa-shim syscalls), or whether that OS-specific behavior has been empirically verified on real hardware versus only reasoned-from-spec.
 
-**Card count:** 14.
+**Card count:** 17 numbered records.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -316,3 +316,24 @@ split the same day.)
     - **Current-number-or-verdict:** documented contract only. `fork()` from a single-threaded process is fine; in the child of a multi-threaded process only async-signal-safe work is allowed until `exec`. The confirmed hazard sites are listed in README "Fork safety": the fallback spinlock, the overflow-sidecar and registry-chunk materialisation sentinels, spill-stack nodes left at `ready == 0`, a deferred-Large head left at `PUBLISHING`, and `owner_slot_is_live` stall rounds for heaps whose owner threads do not exist in the child.
     - **Next trigger:** a user need to allocate in the child of a multi-threaded `fork()`, or a Unix host/CI job that can run a fork subprocess test. Review sketch: `prepare` takes the fallback lock and waits for in-flight materialisations; `child` resets the lock, `INIT_STATE` and the sentinels, marks every slot except the caller's as abandoned, and flags unfinished spill/deferred nodes for recovery. Counterfactual: thread A blocks inside `dbg_with_fallback_for_test`, the main thread forks, the child allocates under `alarm(5)`; today the child is killed by the signal, after the fix it exits 0.
     - **Evidence:** review §R1-02; commit `de61afa1`.
+
+185. **[T] Windows shutdown may strand allocator locks after a holder can no longer run.**
+
+    - **Status:** OPEN — unverified platform hypothesis; NOT verified by execution in this phase. Conditional P2 consequence, P4 investigation; no established shutdown failure.
+    - **Current-number-or-verdict:** TLS teardown/late-free/fallback paths can wait on shard/fallback locks without owner-death recovery. The required std/ExitProcess ordering is external to repository source; ordinary scheduling delay is not a stranded-lock witness. Item 152 owns POSIX fork, item 162 terminal/service acceptance, neither this Windows schedule.
+    - **Next trigger:** Windows shutdown investigation: use an isolated child holding a known lock, parent timeout, and actual std TLS/process-exit ordering evidence to confirm or reject reachability; do not invent a shutdown detector as proof.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-CON-01/R17-LIF-01; `src/global/tls_heap.rs`, `src/global/fallback.rs`, `src/registry/segment_route/shard_lock.rs`, `directory.rs`.
+
+194. **[T] Root weak-memory acceptance needs actual native runner/emulator evidence.**
+
+    - **Status:** OPEN — unverified platform coverage hypothesis; NOT verified by execution in this phase, not a confirmed ordering bug.
+    - **Current-number-or-verdict:** Linux cross/aarch64 rows and macOS workloads exist, but YAML/old logs do not establish current hosted hardware architecture or QEMU/TCG memory-model behavior. Neither “no ARM reorderings” nor “only macOS supplies hardware coverage” follows. Native-arm tagged-index-stack member measurements are not general root acceptance.
+    - **Next trigger:** a runner/emulator or weak-memory claim change: capture actual architecture, emulator/version/config and native-versus-emulated identity, then obtain relevant litmus and root-workload evidence with explicit limits.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-11; `.github/workflows/ci.yml` multi-arch/test-macos and QEMU-versus-native comments; README/ARCHITECTURE weak-memory caveats.
+
+196. **[T] Supported-target OS-keyed TLS first access may recurse into the installed allocator.**
+
+    - **Status:** OPEN — unverified platform hypothesis; NOT verified by execution in this phase. No affected supported target or first-access failure is established.
+    - **Current-number-or-verdict:** const TLS and LOCAL-before-bind are visible, but the target's std TLS first-access allocation implementation is outside repository source. aligned-vmem's Unix-family support does not prove native TLS or root allocator support; items 43/60 own different reasoned-from-spec platform contracts.
+    - **Next trigger:** a supported-target portability investigation: establish target TLS cfg and std first-access allocation path, then use an installed-allocator first-access oracle with nonrecursive controls before changing support claims.
+    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-API-08; `src/global/tls_heap.rs` LOCAL/const TLS and binding paths; README other-64-bit-target caveat.
