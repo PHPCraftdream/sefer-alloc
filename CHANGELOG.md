@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Root allocator `src/` review round 18 remediation (2026-10-09)
 
 Runtime improvements this round: 0 in the production default. R18 repairs an
-internal diagnostic, adds defensive magazine-free bounds, hardens opt-in
-freelist validation, and removes an unused hardened metadata table. Production
+internal diagnostic, adds defensive free bounds, bounds fallback spin counters,
+hardens opt-in freelists, and removes an unused hardened table. Production
 feature composition is unchanged; no speed or RSS improvement is claimed.
 
 - [correctness fix] `AllocCore::dbg_is_decommitted_for` now resolves the input
@@ -42,6 +42,11 @@ feature composition is unchanged; no speed or RSS improvement is claimed.
   refusal releases the cached reservation and falls back without counting a hit;
   the regression passes in debug and release and fails when the increment is
   moved before registration. This remains `alloc-stats`-gated.
+
+- [correctness fix] The fallback lock and init-state wait now share a bounded
+  spin counter that stops at 64; `u32::MAX` remains unchanged and yields.
+  Debug/release boundary regressions pass; restoring the unconditional
+  increment reproduces the debug overflow. No latency result is claimed.
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 

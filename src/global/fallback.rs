@@ -309,8 +309,7 @@ fn heap_ptr_impl(
         // spinning forever waiting for a READY that will never come).
         let mut spins: u32 = 0;
         while INIT_STATE.load(Ordering::Acquire) == STATE_INITIALIZING {
-            if spins < LOCK_TIGHT_SPINS {
-                spins += 1;
+            if lock_tight_spin(&mut spins) {
                 core::hint::spin_loop();
             } else {
                 #[cfg(feature = "std")]
@@ -442,6 +441,26 @@ struct LockGuard;
 /// path.
 const LOCK_TIGHT_SPINS: u32 = 64;
 
+#[inline(always)]
+fn lock_tight_spin(spins: &mut u32) -> bool {
+    if *spins < LOCK_TIGHT_SPINS {
+        *spins += 1;
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+impl super::SeferAlloc {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_fallback_lock_spin_transition(mut spins: u32) -> (u32, bool) {
+        let tight_spin = lock_tight_spin(&mut spins);
+        (spins, tight_spin)
+    }
+}
+
 impl LockGuard {
     fn acquired() -> Self {
         LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
@@ -472,8 +491,7 @@ impl LockGuard {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            spins += 1;
-            if spins <= LOCK_TIGHT_SPINS {
+            if lock_tight_spin(&mut spins) {
                 core::hint::spin_loop();
             } else {
                 #[cfg(feature = "std")]

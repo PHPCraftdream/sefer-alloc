@@ -15,6 +15,20 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 183 — Src review R17-API-06(c): CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the bounded fallback spin-counter helper.
+- **Current verdict:** both fallback init-state waiting and lock acquisition use
+  the same helper, which increments only while below 64 and then leaves the
+  `u32` counter unchanged while selecting scheduler yield. No wrapping or
+  saturating overflow path is required.
+- **Evidence:** `fallback_lock_preserves_tight_spin_boundary` and
+  `fallback_lock_max_counter_yields_without_overflow` passed in debug/release.
+  Replacing the helper with `*spins += 1; *spins <= LOCK_TIGHT_SPINS` made the
+  max-counter test fail with `attempt to add with overflow`; the restored tests
+  passed. Rustfmt, Clippy, and `verify-dbg-hook-safety.mjs` passed.
+- **Next trigger:** none for the fallback wait-counter overflow.
+
 ### 182 — Src review R17-LOG-02: CLOSED (2026-10-09)
 
 - **Status:** CLOSED by the R18 cache-hit counter correction.

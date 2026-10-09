@@ -99,6 +99,9 @@ const PURE_OBSERVERS = [
   "src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
   "src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
   "src/global/fallback.rs::dbg_fallback_lock_acquisitions",
+  // Pure production-helper transition on a by-value u32; no shared state,
+  // allocator metadata, pointers or scheduler action; internals + bench-internals gated.
+  "src/global/fallback.rs::dbg_fallback_lock_spin_transition",
   "src/global/fallback.rs::dbg_init_state",
   "src/registry/bootstrap/registry.rs::dbg_slot_state",
   "src/registry/bootstrap/registry.rs::dbg_slot_generation",
@@ -436,8 +439,10 @@ function verifyHooks(files) {
       if (BENCH_UNSAFE_HOOKS.has(hook.id) && !requires('bench-internals')) errors.push(`measurement-only unsafe hook is not bench-internals-gated: ${hook.id}`);
       if (hook.id === CURRENT_RESERVATION_HOOK && !requires('internals')) errors.push(`reservation observer is not internals-gated: ${hook.id}`);
       if (SIDECAR_UNSAFE_HOOKS.has(hook.id)) for (const feature of ['alloc-global', 'alloc-xthread', 'internals', 'bench-internals']) if (!requires(feature)) errors.push(`terminal producer hook missing ${feature} gate: ${hook.id}`);
-    } else if (requires('bench-internals')) gated++;
-    else foundSafe.add(hook.id);
+    } else if (requires('bench-internals')) {
+      gated++;
+      if (expectedSafe.has(hook.id)) foundSafe.add(hook.id);
+    } else foundSafe.add(hook.id);
   }
   for (const [found, expected, label] of [[foundSafe, expectedSafe, 'safe ungated'], [foundUnsafe, expectedUnsafe, 'unsafe']]) {
     for (const id of found) if (!expected.has(id)) errors.push(`unreviewed ${label} hook: ${id}`);
@@ -470,6 +475,16 @@ function selfCheck() {
   assert(observerErrors.includes(`measurement-only unsafe hook is not bench-internals-gated: ${CURRENT_RESERVATION_HOOK}`));
   const observerBenchOnly = scanFile(observerFile, '/// # Safety\n/// Caller owns the live allocation.\n#[cfg(feature = "bench-internals")]\npub unsafe fn dbg_current_reservation_for_test(ptr: *mut u8) {}');
   assert(verifyHooks(new Map([[observerFile, observerBenchOnly]])).errors.includes(`reservation observer is not internals-gated: ${CURRENT_RESERVATION_HOOK}`));
+  const pureFile = 'src/global/fallback.rs';
+  const pureId = `${pureFile}::dbg_fallback_lock_spin_transition`;
+  const pureHook = scanFile(pureFile, '#[cfg(all(feature = "internals", feature = "bench-internals"))]\nimpl SeferAlloc { pub fn dbg_fallback_lock_spin_transition(spins: u32) -> (u32, bool) { (spins, false) } }');
+  assert.equal(pureHook.hooks.length, 1);
+  for (const feature of ['internals', 'bench-internals']) assert(attributesRequire(pureHook.hooks[0].attrs, feature));
+  const pureResult = verifyHooks(new Map([[pureFile, pureHook], ['fixture.rs', zeroArg]]));
+  assert.equal(pureResult.safe, 2);
+  assert.equal(pureResult.gated, 1);
+  assert(!pureResult.errors.some(error => error.includes(pureId)));
+  assert(pureResult.errors.includes('unreviewed safe ungated hook: fixture.rs::dbg_mutate'));
 }
 selfCheck();
 if (process.argv.includes('--self-test')) { console.log('[verify-dbg-hook-safety] parser adversarial self-checks PASS'); }

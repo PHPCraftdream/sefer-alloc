@@ -121,6 +121,13 @@
   ожидалось `right: 0`). Runtime/performance claim не заявляется; счётчик
   остаётся `alloc-stats`-gated.
 
+- **R17-API-06(c) (P3): ЗАКРЫТО.** Init-state waiting and fallback-lock
+  acquisition now share `lock_tight_spin`, which stops incrementing at 64 and
+  yields thereafter; no hot-path counter or configurable policy was added.
+  Both regressions passed in debug/release. Reverting to unconditional `u32`
+  increment made the `u32::MAX` regression fail with `attempt to add with
+  overflow`; restoring the helper returned both tests to green.
+
 - **Граница:** расширенная freelist-проверка остаётся `hardened`-gated;
   lower-bound и bump guards работают на fastbin production-path и меняют
   обработку только invalid deallocation inputs. Speed/RSS claim не заявлен.
