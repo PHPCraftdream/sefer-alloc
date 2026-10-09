@@ -264,35 +264,6 @@ impl AllocCore {
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
-                // Diagnostic (task D1): count this as a cache hit.
-                // Э5 (task #145): load+store instead of `fetch_add` — no
-                // `lock xadd`. SOUND for the same single-writer reason as
-                // `HeapCore::tcache_hits`: the counter is per-heap and
-                // `alloc_large` (its only incrementer) runs solely on the
-                // owning thread (the slot's claim-CAS winner). No other thread
-                // writes it, so splitting the atomic RMW into Relaxed load +
-                // Relaxed store cannot drop a count. The cross-thread
-                // `large_cache_hits_total` reader still does a Relaxed atomic
-                // load — identical visibility to the old `fetch_add(Relaxed)`.
-                //
-                // W3: increment the SLOT's counter when this heap is bound
-                // (`large_cache_hits_sink`), else the owned fallback (standalone
-                // `AllocCore`). Same 2 mem-ops either way. Safe references
-                // throughout (forbid-unsafe).
-                //
-                // W3 Part B: gated behind `alloc-stats` (default OFF, NOT in
-                // `production`) — when off it compiles OUT of the large-cache
-                // hit path and `stats().large_cache_hits` reads 0. See the
-                // `alloc-stats` feature doc in Cargo.toml.
-                #[cfg(feature = "alloc-stats")]
-                {
-                    let ctr = self.large_cache_hits_sink.unwrap_or(&self.large_cache_hits);
-                    ctr.store(
-                        ctr.load(core::sync::atomic::Ordering::Relaxed)
-                            .wrapping_add(1),
-                        core::sync::atomic::Ordering::Relaxed,
-                    );
-                }
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
@@ -481,6 +452,35 @@ impl AllocCore {
                     SegmentMeta::new(slot.base).set_node_id(my_node);
                 }
                 terminal_meta.finish_large_reuse(generation);
+                // Diagnostic (task D1): count this as a cache hit.
+                // Э5 (task #145): load+store instead of `fetch_add` — no
+                // `lock xadd`. SOUND for the same single-writer reason as
+                // `HeapCore::tcache_hits`: the counter is per-heap and
+                // `alloc_large` (its only incrementer) runs solely on the
+                // owning thread (the slot's claim-CAS winner). No other thread
+                // writes it, so splitting the atomic RMW into Relaxed load +
+                // Relaxed store cannot drop a count. The cross-thread
+                // `large_cache_hits_total` reader still does a Relaxed atomic
+                // load — identical visibility to the old `fetch_add(Relaxed)`.
+                //
+                // W3: increment the SLOT's counter when this heap is bound
+                // (`large_cache_hits_sink`), else the owned fallback (standalone
+                // `AllocCore`). Same 2 mem-ops either way. Safe references
+                // throughout (forbid-unsafe).
+                //
+                // W3 Part B: gated behind `alloc-stats` (default OFF, NOT in
+                // `production`) — when off it compiles OUT of the large-cache
+                // hit path and `stats().large_cache_hits` reads 0. See the
+                // `alloc-stats` feature doc in Cargo.toml.
+                #[cfg(feature = "alloc-stats")]
+                {
+                    let ctr = self.large_cache_hits_sink.unwrap_or(&self.large_cache_hits);
+                    ctr.store(
+                        ctr.load(core::sync::atomic::Ordering::Relaxed)
+                            .wrapping_add(1),
+                        core::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 return (Node::deref(slot.base, hdr_aligned), false);
             }
         }

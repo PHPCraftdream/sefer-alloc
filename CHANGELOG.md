@@ -37,6 +37,12 @@ feature composition is unchanged; no speed or RSS improvement is claimed.
   regressions passed in debug and release under `fastbin` and `production`;
   reverted-boundary assertions failed as expected.
 
+- [correctness fix] `large_cache_hits` now increments only after a cached
+  reservation is successfully registered and reused. An injected registration
+  refusal releases the cached reservation and falls back without counting a hit;
+  the regression passes in debug and release and fails when the increment is
+  moved before registration. This remains `alloc-stats`-gated.
+
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 
 Runtime improvements this round: 1 (one deterministic Ir saving on an

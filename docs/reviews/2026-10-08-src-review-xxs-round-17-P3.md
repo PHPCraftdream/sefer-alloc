@@ -113,6 +113,14 @@
   assertions перед Windows exit `0xc0000409` при unwind; это exit status, не
   диагноз stack-buffer defect. Все мутанты восстановлены; positive tests прошли.
 
+- **R17-LOG-02 (P3): ЗАКРЫТО.** `large_cache_hits` увеличивается после
+  успешных `register_payload` и `finish_large_reuse`; при отказе регистрации
+  cache reservation освобождается и запускается slow path без ложного hit.
+  `cache_registration_refusal_is_not_a_served_hit` прошёл в debug/release;
+  перенос счётчика перед регистрацией сделал тест красным (`left: 1`,
+  ожидалось `right: 0`). Runtime/performance claim не заявляется; счётчик
+  остаётся `alloc-stats`-gated.
+
 - **Граница:** расширенная freelist-проверка остаётся `hardened`-gated;
   lower-bound и bump guards работают на fastbin production-path и меняют
   обработку только invalid deallocation inputs. Speed/RSS claim не заявлен.

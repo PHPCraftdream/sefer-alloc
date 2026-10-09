@@ -15,6 +15,21 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 182 — Src review R17-LOG-02: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the R18 cache-hit counter correction.
+- **Current verdict:** the `alloc-stats`-gated `large_cache_hits` increment now
+  follows successful route registration and `finish_large_reuse`. A failed
+  cached-reservation registration releases that reservation and takes the slow
+  path without incrementing the served-hit counter; a later true cache hit
+  still counts once.
+- **Evidence:** `cache_registration_refusal_is_not_a_served_hit` passed in
+  debug and release. Moving the existing increment back before registration
+  made the refusal assertion fail (`left: 1`, expected `right: 0`). The source
+  mutation was restored and the positive test passed again. No production
+  default counter or speedup claim is involved.
+- **Next trigger:** none for failed-registration hit accounting.
+
 ### 181 — Src review R17-CQ-02: CLOSED (2026-10-09)
 
 - **Status:** CLOSED by the R18 unconditional bump/high-water guard.

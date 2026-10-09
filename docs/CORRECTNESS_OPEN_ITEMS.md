@@ -350,7 +350,7 @@ consulted on demand, exactly as before.
 including `59a`/`59b`, plus retained closure pointers. Item157 moved to
 `RESOLVED.md` in R15 and item22 in R16; items168–170 remain R13/R14 closure
 pointers, item171 is the `[T]` verification card, items172–176 are R16 closures,
-and items177–181 are R17 closures in `RESOLVED.md`. Other `[A]` citations
+and items177–182 are R17 closures in `RESOLVED.md`. Other `[A]` citations
 resolve directly in `ACTIVE.md`. The total is deliberately not typed here.
 Compare the two `[T]` numbered-record counts; the second excludes
 `RESOLVED.md` and counts only `TRACKED_*.md` destinations:
@@ -518,6 +518,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 179 | `RESOLVED.md` |
 | 180 | `RESOLVED.md` |
 | 181 | `RESOLVED.md` |
+| 182 | `RESOLVED.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
