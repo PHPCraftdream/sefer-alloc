@@ -92,67 +92,40 @@
 //!   reused/non-virgin block, or (opt-in `virgin-zero-skip`) a skipped fill
 //!   on a genuinely virgin bump-carved block.
 //!
-//! **Four release-surviving invariant tripwires (fail-loud by design,
-//! unreachable under correct operation).** Beyond
-//! those failure paths a small number of "cannot happen" checks remain as
-//! *release* panics (not `debug_assert!`). Each is a precondition the
-//! immediate caller already proves on the same `&mut self` owner-only path,
-//! so under correct operation none is reachable; an independent audit
-//! (release-stabilization F-5) could not construct a violation of any of the
-//! four. They are deliberately kept as release panics rather than softened to
-//! silent no-ops (the contrasting `AllocCore::reclaim_offset` style —
-//! "bounds-check FIRST and no-op"): each guards allocator metadata whose
-//! silent corruption would be strictly worse than an immediate abort, so a
-//! future bug that broke one trips loudly at the point of corruption instead
-//! of continuing with inconsistent state (defence in depth). The four, all
-//! reachable from `global_alloc.rs`'s `GlobalAlloc` impl under `production`:
+//! **Reviewed release panic sites, not an exhaustive abort inventory.**
+//! These checks are panic-capable source constructs, NOT explicit process
+//! aborts. Their presence does not authorize unwinding from `GlobalAlloc`,
+//! and a panic is not guaranteed to abort. The lexical regression guard
+//! reviews feature-gated branches as well as the production bundle:
 //!
-//!   (Line numbers are deliberately omitted here — they drift as unrelated
-//!   edits shift surrounding code; `tests/no_panic_doc_accuracy.rs` pins the
-//!   four by message string + occurrence count instead, which is the
-//!   drift-proof identifier. File + function name is unambiguous without a
-//!   line number.)
+//! - Four large-cache checks in `alloc_core/large/alloc_core_large_cache.rs`:
+//!   two occupied-slot `expect`s in `large_cache_slot_take` and the
+//!   extension-disabled range `unreachable!` arms in that function and
+//!   `large_cache_slot_set`. All require `alloc-decommit`; the extension
+//!   `expect` additionally requires `large-cache-extended`, while the range
+//!   arms require its absence. Owner-only scans consult the slot array before
+//!   taking an occupied entry; free-slot selection bounds insertion indices.
+//! - `segment_header/terminal_words.rs::pack_large_state` asserts the packed
+//!   generation bound. Fresh initialization uses 0/1; lifecycle transitions
+//!   decode bounded generations and reuse uses fallible checked advancement.
+//! - `alloc_core_small_magazine.rs::refill_class_bump_virgin_internal` asserts
+//!   that output fits a `u16` mask (`alloc-xthread` + `fastbin` +
+//!   `virgin-zero-skip`, the last not in `production`). Global allocation
+//!   supplies a refill bounded by `TCACHE_CAP`, which is compile-time bounded
+//!   by 16. Arbitrary oversized direct substrate calls are a different surface.
+//! - `platform/numa.rs::reserve_aligned_on_node` has a `NodeId::new(node)`
+//!   `expect` only in the non-sentinel branch (`numa-aware`, opt-in).
+//! - `global/exact_object/exact_shard.rs::array_layout` has a descriptor-layout
+//!   `expect` (`exact-object-proto`, opt-in). Initial capacity is 64 and rehash
+//!   grows dynamically; there is no explicit checked capacity/layout bound.
+//!   The lexical allowlist records this existing prototype limitation, not a
+//!   proof that all growth is panic-free. No behavior is changed here.
 //!
-//!   1. `alloc_core/large/alloc_core_large_cache.rs` — `.expect("large_cache
-//!      _slot_take: empty base slot")` in `large_cache_slot_take`
-//!      (`alloc-decommit`, in `production`).
-//!   2. `alloc_core/large/alloc_core_large_cache.rs` — `.expect("large_cache
-//!      _slot_take: empty extension slot")` in `large_cache_slot_take`
-//!      (`alloc-decommit`).
-//!   3. `alloc_core/large/alloc_core_large_cache.rs` — `unreachable!(…)` in
-//!      `large_cache_slot_take` (`alloc-decommit`).
-//!   4. `alloc_core/large/alloc_core_large_cache.rs` — `unreachable!(…)` in
-//!      `large_cache_slot_set` (`alloc-decommit`).
-//!
-//!   All four live in the large-cache slot take/set helpers. Their callers
-//!   only ever pass an index proven occupied by an ARRAY read: the best-fit
-//!   scan and `oldest_occupied_slot` enumerate candidate indices from the
-//!   `large_cache_occupied` bitmask (R32-12, task #503; wired into these two
-//!   scans by #1985) but still consult `large_cache_slot_get(i)` before using
-//!   a slot, and only ever return an index whose ARRAY entry was `Some`.
-//!   A bitmask/array desync therefore cannot reach these `.expect()`/
-//!   `unreachable!()` arms — a stale set bit merely makes a scan SKIP that
-//!   index. The worst a desync can do is
-//!   `large_cache_find_free_slot` handing back an index the array already
-//!   holds occupied (an overwrite on `set`, silent data loss — never a
-//!   take-side panic). `tests/no_panic_doc_accuracy.rs` pins the four by
-//!   their message strings.
-//!
-//!   A former FIFTH release tripwire — the ownership re-check in
-//!   `realloc_inplace_fast_path_known_base`
-//!   (`alloc_core/alloc_core/mem/realloc_fastpath.rs`: `assert!(self.table
-//!   .contains_base_ro(base), "known-base realloc …")`) — was
-//!   first demoted to `debug_assert!` (#1984, alloc-core perf review P1-2):
-//!   both callers already prove membership, so a release panic and duplicate
-//!   probe were unnecessary. It was later replaced by fallible
-//!   `canonical_base_of(key)?`, using a payload-derived segment key. A missing
-//!   address or a supplied base inconsistent with the key/root returns `None`
-//!   without panicking. A hit supplies the table's allocator-owned root for
-//!   block reconstruction and metadata reads; Large in-place growth also
-//!   checks the reconstructed pointer against the header's `payload_offset`
-//!   before changing its size. There is no remaining debug-only re-probe.
-//!   `tests/no_panic_doc_accuracy.rs` pins this fallible root resolution and
-//!   the absence of a release `assert!` in that file.
+//! A former ownership assertion in `realloc_inplace_fast_path_known_base` was
+//! first demoted to `debug_assert!`, then replaced by fallible
+//! `canonical_base_of(key)?` using a payload-derived key. Missing or inconsistent
+//! roots return `None`; Large resizing checks the exact `payload_offset`.
+//! The guard pins that mechanism separately from the panic-site inventory.
 //!
 //! **`GlobalAlloc` methods must not unwind — upheld at the source, NOT
 //! delegated to the std shims (R2-08).** `GlobalAlloc`'s safety contract
@@ -176,27 +149,39 @@
 //!   the panic payload through the global allocator — re-entering this
 //!   allocator mid-operation — before any abort could happen.
 //!
-//! So the guarantee is made where the code is: no path reachable from a
-//! `GlobalAlloc` method by a contract-respecting caller — steady state or the
-//! cold TLS bind / registry-claim path, debug or release, `panic = "unwind"`
-//! or `"abort"` — panics. Expected-but-unusual conditions are signalled
-//! without panicking: OOM → null; an unrecognised pointer → no-op; a
-//! multi-instance config collision on a recycled registry slot → first-wins
-//! plus the always-compiled [`AllocStats::config_conflicts`] counter (a
-//! former debug-build `debug_assert!` there unwound out of
-//! `GlobalAlloc::alloc` — R2-08, `tests/regression_r2_08_globalalloc_no_unwind.rs`).
-//! The one deliberate process kill on the alloc path is a direct
-//! `std::process::abort()` (registry chunk-materialisation OOM,
-//! `registry/bootstrap/registry.rs`), which neither unwinds nor runs the
-//! panic hook. What remains panic-capable on these paths
-//! is internal-invariant checking only — the `debug_assert!`s, bounds-checked
-//! indexing / `expect`s on internally-derived indices (e.g. a size-class
-//! index), and the four release tripwires above — none of which a
-//! contract-respecting caller
-//! (valid non-zero-size `Layout`, live pointer, any configuration) can reach
-//! without a bug in this crate having already corrupted allocator metadata.
-//! Should one ever fire, its outcome is whatever the panic runtime does on
-//! the given call surface — NOT a guaranteed abort.
+//! Expected allocation failures use return-null paths, and failed in-place
+//! resolution uses `None`. Registry claim uses `slot_or_none`: after chunk
+//! OOM it first tries to recover an already-materialised FREE heap. If that
+//! recovery fails, TLS binding selects fallback rather than invoking the
+//! infallible registry abort. Config collisions are first-wins plus the
+//! always-compiled [`AllocStats::config_conflicts`] counter, not an intentional
+//! panic.
+//!
+//! **Explicit registry OOM abort.** `Registry::slot` / `ensure_chunk` retain
+//! a direct `std::process::abort()` on chunk-materialisation failure for
+//! infallible access, including diagnostic accessors. This is not the normal
+//! fallible claim path and is not the only category of explicit abort.
+//!
+//! **Invariant aborts (representative, not a census).** Allocator-path
+//! examples include route-slot issue/registration and route-directory
+//! pin/reference-count consistency; Small sidecar/reclaim class/kind/offset
+//! geometry and pointer reconstruction; Large terminal-state transitions;
+//! live-count and registry lease ownership checks. The opt-in
+//! `exact-object-proto` path aborts on duplicate live descriptors. Already-free
+//! or magazine-resident Small records return `false` without reclaiming them.
+//! These are not ordinary allocation OOM. Direct process abort does not
+//! unwind or run the panic hook; panic-capable checks are a separate category.
+//!
+//! **Caller boundary.** Missing routes or rejected foreign publication can
+//! drop a free (no-op), but this does not make arbitrary pointers safe.
+//! Invalid layouts, stale/interior/unmapped pointers, wrong layouts and
+//! double frees are unsupported caller misuse, not guaranteed no-op paths.
+//! Debug assertions, indexing and the reviewed release panic sites remain
+//! panic-capable; this documentation and lexical guard are not a total
+//! no-panic proof, especially for opt-in prototype capacity growth.
+//! If a panic fires, its outcome depends on the panic runtime and call
+//! surface — NOT a guaranteed abort. The normative no-unwind obligation
+//! remains; neither panic hooks nor std shims repair a violation.
 //!
 //! [`AllocStats::config_conflicts`]: crate::AllocStats::config_conflicts
 //!

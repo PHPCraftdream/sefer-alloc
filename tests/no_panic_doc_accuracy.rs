@@ -1,49 +1,11 @@
 //! Doc-accuracy regression guard for the "No-panic" contract in
 //! `src/global/sefer_alloc/mod.rs` (R34-16, release-stabilization audit F-5).
 //!
-//! F-5 found a divergence between the module doc's claim "Every entry point
-//! here returns null on failure and NEVER panics" and the code: five
-//! release-surviving (not `debug_assert!`) invariant checks are reachable
-//! from the `GlobalAlloc` impl under `production`. R34-16 resolved F-5 the
-//! low-risk way (option (b)): the doc was rewritten to (1) keep the accurate
-//! failure-path bullets, (2) enumerate the five tripwires as "abort by
-//! design" defence-in-depth, and (3) state explicitly that a panic escaping
-//! `GlobalAlloc` aborts via `#[rustc_nounwind]` (not UB), independent of any
-//! downstream `panic = "abort"` setting.
+//! Source-text regression coverage only, not allocator execution or a total
+//! no-unwind proof. Reviewed panic-capable constructs and explicit aborts
+//! are distinct; feature predicates are conservatively retained. The former
+//! known-base realloc assertion is pinned separately from this inventory.
 //!
-//! #1984 (alloc-core perf review P1-2) demoted the realloc ownership
-//! re-check (former site 1) to `debug_assert!`, leaving FOUR release-surviving
-//! tripwires. A later canonical-root change replaced that duplicate probe
-//! with fallible `canonical_base_of(key)?`, where `key` is derived from the
-//! payload address. This test pins the current mechanism and the four
-//! remaining large-cache tripwires:
-//!
-//!   * **Code side:** the four remaining distinctive panic-message strings
-//!     each appear exactly once in their expected source file, AND the
-//!     former realloc site resolves the table-stored canonical root with `?`,
-//!     checks the supplied base against that root or the payload-derived key,
-//!     reconstructs the block from the stored root, and validates a Large
-//!     payload's exact header offset before resizing. No release-surviving
-//!     `assert!(` appears in that file.
-//!
-//!   * **Doc side:** `sefer_alloc.rs`'s "No-panic" section contains the
-//!     qualifying language (`rustc_nounwind`, `invariant tripwire`), states
-//!     the FOUR count (not the stale five), names the fallible canonical-root
-//!     replacement,
-//!     and does NOT contain the old unqualified overclaim. If the section is
-//!     rewritten back to "NEVER panics" without the caveat, this fails.
-//!
-//! R2-08 (task #2010) later found point (3) above wrong: a DIRECT trait call
-//! never passes through the `#[rustc_nounwind]` std shims, and even on the
-//! `#[global_allocator]` path a pre-R2-08 panic was observed to unwind
-//! through `__rust_alloc` rather than abort. The doc now states the
-//! normative "`GlobalAlloc` methods must not unwind — upheld at the source"
-//! rule instead; `no_panic_doc_is_qualified` also pins that the old
-//! "Panic-in-`GlobalAlloc` is abort, not UB" claim stays gone.
-//!
-//! Doc/source-text only: never links against the crate, so it runs in every
-//! feature configuration (mirrors `tests/no_stale_doc_references.rs`).
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -172,27 +134,27 @@ fn no_panic_doc_is_qualified() {
          std shims (R2-08)"
     );
 
-    // The remaining four tripwires must be acknowledged as abort-by-design.
-    assert!(
-        doc.contains("invariant tripwire"),
-        "sefer_alloc.rs 'No-panic' section must acknowledge the invariant tripwires"
-    );
-
-    // The enumeration count must stay in lockstep with the code: #1984
-    // demoted the realloc site (FIVE → FOUR release-surviving tripwires), so
-    // the doc must state FOUR and must not carry the stale FIVE heading.
-    assert_count(
-        &doc,
+    for required in [
+        "Reviewed release panic sites, not an exhaustive abort inventory",
+        "Explicit registry OOM abort",
+        "Invariant aborts",
+        "slot_or_none",
+        "unsupported caller misuse",
+        "NOT a guaranteed abort",
+        "prototype capacity growth",
+    ] {
+        assert!(
+            doc.contains(required),
+            "missing no-panic qualification: {required}"
+        );
+    }
+    for stale in [
         "Four release-surviving invariant tripwires",
-        1,
-        "sefer_alloc.rs tripwire enumeration heading",
-    );
-    assert!(
-        !doc.contains("Five release-surviving"),
-        "sefer_alloc.rs still claims FIVE release-surviving tripwires — a \
-         stale count (the realloc site was demoted to `debug_assert!` by \
-         #1984)"
-    );
+        "The one deliberate process kill",
+        "an unrecognised pointer → no-op",
+    ] {
+        assert!(!doc.contains(stale), "stale no-panic claim: {stale}");
+    }
 
     // Keep the historical demotion and current fallible replacement distinct.
     assert!(
@@ -209,7 +171,8 @@ fn no_panic_doc_is_qualified() {
     );
 }
 
-// Conservative lexical guard, not a Rust parser/feature resolver. Unknown
+// Conservative lexical guard, not a Rust parser/feature resolver.
+// Function identity uses the preceding fn declaration; scoped to these files. Unknown
 // feature predicates remain visible (both feature branches are audited).
 const RELEASE_SCAN_FILES: &[&str] = &[
     "registry/heap_core/free/dealloc_own_base.rs",
@@ -219,34 +182,36 @@ const RELEASE_SCAN_FILES: &[&str] = &[
     "registry/heap_core/alloc/hot.rs",
     "alloc_core/large/alloc_core_large_cache.rs",
     "alloc_core/alloc_core/mem/realloc_fastpath.rs",
+    // Fresh reservation initialization and alloc-decommit Large lifecycle.
+    "alloc_core/segment/segment_header/terminal_words.rs",
+    // Global alloc_zeroed -> virgin magazine refill (opt-in virgin-zero-skip).
+    "alloc_core/small/alloc_core_small_magazine.rs",
+    // Small/Large reservation branches (opt-in numa-aware).
+    "alloc_core/platform/numa.rs",
+    // Global narrow alloc -> register -> shard rehash (exact-object-proto).
+    "global/exact_object/exact_shard.rs",
 ];
 
-// (file, exact source message, count, one-line reason). No magazine exceptions.
+// (file, function + structural expression, count, reviewed reason).
+// String contents and line numbers are NOT identity. Exact multiplicity makes
+// deletion/duplication drift fail too. Feature branches remain visible.
 const RELEASE_ALLOWLIST: &[(&str, &str, usize, &str)] = &[
-    (
-        "alloc_core/large/alloc_core_large_cache.rs",
-        "large_cache_slot_take: empty base slot",
-        1,
-        "Documented occupancy tripwire for a proven occupied base slot.",
-    ),
-    (
-        "alloc_core/large/alloc_core_large_cache.rs",
-        "large_cache_slot_take: empty extension slot",
-        1,
-        "Documented occupancy tripwire for a proven occupied extension slot.",
-    ),
-    (
-        "alloc_core/large/alloc_core_large_cache.rs",
-        "large_cache_slot_take: idx out of base range with extension disabled",
-        1,
-        "Documented take range tripwire when the extension is disabled.",
-    ),
-    (
-        "alloc_core/large/alloc_core_large_cache.rs",
-        "large_cache_slot_set: idx out of base range with extension disabled",
-        1,
-        "Documented insertion range tripwire when the extension is disabled.",
-    ),
+    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_take::self.large_cache[idx].take().expect(<string>)", 1,
+     "alloc-decommit base take: owner-only scan consulted Some array entry."),
+    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_take::ext.slots[idx-LARGE_CACHE_SLOTS].take().expect(<string>)", 1,
+     "alloc-decommit + large-cache-extended: occupied extension array entry and bounded index."),
+    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_take::unreachable!(<string>)", 1,
+     "alloc-decommit without extension: take callers select only base indices."),
+    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_set::unreachable!(<string>)", 1,
+     "alloc-decommit without extension: free-slot selection returns only base indices."),
+    ("alloc_core/segment/segment_header/terminal_words.rs", "pack_large_state::assert!(generation<=MAX_LARGE_GENERATION)", 1,
+     "Fresh initialization 0/1; transitions decode bounded generations; reuse checks next generation."),
+    ("alloc_core/small/alloc_core_small_magazine.rs", "refill_class_bump_virgin_internal::assert!(out.len()<=VIRGIN_MASK_BITS,<string>,out.len(),)", 1,
+     "alloc-xthread + fastbin + virgin-zero-skip: GlobalAlloc refill <= TCACHE_CAP <= 16; not arbitrary substrate slices."),
+    ("alloc_core/platform/numa.rs", "reserve_aligned_on_node::numa_shim::NodeId::new(node).expect(<string>)", 1,
+     "numa-aware only: enclosing else proves node != NO_NODE, the NodeId rejection sentinel."),
+    ("global/exact_object/exact_shard.rs", "array_layout::Layout::from_size_align(cap*core::mem::size_of::<Slot>(),8).expect(<string>)", 1,
+     "exact-object-proto only: existing dynamic capacity/layout limitation, NOT proven bounded or panic-free."),
 ];
 
 #[derive(Debug)]
@@ -471,18 +436,54 @@ fn release_panic_sites(source: &str) -> Vec<(usize, String, String)> {
             i = token_group_end(&ts, i + 2) + 1;
             continue;
         }
-        let expect = text == "expect"
+        let expect = matches!(text, "expect" | "unwrap")
             && i > 0
             && ts[i - 1].text == "."
             && ts.get(i + 1).is_some_and(|t| t.text == "(");
-        if expect || (matches!(text, "panic" | "unreachable") && macro_call) {
+        if expect
+            || (matches!(
+                text,
+                "panic" | "unreachable" | "assert" | "assert_eq" | "assert_ne"
+            ) && macro_call)
+        {
             let open = i + if expect { 1 } else { 2 };
             let end = token_group_end(&ts, open);
             let message = ts[open + 1..end]
                 .iter()
                 .find_map(|t| t.message.clone())
                 .unwrap_or_else(|| "<nonliteral or absent message>".to_owned());
-            sites.push((ts[i].line, text.to_owned(), message));
+            let function = ts[..i]
+                .windows(2)
+                .rev()
+                .find(|pair| pair[0].text == "fn")
+                .map_or("<no function>", |pair| pair[1].text.as_str());
+            let mut start = i;
+            if expect {
+                let mut depth = 0usize;
+                while start > 0 {
+                    let previous = ts[start - 1].text.as_str();
+                    if ts[start - 1].message.is_none() {
+                        match previous {
+                            ")" | "]" => depth += 1,
+                            "(" | "[" if depth > 0 => depth -= 1,
+                            "=" | ";" | "{" | "}" | "," if depth == 0 => break,
+                            _ => {}
+                        }
+                    }
+                    start -= 1;
+                }
+            }
+            let expression: String = ts[start..=end]
+                .iter()
+                .map(|t| {
+                    if t.message.is_some() {
+                        "<string>"
+                    } else {
+                        t.text.as_str()
+                    }
+                })
+                .collect();
+            sites.push((ts[i].line, format!("{function}::{expression}"), message));
             // Keep scanning arguments to report nested calls too.
         }
         i += 1;
@@ -498,7 +499,7 @@ fn production_release_panic_sites_match_explicit_allowlist() {
         for (line, kind, message) in release_panic_sites(&read_src(file)) {
             if !RELEASE_ALLOWLIST
                 .iter()
-                .any(|&(f, m, _, _)| file == f && message == m)
+                .any(|&(f, site, _, _)| file == f && kind == site)
             {
                 errors.push(format!(
                     "{}:{line}: {kind}: {message:?}",
@@ -508,15 +509,15 @@ fn production_release_panic_sites_match_explicit_allowlist() {
             found.push((file, line, kind, message));
         }
     }
-    for &(file, message, count, reason) in RELEASE_ALLOWLIST {
+    for &(file, site, count, reason) in RELEASE_ALLOWLIST {
         assert!(!reason.is_empty() && !reason.contains('\n'));
         let actual = found
             .iter()
-            .filter(|(f, _, _, m)| *f == file && m == message)
+            .filter(|(f, _, identity, _)| *f == file && identity == site)
             .count();
         if actual != count {
             errors.push(format!(
-                "{}: {message:?}: expected {count}, found {actual}; {reason}",
+                "{}: {site:?}: expected {count}, found {actual}; {reason}",
                 src_path(file).display()
             ));
         }
@@ -562,10 +563,39 @@ panic!();
         sites[0],
         (
             17,
-            "expect".to_owned(),
+            "debug_only::value.expect(<string>,)".to_owned(),
             r#"release // message with \"quotes\" and )"#.to_owned()
         )
     );
     assert_eq!(sites[1].2, "raw release");
     assert_eq!(sites[2].2, "<nonliteral or absent message>");
+    let added = release_panic_sites(
+        r#"
+        // assert!(false); value.unwrap();
+        /* assert_eq!(1, 2); assert_ne!(1, 1); */
+        let s = "assert!(false); value.unwrap()";
+        debug_assert!(value.unwrap());
+        debug_assert_eq!(value.expect("ignored"), 1);
+        debug_assert_ne!(value.unwrap(), 0);
+        #[cfg(test)] fn hidden() { assert!(false); value.unwrap(); }
+        fn live() {
+            assert!(ok); assert_eq![a, b]; assert_ne!{a, b};
+            value . unwrap ( );
+            assert!(value.unwrap().expect("nested"));
+        }
+    "#,
+    );
+    let identities: Vec<_> = added.iter().map(|s| s.1.as_str()).collect();
+    assert_eq!(
+        identities,
+        [
+            "live::assert!(ok)",
+            "live::assert_eq![a,b]",
+            "live::assert_ne!{a,b}",
+            "live::value.unwrap()",
+            "live::assert!(value.unwrap().expect(<string>))",
+            "live::assert!(value.unwrap()",
+            "live::assert!(value.unwrap().expect(<string>)",
+        ]
+    );
 }

@@ -77,6 +77,16 @@ composition is unchanged; no speed or RSS improvement is claimed.
   inventories now agree with the current 92 sites across 28 files. No
   production algorithm or performance claim changed.
 
+- [docs] Reconciled the `GlobalAlloc` no-unwind contract with fallible
+  allocation, registry OOM abort, invariant aborts, panic-capable checks, and
+  unsupported caller misuse. The scoped lexical guard now detects release
+  `assert!`/`assert_eq!`/`assert_ne!` and `.unwrap()` sites across eleven
+  traced files, including opt-in branches; it is not a total call-graph or
+  no-unwind proof. The debug and release guard targets pass 4/4 each, and
+  fourteen temporary source controls were detected and restored. No allocator
+  behavior or performance claim changed.
+
+
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 
