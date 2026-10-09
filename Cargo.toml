@@ -132,6 +132,8 @@ std = ["sefer-region/std"]
 # - 3b-II (`crossbeam-epoch`): per-slot atomics + epoch reclamation — the single
 #   confined `unsafe` Hand organ (src/concurrent/epoch/hand.rs), the only module with
 #   `#![allow(unsafe_code)]`. See docs/PLAN.md.
+# Requires `target_has_atomic = "64"` for AtomicU64; pointer-width atomics alone
+# do not suffice. `pinning` and `batch-api` inherit this requirement.
 experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
 # Phase 7c: thread-per-core pinning. Additive over `experimental` — pulls in
 # `core_affinity` (a safe wrapper over the OS affinity syscalls; zero `unsafe`

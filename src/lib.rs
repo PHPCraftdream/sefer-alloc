@@ -362,6 +362,14 @@ compile_error!(
      if you did not request this combination directly."
 );
 
+// The concurrent tier uses AtomicU64; pointer-width atomics alone do not suffice.
+#[cfg(all(feature = "experimental", not(target_has_atomic = "64")))]
+compile_error!(
+    "sefer-alloc: `experimental` (including `pinning`, which implies it) requires \
+     64-bit atomics (target_has_atomic = \"64\"). Choose a target with this \
+     capability or disable `experimental` and features that imply it."
+);
+
 // R2-17 (independent src review round 2, docs/reviews/2026-09-22-120730-src-review-xa-round-2.md) — the allocator's
 // 64-bit-only support boundary, declared explicitly instead of surfacing as
 // two cryptic E0080 const-assert failures. What fires here: ANY allocator

@@ -422,6 +422,16 @@ re-auditing the atomics, and is scoped out here. The region-only
 `Region<T>` surface is unaffected and stays available on 32-bit (std or
 no_std). If you see the gate, the marker message to grep for is
 `sefer-alloc: allocator features require a 64-bit target`.
+Separately, the `experimental` concurrent tier requires `std` and 64-bit
+atomics (`target_has_atomic = "64"`) for its `AtomicU64` counters and IDs.
+`pinning` and `batch-api` imply `experimental` and inherit this requirement.
+Pointer-width atomics (`target_has_atomic = "ptr"`), required by companion
+crates, do not imply 64-bit atomics; neither does the allocator's pointer-width
+layout gate establish this capability. The crate root explicitly rejects
+`experimental` on targets without it, with a diagnostic stating that
+`experimental` (including `pinning`, which implies it) requires
+`64-bit atomics (target_has_atomic = "64")`. This capability requirement
+is not a claim of tested support for every target that satisfies it.
 
 | Target class | Region-only (`Region<T>`) | Allocator (`alloc-core`/`production`/…) |
 |---|---|---|

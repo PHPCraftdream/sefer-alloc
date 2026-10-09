@@ -102,6 +102,13 @@ composition is unchanged; no speed or RSS improvement is claimed.
   composition or runtime behavior changed; API-02 workflow coverage and API-08
   TLS recursion remain unverified.
 
+- [correctness fix] `experimental` now emits a targeted compile error on
+  targets without `target_has_atomic = "64"`; `pinning` and `batch-api` inherit
+  that requirement. Host checks/Clippy pass; installed PowerPC checks fail
+  first with the intended diagnostic, followed by the existing `AtomicU64`
+  import errors. CI target coverage is unchanged; no runtime behavior changed.
+
+
 
 
 
