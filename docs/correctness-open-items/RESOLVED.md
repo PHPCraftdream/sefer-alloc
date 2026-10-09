@@ -15,6 +15,39 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 181 — Src review R17-CQ-02: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the R18 unconditional bump/high-water guard.
+- **Current verdict:** `HeapCore::small_free_guard` now rejects `off >= bump`
+  without an `alloc-decommit` gate, matching the substrate guard. The non-decommit
+  `fastbin` configuration therefore rejects a never-carved offset before it can
+  enter the magazine.
+- **Evidence:** both tests in `regression_magazine_free_bounds.rs` passed in
+  debug and release under `fastbin internals` and `production internals`.
+  Restoring the old `alloc-decommit` gate made the uncarved free enter the
+  magazine (`left: 1`, expected `right: 0`); Windows then terminated the test
+  process with `0xc0000409` while unwinding the failed defense-in-depth oracle.
+  Restored positive runs passed.
+- **Next trigger:** none for the unsupported uncarved-offset guard.
+
+### 180 — Src review R17-SEC-01: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the R18 kind-specific payload lower-bound guard.
+- **Current verdict:** `small_free_guard` rejects offsets below
+  `primordial_meta_end()` or `small_meta_end()` before magazine bitmap access.
+  This is defense-in-depth after misuse of the unsafe deallocation contract,
+  not a valid-caller soundness claim.
+- **Evidence:** `magazine_free_rejects_metadata_and_uncarved_offsets` and
+  `small_magazine_free_rejects_metadata_and_uncarved_offsets` passed in debug
+  and release under both `fastbin internals` and `production internals`.
+  Removing the lower-bound guard made the metadata free enter the magazine
+  (`left: 1`, expected `right: 0`); the exact assertion was observed before
+  Windows process exit `0xc0000409` during unwind. Changing `<` to `<=` rejected
+  the valid first payload block (`left: 0`, expected `right: 1`); that exact
+  boundary assertion was observed before the same unwind exit. The restored
+  tests passed.
+- **Next trigger:** none for this lower-bound guard.
+
 ### 179 — Src review R17-UNS-05: CLOSED (2026-10-09)
 
 - **Status:** CLOSED by the R18 hardened generation-table cutover.

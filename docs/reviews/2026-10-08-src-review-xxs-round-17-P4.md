@@ -261,3 +261,16 @@
 - **Граница:** для удалённого batch-generation пути отдельный Miri witness больше
   не применим. Это не закрывает другие hardened+batch verification-coverage
   вопросы из `R17-VER-03`; runtime/производительный результат не заявляется.
+
+## Результат исправления R18 — R17-CQ-02
+
+- **Статус: ЗАКРЫТО (2026-10-09).** Проверка `off >= bump` теперь действует
+  без `alloc-decommit`, что закрывает feature-gate асимметрию защиты magazine
+  от never-carved offset.
+- **Доказательство:** две регрессии прошли в debug/release под `fastbin internals`
+  и `production internals`. Контрфактуал с возвратом `#[cfg(alloc-decommit)]`
+  позволил uncarved free войти в magazine (`left: 1`, ожидалось `right: 0`);
+  `--nocapture` показал assertion перед Windows exit `0xc0000409` при unwind.
+  Мутант восстановлен, положительные прогоны прошли.
+- **Граница:** сценарий намеренно нарушает unsafe deallocation contract и
+  проверяет defense-in-depth, а не safe-caller exploit. Speedup не измерялся.

@@ -16,7 +16,7 @@ use crate::alloc_core::segment_header::SegmentMeta;
 // the `medium-classes` promotion builds always had — so this import carries
 // the module's own gate, not a feature predicate.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-use crate::alloc_core::segment_header::BlockKind;
+use crate::alloc_core::segment_header::{BlockKind, Layout as SegmentLayout};
 // R18-3: `SegmentHeader` is now used ONLY in branch (A)'s `hardened`
 // layout-consistency check (`large_size_at`/`large_align_at`), which lives
 // inside `medium_promotion_reachable!`'s gated block — Ph3b replaced the two
@@ -167,7 +167,7 @@ pub(super) enum SmallFreeGuard {
 ///    was UNSOUND under user writes (a user write to the stamped bytes made
 ///    a later double-free skip the oracle and double-issue the pointer).
 ///    `off`/`meta` computed here are reused by oracle 2 below.
-/// 5. **M2 oracle 1.5** (`alloc-decommit`): stale-free (`off >= bump`) — a
+/// 5. **M2 oracle 1.5** (always): uncarved/stale-free (`off >= bump`) — a
 ///    block carved into a segment later decommitted+reset has `off >= bump`
 ///    (the reset zeroed the alloc bitmap, so oracle 2 below would NOT catch
 ///    it); parity with `dealloc_small` (`alloc_core.rs`).
@@ -201,6 +201,8 @@ pub(super) fn small_free_guard(
     #[cfg(feature = "hardened")]
     use crate::alloc_core::size_classes::SizeClasses;
 
+    let kind = BlockKind::of(base, Some(c));
+
     // ── Ph3b: physical-Large routing when the F7 branches do not ─────────
     // The segment header's `kind` byte — not the caller's layout, and not a
     // layout-size threshold — decides. Branches (A)/(B) below are
@@ -228,7 +230,7 @@ pub(super) fn small_free_guard(
             )
         ))
     ))]
-    if matches!(BlockKind::of(base, Some(c)), BlockKind::Large) {
+    if matches!(&kind, BlockKind::Large) {
         return SmallFreeGuard::RouteToLargeFree;
     }
 
@@ -237,7 +239,7 @@ pub(super) fn small_free_guard(
     // case-split rationale.
     medium_promotion_reachable! {
     {
-        if matches!(BlockKind::of(base, Some(c)), BlockKind::Large) {
+        if matches!(&kind, BlockKind::Large) {
             if !cfg!(feature = "hardened")
                 || (SegmentHeader::large_size_at(base) == layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK)
                     && SegmentHeader::large_align_at(base) == layout.align())
@@ -263,7 +265,7 @@ pub(super) fn small_free_guard(
         ))
     ))]
     {
-        if matches!(BlockKind::of(base, Some(c)), BlockKind::Large) {
+        if matches!(&kind, BlockKind::Large) {
             #[cfg(feature = "alloc-stats")]
             HARDENED_LARGE_NOOP_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return SmallFreeGuard::RejectNoOp;
@@ -286,10 +288,17 @@ pub(super) fn small_free_guard(
     // flushed-bitmap).
     let off = (ptr as usize - base as usize) as u32;
     let meta = SegmentMeta::new(base);
+    let payload_start = if matches!(&kind, BlockKind::Primordial) {
+        SegmentLayout::primordial_meta_end()
+    } else {
+        SegmentLayout::small_meta_end()
+    };
+    if (off as usize) < payload_start {
+        return SmallFreeGuard::RejectNoOp;
+    }
     if meta.magazine_bitmap().is_in_magazine(off) {
         return SmallFreeGuard::RejectNoOp;
     }
-    #[cfg(feature = "alloc-decommit")]
     if (off as usize) >= meta.bump_of() {
         return SmallFreeGuard::RejectNoOp;
     }

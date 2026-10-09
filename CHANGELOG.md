@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Root allocator `src/` review round 18 remediation (2026-10-09)
 
-Runtime improvements this round: 0 in the production default. R18 fixes an
-internal diagnostic and hardens opt-in free-list checks; it removes an unused
-hardened metadata table. Production feature composition is unchanged; no
-speed or RSS improvement is claimed.
+Runtime improvements this round: 0 in the production default. R18 repairs an
+internal diagnostic, adds defensive magazine-free bounds, hardens opt-in
+freelist validation, and removes an unused hardened metadata table. Production
+feature composition is unchanged; no speed or RSS improvement is claimed.
 
 - [correctness fix] `AllocCore::dbg_is_decommitted_for` now resolves the input
   address to the segment table's canonical stored pointer before reading
@@ -30,6 +30,12 @@ speed or RSS improvement is claimed.
   layout accessors, and table-only tests are gone; this is not a measured RSS
   or instruction-count claim. Current README, architecture, and durability
   inventories reflect the removal.
+
+- [correctness fix] `HeapCore::small_free_guard` rejects metadata and
+  never-carved offsets before magazine insertion; its bump/high-water check is
+  unconditional across decommit feature sets. Primordial and Small geometry
+  regressions passed in debug and release under `fastbin` and `production`;
+  reverted-boundary assertions failed as expected.
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 

@@ -103,6 +103,16 @@
   восстановлены; позитивные regression-тесты прошли. Первый прогон обнаружил
   только ошибку oracle-теста: refill оставил существующий хвост freelist,
   который теперь сохраняется и проверяется вместо предположения об empty.
-- **Граница:** новые проверки остаются `hardened`-gated; non-hardened путь и
-  его стоимость не менялись. Это containment после invalid allocator state,
-  не доказательство safe-caller exploit или runtime speedup.
+- **R17-SEC-01 (P3): ЗАКРЫТО как defense-in-depth после unsafe-contract misuse.**
+  `small_free_guard` теперь отбрасывает смещения до kind-specific payload start;
+  тесты Primordial и Small прошли по 2/2 в debug/release для `fastbin internals`
+  и `production internals`. Удаление нижней границы и возврат `alloc-decommit`
+  cfg на bump-check позволили invalid free войти в magazine (`left: 1`,
+  ожидалось `right: 0`); замена `<` на `<=` отвергла valid boundary free
+  (`left: 0`, ожидалось `right: 1`). `--nocapture` показал соответствующие
+  assertions перед Windows exit `0xc0000409` при unwind; это exit status, не
+  диагноз stack-buffer defect. Все мутанты восстановлены; positive tests прошли.
+
+- **Граница:** расширенная freelist-проверка остаётся `hardened`-gated;
+  lower-bound и bump guards работают на fastbin production-path и меняют
+  обработку только invalid deallocation inputs. Speed/RSS claim не заявлен.
