@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::alloc_core::segment_header::{
-    LargePhase, large_generation, large_phase, next_large_generation, pack_large_state,
+    large_generation, large_phase, next_large_generation, pack_large_state, LargePhase,
 };
 
 /// Wrapper over ONE Large phase word, regardless of which storage backs
