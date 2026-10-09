@@ -15,6 +15,20 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 184 — Src review R17-API-01: CLOSED (2026-10-09)
+
+- **Status:** CLOSED by the NUMA-only `SegmentMeta` import-gate repair.
+- **Current verdict:** the import is enabled for either `alloc-xthread` or
+  `numa-aware`; standalone NUMA builds resolve both slow-path uses without
+  changing feature composition or production defaults.
+- **Evidence:** both `cargo check --lib --no-default-features --features
+  numa-aware` and the `numa-aware internals` variant passed in the worktree and
+  main; strict NUMA-internals Clippy passed in both. Narrowing the import gate
+  back to `alloc-xthread` reproduced E0433 at `SegmentMeta::new`; restoring it
+  returned both checks to green. No runtime test applies to this name-resolution
+  defect.
+- **Next trigger:** none for NUMA-only `SegmentMeta` visibility.
+
 ### 183 — Src review R17-API-06(c): CLOSED (2026-10-09)
 
 - **Status:** CLOSED by the bounded fallback spin-counter helper.

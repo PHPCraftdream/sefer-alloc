@@ -121,6 +121,15 @@
   ожидалось `right: 0`). Runtime/performance claim не заявляется; счётчик
   остаётся `alloc-stats`-gated.
 
+- **R17-API-01 (P3): ЗАКРЫТО.** Импорт `SegmentMeta` теперь доступен при
+  `alloc-xthread` **или** `numa-aware`. В main прошли оба NUMA-only `cargo check`
+  и строгий `cargo clippy`; в изолированном worktree сужение импорта обратно
+  до `alloc-xthread` воспроизвело E0433 на `SegmentMeta::new` в NUMA slow path.
+  После восстановления оба compile checks прошли. Состав features и production
+  defaults не менялись. Точный `cargo clippy --features "numa-aware internals"
+  -- -D warnings` также прошёл; correctness item107 остаётся открытым только
+  для отдельного Clippy-row/CI coverage, а его прежние шесть ошибок устарели.
+
 - **R17-API-06(c) (P3): ЗАКРЫТО.** Init-state waiting and fallback-lock
   acquisition now share `lock_tight_spin`, which stops incrementing at 64 and
   yields thereafter; no hot-path counter or configurable policy was added.

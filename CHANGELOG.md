@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Root allocator `src/` review round 18 remediation (2026-10-09)
 
 Runtime improvements this round: 0 in the production default. R18 repairs an
-internal diagnostic, adds defensive free bounds, bounds fallback spin counters,
-hardens opt-in freelists, and removes an unused hardened table. Production
-feature composition is unchanged; no speed or RSS improvement is claimed.
+internal diagnostic, enables NUMA-only compilation, adds defensive free bounds,
+bounds fallback spin counters, hardens opt-in freelists, and removes an unused
+hardened table. Production feature composition is unchanged; no speed or RSS
+improvement is claimed.
 
 - [correctness fix] `AllocCore::dbg_is_decommitted_for` now resolves the input
   address to the segment table's canonical stored pointer before reading
@@ -20,6 +21,11 @@ feature composition is unchanged; no speed or RSS improvement is claimed.
   under strict-provenance Miri; restoring the caller-derived metadata access
   fails Miri with a no-provenance diagnostic, then the fixed implementation
   passes again.
+
+- [correctness fix] The `SegmentMeta` import now covers `numa-aware` as well as
+  `alloc-xthread`. NUMA-only and NUMA-plus-internals checks and strict Clippy
+  pass. Narrowing the gate to `alloc-xthread` reproduced E0433 in the NUMA
+  slow path; restoring it returned both compile checks to green.
 
 - [correctness fix] Hardened free-list pops and batch drains validate node
   geometry, allocation/magazine state, and continuation links before mutation.

@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::alloc_core::segment_header::{
-    large_generation, large_phase, next_large_generation, pack_large_state, LargePhase,
+    LargePhase, large_generation, large_phase, next_large_generation, pack_large_state,
 };
 
 /// Wrapper over ONE Large phase word, regardless of which storage backs
@@ -100,6 +100,7 @@ impl<'a> LargeReservationState<'a> {
             .map(|_| generation)
     }
 
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn cache_consumed(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Consuming, LargePhase::Cached)
@@ -112,18 +113,21 @@ impl<'a> LargeReservationState<'a> {
     }
 
     /// Owner-only cache eviction, while still mapped and before OS release.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn release_cached(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Cached, LargePhase::Released)
     }
 
     /// Cache-hit rollback after CACHED -> INITIALIZING, before user issuance.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn release_initializing(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Initializing, LargePhase::Released)
     }
 
     /// None leaves CACHED unchanged: the owner retires this reservation.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn begin_reuse(&self) -> Option<u64> {
         let observed = self.word.load(Ordering::Acquire);
@@ -143,6 +147,7 @@ impl<'a> LargeReservationState<'a> {
     }
 
     /// Caller completes layout/owner/table preparation before this release.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub fn finish_reuse(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Initializing, LargePhase::Live)
