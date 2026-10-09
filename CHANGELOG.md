@@ -95,6 +95,16 @@ composition is unchanged; no speed or RSS improvement is claimed.
   SegmentLayout test forwarders use prose references, so the production docs
   build without `internals`. No runtime behavior or performance was measured.
 
+- [docs] Aligned the feature table and integration guide with the six-member
+  `production` bundle, `alloc-stats` dependency, `internals` distinction, and
+  NUMA reservation policy. `PinnedRunner` docs now state the external
+  `core_affinity::CoreId` coupling and thread-creation panic. No feature
+  composition or runtime behavior changed; API-02 workflow coverage and API-08
+  TLS recursion remain unverified.
+
+
+
+
 
 
 

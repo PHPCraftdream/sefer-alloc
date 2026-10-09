@@ -153,6 +153,12 @@ impl PinnedRunner {
 
     /// Pins the CALLING thread to `core_id` via [`core_affinity::set_for_current`].
     ///
+    /// The argument is the external `core_affinity::CoreId` type, not a
+    /// sefer-alloc re-export. Values from [`available_cores`](Self::available_cores)
+    /// can be passed back using type inference without a direct dependency.
+    /// Naming or constructing the type requires a direct `core_affinity`
+    /// dependency compatible with the version used by sefer-alloc.
+    ///
     /// Returns whether pinning succeeded. Best-effort: on some OSes the
     /// affinity syscall is refused; the caller should still proceed (shard
     /// binding does not depend on the OS honoring affinity).
@@ -162,6 +168,11 @@ impl PinnedRunner {
     }
 
     /// Enumerates the host's available cores via [`core_affinity::get_core_ids`].
+    ///
+    /// Returns external `core_affinity::CoreId` values; see
+    /// [`pin_current_thread_to_core`](Self::pin_current_thread_to_core) for
+    /// inferred pass-through and direct-dependency requirements. This external
+    /// type identity is part of the public API's dependency coupling.
     ///
     /// Returns `None` if the host refused to enumerate. This is the raw probe;
     /// [`new`](Self::new) / [`with_workers`](Self::with_workers) use it
@@ -210,8 +221,10 @@ impl PinnedRunner {
     ///
     /// # Panics
     ///
-    /// Propagates a panic from any worker (the scope is joined; a panicking
-    /// worker aborts the join, mirroring `std::thread::scope` semantics).
+    /// Propagates a worker panic after all scoped workers have been joined,
+    /// following [`std::thread::scope`] semantics.
+    /// Also panics if the OS fails to create a worker thread, as documented by
+    /// [`std::thread::Scope::spawn`].
     pub fn run<T, F, R>(&self, region: &ShardedRegion<T>, f: F)
     where
         T: Send + Sync,

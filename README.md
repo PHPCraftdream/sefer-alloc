@@ -1423,33 +1423,27 @@ The full safety stack and the relationship between layers is documented in
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
 | **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
-| `alloc-stats` | — | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
+| `alloc-stats` | `alloc-core` | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
 | `hardened` | `fastbin` | Opt-in own-thread interior-pointer guard, rejecting non-block starts. It does not make duplicate or invalid foreign frees legal; the old X7 ring generation path was removed with the ring. | off | Extra misuse detection, subject to current acceptance gates. |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 | `batch-api` | `experimental` + `alloc-core` | Tcache-aware batch alloc/dealloc (`SeferAlloc::alloc_batch`/`dealloc_batch`). **⚠ No semver guarantees** — signature/behavior may change or the feature may be removed in any release while it depends on `experimental` (R12-12) | off | you have measured a real batch-size win for your workload and accept an unstable API |
+| `internals` | — | Test/measurement-only access to internal module paths and selected diagnostic methods; does not enable allocator features or change crate-root re-export gates. Separate from `bench-internals`, which gates measurement-only probes. | off (not in `production`) | Internal white-box tests and measurement only; not application API. |
 | `bench-internals` | — | Test/performance-only diagnostic hooks, including selected unsafe raw-pointer probes; absent from plain `production` library builds. The removed coarse-dirty and ring probes are no longer part of this feature. | off | Internal CI and measurement only; not application API. |
 
-**Trap — `numa-aware` silently no-ops `small-segment-lazy-commit`.** The two
-features compose without any compile error or runtime diagnostic, but
-enabling both does NOT give you a lazily-committed NUMA-steered small
-segment: `alloc_core_small.rs`'s ordinary-segment reservation has two
-mutually-exclusive `#[cfg]` arms (`src/alloc_core/small/alloc_core_small/reserve.rs`,
-`reserve_small_segment_impl`, ~lines 78–466) — the `numa-aware` arm calls
-`numa::reserve_aligned_on_node` unconditionally and always reserves the
-segment eagerly (this call never participates in the lazy-commit deferral
-logic at all); only the `not(numa-aware)` arm checks
-`#[cfg(feature = "small-segment-lazy-commit")]` and takes the
-`aligned_vmem::reserve_aligned_lazy` path. So with `numa-aware` on,
-`small-segment-lazy-commit` compiles in, costs nothing to enable, and
-changes nothing observable — every ordinary small segment is reserved (and
-fully committed) the eager way regardless of the lazy-commit flag. This is
-the same undocumented-no-op shape as the `pool_segments`/`pool_byte_cap`
-trap below (R27-1): both knobs silently agreeing to do nothing, with no
-error to catch it. `small-segment-lazy-commit`'s own promotion status is
-tracked separately in `docs/perf/OPEN_ITEMS.md` item 26 (deferred, not
-promoted into `production`); this trap applies whether or not that item is
-ever promoted, as long as `numa-aware` is the arm compiled in.
+**NUMA policy — eager reservation, no forced Small rescue.** `numa-aware`
+selects eager reservation for both primordial and ordinary Small segments,
+overriding `primordial-lazy-commit` and `small-segment-lazy-commit` without a
+compile error or runtime diagnostic. Ordinary Small segments use
+`numa::reserve_aligned_on_node` in
+`src/alloc_core/small/alloc_core_small/reserve.rs`; the primordial segment
+uses the plain eager reservation in `src/alloc_core/alloc_core/bootstrap.rs`.
+NUMA Large reservations also omit extra reserved-capacity growth headroom.
+The forced Small directory-rescue path is excluded under `numa-aware`, even
+though the segment directory supports NUMA-aware lookup. These are existing
+allocation-policy choices, not measured RSS or latency results.
+`small-segment-lazy-commit` remains opt-in, outside `production`; its promotion
+status is tracked in `docs/perf/OPEN_ITEMS.md` item 26.
 
 `production` is the right starting point for almost any multi-thread or
 async use of `SeferAlloc`. Without `alloc-decommit`, unregister /
