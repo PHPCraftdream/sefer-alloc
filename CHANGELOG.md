@@ -66,6 +66,17 @@ composition is unchanged; no speed or RSS improvement is claimed.
   release and Large-cache paths. Removed stale ring-era callers and unsupported
   locality/fence assertions; no runtime path changed. The documentation tripwire
   passed 31/31.
+- [correctness fix] Unsafe metadata hooks now require restoration of a valid
+  segment-kind discriminant before any typed header copy, teardown, or Drop;
+  pointer contracts specify the metadata extent and ownership they require.
+  Test-only refill, flush, layout, Epoch, and Sharded forwarders now require
+  `internals`, while production callers use crate-private implementations.
+  Hook scanners cover const/suffix/injection forms, explicit forwarders, and
+  inherited test gates. All 10 selected targets passed (29 tests); scanner
+  negative controls detected removed gates. README and Architecture unsafe
+  inventories now agree with the current 92 sites across 28 files. No
+  production algorithm or performance claim changed.
+
 
 ### Root allocator `src/` review round 16 follow-up (2026-10-08)
 

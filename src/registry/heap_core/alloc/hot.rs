@@ -459,7 +459,7 @@ impl HeapCore {
     /// [`alloc_small_zeroed_via_magazine`](Self::alloc_small_zeroed_via_magazine).
     /// Identical drain/refill/stamp/issue shape (see that function's doc for
     /// the bounded Large-only probe) plus: calls
-    /// [`AllocCore::refill_class_bump_virgin`] instead of the ordinary refill,
+    /// [`AllocCore::refill_class_bump_virgin_internal`] instead of the ordinary refill,
     /// stores the resulting per-slot virgin mask into
     /// `PerClass::virgin_mask` for the `n-1` blocks retained in the magazine,
     /// and reports the ONE block popped to the caller's own virgin bit
@@ -497,8 +497,11 @@ impl HeapCore {
         let mut virgin_mask: u16 = 0;
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
-            heap.core
-                .refill_class_bump_virgin(c, &mut cur.slots[0..want], &mut virgin_mask)
+            heap.core.refill_class_bump_virgin_internal(
+                c,
+                &mut cur.slots[0..want],
+                &mut virgin_mask,
+            )
         });
         if n == 0 {
             return (::core::ptr::null_mut(), false);
@@ -682,7 +685,8 @@ impl HeapCore {
         // belong to the owner retirement primitive, not a caller closure.
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
-            heap.core.refill_class_bump(c, &mut cur.slots[0..want])
+            heap.core
+                .refill_class_bump_internal(c, &mut cur.slots[0..want])
         });
         if n == 0 {
             return ::core::ptr::null_mut();

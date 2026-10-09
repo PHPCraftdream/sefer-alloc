@@ -122,45 +122,36 @@ impl AllocCore {
     ///
     /// # Safety
     ///
-    /// The stamped `kind` discriminant byte is load-bearing allocator metadata:
-    /// `dealloc` / `realloc` / `Drop` decode it via `SegmentHeader::kind_at` and
-    /// route the segment down the matching `Small` / `Large` / `Primordial`
-    /// path. A `raw` value inconsistent with the segment's true kind mis-routes
-    /// the segment — e.g. a `Large` segment whose `kind` byte is stamped to the
-    /// `Small` discriminant gets freed down the `Small` path, writing a
-    /// `BinTable` / free-list header into the live `Large` payload. (Any byte
-    /// outside {0,1,2} decodes to `Unknown`, whose `dealloc` arm is a documented
-    /// no-op — see [`dealloc`](AllocCore::dealloc) — so stamping such a byte and
-    /// then `dealloc`-ing exercises that no-op path, not a mis-route.) This is
-    /// the same raw-metadata safety boundary as
-    /// [`dbg_unregister`](Self::dbg_unregister) and
-    /// [`dbg_recycle`](Self::dbg_recycle) in `alloc_core_core_diag::table_diag`:
-    /// `#[doc(hidden)]` only hides from generated docs, it does NOT
-    /// restrict Rust reachability, so a fully-safe call could overwrite the byte
-    /// with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
-    /// CRITICAL). The `contains_base_ro` assert below only proves the segment
-    /// BELONGS to this `AllocCore`; it does NOT preserve the byte's invariant.
+    /// `ptr` must identify a live, mapped segment owned by this `AllocCore`,
+    /// with exclusive access to its header for the stamp and restoration.
+    /// The stamped byte is load-bearing metadata. A valid discriminant for
+    /// the wrong physical kind can misroute allocator operations and corrupt
+    /// payload or metadata. Capture the true byte with
+    /// [`dbg_kind_byte_of`](Self::dbg_kind_byte_of) before corrupting it.
     ///
-    /// The caller must guarantee that, between this stamp and the byte being
-    /// restored to the segment's true `kind` discriminant, NO safe
-    /// `alloc` / `dealloc` / `realloc` / `Drop` call routes the segment on the
-    /// stamped value — i.e. one of:
+    /// Arbitrary bytes remain permitted for raw-byte strict-decode tests, but
+    /// `SegmentHeader.kind` is an enum: only {0, 1, 2, 0xFF} are valid typed
+    /// discriminants. Decoding any other byte to `Unknown` via `kind_at` does
+    /// NOT make a typed copy of the stored header valid. Restore the segment's
+    /// true discriminant before ANY typed header copy, including read-only
+    /// [`large_geometry_for_test`](Self::large_geometry_for_test),
+    /// [`dbg_unregister`](Self::dbg_unregister),
+    /// [`dbg_recycle`](Self::dbg_recycle), teardown, or `AllocCore::drop`.
+    /// This obligation also applies on unwinding: do not let `Drop` observe an
+    /// invalid byte if an assertion or other operation panics before restore.
     ///
-    /// - the stamped byte is restored to the segment's true discriminant
-    ///   (captured beforehand via [`dbg_kind_byte_of`](Self::dbg_kind_byte_of))
-    ///   before any routing allocator operation touches the segment (read-only
-    ///   `dbg_*` accessors that do not route, such as
-    ///   [`dbg_kind_byte_of`](Self::dbg_kind_byte_of) /
-    ///   [`dbg_kind_at_tag`](Self::dbg_kind_at_tag), may run while the byte is
-    ///   corrupted); OR
-    /// - the only routing operation run while the byte is corrupted is one the
-    ///   allocator performs as a documented no-op regardless of the value, such
-    ///   as [`dealloc`](AllocCore::dealloc)'s `SegmentKind::Unknown => {}` arm;
-    ///   OR
-    /// - the segment is consumed ONLY by a `#[doc(hidden)]` test-only teardown
-    ///   seam ([`dbg_unregister`](Self::dbg_unregister) /
-    ///   [`dbg_recycle`](Self::dbg_recycle)) that does NOT route on the stamped
-    ///   byte being correct.
+    /// While corrupted, the permitted header observations are the raw-byte
+    /// [`dbg_kind_byte_of`](Self::dbg_kind_byte_of) and strict-decode
+    /// [`dbg_kind_at_tag`](Self::dbg_kind_at_tag) accessors; address-only
+    /// [`dbg_contains_base`](Self::dbg_contains_base) is also permitted.
+    /// Read-only status alone does not authorize another metadata accessor.
+    /// No allocation, reallocation, or routing operation may consume the
+    /// stamped kind before restoration. The sole free-path exception is
+    /// [`dealloc`](AllocCore::dealloc) with a byte outside {0, 1, 2}: its
+    /// byte-decoded `Unknown` arm is a no-op and does not copy the header.
+    /// The allocation remains live after that no-op; restore the true byte
+    /// before its actual free or teardown. Neither teardown hook is an
+    /// exception to typed validity or to its own `# Safety` contract.
     #[doc(hidden)]
     #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
     pub unsafe fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {

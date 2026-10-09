@@ -716,6 +716,7 @@ impl<T> ShardedRegion<T> {
     /// re-runs the claim scan on the next insert. Production code should not
     /// call this.
     #[doc(hidden)]
+    #[cfg(feature = "internals")]
     pub fn _reset_my_shard_binding_for_tests() {
         let _ = MY_SHARDS.try_with(|t| t.borrow_mut().clear());
     }
@@ -725,6 +726,7 @@ impl<T> ShardedRegion<T> {
     /// `None` if `shard` is out of range. Same identity-only contract as the
     /// forwarded hook (the pointer must never be dereferenced).
     #[doc(hidden)]
+    #[cfg(feature = "internals")]
     pub fn _remote_free_queue_buffer_identity_for_tests(
         &self,
         shard: u16,

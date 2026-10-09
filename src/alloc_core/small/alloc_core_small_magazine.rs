@@ -36,6 +36,7 @@ impl AllocCore {
     /// identical to a handed-out block.
     #[doc(hidden)]
     #[inline]
+    #[cfg(feature = "internals")]
     pub fn refill_class(&mut self, class_idx: usize, want: usize, out: &mut [*mut u8]) -> usize {
         debug_assert!(
             out.len() >= want,
@@ -111,7 +112,17 @@ impl AllocCore {
     /// block still hits `dealloc_small`'s `is_free` guard exactly as before.
     #[doc(hidden)]
     #[inline]
+    #[cfg(feature = "internals")]
     pub fn refill_class_bump(&mut self, class_idx: usize, out: &mut [*mut u8]) -> usize {
+        self.refill_class_bump_internal(class_idx, out)
+    }
+
+    #[inline]
+    pub(crate) fn refill_class_bump_internal(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
         self.refill_class_bump_impl(
             class_idx,
             out,
@@ -133,7 +144,22 @@ impl AllocCore {
         feature = "fastbin",
         feature = "virgin-zero-skip"
     ))]
+    #[cfg(feature = "internals")]
     pub fn refill_class_bump_virgin(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        virgin_out: &mut u16,
+    ) -> usize {
+        self.refill_class_bump_virgin_internal(class_idx, out, virgin_out)
+    }
+
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "fastbin",
+        feature = "virgin-zero-skip"
+    ))]
+    pub(crate) fn refill_class_bump_virgin_internal(
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
@@ -425,7 +451,23 @@ impl AllocCore {
     #[doc(hidden)]
     #[inline]
     #[allow(unsafe_code)] // R6-MS-3: `unsafe fn` boundary (caller-pointer contract).
+    #[cfg(feature = "internals")]
     pub unsafe fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+        // SAFETY: the caller upholds the identical live-block, ownership,
+        // class, mapping, and unique-free contract documented above.
+        unsafe { self.flush_class_internal(class_idx, blocks) };
+    }
+
+    /// Production magazine flush.
+    ///
+    /// # Safety
+    ///
+    /// Every non-null entry must be a live, mapped allocation start owned by
+    /// this core, of valid `class_idx`, and freed at most once. Interior,
+    /// foreign, stale, or duplicate pointers are forbidden; nulls are skipped.
+    #[inline]
+    #[allow(unsafe_code)] // Caller-pointer contract, unchanged production body.
+    pub(crate) unsafe fn flush_class_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
         // L-4 (UBFIX-11): a per-CALL record of segment bases already recycled
         // (decommitted-and-released OR pooled) by an EARLIER run within this
         // same `flush_class` invocation. `flush_class` groups `blocks` into

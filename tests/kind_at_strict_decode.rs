@@ -119,15 +119,18 @@ fn kind_at_rejects_corrupt_discriminant() {
         // While the byte holds each `corrupt_byte`, only READ-ONLY `dbg_*`
         // accessors (`dbg_kind_byte_of`/`dbg_kind_at_tag`) touch the segment —
         // no routing `alloc`/`dealloc`/`realloc`/`Drop` runs. The byte is
-        // restored to the true `Large` discriminant (2) after the loop, before
-        // `dealloc`. Restore-before-further-use per the `# Safety` contract.
+        // restored to the true `Large` discriminant (2) in each iteration,
+        // before any assertion can unwind. Only raw byte/tag reads occur.
         unsafe { ac.dbg_stamp_kind_byte(large_ptr, corrupt_byte) };
+        let raw = ac.dbg_kind_byte_of(large_ptr);
+        let tag = ac.dbg_kind_at_tag(large_ptr);
+        // Restore before assertions can unwind into AllocCore::drop.
+        // SAFETY: allocation-wide raw pointer; 2 is this segment's true kind.
+        unsafe { ac.dbg_stamp_kind_byte(large_ptr, 2) };
         assert_eq!(
-            ac.dbg_kind_byte_of(large_ptr),
-            corrupt_byte,
+            raw, corrupt_byte,
             "precondition: the corrupt byte must actually have landed"
         );
-        let tag = ac.dbg_kind_at_tag(large_ptr);
         assert_eq!(
             tag, 3,
             "L-5 REGRESSION: kind_at decoded corrupt byte {corrupt_byte:#04x} as tag \
@@ -180,11 +183,7 @@ fn dealloc_on_unknown_kind_is_noop_not_crash() {
     // restored to the true `Large` discriminant below before the real `dealloc`.
     // The documented-no-op-routing exception in the `# Safety` contract.
     unsafe { ac.dbg_stamp_kind_byte(large_ptr, 0x99) };
-    assert_eq!(
-        ac.dbg_kind_at_tag(large_ptr),
-        3,
-        "precondition: Unknown tag"
-    );
+    let unknown_tag = ac.dbg_kind_at_tag(large_ptr);
 
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(large_ptr, large_layout) };
@@ -196,16 +195,24 @@ fn dealloc_on_unknown_kind_is_noop_not_crash() {
     // "segment" with a BinTable/free-list write — this Large payload has no
     // such structure at its start, so any write would show up as corruption
     // of our 0xCD pattern).
+    let still_registered = ac.dbg_contains_base(large_ptr);
+    let payload_unchanged = unsafe {
+        core::slice::from_raw_parts(large_ptr, 4096)
+            .iter()
+            .all(|&b| b == 0xCD)
+    };
+    // SAFETY: restore the true kind before any panic-capable assertion/Drop.
+    unsafe { ac.dbg_stamp_kind_byte(large_ptr, 2) };
+    assert_eq!(unknown_tag, 3, "precondition: Unknown tag");
     assert!(
-        ac.dbg_contains_base(large_ptr),
+        still_registered,
         "L-5 REGRESSION: dealloc on an Unknown-kind segment unregistered it \
          (should be an unconditional no-op, since we cannot trust which free \
          path — Large release/cache, or Small BinTable push — is actually \
          safe for a segment of unknown kind)"
     );
-    let payload = unsafe { core::slice::from_raw_parts(large_ptr, 4096) };
     assert!(
-        payload.iter().all(|&b| b == 0xCD),
+        payload_unchanged,
         "L-5 REGRESSION: dealloc on an Unknown-kind segment mutated the payload \
          (the Small/Primordial free-path arm ran and wrote free-list metadata \
          into what is actually a live Large allocation's payload)"

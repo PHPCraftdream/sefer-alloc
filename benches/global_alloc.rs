@@ -66,7 +66,11 @@
 //!    reason about than per-call true randomization while still breaking
 //!    "always the same arm benefits/suffers from drift".
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 #![allow(
     clippy::cast_possible_truncation,
     clippy::needless_pass_by_value,

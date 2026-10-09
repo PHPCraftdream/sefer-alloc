@@ -47,6 +47,7 @@
 //! stay IDENTICAL — asserted here against the real runtime page size.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     any(
         feature = "primordial-lazy-commit",

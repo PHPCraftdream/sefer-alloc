@@ -38,10 +38,9 @@
 //! Tests 1–2 read the process-global live-block counter and are
 //! `internals`-gated; all three serialize on a file-local mutex because the
 //! counter is process-global and a test binary's tests run on parallel
-//! threads by default. Test 3 is pure behavior and runs under plain
-//! `experimental`.
+//! threads by default. The whole target requires `experimental internals`.
 
-#![cfg(feature = "experimental")]
+#![cfg(all(feature = "experimental", feature = "internals"))]
 
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex, OnceLock};

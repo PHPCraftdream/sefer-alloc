@@ -74,6 +74,21 @@ impl AllocCore {
     /// `contains_base_ro` / `Small`-kind checks below reject foreign or
     /// non-`Small` pointers by returning `false`, but they say nothing about
     /// `live_count`.)
+    ///
+    /// `ptr` must be an allocator-issued raw pointer into this `AllocCore`'s
+    /// still-live, mapped Small reservation, with provenance/access permission
+    /// for the initialized header, BinTable and allocation bitmap read/reset
+    /// through the derived base, and authority to decommit its payload extent.
+    /// The segment must be exclusively owned for the entire call, without
+    /// conflicting aliases, pending frees, or concurrent metadata/payload
+    /// accesses. A payload-only reference/slice or `Box` reborrow tag is
+    /// insufficient unless it still authorizes those metadata regions;
+    /// `contains_base_ro` checks an address, not provenance or access rights.
+    /// A saved raw block pointer after logical free, or a reservation handle's
+    /// raw base, is permitted only while that same reservation remains owned
+    /// and mapped; it need not designate a currently allocated payload block.
+    /// Do not use it after reservation release, and do not access decommitted
+    /// payload until the allocator has recommitted/reissued it.
     // R29-8 (task #439): `pub unsafe fn` + `bench-internals`-gated. This hook
     // resolves `ptr`'s segment base, checks `contains_base_ro` + `Small` kind,
     // then decommits the payload with NO `live_count` check — a direct instance

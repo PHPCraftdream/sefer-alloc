@@ -41,15 +41,18 @@ fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
 /// Build a freelist of exactly `m` blocks of class `c`, all in the SAME segment
 /// (the primordial / `small_cur`, so freeing them never decommits). Returns the
 /// freed pointers in the order they were freed (so the freelist head is the
-/// LAST element). Uses the public alloc/dealloc path; the blocks land on the
+/// LAST element), plus a separate live allocator-issued anchor for the hook.
+/// Uses the public alloc/dealloc path; the blocks land on the
 /// per-segment BinTable via `dealloc_small`.
 fn build_same_segment_freelist(
     core: &mut AllocCore,
     size: usize,
     align: usize,
     m: usize,
-) -> Vec<*mut u8> {
+) -> (Vec<*mut u8>, *mut u8) {
     let layout = Layout::from_size_align(size, align).unwrap();
+    let anchor = core.alloc(layout);
+    assert!(!anchor.is_null());
     // Allocate m blocks. On a fresh-ish core these come from the current
     // segment (bump-carve or its own freelist); we then filter to a single
     // segment base so the freelist we drain is genuinely one segment's.
@@ -78,6 +81,7 @@ fn build_same_segment_freelist(
             "test precondition: all {m} blocks must share one segment"
         );
     }
+    assert_eq!(seg_base_of(anchor), base0);
     // Drain any refill leftovers sitting on the freelist to empty.
     let mut scratch = vec![core::ptr::null_mut::<u8>(); 4096];
     loop {
@@ -96,7 +100,7 @@ fn build_same_segment_freelist(
         // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
         unsafe { core.dealloc(p, layout) };
     }
-    allocated
+    (allocated, anchor)
 }
 
 // ---------------------------------------------------------------------------
@@ -119,9 +123,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
     let layout = Layout::from_size_align(size, align).unwrap();
 
     const M: usize = 64;
-    let freed = build_same_segment_freelist(&mut core, size, align, M);
-    // Anchor pointer for the segment we drain (any block that was freed into it).
-    let anchor = freed[0];
+    let (freed, anchor) = build_same_segment_freelist(&mut core, size, align, M);
+    assert_eq!(freed.len(), M);
 
     // Drain the whole freelist in one batch.
     let mut out = vec![core::ptr::null_mut::<u8>(); M];
@@ -176,6 +179,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
     assert_eq!(k2, M, "re-drain after double-free storm short: {k2}/{M}");
     let uniq2: HashSet<usize> = out2.iter().map(|p| *p as usize).collect();
     assert_eq!(uniq2.len(), M, "double-free corrupted the freelist (dupe)");
+    // SAFETY: anchor remained live, retains allocator provenance, and is freed once.
+    unsafe { core.dealloc(anchor, layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -191,8 +196,8 @@ fn partial_and_bounded_drain_set_head_correct() {
 
     // --- Partial: m < want. Freelist of m; drain want > m → yields m, head NULL.
     const M: usize = 20;
-    let freed = build_same_segment_freelist(&mut core, size, align, M);
-    let anchor = freed[0];
+    let (freed, anchor) = build_same_segment_freelist(&mut core, size, align, M);
+    assert_eq!(freed.len(), M);
     assert_ne!(
         core.dbg_freelist_head_for(anchor, c),
         FREE_LIST_NULL,
@@ -270,6 +275,8 @@ fn partial_and_bounded_drain_set_head_correct() {
         // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
         unsafe { core.dealloc(p, layout) };
     }
+    // SAFETY: anchor remained live, retains allocator provenance, and is freed once.
+    unsafe { core.dealloc(anchor, layout) };
 }
 
 // ---------------------------------------------------------------------------

@@ -148,7 +148,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
 The current tree has **27** tier-1 `#![allow(unsafe_code)]` files (21 in
-`src/`, 6 in `crates/`) and **103** item-scoped allows across **34** files.
+`src/`, 6 in `crates/`) and **92** item-scoped allows across **28** files.
 The ordinary `production` build activates 15 internal tier-1 seams;
 `--cfg loom` adds its bootstrap shim, while `batch-api`,
 `large-cache-extended` and `experimental` add optional seams. See

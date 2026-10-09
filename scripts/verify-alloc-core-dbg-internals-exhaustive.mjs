@@ -1,339 +1,187 @@
-// H2 (task #572, Sol-remediation review finding H2) — EXHAUSTIVE structural
-// check that every `AllocCore::dbg_*` inherent method requires `internals`.
-//
-// ## Background
-//
-// Sol-F1 (task #563) gated the `dbg_*`-only `impl AllocCore` blocks behind
-// `#[cfg(feature = "internals")]` in exactly 3 files
-// (`alloc_core/alloc_core/alloc_core_core_diag/` /
-// `alloc_core/small/alloc_core_small_diag.rs` /
-// `alloc_core/small/alloc_core_small_reclaim.rs`), and proved the fix with a compile-fail
-// oracle (`scripts/verify-internals-negative-boundary.mjs`) that tests
-// exactly ONE representative method (`dbg_carve_batch`). That single-method
-// oracle passed — but 31 OTHER `dbg_*` methods across 3 DIFFERENT files
-// (`large/alloc_core_large_cache.rs`, `small/alloc_core_small_pool/mod.rs`,
-// `alloc_core/alloc_core/state.rs`'s numa-only methods) remained fully reachable without
-// `internals`, undetected, because nothing checked the REST of the surface.
-// This is finding H2 (P1) of
-// `docs/reviews/2026-08-05-sol-remediation-readonly-review.md`.
-//
-// This script closes that class of gap structurally: it does not test one
-// method, it enumerates EVERY `pub fn dbg_*` / `pub unsafe fn dbg_*` method
-// across every `src/alloc_core/*.rs` file with an `impl AllocCore` block,
-// and asserts each one is gated behind `internals` OR is explicitly
-// allowlisted below with a documented reason. Run it whenever a new `dbg_*`
-// method is added to `AllocCore` — a method that is neither gated nor
-// allowlisted fails the build.
-//
-// Usage:
-//   node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs
-//   npm run check   (wired in as a step, alongside the existing
-//                     verify-internals-negative-boundary.mjs)
-
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+// Exhaustive hidden-hook internals boundary. Uses the comment/string-proof
+// inventory parser and inherited module gates, not textual cfg mentions.
+// Parent-only acceptance: --self-test retains structural cases plus literal fixtures.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { REPO_ROOT } from './lib.mjs';
+import { scanFile, listRust, idFor, rustMask, attributesRequire, effectiveFileGates, REVIEWED_SURFACE } from './verify-dbg-hook-safety.mjs';
 
-const ALLOC_CORE_DIR = join(REPO_ROOT, 'src', 'alloc_core');
-const TESTS_DIR = join(REPO_ROOT, 'tests');
-
-/** Recursively list every `.rs` file under `dir`, returning paths relative
- * to `dir` (POSIX-separated, so the ALLOWLIST's `file.rs` keys keep working
- * for the historically-flat `src/alloc_core/` layout while also covering any
- * future subdirectory, e.g. `src/alloc_core/large/deferred_large/`). H2-followup
- * (finding F10): the original version used a non-recursive `readdirSync`,
- * silently invisible to a future `impl AllocCore` block placed in a
- * subdirectory — verified currently harmless (no `pub fn dbg_*` exists under
- * any `src/alloc_core/` subdirectory today), fixed pre-emptively. */
-function listRsFilesRecursive(dir, root = dir) {
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...listRsFilesRecursive(full, root));
-    } else if (entry.isFile() && entry.name.endsWith('.rs')) {
-      out.push(relative(root, full).split('\\').join('/'));
-    }
+// Arrays deliberately retain duplicate rows for validation before Map creation.
+const ALLOWLIST = [
+  ['src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees', 'backs AllocStats::stats()'],
+  ['src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total', 'backs AllocStats::stats()'],
+  ['src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total', 'backs AllocStats::stats()'],
+  ['src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count', 'backs AllocStats::stats()'],
+];
+function verify(files, allowlist = ALLOWLIST, include = hook => hook.file.startsWith('src/alloc_core/') && hook.owner === 'AllocCore') {
+  const errors = [], exceptions = new Map(), found = new Set(), gatedNames = new Set();
+  for (const [id, reason] of allowlist) {
+    if (exceptions.has(id)) errors.push(`duplicate internals allowlist row: ${id}`);
+    if (!reason.trim()) errors.push(`missing internals exception reason: ${id}`);
+    exceptions.set(id, reason);
   }
-  return out;
-}
-
-// Methods deliberately NOT gated behind `internals`, each with a recorded
-// reason. Every entry here must still be justified the same way task #563
-// justified its own three exceptions (a real, non-test/bench/example
-// caller). Do not add an entry here to silence this script without first
-// confirming the reason via `grep -rn "\.<method>(" src/` yourself.
-const ALLOWLIST = new Map([
-  // Sol-F1 (task #563): back `AllocStats::stats()`, a stable always-on
-  // public API method under plain `production` (src/global/sefer_alloc.rs).
-  ['alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees', 'backs AllocStats::stats() (task #563)'],
-  ['alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total', 'backs AllocStats::stats() (task #563)'],
-  ['alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total', 'backs AllocStats::stats() (task #563)'],
-  // H2 (task #572): a 4th sibling of the same class, found by this script's
-  // own first exhaustive run against `alloc_core/small/alloc_core_small_pool/mod.rs` —
-  // `SeferAlloc::stats()`'s `decommit_calls` field
-  // (src/global/sefer_alloc.rs) reads this directly.
-  ['small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count', 'backs AllocStats::stats() (task #572)'],
-]);
-
-/** Walk backward from line index `i` (exclusive) through the contiguous
- * attribute/doc-comment block immediately above it, returning true if any
- * REAL `#[cfg(...)]` ATTRIBUTE line (not a doc comment or `//` comment merely
- * mentioning the string) in that block names `feature = "internals"`. Stops
- * at the first line that is neither an attribute, a doc comment, a blank
- * line, nor a `//`-comment continuation line — doc/`//` lines are walked
- * through (so a `///` line between two `#[cfg(...)]` attributes doesn't
- * truncate the walk early) but never themselves count as a gate.
- *
- * H2-followup (task #572's own review-remediation round, finding F10 of
- * `docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`): the
- * original version of this function accepted ANY line containing the
- * literal `feature = "internals"` — including a `///` doc comment merely
- * DESCRIBING the gate rather than an actual `#[cfg(...)]` attribute
- * applying it. Verified harmless in practice (re-running the ORIGINAL
- * looser check vs. this tightened one produces byte-identical
- * gated/violation classifications across every method as of this fix), but
- * a latent false-pass a future doc comment could trigger. Tightened so only
- * lines literally starting with `#[` can set `gated = true`. */
-function precedingBlockIsInternalsGated(lines, i) {
-  let gated = false;
-  let j = i - 1;
-  while (j >= 0) {
-    const trimmed = lines[j].trim();
-    if (trimmed === '') {
-      j--;
-      continue;
-    }
-    if (trimmed.startsWith('#[')) {
-      if (trimmed.includes('feature = "internals"')) gated = true;
-      j--;
-      continue;
-    }
-    if (trimmed.startsWith('///') || trimmed.startsWith('//!') || trimmed.startsWith('//')) {
-      // Walk through comment lines without ever treating their CONTENT as a
-      // gate — a doc comment can mention `feature = "internals"` in prose
-      // without that being a real attribute.
-      j--;
-      continue;
-    }
-    break;
+  const fileRequires = effectiveFileGates(files);
+  let total = 0;
+  for (const file of files.values()) for (const hook of file.hooks) {
+    if (!include(hook)) continue;
+    total++; found.add(hook.id);
+    if (attributesRequire(hook.attrs, 'internals') || fileRequires(hook.file, 'internals')) gatedNames.add(hook.name);
+    else if (!exceptions.has(hook.id)) errors.push(`hidden API missing internals gate: ${hook.id}`);
   }
-  return gated;
+  for (const id of exceptions.keys()) if (!found.has(id)) errors.push(`stale internals allowlist row: ${id}`);
+  return { errors, total, gatedNames };
 }
-
-/** Extract every `impl AllocCore { ... }` block's `pub (unsafe )?fn dbg_*`
- * methods, each annotated with whether an `internals` cfg gate covers it —
- * EITHER on the method's own immediately-preceding attribute block, OR on
- * the enclosing `impl AllocCore` block itself (task #563 gated whole impl
- * blocks in some files, individual methods in others — both are valid
- * patterns and must both be recognised). Methods inside `impl` blocks for
- * OTHER types (e.g. `RemoteFreeRing`, `ReservedSmallSegment`) are correctly
- * ignored — H2's finding is specifically about `AllocCore::dbg_*`; other
- * types' `internals` boundaries are a separate, not-yet-scoped concern. */
-function scanFile(filename) {
-  const path = join(ALLOC_CORE_DIR, filename);
-  const lines = readFileSync(path, 'utf8').split('\n');
-  const findings = [];
-
-  // Stack of {name, gated, depthAtEntry} for nested-brace tracking — Rust
-  // doesn't nest `impl` blocks, but this still correctly handles `impl`
-  // blocks separated by other top-level items at brace depth 0.
-  let currentImplName = null;
-  let currentImplGated = false;
-  let implBraceDepthAtEntry = null;
-  let braceDepth = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const implMatch = lines[i].match(/^\s*impl(?:<[^>]*>)?\s+([A-Za-z_]\w*)\b/);
-    if (implMatch) {
-      currentImplName = implMatch[1];
-      currentImplGated = precedingBlockIsInternalsGated(lines, i);
-      implBraceDepthAtEntry = braceDepth;
-    }
-
-    for (const ch of lines[i]) {
-      if (ch === '{') braceDepth++;
-      else if (ch === '}') braceDepth--;
-    }
-    // Exited the current impl block once brace depth returns to (or below)
-    // what it was when the `impl` line itself was seen.
-    if (implBraceDepthAtEntry !== null && braceDepth <= implBraceDepthAtEntry && lines[i].includes('}')) {
-      currentImplName = null;
-      currentImplGated = false;
-      implBraceDepthAtEntry = null;
-    }
-
-    if (currentImplName !== 'AllocCore') continue;
-
-    const m = lines[i].match(/^\s*pub (unsafe )?fn (dbg_\w+)/);
-    if (!m) continue;
-    const methodName = m[2];
-    const methodOwnGated = precedingBlockIsInternalsGated(lines, i);
-    const gated = methodOwnGated || currentImplGated;
-
-    findings.push({ file: filename, method: methodName, gated, line: i + 1 });
+function testCallers(files, gatedNames, roots) {
+  const requiresFile = effectiveFileGates(files, roots), errors = [];
+  for (const [id, file] of files) {
+    if (requiresFile(id, 'internals')) continue;
+    const calls = [...rustMask(file.text).matchAll(/[.:](\w+)\s*\(/g)].map(match => match[1]).filter(name => gatedNames.has(name));
+    if (calls.length) errors.push(`test caller missing internals ${roots.has(id) ? 'crate' : 'inherited module'} gate: ${id}: ${[...new Set(calls)].sort().join(', ')}`);
   }
-
-  return findings;
+  return errors;
 }
-
-console.log(`[verify-alloc-core-dbg-internals-exhaustive] repo: ${REPO_ROOT}`);
-console.log(`[verify-alloc-core-dbg-internals-exhaustive] scanning ${ALLOC_CORE_DIR}...\n`);
-
-const files = listRsFilesRecursive(ALLOC_CORE_DIR);
-let totalMethods = 0;
-let totalGated = 0;
-let totalAllowlisted = 0;
-const violations = [];
-
-for (const file of files) {
-  const findings = scanFile(file);
-  for (const f of findings) {
-    totalMethods++;
-    const key = `${f.file}::${f.method}`;
-    if (f.gated) {
-      totalGated++;
-    } else if (ALLOWLIST.has(key)) {
-      totalAllowlisted++;
-      console.log(`  [allowlisted] ${key}:${f.line} — ${ALLOWLIST.get(key)}`);
-    } else {
-      violations.push(f);
-    }
+function testFiles(sources, manifest) {
+  const files = new Map([...sources].map(([id, text]) => [id, { ...scanFile(id, text), text }]));
+  // Cargo auto-discovers tests/*.rs and tests/*/main.rs. Nested helpers
+  // are not roots, even when their directory is not named support.
+  const roots = new Set([...files.keys()].filter(id => /^tests\/[^/]+\.rs$|^tests\/[^/]+\/main\.rs$/.test(id)));
+  // Explicit targets can gate a crate via required-features instead of #![cfg].
+  // Strip TOML comments without treating a # inside a string as a comment.
+  const toml = manifest.replace(/"(?:\\.|[^"\\])*"|#[^\r\n]*/g, token => token.startsWith('#') ? '' : token);
+  for (const target of toml.split(/^\s*\[\[test\]\]\s*$/m).slice(1)) {
+    const section = target.split(/^\s*\[/m)[0];
+    const name = /^\s*name\s*=\s*"([^"]+)"/m.exec(section)?.[1];
+    const path = /^\s*path\s*=\s*"([^"]+)"/m.exec(section)?.[1] ?? (name ? `tests/${name}.rs` : null);
+    if (!files.has(path)) continue;
+    roots.add(path);
+    const required = /^\s*required-features\s*=\s*\[([^\]]*)\]/m.exec(section)?.[1] ?? '';
+    for (const feature of required.matchAll(/"([^"]+)"/g))
+      files.get(path).globals.push(`#![cfg(feature = "${feature[1]}")]`);
   }
+  return { files, roots };
 }
-
-console.log(
-  `\n[verify-alloc-core-dbg-internals-exhaustive] scanned ${files.length} file(s), ` +
-    `found ${totalMethods} AllocCore::dbg_* method(s): ${totalGated} gated behind ` +
-    `internals, ${totalAllowlisted} explicitly allowlisted, ${violations.length} VIOLATION(s).`,
-);
-
-let ok = true;
-
-if (violations.length > 0) {
-  ok = false;
-  console.log(
-    `\n[verify-alloc-core-dbg-internals-exhaustive] FAIL (check 1/2) — the ` +
-      `following AllocCore::dbg_* methods are reachable WITHOUT \`internals\` ` +
-      `and are NOT in the ALLOWLIST above (Sol-F1/H2 regression class):`,
-  );
-  for (const v of violations) {
-    console.log(`  ${v.file}:${v.line} — ${v.method}`);
+function selfCheck() {
+  const fixture = text => new Map([['fixture.rs', scanFile('fixture.rs', text)]]);
+  const select = () => true;
+  for (const declaration of ['pub const fn dbg_const()', 'pub fn value_for_test()', 'pub fn value_for_tests()', 'pub fn inject_fault()']) {
+    const bad = verify(fixture(`impl AllocCore { ${declaration} {} }`), [], select);
+    assert.equal(bad.total, 1);
+    assert.equal(bad.errors.length, 1);
+    for (const gate of ['#[cfg(feature = "internals")]', '#[cfg(all(feature = "other", feature = "internals"))]'])
+      assert.equal(verify(fixture(`${gate}\nimpl AllocCore { ${declaration} {} }`), [], select).errors.length, 0);
   }
-  console.log(
-    `\nEach one must either be gated with #[cfg(feature = "internals")] ` +
-      `(possibly combined with its existing cfg via a second #[cfg(...)] ` +
-      `attribute or all(...)), or added to this script's own ALLOWLIST with ` +
-      `a documented, verified reason (a real caller outside tests/benches/examples).`,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Check 2/2 (H2-followup, task #572's own review-remediation round, finding
-// F4 of `docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`):
-// gating an `AllocCore::dbg_*` method behind `internals` is only half the
-// invariant R34-3 (`b47cc6a`) established — every `tests/*.rs` file that
-// CALLS a gated method must ALSO carry `feature = "internals"` in its own
-// crate-level `#![cfg(...)]`, so a no-`internals` build skips the file
-// (cfg'd out) instead of hard-failing to compile (E0599). Sol-F1 and H2
-// gated 124 methods across 6 files without re-running that sweep; 39 test
-// files were found to violate it (compiler-confirmed via `cargo test --no-run
-// --tests --features production`), including 2 newly broken by H2's own
-// `alloc_core/small/alloc_core_small_pool/mod.rs` gating. Fixed in the same commit that added
-// this check — see that commit's own message for the file list.
-//
-// gatedMethodNames intentionally excludes ALLOWLISTed methods (finding F2 of
-// `docs/reviews/2026-08-05-hs-new-waves-release-readonly-review.md`): an
-// allowlisted method is, by definition, a stable stats()-backed accessor
-// callable WITHOUT `internals` — a test file calling ONLY allowlisted
-// methods must NOT be flagged as a violation requiring `internals`.
-const gatedMethodNames = new Set();
-for (const file of files) {
-  for (const f of scanFile(file)) {
-    if (f.gated) gatedMethodNames.add(f.method);
+  for (const gate of ['// #[cfg(feature = "internals")]', '#[cfg(not(feature = "internals"))]', '#[cfg(any(feature = "internals", feature = "production"))]', '#[cfg_attr(feature = "internals", allow(dead_code))]'])
+    assert(verify(fixture(`${gate}\nimpl AllocCore { pub fn dbg_gate() {} }`), [], select).errors.includes('hidden API missing internals gate: fixture.rs::dbg_gate'));
+  const inherited = new Map([
+    ['fixture/mod.rs', scanFile('fixture/mod.rs', '#[cfg(feature = "internals")]\nmod child;')],
+    ['fixture/child.rs', scanFile('fixture/child.rs', 'impl AllocCore { pub const fn dbg_const() {} }')],
+  ]);
+  assert.equal(verify(inherited, [], select).errors.length, 0);
+  inherited.set('fixture/mod.rs', scanFile('fixture/mod.rs', '#[cfg(any(feature = "internals", feature = "production"))]\nmod child;'));
+  assert(verify(inherited, [], select).errors.includes('hidden API missing internals gate: fixture/child.rs::dbg_const'));
+  assert(verify(fixture('impl AllocCore { pub fn dbg_gate() {} }'), [['fixture.rs::dbg_gate', 'stats'], ['fixture.rs::dbg_gate', 'stats']], select).errors.includes('duplicate internals allowlist row: fixture.rs::dbg_gate'));
+  assert(verify(fixture(''), [['fixture.rs::dbg_retired', 'stats']], select).errors.includes('stale internals allowlist row: fixture.rs::dbg_retired'));
+  assert.equal(verify(fixture('const X: &str = "pub fn dbg_fake() {}"; /* impl AllocCore { pub fn dbg_fake() {} } */'), [], select).total, 0);
+  // Structural row coverage, not an independent oracle: names/gates come
+  // from the same reviewed policy. Literal fixtures below do not use rows.
+  for (const row of REVIEWED_SURFACE.filter(row => row.gates.includes('internals'))) {
+    const split = row.id.lastIndexOf('::'), file = row.id.slice(0, split), name = row.id.slice(split + 2);
+    const declaration = `${row.kind === 'unsafe' ? '/// # Safety\n/// Caller owns the allocation.\n' : ''}pub ${row.kind === 'unsafe' ? 'unsafe ' : ''}fn ${name}() {}`;
+    const files = new Map([[file, scanFile(file, `impl AllocCore {\n${declaration}\n}`)]]);
+    assert(verify(files, [], select).errors.includes(`hidden API missing internals gate: ${row.id}`));
+    files.set(file, scanFile(file, `#[cfg(feature = "internals")]\nimpl AllocCore {\n${declaration}\n}`));
+    assert.equal(verify(files, [], select).errors.length, 0);
   }
-}
+  // Hand-authored actual AllocCore forwarders: default owner selection must
+  // inventory these non-dbg names, including unsafe flush, without row loops.
+  const magazine = 'src/alloc_core/small/alloc_core_small_magazine.rs';
+  const source = `impl AllocCore {
+    pub fn refill_class(&mut self, class_idx: usize, want: usize, out: &mut [*mut u8]) -> usize { 0 }
+    pub fn refill_class_bump(&mut self, class_idx: usize, out: &mut [*mut u8]) -> usize { 0 }
+    pub fn refill_class_bump_virgin(&mut self, class_idx: usize, out: &mut [*mut u8], virgin_out: &mut u16) -> usize { 0 }
+    /// # Safety
+    /// Caller owns the live blocks exactly once.
+    pub unsafe fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {}
+  }`;
+  const actual = new Map([[magazine, scanFile(magazine, source)]]);
+  assert.equal(verify(actual, []).total, 4);
+  assert.deepEqual(verify(actual, []).errors, [
+    `hidden API missing internals gate: ${magazine}::refill_class`,
+    `hidden API missing internals gate: ${magazine}::refill_class_bump`,
+    `hidden API missing internals gate: ${magazine}::refill_class_bump_virgin`,
+    `hidden API missing internals gate: ${magazine}::flush_class`,
+  ]);
+  actual.set(magazine, scanFile(magazine, `#[cfg(feature = "internals")]\n${source}`));
+  assert.deepEqual(verify(actual, []).errors, []);
+  actual.set(magazine, scanFile(magazine, source));
+  const parent = 'src/alloc_core/small/mod.rs';
+  actual.set(parent, scanFile(parent, '#[cfg(feature = "internals")] mod alloc_core_small_magazine;'));
+  assert.deepEqual(verify(actual, []).errors, []);
+  actual.set(parent, scanFile(parent, '#[cfg(any(feature = "internals", feature = "production"))] mod alloc_core_small_magazine;'));
+  assert.equal(verify(actual, []).errors.length, 4);
 
-/** Extract every crate-level `#![cfg(...)]` attribute's inner text (spanning
- * multiple lines if the attribute itself does), recognising ONLY lines that,
- * after trimming, literally start with `#![cfg(` — never text inside a `//`,
- * `///`, or `//!` comment merely MENTIONING the attribute. Fixes finding F1
- * of `docs/reviews/2026-08-05-hs-new-waves-release-readonly-review.md`: the
- * previous version matched `/#!\[cfg\(([\s\S]*?)\)\]/` against the whole raw
- * file text, so a doc comment like `//! ... #![cfg(all(..., feature =
- * "internals"))] ...` (accidentally introduced by this file's own mechanical
- * edit, commit `b1a9b7b`) produced a false PASS while the REAL attribute
- * below it never gained `internals` — a confirmed, reproducible E0599 under
- * `cargo check --features "production medium-classes"` on
- * `tests/medium_classes_correctness.rs` /
- * `tests/medium_classes_wide_correctness.rs`. Paren-balance tracking (not a
- * single-line regex) is required because a real attribute can itself span
- * multiple lines, as both of those two files' fixed `#![cfg(all(...))]` now
- * do. */
-function extractCrateLevelCfgBlocks(text) {
-  const lines = text.split('\n');
-  const blocks = [];
-  let i = 0;
-  while (i < lines.length) {
-    if (lines[i].trim().startsWith('#![cfg(')) {
-      let depth = 0;
-      let buf = '';
-      let j = i;
-      for (; j < lines.length; j++) {
-        buf += `${lines[j]}\n`;
-        for (const ch of lines[j]) {
-          if (ch === '(') depth++;
-          else if (ch === ')') depth--;
-        }
-        if (depth === 0) break;
-      }
-      blocks.push(buf);
-      i = j + 1;
-    } else {
-      i++;
-    }
+  // The AllocCore-only boundary deliberately excludes SegmentLayout; the
+  // safety scanner separately enforces its internals policy.
+  const layout = 'src/alloc_core/segment/segment_layout.rs';
+  const geometry = new Map([[layout, scanFile(layout, 'impl SegmentLayout { pub fn small_decommit_start() -> usize { 0 } }')]]);
+  assert.equal(verify(geometry, []).total, 0);
+  assert.deepEqual(verify(geometry, [], select).errors, [`hidden API missing internals gate: ${layout}::small_decommit_start`]);
+  for (const declaration of ['pub const unsafe fn', 'pub unsafe const fn']) {
+    const parsed = fixture(`impl AllocCore { ${declaration} dbg_const_unsafe() {} }`);
+    assert.equal(verify(parsed, [], select).total, 1);
+    assert.deepEqual(verify(parsed, [], select).errors, ['hidden API missing internals gate: fixture.rs::dbg_const_unsafe']);
   }
-  return blocks;
+  // Independent caller oracle: every incoming declaration is significant,
+  // including a second declaration in the same parent and an ungated root.
+  const callerSources = new Map([
+    ['tests/first.rs', '#![cfg(feature = "internals")]\n#[path = "nested/helper.rs"] mod helper;'],
+    ['tests/second.rs', '#![cfg(feature = "internals")]\n#[path = "nested/helper.rs"] mod renamed;'],
+    ['tests/nested/helper.rs', 'fn check() { core.dbg_probe(); }'],
+  ]);
+  const callerErrors = (sources = callerSources, manifest = '') => {
+    const { files, roots } = testFiles(sources, manifest);
+    return testCallers(files, new Set(['dbg_probe']), roots);
+  };
+  assert.deepEqual(callerErrors(), []);
+  callerSources.set('tests/second.rs', '#[path = "nested/helper.rs"] mod renamed;');
+  assert.deepEqual(callerErrors(), ['test caller missing internals inherited module gate: tests/nested/helper.rs: dbg_probe']);
+  assert.deepEqual(callerErrors(callerSources, '[[test]]\nname = "second"\nrequired-features = ["internals"]'), []);
+  callerSources.set('tests/second.rs', '#[cfg(feature = "internals")]\n#[path = "nested/helper.rs"] mod renamed;\n#[path = "nested/helper.rs"] mod ungated;');
+  assert.equal(callerErrors().length, 1);
+  callerSources.set('tests/second.rs', '#[cfg(feature = "internals")]\n#[path = "nested/helper.rs"] mod renamed;');
+  assert.deepEqual(callerErrors(), []);
+  callerSources.set('tests/nested/helper.rs', 'mod leaf;');
+  callerSources.set('tests/nested/helper/leaf.rs', 'fn check() { core.dbg_probe(); }');
+  assert.deepEqual(callerErrors(), []);
+  callerSources.set('tests/root.rs', 'fn check() { core.dbg_probe(); }');
+  callerSources.set('tests/first.rs', '#![cfg(feature = "internals")]\n#[path = "root.rs"] mod root;');
+  assert.deepEqual(callerErrors(), ['test caller missing internals crate gate: tests/root.rs: dbg_probe']);
+  assert.deepEqual(callerErrors(new Map([
+    ['tests/root.rs', '#[cfg(feature = "internals")] mod outer { #[path = "helper.rs"] mod child; }'],
+    ['tests/outer/helper.rs', 'fn check() { core.dbg_probe(); }'],
+  ])), []);
+  assert.equal(callerErrors(new Map([
+    ['tests/root.rs', 'mod outer { #[path = "helper.rs"] mod child; }'],
+    ['tests/outer/helper.rs', 'fn check() { core.dbg_probe(); }'],
+  ])).length, 1);
+  // Ordinary root mod resolution is relative to tests/, not tests/<root>/.
+  assert.deepEqual(callerErrors(new Map([
+    ['tests/root.rs', '#![cfg(feature = "internals")] mod nested;'],
+    ['tests/nested/mod.rs', 'mod helper;'],
+    ['tests/nested/helper.rs', 'fn check() { core.dbg_probe(); }'],
+  ])), []);
 }
-
-const testFiles = readdirSync(TESTS_DIR).filter((f) => f.endsWith('.rs'));
-const testViolations = [];
-for (const f of testFiles) {
-  const text = readFileSync(join(TESTS_DIR, f), 'utf8');
-  const hasInternals = extractCrateLevelCfgBlocks(text).some((b) => b.includes('feature = "internals"'));
-  if (hasInternals) continue;
-
-  const calledGated = new Set();
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('//')) continue;
-    for (const m of line.matchAll(/[.:](dbg_\w+)\s*\(/g)) {
-      if (gatedMethodNames.has(m[1])) calledGated.add(m[1]);
-    }
-  }
-  if (calledGated.size > 0) testViolations.push({ file: f, methods: [...calledGated].sort() });
+if (process.argv.includes('--self-test')) {
+  selfCheck();
+  console.log('[verify-alloc-core-dbg-internals-exhaustive] parser and API boundary self-checks PASS');
+} else {
+  const files = new Map(listRust(join(REPO_ROOT, 'src')).map(path => { const id = idFor(path); return [id, scanFile(id, readFileSync(path, 'utf8'))]; }));
+  const result = verify(files);
+  // Resolve all declarations across the test tree; only actual Cargo roots
+  // require their own gate. Helpers inherit only if every incoming route gates.
+  const tests = testFiles(new Map(listRust(join(REPO_ROOT, 'tests')).map(path => [idFor(path), readFileSync(path, 'utf8')])), readFileSync(join(REPO_ROOT, 'Cargo.toml'), 'utf8'));
+  result.errors.push(...testCallers(tests.files, result.gatedNames, tests.roots));
+  if (result.errors.length) { console.error(`[verify-alloc-core-dbg-internals-exhaustive] FAIL\n${result.errors.join('\n')}`); process.exitCode = 1; }
+  else console.log(`[verify-alloc-core-dbg-internals-exhaustive] ALL GREEN: ${result.total} hidden AllocCore APIs`);
 }
-
-console.log(
-  `\n[verify-alloc-core-dbg-internals-exhaustive] check 2/2: scanned ` +
-    `${testFiles.length} tests/*.rs file(s), ${testViolations.length} VIOLATION(s) ` +
-    `(call a gated method without \`internals\` in their own #![cfg]).`,
-);
-
-if (testViolations.length > 0) {
-  ok = false;
-  console.log(`\n[verify-alloc-core-dbg-internals-exhaustive] FAIL (check 2/2):`);
-  for (const v of testViolations) {
-    console.log(`  tests/${v.file}: ${v.methods.join(', ')}`);
-  }
-  console.log(
-    `\nEach file above must add \`feature = "internals"\` to its own crate-level ` +
-      `#![cfg(...)] so a no-\`internals\` build skips it (cfg'd out) instead of ` +
-      `hard-failing to compile.`,
-  );
-}
-
-if (!ok) process.exit(1);
-
-console.log(`\n[verify-alloc-core-dbg-internals-exhaustive] ALL GREEN`);
-process.exit(0);

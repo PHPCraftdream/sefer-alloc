@@ -19,7 +19,7 @@
 //! wrapped in a `ShardedRegion` *and* cross-checks via the `ShardedHandle`'s
 //! shard routing — proving the shard id is the routing truth.
 
-#![cfg(feature = "experimental")]
+#![cfg(all(feature = "experimental", feature = "internals"))]
 
 use std::sync::Arc;
 use std::thread::scope;

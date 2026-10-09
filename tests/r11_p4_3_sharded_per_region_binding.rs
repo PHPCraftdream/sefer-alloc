@@ -3,7 +3,7 @@
 //! process-global id. Witness is by PATH (shard id + remote-free queue length),
 //! not by timing.
 
-#![cfg(feature = "experimental")]
+#![cfg(all(feature = "experimental", feature = "internals"))]
 
 use std::sync::{Barrier, Mutex};
 use std::thread::scope;

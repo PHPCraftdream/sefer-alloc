@@ -48,7 +48,7 @@
 //! indices, because re-installing an index requires an owner op, which drains
 //! first.
 
-#![cfg(feature = "experimental")]
+#![cfg(all(feature = "experimental", feature = "internals"))]
 
 use std::sync::Arc;
 use std::thread::scope;

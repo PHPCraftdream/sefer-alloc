@@ -173,6 +173,7 @@ pub(crate) mod saturation;
 // Re-exports preserving the flat file's item paths (`bootstrap::X` — consumed
 // by registry heaps and integration tests):
 pub use ensure::count_for_test;
+#[cfg(feature = "internals")]
 pub use ensure::dbg_num_chunks;
 pub use ensure::dbg_rollback_chunk_sentinel_reenterable;
 #[cfg(feature = "internals")]

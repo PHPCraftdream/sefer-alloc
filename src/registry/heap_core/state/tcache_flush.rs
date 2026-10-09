@@ -102,7 +102,7 @@ impl HeapCore {
             #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
             unsafe {
                 self.core
-                    .flush_class(c, &self.tcache.classes[c].slots[0..n])
+                    .flush_class_internal(c, &self.tcache.classes[c].slots[0..n])
             };
             self.tcache.classes[c].count = 0;
             // R13-3 (task #273): every slot in this class's magazine was just

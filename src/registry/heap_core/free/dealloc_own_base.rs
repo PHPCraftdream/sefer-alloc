@@ -460,7 +460,8 @@ impl HeapCore {
                         // batch.
                         #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                         unsafe {
-                            self.core.flush_class(c, core::slice::from_ref(&block));
+                            self.core
+                                .flush_class_internal(c, core::slice::from_ref(&block));
                         }
                         return;
                     }
@@ -503,7 +504,7 @@ impl HeapCore {
                     #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                     unsafe {
                         self.core
-                            .flush_class(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+                            .flush_class_internal(c, &self.tcache.classes[c].slots[0..FLUSH_N])
                     };
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
                     let remaining = TCACHE_CAP - FLUSH_N;

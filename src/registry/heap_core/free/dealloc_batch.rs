@@ -100,7 +100,7 @@ impl HeapCore {
     /// [`FREE_PARK_CAP`] free-side byte-budget cap, for large small-classes);
     /// any further accepted blocks — the batch's overflow past magazine
     /// capacity — are routed straight to
-    /// [`AllocCore::flush_class`] in ONE call (which internally groups them
+    /// [`AllocCore::flush_class_internal`] in ONE call (which internally groups them
     /// into same-segment runs and does the batched bitmap/BinTable RMW — see
     /// that method's doc comment), instead of the scalar path's dribble of
     /// `FLUSH_N`(8)-block half-flushes interleaved with individual pushes.
@@ -218,7 +218,7 @@ impl HeapCore {
     /// The Small-classified batched fast path (R11-4). Partitions `blocks`
     /// into this-heap-owned vs. everything else, magazine-first-fills the
     /// owned subset up to `TCACHE_CAP`, and routes any overflow past that
-    /// capacity to ONE [`AllocCore::flush_class`] call. See
+    /// capacity to ONE [`AllocCore::flush_class_internal`] call. See
     /// [`dealloc_batch`](Self::dealloc_batch)'s doc comment for the full
     /// mechanism and trade-off.
     ///
@@ -370,7 +370,7 @@ impl HeapCore {
                 // each freed exactly once across this whole call.
                 #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
                 unsafe {
-                    self.core.flush_class(c, &stage[..staged])
+                    self.core.flush_class_internal(c, &stage[..staged])
                 };
                 staged = 0;
             }
@@ -385,7 +385,7 @@ impl HeapCore {
             // once here.
             #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
             unsafe {
-                self.core.flush_class(c, &stage[..staged])
+                self.core.flush_class_internal(c, &stage[..staged])
             };
         }
     }

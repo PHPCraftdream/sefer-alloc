@@ -142,6 +142,17 @@ impl AllocCore {
     /// the head free-list node WITHOUT a membership check; passing an invalid,
     /// interior, stale or foreign `ptr` corrupts allocator metadata or triggers
     /// undefined behaviour.
+    /// `ptr` must retain allocator-issued provenance and access permission for
+    /// the mapped Small/Primordial segment's initialized BinTable and the
+    /// current free-list head's intrusive next word, not just `ptr`'s payload.
+    /// These regions must be readable, and the head word writable, through
+    /// the derived base for the call, without conflicting aliases or accesses.
+    /// A pointer narrowed by a payload reference/slice or `Box` reborrow is
+    /// insufficient unless its tag still authorizes those regions; matching
+    /// the address does not grant access. `class_idx` must be a valid small
+    /// class, and the head must be a mapped, free block of that class. The
+    /// arbitrary `next_raw` is only stored, not dereferenced by this hook;
+    /// restore it before any path that would trust an invalid continuation.
     #[doc(hidden)]
     #[cfg(feature = "hardened")]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
@@ -176,6 +187,16 @@ impl AllocCore {
     /// `ptr` and mutates the free list WITHOUT a membership check; an invalid,
     /// interior, stale or foreign `ptr` corrupts allocator metadata or triggers
     /// undefined behaviour.
+    /// `ptr` must retain allocator-issued provenance and access permission for
+    /// the mapped Small/Primordial segment's initialized header, BinTable,
+    /// allocation bitmap, and every free-list node the drain may visit. These
+    /// regions must remain readable/writable through the derived base for the
+    /// call, without conflicting aliases or accesses. A payload-only tag from
+    /// a reference/slice or `Box` reborrow is insufficient unless it still
+    /// authorizes those regions; an address match does not grant access.
+    /// `class_idx` must be a valid small class; visited free-list nodes must
+    /// belong to that class and remain mapped. Returned blocks become live
+    /// allocations and must not also be issued or freed through another path.
     #[doc(hidden)]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_drain_freelist_batch(
@@ -210,6 +231,14 @@ impl AllocCore {
     /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer whose
     /// segment is owned by this `AllocCore`. The callee computes `base` from
     /// `ptr` and reads raw bitmap bytes WITHOUT a membership check.
+    /// `ptr` must retain allocator-issued provenance and read permission for
+    /// the mapped Small/Primordial segment's initialized AllocBitmap prefix
+    /// of `out.len()` bytes, reached through the derived base, for the call.
+    /// A payload-only reference/slice or `Box` reborrow tag is insufficient
+    /// unless it still authorizes that metadata extent. Address equality does
+    /// not grant access. No conflicting metadata writes may occur during the
+    /// copy, and `out` must not alias the source bitmap. The prefix must not
+    /// exceed `AllocBitmap::FOOTPRINT`.
     #[doc(hidden)]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_alloc_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
@@ -232,8 +261,13 @@ impl AllocCore {
     ///
     /// # Safety
     ///
-    /// Same as [`dbg_alloc_bitmap_bytes_for`](Self::dbg_alloc_bitmap_bytes_for#safety):
-    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer.
+    /// Same ownership, lifetime, provenance and non-conflicting read-access
+    /// requirements as
+    /// [`dbg_alloc_bitmap_bytes_for`](Self::dbg_alloc_bitmap_bytes_for#safety),
+    /// but `ptr`'s allocator-issued tag must authorize the initialized
+    /// MagazineBitmap prefix of `out.len()` bytes through the derived base.
+    /// The segment must be mapped Small/Primordial, `out` must not alias that
+    /// source, and the prefix must not exceed `MagazineBitmap::FOOTPRINT`.
     #[doc(hidden)]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_magazine_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
@@ -372,6 +406,12 @@ impl AllocCore {
     /// segment is owned by this `AllocCore`. The callee reads the segment kind
     /// byte at the computed `base` WITHOUT a membership check; a dangling or
     /// foreign `ptr` triggers undefined behaviour.
+    /// `ptr` must retain allocator-issued provenance and read permission for
+    /// the initialized kind byte at the mapped segment header, reached through
+    /// the derived base, for the call. A payload-only tag from a reference,
+    /// slice or `Box` reborrow is insufficient unless it still authorizes that
+    /// header access; matching the address does not grant access. No
+    /// conflicting header write or segment release may occur during the read.
     #[doc(hidden)]
     #[must_use]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.

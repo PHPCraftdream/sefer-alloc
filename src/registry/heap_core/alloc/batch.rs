@@ -147,7 +147,7 @@ impl HeapCore {
             self.drain_large_sidecar_ingress_hot_bounded();
 
             let n = self.refill_with_large_rescue(|heap| {
-                heap.core.refill_class_bump(c, &mut out[filled..])
+                heap.core.refill_class_bump_internal(c, &mut out[filled..])
             });
             // Stamp each distinct refilled source segment.
             let mut prev_base = usize::MAX;

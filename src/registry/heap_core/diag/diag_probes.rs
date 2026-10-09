@@ -47,6 +47,7 @@ impl HeapCore {
     /// predicate is not mirrored into the test file — the review finding
     /// (P3-2, Round 15) this closes.
     #[doc(hidden)]
+    #[cfg(feature = "internals")]
     #[must_use]
     pub const fn dbg_promotion_compiled() -> bool {
         cfg!(all(
@@ -268,7 +269,7 @@ impl HeapCore {
     /// `docs/perf/R28_1_FLUSH_CLASS_ISOLATION_GATE.md` for the full
     /// decomposition and the isolation arithmetic.
     ///
-    /// Delegates to [`AllocCore::flush_class`] verbatim — production's exact
+    /// Delegates to [`AllocCore::flush_class_internal`] verbatim — production's exact
     /// overflow-arm call (`free/dealloc_own_base.rs`'s magazine-overflow branch of
     /// `dealloc_own_thread_with_base`), not an alternate/bypass
     /// implementation. `class_idx`/`blocks` carry the identical contract as
@@ -290,7 +291,7 @@ impl HeapCore {
     ///
     /// # Safety
     ///
-    /// The caller must uphold [`AllocCore::flush_class`]'s `# Safety`
+    /// The caller must uphold [`AllocCore::flush_class_internal`]'s `# Safety`
     /// contract verbatim for `class_idx`/`blocks`: every non-null entry is
     /// the exact start pointer of a currently-LIVE small-class allocation of
     /// size class `class_idx` owned by this heap's substrate, not an interior
@@ -319,9 +320,9 @@ impl HeapCore {
     #[allow(unsafe_code)] // R28-1: `unsafe fn` boundary, mirrors `dbg_dealloc_own_thread_with_base` above.
     pub unsafe fn dbg_flush_class_only(&mut self, class_idx: usize, blocks: &[*mut u8]) {
         // SAFETY: this method carries the identical `# Safety` contract as
-        // the delegated `AllocCore::flush_class`, forwarded to THIS caller
+        // the delegated `AllocCore::flush_class_internal`, forwarded to THIS caller
         // verbatim.
-        unsafe { self.core.flush_class(class_idx, blocks) };
+        unsafe { self.core.flush_class_internal(class_idx, blocks) };
     }
 
     /// R29-10 (task #441) MEASUREMENT-ONLY: run the EXACT production alloc-hit
@@ -348,23 +349,26 @@ impl HeapCore {
     ///
     /// # Safety
     ///
-    /// `issued` must be the exact start pointer of a currently-live allocation
-    /// residing in a segment owned by this heap's substrate — the same
-    /// precondition the production magazine-hit block already relies on. That
-    /// block re-derives the segment base via `os::segment_base_of_ptr(issued)`
-    /// and writes the magazine-residency bitmap at that derived base with ZERO
-    /// validation beyond the pointer's own segment-alignment, so a foreign,
-    /// null, interior, or already-recycled `issued` is contract UB: the derived
-    /// `base` may be unmapped (crash) or may alias an unrelated segment's bitmap
-    /// (silent metadata corruption). The individual primitives composed here
-    /// (`segment_base_of_ptr` / `SegmentMeta::new` / `magazine_bitmap` /
-    /// `clear_magazine`) are each safe `pub(crate)` fns, but their COMBINATION
-    /// derives an unchecked metadata write from a raw pointer — the exact shape
-    /// CLAUDE.md's benchmark-hook rule (the R25-1 fix for
-    /// `dbg_overflow_bitmap_clear_pass`) requires to be `pub unsafe fn` with a
-    /// documented `# Safety` contract rather than a safe `pub fn`. The sole
-    /// caller is the bench arm, which constructs `issued` as a
-    /// freshly-freed-into-the-magazine live block.
+    /// `issued` must be the exact start pointer of a carved Small/Primordial
+    /// block in this heap's still-mapped, allocator-owned reservation. It may
+    /// be a live issued allocation or a logically freed block retained in this
+    /// heap's magazine; it must not have been recycled, reissued to another
+    /// owner, or released. The caller must exclusively control the block and
+    /// prevent conflicting bitmap access for the duration of this call.
+    /// The production magazine-hit step derives the segment base and writes
+    /// the residency bitmap without validating pointer membership. A null,
+    /// foreign, interior, or released pointer can therefore access unmapped
+    /// memory or corrupt unrelated metadata. This measurement hook changes
+    /// only the residency bit: it does not issue ownership or authorize a
+    /// second free of a logically freed magazine block.
+    /// `issued` must retain allocator-issued provenance and read/write access
+    /// permission for the initialized magazine-bitmap word selected by its
+    /// offset through the derived segment base, not just the payload bytes.
+    /// A payload-only reference/slice or `Box` reborrow tag is insufficient
+    /// unless it still authorizes that metadata access. An address/alignment
+    /// check does not grant access. The offset must identify a carved small
+    /// block within the bitmap's extent; the reservation must remain owned by
+    /// this heap, with no conflicting bitmap accesses or release for the call.
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-global",

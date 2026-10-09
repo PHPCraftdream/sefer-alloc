@@ -653,6 +653,7 @@ impl<T> EpochRegion<T> {
     /// comparison ONLY — it MUST NOT be dereferenced, offset, or converted
     /// back to a reference.
     #[doc(hidden)]
+    #[cfg(feature = "internals")]
     pub fn _remote_free_queue_buffer_identity_for_tests(&self) -> (usize, usize, usize) {
         let q = match self.remote_free.lock() {
             Ok(q) => q,

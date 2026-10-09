@@ -296,9 +296,15 @@ impl AllocCore {
     /// # Safety
     ///
     /// `ptr` MUST be a valid, live allocation pointer whose segment is owned by
-    /// this `AllocCore`. The callee computes `base` from `ptr` and mutates the
-    /// segment table WITHOUT a membership check; an invalid, stale or foreign
-    /// `ptr` may corrupt the segment table or trigger undefined behaviour.
+    /// this `AllocCore`; the segment must remain mapped and exclusively owned
+    /// during this call. The hook resolves the table's canonical root before
+    /// mutation, but address membership does not establish typed validity.
+    /// `unregister` copies a typed `SegmentHeader`: every value-bearing field
+    /// must be valid, and `kind` must be restored to the segment's true
+    /// discriminant before calling, including after `dbg_stamp_kind_byte`.
+    /// A deliberately mismatched numeric `segment_id` is permitted for the
+    /// defensive-lookup test; it does not permit an invalid enum byte.
+    /// The caller remains responsible for cleanup after unregistering.
     #[doc(hidden)]
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
@@ -327,9 +333,16 @@ impl AllocCore {
     /// either way the caller MUST NOT dereference `ptr`/`base` afterwards.
     ///
     /// `ptr` MUST be a valid, live allocation pointer whose segment is owned by
-    /// this `AllocCore`. The callee computes `base` from `ptr` and releases the
-    /// OS reservation WITHOUT a membership check; an invalid, stale or foreign
-    /// `ptr` may corrupt the segment table or release the wrong reservation.
+    /// this `AllocCore`; the segment must remain mapped and exclusively owned
+    /// until release. The hook resolves the table's canonical root before
+    /// release, but address membership does not establish typed validity.
+    /// `recycle` copies a typed `SegmentHeader`: every value-bearing field
+    /// must be valid, and `kind` must be restored to the segment's true
+    /// discriminant before calling, including after `dbg_stamp_kind_byte`.
+    /// A deliberately mismatched numeric `segment_id` is permitted for the
+    /// defensive-lookup test; it does not permit an invalid enum byte. The
+    /// reservation pointer/length must still describe the owned OS reservation
+    /// to be released, with no outstanding accesses when release occurs.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.

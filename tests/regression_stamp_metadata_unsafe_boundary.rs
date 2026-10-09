@@ -22,9 +22,10 @@
 //! `dbg_corrupt_freelist_head_next` cites these two as the field-corruption
 //! pattern it mirrors).
 //!
-//! Both hooks are now `pub unsafe fn` with a `# Safety` contract naming the
-//! restore-before-further-use / teardown-via-test-seam obligation. This module
-//! pins the compile boundary and proves the honoring restore path still works.
+//! Both hooks are `pub unsafe fn` and this module pins their compile boundary.
+//! `segment_id` tests may use the guarded teardown seam. For `kind` corruption,
+//! raw/Unknown decode probes are distinct: restore the true discriminant before
+//! any typed header copy, unregister/recycle, or Drop.
 //!
 //! ## Counterfactual (RED without the fix)
 //!
@@ -117,11 +118,8 @@ fn dbg_stamp_kind_byte_is_unsafe_fn_boundary_and_restore_honoring_path_works() {
     // byte is RESTORED to the true `Large` discriminant below before `dealloc`.
     // Restore-before-further-use per the `# Safety` contract.
     unsafe { ac.dbg_stamp_kind_byte(p, 0x99) };
-    assert_eq!(
-        ac.dbg_kind_at_tag(p),
-        3,
-        "out-of-range byte must decode to Unknown (tag 3), proving the stamp landed"
-    );
+    let corrupt_raw = ac.dbg_kind_byte_of(p);
+    let corrupt_tag = ac.dbg_kind_at_tag(p);
 
     // Restore the true discriminant, then free through the public `dealloc`.
     //
@@ -129,6 +127,9 @@ fn dbg_stamp_kind_byte_is_unsafe_fn_boundary_and_restore_honoring_path_works() {
     // `p`'s true `kind` byte (captured above), so this stamp RESTORES the byte
     // to its correct value before the `dealloc` below.
     unsafe { ac.dbg_stamp_kind_byte(p, true_byte) };
+    // Assertions may unwind only after the enum is valid again.
+    assert_eq!(corrupt_raw, 0x99, "stamp landed");
+    assert_eq!(corrupt_tag, 3, "out-of-range byte must decode to Unknown");
 
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `p` is a live
     // allocation made with the matching layout, freed exactly once here.

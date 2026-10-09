@@ -208,6 +208,7 @@ pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> RollbackProb
 /// [`dbg_rollback_chunk_sentinel_reenterable`] without any chance of
 /// colliding with a chunk another test's `claim()` calls have materialised.
 #[doc(hidden)]
+#[cfg(feature = "internals")]
 #[must_use]
 pub const fn dbg_num_chunks() -> usize {
     NUM_CHUNKS

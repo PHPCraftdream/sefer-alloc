@@ -182,6 +182,7 @@ impl SegmentLayout {
     /// (`#[doc(hidden)]` convention — see `lib.rs`); not stable public API.
     #[doc(hidden)]
     #[must_use]
+    #[cfg(feature = "internals")]
     pub fn small_decommit_start() -> usize {
         crate::alloc_core::segment_header::Layout::small_decommit_start()
     }
@@ -194,6 +195,7 @@ impl SegmentLayout {
     /// sanity tests. Test-only public surface; not stable public API.
     #[doc(hidden)]
     #[must_use]
+    #[cfg(feature = "internals")]
     pub fn primordial_decommit_start() -> usize {
         crate::alloc_core::segment_header::Layout::primordial_decommit_start()
     }
@@ -210,6 +212,7 @@ impl SegmentLayout {
         feature = "primordial-lazy-commit",
         feature = "small-segment-lazy-commit"
     ))]
+    #[cfg(feature = "internals")]
     pub fn small_lazy_initial_commit(page_size: usize) -> usize {
         crate::alloc_core::segment_header::Layout::lazy_initial_commit(
             Self::SMALL_META_END,
@@ -228,6 +231,7 @@ impl SegmentLayout {
         feature = "primordial-lazy-commit",
         feature = "small-segment-lazy-commit"
     ))]
+    #[cfg(feature = "internals")]
     pub fn primordial_lazy_initial_commit(page_size: usize) -> usize {
         crate::alloc_core::segment_header::Layout::lazy_initial_commit(
             Self::PRIMORDIAL_META_END,

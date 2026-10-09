@@ -1,9 +1,10 @@
 //! R2-15: regression coverage for stale `u16` virgin-mask bits and oversized
-//! output slices. Calls the public safe API without `internals`; exact carve
+//! output slices. Calls the internals-only safe forwarder; exact carve
 //! assertions are skipped under Miri, where virgin marking is intentionally
 //! disabled. A deterministic partial/OOM refill cannot be induced here.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-xthread",
     feature = "fastbin",
     feature = "virgin-zero-skip"

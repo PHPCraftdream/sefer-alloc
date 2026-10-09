@@ -55,7 +55,7 @@
 //!    cfg), since the real page size cannot be known at compile time (the
 //!    whole reason this split exists).
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use sefer_alloc::SegmentLayout;
 
