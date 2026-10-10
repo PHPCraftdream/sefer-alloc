@@ -27,7 +27,11 @@ impl Word {
     }
 
     fn cut(&self) -> u64 {
-        self.bits.swap(0, Ordering::AcqRel)
+        if self.bits.load(Ordering::Acquire) == 0 {
+            0
+        } else {
+            self.bits.swap(0, Ordering::AcqRel)
+        }
     }
 
     fn class(&self, slot: usize) -> u8 {

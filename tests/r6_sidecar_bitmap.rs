@@ -12,6 +12,11 @@ mod alloc_core {
     }
 }
 
+// Allocation-discovery routing is outside this source-included primitive test.
+#[cfg_attr(
+    all(feature = "bench-internals", r18_sidecar_scan_bench),
+    allow(dead_code)
+)]
 #[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 
@@ -29,6 +34,92 @@ mod tests {
                 .map(|_| AtomicU8::new(0))
                 .collect(),
         )
+    }
+
+    #[test]
+    fn r18_concurrent_publications_survive_empty_cuts_and_resume() {
+        let (words, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        assert!(map.issue(1024, 3));
+        assert!(map.issue(1040, 4));
+        let mut first = map.scan_from(2048, 1).unwrap();
+        let mut records = Vec::new();
+        std::thread::scope(|scope| {
+            let map_ref = &map;
+            let a = scope.spawn(move || assert!(map_ref.publish(1024)));
+            let b = scope.spawn(move || assert!(map_ref.publish(1040)));
+            let mut cut = first.next_cut().unwrap();
+            while let Some(record) = cut.pop() {
+                records.push(record);
+            }
+            assert!(first.next_cut().is_none());
+            a.join().unwrap();
+            b.join().unwrap();
+        });
+        let mut later = map.scan_from(2048, 1).unwrap();
+        let mut cut = later.next_cut().unwrap();
+        while let Some(record) = cut.pop() {
+            records.push(record);
+        }
+        records.sort_by_key(|record| record.offset);
+        assert_eq!(
+            records,
+            [
+                BitmapRecord {
+                    offset: 1024,
+                    class: 3
+                },
+                BitmapRecord {
+                    offset: 1040,
+                    class: 4
+                },
+            ],
+            "publication lost or duplicated across cuts"
+        );
+        assert!(later.next_cut().is_none());
+        assert!(map
+            .scan_from(2048, 1)
+            .unwrap()
+            .next_cut()
+            .unwrap()
+            .is_empty());
+        assert!(map.issue(1024, 5));
+        assert!(map.publish(1024));
+        let mut valid = map.scan_from(2048, 1).unwrap().next_cut().unwrap();
+        assert_eq!(valid.pop().unwrap().class, 5, "nonempty control must drain");
+        assert!(valid.pop().is_none());
+    }
+
+    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+    #[test]
+    fn r18_candidate_skips_empty_exchange_and_drains_exact_record() {
+        use super::remote_bitmap::BitmapScan;
+
+        let (words, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        BitmapScan::measure_scans(true, false);
+        let mut empty = map.scan(1024).unwrap();
+        assert!(empty.next_cut().unwrap().is_empty());
+        assert!(empty.next_cut().is_none());
+        // An unconditional exchange would report [1, 1, 1, 0].
+        assert_eq!(&BitmapScan::measure_scans(true, false)[..4], &[1, 1, 0, 0]);
+
+        assert!(map.issue(64, 3));
+        assert!(map.publish(64));
+        let mut scan = map.scan(1024).unwrap();
+        let mut cut = scan.next_cut().unwrap();
+        assert_eq!(
+            cut.pop(),
+            Some(BitmapRecord {
+                offset: 64,
+                class: 3
+            })
+        );
+        assert!(cut.pop().is_none());
+        assert!(scan.next_cut().is_none());
+        assert_eq!(&BitmapScan::measure_scans(false, true)[..4], &[1, 0, 1, 1]);
+        assert!(map.scan(1024).unwrap().next_cut().unwrap().is_empty());
+        assert_eq!(BitmapScan::measure_scans(false, true), [0; 5]);
     }
 
     #[test]

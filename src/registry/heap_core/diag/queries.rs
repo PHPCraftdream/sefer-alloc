@@ -19,6 +19,15 @@ use core::sync::atomic::Ordering;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
+    /// Configure thread-local measurement; returns visited, empty, exchanged,
+    /// nonempty and allocation-discovery routed scan counts, in that order.
+    /// No raw pointer access; baseline selects the original AcqRel exchange.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+    pub fn dbg_sidecar_scan_measurement(enable: bool, baseline: bool) -> [u64; 5] {
+        crate::alloc_core::remote_bitmap::BitmapScan::measure_scans(enable, baseline)
+    }
+
     /// TEST-ONLY (P4): read the `owner_id` stamped in the segment header of
     /// the segment that contains `ptr`. Returns `None` if `ptr` is not in a
     /// segment owned by this heap's substrate. Used by

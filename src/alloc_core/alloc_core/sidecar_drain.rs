@@ -185,7 +185,7 @@ impl AllocCore {
 
     /// Fixes the table high-water at entry and visits each live slot once.
     /// The owner lease excludes issue/reuse throughout this pass. Each Small
-    /// word is exchanged exactly once; post-cut publishers wait for a later
+    /// word is visited exactly once; post-cut publishers wait for a later
     /// pass and keep their outstanding credits. No dirty hint or producer
     /// quiescence is required. Only stored table roots access reservations.
     pub(crate) fn drain_sidecar_ingress(&mut self) -> usize {

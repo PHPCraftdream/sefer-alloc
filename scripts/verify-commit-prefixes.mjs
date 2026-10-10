@@ -263,18 +263,22 @@ import { REPO_ROOT } from './lib.mjs';
 // via `git log -1 --format=%H 3f7db16` before hardcoding.
 const R30_12_RULE_COMMIT = '3f7db1629d389c18ae987120f4094aaccf04f81f';
 
-// Commits that ALREADY EXISTED when task #1114/#1117 strengthened the two
-// checks below (direction 1 gained a "the src/ delta must contain a
-// non-comment line" content test; direction 2's docs-prefix warning became an
-// ERROR). CLAUDE.md's R30-12 is explicitly non-retroactive — "no historical
-// commit message is retagged or amended by this rule; it governs new commits
-// going forward only" — and the R14-10 raw-log rule and the R24-6
-// `dbg_push_to_ring` decision are two more precedents in the same file for
-// declining exactly this kind of retroactive cleanup. Without this list the
-// mandatory pre-push gate would be permanently RED on landed history that
-// cannot be fixed, which is worse than useless: a gate nobody can make green
-// is a gate everybody learns to ignore.
+// This list preserves commits whose non-retroactive R30-12 subject cannot be
+// repaired safely, plus exact, reviewed false-positive exceptions where the
+// line-based source classifier has no safe general parser fix. A reason and a
+// durable record are required for every entry. No entry suppresses an unknown
+// commit or an unclassified path. Without the list, the mandatory pre-push
+// gate would stay RED on reviewed history and become unusable.
 //
+// The historical entries predate the strengthened checks; later entries are
+// limited to individually verified cases where the subject is still honest.
+// None broadens the taxonomy or changes production behavior.
+//
+// A fourth false-positive exemption, `1cb85d3`, is a source-comment rewrite:
+// its only non-comment-looking `src/` line changes the trailing `//` text on
+// an otherwise identical `#[allow(dead_code)]` attribute. The line-oriented
+// scanner intentionally does not parse Rust comments; this exact reviewed
+// exemption preserves that conservative boundary without rewriting history.
 // ONE ENTRY IS NOT A GENUINE MIS-SLOT ON LANDED HISTORY (task #1238):
 // `2f9d7b9` is a heuristic FALSE-POSITIVE exemption. It did not pre-exist
 // the check (it failed it on the day it was committed) — but unlike
@@ -394,6 +398,16 @@ const GRANDFATHERED = new Map([
       'which applies unchanged here). UNPUSHED: the owner may still reword it ' +
       'by rebase — this exemption records that decision point, it does not ' +
       'foreclose it. Durable record: item 78, sub-card 7 (task #1335).',
+  ],
+  [
+    '1cb85d3',
+    'Heuristic false positive: the `docs:` commit changes source comments; ' +
+      'its sole non-comment-looking line is `#[allow(dead_code)]` with the ' +
+      'same attribute before and after and only a revised trailing comment. ' +
+      'The remaining `src/` changes are comments; no runtime/default behavior ' +
+      'changed. Keep the honest docs prefix and history unchanged. Durable ' +
+      'record: docs/reviews/2026-10-09-fx-review-of-round-15-16-fixes.md ' +
+      '§10 (R18 closeout).',
   ],
   [
     'eaa3310',
@@ -1286,9 +1300,8 @@ function main() {
   if (exempted.length > 0) {
     console.log(
       `\n[verify-commit-prefixes] ${exempted.length} grandfathered commit(s) — ` +
-        `recorded in docs/CORRECTNESS_OPEN_ITEMS.md item 78, NOT amended (R30-12 is ` +
-        `non-retroactive); each entry's reason line states why it is exempt — genuine ` +
-        `mis-slot on landed history, or a heuristic false-positive exemption (task #1238):`,
+        `each entry's durable record is named in its reason; history is NOT amended (R30-12 is ` +
+        `non-retroactive). The reason distinguishes genuine mis-slots from reviewed heuristic false positives:`,
     );
     for (const e of exempted) console.log(`  - ${e}`);
   }

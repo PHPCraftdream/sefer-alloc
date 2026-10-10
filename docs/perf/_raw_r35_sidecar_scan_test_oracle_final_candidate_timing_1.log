@@ -1,0 +1,27 @@
+r18_sidecar_scan_iai::r18_scan::r18_scan_growth
+  Instructions:                     6262407|9137866              (-31.4675%) [-1.45916x]
+  L1 Hits:                          7337265|11809716             (-37.8709%) [-1.60955x]
+  L2 Hits:                            34019|33900                (+0.35103%) [+1.00351x]
+  RAM Hits:                            2656|2735                 (-2.88848%) [-1.02974x]
+  Total read+write:                 7373940|11846351             (-37.7535%) [-1.60652x]
+  Estimated Cycles:                 7600320|12074941             (-37.0571%) [-1.58874x]
+r18_sidecar_scan_iai::r18_scan::r18_scan_cycles
+  Instructions:                    19406991|28451777             (-31.7899%) [-1.46606x]
+  L1 Hits:                         22512309|36582634             (-38.4618%) [-1.62501x]
+  L2 Hits:                           105043|103936               (+1.06508%) [+1.01065x]
+  RAM Hits:                            2656|2734                 (-2.85296%) [-1.02937x]
+  Total read+write:                22620008|36689304             (-38.3471%) [-1.62198x]
+  Estimated Cycles:                23130484|37198004             (-37.8179%) [-1.60818x]
+r18_sidecar_scan_iai::r18_scan::r18_scan_publication
+  Instructions:                     6821862|10027392             (-31.9677%) [-1.46989x]
+  L1 Hits:                          7874909|12860336             (-38.7659%) [-1.63308x]
+  L2 Hits:                            37915|38005                (-0.23681%) [-1.00237x]
+  RAM Hits:                             188|277                  (-32.1300%) [-1.47340x]
+  Total read+write:                 7913012|12898618             (-38.6522%) [-1.63005x]
+  Estimated Cycles:                 8071064|13060056             (-38.2004%) [-1.61813x]
+
+Iai-Callgrind result: Ok. 3 without regressions; 0 regressed; 3 benchmarks finished in 6.77326s
+    Finished `bench` profile [optimized] target(s) in 2.45s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/r18_sidecar_scan_iai.rs (/tmp/sefer-r18-scan/release/deps/r18_sidecar_scan_iai-3be1a60e789f0aec)

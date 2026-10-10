@@ -556,6 +556,7 @@ impl HeapCore {
         // check, which is also an ownership proof (R2-02) — see
         // `safe_payload_read_span`'s doc.
         if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+            return None;
         }
         // Pad target = `new_size` (no artificial padding beyond the caller's
         // request) — see this function's doc comment for the measured

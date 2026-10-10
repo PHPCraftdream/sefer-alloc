@@ -172,6 +172,8 @@ fn no_panic_doc_is_qualified() {
 }
 
 // Conservative lexical guard, not a Rust parser/feature resolver.
+// Explicitly selected owner-path files only; this is not a complete
+// `GlobalAlloc` call-graph, panic-kind, or abort-site census.
 // Function identity uses the preceding fn declaration; scoped to these files. Unknown
 // feature predicates remain visible (both feature branches are audited).
 const RELEASE_SCAN_FILES: &[&str] = &[

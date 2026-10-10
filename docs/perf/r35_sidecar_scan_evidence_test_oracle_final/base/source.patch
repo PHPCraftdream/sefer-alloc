@@ -1,0 +1,291 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index c874601b..8e2760e3 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -111,7 +111,7 @@ loom = "0.7"
+ # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
+ # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
+ # `numa-aware-mock` feature by the mock-gated integration tests).
+-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)'] }
++unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)'] }
+ 
+ [lints]
+ # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
+@@ -1745,6 +1745,13 @@ name = "perf_gate_iai"
+ harness = false
+ required-features = ["alloc-global", "bench-internals", "internals"]
+ 
++# Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
++[[bench]]
++name = "r18_sidecar_scan_iai"
++harness = false
++test = false
++required-features = ["alloc-global", "bench-internals", "internals"]
++
+ # Ph3c step-1 one-shot micro-prototype, docs/perf/PH3C_LEAF_PROTO_IAI.md
+ # (design: docs/design/2026-10-02-ph3c-offbody-geometry-design.md §2.2/§3.3):
+ # falsifies candidate B "per-leaf bit leaves" against emulations of the
+diff --git a/scripts/verify-dbg-hook-safety.mjs b/scripts/verify-dbg-hook-safety.mjs
+index a6fd5c40..9ae17305 100644
+--- a/scripts/verify-dbg-hook-safety.mjs
++++ b/scripts/verify-dbg-hook-safety.mjs
+@@ -314,6 +314,7 @@ BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
+ 
+ // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
+ export const REVIEWED_SURFACE = [
++  { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
+   ...[
+     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
+     ['src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
+@@ -426,7 +427,7 @@ function featureImplies(from, required, seen = new Set()) {
+   return (featureGraph.get(from) ?? []).some(child => featureGraph.has(child) && featureImplies(child, required, new Set([...seen, from])));
+ }
+ function expressionRequires(expr, feature) {
+-  if (feature === 'loom') return !!expr && ((expr.name === 'loom' && !expr.children) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
++  if (feature === 'loom' || feature === 'r18_sidecar_scan_bench') return !!expr && ((expr.name === feature && !expr.children) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
+   if (feature === 'test-model') return !!expr && ((['loom', 'tagged_index_stack_test'].includes(expr.name) && !expr.children) || (expr.name === 'any' && expr.children.length > 0 && expr.children.every(child => expressionRequires(child, feature))) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
+   return !!expr && ((expr.name === 'feature' && featureImplies(expr.value, feature)) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
+ }
+diff --git a/src/alloc_core/alloc_core/sidecar_drain.rs b/src/alloc_core/alloc_core/sidecar_drain.rs
+index b7108d3a..78c79f54 100644
+--- a/src/alloc_core/alloc_core/sidecar_drain.rs
++++ b/src/alloc_core/alloc_core/sidecar_drain.rs
+@@ -185,7 +185,7 @@ impl AllocCore {
+ 
+     /// Fixes the table high-water at entry and visits each live slot once.
+     /// The owner lease excludes issue/reuse throughout this pass. Each Small
+-    /// word is exchanged exactly once; post-cut publishers wait for a later
++    /// word is visited exactly once; post-cut publishers wait for a later
+     /// pass and keep their outstanding credits. No dirty hint or producer
+     /// quiescence is required. Only stored table roots access reservations.
+     pub(crate) fn drain_sidecar_ingress(&mut self) -> usize {
+diff --git a/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs b/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs
+index 125bd1c9..ad6c9fe8 100644
+--- a/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs
++++ b/src/alloc_core/segment/remote_bitmap/bitmap_scan.rs
+@@ -2,6 +2,12 @@ use core::sync::atomic::{AtomicU64, Ordering};
+ 
+ use super::{sidecar_bitmap::ClassMap, BitmapCut};
+ 
++#[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++std::thread_local! {
++    static SCAN_COUNTS: core::cell::Cell<Option<[u64; 5]>> = const { core::cell::Cell::new(None) };
++    static BASELINE_SCAN: core::cell::Cell<bool> = const { core::cell::Cell::new(true) };
++}
++
+ /// A fixed high-water scan. One cut is taken per word, including empty words.
+ #[must_use = "finish the fixed scan or persist the remaining cursor"]
+ pub(crate) struct BitmapScan<'a> {
+@@ -12,6 +18,23 @@ pub(crate) struct BitmapScan<'a> {
+ }
+ 
+ impl<'a> BitmapScan<'a> {
++    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++    pub(crate) fn measure_scans(enable: bool, baseline: bool) -> [u64; 5] {
++        BASELINE_SCAN.with(|mode| mode.set(baseline));
++        SCAN_COUNTS.with(|counts| counts.replace(enable.then_some([0; 5])).unwrap_or([0; 5]))
++    }
++
++    /// Count only successful allocation-discovery route scan constructions.
++    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++    pub(crate) fn count_routed_scan() {
++        SCAN_COUNTS.with(|counts| {
++            if let Some(mut current) = counts.get() {
++                current[4] += 1;
++                counts.set(Some(current));
++            }
++        });
++    }
++
+     pub(crate) fn next_cut(&mut self) -> Option<BitmapCut<'a>> {
+         if self.next_word == self.end_word {
+             return None;
+@@ -19,7 +42,29 @@ impl<'a> BitmapScan<'a> {
+         let word = self.next_word;
+         self.next_word += 1;
+         let pending = self.pending.next().unwrap_or_else(|| std::process::abort());
++        #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++        let baseline = BASELINE_SCAN.with(core::cell::Cell::get);
++        #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++        let (bits, empty, exchanged) = if baseline {
++            let bits = pending.swap(0, Ordering::AcqRel);
++            (bits, bits == 0, true)
++        } else if pending.load(Ordering::Acquire) == 0 {
++            (0, true, false)
++        } else {
++            (pending.swap(0, Ordering::AcqRel), false, true)
++        };
++        #[cfg(not(all(feature = "bench-internals", r18_sidecar_scan_bench)))]
+         let bits = pending.swap(0, Ordering::AcqRel);
++        #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++        SCAN_COUNTS.with(|counts| {
++            if let Some(mut current) = counts.get() {
++                current[0] += 1;
++                current[1] += u64::from(empty);
++                current[2] += u64::from(exchanged);
++                current[3] += u64::from(bits != 0);
++                counts.set(Some(current));
++            }
++        });
+         Some(BitmapCut {
+             classes: self.classes,
+             word,
+diff --git a/src/alloc_core/small/alloc_core_small/find_segment.rs b/src/alloc_core/small/alloc_core_small/find_segment.rs
+index bb5697e9..c00e4525 100644
+--- a/src/alloc_core/small/alloc_core_small/find_segment.rs
++++ b/src/alloc_core/small/alloc_core_small/find_segment.rs
+@@ -150,6 +150,8 @@ impl AllocCore {
+             else {
+                 std::process::abort();
+             };
++            #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++            crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
+             while let Some(mut cut) = scan.next_cut() {
+                 while let Some(record) = cut.pop() {
+                     if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+diff --git a/src/registry/heap_core/diag/queries.rs b/src/registry/heap_core/diag/queries.rs
+index af5c6f0e..b0d06c2d 100644
+--- a/src/registry/heap_core/diag/queries.rs
++++ b/src/registry/heap_core/diag/queries.rs
+@@ -19,6 +19,15 @@ use core::sync::atomic::Ordering;
+ use crate::registry::heap_core::HeapCore;
+ 
+ impl HeapCore {
++    /// Configure thread-local measurement; returns visited, empty, exchanged,
++    /// nonempty and allocation-discovery routed scan counts, in that order.
++    /// No raw pointer access; baseline selects the original AcqRel exchange.
++    #[doc(hidden)]
++    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++    pub fn dbg_sidecar_scan_measurement(enable: bool, baseline: bool) -> [u64; 5] {
++        crate::alloc_core::remote_bitmap::BitmapScan::measure_scans(enable, baseline)
++    }
++
+     /// TEST-ONLY (P4): read the `owner_id` stamped in the segment header of
+     /// the segment that contains `ptr`. Returns `None` if `ptr` is not in a
+     /// segment owned by this heap's substrate. Used by
+diff --git a/tests/loom_sidecar_bitmap.rs b/tests/loom_sidecar_bitmap.rs
+index 9be3ff7b..8cea8873 100644
+--- a/tests/loom_sidecar_bitmap.rs
++++ b/tests/loom_sidecar_bitmap.rs
+@@ -27,7 +27,11 @@ impl Word {
+     }
+ 
+     fn cut(&self) -> u64 {
+-        self.bits.swap(0, Ordering::AcqRel)
++        if self.bits.load(Ordering::Acquire) == 0 {
++            0
++        } else {
++            self.bits.swap(0, Ordering::AcqRel)
++        }
+     }
+ 
+     fn class(&self, slot: usize) -> u8 {
+diff --git a/tests/r6_sidecar_bitmap.rs b/tests/r6_sidecar_bitmap.rs
+index 6a7907ae..33d8c897 100644
+--- a/tests/r6_sidecar_bitmap.rs
++++ b/tests/r6_sidecar_bitmap.rs
+@@ -12,6 +12,11 @@ mod alloc_core {
+     }
+ }
+ 
++// Allocation-discovery routing is outside this source-included primitive test.
++#[cfg_attr(
++    all(feature = "bench-internals", r18_sidecar_scan_bench),
++    allow(dead_code)
++)]
+ #[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
+ mod remote_bitmap;
+ 
+@@ -31,6 +36,92 @@ mod tests {
+         )
+     }
+ 
++    #[test]
++    fn r18_concurrent_publications_survive_empty_cuts_and_resume() {
++        let (words, classes) = backing();
++        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
++        assert!(map.issue(1024, 3));
++        assert!(map.issue(1040, 4));
++        let mut first = map.scan_from(2048, 1).unwrap();
++        let mut records = Vec::new();
++        std::thread::scope(|scope| {
++            let map_ref = &map;
++            let a = scope.spawn(move || assert!(map_ref.publish(1024)));
++            let b = scope.spawn(move || assert!(map_ref.publish(1040)));
++            let mut cut = first.next_cut().unwrap();
++            while let Some(record) = cut.pop() {
++                records.push(record);
++            }
++            assert!(first.next_cut().is_none());
++            a.join().unwrap();
++            b.join().unwrap();
++        });
++        let mut later = map.scan_from(2048, 1).unwrap();
++        let mut cut = later.next_cut().unwrap();
++        while let Some(record) = cut.pop() {
++            records.push(record);
++        }
++        records.sort_by_key(|record| record.offset);
++        assert_eq!(
++            records,
++            [
++                BitmapRecord {
++                    offset: 1024,
++                    class: 3
++                },
++                BitmapRecord {
++                    offset: 1040,
++                    class: 4
++                },
++            ],
++            "publication lost or duplicated across cuts"
++        );
++        assert!(later.next_cut().is_none());
++        assert!(map
++            .scan_from(2048, 1)
++            .unwrap()
++            .next_cut()
++            .unwrap()
++            .is_empty());
++        assert!(map.issue(1024, 5));
++        assert!(map.publish(1024));
++        let mut valid = map.scan_from(2048, 1).unwrap().next_cut().unwrap();
++        assert_eq!(valid.pop().unwrap().class, 5, "nonempty control must drain");
++        assert!(valid.pop().is_none());
++    }
++
++    #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
++    #[test]
++    fn r18_candidate_skips_empty_exchange_and_drains_exact_record() {
++        use super::remote_bitmap::BitmapScan;
++
++        let (words, classes) = backing();
++        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
++        BitmapScan::measure_scans(true, false);
++        let mut empty = map.scan(1024).unwrap();
++        assert!(empty.next_cut().unwrap().is_empty());
++        assert!(empty.next_cut().is_none());
++        // An unconditional exchange would report [1, 1, 1, 0].
++        assert_eq!(&BitmapScan::measure_scans(true, false)[..4], &[1, 1, 0, 0]);
++
++        assert!(map.issue(64, 3));
++        assert!(map.publish(64));
++        let mut scan = map.scan(1024).unwrap();
++        let mut cut = scan.next_cut().unwrap();
++        assert_eq!(
++            cut.pop(),
++            Some(BitmapRecord {
++                offset: 64,
++                class: 3
++            })
++        );
++        assert!(cut.pop().is_none());
++        assert!(scan.next_cut().is_none());
++        assert_eq!(&BitmapScan::measure_scans(false, true)[..4], &[1, 0, 1, 1]);
++        assert!(map.scan(1024).unwrap().next_cut().unwrap().is_empty());
++        assert_eq!(BitmapScan::measure_scans(false, true), [0; 5]);
++    }
++
+     #[test]
+     fn r6_geometry_and_fixed_high_water() {
+         let (words, classes) = backing();

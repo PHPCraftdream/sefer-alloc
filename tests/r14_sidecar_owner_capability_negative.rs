@@ -2,54 +2,29 @@
 //! rustc, `--error-format=json`, exactly one error with an exact code,
 //! rendered-content substrings, primary span inside the fixture's own
 //! main.rs).
-//! This harness invokes RUSTC (or rustc) directly. There is no architecture,
-//! layout or marker gate: a candidate rlib built for another target than
-//! rustc's default (the `cross test` rows) makes the positive probe fail with
-//! E0461 ("couldn't find crate `sefer_alloc` with expected target triple ..."),
-//! which is the compiler's own verdict that the candidate is foreign. Such
-//! candidates are skipped explicitly, and when every candidate is foreign the
-//! test prints a skip line and returns. With a usable current native artifact,
-//! the probe compiles and the checks run (native arm64 included). Directory-layout and
-//! marker inference was tried and dropped: cargo writes CACHEDIR.TAG into each
-//! `<triple>` directory, and `.rustc_info.json` is not guaranteed in a root.
+//! This harness invokes RUSTC (or rustc) directly. Candidates are collected
+//! from the test binary's `deps` directory and probed deterministically.
+//! Freshness uses each candidate's Cargo dep-info `.d`: only Rust sources
+//! listed there can stale an rlib. Package-manifest mtime and cfg-inactive
+//! source edits are not treated as evidence of staleness; missing/unreadable
+//! dep-info is not evidence either, so the candidate stays for the positive
+//! probe. This does not prove Cargo linked that candidate into this test.
 //!
-//! Fixtures compile against compatible built artifacts; these candidates
-//! are not proven to be the rlib linked into the current test build.
-//! Artifact selection is
-//! deterministic: every `libsefer_alloc-*.rlib` / `libsefer_alloc.rlib` under
-//! the deps directory (the parent of `current_exe()`, which cargo places
-//! under `<profile>/deps/`) is collected, sorted by path. Before probing,
-//! candidates with a readable mtime strictly older than the newest readable
-//! mtime among recursively scanned src/**/*.rs, Cargo.toml and optional build.rs
-//! are excluded and logged as stale-source. Unreadable directories and individual
-//! metadata/mtime failures are ignored; unknown candidate mtimes are retained,
-//! and no readable source timestamp means no exclusion. An empty filtered set
-//! hard fails with a rebuild instruction, never skips. This is a freshness
-//! filter, not proof that a candidate was linked into the current test build.
-//! A positive probe
-//! fixture (`tests/compile_fail/r14_positive_probe`) decides per candidate
-//! whether the build is internals-compatible: success → COMPATIBLE, failure
-//! with only these restricted coded messages → skipped:
-//! - E0432: "unresolved import `sefer_alloc::registry`".
-//! - E0433: "cannot find `registry` in `sefer_alloc`" or
-//!   "could not find `registry` in `sefer_alloc`".
-//! - E0460: prefix "found possibly newer version of crate `" and suffix
-//!   "` which `sefer_alloc` depends on".
-//! - E0461: prefix "couldn't find crate `sefer_alloc` with expected target triple ".
-//! - E0463: prefix "can't find crate for `" and suffix
-//!   " which `sefer_alloc` depends on".
-//! - E0603: "module `registry` is private".
+//! The positive probe classifies candidates as compatible, or skips only
+//! exact, reviewed diagnostics: feature-incompatible registry/dependency
+//! errors, E0461 for this crate's foreign target, and the exact E0514 message
+//! for `sefer_alloc` itself. Unknown diagnostics and incompatible dependency
+//! compiler artifacts remain hard failures.
 //!
-//! Only exit 1 with nonempty coded errors all matching the foreign verdict
-//! counts a candidate as foreign. Only a nonempty all-foreign candidate set
-//! with no compatible candidates skips the test; empty sets and all-feature-
-//! incompatible sets hard fail. Only the exact count-matched uncoded abort
-//! summary is allowed;
-//! anything else (including E0599/E0624 from newer or unknown-mtime
-//! incompatible artifacts) → hard harness failure. Each negative fixture is then run
-//! against EVERY compatible variant, each with its own out-dir, and must
-//! yield exactly one coded error of the expected code with the expected
-//! rendered substrings and a primary span exactly in the fixture's own file.
+//! An all-foreign set may skip only when `rustc --print cfg` differs from the
+//! test binary's target in architecture, OS, or a known target environment.
+//! Equal or unrecognized target configurations fail closed, so a native green
+//! test cannot silently skip all R14 checks. No workflow output parsing,
+//! architecture-directory heuristic, or filesystem marker is used.
+//!
+//! Each negative fixture is run against every compatible candidate in its
+//! own output directory and must produce exactly one expected coded error,
+//! expected rendered text, and a primary span in its own `main.rs`.
 //!
 //! Expected outcomes:
 //! - `small_sidecar_shared_prepare_not_callable` → exactly one E0624
@@ -74,6 +49,91 @@ fn is_foreign_target_diagnostic(code: Option<&str>, message: &str) -> bool {
         && message.starts_with("couldn't find crate `sefer_alloc` with expected target triple ")
 }
 
+fn is_incompatible_rustc_diagnostic(code: Option<&str>, message: &str) -> bool {
+    code == Some("E0514")
+        && message == "found crate `sefer_alloc` compiled by an incompatible version of rustc"
+}
+
+fn cfg_value<'a>(cfg: &'a str, key: &str) -> Option<&'a str> {
+    cfg.lines().find_map(|line| {
+        let (name, value) = line.split_once('=')?;
+        if name == key {
+            value.strip_prefix('"')?.strip_suffix('"')
+        } else {
+            None
+        }
+    })
+}
+
+fn current_target_env() -> Option<&'static str> {
+    if cfg!(target_env = "gnu") {
+        Some("gnu")
+    } else if cfg!(target_env = "musl") {
+        Some("musl")
+    } else if cfg!(target_env = "msvc") {
+        Some("msvc")
+    } else if cfg!(target_env = "uclibc") {
+        Some("uclibc")
+    } else if cfg!(target_env = "newlib") {
+        Some("newlib")
+    } else if cfg!(target_env = "sgx") {
+        Some("sgx")
+    } else if cfg!(target_env = "ohos") {
+        Some("ohos")
+    } else if cfg!(target_env = "p1") {
+        Some("p1")
+    } else if cfg!(target_env = "p2") {
+        Some("p2")
+    } else if cfg!(target_os = "macos") {
+        Some("")
+    } else {
+        None
+    }
+}
+
+fn host_cfg_matches_target(host_cfg: &str, arch: &str, os: &str, env: &str) -> Option<bool> {
+    Some(
+        cfg_value(host_cfg, "target_arch")? == arch
+            && cfg_value(host_cfg, "target_os")? == os
+            && cfg_value(host_cfg, "target_env")? == env,
+    )
+}
+
+fn all_foreign_skip_allowed(
+    candidate_count: usize,
+    foreign_count: usize,
+    compatible_count: usize,
+    host_matches_target: Option<bool>,
+) -> bool {
+    candidate_count > 0
+        && foreign_count == candidate_count
+        && compatible_count == 0
+        && host_matches_target == Some(false)
+}
+
+fn rustc_host_cfg() -> String {
+    let output = std::process::Command::new(rustc_command())
+        .arg("--print")
+        .arg("cfg")
+        .output()
+        .expect("failed to query rustc's default target cfg");
+    assert!(
+        output.status.success(),
+        "rustc --print cfg failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("rustc --print cfg must be UTF-8")
+}
+
+fn rustc_host_matches_test_target(host_cfg: &str) -> Option<bool> {
+    host_cfg_matches_target(
+        host_cfg,
+        std::env::consts::ARCH,
+        std::env::consts::OS,
+        current_target_env()?,
+    )
+}
+
 #[test]
 fn foreign_target_diagnostic_matches_the_cross_ci_message() {
     let ci =
@@ -95,6 +155,44 @@ fn foreign_target_diagnostic_matches_the_cross_ci_message() {
         Some("E0461"),
         "found possibly newer version of crate `x`"
     ));
+}
+
+#[test]
+fn incompatible_rustc_diagnostic_matches_only_sefer_alloc_e0514() {
+    let message = "found crate `sefer_alloc` compiled by an incompatible version of rustc";
+    assert!(is_incompatible_rustc_diagnostic(Some("E0514"), message));
+    assert!(!is_incompatible_rustc_diagnostic(
+        Some("E0514"),
+        "found crate `core` compiled by an incompatible version of rustc"
+    ));
+    assert!(!is_incompatible_rustc_diagnostic(Some("E0460"), message));
+}
+
+#[test]
+fn all_foreign_candidates_skip_only_for_a_different_target() {
+    assert!(all_foreign_skip_allowed(2, 2, 0, Some(false)));
+    assert!(!all_foreign_skip_allowed(2, 2, 0, Some(true)));
+    assert!(!all_foreign_skip_allowed(2, 1, 0, Some(false)));
+    assert!(!all_foreign_skip_allowed(0, 0, 0, Some(false)));
+    assert!(!all_foreign_skip_allowed(2, 2, 0, None));
+    assert_eq!(
+        host_cfg_matches_target(
+            "target_arch=\"aarch64\"\ntarget_os=\"macos\"\ntarget_env=\"\"\n",
+            "aarch64",
+            "macos",
+            "",
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        host_cfg_matches_target(
+            "target_arch=\"x86_64\"\ntarget_os=\"linux\"\ntarget_env=\"gnu\"\n",
+            "aarch64",
+            "linux",
+            "gnu",
+        ),
+        Some(false)
+    );
 }
 
 /// Canonical fixture path in a rustc-comparable form (`\\?\` prefix stripped,
@@ -135,29 +233,65 @@ fn readable_modified(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
-/// Missing metadata and unreadable directories contribute no exclusion evidence.
-fn newest_source_modified(manifest: &Path) -> Option<SystemTime> {
-    fn scan(directory: &Path, newest: &mut Option<SystemTime>) {
-        let Ok(entries) = std::fs::read_dir(directory) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let Ok(kind) = entry.file_type() else {
-                continue;
+/// Missing timestamps add no staleness evidence; only dep-info-listed Rust
+/// sources are compared, not manifest mtimes or cfg-inactive files.
+fn newest_source_modified(manifest: &Path, dependencies: &[PathBuf]) -> Option<SystemTime> {
+    let mut newest = None;
+    for dependency in dependencies {
+        if dependency.extension().is_some_and(|ext| ext == "rs") {
+            let path = if dependency.is_absolute() {
+                dependency.clone()
+            } else {
+                manifest.join(dependency)
             };
-            let path = entry.path();
-            if kind.is_dir() {
-                scan(&path, newest);
-            } else if kind.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
-                *newest = (*newest).max(readable_modified(&path));
-            }
+            newest = newest.max(readable_modified(&path));
         }
     }
-
-    let mut newest = readable_modified(&manifest.join("Cargo.toml"))
-        .max(readable_modified(&manifest.join("build.rs")));
-    scan(&manifest.join("src"), &mut newest);
     newest
+}
+
+fn dep_info_path(candidate: &Path) -> Option<PathBuf> {
+    let file_name = candidate.file_name()?.to_str()?;
+    let stem = file_name.strip_suffix(".rlib")?;
+    let dep_stem = stem.strip_prefix("lib").unwrap_or(stem);
+    Some(candidate.parent()?.join(format!("{dep_stem}.d")))
+}
+
+fn dep_info_dependencies(contents: &str) -> Vec<PathBuf> {
+    let mut dependencies = Vec::new();
+    for line in contents.lines() {
+        let Some((_, raw_dependencies)) = line.split_once(": ") else {
+            continue;
+        };
+        let mut word = String::new();
+        let mut chars = raw_dependencies.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\\' && chars.peek().is_some_and(|next| next.is_whitespace()) {
+                word.push(chars.next().expect("peeked dep-info escape"));
+            } else if ch.is_whitespace() {
+                if !word.is_empty() {
+                    dependencies.push(PathBuf::from(std::mem::take(&mut word)));
+                }
+            } else {
+                word.push(ch);
+            }
+        }
+        if !word.is_empty() {
+            dependencies.push(PathBuf::from(word));
+        }
+    }
+    dependencies
+}
+
+fn candidate_dep_info_dependencies(candidate: &Path) -> Option<Vec<PathBuf>> {
+    let path = dep_info_path(candidate)?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    Some(dep_info_dependencies(&contents))
+}
+
+fn dep_info_freshness(candidate: &Path, manifest: &Path) -> Option<SystemTime> {
+    let dependencies = candidate_dep_info_dependencies(candidate)?;
+    newest_source_modified(manifest, &dependencies)
 }
 
 #[test]
@@ -206,6 +340,75 @@ fn candidate_freshness_keeps_equal_newer_and_unknown_timestamps() {
     }
 }
 
+#[test]
+fn dep_info_parser_preserves_path_separators_and_escaped_spaces() {
+    let paths = dep_info_dependencies(
+        r"C:\target\deps\sefer_alloc.d: src\lib.rs src\module\ with\ space.rs",
+    );
+    assert_eq!(
+        paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+        vec![
+            "src\\lib.rs".to_owned(),
+            "src\\module with space.rs".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn dep_info_freshness_ignores_cfg_inactive_sources() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let manifest = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("r14_dep_info_{unique}"));
+    let src = manifest.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let result = std::panic::catch_unwind(|| {
+        let active_time = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let candidate_time = UNIX_EPOCH + Duration::from_secs(1_700_000_100);
+        let inactive_time = UNIX_EPOCH + Duration::from_secs(1_700_000_200);
+        let active = src.join("active.rs");
+        let inactive = src.join("cfg_inactive.rs");
+        for (path, time) in [(&active, active_time), (&inactive, inactive_time)] {
+            std::fs::File::create(path)
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+        }
+        let deps = manifest.join("deps");
+        std::fs::create_dir_all(&deps).unwrap();
+        let candidate = deps.join("libsefer_alloc-a1b2.rlib");
+        std::fs::File::create(&candidate)
+            .unwrap()
+            .set_modified(candidate_time)
+            .unwrap();
+        std::fs::write(
+            deps.join("sefer_alloc-a1b2.d"),
+            "sefer_alloc-a1b2.rlib: src/active.rs\n",
+        )
+        .unwrap();
+        let newest = dep_info_freshness(&candidate, &manifest);
+        assert_eq!(newest, Some(active_time));
+        assert!(
+            !candidate_is_stale(readable_modified(&candidate), newest),
+            "a newer cfg-inactive source must not stale this candidate"
+        );
+        assert!(
+            candidate_is_stale(Some(active_time - Duration::from_secs(1)), newest),
+            "an older candidate must still be rejected when an active source changed"
+        );
+    });
+    std::fs::remove_dir_all(&manifest).unwrap();
+    if let Err(payload) = result {
+        std::panic::resume_unwind(payload);
+    }
+}
+
 /// Source-fresh or unknown-mtime rlibs under deps, sorted by path.
 fn candidate_rlibs(deps: &Path, tag: &str) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = std::fs::read_dir(deps)
@@ -230,10 +433,13 @@ fn candidate_rlibs(deps: &Path, tag: &str) -> Vec<PathBuf> {
         })
         .collect();
     candidates.sort();
-    let newest_source = newest_source_modified(Path::new(env!("CARGO_MANIFEST_DIR")));
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut stale_skipped = 0usize;
     candidates.retain(|candidate| {
-        if candidate_is_stale(readable_modified(candidate), newest_source) {
+        if candidate_is_stale(
+            readable_modified(candidate),
+            dep_info_freshness(candidate, manifest),
+        ) {
             stale_skipped += 1;
             eprintln!(
                 "R14 {tag}: skip stale-source candidate={}",
@@ -247,7 +453,7 @@ fn candidate_rlibs(deps: &Path, tag: &str) -> Vec<PathBuf> {
     eprintln!("R14 {tag}: {stale_skipped} stale-source candidates skipped");
     assert!(
         !candidates.is_empty(),
-        "R14 {tag}: current build not found under {} after source-freshness filtering; \
+        "R14 {tag}: current build not found under {} after active-input freshness filtering; \
          rebuild the crate with alloc-global + internals features",
         deps.display()
     );
@@ -325,12 +531,11 @@ fn full_context(fixture: &Path, candidate: &Path, output: &std::process::Output)
     )
 }
 
-/// Filters candidate rlibs through a positive probe. Skip only known
-/// feature-incompatible registry and dependency-resolution diagnostics, or
-/// rustc's E0461 verdict for the sefer_alloc candidate. The latter counts once
-/// per candidate only on exit 1 with nonempty, all-foreign coded errors.
-/// Return empty only for a nonempty all-foreign set with no compatible rlibs;
-/// empty sets, all-feature-incompatible sets and other failures hard fail.
+/// Filters candidate rlibs through a positive probe. Skip only the narrowly
+/// recognized feature-incompatibility diagnostics, the exact E0514 for this
+/// crate, or rustc's E0461 verdict for the sefer_alloc candidate. An all-
+/// foreign set skips only for a test target different from rustc's default;
+/// empty sets and all-feature-incompatible sets hard fail.
 fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<PathBuf> {
     let mut compatible = Vec::new();
     let mut foreign = 0usize;
@@ -360,6 +565,19 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
             foreign += 1;
             eprintln!(
                 "R14 {tag}: skip foreign-target candidate={}",
+                candidate.display()
+            );
+        } else if output.status.code() == Some(1)
+            && !errors.is_empty()
+            && errors.iter().all(|error| {
+                is_incompatible_rustc_diagnostic(
+                    error.pointer("/code/code").and_then(as_str),
+                    error.get("message").and_then(as_str).unwrap_or_default(),
+                )
+            })
+        {
+            eprintln!(
+                "R14 {tag}: skip rustc-incompatible candidate={}",
                 candidate.display()
             );
         } else if output.status.code() == Some(1)
@@ -396,9 +614,22 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
         }
     }
     if compatible.is_empty() && !candidates.is_empty() && foreign == candidates.len() {
+        let host_cfg = rustc_host_cfg();
+        let host_matches_target = rustc_host_matches_test_target(&host_cfg);
+        assert!(
+            all_foreign_skip_allowed(
+                candidates.len(),
+                foreign,
+                compatible.len(),
+                host_matches_target
+            ),
+            "R14 {tag}: refusing the all-foreign skip: candidate target does not match \
+             rustc, but the test target is the same as rustc's default or cannot \
+             be identified safely. host cfg:\n{host_cfg}"
+        );
         eprintln!(
-            "R14 {tag}: skip, all {} candidate rlibs are built for another target than \
-             rustc's default (cross test); the checks run with usable native artifacts",
+            "R14 {tag}: skip, all {} candidate rlibs are foreign to this cross target; \
+             native-target runs cannot take this skip",
             candidates.len()
         );
         return compatible;

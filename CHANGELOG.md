@@ -121,6 +121,40 @@ composition is unchanged; no speed or RSS improvement is claimed.
   triggers. Workflow-only gaps remain OPEN; no workflow or runtime changes.
   The full default suite passed (96 tests, 1 ignored).
 
+- [measurement] Evaluated the routed sidecar empty-word prefilter in the
+  dedicated R35 same-binary Callgrind gate. The oracle activated owner-side
+  routed scans in all three scenarios; candidate mode skipped empty-word
+  exchanges, retired 32 more instructions per scenario, and reported lower
+  estimated cycles. These are Callgrind model observations, not native
+  latency/coherence or producer-latency results. The candidate requires both
+  `bench-internals` and the dedicated `r18_sidecar_scan_bench` cfg; ordinary
+  production and IAI without that cfg keep the original swap with no R18 TLS.
+  `npm run iai` is unchanged. Perf item 82 remains OPEN; no production speedup
+  or promotion is claimed. See the R35 report, summary CSV, source snapshot,
+  and cited raw logs.
+
+- [fix(perf), test, docs] The Round-15/16 follow-up restored
+  `try_promote_to_large`'s committed-span rejection (`return None`) after
+  strict Clippy exposed an empty conditional. The Windows-lazy
+  `production medium-classes` regression passes; the empty-if revert crashes
+  its child with `0xc0000005` and fails the parent test. The R14 harness now
+  uses each rlib's dep-info-listed Rust sources, skips only exact
+  `sefer_alloc` E0514 compiler mismatch diagnostics, and refuses all-foreign
+  skips when the test target matches or cannot be identified against
+  `rustc --print cfg`; the cfg-inactive freshness and same-target skip
+  regressions fail under their counterfactuals. The panic-doc scanner claim
+  is scoped to its explicit file/token inventory. Perf-83's ±12/−14 Ir
+  controls are now described as comparable-scale evidence, not a deterministic
+  code-shape effect; its preregistered NO-GO is unchanged. Focused suites:
+  R14 harness 9/9, no-panic accuracy 4/4, promotion 6 passed / 1 ignored.
+  The repository check also exposed stale bench counts (README now says 24)
+  and a Windows all-features 64 KiB setup overflow before `Drop`; the R1-04
+  test uses 96 KiB on Windows and retains 64 KiB on Unix, where CI checks the
+  historical fixed-buffer regression. The R30-12 scanner's `1cb85d3` hit
+  was a false positive: only the trailing comment on an unchanged
+  `#[allow(dead_code)]` attribute differed; an exact reviewed exemption keeps
+  the honest `docs:` subject without rewriting history.
+
 
 
 
@@ -146,8 +180,9 @@ composition, defaults and dependencies are unchanged.
 - [correctness fix] The two release `.expect`s on the `GlobalAlloc`
   free/trim flush loops (item174) first became aborts, then disappeared with
   the segment-mask change below; the no-panic contract text is updated and
-  `no_panic_doc_accuracy` now scans the `GlobalAlloc`-reachable files for
-  release panic sites against an explicit allowlist.
+  `no_panic_doc_accuracy` now scans an explicitly selected set of source
+  files for `.expect`, `panic!`, and `unreachable!` sites against an explicit
+  allowlist; it is not a complete `GlobalAlloc` call-graph or abort census.
 - [perf, runtime] Magazine overflow-flush and `flush_all_tcache` resolve each
   slot's segment root with the segment-base mask (the R12-02 issue-side
   pattern) instead of a segment-table lookup (perf item84, GO):
@@ -159,17 +194,19 @@ composition, defaults and dependencies are unchanged.
   against T=12). No runtime change; revisit needs an owner decision on the
   observable behaviour and a fresh pre-registration. Report, raw logs,
   summary CSV and identity bundle: `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md`.
-- [test, CI] The R14-01 compile-fail harness no longer infers host/target from
-  the architecture, target-directory layout or markers. A candidate rlib built
-  for another target fails the positive probe with rustc's E0461 and is
-  skipped explicitly (the test skips only when every candidate is foreign and
-  none is compatible); a candidate older than the crate's newest source file is
-  skipped as stale-source, which fixes a local failure in long-lived target
-  directories. Native arm64 runs the checks again (item175, CLOSED). The first
-  gate (`6f568c25`, `CACHEDIR.TAG` as root marker) turned the `cross test`
-  aarch64 job red on its first CI run (E0461); it was replaced by `eda25f97`
-  and hardened by `b5247602`. CI is green on both (macOS arm64 and cross
-  aarch64 each run 5 tests). Current-linked rlib identity remains unproven by
+- [test, CI] The R14-01 compile-fail harness classifies candidate rlibs with
+  exact rustc diagnostics. Foreign-target candidates use E0461; freshness now
+  uses each candidate's dep-info-listed active Rust inputs rather than every
+  `src/**/*.rs`, and the exact `sefer_alloc` E0514 is skipped so an old
+  compiler artifact does not mask a usable candidate. An all-foreign set can
+  skip only when the test target cfg differs from `rustc --print cfg`; equal
+  and unrecognized targets fail closed. Historical CI logs show the test
+  binary ran but do not expose which branch ran; this guard makes a same-target
+  all-foreign skip fail. The first gate (`6f568c25`, `CACHEDIR.TAG` as root
+  marker) turned the `cross test` aarch64 job red (E0461); it was replaced by
+  `eda25f97` and hardened by `b5247602`. Item175 remains closed for the
+  original compile-fail and cross-target behavior; the R18 regression closes
+  the false-green skip gap. Current-linked rlib identity remains unproven by
   design.
 - [docs/index] Items 172, 173, 174, 175, 176 moved to `RESOLVED.md`; item154 gets a
   follow-up note (listed prose examples fixed, `segment_route`

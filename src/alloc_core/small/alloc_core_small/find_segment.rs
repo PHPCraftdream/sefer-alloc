@@ -150,6 +150,8 @@ impl AllocCore {
             else {
                 std::process::abort();
             };
+            #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+            crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
             while let Some(mut cut) = scan.next_cut() {
                 while let Some(record) = cut.pop() {
                     if Self::reclaim_sidecar_record(base, record.offset, record.class) {

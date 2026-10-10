@@ -407,3 +407,67 @@ node scripts/verify-commit-prefixes.mjs fe171d9e..453439c1    -> PASS (17 commit
 | Красный CI | job log | 1 passed + 3 failed из 4; 49 + 1 + 4 = 54 | 3 из 4; 49 зелёных | да |
 | Зелёный CI | `--json jobs` | 54 − 4 skipped = 50 success | 50 + 4 | да |
 | §4 итог | таблица §4 | 23 строки: 20 да / 2 нет / 1 частично | — | — |
+
+## 10. R18 follow-up — dispositions
+
+This section records changes made after the read-only review above. Historical
+measurements and findings remain intact; it does not reclassify the original
+five findings.
+
+- **R17F-01 — CLOSED.** `src/global/sefer_alloc/mod.rs` now distinguishes
+  fallible allocation OOM from explicit invariant aborts and the infallible
+  registry accessor. `no_panic_doc_accuracy::no_panic_doc_is_qualified`
+  rejects the stale “one deliberate process kill” claim and pins the
+  replacement categories.
+- **R17F-02 — CLOSED.** The scanner remains intentionally lexical and scoped
+  to its explicit source-file list and three token classes (`expect`,
+  `panic!`, `unreachable!`); it is not a total `GlobalAlloc` call-graph or
+  abort census. `CHANGELOG.md` now says so, and the test file documents the
+  same boundary instead of claiming complete reachability.
+- **R17F-03 — FIXED AT THE IDENTIFIED FAILURE BOUNDARIES.** Candidate
+  freshness now uses the Rust sources listed by that rlib's matching Cargo
+  dep-info `.d`, not every `src/**/*.rs`; cfg-inactive edits and manifest-only
+  mtime changes do not stale a candidate. Missing/unreadable dep-info retains
+  the candidate for the positive probe. Only the exact E0514 for
+  `sefer_alloc` is skipped per candidate; unrelated E0514 errors remain hard
+  failures. The helper tests passed (9 total in the focused harness suite).
+  Counterfactuals confirmed the tests are load-bearing: adding the newer
+  cfg-inactive timestamp to freshness made the test fail with the expected
+  active/inactive timestamp mismatch. The exact compiler-version mismatch was
+  not reproduced with a second rustc toolchain; its classifier is pinned by
+  exact-message tests. Current-linked rlib identity remains the documented
+  design limit.
+- **R17F-04 — REPORT CORRECTED; NO-GO UNCHANGED.** The perf-83 report and item
+  83 now state that C0−A1=+12 Ir and B1−A1=−14 Ir are comparable in magnitude;
+  A1=A2/B1=B2 prove only within-binary repeatability, not a deterministic
+  cross-binary code-shape effect. No new measurement was run, and the
+  preregistered two-sided NO-GO stands.
+- **R17F-05 — CLOSED IN THE HARNESS.** An all-foreign candidate set skips only
+  when the test target's `rustc --print cfg` differs from the rustc default.
+  Same-target and unrecognized-target cases fail closed. The workflow was not
+  changed. The skip-predicate test passed; its counterfactual (allowing
+  `Some(true)`) failed at the intended assertion. Historical CI logs are
+  corrected to say that their captured test count did not prove which path
+  ran; a green native CI after this guard is the end-to-end receipt.
+- **R18 P5 cleanup regression — FIXED.** Restored
+  `try_promote_to_large`'s `return None` when `old_layout.size()` exceeds the
+  committed read span. The Windows-lazy `production medium-classes` regression
+  passed with the fix; replacing the return with the prior empty `if` made the
+  child terminate with `0xc0000005` and the parent test fail.
+
+- **R30-12 pre-push gate — classifier false positive, not a behavior change.**
+  The final check flagged `1cb85d3` because a `#[allow(dead_code)]` line's
+  trailing explanation changed while the attribute itself remained identical;
+  the remaining `src/` delta is comments. Kept the honest `docs:` subject and
+  added a per-SHA false-positive exemption with this section as its durable
+  record, rather than rewriting the existing commit history. The final gate
+  rerun verifies the exemption.
+
+**Focused receipts:** `cargo test --features "alloc-global internals"
+--test r14_sidecar_owner_capability_negative` — 9 passed;
+`cargo test --features "alloc-global internals" --test no_panic_doc_accuracy`
+— 4 passed; `cargo test --features "production medium-classes internals"
+--test r14_4_promotion_move_leg_reduction` — 6 passed, 1 intentional ignored.
+The four edited Rust files pass direct `rustfmt --edition 2021 --check`.
+Strict clippy and the final repository gate are recorded in the R18 closeout
+after completion.

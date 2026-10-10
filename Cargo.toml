@@ -111,7 +111,7 @@ loom = "0.7"
 # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
 # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
 # `numa-aware-mock` feature by the mock-gated integration tests).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -1743,6 +1743,13 @@ required-features = ["alloc-global"]
 [[bench]]
 name = "perf_gate_iai"
 harness = false
+required-features = ["alloc-global", "bench-internals", "internals"]
+
+# Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
+[[bench]]
+name = "r18_sidecar_scan_iai"
+harness = false
+test = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
 # Ph3c step-1 one-shot micro-prototype, docs/perf/PH3C_LEAF_PROTO_IAI.md

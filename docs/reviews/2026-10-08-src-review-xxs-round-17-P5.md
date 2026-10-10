@@ -140,3 +140,14 @@ Clippy на `production internals` прошли.
 аудировались здесь. CQ-10, CQ-11 и CQ-13 остаются без изменений; ни
 рефакторинг дублированных safety-последовательностей, ни измерения speed/code
 size не заявлены. Остальные гипотезы приложения A–C не реализованы.
+
+## R18 follow-up — restore the realloc committed-span rejection
+
+The R18 dead-shape cleanup left `try_promote_to_large`'s committed-span `if`
+empty, removing its intended `return None`. Strict Clippy caught the empty
+conditional. Restored the rejection and added a Windows-lazy
+`production medium-classes` subprocess regression: a 512 KiB false old layout
+on a 16-byte allocation, growing to 600 KiB, must return null before promotion
+copies from the uncommitted tail. The restored test passes; replacing the
+return with an empty conditional makes the child terminate with
+`0xc0000005`, and the parent test fails.

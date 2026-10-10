@@ -314,6 +314,7 @@ BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
 
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
+  { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
     ['src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
@@ -426,7 +427,7 @@ function featureImplies(from, required, seen = new Set()) {
   return (featureGraph.get(from) ?? []).some(child => featureGraph.has(child) && featureImplies(child, required, new Set([...seen, from])));
 }
 function expressionRequires(expr, feature) {
-  if (feature === 'loom') return !!expr && ((expr.name === 'loom' && !expr.children) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
+  if (feature === 'loom' || feature === 'r18_sidecar_scan_bench') return !!expr && ((expr.name === feature && !expr.children) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
   if (feature === 'test-model') return !!expr && ((['loom', 'tagged_index_stack_test'].includes(expr.name) && !expr.children) || (expr.name === 'any' && expr.children.length > 0 && expr.children.every(child => expressionRequires(child, feature))) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
   return !!expr && ((expr.name === 'feature' && featureImplies(expr.value, feature)) || (expr.name === 'all' && expr.children.some(child => expressionRequires(child, feature))));
 }

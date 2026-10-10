@@ -1,0 +1,3 @@
+{"name":"r18_scan_growth","layer":"SeferAlloc::GlobalAlloc->HeapCore","rounds":2,"publish":false,"baseline":false,"oracle":true,"visited":319063,"empty_skipped":319063,"exchanges":0,"nonempty_exchanges":0,"routed_scans":99}
+{"name":"r18_scan_cycles","layer":"SeferAlloc::GlobalAlloc->HeapCore","rounds":6,"publish":false,"baseline":false,"oracle":true,"visited":1004503,"empty_skipped":1004503,"exchanges":0,"nonempty_exchanges":0,"routed_scans":275}
+{"name":"r18_scan_publication","layer":"SeferAlloc::GlobalAlloc->HeapCore","rounds":2,"publish":true,"baseline":false,"oracle":true,"visited":355593,"empty_skipped":355559,"exchanges":34,"nonempty_exchanges":34,"routed_scans":92}

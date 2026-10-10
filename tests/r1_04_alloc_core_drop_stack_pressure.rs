@@ -17,6 +17,11 @@
 //! binary as a fresh child PROCESS and the parent test only asserts on the
 //! child's exit status: a stack overflow shows up as a failed child exit
 //! rather than killing the test harness.
+
+//! On Windows, the all-features debug setup itself overflows at exactly
+//! 64 KiB inside `AllocCore::new` before reaching `Drop`; use 96 KiB there so
+//! the regression still exercises teardown. Unix keeps 64 KiB, including the
+//! Linux CI path that catches the historical 65,536-byte buffer.
 //!
 //! Two scenarios:
 //! - `bare`: construct-then-drop a single `AllocCore` (just the primordial
@@ -34,6 +39,9 @@
 use std::process::Command;
 
 const CASE_ENV: &str = "SEFER_R1_04_CHILD_CASE";
+#[cfg(windows)]
+const SMALL_STACK_BYTES: usize = 96 * 1024;
+#[cfg(not(windows))]
 const SMALL_STACK_BYTES: usize = 64 * 1024;
 
 fn run_child(case: &str) -> std::process::Output {
@@ -75,13 +83,13 @@ fn assert_child_ok(case: &str, output: &std::process::Output) {
 }
 
 #[test]
-fn drop_on_64kib_stack_bare() {
+fn drop_on_small_stack_bare() {
     let output = run_child("bare");
     assert_child_ok("bare", &output);
 }
 
 #[test]
-fn drop_on_64kib_stack_with_many_segments() {
+fn drop_on_small_stack_with_many_segments() {
     let output = run_child("many-segments");
     assert_child_ok("many-segments", &output);
 }
@@ -101,8 +109,8 @@ fn r1_04_drop_stack_child() {
     let handle = std::thread::Builder::new()
         .stack_size(SMALL_STACK_BYTES)
         .spawn(move || build_and_drop(&case))
-        .expect("spawn 64 KiB thread");
-    handle.join().expect("64 KiB thread must not panic");
+        .expect("spawn small-stack thread");
+    handle.join().expect("small-stack thread must not panic");
 }
 
 fn build_and_drop(case: &str) {

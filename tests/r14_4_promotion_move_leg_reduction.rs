@@ -142,6 +142,94 @@ fn layout(size: usize) -> Layout {
     Layout::from_size_align(size, ALIGN).unwrap()
 }
 
+#[cfg(all(
+    windows,
+    feature = "primordial-lazy-commit",
+    not(feature = "numa-aware")
+))]
+const PROMOTION_BOUNDS_CHILD_ENV: &str = "SEFER_R14_PROMOTION_BOUNDS_CHILD";
+
+#[cfg(all(
+    windows,
+    feature = "primordial-lazy-commit",
+    not(feature = "numa-aware")
+))]
+fn run_promotion_bounds_child() -> std::process::Output {
+    std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--exact")
+        .arg("promotion_bounds_child")
+        .arg("--ignored")
+        .arg("--nocapture")
+        .env(PROMOTION_BOUNDS_CHILD_ENV, "1")
+        .output()
+        .expect("run promotion-bounds child")
+}
+
+/// Reject a false old layout before promotion copies from a lazy segment tail.
+#[cfg(all(
+    windows,
+    feature = "primordial-lazy-commit",
+    not(feature = "numa-aware")
+))]
+#[test]
+fn promotion_rejects_old_layout_past_lazy_frontier_before_copy() {
+    if !HAS_PROMOTION {
+        return;
+    }
+    let output = run_promotion_bounds_child();
+    assert!(
+        output.status.success(),
+        "promotion must reject a false old layout before reading the \
+         uncommitted tail; child status={}\nstdout={}\nstderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[cfg(all(
+    windows,
+    feature = "primordial-lazy-commit",
+    not(feature = "numa-aware")
+))]
+#[test]
+#[ignore = "run only in a fresh subprocess"]
+fn promotion_bounds_child() {
+    if std::env::var_os(PROMOTION_BOUNDS_CHILD_ENV).is_none() || !HAS_PROMOTION {
+        return;
+    }
+
+    const OLD_SIZE: usize = 512 * 1024;
+    const NEW_SIZE: usize = 600 * 1024;
+    let allocator = SeferAlloc::new();
+    let small = layout(16);
+    // SAFETY: valid, non-zero-size layout.
+    let ptr = unsafe { allocator.alloc(small) };
+    assert!(!ptr.is_null(), "setup: 16-byte allocation failed");
+    // SAFETY: ptr is valid for 16 bytes.
+    unsafe { std::ptr::write_bytes(ptr, 0xA5, 16) };
+
+    // This deliberately false old layout remains a medium class, and the
+    // requested new size crosses the promotion threshold. It is a
+    // defense-in-depth probe, isolated because the missing guard reads into
+    // the reserved, uncommitted tail and terminates the process.
+    let bogus_old = layout(OLD_SIZE);
+    // SAFETY: ptr is a live allocation; the intentionally false size probes
+    // the allocator's checked rejection path.
+    let result = unsafe { allocator.realloc(ptr, bogus_old, NEW_SIZE) };
+    assert!(
+        result.is_null(),
+        "promotion with an old size beyond the committed frontier must reject"
+    );
+    // SAFETY: a null realloc result leaves the original 16-byte allocation live.
+    unsafe {
+        for index in 0..16 {
+            assert_eq!(ptr.add(index).read(), 0xA5);
+        }
+        allocator.dealloc(ptr, small);
+    }
+}
+
 /// Growing a medium-classified block PAST the promotion threshold, then
 /// growing AGAIN within the promoted (now-Large) block's committed span,
 /// must hit OPT-G on the second grow (SAME pointer, no move) — this test only

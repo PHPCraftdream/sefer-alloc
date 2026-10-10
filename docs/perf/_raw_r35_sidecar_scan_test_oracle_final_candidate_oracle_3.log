@@ -1,0 +1,27 @@
+r18_sidecar_scan_iai::r18_scan::r18_scan_growth
+  Instructions:                     9137866|9137866              (No change)
+  L1 Hits:                         11809716|11809716             (No change)
+  L2 Hits:                            33900|33900                (No change)
+  RAM Hits:                            2735|2735                 (No change)
+  Total read+write:                11846351|11846351             (No change)
+  Estimated Cycles:                12074941|12074941             (No change)
+r18_sidecar_scan_iai::r18_scan::r18_scan_cycles
+  Instructions:                    28451777|28451777             (No change)
+  L1 Hits:                         36582634|36582634             (No change)
+  L2 Hits:                           103936|103936               (No change)
+  RAM Hits:                            2734|2734                 (No change)
+  Total read+write:                36689304|36689304             (No change)
+  Estimated Cycles:                37198004|37198004             (No change)
+r18_sidecar_scan_iai::r18_scan::r18_scan_publication
+  Instructions:                    10027392|10027392             (No change)
+  L1 Hits:                         12860336|12860336             (No change)
+  L2 Hits:                            38005|38005                (No change)
+  RAM Hits:                             277|277                  (No change)
+  Total read+write:                12898618|12898618             (No change)
+  Estimated Cycles:                13060056|13060056             (No change)
+
+Iai-Callgrind result: Ok. 3 without regressions; 0 regressed; 3 benchmarks finished in 6.21451s
+    Finished `bench` profile [optimized] target(s) in 3.67s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/r18_sidecar_scan_iai.rs (/tmp/sefer-r18-scan/release/deps/r18_sidecar_scan_iai-3be1a60e789f0aec)
