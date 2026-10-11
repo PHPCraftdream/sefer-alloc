@@ -2369,6 +2369,14 @@ name = "r34_23_vec_worker_system"
 required-features = ["alloc-global"]
 
 [[example]]
+name = "r19_prf04_gate2b"
+required-features = ["production"]
+
+[[example]]
+name = "r19_prf04_gate2b_observer"
+required-features = ["production"]
+
+[[example]]
 name = "r19_prf04_thread_wave_gate"
 required-features = ["production"]
 
