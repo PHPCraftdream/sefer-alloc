@@ -35,7 +35,11 @@ fn large_owner_slow_path_consumes_descriptor_obligation_before_cache_reuse() {
     assert!(!second.is_null());
     assert_eq!(second, first);
     let next = RouteDirectory::global().lookup(second).unwrap();
-    assert_ne!(next.incarnation(), incarnation);
+    assert_eq!(
+        next.incarnation(),
+        incarnation,
+        "same-payload cache reuse retains the descriptor registration"
+    );
     assert_eq!(
         pin.incarnation(),
         incarnation,

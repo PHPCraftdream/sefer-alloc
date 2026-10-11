@@ -172,6 +172,10 @@
 //! live-count and registry lease ownership checks. The opt-in
 //! `exact-object-proto` path aborts on duplicate live descriptors. Already-free
 //! or magazine-resident Small records return `false` without reclaiming them.
+//! An own free of a Large block whose retained route word is not LIVE (for
+//! example already published PENDING by a foreign free) is rejected before
+//! any metadata mutation as a counted no-op; the abort remains for a header
+//! claim that fails after the route claim succeeded.
 //! These are not ordinary allocation OOM. Direct process abort does not
 //! unwind or run the panic hook; panic-capable checks are a separate category.
 //!

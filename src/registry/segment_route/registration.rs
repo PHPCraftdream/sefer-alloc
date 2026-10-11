@@ -18,6 +18,16 @@ impl RouteRegistration<'_> {
     pub fn root(&self) -> *mut u8 {
         self.entry.root()
     }
+    pub fn payload_addr(&self) -> usize {
+        self.entry.payload_addr()
+    }
+
+    pub fn claim_large_owner_live(&self) -> Result<u64, super::RouteWordState> {
+        self.large_state()
+            .unwrap_or_else(|| std::process::abort())
+            .claim_owner_live()
+    }
+
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }

@@ -199,6 +199,82 @@ pub(in crate::alloc_core) struct CachedLarge {
     /// `docs/checkpoints` history). This field restores a correct FIFO
     /// ordering independent of slot count.
     pub(in crate::alloc_core) seq: u64,
+    /// Sole owner of a retained Large descriptor; never Copy or publicly extracted.
+    route: crate::alloc_core::segment_table::ParkedRoute,
+}
+
+#[cfg(feature = "alloc-decommit")]
+impl CachedLarge {
+    pub(in crate::alloc_core) fn new(
+        reservation: *mut u8,
+        reservation_len: usize,
+        base: *mut u8,
+        usable_size: usize,
+        reserved_capacity: usize,
+        seq: u64,
+        route: crate::alloc_core::segment_table::ParkedRoute,
+    ) -> Self {
+        Self {
+            reservation,
+            reservation_len,
+            base,
+            usable_size,
+            reserved_capacity,
+            seq,
+            route,
+        }
+    }
+    pub(in crate::alloc_core) fn begin_route_reuse(&mut self, payload: *mut u8) -> Option<u64> {
+        self.route.discard_if_payload_changed(payload);
+        self.route.begin_reuse()
+    }
+    pub(in crate::alloc_core) fn register_reuse(
+        &mut self,
+        table: &mut SegmentTable,
+        payload: *mut u8,
+    ) -> Option<u32> {
+        table.register_payload_parked(
+            self.base,
+            self.reserved_capacity,
+            crate::alloc_core::segment_header::SegmentKind::Large,
+            payload,
+            &mut self.route,
+        )
+    }
+}
+
+#[cfg(feature = "alloc-decommit")]
+impl AllocCore {
+    /// Sole cached-reservation retirement: unlink, release physical credit, unmap.
+    pub(in crate::alloc_core) fn release_cached_large(cached: CachedLarge) {
+        cached.route.release_before_unmap();
+        let meta = crate::alloc_core::segment_header::SegmentMeta::new(cached.base);
+        let word = meta.terminal_snapshot().large_state;
+        let state = crate::alloc_core::large::reservation_state::LargeReservationState::new(
+            meta.large_state_atomic(),
+        );
+        let generation = crate::alloc_core::segment_header::large_generation(word);
+        let released = match crate::alloc_core::segment_header::large_phase(word) {
+            Some(crate::alloc_core::segment_header::LargePhase::Cached) => {
+                state.release_cached(generation)
+            }
+            Some(crate::alloc_core::segment_header::LargePhase::Initializing) => {
+                state.release_initializing(generation)
+            }
+            _ => false,
+        };
+        if !released {
+            std::process::abort();
+        }
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "bench-internals",
+            feature = "internals",
+            debug_assertions
+        ))]
+        Self::observe_cached_large_release_boundary();
+        crate::alloc_core::os::release_segment(cached.reservation, cached.reservation_len);
+    }
 }
 
 /// A single-threaded allocator over the self-hosted segment substrate.

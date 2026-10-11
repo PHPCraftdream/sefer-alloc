@@ -147,6 +147,10 @@ fn large_pending_claim_reclaims_and_cache_reissues() {
     #[cfg(feature = "alloc-decommit")]
     assert_eq!(second, first, "same-size Large cache reuse");
     let next = RouteDirectory::global().lookup(second).unwrap();
+    // Same-payload cache reuse retains the parked registration.
+    #[cfg(feature = "alloc-decommit")]
+    assert_eq!(next.incarnation(), incarnation);
+    #[cfg(not(feature = "alloc-decommit"))]
     assert_ne!(next.incarnation(), incarnation);
     // SAFETY: second is the new unique live Large instance; it is transferred
     // exactly once here and is never sent to the old dealloc path.

@@ -271,6 +271,12 @@ impl AllocCore {
                 if Self::reject_large_interior_free(base, ptr) {
                     return;
                 }
+                if !self.table.claim_large_owner_live(base) {
+                    #[cfg(feature = "alloc-global")]
+                    crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return;
+                }
                 // LIVE carries this instance's sole credit until the owner
                 // claims it. A failed claim must not unregister or unmap it.
                 let terminal_meta = SegmentMeta::new(base);
@@ -410,7 +416,7 @@ impl AllocCore {
                         // NULL the table slot WITHOUT releasing the OS reservation.
                         // The cached entry owns the reservation; AllocCore::drop
                         // releases it explicitly from the large_cache array.
-                        self.table.unregister(base);
+                        let parked = self.table.unregister_parking(base);
                         // Zero the magic so that if something reads the header
                         // while it's in the cache, it won't be confused as a
                         // live registered segment.
@@ -447,19 +453,21 @@ impl AllocCore {
                         if !state.cache_consumed(generation) {
                             std::process::abort();
                         }
+                        parked.cache_consumed();
                         // Deposit into cache and update the byte-budget counter.
                         let seq = self.large_cache_seq;
                         self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                         self.large_cache_slot_set(
                             slot_idx,
-                            CachedLarge {
-                                reservation: stale.reservation,
-                                reservation_len: stale.reservation_len,
+                            CachedLarge::new(
+                                stale.reservation,
+                                stale.reservation_len,
                                 base,
                                 usable_size,
                                 reserved_capacity,
                                 seq,
-                            },
+                                parked,
+                            ),
                         );
                         self.large_cache_used_bytes += usable_size;
                         return;

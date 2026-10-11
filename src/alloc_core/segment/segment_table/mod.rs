@@ -69,6 +69,9 @@ pub(crate) use issue_transaction::IssueTransaction;
 #[path = "route_slots.rs"]
 mod route_slots;
 
+mod parked_route;
+pub(crate) use parked_route::ParkedRoute;
+
 #[path = "segment_table_impl.rs"]
 mod segment_table_impl;
 pub use segment_table_impl::*;

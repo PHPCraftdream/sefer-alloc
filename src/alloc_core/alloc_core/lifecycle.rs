@@ -12,15 +12,13 @@ use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-#[cfg(feature = "alloc-decommit")]
-use crate::alloc_core::segment_header::large_generation;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 
 use super::bootstrap;
 #[cfg(feature = "alloc-decommit")]
 use super::counters::LargeCacheHitCounter;
 #[cfg(feature = "alloc-decommit")]
-use super::{CachedLarge, LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
+use super::{LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
 #[cfg(feature = "numa-aware")]
@@ -54,20 +52,6 @@ impl LargeCacheDecayConfig {
             headroom_bytes: cfg.resolved_headroom_bytes(),
         }
     }
-}
-
-#[cfg(feature = "alloc-decommit")]
-fn release_cached_on_drop(cached: CachedLarge) {
-    // The detached slot owns the reservation; a failed credit transition is
-    // terminal, and must never be followed by an OS release.
-    {
-        let meta = SegmentMeta::new(cached.base);
-        let generation = large_generation(meta.terminal_snapshot().large_state);
-        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
-            std::process::abort();
-        }
-    }
-    os::release_segment(cached.reservation, cached.reservation_len);
 }
 
 /// Task #1998: resolve the empty-small-segment pool cap (`min(by_segments,
@@ -448,7 +432,7 @@ impl Drop for AllocCore {
         #[cfg(feature = "alloc-decommit")]
         for slot in &mut self.large_cache {
             if let Some(cached) = slot.take() {
-                release_cached_on_drop(cached);
+                Self::release_cached_large(cached);
             }
         }
         // R13-7 (task #277): the lazily-materialised extension sidecar holds
@@ -475,7 +459,7 @@ impl Drop for AllocCore {
             };
             for slot in &mut ext.slots {
                 if let Some(cached) = slot.take() {
-                    release_cached_on_drop(cached);
+                    Self::release_cached_large(cached);
                 }
             }
         }

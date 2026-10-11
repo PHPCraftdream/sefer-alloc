@@ -77,7 +77,8 @@ fn pool_release_and_large_cache_reissue_balance_routes() {
     );
     let new = RouteDirectory::global().lookup(second).unwrap();
     assert_eq!(new.kind(), RouteKind::Large);
-    assert_ne!(new.incarnation(), old);
+    // Same-payload cache reuse retains the parked registration.
+    assert_eq!(new.incarnation(), old);
     drop(new);
     // SAFETY: second is the live reissue with the same layout.
     unsafe {

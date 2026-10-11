@@ -27,6 +27,31 @@ impl LargeState {
         self.state().publish_pending(generation)
     }
 
+    /// Owner claim before any physical header or table mutation.
+    pub fn claim_owner_live(&self) -> Result<u64, super::RouteWordState> {
+        let observed = self.word.load(Ordering::Acquire);
+        if crate::alloc_core::segment_header::large_phase(observed) != Some(LargePhase::Live) {
+            return Err(super::RouteWordState(observed));
+        }
+        let generation = large_generation(observed);
+        self.word
+            .compare_exchange(
+                observed,
+                pack_large_state(LargePhase::Consuming, generation),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .map(|_| generation)
+            .map_err(super::RouteWordState)
+    }
+
+    pub fn is_issued(&self) -> bool {
+        matches!(
+            crate::alloc_core::segment_header::large_phase(self.word.load(Ordering::Acquire)),
+            Some(LargePhase::Live | LargePhase::Pending | LargePhase::Consuming)
+        )
+    }
+
     pub fn claim_pending(&self) -> Option<u64> {
         self.state().claim_pending()
     }

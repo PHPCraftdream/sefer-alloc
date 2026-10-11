@@ -18,6 +18,10 @@ import { REPO_ROOT } from './lib.mjs';
 
 // Pure observers: read-only, no allocator-state mutation.
 const PURE_OBSERVERS = [
+  // Owner-thread release-boundary count/census only; no callback or reservation reads.
+  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_cached_large_release_boundary",
+  // PRF03: Relaxed ID-total load only; no mutation, reset, pointer or publication.
+  "src/registry/segment_route/directory.rs::incarnations_issued_for_test",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
   "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
   // C1: numeric results of resolved-default comparison under the claiming lease.
