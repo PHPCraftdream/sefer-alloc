@@ -107,7 +107,10 @@ fn stats_hit_counters_are_zero_without_alloc_stats() {
     // Drive traffic that WOULD bump the hit counters under `alloc-stats`.
     drive_cache_hitting_traffic(&a);
 
+    #[cfg(any(feature = "fastbin", feature = "alloc-decommit"))]
     let s = a.stats();
+    #[cfg(not(any(feature = "fastbin", feature = "alloc-decommit")))]
+    let _ = a.stats();
 
     // `tcache_hits` calls `tcache_hits_total()` under `fastbin` (which
     // `production` includes); without `alloc-stats` it must be exactly 0.
