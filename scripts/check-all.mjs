@@ -33,10 +33,10 @@
 //      -- --check passthrough on non-Windows; on Windows, an argv-budgeted
 //      direct rustfmt invocation working around os-error-206 — see that
 //      script's own header)
-//   2-7. the 6 `clippy` rows from scripts/check-matrix.mjs's PER_PR_ROWS
+//   the clippy rows from scripts/check-matrix.mjs's PER_PR_ROWS
 //      (R30-5: GENERATED, not hand-written — default / experimental /
 //      --all-features / hardened medium-classes internals / production /
-//      production internals)
+//      production internals / numa-aware internals)
 //   8. cargo test --features "production internals"                (default prod suite;
 //      `internals` required — this repo's own tests/ suite reaches
 //      alloc_core/global/registry directly, R34-3/task #522. There is no
@@ -382,6 +382,11 @@ const otherRows = PER_PR_ROWS.filter((r) => r.kind !== 'clippy').map((row) => ({
 
 const steps = [
   {
+    name: 'powerset-summary self-test',
+    cmd: 'node',
+    args: ['scripts/powerset-summary.mjs', '--self-test'],
+  },
+  {
     // R27-9 (task #427): tooling-correctness precondition for every later
     // step — they all spawn through the same run() in lib.mjs, so a
     // regression in run()'s shell:false argv preservation would corrupt
@@ -411,9 +416,9 @@ const steps = [
     cmd: 'node',
     args: ['scripts/fmt-check.mjs'],
   },
-  // R30-5: the 6 PER_PR_ROWS clippy rows (default / experimental /
+  // R30-5: the PER_PR_ROWS clippy rows (default / experimental /
   // --all-features / hardened medium-classes internals / production /
-  // production internals), generated — see the comment above `clippyRows`.
+  // production internals / numa-aware internals), generated — see the comment above `clippyRows`.
   // Byte-identical argv to the pre-R30-5 hand-written steps for the first
   // 3; `hardened medium-classes internals` and plain `production` were NEW
   // as of R30-5 (they previously ran only in CI's `clippy` job / not at

@@ -1372,6 +1372,8 @@ jobs:
       # `alloc_core`/`global`/`registry` directly) actually compile.
       - name: clippy (--features "production internals")
         run: cargo clippy --all-targets --features "production internals" -- -D warnings
+      - name: clippy (--features "numa-aware internals")
+        run: cargo clippy --lib --features "numa-aware internals" -- -D warnings
 
   evidence-registry:
     runs-on: ubuntu-latest
@@ -4091,8 +4093,19 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: powerset summary self-test
+        run: node scripts/powerset-summary.mjs --self-test
       - name: cargo hack check --feature-powerset --depth 2
-        run: cargo hack check --feature-powerset --depth 2 --no-dev-deps
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo hack check --locked --feature-powerset --depth 2 --no-dev-deps --keep-going 2>&1 | tee powerset-root.log
+      - name: Summarize powerset (root)
+        if: ${{ !cancelled() }}
+        run: node scripts/powerset-summary.mjs powerset-root.log >> "$GITHUB_STEP_SUMMARY"
       # Task #856/W14-3: aligned-vmem crate feature-powerset check. 5 features
       # (lazy-commit, alloc-lazy-commit alias, huge-pages, fault-injection,
       # bench-internals) — mock is no longer a Cargo feature (task #962,
@@ -4122,4 +4135,53 @@ jobs:
       # oversight; see docs/CORRECTNESS_OPEN_ITEMS.md item 95 before
       # "finishing" this.
       - name: cargo hack check --feature-powerset --depth 2 (aligned-vmem)
-        run: cargo hack check --feature-powerset --depth 2 -p aligned-vmem --all-targets
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo hack check --locked --feature-powerset --depth 2 -p aligned-vmem --all-targets --keep-going 2>&1 | tee powerset-aligned-vmem.log
+      - name: Summarize powerset (aligned-vmem)
+        if: ${{ !cancelled() }}
+        run: node scripts/powerset-summary.mjs powerset-aligned-vmem.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Allocation policy depth-3 powerset
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo hack check --locked --feature-powerset --depth 3 --no-dev-deps --keep-going --include-features fastbin,medium-classes,medium-classes-wide,exact-span-large,large-reserved-capacity,numa-aware,hardened,alloc-decommit,alloc-segment-directory,virgin-zero-skip 2>&1 | tee powerset-policy.log
+      - name: Summarize powerset (policy)
+        if: ${{ !cancelled() }}
+        run: node scripts/powerset-summary.mjs powerset-policy.log >> "$GITHUB_STEP_SUMMARY"
+      - name: MSRV each-feature check
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          msrv=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"])')
+          rustup toolchain install "$msrv" --profile minimal
+          cargo +"$msrv" hack check --locked --each-feature --no-dev-deps --keep-going 2>&1 | tee powerset-msrv.log
+      - name: Summarize powerset (MSRV)
+        if: ${{ !cancelled() }}
+        run: node scripts/powerset-summary.mjs powerset-msrv.log >> "$GITHUB_STEP_SUMMARY"
+      - name: experimental requires 64-bit atomics (powerpc-unknown-linux-gnu)
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add powerpc-unknown-linux-gnu
+          cfg=$(rustc --print cfg --target powerpc-unknown-linux-gnu)
+          grep -qx 'target_has_atomic="ptr"' <<<"$cfg"
+          if grep -qx 'target_has_atomic="64"' <<<"$cfg"; then
+            echo 'expected target without 64-bit atomics'; exit 1
+          fi
+          cargo check --locked --color never --target powerpc-unknown-linux-gnu --no-default-features --features std
+          if cargo check --locked --color never --target powerpc-unknown-linux-gnu --no-default-features --features experimental > powerset-experimental.log 2>&1; then
+            echo 'expected experimental compile_error'; exit 1
+          fi
+          grep -F 'requires 64-bit atomics (target_has_atomic = "64")' powerset-experimental.log
+      - uses: actions/upload-artifact@v6
+        if: ${{ failure() && !cancelled() }}
+        with:
+          name: feature-powerset-logs
+          path: powerset-*.log
+          retention-days: 30

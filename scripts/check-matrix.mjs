@@ -154,6 +154,15 @@ export const PER_PR_ROWS = [
       'and never turns `internals` on.',
   },
   {
+    id: 'clippy-numa-aware-internals',
+    kind: 'clippy',
+    features: 'numa-aware internals',
+    libOnly: true,
+    note:
+      'R17-API-01/item 107: standalone NUMA shipped E0433 without a per-PR row. ' +
+      '--lib keeps the dev suite outside this combination (item 95).',
+  },
+  {
     id: 'check-perf-gate-iai-default',
     kind: 'check',
     features: 'production bench-internals internals',
