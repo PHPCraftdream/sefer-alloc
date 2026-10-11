@@ -1,0 +1,31 @@
+# TRUNCATED — unrelated Callgrind records omitted. Full output: valgrind --tool=callgrind --cache-sim=yes --I1=32768,8,64 --D1=32768,8,64 --LL=8388608,16,64 --collect-atstart=no --toggle-collect="*__iai_callgrind_wrapper_mod*large_cache_prefill_only_4mib" --dump-instr=yes --compress-strings=no --compress-pos=no --callgrind-out-file=target/r19_prf03_prefill.callgrind target/release/deps/perf_gate_iai-6a994302539a9d7d --iai-run perf_gate 53 0
+positions: instr line
+summary: 58589 4115 45212 185 64 1016 182 12 898
+fn=<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+cfn=<sefer_alloc::registry::segment_route::directory::RouteDirectory>::register
+calls=8 0x73080 0
+0x6fa0f 0 2955
+fn=<sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::unregister
+cfn=<sefer_alloc::registry::segment_route::registration::RouteRegistration as core::ops::drop::Drop>::drop
+calls=8 0x75400 0
+0x6f24d 0 2696
+fn=<sefer_alloc::registry::segment_route::directory::RouteDirectory>::register
+0x7318e 0 9 0 9
+0x732a6 0 9 0 9 0 0 2 0 0 2
+0x732a6 0 2 0 2
+cfn=malloc
+calls=8 0xad750 3294
+0x731a7 0 336
+cfn=malloc
+calls=8 0xad750 3294
+0x731c7 0 505
+fn=<sefer_alloc::registry::segment_route::registration::RouteRegistration as core::ops::drop::Drop>::drop
+0x75446 0 8 0 8
+0x758aa 0 8 8 8
+cfn=free
+calls=8 0xade30 3359
+0x75951 0 680 200 112 0 4
+cfn=free
+calls=8 0xade30 3359
+0x75968 0 680 200 112
+totals: 58589 4115 45212 185 64 1016 182 12 898

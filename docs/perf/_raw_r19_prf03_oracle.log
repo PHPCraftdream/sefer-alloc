@@ -1,0 +1,7 @@
+# TRUNCATED — compiler diagnostics omitted; full output reproducible via RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=$PWD/target cargo run --locked --release --example r32_7_large_cache_hit_activation_oracle --features "production bench-internals internals alloc-stats"
+hits_before_prefill  = 0
+hits_after_prefill   = 7
+hits_after_terminal  = 8
+terminal_hit_delta   = 1
+F12 path-activation oracle PASSED: the large_cache_hit_only_4mib bench's terminal alloc is a genuine large-cache HIT.
+exit=0

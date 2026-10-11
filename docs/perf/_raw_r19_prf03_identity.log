@@ -1,0 +1,23 @@
+# PRF-03 immutable source identity captured before measurement
+source_sha=7ce23bfc76bcee24fe23671b42c9468c66caae68
+source_tree=d0389d743717eb6680c3827786e44ed94b129328
+src_benches_patch_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+initial_git_status=empty
+initial_git_diff_src_benches=empty
+features=production bench-internals internals
+build_command=RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=$PWD/target cargo bench --locked --bench perf_gate_iai --features "production bench-internals internals" --no-run
+build_exit=0
+build_profile=bench (optimized; thin LTO; codegen-units=1)
+valgrind=3.22.0
+callgrind_annotate=3.22.0 (version probe exit 255)
+# Following binary/environment metadata observed after measurement; source identity above was captured before measurement.
+binary=target/release/deps/perf_gate_iai-6a994302539a9d7d
+binary_sha256=ffd5c88dc621ed8683bbe2da19ec05ef62d308d9b536a247c3deb29cd05aa537
+os=Linux 6.18.33.2-microsoft-standard-WSL2 (Ubuntu-24.04)
+architecture=x86_64
+cpu=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+rustc=rustc 1.98.1 (48a229cea 2026-09-01)
+cargo=cargo 1.98.1 (797e8a9bc 2026-08-05)
+iai_runner=0.14.2
+sample_count_per_arm=1
+# TRUNCATED — dependency compilation lines omitted; full output reproducible via build_command above from repository root in Ubuntu-24.04.

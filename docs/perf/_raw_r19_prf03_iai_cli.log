@@ -1,0 +1,18 @@
+# TRUNCATED — help sections unrelated to filtering omitted. Reproduce: iai-callgrind-runner --help
+Usage: cargo bench ... [BENCHNAME] -- [OPTIONS]
+Arguments:
+  [BENCHNAME]
+          If specified, only run benches containing this string in their names
+          Note that a benchmark name might differ from the benchmark file name.
+          [env: IAI_CALLGRIND_FILTER=]
+# Reproduce: iai-callgrind-runner --version
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+# Limited probes, no full suite; each exited successfully with empty stdout (zero Instructions rows):
+# target/release/deps/perf_gate_iai-6a994302539a9d7d large_cache_prefill_only_4mib
+# target/release/deps/perf_gate_iai-6a994302539a9d7d large_cache_hit_only_4mib
+prefill_exit=0
+prefill_Instructions_rows=0
+hit_exit=0
+hit_Instructions_rows=0
+consistency_status=NOT_OBTAINED
+# Dependency source inspected: iai-callgrind-runner-0.14.2/src/runner/mod.rs library branch applies filter to meta.bench_name before lib_bench::run. No per-function filtering in lib_bench.rs. The filter is the benchmark FILE name in this version. Passing the file name would run the whole group and was NOT attempted.
