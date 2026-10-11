@@ -18,6 +18,7 @@ impl Drop for OomReset {
 fn chunk_oom_retries_materialised_uninitialised_free() {
     let old = dbg_claim_then_simulate_oom().expect("first failed constructor");
     let latest = dbg_claim_then_simulate_oom().expect("second failed constructor");
+    bootstrap::ensure().dbg_forget_free_slot_hint(old as usize);
     assert_eq!((old, latest), (0, 1));
     assert!(!dbg_slot_initialised(old));
     let mut held = Vec::with_capacity(64);
@@ -48,6 +49,22 @@ fn chunk_oom_retries_materialised_uninitialised_free() {
     let mut minted_retry = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_eq!(minted_retry.core().id(), 64);
     assert_eq!(bootstrap::count_for_test(), 65);
+    let old_without_hook =
+        dbg_claim_then_simulate_oom().expect("first failed constructor without hook");
+    let latest_without_hook =
+        dbg_claim_then_simulate_oom().expect("second failed constructor without hook");
+    assert_eq!((old_without_hook, latest_without_hook), (65, 66));
+    assert!(!dbg_slot_initialised(old_without_hook));
+    let mut latest_reused =
+        HeapRegistry::dbg_claim_lease().expect("latest failed constructor retry");
+    assert_eq!(latest_reused.core().id(), latest_without_hook);
+    let mut old_reused =
+        HeapRegistry::dbg_claim_lease().expect("older failed constructor before bump");
+    assert_eq!(old_reused.core().id(), old_without_hook);
+    assert!(dbg_slot_initialised(old_without_hook));
+    assert_eq!(bootstrap::count_for_test(), 67);
+    drop(old_reused);
+    drop(latest_reused);
     // All these leases are still distinct LIVE claims.
     drop(minted_retry);
     drop(recovered);

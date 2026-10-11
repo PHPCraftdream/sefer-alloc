@@ -47,6 +47,7 @@ const FEATURES = {
   loom_r8_maintenance_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_active_kind_index: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_registry_claim: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
+  loom_r19_registry_free_set: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4a_heap_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_ph4b_publish_recycle_drain: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',
   loom_r11_small_sidecar: 'alloc-core,alloc-xthread,tagged-index-stack/loom',

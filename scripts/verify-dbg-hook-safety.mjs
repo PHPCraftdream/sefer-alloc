@@ -119,6 +119,7 @@ const PURE_OBSERVERS = [
   "src/global/fallback.rs::dbg_fallback_lock_spin_transition",
   "src/global/fallback.rs::dbg_init_state",
   "src/registry/bootstrap/registry.rs::dbg_chunk_is_materialised",
+  "src/registry/bootstrap/registry.rs::dbg_free_slot_hint_contains",
   "src/registry/heap_core/core.rs::dbg_cached_numa_node",
   "src/registry/heap_core/diag/queries.rs::dbg_owner_id_for",
   "src/registry/heap_core/diag/queries.rs::dbg_class_for",
@@ -140,6 +141,7 @@ const PURE_OBSERVERS = [
 
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
+  ["src/registry/bootstrap/registry.rs::dbg_forget_free_slot_hint", "clears a non-authoritative FREE-slot hint bit; ownership still requires the slot-state CAS"],
   [
     "src/registry/segment_route/directory.rs::dbg_with_shard_of_locked_for_test",
     "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
