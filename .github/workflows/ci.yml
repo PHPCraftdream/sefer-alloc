@@ -3110,10 +3110,14 @@ jobs:
   # Loom checks terminal publication/cuts, owner credits, registry free slots,
   # and the maintenance lease separately from actual allocator runtime tests.
   kani:
-    # Retained bounded proofs cover node arithmetic, epoch-hand transitions
-    # and registry pointer packing. Ring cursor/ENTRY packing proofs are
-    # retired with that protocol; sidecar/owner lifetime models run under Loom.
-    # Feature gates: alloc-core (node), experimental (hand), alloc-global (pack).
+    # Sequential proofs: Node local-buffer primitives, vacant experimental
+    # AtomicSlot facts, real Large codec/transitions and SaturationHint versions.
+    # Loom tests are shadow protocol models, not real AtomicSlot proofs.
+    # internals exposes the local SaturationHint constructor only; its proved
+    # methods are unchanged. Large lifecycle word-change proofs and native
+    # CAS-result controls pass locally despite Kani 0.67.0's loose success flag
+    # (correctness item 205); landing CI acceptance remains pending.
+    # Keep all harnesses enabled: no assertion or failure suppression.
     name: kani proofs
     runs-on: ubuntu-latest
     steps:
@@ -3124,7 +3128,7 @@ jobs:
       - name: cargo kani setup
         run: cargo kani setup
       - name: cargo kani (all harnesses)
-        run: cargo kani --features "alloc-core experimental alloc-global"
+        run: cargo kani --features "alloc-core experimental alloc-global internals"
 
   loom-alloc-global:
     name: loom (alloc-global)

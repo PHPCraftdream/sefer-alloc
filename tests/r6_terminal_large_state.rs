@@ -27,10 +27,20 @@ fn pending_is_single_admission_and_single_owner_claim() {
 fn consumed_cache_hit_advances_generation_only_after_reset_phase() {
     let word = AtomicU64::new(pack_large_state(LargePhase::Live, 9));
     let state = LargeReservationState::new(&word);
+    let live = word.load(Ordering::Acquire);
+    assert!(!state.cache_consumed(9));
+    assert_eq!(word.load(Ordering::Acquire), live);
     assert!(state.publish_pending(9));
     assert_eq!(state.claim_pending(), Some(9));
+    let consuming = word.load(Ordering::Acquire);
+    assert!(!state.cache_consumed(8));
+    assert_eq!(word.load(Ordering::Acquire), consuming);
     assert!(state.cache_consumed(9));
+    let cached = word.load(Ordering::Acquire);
+    assert_eq!(cached, pack_large_state(LargePhase::Cached, 9));
+    assert_ne!(cached, consuming);
     assert!(!state.cache_consumed(9));
+    assert_eq!(word.load(Ordering::Acquire), cached);
     assert_eq!(state.begin_reuse(), Some(10));
     assert_eq!(
         large_phase(word.load(Ordering::Acquire)),

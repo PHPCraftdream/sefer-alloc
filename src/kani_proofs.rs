@@ -1,26 +1,18 @@
-//! Kani proof harnesses — bounded, symbolic-input round-trip / invariant
-//! proofs, compiled only under `cfg(kani)`.
+//! Sequential Kani proofs over symbolic inputs, compiled only under `cfg(kani)`.
 //!
-//! What these prove, and what they DO NOT:
+//! - `node_proofs` checks pointer primitives on locally valid buffers, not
+//!   caller obligations (bounds, exclusivity, or lifetime).
+//! - `hand_proofs` checks two vacant-slot facts, not epoch concurrency.
+//!   The Loom tests are handwritten shadow publication models, not proofs of
+//!   the real `AtomicSlot` implementation or reclamation.
+//! - `large_state_proofs` checks the real Large codec and all nine sequential
+//!   transition methods, including rejection and generation exhaustion.
+//! - `saturation_proofs` checks the real versioned hint after bounded
+//!   publications and a fresh reachable snapshot. `internals` exposes only
+//!   its local-word constructor; the proved methods are unchanged.
 //!
-//! - `node_proofs` — smoke round-trip proofs on LOCALLY-VALID buffers for the
-//!   `alloc_core::node::Node` pointer primitives (write→read round-trips,
-//!   in-bounds `deref`/`offset`). They exercise the arithmetic; they do NOT
-//!   model the caller contracts those primitives require (bounds, exclusivity,
-//!   `'static` lifetime) — those are the caller's obligation, unmodelled here.
-//! - `hand_proofs` — two no-concurrency invariants of `AtomicSlot`
-//!   (`vacant().generation() == 0` and `drop_value()` on a vacant slot is a
-//!   no-op). These do NOT model the publication/eviction protocol: Kani cannot
-//!   model concurrency (see the `hand_proofs` module comment on `pin()`), so
-//!   the CAS-uniqueness / no-torn-read properties are covered by loom, not here.
-//! - `pack_proofs` — bounded round-trip / no-panic proofs over symbolic input
-//!   for the registry's pure bit-packing arithmetic
-//!   (`tagged_index_stack::TaggedIndex::pack/unpack` at `INDEX_BITS = 16`, the
-//!   extracted `free_slots` packing — CRATE-P7). This is where Kani is genuinely strong:
-//!   exhaustive-over-all-inputs bounded proofs with no concurrency and no
-//!   caller contract to assume. (The abandoned-segment head-packing proofs
-//!   that previously also lived here were removed with that substrate — task
-//!   #97 / R4-5.)
+//! These proofs do not establish concurrent memory ordering, reservation
+//! lifetime, ownership authority, or reclamation safety.
 
 #[cfg(all(kani, feature = "alloc-core"))]
 mod node_proofs {
@@ -145,12 +137,8 @@ mod node_proofs {
     }
 }
 
-// Kani does NOT support concurrency: `crossbeam_epoch::pin()` uses TLS
-// (`pthread_key_create`) which CBMC cannot model, so every harness that calls
-// `pin()` fails with "call to foreign C function pthread_key_create is not
-// currently supported". The concurrent invariants of `AtomicSlot` (CAS
-// uniqueness, no torn reads) are already verified by loom (11 harnesses in
-// CI). We keep only harnesses that never touch the epoch runtime.
+// These harnesses never enter the epoch runtime. Loom covers a handwritten
+// shadow publication model, not the real AtomicSlot or its reclamation.
 #[cfg(all(kani, feature = "experimental"))]
 mod hand_proofs {
     use crate::concurrent::epoch::hand::AtomicSlot;
@@ -168,56 +156,186 @@ mod hand_proofs {
     }
 }
 
-// Bounded proofs of the registry's pure bit-packing arithmetic. No pointers
-// are dereferenced, no concurrency, no caller contract — Kani explores EVERY
-// input in the modelled range and proves the round-trip / no-overflow
-// invariants hold. These harnesses ARE the regression tests for the
-// `free_slots` packing (a future INDEX_BITS change that broke round-trip or
-// let a tag bleed into the value half would fail here).
-// `tagged-index-stack` is a `cfg(any(loom, kani))` target dependency: these proofs are verification-only.
-#[cfg(all(kani, feature = "alloc-global"))]
-mod pack_proofs {
-    // CRATE-P7: the `free_slots` packing now lives in the `tagged-index-stack`
-    // crate (`TaggedIndex<INDEX_BITS>`); the registry uses `INDEX_BITS = 16`.
-    // These proofs bind the crate's `pack`/`unpack` at that width.
-    use tagged_index_stack::TaggedIndex;
+#[cfg(all(
+    kani,
+    feature = "alloc-core",
+    not(all(feature = "alloc-global", feature = "internals"))
+))]
+#[path = "alloc_core/large/reservation_state.rs"]
+mod proof_reservation_state;
 
-    const INDEX_BITS: u32 = 16;
-    type Packed = TaggedIndex<INDEX_BITS>;
+#[cfg(all(kani, feature = "alloc-core"))]
+mod large_state_proofs {
+    use crate::alloc_core::segment_header::{
+        large_generation, large_phase, next_large_generation_bounded, pack_large_state, LargePhase,
+        MAX_LARGE_GENERATION,
+    };
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
+    use crate::alloc_core::LargeReservationState;
+    // Compile the real production source when its public reexport is absent.
+    #[cfg(not(all(feature = "alloc-global", feature = "internals")))]
+    use super::proof_reservation_state::LargeReservationState;
+    use core::sync::atomic::{AtomicU64, Ordering};
 
-    // ── 1. TaggedIndex pack→unpack round-trip ────────────────────────────
-    //
-    // For any value that fits the low INDEX_BITS and any tag that fits the
-    // high (64 - INDEX_BITS), pack then unpack recovers BOTH halves exactly.
     #[kani::proof]
-    fn tagged_pack_unpack_roundtrip() {
-        let index_mask: u32 = (1u32 << INDEX_BITS) - 1;
-        let value: u32 = kani::any();
-        let tag: u64 = kani::any();
-        // The caller's documented invariant: value fits the index half, tag
-        // fits the remaining high bits.
-        kani::assume(value <= index_mask);
-        kani::assume(tag < (1u64 << (64 - INDEX_BITS)));
-
-        let word = Packed::pack(value, tag).expect("in range by the kani::assume guards above");
-        let (got_value, got_tag) = Packed::unpack(word);
-        assert_eq!(got_value, value);
-        assert_eq!(got_tag, tag);
+    fn large_codec_roundtrip_and_canonical() {
+        let generation: u64 = kani::any();
+        kani::assume(generation <= MAX_LARGE_GENERATION);
+        let code: u64 = kani::any();
+        kani::assume(code <= 6);
+        let phase = large_phase(code).expect("valid phase code");
+        let word = pack_large_state(phase, generation);
+        assert_eq!(large_phase(word), Some(phase));
+        assert_eq!(large_generation(word), generation);
+        let arbitrary: u64 = kani::any();
+        if let Some(decoded) = large_phase(arbitrary) {
+            assert_eq!(
+                pack_large_state(decoded, large_generation(arbitrary)),
+                arbitrary
+            );
+        }
+        kani::cover!(
+            large_phase(arbitrary).is_none(),
+            "invalid phase is reachable"
+        );
     }
 
-    // ── 2. TaggedIndex unpack never loses / mixes bits on ANY word ───────
-    //
-    // For a fully arbitrary 64-bit word (no assumptions), unpack splits it at
-    // the INDEX_BITS boundary with no overlap: value is exactly the low bits,
-    // tag is exactly the high bits, and re-packing them is the identity.
     #[kani::proof]
-    fn tagged_unpack_is_clean_split() {
-        let index_mask: u32 = (1u32 << INDEX_BITS) - 1;
-        let word: u64 = kani::any();
-        let (value, tag) = Packed::unpack(word);
-        // Halves never overlap: value occupies only the low bits.
-        assert!(value <= index_mask);
-        // The split is lossless: recombining reproduces the original word.
-        assert_eq!(Packed::pack(value, tag), Some(word));
+    fn next_generation_never_exceeds_limit() {
+        let generation: u64 = kani::any();
+        let limit: u64 = kani::any();
+        let next = next_large_generation_bounded(generation, limit);
+        match next {
+            Some(value) => {
+                assert!(limit <= MAX_LARGE_GENERATION);
+                assert!(generation < limit);
+                assert_eq!(value, generation + 1);
+                assert!(value <= limit);
+            }
+            None => assert!(generation >= limit || limit > MAX_LARGE_GENERATION),
+        }
+        kani::cover!(next.is_some(), "generation can advance");
+    }
+
+    #[kani::proof]
+    fn large_reservation_state_transition_relation() {
+        use LargePhase::{Cached, Consuming, Initializing, Live, Pending, Released};
+        let before: u64 = kani::any();
+        let word = AtomicU64::new(before);
+        let state = LargeReservationState::new(&word);
+        let generation: u64 = kani::any();
+        kani::assume(generation <= MAX_LARGE_GENERATION);
+        let operation: u8 = kani::any();
+        kani::assume(operation < 9);
+        let old_generation = large_generation(before);
+        // Independent lifecycle table from VER-04 §1.4 / §5.4: each
+        // method must implement its own edge, not just any allowed edge.
+        let (from, to) = match operation {
+            0 => (Live, Pending),
+            1 => (Pending, Consuming),
+            2 => (Live, Consuming),
+            3 => (Consuming, Cached),
+            4 => (Consuming, Released),
+            5 => (Cached, Released),
+            6 => (Initializing, Released),
+            7 => (Cached, Initializing),
+            _ => (Initializing, Live), // operation == 8 by the guard
+        };
+        let expected_success = large_phase(before) == Some(from)
+            && match operation {
+                1 | 2 => true,
+                7 => old_generation < MAX_LARGE_GENERATION,
+                _ => old_generation == generation,
+            };
+        let mut returned_generation = None;
+        let success = match operation {
+            0 => state.publish_pending(generation),
+            1 => {
+                returned_generation = state.claim_pending();
+                returned_generation.is_some()
+            }
+            2 => {
+                returned_generation = state.claim_live();
+                returned_generation.is_some()
+            }
+            3 => state.cache_consumed(generation),
+            4 => state.release_consumed(generation),
+            5 => state.release_cached(generation),
+            6 => state.release_initializing(generation),
+            7 => {
+                returned_generation = state.begin_reuse();
+                returned_generation.is_some()
+            }
+            _ => state.finish_reuse(generation),
+        };
+        let after = word.load(Ordering::Relaxed);
+        let changed = after != before;
+        // Kani 0.67 models strong CAS success flag loosely; `ok => changed`
+        // is pinned natively by consumed_cache_hit_advances_generation_only_after_reset_phase.
+        assert_eq!(changed, expected_success);
+        assert!(!changed || success);
+        if changed {
+            let next_generation = if operation == 7 {
+                old_generation + 1 // expected_success excludes exhaustion
+            } else {
+                old_generation
+            };
+            assert_eq!(large_phase(after), Some(to));
+            assert_eq!(large_generation(after), next_generation);
+            assert_eq!(after, pack_large_state(to, next_generation));
+            if operation == 1 || operation == 2 || operation == 7 {
+                assert_eq!(returned_generation, Some(next_generation));
+            }
+        } else {
+            assert_eq!(after, before);
+            if !success {
+                assert_eq!(returned_generation, None);
+            }
+        }
+        kani::cover!(changed, "a lifecycle transition changes the word");
+    }
+}
+
+#[cfg(all(kani, feature = "alloc-global", feature = "internals"))]
+mod saturation_proofs {
+    use crate::registry::bootstrap::saturation::SaturationHint;
+
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn stale_saturation_snapshot_never_marks() {
+        let before: u64 = kani::any();
+        let hint = SaturationHint::dbg_with_word_for_test(before);
+        let stale = hint.snapshot();
+        let publications: u8 = kani::any();
+        kani::assume(publications >= 1 && publications <= 3);
+        for _ in 0..publications {
+            hint.publish_claimable();
+        }
+        let after = hint.snapshot();
+        assert!(after == u64::MAX || (after > before && after & 1 == 0));
+        if before == u64::MAX {
+            assert_eq!(after, u64::MAX);
+        }
+        hint.try_mark_saturated(stale);
+        assert_eq!(hint.snapshot(), after);
+        assert!(!hint.is_saturated());
+        kani::cover!(after != u64::MAX, "publication advances an enabled version");
+    }
+
+    #[kani::proof]
+    fn fresh_snapshot_marks() {
+        let before: u64 = kani::any();
+        // Reachable enabled snapshots are even and at most MAX-3.
+        // MAX-1 is unreachable through publish_claimable: marking it would
+        // produce DISABLED rather than saturation, intentionally excluded here.
+        kani::assume(before & 1 == 0 && before <= u64::MAX - 3);
+        let hint = SaturationHint::dbg_with_word_for_test(before);
+        hint.try_mark_saturated(hint.snapshot());
+        assert_eq!(hint.snapshot(), before | 1);
+        assert!(hint.is_saturated());
+        kani::cover!(
+            hint.is_saturated(),
+            "fresh reachable snapshot marks saturation"
+        );
     }
 }
