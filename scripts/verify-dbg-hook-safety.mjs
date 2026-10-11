@@ -18,6 +18,10 @@ import { REPO_ROOT } from './lib.mjs';
 
 // Pure observers: read-only, no allocator-state mutation.
 const PURE_OBSERVERS = [
+  // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
+  "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
+  // C1: numeric results of resolved-default comparison under the claiming lease.
+  "src/registry/heap_registry/claim.rs::dbg_registry_default_config_results",
   // CI-2b: relaxed cumulative System totals and actual slot layout only;
   // no pointer input, metadata access, allocation, mutation, or counter reset.
   "src/registry/segment_route/small_sidecar.rs::dbg_route_slots_system_totals",

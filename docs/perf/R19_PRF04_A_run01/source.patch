@@ -1,0 +1,642 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 9301cf4d..33a95be8 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -2354,6 +2354,10 @@ required-features = ["alloc-global"]
+ name = "r34_23_vec_worker_system"
+ required-features = ["alloc-global"]
+ 
++[[example]]
++name = "r19_prf04_thread_wave_gate"
++required-features = ["production"]
++
+ # Sol-F1 (task #563, release-readiness review finding F1): the NEGATIVE-half
+ # compile-fail probe for the `internals` boundary. Deliberately does NOT list
+ # `internals` here — `internals`-off is exactly the configuration this file
+diff --git a/scripts/verify-dbg-hook-safety.mjs b/scripts/verify-dbg-hook-safety.mjs
+index 3e91ecf9..74e8b062 100644
+--- a/scripts/verify-dbg-hook-safety.mjs
++++ b/scripts/verify-dbg-hook-safety.mjs
+@@ -18,6 +18,10 @@ import { REPO_ROOT } from './lib.mjs';
+ 
+ // Pure observers: read-only, no allocator-state mutation.
+ const PURE_OBSERVERS = [
++  // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
++  "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
++  // C1: numeric results of resolved-default comparison under the claiming lease.
++  "src/registry/heap_registry/claim.rs::dbg_registry_default_config_results",
+   // CI-2b: relaxed cumulative System totals and actual slot layout only;
+   // no pointer input, metadata access, allocation, mutation, or counter reset.
+   "src/registry/segment_route/small_sidecar.rs::dbg_route_slots_system_totals",
+diff --git a/src/registry/heap_registry/claim.rs b/src/registry/heap_registry/claim.rs
+index 453a3d33..ca16034f 100644
+--- a/src/registry/heap_registry/claim.rs
++++ b/src/registry/heap_registry/claim.rs
+@@ -34,6 +34,26 @@ use crate::registry::heap_slot::{
+ pub struct HeapRegistry;
+ 
+ impl HeapRegistry {
++    /// Successful returned leases by selector source: hint, bump, cap scan, recovery.
++    /// Relaxed numeric loads only; failed CAS and constructor OOM are excluded.
++    #[doc(hidden)]
++    #[cfg(feature = "bench-internals")]
++    pub fn dbg_registry_claim_sources() -> [u64; 4] {
++        super::counters::CLAIM_SOURCES
++            .each_ref()
++            .map(|c| c.load(Ordering::Relaxed))
++    }
++
++    /// Successful leases whose actual resolved policy matches / differs from default.
++    /// Read-only numeric observer; comparison occurs while the claiming lease owns the core.
++    #[doc(hidden)]
++    #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
++    pub fn dbg_registry_default_config_results() -> [u64; 2] {
++        super::counters::DEFAULT_CONFIG_RESULTS
++            .each_ref()
++            .map(|c| c.load(Ordering::Relaxed))
++    }
++
+     /// Ph4a (task #2091): safe test observer — same semantics as
+     /// [`claim_lease`](Self::claim_lease) but test-gated.
+     #[cfg(feature = "internals")]
+@@ -203,9 +223,18 @@ impl HeapRegistry {
+         let mut failed_chunk = None;
+         loop {
+             let reg = ensure();
++            #[cfg(feature = "bench-internals")]
++            let source = core::cell::Cell::new(0usize);
+             let candidate = match failed_chunk {
+-                Some(failed) => scan_claim_recovery_free(reg, failed),
+-                None => Self::pick_slot(),
++                Some(failed) => {
++                    #[cfg(feature = "bench-internals")]
++                    source.set(3);
++                    scan_claim_recovery_free(reg, failed)
++                }
++                None => Self::pick_slot(
++                    #[cfg(feature = "bench-internals")]
++                    &source,
++                ),
+             };
+             let idx = candidate?;
+             // A minted index is still below `count` after chunk OOM. Keep it
+@@ -336,6 +365,18 @@ impl HeapRegistry {
+             // The typed authority (Ph4a): slot is LIVE + initialised (see the
+             // branch above), we are the sole writer. `generation` is a purely
+             // numeric observer — no gate on the hot path.
++            #[cfg(feature = "bench-internals")]
++            super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
++            #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
++            {
++                // SAFETY: successful claim owns this LIVE, initialized core.
++                let matches = unsafe {
++                    (*slot.heap.get().cast::<HeapCore>())
++                        .live_config_matches(&crate::alloc_core::LargeCacheConfig::new())
++                };
++                super::counters::DEFAULT_CONFIG_RESULTS[usize::from(!matches)]
++                    .fetch_add(1, Ordering::Relaxed);
++            }
+             return Some(HeapLease {
+                 slot,
+                 index: idx as u32,
+@@ -347,15 +388,28 @@ impl HeapRegistry {
+ 
+     /// Pick from the hint, then capped high-water bump, then full scan at cap.
+     /// An unmaterialised index below `count` remains cold-recoverable.
+-    pub(super) fn pick_slot() -> Option<usize> {
++    pub(super) fn pick_slot(
++        #[cfg(feature = "bench-internals")] source: &core::cell::Cell<usize>,
++    ) -> Option<usize> {
+         let reg = ensure();
+         pick_with_saturation(
+             &reg.reuse_hint,
+             &reg.count,
+             &reg.saturation,
+             MAX_HEAPS,
+-            || scan_claimable_slot(reg),
+-            || super::stack::bump_count(reg),
++            || {
++                #[cfg(feature = "bench-internals")]
++                source.set(2);
++                scan_claimable_slot(reg)
++            },
++            || {
++                let picked = super::stack::bump_count(reg);
++                #[cfg(feature = "bench-internals")]
++                if picked.is_some() {
++                    source.set(1);
++                }
++                picked
++            },
+         )
+     }
+ }
+diff --git a/src/registry/heap_registry/counters.rs b/src/registry/heap_registry/counters.rs
+index 467076b5..6d0c2cd4 100644
+--- a/src/registry/heap_registry/counters.rs
++++ b/src/registry/heap_registry/counters.rs
+@@ -458,3 +458,9 @@ pub fn dbg_bump_count_without_materialising() -> Option<u32> {
+     let reg = ensure();
+     super::stack::bump_count(reg).map(|idx| idx as u32)
+ }
++
++// Measurement-only successful claim totals; never read by policy.
++#[cfg(feature = "bench-internals")]
++pub(super) static CLAIM_SOURCES: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
++#[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
++pub(super) static DEFAULT_CONFIG_RESULTS: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];
+diff --git a/docs/perf/R19_PRF04_THREAD_WAVE_PREREG.md b/docs/perf/R19_PRF04_THREAD_WAVE_PREREG.md
+new file mode 100644
+--- /dev/null
++++ b/docs/perf/R19_PRF04_THREAD_WAVE_PREREG.md
+@@ -0,0 +1,131 @@
++# R19 PRF04 C1 — bench / measurement-only baseline preregistration (not measured)
++
++Status: implementation/validation only. No measured verdict, no V4, no policy change.
++The owner decision, question 3 in the 2026-10-11 decisions document, supersedes
++the stale NOT-approved wording of perf item 87; the index is intentionally untouched.
++
++## Fixed experiment
++
++Only A, current fresh-first policy; K=32, W=1 and W=128, five fresh subprocesses
++per cell: **ten primary samples total**. Order alternates short/long across
++repetitions. Two additional diagnostic subprocesses (one per cell) are activation
++checks, not primary samples. No warmup waves, retries, R-live, R-churn or B arm
++in C1. A failed oracle stops the run; do not silently replace samples.
++
++Entry is an actual `#[global_allocator] static GLOBAL: SeferAlloc`.
++Each worker allocates 128 objects at each of 64, 256, 1024, 2048 and 4096 bytes
++(958464 Small payload bytes), plus one 2 MiB Large object, touches each page,
++frees all workload objects, then waits at a common barrier. Main samples memory
++while all 32 threads remain alive, releases a second barrier, and joins every
++native thread before spawning the next wave. The common barrier prevents early
++TLS exit hints during another worker's claim. `maintenance_running()` must remain
++false; the harness never requests startup.
++
++Main binds and remains LIVE before taking the baseline: raw count_before=1.
++Derived worker count increment is `1 + W*(32-1)`: 32 / 3969.
++Raw count_after is **33 / 3970**, including main. These are code-derived
++expectations, not measurements. Report before, after and delta; never relabel
++3969 as the whole process count. Diagnostic successful-claim deltas are
++`[hint, bump, cap_scan, recovery] = [W-1, 1+31W, 0, 0]`, summing to `32W`.
++Counters increment only immediately before a successful lease return, excluding
++lost CAS, chunk OOM and constructor failure; all added code is compiled out
++without bench-internals. Bump is selector provenance, not merely first-claim state.
++
++## Features, configuration and corrections to the research sketch
++
++Primary: exact `production`, no bench-internals or alloc-stats. Diagnostic:
++`production bench-internals alloc-stats internals`, separately built/copied/hashed.
++`internals` is needed to access the existing registry and AllocCore observer surfaces;
++it is not added to the primary build. The initial diagnostic compile without it
++failed with private-module/missing-observer errors; no production exposure is widened.
++Timing
++fields are absent in diagnostic JSON and aggregation rejects diagnostic timings.
++No production feature composition changes.
++
++Requested config is `LargeCacheConfig::new()` (SeferAlloc::new). In diagnostics,
++every successful lease compares the actual LIVE resolved policy via the existing
++`live_config_matches` under its newly acquired exclusive authority, records
++matches/mismatches, and asserts all `32W` worker leases match, mismatches=0.
++All builds assert process config-conflicts before/after=0. Primary configuration
++readback is validated by the matched diagnostic build/workload, not falsely
++claimed as a primary observer. No new raw-pointer public hook is introduced.
++
++**Research correction:** zero config conflicts alone is not resolved-value
++readback. The new diagnostic match oracle supplies it. The existing
++`AllocCore::dbg_routed_miss_scans()` counts only with alloc-stats; bench-internals
++alone would return a misleading zero. Hence alloc-stats is diagnostic only;
++primary emits null, not measured zero. Report the diagnostic routed scan count,
++do not assert scans=0 without evidence. This is the existing negative-directory
++scan observer, not the separate r18_sidecar_scan_bench custom-cfg observer.
++
++**Research correction:** commit is not portable virtual address space. Use the
++fallible proc-probe snapshot and keep RSS, optional commit_charge and virtual_size
++separate. Missing commit_charge means the commit threshold is INCONCLUSIVE;
++never substitute virtual_size or charged_or_reserved_bytes for commit. Peak fields
++are maxima of barrier/idle snapshots, **not continuous OS peak**.
++
++First-workload-alloc latency uses Instant around the first explicit worker Vec
++allocation, not native-thread startup-to-first TLS bind: std thread setup may
++already allocate before the closure. It is honestly labelled
++`first_workload_alloc_ns`; it is descriptive only, **not valid KILL-3 first-bind
++evidence**. The research's first-alloc timing aspect is halted pending a separately
++validated thread-entry/first-bind observer; C1's retention decision does not use it.
++Wall time includes spawn, work, barrier snapshots, native join and TLS teardown.
++
++## Predetermined decision boundary
++
++Compute arithmetic median of five process-idle commit-charge samples in each
++cell, then `median(W128) - median(W1)` in bytes. Below 67108864 bytes permits
++NULL/V0 without V4, after checking all oracles. At/above that floor permits only
++consideration of C2: **not GO**. Missing commit data or failed identity/oracle
++means INCONCLUSIVE, not NULL. RSS and incremental RSS are reported distinctly;
++RSS cannot replace commit in this decision.
++
++Future B promotion (not implemented/run): primary benefit K32/W128 median commit
++improvement at least max(64 MiB, 25% of A); R-live p50 within 5% and paired-t
++criterion; R-churn wall within max(2%, A/A noise); first-bind p99 B <= 1.10*A is
++hard KILL-3. A/A noise wider than the threshold fails closed. No promotion based
++on these ten A-only samples. NUMA has no separate policy; V6 remains a separate
++future gate only if measured FREE retention still >=64 MiB after the V4 decision.
++
++## Reproduction and artifacts
++
++From this isolated repository root, after orchestrator approval:
++
++```text
++node scripts/r19_prf04_thread_wave.mjs --run docs/perf/R19_PRF04_A_run01
++```
++
++The runner makes no git writes and reads no other worktree. Before measurement
++it saves a binary tracked diff against HEAD **plus added-file patches for all
++untracked Rust/JS/TOML source and this preregistration**, hashes that immutable
++patch, captures base SHA, rustc -vV, host target, release/default-feature metadata,
++requested and resolved Cargo features, OS/CPU, and both copied binary SHA-256s.
++Binary copies live only under `target/r19_prf04_<run-id>/`, after verifying the
++existing target parent; identity names are repository-relative paths under target,
++never private absolute paths. The docs run directory contains only the small
++identity/raw JSON, source patch and derived CSV/Markdown tables, no executables.
++It rejects flag/target overrides, source drift, private-path text, existing output
++directories and artifact overwrites. Cargo is sequential, --locked,
++RUSTC_WRAPPER empty, CARGO_BUILD_JOBS=3, target inside this worktree. Build errors
++are not copied to artifacts because they can include private absolute paths.
++Raw JSON is saved after each validated sample, before derived tables.
++
++One script validates count/source/config arithmetic, exact cell sizes, immutable
++identity and the median difference, then emits summary CSV and Markdown tables.
++Statistic names accompany the computations. No handwritten measured tables.
++Use `--aggregate` with an existing run directory only before derived files exist;
++no-overwrite prevents silently rewriting published evidence.
++
++Validation without allocator measurement:
++
++```text
++node scripts/r19_prf04_thread_wave.mjs --self-test
++node scripts/verify-dbg-hook-safety.mjs
++```
++
++Self-test fixtures are synthetic and include invalid count, config, maintenance,
++source-sum, resolved-default and diagnostic-timing rejection controls. Existing
++selector and OOM tests are the narrow Rust regressions; new runtime wave tests
++would duplicate the explicitly deferred measurement and are not added in C1.
++No README, architecture, changelog, index, manifest or lockfile updates in C1.
+diff --git a/examples/r19_prf04_thread_wave_gate.rs b/examples/r19_prf04_thread_wave_gate.rs
+new file mode 100644
+--- /dev/null
++++ b/examples/r19_prf04_thread_wave_gate.rs
+@@ -0,0 +1,138 @@
++//! C1 baseline only: fresh subprocess, barrier-retained spawn/join waves.
++use sefer_alloc::SeferAlloc;
++use std::sync::{Arc, Barrier};
++use std::time::Instant;
++
++#[global_allocator]
++static GLOBAL: SeferAlloc = SeferAlloc::new();
++const K: usize = 32;
++
++fn main() {
++    let w: usize = std::env::args()
++        .nth(1)
++        .expect("W required")
++        .parse()
++        .expect("W integer");
++    assert!(w == 1 || w == 128);
++    assert!(!SeferAlloc::maintenance_running());
++    // Bind main before the baseline. Its heap remains LIVE throughout all waves.
++    let main_live = vec![1u8; 4096];
++    std::hint::black_box(&main_live);
++    let mut latencies = Vec::with_capacity(w * K);
++    let before = GLOBAL.stats();
++    assert_eq!(
++        before.heaps_claimed_high_water, 1,
++        "unexpected pre-wave heaps"
++    );
++    assert_eq!(before.config_conflicts, 0);
++    #[cfg(feature = "bench-internals")]
++    let sources_before = sefer_alloc::registry::HeapRegistry::dbg_registry_claim_sources();
++    #[cfg(feature = "bench-internals")]
++    let config_before = sefer_alloc::registry::HeapRegistry::dbg_registry_default_config_results();
++    #[cfg(feature = "alloc-stats")]
++    let scans_before = sefer_alloc::alloc_core::AllocCore::dbg_routed_miss_scans();
++    let memory_before = proc_probe::try_snapshot().expect("memory snapshot");
++    let mut peak_rss = memory_before.rss;
++    let mut peak_commit = memory_before.commit_charge;
++    let start = Instant::now();
++    for _ in 0..w {
++        let barrier = Arc::new(Barrier::new(K + 1));
++        let mut handles = Vec::with_capacity(K);
++        for _ in 0..K {
++            let barrier = Arc::clone(&barrier);
++            handles.push(std::thread::spawn(move || {
++                let start = Instant::now();
++                let first = vec![0u8; 64];
++                std::hint::black_box(&first);
++                let first_ns = u64::try_from(start.elapsed().as_nanos()).expect("duration fits");
++                // ~1 MiB of Small allocations across 64 B..4 KiB, plus 2 MiB Large.
++                let mut blocks = Vec::with_capacity(640);
++                for size in [64, 256, 1024, 2048, 4096] {
++                    for _ in 0..128 {
++                        let mut block = vec![0u8; size];
++                        for byte in block.iter_mut().step_by(4096) {
++                            *byte = 0xab;
++                        }
++                        blocks.push(block);
++                    }
++                }
++                let mut large = vec![0u8; 2 * 1024 * 1024];
++                for byte in large.iter_mut().step_by(4096) {
++                    *byte = 0xab;
++                }
++                std::hint::black_box((&blocks, &large));
++                drop((first, blocks, large));
++                // Every worker has allocated AND freed before anyone can exit.
++                // No TLS destructor can publish an early reuse hint during claims.
++                barrier.wait();
++                barrier.wait();
++                first_ns
++            }));
++        }
++        barrier.wait();
++        let active = proc_probe::try_snapshot().expect("active snapshot");
++        peak_rss = peak_rss.max(active.rss);
++        peak_commit = match (peak_commit, active.commit_charge) {
++            (Some(a), Some(b)) => Some(a.max(b)),
++            _ => None,
++        };
++        barrier.wait();
++        for handle in handles {
++            latencies.push(handle.join().expect("worker panic"));
++        }
++        assert!(!SeferAlloc::maintenance_running());
++    }
++    let wall_ns = u64::try_from(start.elapsed().as_nanos()).expect("duration fits");
++    let after = GLOBAL.stats();
++    let idle = proc_probe::try_snapshot().expect("idle snapshot");
++    let expected = 1 + w * (K - 1);
++    assert_eq!(
++        after.heaps_claimed_high_water - before.heaps_claimed_high_water,
++        expected as u64
++    );
++    assert_eq!(after.config_conflicts, 0);
++    #[cfg(feature = "bench-internals")]
++    let sources = {
++        let end = sefer_alloc::registry::HeapRegistry::dbg_registry_claim_sources();
++        let delta = std::array::from_fn::<_, 4, _>(|i| end[i] - sources_before[i]);
++        assert_eq!(delta, [(w - 1) as u64, expected as u64, 0, 0]);
++        let config = sefer_alloc::registry::HeapRegistry::dbg_registry_default_config_results();
++        assert_eq!(config[0] - config_before[0], (w * K) as u64);
++        assert_eq!(config[1] - config_before[1], 0);
++        delta
++    };
++    #[cfg(feature = "bench-internals")]
++    let config_results = {
++        let end = sefer_alloc::registry::HeapRegistry::dbg_registry_default_config_results();
++        [end[0] - config_before[0], end[1] - config_before[1]]
++    };
++    #[cfg(not(feature = "bench-internals"))]
++    let config_results: Option<[u64; 2]> = None;
++    #[cfg(not(feature = "bench-internals"))]
++    let sources: Option<[u64; 4]> = None;
++    #[cfg(feature = "alloc-stats")]
++    let routed_scans =
++        Some(sefer_alloc::alloc_core::AllocCore::dbg_routed_miss_scans() - scans_before);
++    #[cfg(not(feature = "alloc-stats"))]
++    let routed_scans: Option<u64> = None;
++    // Raw samples precede aggregation. Diagnostic timing is deliberately absent.
++    println!(
++        "{}",
++        serde_json::json!({
++            "schema": 1, "k": K, "w": w, "pid": std::process::id(),
++            "diagnostic": cfg!(feature = "bench-internals"),
++            "maintenance_running": SeferAlloc::maintenance_running(),
++            "requested_config": "LargeCacheConfig::new", "resolved_default_matches": cfg!(feature = "bench-internals"),
++            "config_conflicts_before": before.config_conflicts, "config_conflicts_after": after.config_conflicts,
++            "count_before": before.heaps_claimed_high_water, "count_after": after.heaps_claimed_high_water,
++            "count_delta": after.heaps_claimed_high_water - before.heaps_claimed_high_water,
++            "segments_reserved_delta": after.segments_reserved_total - before.segments_reserved_total,
++            "rss_before": memory_before.rss, "rss_idle": idle.rss, "rss_peak_sampled": peak_rss.max(idle.rss),
++            "commit_before": memory_before.commit_charge, "commit_idle": idle.commit_charge,
++            "commit_peak_sampled": peak_commit, "virtual_size_idle": idle.virtual_size,
++            "claim_sources": sources, "resolved_config_results": config_results, "routed_scans": routed_scans,
++            "wall_ns": (!cfg!(feature = "bench-internals")).then_some(wall_ns),
++            "first_workload_alloc_ns": if cfg!(feature = "bench-internals") { None } else { Some(latencies) }
++        })
++    );
++}
+diff --git a/scripts/r19_prf04_thread_wave.mjs b/scripts/r19_prf04_thread_wave.mjs
+new file mode 100644
+--- /dev/null
++++ b/scripts/r19_prf04_thread_wave.mjs
+@@ -0,0 +1,211 @@
++// C1 only. No git writes, no other worktree access. --run is explicit opt-in.
++import assert from 'node:assert/strict';
++import { spawnSync } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
++import { fileURLToPath } from 'node:url';
++import { dirname, resolve, relative } from 'node:path';
++import os from 'node:os';
++
++const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
++const hash = bytes => createHash('sha256').update(bytes).digest('hex');
++function command(exe, args, env = process.env) {
++  const result = spawnSync(exe, args, { cwd: root, env, encoding: 'utf8', timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
++  // Do not copy build stderr (which contains private absolute paths) to artifacts.
++  assert.equal(result.status, 0, `${exe} ${args.join(' ')} failed: ${result.error?.message ?? result.stderr}`);
++  return result.stdout;
++}
++function safeArtifact(text) {
++  for (const privatePath of [root, root.replaceAll('\\', '/'), os.homedir(), os.homedir().replaceAll('\\', '/')]) {
++    assert(!text.toLowerCase().includes(privatePath.toLowerCase()), 'private path in artifact');
++  }
++  return text;
++}
++function put(dir, name, text) {
++  assert(!existsSync(resolve(dir, name)), 'refusing artifact overwrite');
++  writeFileSync(resolve(dir, name), safeArtifact(text), { flag: 'wx' });
++}
++function snapshotPatch() {
++  let patch = command('git', ['diff', '--binary', 'HEAD', '--', '.']);
++  const untracked = command('git', ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
++  const sources = untracked.filter(p => /\.(rs|mjs|toml)$/.test(p) || /^docs\/perf\/R19_PRF04_.*\.md$/.test(p));
++  for (const path of sources.sort()) {
++    assert(/^[\w./-]+$/.test(path), 'unsupported patch filename');
++    const text = readFileSync(resolve(root, path), 'utf8');
++    assert(!text.includes('\0'), 'binary untracked source not supported');
++    const lines = text.split('\n');
++    const newline = lines.at(-1) === '';
++    if (newline) lines.pop();
++    patch += `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${lines.length} @@\n`;
++    patch += lines.map(line => `+${line}\n`).join('');
++    if (!newline) patch += '\\ No newline at end of file\n';
++  }
++  assert(sources.includes('examples/r19_prf04_thread_wave_gate.rs') || command('git', ['ls-files', 'examples/r19_prf04_thread_wave_gate.rs']).trim(), 'harness missing from source identity');
++  return safeArtifact(patch);
++}
++export function validate(row) {
++  assert.equal(row.schema, 1);
++  assert.equal(row.k, 32);
++  assert([1, 128].includes(row.w));
++  assert.equal(typeof row.diagnostic, 'boolean');
++  assert.equal(row.maintenance_running, false);
++  assert.equal(row.requested_config, 'LargeCacheConfig::new');
++  assert.equal(row.config_conflicts_before, 0);
++  assert.equal(row.config_conflicts_after, 0);
++  assert.equal(row.count_before, 1);
++  const expected = 1 + row.w * 31;
++  assert.equal(row.count_delta, expected);
++  assert.equal(row.count_after - row.count_before, expected);
++  assert.equal(row.count_after, expected + 1); // main LIVE heap is additional
++  for (const field of ['rss_before', 'rss_idle', 'rss_peak_sampled', 'segments_reserved_delta']) {
++    assert(Number.isSafeInteger(row[field]) && row[field] >= 0, field);
++  }
++  assert(row.rss_idle > 0);
++  if (row.diagnostic) {
++    assert.deepEqual(row.claim_sources, [row.w - 1, expected, 0, 0]);
++    assert.equal(row.claim_sources.reduce((a, b) => a + b, 0), row.w * 32);
++    assert.equal(row.resolved_default_matches, true);
++    assert.deepEqual(row.resolved_config_results, [row.w * 32, 0]);
++    assert.equal(row.wall_ns, null);
++    assert.equal(row.first_workload_alloc_ns, null);
++    assert(Number.isSafeInteger(row.routed_scans) && row.routed_scans >= 0);
++  } else {
++    assert.equal(row.claim_sources, null);
++    assert.equal(row.resolved_config_results, null);
++    assert.equal(row.routed_scans, null); // increments absent in plain production
++    assert.equal(row.first_workload_alloc_ns.length, row.w * 32);
++    assert(row.first_workload_alloc_ns.every(n => Number.isSafeInteger(n) && n >= 0));
++    assert(Number.isSafeInteger(row.wall_ns) && row.wall_ns > 0);
++  }
++}
++const median = xs => { const s = [...xs].sort((a, b) => a - b); assert.equal(s.length, 5); return s[2]; };
++const quantile = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s[Math.ceil(q * s.length) - 1]; };
++export function aggregate(rows) {
++  assert.equal(rows.length, 12, 'exactly ten primary and two diagnostic samples');
++  rows.forEach(validate);
++  const primary = rows.filter(r => !r.diagnostic);
++  assert.equal(primary.length, 10);
++  const cells = [1, 128].map(w => {
++    const cell = primary.filter(r => r.w === w);
++    const diagnostic = rows.filter(r => r.diagnostic && r.w === w);
++    assert.equal(cell.length, 5);
++    assert.equal(diagnostic.length, 1);
++    assert.equal(new Set(cell.map(r => r.repetition)).size, 5);
++    assert(cell.every(r => r.repetition >= 1 && r.repetition <= 5));
++    const commitAvailable = cell.every(r => Number.isSafeInteger(r.commit_idle) && r.commit_idle > 0);
++    const times = cell.flatMap(r => r.first_workload_alloc_ns);
++    return { w, n: 5, count_delta: 1 + w * 31, count_raw: 2 + w * 31,
++      commit_idle_median: commitAvailable ? median(cell.map(r => r.commit_idle)) : null,
++      rss_idle_median: median(cell.map(r => r.rss_idle)),
++      rss_delta_median: median(cell.map(r => r.rss_idle - r.rss_before)),
++      wall_ns_median: median(cell.map(r => r.wall_ns)),
++      first_workload_p50_ns: quantile(times, 0.5), first_workload_p99_ns: quantile(times, 0.99),
++      diagnostic_routed_scans: diagnostic[0].routed_scans };
++  });
++  const delta = cells.every(c => c.commit_idle_median !== null)
++    ? cells[1].commit_idle_median - cells[0].commit_idle_median : null;
++  if (delta !== null) assert.equal(delta + cells[0].commit_idle_median, cells[1].commit_idle_median);
++  const columns = Object.keys(cells[0]);
++  const csv = `${columns.join(',')}\n${cells.map(c => columns.map(k => c[k] ?? 'unavailable').join(',')).join('\n')}\n`;
++  const table = `| ${columns.join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |\n${cells.map(c => `| ${columns.map(k => c[k] ?? 'unavailable').join(' | ')} |`).join('\n')}\n`;
++  return { csv, markdown: `# C1 baseline measurement tables\n\n${table}\nCommit idle median difference (W128 minus W1), bytes: ${delta ?? 'unavailable — no commit-charge decision on this OS'}.\n\nThreshold: 67108864 bytes. This table is not a measured verdict; the orchestrator reviews validity and decides the next phase. Diagnostic timings are excluded.\n` };
++}
++function derive(dir) {
++  const identity = JSON.parse(readFileSync(resolve(dir, 'identity.json'), 'utf8'));
++  assert.equal(hash(readFileSync(resolve(dir, 'source.patch'))), identity.patch_sha256);
++  const rows = JSON.parse(readFileSync(resolve(dir, 'samples.json'), 'utf8'));
++  for (const row of rows) {
++    assert.equal(row.patch_sha256, identity.patch_sha256);
++    assert.equal(row.binary_sha256, identity.binaries[row.diagnostic ? 'diagnostic' : 'production'].sha256);
++  }
++  const result = aggregate(rows);
++  put(dir, 'R19_PRF04_THREAD_WAVE_summary.csv', result.csv);
++  put(dir, 'R19_PRF04_THREAD_WAVE_TABLES.md', result.markdown);
++}
++function run(dir) {
++  assert(!existsSync(dir), 'fresh artifact directory required');
++  const outputRelative = relative(resolve(root, 'docs/perf'), dir).replaceAll('\\', '/');
++  assert(/^R19_PRF04_[\w-]+$/.test(outputRelative), 'output must be a direct docs/perf/R19_PRF04_* directory');
++  const targetParent = resolve(root, 'target');
++  assert(statSync(targetParent).isDirectory(), 'verified target parent required');
++  const binaryDir = resolve(targetParent, `r19_prf04_${outputRelative.slice('R19_PRF04_'.length)}`);
++  assert(!existsSync(binaryDir), 'fresh binary directory required');
++  const patch = snapshotPatch(); // before building or measuring, includes untracked sources
++  const base = command('git', ['rev-parse', 'HEAD']).trim();
++  mkdirSync(dir);
++  mkdirSync(binaryDir);
++  put(dir, 'source.patch', patch);
++  const env = { ...process.env, RUSTC_WRAPPER: '', CARGO_BUILD_JOBS: '3', CARGO_TARGET_DIR: resolve(root, 'target') };
++  assert(!env.RUSTFLAGS && !env.CARGO_ENCODED_RUSTFLAGS && !env.CARGO_BUILD_TARGET, 'unset flags/target overrides for reproducibility');
++  const rustc = command('rustc', ['-vV']);
++  const cargo = command('cargo', ['--version']);
++  const target = rustc.match(/^host: (.+)$/m)?.[1];
++  assert(target);
++  const binaries = {};
++  for (const [mode, features] of [['production', 'production'], ['diagnostic', 'production bench-internals alloc-stats internals']]) {
++    command('cargo', ['build', '--locked', '--release', '--example', 'r19_prf04_thread_wave_gate', '--features', features], env);
++    const exe = resolve(root, 'target/release/examples/r19_prf04_thread_wave_gate' + (process.platform === 'win32' ? '.exe' : ''));
++    const bytes = readFileSync(exe);
++    const name = `${mode}${process.platform === 'win32' ? '.exe' : ''}`;
++    const binaryPath = resolve(binaryDir, name);
++    writeFileSync(binaryPath, bytes, { flag: 'wx', mode: 0o755 });
++    const binaryRelative = relative(root, binaryPath).replaceAll('\\', '/');
++    assert(/^target\/r19_prf04_[\w-]+\/(production|diagnostic)(\.exe)?$/.test(binaryRelative));
++    const metadata = JSON.parse(command('cargo', ['metadata', '--locked', '--format-version', '1', '--features', features], env));
++    // No manifest/target/source absolute paths are copied from cargo metadata.
++    binaries[mode] = { name: binaryRelative, sha256: hash(bytes), requested_features: features,
++      resolved_features: metadata.resolve.nodes.map(n => ({ id: n.id.replace(/path\+file:\/\/[^#]+#/g, 'local#'), features: n.features })) };
++  }
++  assert.equal(hash(snapshotPatch()), hash(patch), 'source changed during build');
++  const identity = { base_sha: base, patch_sha256: hash(patch), rustc, cargo, target, binaries,
++    os: { platform: os.platform(), release: os.release(), arch: os.arch(), cpu: os.cpus()[0]?.model },
++    profile: 'release', locked: true, default_features: true };
++  put(dir, 'identity.json', JSON.stringify(identity, null, 2) + '\n'); // BEFORE any measurement
++  const rows = [];
++  for (let repetition = 1; repetition <= 5; repetition++) {
++    for (const w of repetition % 2 ? [1, 128] : [128, 1]) {
++      const row = JSON.parse(command(resolve(root, binaries.production.name), [String(w)], env));
++      Object.assign(row, { repetition, patch_sha256: identity.patch_sha256, binary_sha256: binaries.production.sha256 });
++      validate(row);
++      rows.push(row);
++      put(dir, `primary_${repetition}_w${w}.json`, JSON.stringify(row) + '\n');
++    }
++  }
++  for (const w of [1, 128]) {
++    const row = JSON.parse(command(resolve(root, binaries.diagnostic.name), [String(w)], env));
++    Object.assign(row, { repetition: 1, patch_sha256: identity.patch_sha256, binary_sha256: binaries.diagnostic.sha256 });
++    validate(row);
++    rows.push(row);
++    put(dir, `diagnostic_w${w}.json`, JSON.stringify(row) + '\n');
++  }
++  assert.equal(hash(snapshotPatch()), identity.patch_sha256, 'source changed during measurement');
++  put(dir, 'samples.json', JSON.stringify(rows, null, 2) + '\n');
++  derive(dir);
++}
++function selfTest() {
++  // Synthetic fixtures only: rejection controls, never allocator measurement.
++  const fixture = (w, diagnostic, repetition) => ({ schema: 1, k: 32, w, diagnostic, repetition,
++    maintenance_running: false, requested_config: 'LargeCacheConfig::new',
++    resolved_default_matches: diagnostic, config_conflicts_before: 0, config_conflicts_after: 0,
++    count_before: 1, count_after: 2 + w * 31, count_delta: 1 + w * 31,
++    segments_reserved_delta: w * 32, rss_before: 100, rss_idle: 200 + w, rss_peak_sampled: 300 + w,
++    commit_idle: 1000 + w * 1000000, claim_sources: diagnostic ? [w - 1, 1 + w * 31, 0, 0] : null,
++    resolved_config_results: diagnostic ? [w * 32, 0] : null,
++    routed_scans: diagnostic ? 7 : null, wall_ns: diagnostic ? null : w * 100,
++    first_workload_alloc_ns: diagnostic ? null : Array(w * 32).fill(10) });
++  const rows = [1, 128].flatMap(w => [...Array.from({ length: 5 }, (_, i) => fixture(w, false, i + 1)), fixture(w, true, 1)]);
++  assert(aggregate(rows).markdown.includes('127000000'));
++  for (const mutate of [r => r.count_delta--, r => r.config_conflicts_after++, r => r.maintenance_running = true,
++    r => r.claim_sources[1]--, r => r.resolved_default_matches = false, r => r.wall_ns = 1]) {
++    const bad = structuredClone(rows);
++    mutate(bad.find(r => r.diagnostic));
++    assert.throws(() => aggregate(bad));
++  }
++  assert.throws(() => aggregate(rows.slice(1)));
++  console.log('C1 aggregation self-test PASS (synthetic only)');
++}
++const [mode, path] = process.argv.slice(2);
++if (mode === '--self-test') selfTest();
++else if (mode === '--run' && path) run(resolve(root, path));
++else if (mode === '--aggregate' && path) derive(resolve(root, path));
++else throw new Error('usage: --self-test | --run docs/perf/R19_PRF04_<id> | --aggregate <existing run>');

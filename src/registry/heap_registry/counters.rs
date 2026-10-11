@@ -458,3 +458,9 @@ pub fn dbg_bump_count_without_materialising() -> Option<u32> {
     let reg = ensure();
     super::stack::bump_count(reg).map(|idx| idx as u32)
 }
+
+// Measurement-only successful claim totals; never read by policy.
+#[cfg(feature = "bench-internals")]
+pub(super) static CLAIM_SOURCES: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+#[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
+pub(super) static DEFAULT_CONFIG_RESULTS: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];

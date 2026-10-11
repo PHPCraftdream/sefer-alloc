@@ -34,6 +34,26 @@ use crate::registry::heap_slot::{
 pub struct HeapRegistry;
 
 impl HeapRegistry {
+    /// Successful returned leases by selector source: hint, bump, cap scan, recovery.
+    /// Relaxed numeric loads only; failed CAS and constructor OOM are excluded.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_registry_claim_sources() -> [u64; 4] {
+        super::counters::CLAIM_SOURCES
+            .each_ref()
+            .map(|c| c.load(Ordering::Relaxed))
+    }
+
+    /// Successful leases whose actual resolved policy matches / differs from default.
+    /// Read-only numeric observer; comparison occurs while the claiming lease owns the core.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
+    pub fn dbg_registry_default_config_results() -> [u64; 2] {
+        super::counters::DEFAULT_CONFIG_RESULTS
+            .each_ref()
+            .map(|c| c.load(Ordering::Relaxed))
+    }
+
     /// Ph4a (task #2091): safe test observer — same semantics as
     /// [`claim_lease`](Self::claim_lease) but test-gated.
     #[cfg(feature = "internals")]
@@ -203,9 +223,18 @@ impl HeapRegistry {
         let mut failed_chunk = None;
         loop {
             let reg = ensure();
+            #[cfg(feature = "bench-internals")]
+            let source = core::cell::Cell::new(0usize);
             let candidate = match failed_chunk {
-                Some(failed) => scan_claim_recovery_free(reg, failed),
-                None => Self::pick_slot(),
+                Some(failed) => {
+                    #[cfg(feature = "bench-internals")]
+                    source.set(3);
+                    scan_claim_recovery_free(reg, failed)
+                }
+                None => Self::pick_slot(
+                    #[cfg(feature = "bench-internals")]
+                    &source,
+                ),
             };
             let idx = candidate?;
             // A minted index is still below `count` after chunk OOM. Keep it
@@ -336,6 +365,18 @@ impl HeapRegistry {
             // The typed authority (Ph4a): slot is LIVE + initialised (see the
             // branch above), we are the sole writer. `generation` is a purely
             // numeric observer — no gate on the hot path.
+            #[cfg(feature = "bench-internals")]
+            super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
+            #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
+            {
+                // SAFETY: successful claim owns this LIVE, initialized core.
+                let matches = unsafe {
+                    (*slot.heap.get().cast::<HeapCore>())
+                        .live_config_matches(&crate::alloc_core::LargeCacheConfig::new())
+                };
+                super::counters::DEFAULT_CONFIG_RESULTS[usize::from(!matches)]
+                    .fetch_add(1, Ordering::Relaxed);
+            }
             return Some(HeapLease {
                 slot,
                 index: idx as u32,
@@ -347,15 +388,28 @@ impl HeapRegistry {
 
     /// Pick from the hint, then capped high-water bump, then full scan at cap.
     /// An unmaterialised index below `count` remains cold-recoverable.
-    pub(super) fn pick_slot() -> Option<usize> {
+    pub(super) fn pick_slot(
+        #[cfg(feature = "bench-internals")] source: &core::cell::Cell<usize>,
+    ) -> Option<usize> {
         let reg = ensure();
         pick_with_saturation(
             &reg.reuse_hint,
             &reg.count,
             &reg.saturation,
             MAX_HEAPS,
-            || scan_claimable_slot(reg),
-            || super::stack::bump_count(reg),
+            || {
+                #[cfg(feature = "bench-internals")]
+                source.set(2);
+                scan_claimable_slot(reg)
+            },
+            || {
+                let picked = super::stack::bump_count(reg);
+                #[cfg(feature = "bench-internals")]
+                if picked.is_some() {
+                    source.set(1);
+                }
+                picked
+            },
         )
     }
 }

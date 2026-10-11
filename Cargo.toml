@@ -2354,6 +2354,10 @@ required-features = ["alloc-global"]
 name = "r34_23_vec_worker_system"
 required-features = ["alloc-global"]
 
+[[example]]
+name = "r19_prf04_thread_wave_gate"
+required-features = ["production"]
+
 # Sol-F1 (task #563, release-readiness review finding F1): the NEGATIVE-half
 # compile-fail probe for the `internals` boundary. Deliberately does NOT list
 # `internals` here — `internals`-off is exactly the configuration this file
