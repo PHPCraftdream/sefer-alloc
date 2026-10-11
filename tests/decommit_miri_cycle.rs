@@ -1,18 +1,24 @@
-//! Phase 35 (M6) — bounded miri decommit/recommit cycle (`alloc-decommit`).
+//! Bounded alloc-decommit lifecycle and diagnostic-provenance checks under
+//! strict-provenance Miri with Stacked Borrows (the manifest's miri-core row).
+//! Historical file/test names do not imply a retained-segment recommit oracle.
 //!
-//! A deliberately SMALL test sized for miri (~1000× slower than native): it
-//! allocates just enough large-ish small blocks to spill past the primordial
-//! segment into ONE fresh `Small` segment, frees everything so that fresh
-//! segment empties and decommits, then re-allocates and writes/reads back to
-//! prove the recommit path is sound. Under miri `os::decommit_pages` /
-//! `recommit_pages` are no-ops, so this verifies the BOOKKEEPING (live_count
-//! zero-crossing → decommit hook, the reset, and reuse correctness), not RSS —
-//! exactly what the design (§5) asks miri to cover. No UAF, no OOB write during
-//! the reset, no access to "freed" pages on reuse.
+//! The diagnostic test passes a live allocation address with no provenance to
+//! dbg_is_decommitted_for. The accessor treats it only as a membership key and
+//! reads metadata via the allocator's stored canonical base; null and unrelated
+//! keys return None. Only the original live pointer is actually deallocated.
 //!
-//! Kept separate from `decommit_soak` (whose N is large for a native RSS soak)
-//! so the miri target is fast. Block size is chosen so the primordial fills in
-//! a few thousand blocks rather than tens of thousands.
+//! The cycle test disables the Small pool and performs two rounds of 6000
+//! 2-KiB allocations, payload endpoint write/readback, and local frees. Empty
+//! non-current Small segments take release_or_pool_empty_segment's release leg:
+//! decommit_empty_segment_for_release counts the event and resets bump/flag,
+//! then the caller releases the whole reservation. Subsequent allocation is
+//! not asserted to reuse that reservation or execute retained-page recommit.
+//!
+//! Under Miri aligned-vmem reserves/releases through System.alloc/dealloc;
+//! its page decommit/recommit backends are no-ops. Readback and an increased
+//! decommit-event counter check exercised memory accesses and bookkeeping, not
+//! RSS, native page protection, a recommit syscall, or same-VA reuse. Explicit
+//! retained-payload decommit/reset is a separate hook path not driven here.
 
 #![cfg(all(
     all(feature = "alloc-core", feature = "alloc-decommit"),

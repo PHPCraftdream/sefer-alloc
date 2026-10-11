@@ -4,38 +4,29 @@
     feature = "internals",
     feature = "bench-internals"
 ))]
-//! Miri-plain coverage for the multi-producer SMALL-block `RemoteFreeRing`
-//! push path (audit finding G1, high severity —
-//! `docs/reviews/2026-08-04-release-stabilization-audit.md`).
+//! Plain-Miri coverage for two remote producers freeing 64-byte allocations
+//! while the owner allocates under its exclusive HeapLease. The historical
+//! file/test names are retained; the current ingress is a route sidecar bitmap,
+//! not RemoteFreeRing or an intrusive deferred-free stack.
 //!
-//! ## The coverage gap this closes
+//! HeapCore::dealloc routes foreign addresses through publish_foreign and a
+//! RouteDirectory pin. Small/Primordial publication uses owner-recorded class
+//! metadata and a terminal pending-bit fetch_or(AcqRel) in the independent
+//! sidecar. Producers do not access reservation bytes or the owner-only ledger;
+//! releasing the pin after publication touches only the descriptor/sidecar.
+//! These tiny allocations may come from Primordial: the body neither asserts
+//! RouteKind::Small nor checks that every pointer shares one segment.
 //!
-//! The most-scrutinised `unsafe` seam in the project — `Node::atomic_u32_at`
-//! → `RemoteFreeRing::{push, drain}` (N remote producers, one owner-consumer)
-//! — had ZERO miri coverage under concurrency for the SMALL-block path. The
-//! existing miri-plain matrix (`regression_xthread_large_free_no_leak`,
-//! `regression_xthread_thread_free_alias_miri`) covers only the LARGE
-//! cross-thread path (the `deferred_large` `AtomicPtr` stack / the
-//! `thread_free` aliasing guard). TSan covers data races on the ring's
-//! atomics but cannot speak to Stacked/Tree Borrows aliasing or provenance —
-//! exactly the class of bug miri catches.
+//! After both producers join, dbg_drain_sidecar_ingress visits the owner's
+//! registered routes, cuts bitmap words and reclaims through canonical table
+//! roots. Owner allocations may also consume ingress before that explicit pass.
+//! This is an interpreted memory-safety exercise, not an exactly-once-count or
+//! forced-overlap oracle: the start gate permits concurrency but cannot force it.
 //!
-//! ## What this test does
-//!
-//! Two spawned producer threads concurrently free small blocks (64 B, well
-//! below `SMALL_MAX`) that the owner thread pre-allocated — all from the same
-//! segment, so both producers push into the SAME per-segment `RemoteFreeRing`,
-//! exercising the multi-producer CAS-reserve push protocol
-//! (`RemoteFreeRing::push` → `Node::atomic_u32_at`). While the producers push,
-//! the owner spins its own allocations (each forming a fresh protected
-//! `&mut HeapCore` frame overlapping the producers' ring writes). After both
-//! producers join, the owner force-drains all rings via `dbg_drain_all_rings`,
-//! exercising the single-consumer drain path
-//! (`RemoteFreeRing::drain` → `Node::atomic_u32_at`).
-//!
-//! Run under plain-provenance miri (Stacked Borrows, non-strict — the same
-//! mode as the other `miri-plain` tests), this validates that the concurrent
-//! multi-producer push and the owner drain are free of aliasing/provenance UB.
+//! The manifest selects plain provenance with Stacked Borrows and elevated
+//! preemption, not strict provenance or Tree Borrows. Integer pointer transport
+//! relies on exposed provenance. A pass covers the exercised schedules only;
+//! it is not a whole-project aliasing/provenance proof.
 
 #![cfg(all(
     all(feature = "alloc-global", feature = "alloc-xthread"),

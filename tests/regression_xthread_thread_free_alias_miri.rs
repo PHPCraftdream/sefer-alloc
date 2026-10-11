@@ -1,48 +1,27 @@
-//! Regression guard for the H1 soundness finding
-//! (`docs/reviews/2026-07-09-unsafe-soundness-review.md`).
+//! Plain-Miri regression for remote Large publication concurrent with owner
+//! Small allocations and their protected &mut HeapCore call frames. Historical
+//! file/test names are retained; current producers do not write a thread_free
+//! field in the owner core or link a deferred-free stack inside reservations.
 //!
-//! ## The hazard this test targets
+//! HeapCore::dealloc -> dealloc_routing -> publish_foreign looks up and pins an
+//! independent RouteDirectory descriptor. LargeState::publish_pending performs
+//! the terminal LIVE(g) -> PENDING(g) CAS on that descriptor's atomic word.
+//! Reservation/header and owner-only ledger accesses are forbidden to foreign
+//! producers, including after publication; pin release may touch the sidecar.
+//! Owner-side drain claims pending descriptors and accesses reservations only
+//! through canonical roots while holding the exclusive heap lease.
 //!
-//! `HeapCore::thread_free` is (was) an INLINE `AtomicPtr<u8>` field of
-//! `HeapCore`. On EVERY `alloc`/`dealloc` the owning thread materialises a
-//! `&mut HeapCore` over the whole struct — including the `thread_free` bytes —
-//! and that `&mut` is a *protected* `Unique` for the duration of the call
-//! (`pub fn alloc(&mut self, …)`). Meanwhile a REMOTE thread that cross-thread
-//! frees a Large segment owned by this heap CASes EXACTLY those same bytes,
-//! reconstructing the pointer through EXPOSED provenance
-//! (`Node::atomic_ptr_ref` → `with_exposed_provenance_mut` →
-//! `compare_exchange`, see `deferred_large/push.rs`).
+//! The owner preallocates eight Large blocks, releases a start gate, and makes
+//! 200 Small allocations while the remote thread frees the Large batch. After
+//! join it allocates another Large block and performs local cleanup; owner
+//! allocation paths and lease teardown handle pending ingress/retention policy.
+//! The gate makes competing frames possible, not a guaranteed overlap. Miri
+//! checks exercised memory accesses, not every schedule or reclamation count.
 //!
-//! Under Stacked/Tree Borrows (the model miri enforces) a foreign write that
-//! lands inside the range of a live protected `&mut` is a protector violation
-//! (UB) — the same class of conflict the project already paid to fix in W3 for
-//! the diagnostic counters (there it was only a foreign *read*; here it is a
-//! foreign *write*, a strictly stronger conflict).
-//!
-//! ## Why the EXISTING xthread miri-plain test does NOT catch this
-//!
-//! `regression_xthread_large_free_no_leak` is PHASE-SERIALISED: the owner
-//! allocates, THEN a remote thread frees (owner passive), THEN the owner
-//! allocates again. The owner's `&mut HeapCore` frame and the remote CAS never
-//! overlap in time, so no protector is ever live when the remote writes.
-//!
-//! ## What THIS test does differently
-//!
-//! It runs the two frames CONCURRENTLY with a REAL overlap: an owner thread
-//! spins a tight loop of SMALL allocations (each forms a fresh protected
-//! `&mut HeapCore`; small allocs take the OPT-C magazine/cache-hit path that
-//! does NOT re-expose `thread_free`), WHILE a remote thread frees a batch of
-//! Large blocks owned by that heap — each free a wildcard CAS into the owner's
-//! `thread_free`. Run under plain-provenance miri with an elevated
-//! `-Zmiri-preemption-rate` (see the CI `miri-plain` job / `scripts/miri.mjs`),
-//! the interpreter's scheduler will interleave a remote CAS inside a live
-//! owner `alloc` frame — the exact schedule the review argues is UB.
-//!
-//! If miri reports a Stacked-Borrows / protector error here, H1 is confirmed
-//! empirically and the fix (hoist the TFS head out of `HeapCore` into the
-//! `Sync` `HeapSlot`, mirroring W3) is required. If miri stays green, the
-//! schedule class is at least made VISIBLE and permanently guarded — the test
-//! is kept in-tree either way.
+//! The manifest selects plain provenance, Stacked Borrows and elevated
+//! preemption. Address transport uses exposed provenance; this is not a
+//! strict-provenance or Tree-Borrows acceptance target, nor evidence that the
+//! removed thread_free mechanism still exists.
 
 #![cfg(all(
     all(feature = "alloc-global", feature = "alloc-xthread"),

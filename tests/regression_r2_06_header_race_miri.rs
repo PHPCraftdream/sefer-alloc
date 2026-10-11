@@ -1,164 +1,172 @@
-//! R2-06 (independent src review round 2, task #2008) — miri data-race
-//! regression: a diagnostic full-header snapshot (`SegmentHeader::read_at`,
-//! reached here via `HeapCore::dbg_segment_state_reconciliation`, which walks
-//! EVERY registered segment including Large ones this thread does not
-//! exclusively own) running CONCURRENTLY with a remote thread's cross-thread
-//! Large free (`dealloc` → `dealloc_routing` → `push_large_deferred_free`,
-//! which CASes/stores that segment's `deferred_next` field via a REAL
-//! `&AtomicU64` view).
+//! VER-03 / owner decision 8: remote Large and Small frees must not touch
+//! reservation bytes, including after terminal publication. Small publishes
+//! a sidecar bitmap bit; Large claims the sidecar phase/generation word.
+//! Sidecar pin release and notifications may follow, but reservation/header
+//! and owner-only ledger accesses may not (REMOTE_FREE_SIDECAR_REVISION).
 //!
-//! Before this fix, `SegmentHeader::read_at` was a plain
-//! `Node::read_struct::<SegmentHeader>` — ONE non-atomic load over the WHOLE
-//! struct, including `deferred_next`'s bytes. Racing that against
-//! `push_large_deferred_free`'s atomic CAS/store on the SAME bytes is a data
-//! race (undefined behavior) under Rust's memory model, independent of
-//! whether the diagnostic caller ever uses the torn `deferred_next` value it
-//! read (`dbg_segment_state_reconciliation` in fact never reads that field at
-//! all — the UB is in the non-atomic READ touching racing memory, not in
-//! what the caller does with the result). The fix
-//! (`Node::read_struct_with_atomic_word`) never performs a non-atomic read
-//! over `deferred_next`'s bytes: it splices in a REAL atomic load at that
-//! offset instead, closing the race structurally for every `read_at` caller.
+//! The owner keeps its exclusive HeapLease and repeatedly calls
+//! dbg_segment_state_reconciliation without allocating, draining or trimming.
+//! Its Large arm copies the full header via SegmentMeta::header/read_at; its
+//! Small arm currently reads individual owner-only header fields, NOT a full
+//! Small header copy. Both kinds must remain registered until the final join.
+//! Publication alone cannot change this owner-only reconciliation snapshot.
 //!
-//! Mirrors `regression_xthread_thread_free_alias_miri.rs`'s established
-//! shape (a real, gated, CONCURRENT owner/remote overlap under plain-
-//! provenance miri with an elevated preemption rate — see
-//! `scripts/miri.mjs`'s `PLAIN_MIRIFLAGS` / `PLAIN_MATRIX`) — that test
-//! targets a DIFFERENT racing field (`thread_free`); this one targets
-//! `deferred_next` specifically, the field this task's review finding
-//! (R2-06) names.
+//! The start barrier orders setup before both arms, not producer frees before
+//! owner reads. There is deliberately no completion signal, per-free handshake
+//! or join until ALL snapshots finish. Yields encourage interleaving; they do
+//! not prove physical overlap. Miri's race detector is the race oracle; native
+//! assertions additionally prove both routes were exercised and consumed once.
 //!
-//! If miri reports a data race here, the fix regressed (or this test
-//! predates it and empirically PROVES the pre-fix hazard — verified via a
-//! genuine counterfactual: stashing just the `src/` fix and re-running this
-//! exact test under `node scripts/miri.mjs --plain
-//! regression_r2_06_header_race_miri` reproduces a real miri "Data race
-//! detected" report). If miri stays green, the concurrent snapshot is sound.
+//! Observed negative control (optimized fixture): after the anchored real
+//! producer dealloc, a temporary `usize` header-word read/write at the saved
+//! canonical base produced `Data race detected`: owner header-copy read versus
+//! producer write (node.rs:310; temporary test line 122). Plain Miri with
+//! preemption-rate=0.5, isolation disabled: exit 1 after 376 seconds (rerun).
+//! Backup restore plus cmp exited 0; git diff --stat was checked afterward.
+//! No src mutation was needed. A payload-only write is NOT observed by this
+//! header oracle. A green run is not an exhaustive no-reservation-access proof.
+//!
+//! Cost: a clean plain-Miri run takes about 524 seconds on a loaded dev host
+//! (the earlier full-primordial-burn fixture took 900 seconds). Almost all of
+//! it is Small setup: the first Small allocation after the primordial high
+//! water is marked exhausted. The 2 frees per kind, 8 snapshots and 16-byte
+//! payloads are already minimal. The <=200 s goal was NOT met; reaching it
+//! needs a cheaper way to open a non-primordial Small segment in `src/`.
+//!
+//! Intended for plain Miri: address transport deliberately uses exposed
+//! provenance; this is not a strict-provenance/Stacked-Borrows acceptance test.
 
 #![cfg(all(
-    all(feature = "alloc-global", feature = "alloc-xthread"),
-    all(feature = "alloc-decommit", feature = "bench-internals"),
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "alloc-decommit",
+    feature = "bench-internals",
     feature = "internals"
 ))]
 
 use std::alloc::Layout;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::thread;
 
+use sefer_alloc::alloc_core::SegmentLayout;
+use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind};
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
-// Serialise against the other xthread tests in the same binary: the registry
-// is a process-global static. Mirrors the SerialGuard in
-// `regression_xthread_thread_free_alias_miri.rs`.
-static SERIAL: AtomicBool = AtomicBool::new(false);
-
-struct SerialGuard;
-impl SerialGuard {
-    fn acquire() -> Self {
-        while SERIAL
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            std::hint::spin_loop();
-        }
-        SerialGuard
-    }
-}
-impl Drop for SerialGuard {
-    fn drop(&mut self) {
-        SERIAL.store(false, Ordering::Release);
-    }
-}
-
 #[test]
-fn owner_reconciliation_walk_overlaps_remote_large_free() {
-    let _g = SerialGuard::acquire();
+fn owner_reconciliation_overlaps_remote_large_and_small_free() {
+    // This binary contains one test; no other test shares its global registry.
     let _ = bootstrap::ensure();
+    let mut owner = HeapRegistry::dbg_claim_lease().expect("owner lease");
+    const REMOTE_PER_KIND: usize = 2;
+    const SNAPSHOTS: usize = 8;
+    // Alignment above SMALL_MAX forces Large even for a tiny payload.
+    let large_layout =
+        Layout::from_size_align(16, SegmentLayout::SMALL_MAX.next_power_of_two()).unwrap();
+    let small_layout = Layout::from_size_align(16, 16).unwrap();
 
-    // Large blocks the remote thread will free (each free = a real
-    // `push_large_deferred_free` CAS/store on THAT segment's `deferred_next`).
-    // Distinct bases so the double-push guard does not collapse them into a
-    // single no-op — each contributes a real atomic write. Kept small (miri
-    // is ~1e5x slower than native; each Large alloc reserves an OS segment).
-    const LARGE_N: usize = 6;
-    const LARGE_SIZE: usize = 2 * 1024 * 1024; // > SMALL_MAX -> routed to alloc_large
-    let large_layout = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
-
-    // Owner's diagnostic-walk iteration count: enough for miri's preemptive
-    // scheduler (elevated preemption rate under the `--plain` job) to land a
-    // remote deferred-free write inside a live owner `read_at` snapshot,
-    // without blowing the per-test miri budget.
-    const RECONCILIATION_ITERS: usize = 40;
-
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
-    let heap = lease.core();
-
-    // Owner pre-allocates the Large blocks so they are registered, owner-
-    // stamped segments before the remote thread starts freeing them.
-    let mut large_ptrs: Vec<*mut u8> = Vec::with_capacity(LARGE_N);
-    for i in 0..LARGE_N {
-        let p = heap.alloc(large_layout);
-        assert!(!p.is_null(), "large alloc[{i}] returned null");
-        large_ptrs.push(p);
+    // Each record carries the original allocation address, matching Layout,
+    // and an owner-canonical header base for the later test-only counterfactual.
+    // The unmutated producer never dereferences that saved base.
+    let mut transfers = Vec::with_capacity(2 * REMOTE_PER_KIND);
+    for _ in 0..REMOTE_PER_KIND {
+        let ptr = owner.core().alloc(large_layout);
+        assert!(!ptr.is_null(), "Large allocation");
+        let pin = RouteDirectory::global().lookup(ptr).expect("Large route");
+        assert_eq!(pin.kind(), RouteKind::Large);
+        let base = owner
+            .core()
+            .segment_bases()
+            .find(|base| base.addr() == SegmentLayout::segment_base_of(ptr.addr()))
+            .expect("registered Large root");
+        transfers.push((ptr as usize, large_layout, base as usize));
     }
 
-    // A gate so both threads start at (nearly) the same instant, maximising
-    // the window in which a remote deferred-free write overlaps an owner
-    // `read_at` snapshot.
-    let start = Arc::new(AtomicBool::new(false));
+    // The reserve-and-keep hook registers a Small root but deliberately does
+    // not switch the carve cursor; it cannot by itself bypass primordial.
+    // Skip virgin primordial payload instead: bump is the first repr(C) header
+    // field. No payload has been issued there, and no free lists exist yet.
+    let primordial_base = owner
+        .core()
+        .segment_bases()
+        .next()
+        .expect("primordial root");
+    // SAFETY: the exclusive owner lease controls this live, aligned header;
+    // setup is single-threaded, bump is an initialized usize at offset zero,
+    // and SEGMENT marks unused payload exhausted without issuing live credits.
+    unsafe {
+        primordial_base
+            .cast::<usize>()
+            .write(SegmentLayout::SEGMENT)
+    };
+    for _ in 0..REMOTE_PER_KIND {
+        let ptr = owner.core().alloc(small_layout);
+        assert!(!ptr.is_null(), "Small allocation");
+        let pin = RouteDirectory::global().lookup(ptr).expect("Small route");
+        assert_eq!(pin.kind(), RouteKind::Small, "not Primordial");
+        let base = owner
+            .core()
+            .segment_bases()
+            .find(|base| base.addr() == SegmentLayout::segment_base_of(ptr.addr()))
+            .expect("registered Small root");
+        transfers.push((ptr as usize, small_layout, base as usize));
+        // SAFETY: no primordial payload was ever issued; the cursor has moved
+        // to Small, so restore its original high water before further scans.
+        unsafe {
+            primordial_base
+                .cast::<usize>()
+                .write(SegmentLayout::PRIMORDIAL_META_END)
+        };
+    }
+    let before = owner.core().dbg_segment_state_reconciliation();
+    assert_eq!(before.unknown_count, 0);
+    assert_eq!(before.large_active.count, REMOTE_PER_KIND);
+    assert!(before.small_active.count > 0, "registered Small fixture");
 
-    // Raw pointers are `!Send`; ship addresses.
-    let addrs: Vec<usize> = large_ptrs.iter().map(|&p| p as usize).collect();
-    let start_remote = Arc::clone(&start);
-
+    let start = Arc::new(Barrier::new(2));
+    let remote_start = Arc::clone(&start);
     let remote = thread::spawn(move || {
-        let _ = bootstrap::ensure();
-        let mut remote_lease =
-            HeapRegistry::dbg_claim_lease().expect("remote HeapRegistry::claim failed");
-        let remote_heap = remote_lease.core();
-        while !start_remote.load(Ordering::Acquire) {
-            std::hint::spin_loop();
+        let mut producer = HeapRegistry::dbg_claim_lease().expect("producer lease");
+        remote_start.wait();
+        let count = transfers.len();
+        for (address, layout, _header_base_address) in transfers {
+            let ptr = address as *mut u8;
+            // SAFETY: ptr is the exact live start issued by the still-owned
+            // owner heap, layout matches, and this thread alone transfers it
+            // once. The owner does not access payload or reclaim before join.
+            unsafe { producer.core().dealloc(ptr, layout) };
+            // VER03_POST_FREE_MUTANT_ANCHOR: no reservation access after free.
+            thread::yield_now();
         }
-        // Each dealloc of a Large block owned by `heap` routes through
-        // `dealloc_routing` -> `push_large_deferred_free` -> a real
-        // CAS/store on that segment's `deferred_next` -- concurrently with
-        // the owner's diagnostic reconciliation walk below.
-        for &addr in &addrs {
-            let p = addr as *mut u8;
-            // SAFETY: `p` is a live owner allocation; the deliberate
-            // cross-thread free exercises the deferred-free push under test.
-            unsafe { remote_heap.dealloc(p, large_layout) };
-        }
-        drop(remote_lease);
+        count
     });
 
-    // Owner: release the gate, then repeatedly snapshot the FULL segment-state
-    // reconciliation -- this walks every registered segment (including the
-    // Large ones the remote thread is concurrently freeing) and, for each
-    // Large segment, reads its header via `SegmentMeta::header()` ->
-    // `SegmentHeader::read_at`, exactly the call path this task's review
-    // finding names.
-    start.store(true, Ordering::Release);
-    for _ in 0..RECONCILIATION_ITERS {
-        let rec = lease.core().dbg_segment_state_reconciliation();
-        // Not asserting on the numbers themselves (they are inherently
-        // racy/momentary while the remote thread is mid-free) -- the
-        // regression this test targets is a miri data-race REPORT, not a
-        // wrong count. `recompute_total` having run without panicking is a
-        // cheap sanity floor.
-        let _ = rec;
+    start.wait();
+    for _ in 0..SNAPSHOTS {
+        let snapshot = owner.core().dbg_segment_state_reconciliation();
+        // Remote publication changes sidecars, not table/header/cache/ledger.
+        assert_eq!(snapshot, before, "publication changed owner-only state");
+        thread::yield_now();
     }
+    assert_eq!(
+        remote.join().expect("producer panicked"),
+        2 * REMOTE_PER_KIND
+    );
+    assert_eq!(owner.core().dbg_segment_state_reconciliation(), before);
 
-    remote.join().unwrap();
+    // No allocation-based implicit drain: observe actual exactly-once ingress.
+    assert_eq!(
+        owner.core().dbg_drain_sidecar_ingress(),
+        2 * REMOTE_PER_KIND
+    );
+    assert_eq!(owner.core().dbg_drain_sidecar_ingress(), 0);
+    let after = owner.core().dbg_segment_state_reconciliation();
+    assert_eq!(after.large_active.count, 0, "Large publications retired");
+    assert_eq!(after.unknown_count, 0);
+    assert_eq!(
+        after.total.count + after.unknown_count + after.table_recycled_null_slots,
+        after.table_high_water + after.large_cached.count
+    );
 
-    // Drain the deferred-free stack the remote populated (own-thread large
-    // alloc slow path runs the drain) and clean up, so miri's leak checker is
-    // satisfied -- mirrors `regression_xthread_thread_free_alias_miri.rs`.
-    let drain = lease.core().alloc(large_layout);
-    assert!(!drain.is_null());
-    // SAFETY: `drain` is a live allocation of this lease's heap.
-    unsafe { lease.core().dealloc(drain, large_layout) };
-    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
-    drop(lease);
+    // Lease teardown applies owner-side retention/recycle policy after join.
+    drop(owner);
 }
