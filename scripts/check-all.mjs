@@ -282,6 +282,8 @@
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
+//   Static Miri target-wiring gate: verify-miri-target-wiring.mjs
+//      (inventory/features/models/manual CI; does not execute Miri).
 //   53-55. the three Ph7 evidence-registry tail steps (task #2098: judge +
 //      mutation self-test + REGISTRY.md --check; appended at the array END so
 //      all numbers above stay stable; pure node scans, no cargo — check-all
@@ -1113,6 +1115,12 @@ const steps = [
     name: 'verify-root-package-list (published root exclusions)',
     cmd: 'node',
     args: ['scripts/verify-root-package-list.mjs'],
+  },
+  // Local static Miri target-wiring gate; does not execute Miri.
+  {
+    name: 'verify-miri-target-wiring (manifest, feature gates, models and manual CI)',
+    cmd: 'node',
+    args: ['scripts/verify-miri-target-wiring.mjs'],
   },
   // Ph7 (task #2098, step 7 of the foundational plan): appended at the END
   // to keep every existing step number stable (header convention). Pure
