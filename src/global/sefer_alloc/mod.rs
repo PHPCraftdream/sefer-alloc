@@ -31,7 +31,10 @@
 //!
 //! The whole point (§4 M5, §8 of `ALLOC_PLAN.md`): when WE are the global
 //! allocator, ANY use of `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
-//! alloc path would recurse infinitely. This module contains NONE of those.
+//! alloc path would recurse infinitely. This module contains NONE of those, with one deliberate exception: while
+//! Windows loader shutdown is detected and the fallback heap is unavailable, the
+//! fallback branch serves the request from `std::alloc::System` and leaks it
+//! (the selected global allocator is never re-entered).
 //! `current_for_alloc()` is a plain thread-local load + null check.
 //! `bind_slow_tagged` claims a registry slot. M5's rule is narrow and
 //! precise: NO allocator path may recurse into the SELECTED global

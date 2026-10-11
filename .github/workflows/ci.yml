@@ -2101,6 +2101,21 @@ jobs:
           RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test r8_os_release_oracle -- --exact owner_exit_last_remote_free_returns_exact_os_tokens --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-os-release-production-windows.log"
           grep -F "test owner_exit_last_remote_free_returns_exact_os_tokens ... ok" "$RUNNER_TEMP/r8-os-release-production-windows.log"
         shell: bash
+      # CON-01 (item 185): Windows process exit must end in a bounded exit, not a stranded
+      # allocator lock. The detector probe and the main-return child have no libtest harness;
+      # their sentinels come from the binaries' own output.
+      - name: process exit (Windows, CON-01)
+        if: ${{ !cancelled() }}
+        run: |
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test con01_exit_stranded_lock -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/con01-stranded-windows.log"
+          grep -F "test exit_stranded_lock ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+          grep -F "test exit_fallback_escape ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+          grep -F "test exit_remove_owner_retained ... ok" "$RUNNER_TEMP/con01-stranded-windows.log"
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test con01_exit_main_return 2>&1 | tee "$RUNNER_TEMP/con01-main-return-windows.log"
+          grep -F "CON01_DTOR_DONE" "$RUNNER_TEMP/con01-main-return-windows.log"
+          RUSTC_WRAPPER='' cargo test --locked -j 1 --features "production internals bench-internals" --test con01_exit_detector_probe 2>&1 | tee "$RUNNER_TEMP/con01-probe-windows.log"
+          grep -F "CON01_DETECTOR_PROBE_PASS" "$RUNNER_TEMP/con01-probe-windows.log"
+        shell: bash
       # Task #1086 (M6): each forced-page row is now self-verifying —
       # without the grep, a typo'd RUSTFLAGS cfg name (e.g. `--cfg
       # aligned_vmem_page_size_overide`) silently compiles the forced

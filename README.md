@@ -686,6 +686,7 @@ hard compile error in every configuration:
 | [`src/global/sefer_alloc/global_alloc.rs`](src/global/sefer_alloc/global_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/sefer_alloc/batch.rs`](src/global/sefer_alloc/batch.rs) | The `batch-api` `alloc_batch`/`dealloc_batch` `unsafe fn` boundary pair — resolves the per-thread heap once, delegates to `HeapCore::alloc_batch`/`dealloc_batch` | `batch-api` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; the `AbandonGuard`'s drop releases the abandoned lease through `HeapLease::Drop` (LIVE → FREE Release CAS, whole-slot reuse) plus `HeapCore::trim_for_recycle`; and the `bench-internals`-gated `unsafe fn dbg_restore_local_for_test` test hook (R29-7, task #438) — covered by this module's tier-1 allow, with no separate item-level allow (so it adds no tier-2 site). | `alloc-global` |
+| [`src/global/process_exit.rs`](src/global/process_exit.rs) | Dynamically resolved Windows loader-shutdown query (`GetModuleHandleW` / `GetProcAddress` / `RtlDllShutdownInProgress`); a missing module or export and every non-Windows target return `false`. Sole reason for `unsafe`: the FFI call. | `alloc-global` |
 | [`src/global/exact_object/exact_shard.rs`](src/global/exact_object/exact_shard.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): out-of-object descriptor array in raw `System` memory under a shard spinlock. |
 | [`src/global/exact_object/narrow.rs`](src/global/exact_object/narrow.rs) | Opt-in prototype (`exact-object-proto`, not in `production`): exact `System` alloc/free of narrow requests with the original pointer and Layout. |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
@@ -703,10 +704,10 @@ hard compile error in every configuration:
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
-+ primordial-lazy-commit`) the active internal tier-1 seams are **fifteen**:
++ primordial-lazy-commit`) the active internal tier-1 seams are **sixteen**:
 `alloc_core::platform::{os, node, sidecar}` and
 `alloc_core::segment::segment_table::route_slots`;
-`global::{sefer_alloc::global_alloc, tls_heap, fallback}`;
+`global::{sefer_alloc::global_alloc, tls_heap, fallback, process_exit}`;
 `registry::bootstrap::{registry, ensure}`, `registry::heap_slot`,
 `registry::heap_registry::claim`, and
 `registry::segment_route::{directory, shard_lock, small_sidecar}` and
@@ -740,6 +741,7 @@ item-scoped regions.
 | File | Sites | What they cover |
 |---|---|---|
 | [`src/registry/segment_route/pin.rs`](src/registry/segment_route/pin.rs) | 2 | Consuming Small/Large publication boundaries: the caller must uniquely own and transfer the current allocation; address lookup alone grants no right to free it. |
+| [`src/registry/segment_route/registration.rs`](src/registry/segment_route/registration.rs) | 1 | `RouteRegistration::drop` — drops the counted owner reference exactly once, only after a successful unlink; a failed unlink during Windows process exit intentionally retains the descriptor and its sidecar. |
 | [`src/alloc_core/alloc_core/mem/mem_impl.rs`](src/alloc_core/alloc_core/mem/mem_impl.rs) | 4 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract); plus `dealloc_at_base` (the shared `kind_at`-onward tail both `dealloc` and the non-fastbin `dealloc_with_base` call) and `dealloc_with_base` itself (xxs-r5-01c: already-proven-`base` sibling entry, non-fastbin only) |
 | [`src/alloc_core/alloc_core/lifecycle.rs`](src/alloc_core/alloc_core/lifecycle.rs) | 1 | `Drop::drop` — internal call-site block into `deref_large_cache_extension_mut` (R14-1, task #286) |
 | [`src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`](src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs) | 3 | `dbg_stamp_segment_id` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
@@ -768,8 +770,8 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **92** tier-2 item-scoped allows across **28**
+That's the full list (both tiers): **28** tier-1 module-level seams (22 in
+`src/`, 6 in `crates/`) plus **93** tier-2 item-scoped allows across **29**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1381,7 +1383,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **380 integration test files**,
+needs its acceptance run. The present tree contains **381 integration test files**,
 **83 example binaries**, **24 benches**, and **13 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1391,7 +1393,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (380 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (381 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (83 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (24 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1683,6 +1685,26 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   for the follow-on design (an expandable/chained table, evaluated jointly
   against the cold-carve gap) if a workload still needs more than 4095
   simultaneously-live Large objects.
+
+---
+
+## Process exit on Windows
+
+On Windows, `ExitProcess` terminates every other thread before the exiting thread runs its
+thread-local destructors. A terminated thread that held an allocator spin lock never releases it.
+Once the loader reports that the process is shutting down, contended allocator waits give up after
+their initial 64 spins without touching the locked data: foreign-free lookups return no route (a
+counted no-op), teardown skips the cache trim, and an allocation that cannot use the fallback heap
+is served by `System` and deliberately leaked until the process ends. A later free of such a block
+is a counted no-op. Stop and join allocator-using threads before exiting where you can; this is a
+bounded-exit measure, not a complete shutdown-safety guarantee.
+
+**Residual limits.** A route registration that fails on an already-bound thread's own path while the
+process is exiting can still surface as a null allocation and end in `handle_alloc_error` (an abort).
+`OncePtrCell` initialization waits outside the avoided binding path are not covered. If the
+shutdown query is unavailable (no `ntdll` export), the previous waiting behavior remains. Non-Windows
+targets are unchanged. Evidence: `tests/con01_exit_stranded_lock.rs`, `tests/con01_exit_main_return.rs`,
+`tests/con01_exit_detector_probe.rs`; tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 185.
 
 ---
 

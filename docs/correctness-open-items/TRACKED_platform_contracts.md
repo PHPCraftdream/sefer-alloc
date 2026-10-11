@@ -319,10 +319,10 @@ split the same day.)
 
 185. **[T] Windows shutdown may strand allocator locks after a holder can no longer run.**
 
-    - **Status:** OPEN — unverified platform hypothesis; NOT verified by execution in this phase. Conditional P2 consequence, P4 investigation; no established shutdown failure.
-    - **Current-number-or-verdict:** TLS teardown/late-free/fallback paths can wait on shard/fallback locks without owner-death recovery. The required std/ExitProcess ordering is external to repository source; ordinary scheduling delay is not a stranded-lock witness. Item 152 owns POSIX fork, item 162 terminal/service acceptance, neither this Windows schedule.
-    - **Next trigger:** Windows shutdown investigation: use an isolated child holding a known lock, parent timeout, and actual std TLS/process-exit ordering evidence to confirm or reject reachability; do not invent a shutdown detector as proof.
-    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-CON-01/R17-LIF-01; `src/global/tls_heap.rs`, `src/global/fallback.rs`, `src/registry/segment_route/shard_lock.rs`, `directory.rs`.
+    - **Status:** PARTIAL — hang reproduced on Windows by execution (phase A, `7c5af734`) and bounded by a loader-shutdown detector (phase B, `ccd4f1c0`); documented residuals remain open.
+    - **Current-number-or-verdict:** before the fix, `shard`, `fallback`, `init` and `main_return` scenarios each hung until the parent's 20 s deadline (CONFIRMED_HANG) while live-holder controls exited in under 0.4 s, on Windows 10 (author runs and an independent reviewer run). After the fix all of them exit 0 in under a second: contended waits give up after 64 spins once `RtlDllShutdownInProgress` (resolved dynamically) reports shutdown, the detector reads false after an ordinary thread exit and true under `process::exit` and after `main` returns, and an unavailable fallback is served from `System` (leaked). A TLS-callback detector was tried and rejected (early call, null reserved argument). Residuals: a route registration failing on the Own path during exit can still end in `handle_alloc_error`; `OncePtrCell` waits are not covered; if the ntdll export is missing the old waiting remains; the detector costs two kernel32 calls per thread bind and exit. Only one Windows 10 host was exercised; other Windows versions are not covered. The `thread::scope` question is item 203.
+    - **Next trigger:** a Windows CI receipt for the new job step (not yet executed on `windows-latest`), a decision on the `Own`-path residual, or a report of a hang on another Windows version.
+    - **Evidence:** `tests/con01_exit_stranded_lock.rs`, `tests/con01_exit_main_return.rs`, `tests/con01_exit_detector_probe.rs`; `src/global/process_exit.rs`; `docs/reviews/2026-10-11-solution-research-windows-exit-con01.md`; `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 7; README "Process exit on Windows".
 
 194. **[T] Root weak-memory acceptance needs actual native runner/emulator evidence.**
 
@@ -337,3 +337,10 @@ split the same day.)
     - **Current-number-or-verdict:** const TLS and LOCAL-before-bind are visible, but the target's std TLS first-access allocation implementation is outside repository source. aligned-vmem's Unix-family support does not prove native TLS or root allocator support; items 43/60 own different reasoned-from-spec platform contracts.
     - **Next trigger:** a supported-target portability investigation: establish target TLS cfg and std first-access allocation path, then use an installed-allocator first-access oracle with nonrecursive controls before changing support claims.
     - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-API-08; `src/global/tls_heap.rs` LOCAL/const TLS and binding paths; README other-64-bit-target caveat.
+
+203. **[T] Does `thread::scope` return before the scoped threads' TLS destructors have run?**
+
+    - **Status:** OPEN — hypothesis about std, not about this crate; not executed.
+    - **Current-number-or-verdict:** if `scope` returns first, the common advice "join threads before exit" does not guarantee the allocator's per-thread teardown has finished, and `PinnedRunner::run` (`src/concurrent/pinning.rs`, `std::thread::scope`) and any harness built on `scope` (the PRF-04 wave harness must use `spawn` + `join`) inherit the gap. No instance of a failure is known.
+    - **Next trigger:** a deterministic characterization on all platforms with no hooks: a scoped thread whose TLS value's `Drop` waits for a flag F (with a timeout) and then sets DONE; after `scope` returns, the main thread reads DONE and only then sets F. `DONE == false` at that moment confirms the hypothesis.
+    - **Evidence:** `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 7; `docs/reviews/2026-10-11-solution-research-windows-exit-con01.md` hypothesis P5.
