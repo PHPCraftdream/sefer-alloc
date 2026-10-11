@@ -1,0 +1,22 @@
+PRF02R_METADATA {"arm":"A","axis":"activation","repeat":2,"identity_sha256":"76b4f9d0ed144b1803409f6ecb4f01c52bb3346b51a5a336cd5a91f4052b849c","prereg_sha256":"d1e951abb5a65b97e332dba38a5db124177979a8a18e2314e2f0cefde04f67ba","features":"production internals bench-internals medium-classes","env":{"RUSTC_WRAPPER":"","CARGO_BUILD_JOBS":"3","CARGO_TARGET_DIR":"<repo>/target","R19_PRF02R_ARM":"A"}}
+{"arm":"A","expected":32,"n":16,"preallocated":64,"hits":32,"misses":0,"tcache":16,"routed_scans":0}
+
+running 1 test
+test realloc_tail_and_inplace_activation ... arm=A large_free=3
+arm=A inplace=1 alloc=0 move=2 promote=3 tail=1
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.76s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running `target/debug/examples/r19_prf02_activation A 32`
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.29s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r19_prf02r_realloc_tail.rs (target/debug/deps/r19_prf02r_realloc_tail-42ca5e80243b7e2e)
+
+PRF02R_EXIT 0

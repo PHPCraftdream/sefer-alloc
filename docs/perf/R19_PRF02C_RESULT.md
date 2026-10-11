@@ -1,0 +1,211 @@
+# R19 PRF02C derived result
+
+Exact verdict: **NO-GO**
+
+- pure: push [-3,+1]
+- pure: raw churn small_churn_16b
+- pure: raw churn small_churn_16b_2n
+- instrumented: push [-3,+1]
+- instrumented: raw churn small_churn_16b
+- instrumented: raw churn small_churn_16b_2n
+
+| axis | arm | repeat | metric | numerator | denominator | value | raw |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| pure | B | 1 | dealloc_prealloc_only_16b | 63053 | 1 | 63053 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | dealloc_free_only_16b_n8 | 63472 | 1 | 63472 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | dealloc_free_only_16b_n9 | 63524 | 1 | 63524 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | dealloc_free_only_16b_n16 | 63888 | 1 | 63888 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | small_churn_16b | 55241 | 1 | 55241 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | small_churn_16b_2n | 59721 | 1 | 59721 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | alloc_magazine_prefill_only_16b | 55554 | 1 | 55554 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | alloc_magazine_hit_only_16b | 55911 | 1 | 55911 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | large_alloc_free_cycle | 49736 | 1 | 49736 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | push | 52 | 1 | 52 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | churn/pair | 4480 | 64 | 70 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | free-average | 835 | 16 | 52.1875 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 1 | magazine numerator | 357 | 1 | 357 | _raw_r19_prf02c_B_pure_1.log |
+| pure | B | 2 | dealloc_prealloc_only_16b | 63053 | 1 | 63053 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | dealloc_free_only_16b_n8 | 63472 | 1 | 63472 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | dealloc_free_only_16b_n9 | 63524 | 1 | 63524 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | dealloc_free_only_16b_n16 | 63888 | 1 | 63888 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | small_churn_16b | 55241 | 1 | 55241 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | small_churn_16b_2n | 59721 | 1 | 59721 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | alloc_magazine_prefill_only_16b | 55554 | 1 | 55554 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | alloc_magazine_hit_only_16b | 55911 | 1 | 55911 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | large_alloc_free_cycle | 49736 | 1 | 49736 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | push | 52 | 1 | 52 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | churn/pair | 4480 | 64 | 70 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | free-average | 835 | 16 | 52.1875 | _raw_r19_prf02c_B_pure_2.log |
+| pure | B | 2 | magazine numerator | 357 | 1 | 357 | _raw_r19_prf02c_B_pure_2.log |
+| pure | Cprime | 1 | dealloc_prealloc_only_16b | 63053 | 1 | 63053 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | dealloc_free_only_16b_n8 | 63561 | 1 | 63561 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | dealloc_free_only_16b_n9 | 63624 | 1 | 63624 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | dealloc_free_only_16b_n16 | 64065 | 1 | 64065 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | small_churn_16b | 55947 | 1 | 55947 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | small_churn_16b_2n | 61131 | 1 | 61131 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | alloc_magazine_prefill_only_16b | 56250 | 1 | 56250 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | alloc_magazine_hit_only_16b | 56608 | 1 | 56608 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | large_alloc_free_cycle | 49736 | 1 | 49736 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | push | 63 | 1 | 63 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | churn/pair | 5184 | 64 | 81 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | free-average | 1012 | 16 | 63.25 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 1 | magazine numerator | 358 | 1 | 358 | _raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime | 2 | dealloc_prealloc_only_16b | 63053 | 1 | 63053 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | dealloc_free_only_16b_n8 | 63561 | 1 | 63561 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | dealloc_free_only_16b_n9 | 63624 | 1 | 63624 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | dealloc_free_only_16b_n16 | 64065 | 1 | 64065 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | small_churn_16b | 55947 | 1 | 55947 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | small_churn_16b_2n | 61131 | 1 | 61131 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | alloc_magazine_prefill_only_16b | 56250 | 1 | 56250 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | alloc_magazine_hit_only_16b | 56608 | 1 | 56608 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | large_alloc_free_cycle | 49736 | 1 | 49736 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | push | 63 | 1 | 63 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | churn/pair | 5184 | 64 | 81 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | free-average | 1012 | 16 | 63.25 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime | 2 | magazine numerator | 358 | 1 | 358 | _raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 1 | dealloc_prealloc_only_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | dealloc_free_only_16b_n8 | 89 | 1 | 89 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | dealloc_free_only_16b_n9 | 100 | 1 | 100 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | dealloc_free_only_16b_n16 | 177 | 1 | 177 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | small_churn_16b | 706 | 1 | 706 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | small_churn_16b_2n | 1410 | 1 | 1410 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | alloc_magazine_prefill_only_16b | 696 | 1 | 696 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | alloc_magazine_hit_only_16b | 697 | 1 | 697 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | large_alloc_free_cycle | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | mimalloc_small_churn_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | mimalloc_small_churn_16b_2n | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | push | 11 | 1 | 11 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | churn/pair | 704 | 64 | 11 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | free-average | 177 | 16 | 11.0625 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 1 | magazine numerator | 1 | 1 | 1 | _raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log |
+| pure | Cprime-B | 2 | dealloc_prealloc_only_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | dealloc_free_only_16b_n8 | 89 | 1 | 89 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | dealloc_free_only_16b_n9 | 100 | 1 | 100 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | dealloc_free_only_16b_n16 | 177 | 1 | 177 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | small_churn_16b | 706 | 1 | 706 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | small_churn_16b_2n | 1410 | 1 | 1410 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | alloc_magazine_prefill_only_16b | 696 | 1 | 696 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | alloc_magazine_hit_only_16b | 697 | 1 | 697 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | large_alloc_free_cycle | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | mimalloc_small_churn_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | mimalloc_small_churn_16b_2n | 0 | 1 | 0 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | push | 11 | 1 | 11 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | churn/pair | 704 | 64 | 11 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | free-average | 177 | 16 | 11.0625 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| pure | Cprime-B | 2 | magazine numerator | 1 | 1 | 1 | _raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log |
+| instrumented | B | 1 | small_churn_16b | 56494 | 1 | 56494 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | small_churn_16b_2n | 61614 | 1 | 61614 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | dealloc_prealloc_only_16b | 63472 | 1 | 63472 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | dealloc_free_only_16b_n8 | 63909 | 1 | 63909 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | dealloc_free_only_16b_n9 | 63962 | 1 | 63962 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | dealloc_free_only_16b_n16 | 64333 | 1 | 64333 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | large_alloc_free_cycle | 49809 | 1 | 49809 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | alloc_magazine_hit_only_16b | 56127 | 1 | 56127 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | alloc_magazine_prefill_only_16b | 55769 | 1 | 55769 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | dealloc_own_thread_body_only_16b | 70649 | 1 | 70649 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | dealloc_segment_base_of_ptr_probe_only_16b | 64045 | 1 | 64045 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | push | 53 | 1 | 53 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | churn/pair | 5120 | 64 | 80 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | free-average | 861 | 16 | 53.8125 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | magazine numerator | 358 | 1 | 358 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 1 | body diagnostic | 6604 | 64 | 103.1875 | _raw_r19_prf02c_B_instrumented_1.log |
+| instrumented | B | 2 | small_churn_16b | 56494 | 1 | 56494 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | small_churn_16b_2n | 61614 | 1 | 61614 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | dealloc_prealloc_only_16b | 63472 | 1 | 63472 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | dealloc_free_only_16b_n8 | 63909 | 1 | 63909 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | dealloc_free_only_16b_n9 | 63962 | 1 | 63962 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | dealloc_free_only_16b_n16 | 64333 | 1 | 64333 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | large_alloc_free_cycle | 49809 | 1 | 49809 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | alloc_magazine_hit_only_16b | 56127 | 1 | 56127 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | alloc_magazine_prefill_only_16b | 55769 | 1 | 55769 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | dealloc_own_thread_body_only_16b | 70649 | 1 | 70649 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | dealloc_segment_base_of_ptr_probe_only_16b | 64045 | 1 | 64045 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | push | 53 | 1 | 53 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | churn/pair | 5120 | 64 | 80 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | free-average | 861 | 16 | 53.8125 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | magazine numerator | 358 | 1 | 358 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | B | 2 | body diagnostic | 6604 | 64 | 103.1875 | _raw_r19_prf02c_B_instrumented_2.log |
+| instrumented | Cprime | 1 | small_churn_16b | 57198 | 1 | 57198 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | small_churn_16b_2n | 63022 | 1 | 63022 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | dealloc_prealloc_only_16b | 63472 | 1 | 63472 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | dealloc_free_only_16b_n8 | 63985 | 1 | 63985 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | dealloc_free_only_16b_n9 | 64049 | 1 | 64049 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | dealloc_free_only_16b_n16 | 64497 | 1 | 64497 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | large_alloc_free_cycle | 49809 | 1 | 49809 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | alloc_magazine_hit_only_16b | 56823 | 1 | 56823 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | alloc_magazine_prefill_only_16b | 56465 | 1 | 56465 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | dealloc_own_thread_body_only_16b | 71277 | 1 | 71277 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | dealloc_segment_base_of_ptr_probe_only_16b | 64045 | 1 | 64045 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | push | 64 | 1 | 64 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | churn/pair | 5824 | 64 | 91 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | free-average | 1025 | 16 | 64.0625 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | magazine numerator | 358 | 1 | 358 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 1 | body diagnostic | 7232 | 64 | 113 | _raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime | 2 | small_churn_16b | 57198 | 1 | 57198 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | small_churn_16b_2n | 63022 | 1 | 63022 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | dealloc_prealloc_only_16b | 63472 | 1 | 63472 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | dealloc_free_only_16b_n8 | 63985 | 1 | 63985 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | dealloc_free_only_16b_n9 | 64049 | 1 | 64049 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | dealloc_free_only_16b_n16 | 64497 | 1 | 64497 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | mimalloc_small_churn_16b | 16629 | 1 | 16629 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | mimalloc_small_churn_16b_2n | 21557 | 1 | 21557 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | large_alloc_free_cycle | 49809 | 1 | 49809 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | alloc_magazine_hit_only_16b | 56823 | 1 | 56823 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | alloc_magazine_prefill_only_16b | 56465 | 1 | 56465 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | dealloc_own_thread_body_only_16b | 71277 | 1 | 71277 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | dealloc_segment_base_of_ptr_probe_only_16b | 64045 | 1 | 64045 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | push | 64 | 1 | 64 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | churn/pair | 5824 | 64 | 91 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | free-average | 1025 | 16 | 64.0625 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | magazine numerator | 358 | 1 | 358 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime | 2 | body diagnostic | 7232 | 64 | 113 | _raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 1 | small_churn_16b | 704 | 1 | 704 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | small_churn_16b_2n | 1408 | 1 | 1408 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | dealloc_prealloc_only_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | dealloc_free_only_16b_n8 | 76 | 1 | 76 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | dealloc_free_only_16b_n9 | 87 | 1 | 87 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | dealloc_free_only_16b_n16 | 164 | 1 | 164 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | mimalloc_small_churn_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | mimalloc_small_churn_16b_2n | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | large_alloc_free_cycle | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | alloc_magazine_hit_only_16b | 696 | 1 | 696 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | alloc_magazine_prefill_only_16b | 696 | 1 | 696 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | dealloc_own_thread_body_only_16b | 628 | 1 | 628 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | dealloc_segment_base_of_ptr_probe_only_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | push | 11 | 1 | 11 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | churn/pair | 704 | 64 | 11 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | free-average | 164 | 16 | 10.25 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | magazine numerator | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 1 | body diagnostic | 628 | 64 | 9.8125 | _raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log |
+| instrumented | Cprime-B | 2 | small_churn_16b | 704 | 1 | 704 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | small_churn_16b_2n | 1408 | 1 | 1408 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | dealloc_prealloc_only_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | dealloc_free_only_16b_n8 | 76 | 1 | 76 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | dealloc_free_only_16b_n9 | 87 | 1 | 87 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | dealloc_free_only_16b_n16 | 164 | 1 | 164 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | mimalloc_small_churn_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | mimalloc_small_churn_16b_2n | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | large_alloc_free_cycle | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | alloc_magazine_hit_only_16b | 696 | 1 | 696 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | alloc_magazine_prefill_only_16b | 696 | 1 | 696 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | dealloc_own_thread_body_only_16b | 628 | 1 | 628 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | dealloc_segment_base_of_ptr_probe_only_16b | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | push | 11 | 1 | 11 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | churn/pair | 704 | 64 | 11 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | free-average | 164 | 16 | 10.25 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | magazine numerator | 0 | 1 | 0 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |
+| instrumented | Cprime-B | 2 | body diagnostic | 628 | 64 | 9.8125 | _raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log |

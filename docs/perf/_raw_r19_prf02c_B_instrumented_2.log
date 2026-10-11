@@ -1,0 +1,146 @@
+PRF02C_METADATA {"arm":"B","axis":"instrumented","repeat":2,"identity_sha256":"3cec34ca0d5df7b31174183cd0f51248ca93c88cefcc45ffa40bf2398bdbb442","prereg_sha256":"3649a2f3d289f5f8bea59771df49121a53e4208c96407b63249fcbea7a95a23e","features":"production internals bench-internals","env":{"RUSTC_WRAPPER":"","CARGO_BUILD_JOBS":"3","CARGO_TARGET_DIR":"<repo>/target"}}
+[iai] wsl: <repo>
+[iai] features: production internals bench-internals | target: "$PWD/target"
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+__MISSING__
+[iai] runner already installed: 0.14.2 (skip install)
+
+[iai] running benches...
+
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `bench` profile [optimized] target(s) in 38.27s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/r19_prf02_instrumented_iai.rs (target/release/deps/r19_prf02_instrumented_iai-4ba175c86363b3c4)
+r19_prf02_instrumented_iai::gate::perf_gate::small_churn_16b
+  Instructions:                       56494|57198                (-1.23081%) [-1.01246x]
+  L1 Hits:                           102636|103339               (-0.68029%) [-1.00685x]
+  L2 Hits:                              178|180                  (-1.11111%) [-1.01124x]
+  RAM Hits:                            1095|1094                 (+0.09141%) [+1.00091x]
+  Total read+write:                  103909|104613               (-0.67296%) [-1.00678x]
+  Estimated Cycles:                  141851|142529               (-0.47569%) [-1.00478x]
+r19_prf02_instrumented_iai::gate::perf_gate::small_churn_16b_2n
+  Instructions:                       61614|63022                (-2.23414%) [-1.02285x]
+  L1 Hits:                           109163|110571               (-1.27339%) [-1.01290x]
+  L2 Hits:                              178|180                  (-1.11111%) [-1.01124x]
+  RAM Hits:                            1096|1094                 (+0.18282%) [+1.00183x]
+  Total read+write:                  110437|111845               (-1.25889%) [-1.01275x]
+  Estimated Cycles:                  148413|149761               (-0.90010%) [-1.00908x]
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_prealloc_only_16b
+  Instructions:                       63472|63472                (No change)
+  L1 Hits:                           112165|112167               (-0.00178%) [-1.00002x]
+  L2 Hits:                              165|166                  (-0.60241%) [-1.00606x]
+  RAM Hits:                            1069|1066                 (+0.28143%) [+1.00281x]
+  Total read+write:                  113399|113399               (No change)
+  Estimated Cycles:                  150405|150307               (+0.06520%) [+1.00065x]
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_free_only_16b_n8
+  Instructions:                       63909|63985                (-0.11878%) [-1.00119x]
+  L1 Hits:                           112723|112793               (-0.06206%) [-1.00062x]
+  L2 Hits:                              165|166                  (-0.60241%) [-1.00606x]
+  RAM Hits:                            1076|1073                 (+0.27959%) [+1.00280x]
+  Total read+write:                  113964|114032               (-0.05963%) [-1.00060x]
+  Estimated Cycles:                  151208|151178               (+0.01984%) [+1.00020x]
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_free_only_16b_n9
+  Instructions:                       63962|64049                (-0.13583%) [-1.00136x]
+  L1 Hits:                           112791|112873               (-0.07265%) [-1.00073x]
+  L2 Hits:                              165|166                  (-0.60241%) [-1.00606x]
+  RAM Hits:                            1076|1072                 (+0.37313%) [+1.00373x]
+  Total read+write:                  114032|114111               (-0.06923%) [-1.00069x]
+  Estimated Cycles:                  151276|151223               (+0.03505%) [+1.00035x]
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_free_only_16b_n16
+  Instructions:                       64333|64497                (-0.25428%) [-1.00255x]
+  L1 Hits:                           113266|113426               (-0.14106%) [-1.00141x]
+  L2 Hits:                              165|166                  (-0.60241%) [-1.00606x]
+  RAM Hits:                            1077|1072                 (+0.46642%) [+1.00466x]
+  Total read+write:                  114508|114664               (-0.13605%) [-1.00136x]
+  Estimated Cycles:                  151786|151776               (+0.00659%) [+1.00007x]
+r19_prf02_instrumented_iai::gate::perf_gate::mimalloc_small_churn_16b
+  Instructions:                       16629|16629                (No change)
+  L1 Hits:                            21436|21438                (-0.00933%) [-1.00009x]
+  L2 Hits:                               60|58                   (+3.44828%) [+1.03448x]
+  RAM Hits:                             502|502                  (No change)
+  Total read+write:                   21998|21998                (No change)
+  Estimated Cycles:                   39306|39298                (+0.02036%) [+1.00020x]
+r19_prf02_instrumented_iai::gate::perf_gate::mimalloc_small_churn_16b_2n
+  Instructions:                       21557|21557                (No change)
+  L1 Hits:                            27898|27902                (-0.01434%) [-1.00014x]
+  L2 Hits:                               62|58                   (+6.89655%) [+1.06897x]
+  RAM Hits:                             502|502                  (No change)
+  Total read+write:                   28462|28462                (No change)
+  Estimated Cycles:                   45778|45762                (+0.03496%) [+1.00035x]
+r19_prf02_instrumented_iai::gate::perf_gate::large_alloc_free_cycle
+  Instructions:                       49809|49809                (No change)
+  L1 Hits:                            94129|94129                (No change)
+  L2 Hits:                              186|189                  (-1.58730%) [-1.01613x]
+  RAM Hits:                            1108|1105                 (+0.27149%) [+1.00271x]
+  Total read+write:                   95423|95423                (No change)
+  Estimated Cycles:                  133839|133749               (+0.06729%) [+1.00067x]
+r19_prf02_instrumented_iai::gate::perf_gate::alloc_magazine_hit_only_16b
+  Instructions:                       56127|56823                (-1.22486%) [-1.01240x]
+  L1 Hits:                           102089|102780               (-0.67231%) [-1.00677x]
+  L2 Hits:                              165|165                  (No change)
+  RAM Hits:                            1072|1069                 (+0.28064%) [+1.00281x]
+  Total read+write:                  103326|104014               (-0.66145%) [-1.00666x]
+  Estimated Cycles:                  140434|141020               (-0.41554%) [-1.00417x]
+r19_prf02_instrumented_iai::gate::perf_gate::alloc_magazine_prefill_only_16b
+  Instructions:                       55769|56465                (-1.23262%) [-1.01248x]
+  L1 Hits:                           101654|102342               (-0.67226%) [-1.00677x]
+  L2 Hits:                              164|165                  (-0.60606%) [-1.00610x]
+  RAM Hits:                            1069|1068                 (+0.09363%) [+1.00094x]
+  Total read+write:                  102887|103575               (-0.66425%) [-1.00669x]
+  Estimated Cycles:                  139889|140547               (-0.46817%) [-1.00470x]
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_own_thread_body_only_16b
+  Instructions:                       70649|71277                (-0.88107%) [-1.00889x]
+  L1 Hits:                           121353|121964               (-0.50097%) [-1.00503x]
+  L2 Hits:                              165|165                  (No change)
+  RAM Hits:                            1110|1107                 (+0.27100%) [+1.00271x]
+  Total read+write:                  122628|123236               (-0.49336%) [-1.00496x]
+  Estimated Cycles:                  161028|161534               (-0.31325%) [-1.00314x]
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_segment_base_of_ptr_probe_only_16b
+  Instructions:                       64045|64045                (No change)
+  L1 Hits:                           112863|112864               (-0.00089%) [-1.00001x]
+  L2 Hits:                              163|164                  (-0.60976%) [-1.00613x]
+  RAM Hits:                            1070|1068                 (+0.18727%) [+1.00187x]
+  Total read+write:                  114096|114096               (No change)
+  Estimated Cycles:                  151128|151064               (+0.04237%) [+1.00042x]
+
+Iai-Callgrind result: Ok. 13 without regressions; 0 regressed; 13 benchmarks finished in 15.6645s
+
+  bench                                                 Ir            L1            L2           RAM     EstCycles        Ir/op*
+  ------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                                   56,494       102,636           178         1,095       141,851         104.5
+  small_churn_16b_2n                                61,614       109,163           178         1,096       148,413             -
+  dealloc_prealloc_only_16b                         63,472       112,165           165         1,069       150,405             -
+  dealloc_free_only_16b_n8                          63,909       112,723           165         1,076       151,208             -
+  dealloc_free_only_16b_n9                          63,962       112,791           165         1,076       151,276             -
+  dealloc_free_only_16b_n16                         64,333       113,266           165         1,077       151,786             -
+  mimalloc_small_churn_16b                          16,629        21,436            60           502        39,306             -
+  mimalloc_small_churn_16b_2n                       21,557        27,898            62           502        45,778             -
+  large_alloc_free_cycle                            49,809        94,129           186         1,108       133,839             -
+  alloc_magazine_hit_only_16b                       56,127       102,089           165         1,072       140,434             -
+  alloc_magazine_prefill_only_16b                   55,769       101,654           164         1,069       139,889             -
+  dealloc_own_thread_body_only_16b                  70,649       121,353           165         1,110       161,028             -
+  dealloc_segment_base_of_ptr_probe_only_16b        64,045       112,863           163         1,070       151,128             -
+
+  * Ir/op = (Ir − B) / ops — marginal instruction count per operation, with
+    the one-time process bootstrap subtracted. B is taken PER ARM: SeferAlloc
+    rows use large_alloc_free_cycle (B=49,809); mimalloc_* rows use
+    mimalloc_bootstrap_proxy (B=-) — the two allocators' bootstrap
+    constants are never mixed (R22-15/task #366). Comparable across benches
+    within the SAME arm; the honest unit for per-op thresholds (review finding
+    F2). "-" = bootstrap proxy / no op-count / that arm's bootstrap bench absent.
+
+  Sefer/mimalloc marginal Ir/op ratio (workload-matched pairs):
+
+  workload          Sefer Ir/op      mi Ir/op         ratio
+  ---------------  ------------  ------------  ------------
+  small_churn_16b         104.5             -             -
+
+  ratio = Sefer Ir/op ÷ mimalloc Ir/op — > 1.000 means SeferAlloc retires MORE
+    instructions per op than mimalloc on that workload (i.e. mimalloc is
+    cheaper in Ir); < 1.000 means the reverse. "-" when a pair's row is
+    missing/filtered on either side.
+
+[iai] PASS — 13 bench(es) produced Ir
+
+PRF02C_EXIT 0

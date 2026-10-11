@@ -1,0 +1,1996 @@
+{
+  "verdict": "NO-GO",
+  "identity_sha256": "3cec34ca0d5df7b31174183cd0f51248ca93c88cefcc45ffa40bf2398bdbb442",
+  "prereg_sha256": "3649a2f3d289f5f8bea59771df49121a53e4208c96407b63249fcbea7a95a23e",
+  "failures": [
+    "pure: push [-3,+1]",
+    "pure: raw churn small_churn_16b",
+    "pure: raw churn small_churn_16b_2n",
+    "instrumented: push [-3,+1]",
+    "instrumented: raw churn small_churn_16b",
+    "instrumented: raw churn small_churn_16b_2n"
+  ],
+  "rows": [
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63053,
+      "denominator": 1,
+      "value": 63053,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63472,
+      "denominator": 1,
+      "value": 63472,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 63524,
+      "denominator": 1,
+      "value": 63524,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 63888,
+      "denominator": 1,
+      "value": 63888,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "small_churn_16b",
+      "numerator": 55241,
+      "denominator": 1,
+      "value": 55241,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "small_churn_16b_2n",
+      "numerator": 59721,
+      "denominator": 1,
+      "value": 59721,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 55554,
+      "denominator": 1,
+      "value": 55554,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 55911,
+      "denominator": 1,
+      "value": 55911,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49736,
+      "denominator": 1,
+      "value": 49736,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "push",
+      "numerator": 52,
+      "denominator": 1,
+      "value": 52,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "churn/pair",
+      "numerator": 4480,
+      "denominator": 64,
+      "value": 70,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "free-average",
+      "numerator": 835,
+      "denominator": 16,
+      "value": 52.1875,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "magazine numerator",
+      "numerator": 357,
+      "denominator": 1,
+      "value": 357,
+      "raw": "_raw_r19_prf02c_B_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63053,
+      "denominator": 1,
+      "value": 63053,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63472,
+      "denominator": 1,
+      "value": 63472,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 63524,
+      "denominator": 1,
+      "value": 63524,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 63888,
+      "denominator": 1,
+      "value": 63888,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "small_churn_16b",
+      "numerator": 55241,
+      "denominator": 1,
+      "value": 55241,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "small_churn_16b_2n",
+      "numerator": 59721,
+      "denominator": 1,
+      "value": 59721,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 55554,
+      "denominator": 1,
+      "value": 55554,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 55911,
+      "denominator": 1,
+      "value": 55911,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49736,
+      "denominator": 1,
+      "value": 49736,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "push",
+      "numerator": 52,
+      "denominator": 1,
+      "value": 52,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "churn/pair",
+      "numerator": 4480,
+      "denominator": 64,
+      "value": 70,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "free-average",
+      "numerator": 835,
+      "denominator": 16,
+      "value": 52.1875,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "magazine numerator",
+      "numerator": 357,
+      "denominator": 1,
+      "value": 357,
+      "raw": "_raw_r19_prf02c_B_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63053,
+      "denominator": 1,
+      "value": 63053,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63561,
+      "denominator": 1,
+      "value": 63561,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 63624,
+      "denominator": 1,
+      "value": 63624,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 64065,
+      "denominator": 1,
+      "value": 64065,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "small_churn_16b",
+      "numerator": 55947,
+      "denominator": 1,
+      "value": 55947,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "small_churn_16b_2n",
+      "numerator": 61131,
+      "denominator": 1,
+      "value": 61131,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 56250,
+      "denominator": 1,
+      "value": 56250,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 56608,
+      "denominator": 1,
+      "value": 56608,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49736,
+      "denominator": 1,
+      "value": 49736,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "push",
+      "numerator": 63,
+      "denominator": 1,
+      "value": 63,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "churn/pair",
+      "numerator": 5184,
+      "denominator": 64,
+      "value": 81,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "free-average",
+      "numerator": 1012,
+      "denominator": 16,
+      "value": 63.25,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "magazine numerator",
+      "numerator": 358,
+      "denominator": 1,
+      "value": 358,
+      "raw": "_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63053,
+      "denominator": 1,
+      "value": 63053,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63561,
+      "denominator": 1,
+      "value": 63561,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 63624,
+      "denominator": 1,
+      "value": 63624,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 64065,
+      "denominator": 1,
+      "value": 64065,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "small_churn_16b",
+      "numerator": 55947,
+      "denominator": 1,
+      "value": 55947,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "small_churn_16b_2n",
+      "numerator": 61131,
+      "denominator": 1,
+      "value": 61131,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 56250,
+      "denominator": 1,
+      "value": 56250,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 56608,
+      "denominator": 1,
+      "value": 56608,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49736,
+      "denominator": 1,
+      "value": 49736,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "push",
+      "numerator": 63,
+      "denominator": 1,
+      "value": 63,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "churn/pair",
+      "numerator": 5184,
+      "denominator": 64,
+      "value": 81,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "free-average",
+      "numerator": 1012,
+      "denominator": 16,
+      "value": 63.25,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "magazine numerator",
+      "numerator": 358,
+      "denominator": 1,
+      "value": 358,
+      "raw": "_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 89,
+      "denominator": 1,
+      "value": 89,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 100,
+      "denominator": 1,
+      "value": 100,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 177,
+      "denominator": 1,
+      "value": 177,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "small_churn_16b",
+      "numerator": 706,
+      "denominator": 1,
+      "value": 706,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "small_churn_16b_2n",
+      "numerator": 1410,
+      "denominator": 1,
+      "value": 1410,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 696,
+      "denominator": 1,
+      "value": 696,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 697,
+      "denominator": 1,
+      "value": 697,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "push",
+      "numerator": 11,
+      "denominator": 1,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "churn/pair",
+      "numerator": 704,
+      "denominator": 64,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "free-average",
+      "numerator": 177,
+      "denominator": 16,
+      "value": 11.0625,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "magazine numerator",
+      "numerator": 1,
+      "denominator": 1,
+      "value": 1,
+      "raw": "_raw_r19_prf02c_B_pure_1.log;_raw_r19_prf02c_Cprime_pure_1.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 89,
+      "denominator": 1,
+      "value": 89,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 100,
+      "denominator": 1,
+      "value": 100,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 177,
+      "denominator": 1,
+      "value": 177,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "small_churn_16b",
+      "numerator": 706,
+      "denominator": 1,
+      "value": 706,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "small_churn_16b_2n",
+      "numerator": 1410,
+      "denominator": 1,
+      "value": 1410,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 696,
+      "denominator": 1,
+      "value": 696,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 697,
+      "denominator": 1,
+      "value": 697,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "push",
+      "numerator": 11,
+      "denominator": 1,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "churn/pair",
+      "numerator": 704,
+      "denominator": 64,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "free-average",
+      "numerator": 177,
+      "denominator": 16,
+      "value": 11.0625,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "pure",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "magazine numerator",
+      "numerator": 1,
+      "denominator": 1,
+      "value": 1,
+      "raw": "_raw_r19_prf02c_B_pure_2.log;_raw_r19_prf02c_Cprime_pure_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "small_churn_16b",
+      "numerator": 56494,
+      "denominator": 1,
+      "value": 56494,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "small_churn_16b_2n",
+      "numerator": 61614,
+      "denominator": 1,
+      "value": 61614,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63472,
+      "denominator": 1,
+      "value": 63472,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63909,
+      "denominator": 1,
+      "value": 63909,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 63962,
+      "denominator": 1,
+      "value": 63962,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 64333,
+      "denominator": 1,
+      "value": 64333,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49809,
+      "denominator": 1,
+      "value": 49809,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 56127,
+      "denominator": 1,
+      "value": 56127,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 55769,
+      "denominator": 1,
+      "value": 55769,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_own_thread_body_only_16b",
+      "numerator": 70649,
+      "denominator": 1,
+      "value": 70649,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "dealloc_segment_base_of_ptr_probe_only_16b",
+      "numerator": 64045,
+      "denominator": 1,
+      "value": 64045,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "push",
+      "numerator": 53,
+      "denominator": 1,
+      "value": 53,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "churn/pair",
+      "numerator": 5120,
+      "denominator": 64,
+      "value": 80,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "free-average",
+      "numerator": 861,
+      "denominator": 16,
+      "value": 53.8125,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "magazine numerator",
+      "numerator": 358,
+      "denominator": 1,
+      "value": 358,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 1,
+      "metric": "body diagnostic",
+      "numerator": 6604,
+      "denominator": 64,
+      "value": 103.1875,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "small_churn_16b",
+      "numerator": 56494,
+      "denominator": 1,
+      "value": 56494,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "small_churn_16b_2n",
+      "numerator": 61614,
+      "denominator": 1,
+      "value": 61614,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63472,
+      "denominator": 1,
+      "value": 63472,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63909,
+      "denominator": 1,
+      "value": 63909,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 63962,
+      "denominator": 1,
+      "value": 63962,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 64333,
+      "denominator": 1,
+      "value": 64333,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49809,
+      "denominator": 1,
+      "value": 49809,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 56127,
+      "denominator": 1,
+      "value": 56127,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 55769,
+      "denominator": 1,
+      "value": 55769,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_own_thread_body_only_16b",
+      "numerator": 70649,
+      "denominator": 1,
+      "value": 70649,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "dealloc_segment_base_of_ptr_probe_only_16b",
+      "numerator": 64045,
+      "denominator": 1,
+      "value": 64045,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "push",
+      "numerator": 53,
+      "denominator": 1,
+      "value": 53,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "churn/pair",
+      "numerator": 5120,
+      "denominator": 64,
+      "value": 80,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "free-average",
+      "numerator": 861,
+      "denominator": 16,
+      "value": 53.8125,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "magazine numerator",
+      "numerator": 358,
+      "denominator": 1,
+      "value": 358,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "B",
+      "repeat": 2,
+      "metric": "body diagnostic",
+      "numerator": 6604,
+      "denominator": 64,
+      "value": 103.1875,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "small_churn_16b",
+      "numerator": 57198,
+      "denominator": 1,
+      "value": 57198,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "small_churn_16b_2n",
+      "numerator": 63022,
+      "denominator": 1,
+      "value": 63022,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63472,
+      "denominator": 1,
+      "value": 63472,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63985,
+      "denominator": 1,
+      "value": 63985,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 64049,
+      "denominator": 1,
+      "value": 64049,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 64497,
+      "denominator": 1,
+      "value": 64497,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49809,
+      "denominator": 1,
+      "value": 49809,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 56823,
+      "denominator": 1,
+      "value": 56823,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 56465,
+      "denominator": 1,
+      "value": 56465,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_own_thread_body_only_16b",
+      "numerator": 71277,
+      "denominator": 1,
+      "value": 71277,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "dealloc_segment_base_of_ptr_probe_only_16b",
+      "numerator": 64045,
+      "denominator": 1,
+      "value": 64045,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "push",
+      "numerator": 64,
+      "denominator": 1,
+      "value": 64,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "churn/pair",
+      "numerator": 5824,
+      "denominator": 64,
+      "value": 91,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "free-average",
+      "numerator": 1025,
+      "denominator": 16,
+      "value": 64.0625,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "magazine numerator",
+      "numerator": 358,
+      "denominator": 1,
+      "value": 358,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 1,
+      "metric": "body diagnostic",
+      "numerator": 7232,
+      "denominator": 64,
+      "value": 113,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "small_churn_16b",
+      "numerator": 57198,
+      "denominator": 1,
+      "value": 57198,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "small_churn_16b_2n",
+      "numerator": 63022,
+      "denominator": 1,
+      "value": 63022,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 63472,
+      "denominator": 1,
+      "value": 63472,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 63985,
+      "denominator": 1,
+      "value": 63985,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 64049,
+      "denominator": 1,
+      "value": 64049,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 64497,
+      "denominator": 1,
+      "value": 64497,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 16629,
+      "denominator": 1,
+      "value": 16629,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 21557,
+      "denominator": 1,
+      "value": 21557,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 49809,
+      "denominator": 1,
+      "value": 49809,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 56823,
+      "denominator": 1,
+      "value": 56823,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 56465,
+      "denominator": 1,
+      "value": 56465,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_own_thread_body_only_16b",
+      "numerator": 71277,
+      "denominator": 1,
+      "value": 71277,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "dealloc_segment_base_of_ptr_probe_only_16b",
+      "numerator": 64045,
+      "denominator": 1,
+      "value": 64045,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "push",
+      "numerator": 64,
+      "denominator": 1,
+      "value": 64,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "churn/pair",
+      "numerator": 5824,
+      "denominator": 64,
+      "value": 91,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "free-average",
+      "numerator": 1025,
+      "denominator": 16,
+      "value": 64.0625,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "magazine numerator",
+      "numerator": 358,
+      "denominator": 1,
+      "value": 358,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime",
+      "repeat": 2,
+      "metric": "body diagnostic",
+      "numerator": 7232,
+      "denominator": 64,
+      "value": 113,
+      "raw": "_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "small_churn_16b",
+      "numerator": 704,
+      "denominator": 1,
+      "value": 704,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "small_churn_16b_2n",
+      "numerator": 1408,
+      "denominator": 1,
+      "value": 1408,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 76,
+      "denominator": 1,
+      "value": 76,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 87,
+      "denominator": 1,
+      "value": 87,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 164,
+      "denominator": 1,
+      "value": 164,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 696,
+      "denominator": 1,
+      "value": 696,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 696,
+      "denominator": 1,
+      "value": 696,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_own_thread_body_only_16b",
+      "numerator": 628,
+      "denominator": 1,
+      "value": 628,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "dealloc_segment_base_of_ptr_probe_only_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "push",
+      "numerator": 11,
+      "denominator": 1,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "churn/pair",
+      "numerator": 704,
+      "denominator": 64,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "free-average",
+      "numerator": 164,
+      "denominator": 16,
+      "value": 10.25,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "magazine numerator",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 1,
+      "metric": "body diagnostic",
+      "numerator": 628,
+      "denominator": 64,
+      "value": 9.8125,
+      "raw": "_raw_r19_prf02c_B_instrumented_1.log;_raw_r19_prf02c_Cprime_instrumented_1.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "small_churn_16b",
+      "numerator": 704,
+      "denominator": 1,
+      "value": 704,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "small_churn_16b_2n",
+      "numerator": 1408,
+      "denominator": 1,
+      "value": 1408,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_prealloc_only_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n8",
+      "numerator": 76,
+      "denominator": 1,
+      "value": 76,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n9",
+      "numerator": 87,
+      "denominator": 1,
+      "value": 87,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_free_only_16b_n16",
+      "numerator": 164,
+      "denominator": 1,
+      "value": 164,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "mimalloc_small_churn_16b_2n",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "large_alloc_free_cycle",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "alloc_magazine_hit_only_16b",
+      "numerator": 696,
+      "denominator": 1,
+      "value": 696,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "alloc_magazine_prefill_only_16b",
+      "numerator": 696,
+      "denominator": 1,
+      "value": 696,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_own_thread_body_only_16b",
+      "numerator": 628,
+      "denominator": 1,
+      "value": 628,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "dealloc_segment_base_of_ptr_probe_only_16b",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "push",
+      "numerator": 11,
+      "denominator": 1,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "churn/pair",
+      "numerator": 704,
+      "denominator": 64,
+      "value": 11,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "free-average",
+      "numerator": 164,
+      "denominator": 16,
+      "value": 10.25,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "magazine numerator",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    },
+    {
+      "axis": "instrumented",
+      "arm": "Cprime-B",
+      "repeat": 2,
+      "metric": "body diagnostic",
+      "numerator": 628,
+      "denominator": 64,
+      "value": 9.8125,
+      "raw": "_raw_r19_prf02c_B_instrumented_2.log;_raw_r19_prf02c_Cprime_instrumented_2.log"
+    }
+  ],
+  "rule3": "On NO-GO remove all Cprime hook/inventory/contract/test/source changes; preserve external snapshots; tree remains B."
+}

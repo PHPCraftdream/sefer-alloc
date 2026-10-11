@@ -1,0 +1,11 @@
+{"arm":"B","expected":16,"n":16,"preallocated":64,"hits":32,"misses":0,"tcache":16,"routed_scans":0}
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.39s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running `target/r19-linux/debug/examples/r19_prf02_activation B 16`
+
+thread 'main' (636850) panicked at examples/r19_prf02_activation.rs:34:5:
+assertion `left == right` failed
+  left: 32
+ right: 16
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

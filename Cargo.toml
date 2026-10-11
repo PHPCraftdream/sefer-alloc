@@ -1760,6 +1760,20 @@ name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
+[[example]]
+name = "r19_prf02_activation"
+required-features = ["production", "internals", "bench-internals"]
+
+[[bench]]
+name = "r19_prf02_instrumented_iai"
+harness = false
+required-features = ["production", "bench-internals", "internals"]
+
+[[bench]]
+name = "r19_prf02_production_iai"
+harness = false
+required-features = ["production", "internals"]
+
 # Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
 [[bench]]
 name = "r18_sidecar_scan_iai"

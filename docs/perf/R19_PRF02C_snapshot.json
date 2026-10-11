@@ -1,0 +1,37 @@
+{
+  "arms": {
+    "B": {
+      "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs": "457b03358bb810e4fabc1631355ed9f4d99941ba689a7a49015a3d9454f1c98a",
+      "src/alloc_core/alloc_core/mem/mem_impl.rs": "61f20e1af6cfe346a3d6aadba8effe9b3968dba1cd6b9adbe229fd4060e96793",
+      "src/alloc_core/alloc_core/mem/mod.rs": "6cf678588a2be0f57a8377b48fcfa50caba16bff5161150aeb3f66a0bc19e95e",
+      "src/alloc_core/alloc_core/mem/owned_block.rs": "77b071403c4702d826df8a15d43e2ed525cdcafeecfb8ff477b37fb6d35060a0",
+      "src/alloc_core/alloc_core/mod.rs": "60ee3fcb196a74562e246a05c583917b7e6b5a9cd1698d5719b7f6d627723add",
+      "src/alloc_core/mod.rs": "fb0903e8348fd840b472983f5b1cbda71ca08388d7996e9d4918acac77f604dd",
+      "src/registry/heap_core/diag/diag_probes.rs": "81077d8fa040090ade65c9ccc72869fee7775ec472f722209b7d3c89abfd2d78",
+      "src/registry/heap_core/free/dealloc_own_base.rs": "9bc10ac46ae3e4f646ebb52f81f50e2d8a7ce196e579ae7d4c3a6a29c9a1b405",
+      "src/registry/heap_core/free/realloc.rs": "77ff6f9868306816812a3041b8dc98b220b3694d8781f3f22840c48919b5857b",
+      "src/registry/heap_core_xthread/routing.rs": "53ffa2ea40e1c1c7f80b482146995148d90fc8a58c2074176fa8ab83163785be",
+      "src/registry/heap_core/diag/queries.rs": "4431732f64c2092b2c0185f25c4a501fee045f96c6a023ce6c1ca5b17f617a66",
+      "src/registry/heap_core/free/dealloc.rs": "fe748ac68e114f14978a1c49aa97c1ffb3e1a598b30e997800ba2fd4d590b849",
+      "scripts/verify-dbg-hook-safety.mjs": "1bf1a0885e443e2acf1097eb928b1b0ab425fb2769f59bd2bf93a2364810779d",
+      "tests/regression_magazine_free_unknown_kind.rs": null
+    },
+    "Cprime": {
+      "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs": "76632419b394470d26485a95f35012ac21d03afe9f48859fe1ccf2529c8fd857",
+      "src/alloc_core/alloc_core/mem/mem_impl.rs": "61f20e1af6cfe346a3d6aadba8effe9b3968dba1cd6b9adbe229fd4060e96793",
+      "src/alloc_core/alloc_core/mem/mod.rs": "6cf678588a2be0f57a8377b48fcfa50caba16bff5161150aeb3f66a0bc19e95e",
+      "src/alloc_core/alloc_core/mem/owned_block.rs": "77b071403c4702d826df8a15d43e2ed525cdcafeecfb8ff477b37fb6d35060a0",
+      "src/alloc_core/alloc_core/mod.rs": "60ee3fcb196a74562e246a05c583917b7e6b5a9cd1698d5719b7f6d627723add",
+      "src/alloc_core/mod.rs": "fb0903e8348fd840b472983f5b1cbda71ca08388d7996e9d4918acac77f604dd",
+      "src/registry/heap_core/diag/diag_probes.rs": "81077d8fa040090ade65c9ccc72869fee7775ec472f722209b7d3c89abfd2d78",
+      "src/registry/heap_core/free/dealloc_own_base.rs": "85ae577e8607ad62688a911d037db03ca3517f4f3a4e438d3429b60e0d17c623",
+      "src/registry/heap_core/free/realloc.rs": "77ff6f9868306816812a3041b8dc98b220b3694d8781f3f22840c48919b5857b",
+      "src/registry/heap_core_xthread/routing.rs": "53ffa2ea40e1c1c7f80b482146995148d90fc8a58c2074176fa8ab83163785be",
+      "src/registry/heap_core/diag/queries.rs": "e96dca091eea02f11bb5cccd86a5fdc1c3058e5cfb84b7e9b84eab91bca9f1b0",
+      "src/registry/heap_core/free/dealloc.rs": "c7819645e1bbf49a11e51cfb557195e7861b01a6af52ccc1d1aff47a053fd78d",
+      "scripts/verify-dbg-hook-safety.mjs": "3633ba7b06af7dbb64c5e62f5d10eb31bd8d5cb57d576146aab726781d3734f4",
+      "tests/regression_magazine_free_unknown_kind.rs": "e2c87bcdf928a5198ee2b278eca34dcae96a29d663a474cb63f03dd62705b13f"
+    }
+  },
+  "patch_sha256": "da629b08a216895144b57285c69424f113baae0c32329da04b6606969d9a986c"
+}

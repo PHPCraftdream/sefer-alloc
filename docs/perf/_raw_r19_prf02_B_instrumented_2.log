@@ -1,0 +1,144 @@
+[iai] wsl: <repo>
+[iai] features: production bench-internals internals | target: "$PWD/target/r19-linux"
+[iai] filter: dealloc_prealloc_only_16b, dealloc_free_only_16b_n8, dealloc_free_only_16b_n9, dealloc_free_only_16b_n16, small_churn_16b, small_churn_16b_2n, mimalloc_small_churn_16b, mimalloc_small_churn_16b_2n, large_alloc_free_cycle, alloc_magazine_hit_only_16b, alloc_magazine_prefill_only_16b, dealloc_own_thread_body_only_16b, dealloc_segment_base_of_ptr_probe_only_16b
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+__MISSING__
+[iai] runner already installed: 0.14.2 (skip install)
+
+[iai] running benches...
+
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `bench` profile [optimized] target(s) in 14.41s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/r19_prf02_instrumented_iai.rs (target/r19-linux/release/deps/r19_prf02_instrumented_iai-4ba175c86363b3c4)
+r19_prf02_instrumented_iai::gate::perf_gate::small_churn_16b
+  Instructions:                       56506|56506                (No change)
+  L1 Hits:                           102656|102656               (No change)
+  L2 Hits:                              178|178                  (No change)
+  RAM Hits:                            1095|1095                 (No change)
+  Total read+write:                  103929|103929               (No change)
+  Estimated Cycles:                  141871|141871               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::small_churn_16b_2n
+  Instructions:                       61614|61614                (No change)
+  L1 Hits:                           109163|109163               (No change)
+  L2 Hits:                              178|178                  (No change)
+  RAM Hits:                            1096|1096                 (No change)
+  Total read+write:                  110437|110437               (No change)
+  Estimated Cycles:                  148413|148413               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_prealloc_only_16b
+  Instructions:                       63467|63467                (No change)
+  L1 Hits:                           112157|112157               (No change)
+  L2 Hits:                              163|163                  (No change)
+  RAM Hits:                            1070|1070                 (No change)
+  Total read+write:                  113390|113390               (No change)
+  Estimated Cycles:                  150422|150422               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_free_only_16b_n8
+  Instructions:                       63897|63897                (No change)
+  L1 Hits:                           112703|112703               (No change)
+  L2 Hits:                              164|164                  (No change)
+  RAM Hits:                            1077|1077                 (No change)
+  Total read+write:                  113944|113944               (No change)
+  Estimated Cycles:                  151218|151218               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_free_only_16b_n9
+  Instructions:                       63950|63950                (No change)
+  L1 Hits:                           112771|112771               (No change)
+  L2 Hits:                              164|164                  (No change)
+  RAM Hits:                            1077|1077                 (No change)
+  Total read+write:                  114012|114012               (No change)
+  Estimated Cycles:                  151286|151286               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_free_only_16b_n16
+  Instructions:                       64321|64321                (No change)
+  L1 Hits:                           113246|113246               (No change)
+  L2 Hits:                              164|164                  (No change)
+  RAM Hits:                            1078|1078                 (No change)
+  Total read+write:                  114488|114488               (No change)
+  Estimated Cycles:                  151796|151796               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::mimalloc_small_churn_16b
+  Instructions:                       16629|16629                (No change)
+  L1 Hits:                            21435|21435                (No change)
+  L2 Hits:                               61|61                   (No change)
+  RAM Hits:                             502|502                  (No change)
+  Total read+write:                   21998|21998                (No change)
+  Estimated Cycles:                   39310|39310                (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::mimalloc_small_churn_16b_2n
+  Instructions:                       21557|21557                (No change)
+  L1 Hits:                            27897|27897                (No change)
+  L2 Hits:                               63|63                   (No change)
+  RAM Hits:                             502|502                  (No change)
+  Total read+write:                   28462|28462                (No change)
+  Estimated Cycles:                   45782|45782                (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::large_alloc_free_cycle
+  Instructions:                       49797|49797                (No change)
+  L1 Hits:                            94109|94109                (No change)
+  L2 Hits:                              185|185                  (No change)
+  RAM Hits:                            1109|1109                 (No change)
+  Total read+write:                   95403|95403                (No change)
+  Estimated Cycles:                  133849|133849               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::alloc_magazine_hit_only_16b
+  Instructions:                       56115|56115                (No change)
+  L1 Hits:                           102070|102070               (No change)
+  L2 Hits:                              163|163                  (No change)
+  RAM Hits:                            1073|1073                 (No change)
+  Total read+write:                  103306|103306               (No change)
+  Estimated Cycles:                  140440|140440               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::alloc_magazine_prefill_only_16b
+  Instructions:                       55757|55757                (No change)
+  L1 Hits:                           101635|101635               (No change)
+  L2 Hits:                              162|162                  (No change)
+  RAM Hits:                            1070|1070                 (No change)
+  Total read+write:                  102867|102867               (No change)
+  Estimated Cycles:                  139895|139895               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_own_thread_body_only_16b
+  Instructions:                       70637|70637                (No change)
+  L1 Hits:                           121334|121334               (No change)
+  L2 Hits:                              162|162                  (No change)
+  RAM Hits:                            1112|1112                 (No change)
+  Total read+write:                  122608|122608               (No change)
+  Estimated Cycles:                  161064|161064               (No change)
+r19_prf02_instrumented_iai::gate::perf_gate::dealloc_segment_base_of_ptr_probe_only_16b
+  Instructions:                       64050|64050                (No change)
+  L1 Hits:                           112871|112871               (No change)
+  L2 Hits:                              165|165                  (No change)
+  RAM Hits:                            1069|1069                 (No change)
+  Total read+write:                  114105|114105               (No change)
+  Estimated Cycles:                  151111|151111               (No change)
+
+Iai-Callgrind result: Ok. 13 without regressions; 0 regressed; 13 benchmarks finished in 6.36865s
+
+  bench                                                 Ir            L1            L2           RAM     EstCycles        Ir/op*
+  ------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                                   56,506       102,656           178         1,095       141,871         104.8
+  small_churn_16b_2n                                61,614       109,163           178         1,096       148,413             -
+  dealloc_prealloc_only_16b                         63,467       112,157           163         1,070       150,422             -
+  dealloc_free_only_16b_n8                          63,897       112,703           164         1,077       151,218             -
+  dealloc_free_only_16b_n9                          63,950       112,771           164         1,077       151,286             -
+  dealloc_free_only_16b_n16                         64,321       113,246           164         1,078       151,796             -
+  mimalloc_small_churn_16b                          16,629        21,435            61           502        39,310             -
+  mimalloc_small_churn_16b_2n                       21,557        27,897            63           502        45,782             -
+  large_alloc_free_cycle                            49,797        94,109           185         1,109       133,849             -
+  alloc_magazine_hit_only_16b                       56,115       102,070           163         1,073       140,440             -
+  alloc_magazine_prefill_only_16b                   55,757       101,635           162         1,070       139,895             -
+  dealloc_own_thread_body_only_16b                  70,637       121,334           162         1,112       161,064             -
+  dealloc_segment_base_of_ptr_probe_only_16b        64,050       112,871           165         1,069       151,111             -
+
+  * Ir/op = (Ir − B) / ops — marginal instruction count per operation, with
+    the one-time process bootstrap subtracted. B is taken PER ARM: SeferAlloc
+    rows use large_alloc_free_cycle (B=49,797); mimalloc_* rows use
+    mimalloc_bootstrap_proxy (B=-) — the two allocators' bootstrap
+    constants are never mixed (R22-15/task #366). Comparable across benches
+    within the SAME arm; the honest unit for per-op thresholds (review finding
+    F2). "-" = bootstrap proxy / no op-count / that arm's bootstrap bench absent.
+
+  Sefer/mimalloc marginal Ir/op ratio (workload-matched pairs):
+
+  workload          Sefer Ir/op      mi Ir/op         ratio
+  ---------------  ------------  ------------  ------------
+  small_churn_16b         104.8             -             -
+
+  ratio = Sefer Ir/op ÷ mimalloc Ir/op — > 1.000 means SeferAlloc retires MORE
+    instructions per op than mimalloc on that workload (i.e. mimalloc is
+    cheaper in Ir); < 1.000 means the reverse. "-" when a pair's row is
+    missing/filtered on either side.
+
+[iai] PASS — 13 bench(es) produced Ir

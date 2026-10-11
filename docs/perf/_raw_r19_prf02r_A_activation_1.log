@@ -1,0 +1,140 @@
+PRF02R_METADATA {"arm":"A","axis":"activation","repeat":1,"identity_sha256":"76b4f9d0ed144b1803409f6ecb4f01c52bb3346b51a5a336cd5a91f4052b849c","prereg_sha256":"d1e951abb5a65b97e332dba38a5db124177979a8a18e2314e2f0cefde04f67ba","features":"production internals bench-internals medium-classes","env":{"RUSTC_WRAPPER":"","CARGO_BUILD_JOBS":"3","CARGO_TARGET_DIR":"<repo>/target","R19_PRF02R_ARM":"A"}}
+{"arm":"A","expected":32,"n":16,"preallocated":64,"hits":32,"misses":0,"tcache":16,"routed_scans":0}
+
+running 1 test
+test realloc_tail_and_inplace_activation ... arm=A large_free=3
+arm=A inplace=1 alloc=0 move=2 promote=3 tail=1
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling zerocopy v0.8.52
+   Compiling serde_core v1.0.228
+   Compiling syn v2.0.118
+   Compiling serde v1.0.228
+   Compiling zmij v1.0.21
+   Compiling getrandom v0.3.4
+   Compiling libm v0.2.16
+   Compiling serde_json v1.0.150
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling num-traits v0.2.19
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.52
+   Compiling rustix v1.1.4
+   Compiling getrandom v0.4.3
+   Compiling memchr v2.8.2
+   Compiling crossbeam-epoch v0.9.20
+   Compiling itoa v1.0.18
+   Compiling rand_core v0.9.5
+   Compiling linux-raw-sys v0.12.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling regex-syntax v0.8.11
+   Compiling version_check v0.9.5
+   Compiling bitflags v2.13.0
+   Compiling once_cell v1.21.4
+   Compiling slotmap v1.1.1
+   Compiling cc v1.2.65
+   Compiling derive_more-impl v2.1.1
+   Compiling fastrand v2.4.1
+   Compiling rayon-core v1.13.0
+   Compiling either v1.16.0
+   Compiling tempfile v3.27.0
+   Compiling libmimalloc-sys v0.1.49
+   Compiling crossbeam-deque v0.8.6
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling wait-timeout v0.2.1
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling anstyle v1.0.14
+   Compiling fnv v1.0.7
+   Compiling ciborium-io v0.2.2
+   Compiling bit-vec v0.8.0
+   Compiling quick-error v1.2.3
+   Compiling clap_lex v1.1.0
+   Compiling plotters-backend v0.3.7
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling bit-set v0.8.0
+   Compiling proc-macro-error2 v2.0.1
+   Compiling rusty-fork v0.3.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling itertools v0.10.5
+   Compiling derive_more v2.1.1
+   Compiling regex-automata v0.4.14
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling cast v0.3.0
+   Compiling iai-callgrind v0.14.2
+   Compiling same-file v1.0.6
+   Compiling unarray v0.1.4
+   Compiling proptest v1.11.0
+   Compiling tinytemplate v1.2.1
+   Compiling regex v1.12.4
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling rayon v1.12.0
+   Compiling clap v4.6.1
+   Compiling sefer-region v0.2.0 (<repo>/crates/sefer-region)
+   Compiling ciborium v0.2.2
+   Compiling plotters v0.3.7
+   Compiling bincode v1.3.3
+   Compiling tokio-macros v2.7.0
+   Compiling is-terminal v0.4.17
+   Compiling oorandom v11.1.5
+   Compiling once-ptr-cell v0.1.0 (<repo>/crates/once-ptr-cell)
+   Compiling aligned-vmem v0.2.0 (<repo>/crates/aligned-vmem)
+   Compiling proc-memstat v0.1.0 (<repo>/crates/proc-memstat)
+   Compiling anes v0.1.6
+   Compiling pin-project-lite v0.2.17
+   Compiling size-classes v0.1.0 (<repo>/crates/size-classes)
+   Compiling tokio v1.52.3
+   Compiling sefer-alloc v0.3.0 (<repo>)
+   Compiling criterion v0.5.1
+   Compiling proc-probe v0.1.0 (<repo>/crates/proc-probe)
+   Compiling globalalloc-model v0.1.0 (<repo>/crates/globalalloc-model)
+   Compiling mimalloc v0.1.52
+   Compiling malloc-bench-rs v0.1.0 (<repo>/crates/malloc-bench-rs)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 54s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running `target/debug/examples/r19_prf02_activation A 32`
+   Compiling libc v0.2.186
+   Compiling getrandom v0.3.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling crossbeam-epoch v0.9.20
+   Compiling serde v1.0.228
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling crossbeam-deque v0.8.6
+   Compiling getrandom v0.4.3
+   Compiling rand_core v0.9.5
+   Compiling tempfile v3.27.0
+   Compiling wait-timeout v0.2.1
+   Compiling rusty-fork v0.3.1
+   Compiling rand v0.9.4
+   Compiling rand_chacha v0.9.0
+   Compiling rand_xorshift v0.4.0
+   Compiling rayon-core v1.13.0
+   Compiling is-terminal v0.4.17
+   Compiling proptest v1.11.0
+   Compiling rayon v1.12.0
+   Compiling sefer-alloc v0.3.0 (<repo>)
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (<repo>/crates/globalalloc-model)
+   Compiling iai-callgrind v0.14.2
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r19_prf02r_realloc_tail.rs (target/debug/deps/r19_prf02r_realloc_tail-42ca5e80243b7e2e)
+
+PRF02R_EXIT 0
