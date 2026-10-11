@@ -1,0 +1,64 @@
+//! Real ClassLeaves spill/read publication oracle; the Relaxed signal supplies
+//! no happens-before edge for fresh-leaf initialization.
+#![cfg(feature = "alloc-core")]
+#![deny(unsafe_code)]
+
+mod alloc_core {
+    pub mod os {
+        pub const SEGMENT: usize = sefer_alloc::SegmentLayout::SEGMENT;
+    }
+    pub mod size_classes {
+        pub const MIN_BLOCK: usize = sefer_alloc::SegmentLayout::MIN_BLOCK;
+        pub const SMALL_CLASS_COUNT: usize = sefer_alloc::SegmentLayout::SIZE_CLASS_TABLE.len();
+    }
+}
+
+// Only ClassLeaves is exercised; the included scanner/bitmap siblings are unused.
+#[allow(dead_code)]
+#[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
+mod remote_bitmap;
+
+use remote_bitmap::ClassLeaves;
+use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+fn leaves() -> Arc<ClassLeaves> {
+    let mut raw = Box::new(MaybeUninit::<ClassLeaves>::uninit());
+    // SAFETY: raw owns a private, aligned, writable ClassLeaves-sized slot;
+    // no reference to ClassLeaves or Drop accesses it before initialization.
+    #[allow(unsafe_code)]
+    unsafe {
+        ClassLeaves::initialize_at(raw.as_mut_ptr());
+    }
+    // SAFETY: initialize_at initialized both complete atomic arrays; the Box
+    // retains exclusive ownership and its original allocation/layout.
+    #[allow(unsafe_code)]
+    let initialized = unsafe { raw.assume_init() };
+    Arc::from(initialized)
+}
+
+#[test]
+fn mixed_leaf_initialization_is_visible_to_reader() {
+    let leaves = leaves();
+    assert!(leaves.issue(0, 3));
+    assert!(!leaves.prepared(1, 4));
+    let spilled = Arc::new(AtomicBool::new(false));
+    let reader_leaves = Arc::clone(&leaves);
+    let reader_spilled = Arc::clone(&spilled);
+    let reader = std::thread::spawn(move || {
+        while !reader_spilled.load(Ordering::Relaxed) {
+            std::thread::yield_now();
+        }
+        for _ in 0..64 {
+            assert_eq!(reader_leaves.encoded(0), 4);
+            std::thread::yield_now();
+        }
+    });
+    let prepared = leaves.prepare(1, 4);
+    // Deliberately not Release: only mixed's publication may synchronize the read.
+    spilled.store(true, Ordering::Relaxed);
+    reader.join().expect("ClassLeaves reader completed");
+    assert!(prepared);
+    assert!(leaves.prepared(1, 4));
+}
