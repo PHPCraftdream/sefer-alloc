@@ -46,6 +46,32 @@ pub struct SegmentHashHarness {
 
 #[doc(hidden)]
 impl SegmentHashHarness {
+    /// Drives the real owner attachment path with an address-only primordial.
+    /// Directory registration stores roots but never dereferences them; this
+    /// fixture must never use header-reading issue/unregister/recycle paths.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    pub fn attach_routes_for_test(&mut self) -> bool {
+        self.table.attach_owner(u32::MAX, self._slots[0]).is_some()
+    }
+
+    /// Real descriptor registration and RouteSlots growth, without reserving
+    /// MAX_SEGMENTS physical segments. Synthetic roots remain address keys
+    /// only; dropping the table unlinks descriptors without reading headers.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    pub fn register_route_for_test(&mut self) -> Option<u32> {
+        let base = Self::base_for_index(self.table.count() as usize);
+        self.table
+            .register(base, crate::alloc_core::os::SEGMENT, SegmentKind::Large)
+    }
+
     /// Logical membership fixture; synthetic hash roots are never read.
     pub fn active_set(&mut self, slot: usize, large: bool) {
         ActiveKindIndex::set(

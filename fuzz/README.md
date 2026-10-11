@@ -184,12 +184,22 @@ llvm-symbolizers, finally addr2line; missing tools fail setup rather than silent
 losing symbols. Some llvm-tools-preview distributions omit llvm-symbolizer.
 
 The suppression can hide genuine leaks of arrays allocated at this same site,
-including a missing free on growth. Existing routed-core construction hooks and
-sidecar counters do not observe RouteSlots array alloc/free totals. A trustworthy
-bounded-array test needs a RouteSlots-specific live-array/live-byte observer
-(including growth frees and final drop), plus actual registry slot reuse/claim
-observation; no textual substitute is added. Reconsider/remove the suppression
-when registry teardown changes, or when audit count/bytes unexpectedly grow.
+including a missing free on growth. The single-test integration target
+[`route_slots_bounded_per_slot`](../tests/route_slots_bounded_per_slot.rs) uses
+`bench-internals` cumulative RouteSlots array/byte alloc/free totals at quiescent
+checkpoints: real registry claims grow past eight routes, reuse the same observed
+slot without any new array allocation, and retain one bounded array after each
+completed operation. During growth, the old and fresh arrays transiently coexist
+(two arrays); the retained bound applies at completed-operation checkpoints, not
+to this transient peak. An owned
+routed core checks final drop returns its array/bytes to zero. A real SegmentTable
+address-only registration fixture additionally checks growth through MAX_SEGMENTS,
+repeated attachment rejection, full-table rejection, and final array drop without
+reserving thousands of physical Large spans. Requested System bytes are not RSS;
+the observers are not coherent concurrent snapshots. Run `cargo test --locked
+--features "production internals bench-internals" --test route_slots_bounded_per_slot`.
+Reconsider/remove the suppression when registry teardown changes, or when audit
+count/bytes unexpectedly grow.
 Disabling leak detection is an emergency fallback only, **not configured here**.
 
 ## Status

@@ -18,6 +18,10 @@ import { REPO_ROOT } from './lib.mjs';
 
 // Pure observers: read-only, no allocator-state mutation.
 const PURE_OBSERVERS = [
+  // CI-2b: relaxed cumulative System totals and actual slot layout only;
+  // no pointer input, metadata access, allocation, mutation, or counter reset.
+  "src/registry/segment_route/small_sidecar.rs::dbg_route_slots_system_totals",
+  "src/registry/segment_route/small_sidecar.rs::dbg_route_slot_bytes",
   "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
   "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",
@@ -345,6 +349,7 @@ export const REVIEWED_SURFACE = [
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['large_geometry_for_test'], 'observer', 'validated owned header geometry'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals'] }))),
   ...[
+    ['src/alloc_core/segment/segment_table/harness.rs', ['attach_routes_for_test', 'register_route_for_test'], 'mutator', 'exclusive owned fixture delegates to real attachment/registration; synthetic address keys never dereferenced and descriptors unlinked on drop'],
     ['src/global/maintenance_service.rs', ['try_fallback_step_for_test', 'fail_next_start_for_test', 'pause_start_for_test', 'wait_start_paused_for_test', 'fail_worker_for_test'], 'mutator', 'bounded maintenance step or explicit startup/worker fault injection; synchronization retained'],
     ['src/registry/segment_route/directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
     ['src/registry/segment_route/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],

@@ -2,7 +2,14 @@
 #![allow(unsafe_code)]
 
 use core::ptr;
+#[cfg(feature = "bench-internals")]
+use core::sync::atomic::{AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
+
+// Diagnostic totals only, never publication/synchronization. Snapshots are
+// meaningful at quiescent checkpoints; totals wrap like AtomicUsize::fetch_add.
+#[cfg(feature = "bench-internals")]
+static SYSTEM_TOTALS: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 
 use crate::alloc_core::segment_header::SegmentKind;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
@@ -17,6 +24,21 @@ pub(super) struct RouteSlots {
 }
 
 impl RouteSlots {
+    #[cfg(feature = "bench-internals")]
+    pub(super) fn system_totals() -> (usize, usize, usize, usize) {
+        (
+            SYSTEM_TOTALS[0].load(Ordering::Relaxed),
+            SYSTEM_TOTALS[1].load(Ordering::Relaxed),
+            SYSTEM_TOTALS[2].load(Ordering::Relaxed),
+            SYSTEM_TOTALS[3].load(Ordering::Relaxed),
+        )
+    }
+
+    #[cfg(feature = "bench-internals")]
+    pub(super) fn slot_bytes() -> usize {
+        core::mem::size_of::<Option<RouteRegistration<'static>>>()
+    }
+
     pub(super) fn new(owner: u32, primordial: *mut u8, segment_len: usize) -> Option<Self> {
         let mut slots = Self {
             slots: ptr::null_mut(),
@@ -49,6 +71,11 @@ impl RouteSlots {
         if fresh.is_null() {
             return None;
         }
+        #[cfg(feature = "bench-internals")]
+        {
+            SYSTEM_TOTALS[0].fetch_add(1, Ordering::Relaxed);
+            SYSTEM_TOTALS[2].fetch_add(layout.size(), Ordering::Relaxed);
+        }
         for i in 0..cap {
             // SAFETY: i < cap, the allocation has the exact Option layout,
             // and each slot is written once before any read.
@@ -62,9 +89,13 @@ impl RouteSlots {
         if self.cap != 0 {
             let old_layout = Layout::array::<Option<RouteRegistration<'static>>>(self.cap)
                 .unwrap_or_else(|_| std::process::abort());
-            // SAFETY: every old slot was moved out, and this is System's exact
-            // original allocation and layout.
+            // SAFETY: all handles were moved; System owns this exact allocation.
             unsafe { System.dealloc(self.slots.cast(), old_layout) };
+            #[cfg(feature = "bench-internals")]
+            {
+                SYSTEM_TOTALS[1].fetch_add(1, Ordering::Relaxed);
+                SYSTEM_TOTALS[3].fetch_add(old_layout.size(), Ordering::Relaxed);
+            }
         }
         self.slots = fresh;
         self.cap = cap;
@@ -230,5 +261,10 @@ impl Drop for RouteSlots {
             .unwrap_or_else(|_| std::process::abort());
         // SAFETY: all handles were dropped; System owns this exact allocation.
         unsafe { System.dealloc(self.slots.cast(), layout) };
+        #[cfg(feature = "bench-internals")]
+        {
+            SYSTEM_TOTALS[1].fetch_add(1, Ordering::Relaxed);
+            SYSTEM_TOTALS[3].fetch_add(layout.size(), Ordering::Relaxed);
+        }
     }
 }

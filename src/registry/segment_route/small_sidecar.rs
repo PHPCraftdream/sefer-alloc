@@ -17,6 +17,22 @@ pub struct SmallSidecar {
 }
 
 impl SmallSidecar {
+    /// Process-wide RouteSlots System totals: (arrays allocated, arrays freed,
+    /// bytes allocated, bytes freed). Read at quiescent checkpoints; separate
+    /// relaxed loads are not a coherent concurrent snapshot. No counter reset.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_route_slots_system_totals() -> (usize, usize, usize, usize) {
+        crate::alloc_core::segment_table::SegmentTable::route_slots_system_totals()
+    }
+
+    /// Actual Option<RouteRegistration> layout, not a fixed ABI/RSS estimate.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_route_slot_bytes() -> usize {
+        crate::alloc_core::segment_table::SegmentTable::route_slot_bytes()
+    }
+
     pub const WORDS: usize = SidecarBitmap::WORDS;
 
     /// # Safety
