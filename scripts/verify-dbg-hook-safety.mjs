@@ -128,6 +128,10 @@ const PURE_OBSERVERS = [
 
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
+  [
+    "src/registry/segment_route/directory.rs::dbg_with_shard_of_locked_for_test",
+    "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
+  ],
   ["src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
   ["src/registry/bootstrap/registry.rs::dbg_slot_generation", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic generation, without borrowing the core"],
   ["src/registry/heap_registry/counters.rs::dbg_slot_initialised", "Registry::slot may materialize a chunk and abort on OOM; then reads initialization state, without borrowing the core"],

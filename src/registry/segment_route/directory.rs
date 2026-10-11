@@ -869,6 +869,19 @@ impl RouteDirectory {
         }
     }
 
+    /// Runs a test closure while holding the shard selected by the address.
+    /// The pointer is only a numeric shard key and is never dereferenced.
+    /// Reentering this shard from `f` can deadlock: a liveness risk, not a
+    /// memory-safety precondition. Unwinding releases the ordinary guard.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_with_shard_of_locked_for_test(&self, ptr: *mut u8, f: impl FnOnce()) {
+        let key = ptr.addr() & !(SEGMENT - 1);
+        let guard = self.shards[Self::shard_index(key)].lock();
+        f();
+        drop(guard);
+    }
+
     /// Only `ptr.addr()` is used as a key; no reservation byte is read.
     pub fn lookup(&self, ptr: *mut u8) -> Option<RoutePin> {
         let addr = ptr.addr();
