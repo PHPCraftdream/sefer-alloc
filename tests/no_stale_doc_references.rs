@@ -119,6 +119,47 @@ fn root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings() {
     );
 }
 
+/// Every full Rust source path in manifest comments must resolve to a file.
+/// The filesystem is the oracle; adding a fictitious path makes this fail.
+#[test]
+fn cargo_toml_comment_source_paths_exist() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo = fs::read_to_string(manifest.join("Cargo.toml")).expect("read Cargo.toml");
+    let mut checked = 0usize;
+    let mut offenders = Vec::new();
+    for (line_number, line) in cargo.lines().enumerate() {
+        let Some(comment) = line.trim_start().strip_prefix('#') else {
+            continue;
+        };
+        for (start, _) in comment.match_indices("src/") {
+            // Match the manifest's ASCII path spelling, stopping before prose
+            // punctuation or a line-number suffix. Byte offsets stay UTF-8 safe.
+            let rest = &comment[start..];
+            let end = rest
+                .bytes()
+                .position(|b| {
+                    !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'/' | b'.' | b'-'))
+                })
+                .unwrap_or(rest.len());
+            let token = &rest[..end];
+            let Some(rs_end) = token.find(".rs") else {
+                continue;
+            };
+            let path = &token[..rs_end + 3];
+            checked += 1;
+            if !manifest.join(path).is_file() {
+                offenders.push(format!("Cargo.toml:{}: {path}", line_number + 1));
+            }
+        }
+    }
+    assert!(checked > 0, "no source paths found in manifest comments");
+    assert!(
+        offenders.is_empty(),
+        "manifest comments reference missing Rust source files:\n{}",
+        offenders.join("\n"),
+    );
+}
+
 #[test]
 fn no_crate_heap_module_path() {
     let mut files = Vec::new();
@@ -263,7 +304,7 @@ fn no_stale_abandon_adopt_substrate_references() {
 /// is contradicted by two REAL, intentional, release-surviving termination
 /// paths reachable from `SeferAlloc`'s `GlobalAlloc` impl:
 ///
-///   1. Five invariant tripwires documented in `src/global/sefer_alloc.rs`'s
+///   1. Five invariant tripwires documented in `src/global/sefer_alloc/core.rs`'s
 ///      module doc (R34-16, task #535, pinned separately by
 ///      `tests/no_panic_doc_accuracy.rs`) — release `assert!`/`.expect()`/
 ///      `unreachable!()` sites kept as deliberate defence-in-depth, which
@@ -310,15 +351,15 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
         "Cargo.toml's `alloc-global` comment reintroduced the blanket \
          'never panic/abort' overclaim without the qualifying caveat (Sol-F3 \
          regression). Ordinary failure paths are no-op/null, but five \
-         release-surviving invariant tripwires (src/global/sefer_alloc.rs) \
+         release-surviving invariant tripwires (src/global/sefer_alloc/core.rs) \
          can terminate the process by design, while chunk OOM on a new claim \
          can reach fallback. See \
          docs/reviews/2026-08-05-sol-release-readonly-review.md finding F3."
     );
     assert!(
-        block.contains("sefer_alloc.rs"),
+        block.contains("src/global/sefer_alloc/core.rs"),
         "Cargo.toml's `alloc-global` comment must point readers at \
-         `src/global/sefer_alloc.rs`'s module doc (the five release-surviving \
+         `src/global/sefer_alloc/core.rs`'s module doc (the five release-surviving \
          invariant tripwires) — Sol-F3 regression guard."
     );
     assert!(
@@ -874,7 +915,12 @@ fn production_feature_bundle_doc_sites_match_cargo_toml() {
 
     // Every doc site that writes the `production` bundle out as a
     // `+`-separated feature list (rather than just saying "`production`").
-    let sites: &[&str] = &["src/lib.rs", "src/global/sefer_alloc/core.rs", "README.md"];
+    let sites: &[&str] = &[
+        "src/lib.rs",
+        "src/global/sefer_alloc/core.rs",
+        "README.md",
+        "docs/INTEGRATION.md",
+    ];
 
     let mut offenders = Vec::new();
     for rel in sites {

@@ -204,13 +204,11 @@ impl AllocCore {
         // success paths read it to decide whether to self-heal a directory
         // bit — distinguishing "scan ran as periodic re-validation" (heal)
         // from "scan ran because the directory feature is OFF / sidecar not
-        // materialised / `numa-aware` skipped the directory path" (no heal,
-        // since there is no miss to repair and healing under `numa-aware`
-        // would muddy the `DIRECTORY_MISS_SELF_HEAL` canary signal).
-        // Under `numa-aware` the directory-driven lookup block below (which is
-        // the ONLY site that writes `true`) is compiled out entirely (gated
-        // `not(feature = "numa-aware")`), so this binding is read-only in that
-        // configuration — `mut` would be a warning under `--all-features`.
+        // materialised" (no heal, since there is no directory miss to repair).
+        // The directory-driven block is gated only on `alloc-segment-directory`
+        // and remains active under `numa-aware`, using node-bucket preference.
+        // It can set this binding to `true` in either configuration; only the
+        // forced rescue wrapper is excluded under `numa-aware`.
         #[cfg(feature = "alloc-segment-directory")]
         let mut periodic_revalidation_active = false;
         // Round 12 O-4 (data only): set when this call is a routed

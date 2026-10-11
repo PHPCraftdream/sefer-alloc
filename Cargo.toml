@@ -179,12 +179,12 @@ alloc-xthread = ["alloc-core"]
 # checked branches (OOM, a foreign pointer, a layout we refuse to serve)
 # return null / are a safe no-op, never panic. This is NOT a blanket
 # never-panic/never-abort guarantee for the whole entry-point surface --
-# see `src/global/sefer_alloc.rs`'s module doc for the four release-surviving
+# see `src/global/sefer_alloc/core.rs`'s module doc for the four release-surviving
 # invariant tripwires deliberately kept as release panics (defence-in-depth,
 # unreachable under correct operation; NOT a guaranteed abort -- no
 # `GlobalAlloc` method may unwind, and the crate does not lean on the std
 # shims to contain one, see that doc's R2-08 note) and
-# `src/registry/bootstrap.rs`'s `Registry::ensure_chunk` for an invariant
+# `src/registry/bootstrap/registry.rs`'s `Registry::ensure_chunk` for an invariant
 # abort if a caller claimed an already-materialised chunk but it is absent.
 # New claims and free-path lookups use fallible `slot_or_none`, so chunk OOM
 # can return to the allocator's fallback path. Reentrancy-free (M5) is upheld
@@ -269,7 +269,7 @@ batch-api = ["experimental", "alloc-core"]
 # This feature therefore gates the WRITE sites only — `PageMap::init_in_place`
 # (bootstrap, ×2), `carve_block`'s / `carve_batch`'s per-distinct-page
 # `set_class` "first class wins" stamp, and the decommit-reset `set_free`
-# re-marking loop (`alloc_core_small_pool.rs`) — out of the default/production
+# re-marking loop (`src/alloc_core/small/alloc_core_small_pool/decommit.rs`) — out of the default/production
 # build. The `PageMap` struct, its FOOTPRINT, and its offset in `Layout` stay
 # UNCONDITIONAL (present in every feature config) so the segment metadata
 # byte layout never shifts with this feature on/off — only the per-segment/
@@ -303,7 +303,7 @@ alloc-decommit = ["alloc-core"]
 # still recycles freed large-segment slots unconditionally, but empty
 # small segments cannot be recycled until they are decommitted; long-running
 # processes with many small-segment carve/decay cycles will pin slots and
-# eventually hit the 1024 cap. `alloc-decommit` closes this by decommitting
+# eventually hit the `MAX_SEGMENTS` cap. `alloc-decommit` closes this by decommitting
 # empty small segments and freeing their slot (#60). Add this feature for any long-running deployment.
 # R12-3 (P0-perf, EXPERIMENTAL A/B): size the Large/huge dedicated segment to
 # the exact page-rounded request (`round_up(header + size, OS page)`) instead
@@ -376,6 +376,10 @@ exact-span-large = ["alloc-core"]
 # with. This is why the feature is documented as "Windows-gated EFFECT" (the
 # RSS-deferral benefit is Windows-specific) rather than "Windows-gated CODE".
 #
+# Overridden by `numa-aware` (eager Large reservation with
+# `reserved_capacity == span_usable`, no extra growth headroom); see `numa-aware`.
+# `exact-span-large` still controls the page-rounded usable span under NUMA.
+#
 # Requires `exact-span-large` (the mechanism exists to counteract exactly
 # that feature's OPT-G headroom loss) and pulls in `aligned-vmem/lazy-commit`
 # for the reserve/commit primitives (the same dependency `alloc-lazy-commit`
@@ -390,7 +394,7 @@ large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit"]
 # R13-7 (P1-perf, EXPERIMENTAL, task #277): widens `AllocCore::large_cache`'s
 # fixed 8 base slots (`LARGE_CACHE_SLOTS`) via a lazily-materialised extension
 # sidecar of 32 additional slots (40 total) — see
-# `src/alloc_core/large_cache_extended.rs`'s module doc for the full design,
+# `src/alloc_core/large/large_cache_extended.rs`'s module doc for the full design,
 # design-alternatives writeup, and motivation
 # (`docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §4).
 # Invariants: materialises only on first overflow of the base 8 slots (zero
@@ -545,8 +549,8 @@ alloc-stats = ["alloc-core"]
 # plus its safe twin `tls_heap::dbg_mark_local_torn_for_test` (gated here too
 # per rule 2: no production caller — but kept a SAFE `fn`, see its own
 # comment for why). From R29-8 (task #439) this feature also covers a SECOND
-# file outside `heap_core_diag.rs`: `AllocCore::dbg_force_decommit_retain_for`
-# in `src/alloc_core/alloc_core_small_pool.rs` (a `pub unsafe fn`; one caller,
+# file outside `src/registry/heap_core/diag/diag_probes.rs`: `AllocCore::dbg_force_decommit_retain_for`
+# in `src/alloc_core/small/alloc_core_small_pool/decommit.rs` (a `pub unsafe fn`; one caller,
 # `tests/alloc_zeroed_virgin_small_skip.rs`'s
 # `decommit_retain_path_clears_virgin_bit` test). This was a SAFE `pub fn`
 # that decommitted a caller-pointer's segment payload via
@@ -559,8 +563,8 @@ alloc-stats = ["alloc-core"]
 # revert — see `docs/perf/OPEN_ITEMS.md`'s R24-6 entry for the doc-only
 # remediation chosen for that pre-existing hook instead. From R29-3 (task #434)
 # this feature also covers the segment-lifecycle decomposition hooks
-# (`AllocCore::dbg_decomp_*` in `src/alloc_core/alloc_core_small_pool.rs` +
-# `HeapCore` delegation in `src/registry/heap_core_diag.rs`; two `pub unsafe fn`
+# (`AllocCore::dbg_decomp_*` in `src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs` +
+# `HeapCore` delegation in `src/registry/heap_core/diag/diag_probes.rs`; two `pub unsafe fn`
 # — `dbg_decomp_release`/`dbg_decomp_decommit_payload` — the rest safe; one
 # caller each, `examples/r29_3_decomposition_gate.rs` +
 # `benches/perf_gate_iai.rs`'s `decomp_*` arms). This feature is NOT
@@ -572,11 +576,11 @@ alloc-stats = ["alloc-core"]
 # forwards to `aligned-vmem/bench-internals`, gating that crate's own
 # `UNIX_EXACT_RESERVE_*`/`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
 # path-activation counters (surfaced here via `AllocCore::dbg_unix_exact_reserve_*`/
-# `dbg_windows_reserve_commit_*` in `src/alloc_core/alloc_core_core_diag.rs`),
+# `dbg_windows_reserve_commit_*` in `src/alloc_core/alloc_core/alloc_core_core_diag/vmem.rs`),
 # plus `aligned-vmem/lazy-commit` — the crate-level reserve/commit-SPLIT
 # primitive (`reserve_aligned_lazy` + `commit_range`) the R32-13 Windows
 # decomposition gate's `dbg_decomp_win_reserve_only`/`dbg_decomp_win_commit_only`
-# hooks (`src/alloc_core/alloc_core_small_pool.rs`) use to time
+# hooks (`src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) use to time
 # `VirtualAlloc(MEM_RESERVE)` separately from `VirtualAlloc(MEM_COMMIT)`. This
 # is the CRATE-LEVEL `lazy-commit` feature only (no sefer-level lazy-commit
 # POLICY feature — `primordial-lazy-commit`/`small-segment-lazy-commit` are
@@ -621,7 +625,7 @@ bench-internals = ["aligned-vmem?/bench-internals", "aligned-vmem?/lazy-commit"]
 # constant that is 49 (unchanged) without it, so a non-`medium-classes` build
 # is byte-for-byte identical to a build predating this feature.
 #
-# See `src/alloc_core/size_classes.rs` module doc for the full scheme and
+# See `src/alloc_core/platform/size_classes.rs` module doc for the full scheme and
 # `benches/medium_size_sweep.rs` for the before/after measurement this
 # feature is judged against. Requires `alloc-core`.
 medium-classes = ["alloc-core"]
@@ -648,14 +652,10 @@ medium-classes = ["alloc-core"]
 # to a pre-R9-4 build — every constant this feature touches is behind an
 # `#[cfg]` whose predicate includes `medium-classes-wide`.
 #
-# Encoding-headroom note: the hardened `RemoteFreeRing` packed entry's
-# 6-bit `class` field has its collision-margin const-assert pinned at
-# `SMALL_CLASS_COUNT <= 62` (`src/alloc_core/remote_free_ring.rs`). Adding
-# 3 classes takes the count 55 → 58, still strictly below 62 — the
-# non-collision argument holds, with a narrower margin (4 headroom values
-# instead of `medium-classes`' 7). A future further bump past 62 needs a
-# wider field; see the `entry_never_collides_with_ring_slot_empty`
-# regression test.
+# Historical encoding-headroom note: the retired `RemoteFreeRing` packed entry
+# used a 6-bit class field with a `SMALL_CLASS_COUNT <= 62` assertion.
+# The current size-class scheme lives in `src/alloc_core/platform/size_classes.rs`;
+# cross-thread terminal publication now uses sidecar bits, not that ring encoding.
 medium-classes-wide = ["medium-classes"]
 # R7-A1: per-class segment directory — a lazily-materialised
 # `class_nonempty` bitmap sidecar that replaces the O(S) linear scan in
@@ -777,7 +777,7 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 # reserved exactly ONCE per process and is PROVABLY excluded from the
 # empty→pool→decommit→release lifecycle for its whole lifetime —
 # `AllocCore::dec_live_and_maybe_decommit` / `dec_live_batch_and_maybe_decommit`
-# (`alloc_core_small_pool.rs`) both hard-gate on
+# (`src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs`) both hard-gate on
 # `matches!(SegmentHeader::kind_at(base), SegmentKind::Small)`, which a
 # `SegmentKind::Primordial` base never satisfies ("NEVER decommit the
 # PRIMORDIAL segment" — see that function's own comment). So this policy
@@ -792,6 +792,8 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 # `production` since R12-9 (the
 # measured GO in `docs/perf/R12_9_PRIMORDIAL_LAZY_COMMIT.md`, confirmed by
 # the user): the sibling `small-segment-lazy-commit` stays opt-in only.
+# Overridden by `numa-aware` (eager primordial reservation via
+# `Segment::reserve`, not NUMA node binding); see `numa-aware`.
 # Feature-OFF: the primordial reservation is the plain eager
 # `Segment::reserve`, byte-for-byte unchanged from pre-R12-9.
 primordial-lazy-commit = [
@@ -913,7 +915,7 @@ core_affinity = { version = "0.8", optional = true }
 # `alloc-core` feature (and every feature that depends on it).
 aligned-vmem = { path = "crates/aligned-vmem", version = "0.2", optional = true }
 # CRATE-P3: the lazy CAS-published pointer cell (UNINIT -> INITIALIZING -> READY
-# with OOM rollback + loser re-race), extracted from `registry/bootstrap.rs`'s
+# with OOM rollback + loser re-race), extracted from `src/registry/bootstrap/ensure.rs`'s
 # per-chunk materialisation state machine and
 # `global/fallback.rs`'s init state-word. Allocation-free and
 # `#[global_allocator]`-safe (no std sync, no reentrancy) — the exact niche the
@@ -923,8 +925,8 @@ aligned-vmem = { path = "crates/aligned-vmem", version = "0.2", optional = true 
 once-ptr-cell = { path = "crates/once-ptr-cell", version = "0.1", optional = true }
 # CRATE-P5: const-built size-class table + compile-time-derived O(1) size->class
 # lookup + alignment-divisibility classifier, extracted from
-# `src/alloc_core/size_classes.rs` (pure safe const arithmetic — no unsafe, no
-# memory). `src/alloc_core/size_classes.rs` is now a thin compat shim that wires
+# `src/alloc_core/platform/size_classes.rs` (pure safe const arithmetic — no unsafe, no
+# memory). `src/alloc_core/platform/size_classes.rs` is now a thin compat shim that wires
 # sefer's one concrete instantiation of the crate's const-generic builder and
 # re-exports the exact `super::size_classes::*` surface every in-tree call site
 # already uses. Pulled in ONLY by `alloc-core`. See `crates/size-classes`.
@@ -1102,7 +1104,7 @@ name = "global_alloc"
 harness = false
 # Sol-F1 (task #563): `internals` added — this file calls
 # `AllocCore::dbg_layout_class_for`, moved behind `internals` in
-# `alloc_core_core_diag.rs` (release-readiness review finding F1).
+# `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs` (release-readiness review finding F1).
 # I5 (task #583): `bench-internals` added — this file calls
 # `SeferAlloc::dbg_trim_current_thread`, moved behind `bench-internals` +
 # `internals` (release-readiness review finding F5).
@@ -1314,7 +1316,7 @@ name = "paired_ab_large_cache_extended_off"
 # Sol-F1 (task #563): `internals` added — the shared workload
 # (`examples/_shared/paired_ab_large_cache_extended_turnover_workload.rs`)
 # calls `AllocCore::dbg_small_class_count`/`dbg_block_size`, both moved
-# behind `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# behind `internals` in `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs` (release-readiness review
 # finding F1: gating the `alloc_core` module PATH alone, R34-3/task #522,
 # did not hide `AllocCore`'s crate-root-reachable inherent `dbg_*` methods).
 required-features = ["alloc-global", "internals"]
@@ -1358,7 +1360,7 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals", "inter
 name = "r31_3_large_cache_extended_narrow_on"
 # H2 (task #572) fallout: same reason as `_narrow_off` immediately above,
 # plus `dbg_current_large_cache_extension_materialised`, which is ALSO
-# gated on `large-cache-extended` (`src/global/sefer_alloc.rs`'s own cfg) —
+# gated on `large-cache-extended` (`src/global/sefer_alloc/diag.rs`'s own cfg) —
 # a requirement the doc comment above already documented in this target's
 # invocation string ("--features ... large-cache-extended") but that was
 # never actually encoded in `required-features` until now; found by
@@ -1472,7 +1474,7 @@ required-features = ["alloc-global"]
 name = "r12_3_exact_span_measure"
 # Sol-F1 (task #563): `internals` added — this file calls
 # `AllocCore::dbg_span_usable_of`, moved behind `internals` in
-# `alloc_core_core_diag.rs` (release-readiness review finding F1).
+# `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs` (release-readiness review finding F1).
 required-features = ["alloc-core", "internals"]
 
 # R12-4 (P0-perf, EXPERIMENTAL Windows-gated-effect prototype): THROWAWAY
@@ -1523,7 +1525,7 @@ required-features = ["alloc-core", "alloc-decommit", "internals"]
 name = "r13_7_large_cache_extended_hit_rate_measure"
 # Sol-F1 (task #563): `internals` added — this file calls
 # `AllocCore::dbg_small_class_count`/`dbg_block_size`, both moved behind
-# `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# `internals` in `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs` (release-readiness review
 # finding F1).
 required-features = ["alloc-core", "alloc-decommit", "internals"]
 
@@ -1556,9 +1558,10 @@ required-features = ["alloc-core", "alloc-decommit", "internals"]
 [[example]]
 name = "r13_8_medium_working_set_judge"
 # Sol-F1 (task #563): `internals` added — this file calls
-# `AllocCore::dbg_small_class_count`/`dbg_block_size`/`dbg_max_segments`/
-# `dbg_table_count`, all moved behind `internals` in
-# `alloc_core_core_diag.rs` (release-readiness review finding F1).
+# `AllocCore::dbg_small_class_count`/`dbg_block_size` in
+# `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs` and
+# `dbg_max_segments`/`dbg_table_count` in
+# `src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs`, all behind `internals`.
 required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
@@ -1655,15 +1658,17 @@ required-features = ["alloc-global", "alloc-xthread", "internals", "bench-intern
 name = "medium_size_sweep"
 harness = false
 # Sol-F1 (task #563): `internals` added — this file calls
-# `AllocCore::dbg_table_count`/`dbg_layout_class_for`, both moved behind
-# `internals` in `alloc_core_core_diag.rs` (release-readiness review
-# finding F1).
+# `AllocCore::dbg_table_count` in
+# `src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs` and
+# `dbg_layout_class_for` in
+# `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs`, both behind
+# `internals` (release-readiness review finding F1).
 required-features = ["alloc-core", "internals"]
 
 # R6-OPT-A4 (radical_optimization_review §4 P1-6 measurement plan / §5.5 item
 # 7 / §6 Stage A.5): deterministic multi-segment directory-scan JUDGE for
 # `AllocCore::find_segment_with_free_impl`'s O(segments) scan
-# (`src/alloc_core/alloc_core_small.rs`). Three prior optimisation attempts
+# (`src/alloc_core/small/alloc_core_small/find_segment.rs`). Three prior optimisation attempts
 # (X5, T10, R5-R1) measured ~zero improvement because the only existing judge
 # that exercises this scan, `perf_gate_iai.rs`'s `multiseg_cold_256k`, builds
 # only 3 segments — deep in the flat region of any O(S) curve. This harness
@@ -1700,7 +1705,7 @@ name = "directory_threshold_probe"
 harness = false
 # Sol-F1 (task #563): `internals` added — this file calls
 # `AllocCore::dbg_block_size`/`dbg_small_class_count`, both moved behind
-# `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# `internals` in `src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs` (release-readiness review
 # finding F1).
 required-features = ["alloc-core", "internals"]
 
@@ -1838,7 +1843,7 @@ required-features = ["alloc-global", "fastbin", "internals"]
 # every call after the first actually pops a RECYCLED block off the free
 # list instead of exercising the bump-carve path `virgin-zero-skip` gates
 # (confirmed by tracing `alloc_small_with_virgin`'s dispatch order,
-# `src/alloc_core/alloc_core_small.rs:274-297`; see
+# `src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs`; see
 # `docs/reviews/2026-07-30-r29-followup-readonly-review.md` §3 for the 8-point
 # judge design this bench implements, and
 # `docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` for the measured result).
@@ -1964,7 +1969,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 # `alloc-global` (not `alloc-xthread`, unlike the r27_3 sibling) because this
 # probe only reaches `sefer_alloc::registry` (which is `alloc-global`-gated,
 # `src/lib.rs:315-317`) and `config_conflicts_total` (`alloc-xthread`-independent,
-# `src/registry/heap_registry.rs:667`) — verified by building with exactly
+# `src/registry/heap_registry/counters.rs`) — verified by building with exactly
 # this feature set and no more (`cargo build --example
 # r29_13_large_cache_retention_gate --features "alloc-global alloc-decommit
 # bench-internals"` succeeds; without `alloc-global` it fails E0432 on
@@ -2278,7 +2283,7 @@ required-features = ["alloc-global", "bench-internals", "internals"]
 # `recommit_pages` (the SAME production backends `dbg_decomp_*` already
 # wraps) plus the new `dbg_decomp_win_reserve_only`/`_commit_only`/
 # `_release_only` reserve-vs-commit SPLIT hooks (task #504,
-# `alloc_core_small_pool.rs`) that isolate `VirtualAlloc(MEM_RESERVE)` from
+# `src/alloc_core/small/alloc_core_small_pool/decomp_hooks.rs`) that isolate `VirtualAlloc(MEM_RESERVE)` from
 # `VirtualAlloc(MEM_COMMIT)` — R29-3's own decomposition lumped these into
 # ONE "OS roundtrip" figure, adequate for the Linux question but too coarse
 # for Windows, where they are two syscalls with potentially different cost.
