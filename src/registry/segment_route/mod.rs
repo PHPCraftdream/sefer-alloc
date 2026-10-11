@@ -15,6 +15,8 @@ mod directory;
 mod error;
 mod kind;
 mod large_state;
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+mod paused_publish;
 mod pin;
 mod registration;
 mod route_cut;
@@ -29,6 +31,8 @@ pub use directory::RouteDirectory;
 pub use error::RouteError;
 pub use kind::RouteKind;
 pub use large_state::LargeState;
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+pub use paused_publish::PausedPublish;
 pub use pin::RoutePin;
 pub use registration::RouteRegistration;
 pub use route_cut::RouteCut;

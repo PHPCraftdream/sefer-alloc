@@ -21,7 +21,9 @@ use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 const GRANULES: usize = SEGMENT / MIN_BLOCK;
 const WORDS: usize = GRANULES / 64;
+const SUMMARY_WORDS: usize = WORDS / 64;
 const _: () = {
+    assert!(SUMMARY_WORDS == 64);
     assert!(SEGMENT == 4 * 1024 * 1024);
     assert!(MIN_BLOCK == 16);
     assert!(WORDS == 4096);
@@ -33,6 +35,7 @@ const _: () = {
 /// it does not allocate, initialize, or bind a reservation pointer.
 pub(crate) struct SidecarBitmap<'a> {
     pub(super) pending: &'a [AtomicU64],
+    pub(super) summary: &'a [AtomicU64],
     pub(super) classes: ClassMap<'a>,
 }
 
@@ -53,6 +56,7 @@ impl ClassMap<'_> {
 }
 
 impl<'a> SidecarBitmap<'a> {
+    pub(crate) const SUMMARY_WORDS: usize = SUMMARY_WORDS;
     pub(crate) const WORDS: usize = WORDS;
     pub(crate) const GRANULES: usize = GRANULES;
 
@@ -60,18 +64,26 @@ impl<'a> SidecarBitmap<'a> {
     /// before segment publication. Its lifetime must extend through all cuts.
     pub(crate) fn from_initialized(
         pending: &'a [AtomicU64],
+        summary: &'a [AtomicU64],
         classes: &'a [AtomicU8],
     ) -> Option<Self> {
-        (pending.len() == WORDS && classes.len() == GRANULES).then_some(Self {
-            pending,
-            classes: ClassMap::Dense(classes),
-        })
+        (pending.len() == WORDS && summary.len() == SUMMARY_WORDS && classes.len() == GRANULES)
+            .then_some(Self {
+                pending,
+                summary,
+                classes: ClassMap::Dense(classes),
+            })
     }
 
     #[cfg_attr(test, allow(dead_code))]
-    pub(crate) fn from_leaves(pending: &'a [AtomicU64], classes: &'a ClassLeaves) -> Option<Self> {
-        (pending.len() == WORDS).then_some(Self {
+    pub(crate) fn from_leaves(
+        pending: &'a [AtomicU64],
+        summary: &'a [AtomicU64],
+        classes: &'a ClassLeaves,
+    ) -> Option<Self> {
+        (pending.len() == WORDS && summary.len() == SUMMARY_WORDS).then_some(Self {
             pending,
+            summary,
             classes: ClassMap::Leaves(classes),
         })
     }
@@ -107,20 +119,92 @@ impl<'a> SidecarBitmap<'a> {
     /// last producer access to the reclaimable reservation and ledger. Afterwards
     /// only a discovery-summary bit in the SAME sidecar may be set, using an
     /// address obtained before this RMW while RoutePin is held, then the pin
-    /// released. Strict trim and periodic maintenance ignore summary; this
-    /// permission does not imply a runtime summary implementation.
+    /// released. Strict trim and periodic maintenance ignore summary.
     /// Exactly one producer publishes each valid allocation instance. An
     /// unpublished producer retains its segment credit; a published one
     /// retains it until reclaim.
+    #[inline(always)]
     pub(crate) fn publish(&self, offset: u32) -> bool {
-        let Some(granule) = Self::granule(offset) else {
-            return false;
-        };
+        self.publish_sequence::<false>(offset).is_some()
+    }
+
+    // One order for production, paused first invocation and its continuation.
+    // M5' swaps this constant to [false, true].
+    const HALVES: [bool; 2] = [true, false];
+
+    /// Both the ordinary publisher and the paused hook execute this sequence.
+    /// The const pause removes the second invocation, not a copy of the LP.
+    #[inline(always)]
+    fn publish_sequence<const PAUSE: bool>(&self, offset: u32) -> Option<(&'a AtomicU64, u64)> {
+        let granule = Self::granule(offset)?;
+        let word = granule / 64;
+        // Prepare notification capability before any actual half invocation.
+        let summary = &self.summary[word / 64];
+        let summary_bit = 1u64 << (word % 64);
+        for pending_half in Self::HALVES {
+            if pending_half {
+                if !self.publish_pending_half(granule) {
+                    return None;
+                }
+            } else {
+                Self::publish_summary_half(summary, summary_bit);
+            }
+            if PAUSE {
+                break;
+            }
+        }
+        Some((summary, summary_bit))
+    }
+
+    #[inline(always)]
+    fn publish_pending_half(&self, granule: usize) -> bool {
         if self.classes.encoded(granule) == 0 {
             return false;
         }
         self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
         true
+    }
+
+    #[inline(always)]
+    fn publish_summary_half(summary: &AtomicU64, summary_bit: u64) {
+        let notify = summary.load(Ordering::Relaxed) & summary_bit == 0;
+        if notify {
+            summary.fetch_or(summary_bit, Ordering::Release);
+        }
+        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+        super::Prf01SidecarOracle::published(u64::from(notify), 1);
+    }
+
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[cfg_attr(test, allow(dead_code))] // Source-included fixtures have no route handles.
+    #[inline(always)]
+    pub(crate) fn pause_publish(&self, offset: u32) -> Option<(&'a AtomicU64, u64)> {
+        self.publish_sequence::<true>(offset)
+    }
+
+    /// Baseline continuation uses only the saved notification capability.
+    /// The lazy pending capability is invoked ONLY under the reversed-order
+    /// counterfactual, where the first invocation has not performed the LP.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[cfg_attr(test, allow(dead_code))] // Source-included fixtures have no route handles.
+    #[inline(always)]
+    pub(crate) fn resume_publish(summary: &AtomicU64, bit: u64, pending: impl FnOnce() -> bool) {
+        if Self::HALVES[1] {
+            if !pending() {
+                std::process::abort();
+            }
+        } else {
+            Self::publish_summary_half(summary, bit);
+        }
+    }
+
+    /// Test-only lazy continuation for M5'; no reservation access, and never
+    /// called after the pending LP in the baseline publication order.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[cfg_attr(test, allow(dead_code))] // Source-included fixtures have no route handles.
+    #[inline(always)]
+    pub(crate) fn resume_pending_for_test(&self, offset: u32) -> bool {
+        Self::granule(offset).is_some_and(|granule| self.publish_pending_half(granule))
     }
 
     /// Owner fixes an exclusive upper bound in bytes. The caller's high water
@@ -146,7 +230,31 @@ impl<'a> SidecarBitmap<'a> {
             classes: self.classes,
             next_word: start_word,
             end_word,
+            summarized: None,
+            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+            summary_visited: 0,
         })
+    }
+
+    /// Discovery only. Clear each summary word before any of its pending cuts.
+    /// Concurrent notifications may wait for the next discovery; strict and
+    /// bounded maintenance must continue to use scan/scan_from instead.
+    #[cfg_attr(test, allow(dead_code))] // Fixed-only source-included primitive fixtures.
+    pub(crate) fn scan_summarized_from(
+        &self,
+        high_water: usize,
+        start_word: usize,
+    ) -> Option<BitmapScan<'a>> {
+        let mut scan = self.scan_from(high_water, start_word)?;
+        scan.summarized = Some((
+            self.summary,
+            self.pending,
+            start_word / 64,
+            0,
+            0,
+            start_word,
+        ));
+        Some(scan)
     }
 
     fn granule(offset: u32) -> Option<usize> {
