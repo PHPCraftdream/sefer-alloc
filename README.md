@@ -696,7 +696,8 @@ hard compile error in every configuration:
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync` impl on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. `HeapSlot` is deliberately not `Send`. | `alloc-global` |
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | file owns the lease-claim path: slot picking + the `FREE → LIVE` CAS (`claim_lease` / `claim_lease_with_config`), OOM push-back, the config-conflict rollback guard, and `HeapLease` (its `Drop` performs the `LIVE → FREE` Release CAS) — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell`. The legacy raw-pointer surface (`claim` / `claim_with_config` / `unsafe fn recycle` / `HeapLease::into_raw`) was removed (task #2119) | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
-| [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
+| [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words, the discovery summary words and the adaptive class map before publication. | `alloc-global` |
+| [`src/registry/segment_route/paused_publish.rs`](src/registry/segment_route/paused_publish.rs) | Owned post-linearization notification capability of the paused-publication test hook: retains the consuming pin and a pre-LP sidecar atomic address; `resume` writes only that independently allocated sidecar, never a reservation or ledger. | `alloc-global` + `internals bench-internals` |
 | [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, atomic initialization and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/registry/segment_route/shard_lock.rs`](src/registry/segment_route/shard_lock.rs) | Non-allocating spin lock guarding route-directory shards; std `Mutex` boxes a pthread mutex on first lock on macOS, which would re-enter the installed global allocator during heap construction. | `alloc-global` |
@@ -740,7 +741,7 @@ item-scoped regions.
 
 | File | Sites | What they cover |
 |---|---|---|
-| [`src/registry/segment_route/pin.rs`](src/registry/segment_route/pin.rs) | 2 | Consuming Small/Large publication boundaries: the caller must uniquely own and transfer the current allocation; address lookup alone grants no right to free it. |
+| [`src/registry/segment_route/pin.rs`](src/registry/segment_route/pin.rs) | 4 | Consuming Small/Large publication boundaries: the caller must uniquely own and transfer the current allocation; address lookup alone grants no right to free it. |
 | [`src/registry/segment_route/registration.rs`](src/registry/segment_route/registration.rs) | 1 | `RouteRegistration::drop` — drops the counted owner reference exactly once, only after a successful unlink; a failed unlink during Windows process exit intentionally retains the descriptor and its sidecar. |
 | [`src/alloc_core/alloc_core/mem/mem_impl.rs`](src/alloc_core/alloc_core/mem/mem_impl.rs) | 4 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract); plus `dealloc_at_base` (the shared `kind_at`-onward tail both `dealloc` and the non-fastbin `dealloc_with_base` call) and `dealloc_with_base` itself (xxs-r5-01c: already-proven-`base` sibling entry, non-fastbin only) |
 | [`src/alloc_core/alloc_core/lifecycle.rs`](src/alloc_core/alloc_core/lifecycle.rs) | 1 | `Drop::drop` — internal call-site block into `deref_large_cache_extension_mut` (R14-1, task #286) |
@@ -770,8 +771,8 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **93** tier-2 item-scoped allows across **29**
+That's the full list (both tiers): **29** tier-1 module-level seams (23 in
+`src/`, 6 in `crates/`) plus **95** tier-2 item-scoped allows across **29**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1383,7 +1384,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **386 integration test files**,
+needs its acceptance run. The present tree contains **387 integration test files**,
 **89 example binaries**, **26 benches**, and **14 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1393,7 +1394,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (386 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (387 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (89 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (26 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |

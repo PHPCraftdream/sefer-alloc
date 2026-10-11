@@ -48,6 +48,38 @@ impl RoutePin {
             .small_sidecar()
             .is_some_and(|sidecar| sidecar.publish(offset))
     }
+    /// Publish only the authoritative pending bit, simulating a producer
+    /// paused before notification. Consumes the pin without touching reservation.
+    ///
+    /// # Safety
+    /// This pin and offset must identify a current, uniquely owned issued Small
+    /// or Primordial block. Transfer that ownership exactly once; after success
+    /// never access or deallocate the block. The pin must remain held through
+    /// the pending LP (enforced here by consuming self after publication).
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_publish_pending_only_for_test(self, offset: u32) -> bool {
+        // SAFETY: identical ownership-transfer contract; abandoning the handle
+        // omits only the notification, not the actual pending half.
+        unsafe { self.dbg_pause_publish_for_test(offset) }.is_some()
+    }
+
+    /// Pause the shared production invocation sequence after its first half.
+    ///
+    /// # Safety
+    /// This pin and offset identify the caller's current uniquely owned issued
+    /// Small/Primordial allocation. Successful return transfers ownership at LP:
+    /// never access or free that instance again, even if the handle is dropped.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_pause_publish_for_test(self, offset: u32) -> Option<super::PausedPublish> {
+        let (summary, bit) = self.entry.small_sidecar()?.pause_publish(offset)?;
+        let summary = core::ptr::NonNull::from(summary);
+        Some(super::PausedPublish::new(self, summary, bit, offset))
+    }
+
     /// Terminal LIVE(g) -> PENDING(g) CAS, consuming this pin.
     ///
     /// # Safety

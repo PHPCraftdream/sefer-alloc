@@ -14,7 +14,11 @@ use super::RouteScan;
 pub struct SmallSidecar {
     pending: [AtomicU64; SidecarBitmap::WORDS],
     classes: ClassLeaves,
+    summary: [AtomicU64; SidecarBitmap::SUMMARY_WORDS],
 }
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<SmallSidecar>() == 41_984 + 512);
 
 impl SmallSidecar {
     /// Process-wide RouteSlots System totals: (arrays allocated, arrays freed,
@@ -47,13 +51,20 @@ impl SmallSidecar {
             // initialized once before directory publication.
             unsafe { pending.add(i).write(AtomicU64::new(0)) };
         }
+        // SAFETY: disjoint summary field in exclusive uninitialized storage;
+        // each of its 64 atomics is written exactly once before publication.
+        let summary = unsafe { ptr::addr_of_mut!((*raw).summary).cast::<AtomicU64>() };
+        for i in 0..SidecarBitmap::SUMMARY_WORDS {
+            // SAFETY: i is within the summary field; no observer exists yet.
+            unsafe { summary.add(i).write(AtomicU64::new(0)) };
+        }
         // SAFETY: disjoint classes field in the same private allocation;
         // pending is initialized and publication is still excluded.
         unsafe { ClassLeaves::initialize_at(ptr::addr_of_mut!((*raw).classes)) };
     }
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
-        SidecarBitmap::from_leaves(&self.pending, &self.classes)
+        SidecarBitmap::from_leaves(&self.pending, &self.summary, &self.classes)
             .unwrap_or_else(|| std::process::abort())
     }
 
@@ -161,6 +172,24 @@ impl SmallSidecar {
             && self.pending[bit / 64].load(Ordering::Acquire) & (1u64 << (bit % 64)) != 0
     }
 
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn pause_publish(&self, offset: u32) -> Option<(&AtomicU64, u64)> {
+        self.bitmap().pause_publish(offset)
+    }
+
+    /// Remaining actual pending half for the reversed-order test counterfactual.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn resume_pending_for_test(&self, offset: u32) -> bool {
+        self.bitmap().resume_pending_for_test(offset)
+    }
+
+    /// Actual discovery scanner, exposed only for deterministic owner tests.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn scan_summarized_for_test(&self, high_water: usize) -> Option<RouteScan<'_>> {
+        self.scan_summarized_from(high_water, 0)
+    }
+
     /// Producer terminal publication, called by consuming RoutePin.
     pub(super) fn publish(&self, offset: u32) -> bool {
         self.bitmap().publish(offset)
@@ -170,6 +199,16 @@ impl SmallSidecar {
     pub fn scan(&self, high_water: usize) -> Option<RouteScan<'_>> {
         self.bitmap()
             .scan(high_water)
+            .map(|inner| RouteScan { inner })
+    }
+
+    pub(crate) fn scan_summarized_from(
+        &self,
+        high_water: usize,
+        word: usize,
+    ) -> Option<RouteScan<'_>> {
+        self.bitmap()
+            .scan_summarized_from(high_water, word)
             .map(|inner| RouteScan { inner })
     }
 

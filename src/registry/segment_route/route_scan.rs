@@ -9,6 +9,11 @@ pub struct RouteScan<'a> {
 }
 
 impl<'a> RouteScan<'a> {
+    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    pub(crate) fn summary_words_visited(&self) -> u64 {
+        self.inner.summary_words_visited()
+    }
+
     pub fn next_cut(&mut self) -> Option<RouteCut<'a>> {
         self.inner.next_cut().map(|inner| RouteCut { inner })
     }
