@@ -184,13 +184,13 @@ fn heap_cases() {
                 );
                 #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
                 if free_layout != old && heap.dbg_owner_id_for(interior).is_some() {
-                    // M5 oracle: routing + scalar canonical re-resolution only.
-                    // A substrate fallback adds a third mutable lookup even
-                    // though its own guard also counts and preserves the block.
+                    // M5 oracle (PRF-02): the own free resolves the owned block
+                    // exactly once; the former second canonical re-resolution
+                    // is gone, as on the batch path below.
                     assert_eq!(
                         sefer_alloc::registry::HeapCore::dbg_contains_base_tier1_hits()
                             + sefer_alloc::registry::HeapCore::dbg_contains_base_tier1_misses(),
-                        lookups_before + 2
+                        lookups_before + 1
                     );
                 }
                 assert_eq!(heap.dbg_owner_id_for(ptr), owner);

@@ -59,9 +59,27 @@ fn teardown_stamps_torn_then_trims_then_releases_the_slot() {
     let trim = body
         .find("trim_for_recycle()")
         .expect("teardown trims the core while still the sole owner");
+    // The terminal release is the LAST `drop(lease);`; an earlier one is only
+    // the process-exit early return, pinned below to sit after the TORN stamp,
+    // under its guard, and before the trim (it performs no core mutation).
     let lease_drop = body
-        .find("drop(lease);")
-        .expect("teardown releases the slot exactly once via `drop(lease);`");
+        .rfind("drop(lease);")
+        .expect("teardown releases the slot via a final `drop(lease);`");
+    let first_drop = body.find("drop(lease);").expect("at least one release");
+    if first_drop != lease_drop {
+        let guard = body
+            .find("process_exit_in_progress()")
+            .expect("the early release is guarded by the process-exit check");
+        assert!(
+            torn < guard && guard < first_drop && first_drop < trim,
+            "the process-exit early release must follow mark_local_torn() and              precede trim_for_recycle() without touching the core"
+        );
+        assert_eq!(
+            body.matches("drop(lease);").count(),
+            2,
+            "exactly the early return and the terminal release"
+        );
+    }
     assert!(
         torn < trim,
         "mark_local_torn() must precede trim_for_recycle(): \
