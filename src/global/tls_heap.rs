@@ -210,6 +210,12 @@ impl Drop for AbandonGuard {
         // either — those resolvers get `Err` too and route to Fallback — so
         // the no-op is safe.
         mark_local_torn();
+        if super::process_exit_in_progress() {
+            // No other thread can reclaim this slot during process shutdown.
+            // Publish FREE without waiting on routes held by terminated threads.
+            drop(lease);
+            return;
+        }
         // Complete the terminal sidecar cut and owner cache trim before
         // releasing this thread's ownership. Never mutate the core after the
         // lease Drop.
@@ -409,6 +415,9 @@ pub fn current_for_trim() -> Option<*mut HeapCore> {
 /// always-live primordial heap — never null, M10).
 #[cold]
 fn bind_slow_tagged() -> CurrentHeap {
+    if super::process_exit_in_progress() {
+        return CurrentHeap::Fallback;
+    }
     finish_bind(HeapRegistry::claim_lease())
 }
 
@@ -420,6 +429,9 @@ fn bind_slow_tagged() -> CurrentHeap {
 #[cfg(feature = "alloc-decommit")]
 #[cold]
 fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
+    if super::process_exit_in_progress() {
+        return CurrentHeap::Fallback;
+    }
     finish_bind(HeapRegistry::claim_lease_with_config(config))
 }
 

@@ -11,6 +11,6 @@ fn main() {
     }
     assert!(
         oracle::run_scenario("main_return", None, false),
-        "invalid CON-01 main-return characterization"
+        "expected bounded CON-01 main return within 20s with shard unroutable +1"
     );
 }

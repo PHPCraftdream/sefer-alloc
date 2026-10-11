@@ -108,6 +108,19 @@ static DBG_INJECT_FALLBACK_OOM: AtomicBool = AtomicBool::new(false);
 /// cannot wrap this counter around and produce a false "unchanged" reading.
 static LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
 
+static EXIT_LOCK_GIVEUPS: AtomicU64 = AtomicU64::new(0);
+
+#[cold]
+pub(crate) fn record_exit_lock_giveup() {
+    EXIT_LOCK_GIVEUPS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn dbg_exit_lock_giveups() -> u64 {
+    EXIT_LOCK_GIVEUPS.load(Ordering::Relaxed)
+}
+
 /// The fallback-heap spinlock. Held while a thread is performing an
 /// alloc/dealloc/realloc on the fallback; ensures mutual exclusion so the
 /// `&mut HeapCore` handout is sound. `AtomicBool` (not `std::sync::Mutex`)
@@ -312,6 +325,10 @@ fn heap_ptr_impl(
             if lock_tight_spin(&mut spins) {
                 core::hint::spin_loop();
             } else {
+                if super::process_exit_in_progress() {
+                    record_exit_lock_giveup();
+                    return core::ptr::null_mut();
+                }
                 #[cfg(feature = "std")]
                 {
                     #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -331,7 +348,7 @@ fn heap_ptr_impl(
 /// most one thread is inside `with_heap` at a time.
 ///
 /// Returns `f`'s result, or `None` if the fallback heap could not be
-/// initialised (true OOM — the alloc face surfaces this as null).
+/// initialised, or a contended wait was abandoned during process shutdown.
 pub fn with_heap<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HeapCore) -> R,
@@ -347,7 +364,7 @@ where
     // (deadlock instead of a clean abort). No-panic is a project invariant
     // (HeapCore never panics), but the guard makes `with_heap` panic-safe at
     // zero cost — it also removes the explicit `release_lock()` call.
-    let _guard = LockGuard::acquire();
+    let _guard = LockGuard::acquire()?;
     // SAFETY: `heap` is non-null and points to the initialised `FALLBACK`
     // `HeapCore`. `LOCK` is held (the guard just acquired it), giving us
     // exclusive `&mut` access — no other thread can be inside `with_heap`. The
@@ -366,7 +383,7 @@ where
     if heap.is_null() {
         return None;
     }
-    let _guard = LockGuard::acquire();
+    let _guard = LockGuard::acquire()?;
     // SAFETY: READY published the process-lifetime heap and the fallback
     // lock grants exclusive access for both policy comparison and `f`.
     let heap = unsafe { &mut *heap };
@@ -485,7 +502,7 @@ impl LockGuard {
     /// without `std` (this module's rest is already `std`-free); without
     /// `std` there is no better primitive than the tight spin, so it
     /// continues unconditionally in that configuration.
-    fn acquire() -> Self {
+    fn acquire() -> Option<Self> {
         let mut spins: u32 = 0;
         while LOCK
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -494,13 +511,17 @@ impl LockGuard {
             if lock_tight_spin(&mut spins) {
                 core::hint::spin_loop();
             } else {
+                if super::process_exit_in_progress() {
+                    record_exit_lock_giveup();
+                    return None;
+                }
                 #[cfg(feature = "std")]
                 std::thread::yield_now();
                 #[cfg(not(feature = "std"))]
                 core::hint::spin_loop();
             }
         }
-        Self::acquired()
+        Some(Self::acquired())
     }
 }
 

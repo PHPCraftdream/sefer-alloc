@@ -1,7 +1,7 @@
-//! Phase A characterizes process::exit ordering, not a product fix.
+//! Requires bounded process exit despite stranded allocator locks.
 //! System stays installed so harness/runtime traffic cannot bind E or initialize
 //! fallback before the init witness. The operations under test call SeferAlloc's
-//! real GlobalAlloc face explicitly. Phase B changes expectation to exit <=20s.
+//! real GlobalAlloc face explicitly.
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
@@ -10,10 +10,11 @@
 ))]
 
 use sefer_alloc::global::{self, tls_heap};
+use sefer_alloc::registry::segment_route::{RouteKind, RoutePin, RouteRegistration};
 use sefer_alloc::registry::{segment_route::RouteDirectory, HeapCore};
 use sefer_alloc::{AllocCore, SeferAlloc};
 use std::alloc::{GlobalAlloc, Layout};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,9 +32,11 @@ enum Scenario {
     Shard(usize),
     Fallback,
     Init,
+    Remove,
 }
 
 thread_local! {
+    static REMOVE: RefCell<Option<(RouteRegistration<'static>, RoutePin)>> = const { RefCell::new(None) };
     static LATE: Cell<Option<Scenario>> = const { Cell::new(None) };
     static DTOR: Late = const { Late };
 }
@@ -52,6 +55,7 @@ impl Drop for Late {
         if bound {
             fail("E still bound: TLS ordering/precondition violated");
         }
+        let giveups = global::dbg_exit_lock_giveups();
         let frees = AllocCore::dbg_foreign_or_unroutable_frees();
         let locks = global::dbg_fallback_lock_acquisitions();
         RELEASE.store(true, Ordering::Release);
@@ -64,6 +68,21 @@ impl Drop for Late {
                 // the child test thread; that owner stays alive until exit.
                 unsafe { ALLOC.dealloc(address as *mut u8, Layout::new::<[u8; 64]>()) };
             }
+            Scenario::Remove => {
+                let (registration, pin) = REMOVE
+                    .with(|cell| cell.borrow_mut().take())
+                    .expect("remove witness");
+                assert_eq!(RouteDirectory::dbg_route_pin_refs(&pin), 2);
+                drop(registration);
+                let refs = RouteDirectory::dbg_route_pin_refs(&pin);
+                eprintln!("CON01_REMOVE owner_refs={refs}");
+                assert_eq!(
+                    refs,
+                    if cfg!(windows) { 2 } else { 1 },
+                    "failed unlink must retain owner count"
+                );
+                drop(pin);
+            }
             Scenario::Fallback | Scenario::Init => {
                 // SAFETY: valid nonzero layout. Leak deliberately: a dealloc
                 // would add another lock acquisition and obscure this oracle.
@@ -72,16 +91,63 @@ impl Drop for Late {
                     fail("late allocation returned null");
                 }
                 eprintln!("CON01_ALLOC_SUCCESS");
+                if matches!(scenario, Scenario::Fallback) {
+                    let layout = Layout::from_size_align(32, 64).expect("escape layout");
+                    // SAFETY: valid nonzero layout; each successful block is uniquely
+                    // owned here, initialized before realloc and freed once.
+                    unsafe {
+                        let zeroed = ALLOC.alloc_zeroed(layout);
+                        assert!(!zeroed.is_null());
+                        assert_eq!(zeroed.addr() % 64, 0);
+                        assert!(std::slice::from_raw_parts(zeroed, 32)
+                            .iter()
+                            .all(|&b| b == 0));
+                        zeroed.write_bytes(0x5a, 32);
+                        let grown = ALLOC.realloc(zeroed, layout, 96);
+                        assert!(!grown.is_null());
+                        assert_eq!(grown.addr() % 64, 0);
+                        assert!(std::slice::from_raw_parts(grown, 32)
+                            .iter()
+                            .all(|&b| b == 0x5a));
+                        let before_free = AllocCore::dbg_foreign_or_unroutable_frees();
+                        ALLOC.dealloc(
+                            grown,
+                            Layout::from_size_align(96, 64).expect("grown layout"),
+                        );
+                        let free_delta = AllocCore::dbg_foreign_or_unroutable_frees() - before_free;
+                        assert_eq!(
+                            free_delta,
+                            u64::from(
+                                cfg!(windows)
+                                    && std::env::var_os("SEFER_CON01_LIVE").as_deref()
+                                        == Some(std::ffi::OsStr::new("0"))
+                            )
+                        );
+                        ALLOC.dealloc(p, Layout::new::<u64>());
+                    }
+                    eprintln!("CON01_ESCAPE_ZEROED_REALLOC_FREE_OK");
+                }
             }
         }
+        let giveup_delta = global::dbg_exit_lock_giveups() - giveups;
+        eprintln!("CON01_GIVEUPS delta={giveup_delta}");
         let lock_delta = global::dbg_fallback_lock_acquisitions() - locks;
         let free_delta = AllocCore::dbg_foreign_or_unroutable_frees() - frees;
         eprintln!("CON01_COUNTERS fallback_delta={lock_delta} unroutable_delta={free_delta}");
-        if matches!(scenario, Scenario::Fallback) && lock_delta != 1 {
-            fail("fallback delta lock acquisitions != 1");
+        let windows_exit = cfg!(windows)
+            && std::env::var_os("SEFER_CON01_LIVE").as_deref() == Some(std::ffi::OsStr::new("0"));
+        let expected_locks = if windows_exit { 0 } else { 5 };
+        if matches!(scenario, Scenario::Fallback) && lock_delta != expected_locks {
+            fail("fallback lock acquisition delta violated live/exit contract");
         }
-        if matches!(scenario, Scenario::Shard(_)) && (free_delta != 0 || lock_delta != 0) {
-            fail("shard control did not publish through the live route");
+        let expected_frees = u64::from(windows_exit);
+        if !windows_exit && giveup_delta != 0 {
+            fail("live/non-Windows control unexpectedly abandoned a wait");
+        }
+        if matches!(scenario, Scenario::Shard(_))
+            && (free_delta != expected_frees || lock_delta != 0 || giveup_delta != expected_frees)
+        {
+            fail("shard unroutable delta violated live/exit contract");
         }
         eprintln!("CON01_DTOR_DONE");
     }
@@ -106,6 +172,7 @@ fn hold() {
 
 fn prepare(mode: &str) -> Scenario {
     match mode {
+        "remove" => Scenario::Remove,
         "shard" => {
             // SAFETY: valid nonzero layout; retained until Late's unique free.
             let p = unsafe { ALLOC.alloc(Layout::new::<[u8; 64]>()) };
@@ -163,9 +230,28 @@ fn arm(scenario: Scenario, mode: &str) {
     if tls_heap::current_for_trim().is_some() {
         fail("E unexpectedly bound before setup");
     }
+    if matches!(scenario, Scenario::Remove) {
+        let size = 4 * 1024 * 1024;
+        let layout = Layout::from_size_align(size, size).expect("route layout");
+        // SAFETY: nonzero System layout. Reservation remains allocated through
+        // process exit; only the independent route descriptor is dropped.
+        let root = unsafe { std::alloc::System.alloc(layout) };
+        assert!(!root.is_null());
+        let directory = RouteDirectory::global();
+        let registration = directory
+            .register(root, size, root, 0, RouteKind::Large)
+            .expect("test route");
+        let pin = directory.lookup(root).expect("retained pin");
+        REMOVE.with(|cell| *cell.borrow_mut() = Some((registration, pin)));
+        let address = root.addr();
+        std::thread::spawn(move || {
+            RouteDirectory::global().dbg_with_shard_of_locked_for_test(address as *mut u8, hold);
+        });
+        wait_for(|| HELD.load(Ordering::Acquire));
+    }
     LATE.with(|cell| cell.set(Some(scenario)));
     DTOR.with(|_| ());
-    if !matches!(scenario, Scenario::Shard(_)) {
+    if !matches!(scenario, Scenario::Shard(_) | Scenario::Remove) {
         if !matches!(tls_heap::current_for_alloc(), tls_heap::CurrentHeap::Own(_)) {
             fail("E could not bind its empty registry heap");
         }
@@ -187,6 +273,7 @@ fn child(mode: &str, live: bool) -> ! {
             Scenario::Shard(_) => "shard",
             Scenario::Fallback => "fallback",
             Scenario::Init => "init",
+            Scenario::Remove => "remove",
         };
         arm(scenario, mode);
         if !live {
@@ -359,9 +446,31 @@ pub(crate) fn run_scenario(mode: &str, test: Option<&str>, live: bool) -> bool {
     );
     println!("CON01_VERDICT {mode} {verdict} live={live} pid={pid} elapsed_ms={elapsed} status={status} timed_out={timed_out}");
     if live {
-        verdict == "REFUTED_NO_HANG"
+        verdict == "REFUTED_NO_HANG" && stderr.lines().any(|line| line == "CON01_GIVEUPS delta=0")
     } else if cfg!(windows) {
-        verdict != "OTHER"
+        let counters = match mode {
+            "shard" | "main_return" => {
+                stderr
+                    .lines()
+                    .any(|line| line == "CON01_COUNTERS fallback_delta=0 unroutable_delta=1")
+                    && stderr.lines().any(|line| line == "CON01_GIVEUPS delta=1")
+            }
+            "remove" => {
+                stderr
+                    .lines()
+                    .any(|line| line == "CON01_REMOVE owner_refs=2")
+                    && stderr.lines().any(|line| line == "CON01_GIVEUPS delta=1")
+            }
+            "fallback" => {
+                stderr.lines().any(|line| line == "CON01_ALLOC_SUCCESS")
+                    && stderr
+                        .lines()
+                        .any(|line| line == "CON01_ESCAPE_ZEROED_REALLOC_FREE_OK")
+            }
+            "init" => stderr.lines().any(|line| line == "CON01_ALLOC_SUCCESS"),
+            _ => false,
+        };
+        verdict == "REFUTED_NO_HANG" && elapsed <= BOUND.as_millis() && counters
     } else {
         // No TLS dtors on process exit is an exit-0 no-hang control, not
         // evidence that RELEASE ran. Live controls always require DONE.
@@ -381,7 +490,10 @@ fn exit_stranded_lock() {
     for mode in ["shard", "fallback", "init"] {
         valid &= run_scenario(mode, Some("exit_stranded_lock"), false);
     }
-    assert!(valid, "invalid CON-01 characterization");
+    assert!(
+        valid,
+        "expected bounded CON-01 exit within 20s with exit-path witnesses"
+    );
 }
 
 #[cfg(test)]
@@ -410,6 +522,32 @@ fn live_holder_fallback_init_controls() {
         valid,
         "expected REFUTED_NO_HANG live-holder fallback/init controls"
     );
+}
+
+#[cfg(test)]
+#[test]
+fn exit_remove_owner_retained() {
+    if let Ok(mode) = std::env::var(CHILD) {
+        child(&mode, false);
+    }
+    assert!(run_scenario(
+        "remove",
+        Some("exit_remove_owner_retained"),
+        false
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn exit_fallback_escape() {
+    if let Ok(mode) = std::env::var(CHILD) {
+        child(&mode, false);
+    }
+    assert!(run_scenario(
+        "fallback",
+        Some("exit_fallback_escape"),
+        false
+    ));
 }
 
 #[cfg(test)]

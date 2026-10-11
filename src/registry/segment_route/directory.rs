@@ -835,13 +835,18 @@ impl RouteDirectory {
         let entry = EntryHandle::new(root, key, end, route_addr, owner, kind, incarnation)?;
         let shard = &self.shards[Self::shard_index(key)];
         loop {
-            let mut guard = shard.lock();
+            let mut guard = shard
+                .lock_unless_exiting(
+                    crate::global::process_exit_in_progress,
+                    crate::global::fallback::record_exit_lock_giveup,
+                )
+                .ok_or(RouteError::ProcessExiting)?;
             let (need_block, index_cap) = match guard.insert(key, entry.ptr()) {
                 Insert::Done => {
                     drop(guard);
                     return Ok(RouteRegistration {
                         directory: self,
-                        entry,
+                        entry: core::mem::ManuallyDrop::new(entry),
                         owner_only: PhantomData::<Cell<()>>,
                     });
                 }
@@ -862,7 +867,12 @@ impl RouteDirectory {
             } else {
                 None
             };
-            let mut guard = shard.lock();
+            let mut guard = shard
+                .lock_unless_exiting(
+                    crate::global::process_exit_in_progress,
+                    crate::global::fallback::record_exit_lock_giveup,
+                )
+                .ok_or(RouteError::ProcessExiting)?;
             let surplus = guard.install(block, enlarged);
             drop(guard);
             drop(surplus);
@@ -882,11 +892,20 @@ impl RouteDirectory {
         drop(guard);
     }
 
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_route_pin_refs(pin: &RoutePin) -> usize {
+        pin.entry.entry().refs.load(Ordering::Relaxed)
+    }
+
     /// Only `ptr.addr()` is used as a key; no reservation byte is read.
     pub fn lookup(&self, ptr: *mut u8) -> Option<RoutePin> {
         let addr = ptr.addr();
         let key = addr & !(SEGMENT - 1);
-        let guard = self.shards[Self::shard_index(key)].lock();
+        let guard = self.shards[Self::shard_index(key)].lock_unless_exiting(
+            crate::global::process_exit_in_progress,
+            crate::global::fallback::record_exit_lock_giveup,
+        )?;
         let raw = guard.find(key)?;
         // SAFETY: the shard lock excludes unlink and final release; the
         // indexed entry is fully initialized and still owner-referenced.
@@ -911,12 +930,18 @@ impl RouteDirectory {
         Some(RoutePin { entry: pin })
     }
 
-    pub(super) fn remove(&self, entry: &EntryHandle) {
+    pub(super) fn remove(&self, entry: &EntryHandle) -> bool {
         let key = entry.key();
         let shard = &self.shards[Self::shard_index(key)];
-        let mut guard = shard.lock();
+        let Some(mut guard) = shard.lock_unless_exiting(
+            crate::global::process_exit_in_progress,
+            crate::global::fallback::record_exit_lock_giveup,
+        ) else {
+            return false;
+        };
         guard.remove(key, entry.ptr());
         // The caller drops the owner reference after this lock is released.
+        true
     }
 
     const fn shard_index(key: usize) -> usize {

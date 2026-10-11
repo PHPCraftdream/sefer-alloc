@@ -22,6 +22,10 @@ const PURE_OBSERVERS = [
   // no pointer input, metadata access, allocation, mutation, or counter reset.
   "src/registry/segment_route/small_sidecar.rs::dbg_route_slots_system_totals",
   "src/registry/segment_route/small_sidecar.rs::dbg_route_slot_bytes",
+  // Read-only Relaxed load of the cold-path giveup counter.
+  "src/global/fallback.rs::dbg_exit_lock_giveups",
+  // Read-only Relaxed descriptor count; the borrowed RoutePin retains its lifetime.
+  "src/registry/segment_route/directory.rs::dbg_route_pin_refs",
   "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
   "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",

@@ -1,5 +1,6 @@
 use core::cell::Cell;
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 
 use super::directory::{EntryHandle, RouteDirectory};
 use super::{LargeState, SmallSidecar};
@@ -8,7 +9,7 @@ use super::{LargeState, SmallSidecar};
 /// descriptor reference without waiting for producers already holding pins.
 pub struct RouteRegistration<'a> {
     pub(super) directory: &'a RouteDirectory,
-    pub(super) entry: EntryHandle,
+    pub(super) entry: ManuallyDrop<EntryHandle>,
     pub(super) owner_only: PhantomData<Cell<()>>,
 }
 
@@ -76,7 +77,17 @@ impl RouteRegistration<'_> {
 }
 
 impl Drop for RouteRegistration<'_> {
+    /// # Safety
+    /// Drop the counted owner exactly once, only after successful unlink;
+    /// failed unlink must retain the descriptor and sidecar owner count.
+    #[allow(unsafe_code)]
     fn drop(&mut self) {
-        self.directory.remove(&self.entry);
+        if self.directory.remove(&self.entry) {
+            // SAFETY: successful unlink released the shard guard before this
+            // sole owner-count drop. ManuallyDrop suppresses automatic cleanup.
+            unsafe { ManuallyDrop::drop(&mut self.entry) };
+        }
+        // Failed unlink leaves a non-owning shard pointer: retain its owner
+        // count intentionally, including its independent sidecar, until exit.
     }
 }

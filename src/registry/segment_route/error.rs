@@ -5,4 +5,5 @@ pub enum RouteError {
     Duplicate,
     OutOfMemory,
     IncarnationExhausted,
+    ProcessExiting,
 }

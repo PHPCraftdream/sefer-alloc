@@ -45,6 +45,34 @@ impl<T> ShardLock<T> {
         }
     }
 
+    #[allow(dead_code)] // Standalone path-included auto-trait tests use only lock().
+    pub(super) fn lock_unless_exiting(
+        &self,
+        exiting: impl Fn() -> bool,
+        giveup: impl Fn(),
+    ) -> Option<ShardGuard<'_, T>> {
+        let mut spins = 0u32;
+        while self
+            .locked
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            if spins < SPINS_BEFORE_YIELD {
+                spins += 1;
+                core::hint::spin_loop();
+            } else if exiting() {
+                giveup();
+                return None;
+            } else {
+                std::thread::yield_now();
+            }
+        }
+        Some(ShardGuard {
+            lock: self,
+            _unique: PhantomData,
+        })
+    }
+
     pub(super) fn lock(&self) -> ShardGuard<'_, T> {
         let mut spins = 0u32;
         while self

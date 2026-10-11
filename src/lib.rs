@@ -221,6 +221,7 @@
 //      * `global::exact_object::narrow` — exact `System` alloc/free of narrow
 //                             requests, original pointer and layout.
 //                             (`exact-object-proto` prototype only, not `production`)
+//      * `global::process_exit` — FFI query of Windows loader shutdown state.
 //      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
 //                             (under `alloc-global`)
 //      * `global::fallback`     — primordial fallback heap seam —

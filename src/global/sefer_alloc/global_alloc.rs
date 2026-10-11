@@ -38,13 +38,15 @@ unsafe impl GlobalAlloc for SeferAlloc {
             return ExactNarrow::alloc(layout, false);
         }
         match self.current_heap() {
-            // Fallback path (TLS torn down, registry exhausted, or true
-            // fallback OOM): route through the fallback's spinlock-guarded
-            // `with_heap`. `with_heap` returns `None` only on true OOM → we
-            // surface null.
-            CurrentHeap::Fallback => self
-                .with_fallback_heap(|h| h.alloc(layout))
-                .unwrap_or(core::ptr::null_mut()),
+            CurrentHeap::Fallback => match self.with_fallback_heap(|h| h.alloc(layout)) {
+                Some(ptr) => ptr,
+                None if crate::global::process_exit_in_progress() => {
+                    // SAFETY: the caller supplied a valid nonzero allocation
+                    // layout. System owns the escaped block; it leaks at exit.
+                    unsafe { std::alloc::System.alloc(layout) }
+                }
+                None => core::ptr::null_mut(),
+            },
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in
             // a registry slot. `current_heap` returned it for THIS thread;
             // the single-writer invariant (the CAS-won slot owner) makes
@@ -97,9 +99,15 @@ unsafe impl GlobalAlloc for SeferAlloc {
             return ExactNarrow::alloc(layout, true);
         }
         match self.current_heap() {
-            CurrentHeap::Fallback => self
-                .with_fallback_heap(|h| h.alloc_zeroed(layout))
-                .unwrap_or(core::ptr::null_mut()),
+            CurrentHeap::Fallback => match self.with_fallback_heap(|h| h.alloc_zeroed(layout)) {
+                Some(ptr) => ptr,
+                None if crate::global::process_exit_in_progress() => {
+                    // SAFETY: valid nonzero layout from the GlobalAlloc caller;
+                    // System supplies zeroed storage, intentionally leaked at exit.
+                    unsafe { std::alloc::System.alloc_zeroed(layout) }
+                }
+                None => core::ptr::null_mut(),
+            },
             // SAFETY: as in `alloc`.
             CurrentHeap::Own(heap) => unsafe { (*heap).alloc_zeroed(layout) },
         }
@@ -136,9 +144,37 @@ unsafe impl GlobalAlloc for SeferAlloc {
             // SAFETY: `ptr`/`old_layout` are the caller-bound GlobalAlloc
             // contract pair (this whole fn is `unsafe fn realloc`); the
             // closure forwards them to the fallback heap's `HeapCore::realloc`.
-            CurrentHeap::Fallback => self
+            CurrentHeap::Fallback => match self
                 .with_fallback_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
-                .unwrap_or(core::ptr::null_mut()),
+            {
+                Some(ptr) => ptr,
+                None if crate::global::process_exit_in_progress() => {
+                    let Ok(layout) = Layout::from_size_align(new_size, old_layout.align()) else {
+                        return core::ptr::null_mut();
+                    };
+                    if new_size == 0 {
+                        return core::ptr::null_mut();
+                    }
+                    // SAFETY: nonzero validated layout with the old alignment.
+                    // The caller retains a live old allocation of old_layout.size()
+                    // readable bytes. A successful fresh System allocation cannot
+                    // overlap it; copy only the smaller extent. Never hand an
+                    // unknown-origin pointer to System.realloc/dealloc. Both old
+                    // storage and escaped storage are intentionally leaked at exit.
+                    unsafe {
+                        let new_ptr = std::alloc::System.alloc(layout);
+                        if !new_ptr.is_null() {
+                            core::ptr::copy_nonoverlapping(
+                                ptr,
+                                new_ptr,
+                                old_layout.size().min(new_size),
+                            );
+                        }
+                        new_ptr
+                    }
+                }
+                None => core::ptr::null_mut(),
+            },
             // SAFETY: as in `alloc`. `realloc` takes the C2 in-place fast path
             // for a same-class / compatible resize of an own-thread block, and
             // otherwise falls back to alloc-new + copy + dealloc-old, leaving

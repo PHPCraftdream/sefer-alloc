@@ -1014,6 +1014,11 @@ name = "locality"
 harness = false
 
 [[test]]
+name = "con01_exit_detector_probe"
+harness = false
+required-features = ["alloc-global"]
+
+[[test]]
 name = "con01_exit_main_return"
 harness = false
 required-features = ["alloc-global", "alloc-xthread", "internals", "bench-internals"]
