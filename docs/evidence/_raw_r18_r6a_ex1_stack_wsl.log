@@ -1,0 +1,112 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.228
+   Compiling zerocopy v0.8.52
+   Compiling getrandom v0.3.4
+   Compiling serde v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling zmij v1.0.21
+   Compiling libm v0.2.16
+   Compiling crossbeam-epoch v0.9.20
+   Compiling autocfg v1.5.1
+   Compiling serde_json v1.0.150
+   Compiling rustix v1.1.4
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.2
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.4.3
+   Compiling bitflags v2.13.0
+   Compiling regex-syntax v0.8.11
+   Compiling find-msvc-tools v0.1.9
+   Compiling linux-raw-sys v0.12.1
+   Compiling version_check v0.9.5
+   Compiling shlex v2.0.1
+   Compiling once_cell v1.21.4
+   Compiling cc v1.2.65
+   Compiling fastrand v2.4.1
+   Compiling slotmap v1.1.1
+   Compiling either v1.16.0
+   Compiling rustversion v1.0.22
+   Compiling rayon-core v1.13.0
+   Compiling plotters-backend v0.3.7
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling quick-error v1.2.3
+   Compiling crossbeam-deque v0.8.6
+   Compiling fnv v1.0.7
+   Compiling ciborium-io v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.0
+   Compiling bit-vec v0.8.0
+   Compiling syn v2.0.118
+   Compiling plotters-svg v0.3.7
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling clap_builder v4.6.0
+   Compiling bit-set v0.8.0
+   Compiling itertools v0.10.5
+   Compiling cast v0.3.0
+   Compiling iai-callgrind v0.14.2
+   Compiling unarray v0.1.4
+   Compiling same-file v1.0.6
+   Compiling aligned-vmem v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/aligned-vmem)
+   Compiling plotters v0.3.7
+   Compiling rayon v1.12.0
+   Compiling libmimalloc-sys v0.1.49
+   Compiling wait-timeout v0.2.1
+   Compiling num_cpus v1.17.0
+   Compiling rand_core v0.9.5
+   Compiling arc-swap v1.9.1
+   Compiling sefer-region v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/sefer-region)
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling numa-shim v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/numa-shim)
+   Compiling core_affinity v0.8.3
+   Compiling is-terminal v0.4.17
+   Compiling walkdir v2.5.0
+   Compiling anes v0.1.6
+   Compiling tempfile v3.27.0
+   Compiling rusty-fork v0.3.1
+   Compiling regex-automata v0.4.14
+   Compiling criterion-plot v0.5.0
+   Compiling proc-memstat v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/proc-memstat)
+   Compiling once-ptr-cell v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/once-ptr-cell)
+   Compiling pin-project-lite v0.2.17
+   Compiling clap v4.6.1
+   Compiling size-classes v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/size-classes)
+   Compiling oorandom v11.1.5
+   Compiling malloc-bench-rs v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/malloc-bench-rs)
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final)
+   Compiling proc-probe v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/proc-probe)
+   Compiling mimalloc v0.1.52
+   Compiling regex v1.12.4
+   Compiling proc-macro-error2 v2.0.1
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.52
+   Compiling derive_more-impl v2.1.1
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling derive_more v2.1.1
+   Compiling tinytemplate v1.2.1
+   Compiling bincode v1.3.3
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/r18-closeout-final/crates/globalalloc-model)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.19s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/r1_04_alloc_core_drop_stack_pressure.rs (/tmp/sefer-alloc-r18-final-target/debug/deps/r1_04_alloc_core_drop_stack_pressure-4756dc6e978553d5)
+
+running 3 tests
+test r1_04_drop_stack_child ... ignored, run only in a fresh subprocess (see run_child)
+test drop_on_small_stack_bare ... ok
+test drop_on_small_stack_with_many_segments ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s

@@ -463,11 +463,14 @@ five findings.
   record, rather than rewriting the existing commit history. The final gate
   rerun verifies the exemption.
 
-**Focused receipts:** `cargo test --features "alloc-global internals"
---test r14_sidecar_owner_capability_negative` — 9 passed;
-`cargo test --features "alloc-global internals" --test no_panic_doc_accuracy`
-— 4 passed; `cargo test --features "production medium-classes internals"
---test r14_4_promotion_move_leg_reduction` — 6 passed, 1 intentional ignored.
-The four edited Rust files pass direct `rustfmt --edition 2021 --check`.
-Strict clippy and the final repository gate are recorded in the R18 closeout
-after completion.
+**Focused receipts:**
+- `cargo test --features "alloc-global internals" --test r14_sidecar_owner_capability_negative` — 9 passed.
+- `cargo test --features "alloc-global internals" --test no_panic_doc_accuracy` — 4 passed.
+- `cargo test --features "production medium-classes internals" --test r14_4_promotion_move_leg_reduction` — 6 passed, 1 intentionally ignored. The empty-`if` counterfactual crashes the child with `0xc0000005` and fails the parent.
+- `node scripts/loom.mjs loom_sidecar_bitmap loom_terminal_large loom_terminal_owner_drain` — 7 passed across the three shadow suites; see `docs/evidence/_raw_r18_r0_21_loom.log`.
+- `cargo +nightly miri test --features "alloc-core alloc-decommit internals" --test decommit_miri_cycle` — 2 passed under Miri SB; see `docs/evidence/_raw_r18_r4c_08_decommit_miri.log`.
+- `RUSTFLAGS="--cfg numa_shim_mock" cargo test --all-features --test r1_04_alloc_core_drop_stack_pressure -- --nocapture` — Windows: 2 passed, 1 intentionally ignored at 96 KiB; WSL Ubuntu: 2 passed, 1 intentionally ignored at 64 KiB. Logs: `docs/evidence/_raw_r18_r6a_ex1_stack_windows.log` and `docs/evidence/_raw_r18_r6a_ex1_stack_wsl.log`.
+
+The four edited Rust files pass direct `rustfmt --edition 2021 --check`; strict Clippy passed. The final `npm run check` result is recorded in the R18 closeout commit message. These execution receipts supplement, and are not attributed to, the original read-only review.
+
+The refreshed receipt-pin and generated-registry checks pass. `node scripts/verify-evidence-registry.mjs --strict` exits 0 with `INCOMPLETE` because pre-existing spike rows cite unpublished commits and existing required cells await final status; the three refreshed rows are `PASS` at source commit `07a3652b74ea535977cb7c5c487a66b416c4205c`.

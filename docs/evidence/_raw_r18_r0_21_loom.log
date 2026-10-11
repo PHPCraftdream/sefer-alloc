@@ -1,0 +1,139 @@
+[loom] tests: loom_sidecar_bitmap, loom_terminal_large, loom_terminal_owner_drain
+
+[loom] --features alloc-core,alloc-xthread,tagged-index-stack/loom: 3 test(s) selected — loom_sidecar_bitmap, loom_terminal_large, loom_terminal_owner_drain
+
+
+[loom] --features alloc-core,alloc-xthread,tagged-index-stack/loom: loom_sidecar_bitmap, loom_terminal_large, loom_terminal_owner_drain
+   Compiling cfg-if v1.0.4
+   Compiling proc-macro2 v1.0.106
+   Compiling windows-link v0.2.1
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling once_cell v1.21.4
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling regex-syntax v0.8.11
+   Compiling zerocopy v0.8.52
+   Compiling rustversion v1.0.22
+   Compiling getrandom v0.3.4
+   Compiling autocfg v1.5.1
+   Compiling libm v0.2.16
+   Compiling crossbeam-utils v0.8.21
+   Compiling serde_core v1.0.228
+   Compiling windows-sys v0.61.2
+   Compiling log v0.4.33
+   Compiling pin-project-lite v0.2.17
+   Compiling tracing-core v0.1.36
+   Compiling getrandom v0.4.3
+   Compiling lazy_static v1.5.0
+   Compiling crossbeam-epoch v0.9.20
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling sharded-slab v0.1.7
+   Compiling windows-result v0.4.1
+   Compiling thread_local v1.1.9
+   Compiling smallvec v1.15.2
+   Compiling tracing-log v0.2.0
+   Compiling tracing v0.1.44
+   Compiling rand_core v0.9.5
+   Compiling zmij v1.0.21
+   Compiling version_check v0.9.5
+   Compiling serde v1.0.228
+   Compiling fastrand v2.4.1
+   Compiling nu-ansi-term v0.50.3
+   Compiling either v1.16.0
+   Compiling rayon-core v1.13.0
+   Compiling serde_json v1.0.150
+   Compiling syn v2.0.118
+   Compiling slotmap v1.1.1
+   Compiling scoped-tls v1.0.1
+   Compiling regex-automata v0.4.14
+   Compiling tempfile v3.27.0
+   Compiling winapi-util v0.1.11
+   Compiling crossbeam-deque v0.8.6
+   Compiling memchr v2.8.2
+   Compiling fnv v1.0.7
+   Compiling bit-vec v0.8.0
+   Compiling itoa v1.0.18
+   Compiling plotters-backend v0.3.7
+   Compiling ciborium-io v0.2.2
+   Compiling wait-timeout v0.2.1
+   Compiling clap_lex v1.1.0
+   Compiling quick-error v1.2.3
+   Compiling anstyle v1.0.14
+   Compiling same-file v1.0.6
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling generator v0.8.9
+   Compiling libmimalloc-sys v0.1.49
+   Compiling clap_builder v4.6.0
+   Compiling plotters-svg v0.3.7
+   Compiling itertools v0.10.5
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling bitflags v2.13.0
+   Compiling unarray v0.1.4
+   Compiling cast v0.3.0
+   Compiling plotters v0.3.7
+   Compiling walkdir v2.5.0
+   Compiling is-terminal v0.4.17
+   Compiling anes v0.1.6
+   Compiling proc-memstat v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\proc-memstat)
+   Compiling rayon v1.12.0
+   Compiling sefer-region v0.2.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\sefer-region)
+   Compiling aligned-vmem v0.2.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\aligned-vmem)
+   Compiling oorandom v11.1.5
+   Compiling size-classes v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\size-classes)
+   Compiling proc-probe v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\proc-probe)
+   Compiling malloc-bench-rs v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\malloc-bench-rs)
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.7.0
+   Compiling matchers v0.2.0
+   Compiling regex v1.12.4
+   Compiling tracing-subscriber v0.3.23
+   Compiling criterion-plot v0.5.0
+   Compiling tokio v1.52.3
+   Compiling clap v4.6.1
+   Compiling mimalloc v0.1.52
+   Compiling loom v0.7.2
+   Compiling tinytemplate v1.2.1
+   Compiling tagged-index-stack v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\tagged-index-stack)
+   Compiling once-ptr-cell v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\once-ptr-cell)
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final)
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (D:\dev\rust\sefer-alloc\worktrees\r18-closeout-final\crates\globalalloc-model)
+    Finished `release` profile [optimized] target(s) in 5m 21s
+     Running tests\loom_sidecar_bitmap.rs (target\release\deps\loom_sidecar_bitmap-f28d41bc007a0f3e.exe)
+
+running 3 tests
+test loom_sidecar_paused_producer_and_reused_bit ... ok
+test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok
+test loom_sidecar_class_publication_and_two_producers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\loom_terminal_large.rs (target\release\deps\loom_terminal_large-aa7e313249143a18.exe)
+
+running 2 tests
+test owner_cache_or_release_is_exclusive ... ok
+test producer_owner_cut_and_duplicate_admission ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+     Running tests\loom_terminal_owner_drain.rs (target\release\deps\loom_terminal_owner_drain-d120a54842617da8.exe)
+
+running 2 tests
+test unpublished_and_detached_instances_hold_the_reservation_credit ... ok
+test negative_producer_retirement_allows_premature_release - should panic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+[loom --features alloc-core,alloc-xthread,tagged-index-stack/loom] PASS
