@@ -167,11 +167,21 @@ function inventory(bytes) {
   for (const k of Object.keys(PAIRS)) { assert.equal(cells.filter(c => c.kind === k).length, 1); assert.ok(names.includes(PAIRS[k][0])); }
   return cells;
 }
+// A3: build/run paths of A, B and C0 must have the same shape, otherwise libc alignment-dependent Ir (+7 observed in
+// run01, also in mimalloc cells) is a confounder between arms. C0 uses the one-character directory label 'C'.
+export const dirLabel = arm => (arm === 'C0' ? 'C' : arm);
+export function assertEqualShape(a, b) { assert.equal(a.length, b.length, 'arm paths must have identical length (alignment confounder, A3)'); }
 export function makeTransport({ executable, prefix = [], path = linuxPath } = {}) {
   executable ??= process.platform === 'win32' ? 'wsl.exe' : 'bash';
   prefix = prefix.length ? prefix : process.platform === 'win32' ? ['bash', '-lc'] : ['-lc'];
   return {
     path,
+    async hostLoad() {
+      if (process.platform !== 'win32') return null;
+      const w = spawnSync('wmic', ['cpu', 'get', 'loadpercentage'], { encoding: 'utf8', timeout: 20000 });
+      const m = /(\d+)/.exec((w.stdout ?? '').split(/\r?\n/).slice(1).join(' '));
+      return m ? Number(m[1]) : null;
+    },
     async execute(request) {
       const script = `cd ${quote(path(request.cwd))} && ${request.script}`;
       return new Promise((accept, reject) => {
@@ -224,10 +234,17 @@ async function environment(ctx, cwd, arm) {
     flags: { RUSTFLAGS: process.env.RUSTFLAGS ?? '', CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS ?? '',
       CARGO_BUILD_TARGET: process.env.CARGO_BUILD_TARGET ?? '', profile: 'release' }, toolReceipt: r.ref };
 }
+async function telemetry(ctx, label) {
+  const r = await execute(ctx, { cwd: ctx.arms.A, script: 'cat /proc/loadavg; nproc', type: 'telemetry', arm: 'A', name: label, timeoutMs: 30000 });
+  const [loadavg, nproc] = r.stdout.trim().split(/\r?\n/);
+  const hostLoad = ctx.transport.hostLoad ? await ctx.transport.hostLoad() : null;
+  const ref = putJson(ctx.out, `telemetry/${ctx.telemetry.length}-${label}.json`, { label, at: now(), wslLoadavg: loadavg, wslNproc: Number(nproc), hostCpuLoadPercent: hostLoad, process: r.ref });
+  ctx.telemetry.push({ label, ref });
+}
 async function build(ctx, arm, role) {
   const sourceArm = arm === 'C0' ? 'A' : arm, cwd = ctx.arms[sourceArm];
   sourceStable(ctx.snapshots[sourceArm].source, snapshot(cwd).source);
-  const [name, features, kind] = ROLES[role]; const target = `target/gate-prf03-${arm}-${role}`;
+  const [name, features, kind] = ROLES[role]; const target = `target/gate-prf03-${dirLabel(arm)}-${role}`;
   assert.ok(!existsSync(local(cwd, target)), 'build target exists; no overwrite');
   const script = `RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR="$PWD/${target}" cargo ${kind === 'bench' ? 'bench --no-run' : 'build --release'} --locked --message-format=json-render-diagnostics --${kind} ${quote(name)} --features ${quote(features.join(' '))}`;
   const r = await execute(ctx, { cwd, script, type: 'build', role, arm, timeoutMs: 1800000 });
@@ -271,7 +288,7 @@ function walkFiles(dir) {
 async function iaiArm(ctx, label, cells) {
   const arm = label === 'C0' ? 'C0' : label.startsWith('B') ? 'B' : 'A';
   const b = ctx.builds[`${arm}-iai`]; binaryStable(ctx, b);
-  const id = randomUUID(), cwd = ctx.arms[b.sourceArm], home = `target/gate-prf03-${arm}-iai-observations-${id}`;
+  const id = randomUUID(), cwd = ctx.arms[b.sourceArm], home = `target/gate-prf03-${dirLabel(arm)}-iai-observations-${id}`;
   assert.ok(!existsSync(local(cwd, home)));
   // Normal benchmark entry invokes installed iai 0.14.2; no cargo/rebuild or dispatch substitution.
   const script = ['./' + b.binaryPath, '--home', ctx.transport.path(local(cwd, home)), '--save-summary=json'].map(quote).join(' ');
@@ -446,12 +463,13 @@ function ownSource(s) {
 }
 async function pipeline(ctx) {
   assert.ok(!existsSync(ctx.out)); mkdirSync(ctx.out, { recursive: true });
-  ctx.processes = []; ctx.snapshots = {}; ctx.builds = {}; ctx.rows = { iai: [], native: [] };
+  ctx.processes = []; ctx.snapshots = {}; ctx.builds = {}; ctx.rows = { iai: [], native: [] }; ctx.telemetry = [];
   for (const arm of ['A', 'B']) {
     ctx.arms[arm] = realpathSync(ctx.arms[arm]);
     ctx.snapshots[arm] = snapshot(ctx.arms[arm]);
   }
   assert.notEqual(ctx.arms.A, ctx.arms.B);
+  assertEqualShape(ctx.arms.A, ctx.arms.B);
   const a = ctx.snapshots.A, b = ctx.snapshots.B;
   assert.notEqual(a.source.identitySha256, b.source.identitySha256);
   assert.deepEqual(a.source.harness, b.source.harness, 'harness mismatch');
@@ -485,6 +503,7 @@ async function pipeline(ctx) {
   for (const v of Object.values(ctx.builds)) binaryStable(ctx, v);
   ctx.allCapturedAt = now();
   putJson(ctx.out, 'all-identities-before-measurement.json', { capturedAt: ctx.allCapturedAt, builds: ctx.builds, environment: envRef, sources });
+  await telemetry(ctx, 'before-measurement');
   const probes = {};
   for (const arm of ['A', 'B']) for (const claim of ['lease', 'global'])
     probes[`${arm}-${claim}`] = await observation(ctx, arm, 'primary', [`probe-${claim}`, arm]);
@@ -502,6 +521,7 @@ async function pipeline(ctx) {
   const iaiRows = [];
   for (const label of ['A1', 'B1', 'A2', 'B2', 'C0']) {
     const measured = await iaiArm(ctx, label, cells);
+    await telemetry(ctx, `after-iai-${label}`);
     for (const cell of cells) {
     const arm = label.startsWith('B') ? 'B' : 'A'; let primary, paired;
     if (PAIRS[cell.kind]) {
@@ -531,6 +551,7 @@ async function pipeline(ctx) {
   }
   const nativePairs = [];
   for (const n of [1, 4, 8]) for (let sample = 0; sample < 9; sample++) {
+    await telemetry(ctx, `native-n${n}-s${sample}`);
     const labels = sample % 2 === 0 ? ['A', 'B', 'AA'] : ['B', 'AA', 'A'];
     for (const label of labels) {
       const arm = label === 'B' ? 'B' : 'A';
@@ -547,6 +568,7 @@ async function pipeline(ctx) {
       ctx.rows.native.push(row); nativePairs.push({ row, rowReceipt, twin: twin.id, native: native.id });
     }
   }
+  await telemetry(ctx, 'after-native');
   for (const arm of ['A', 'B']) sourceStable(ctx.snapshots[arm].source, snapshot(ctx.arms[arm]).source);
   for (const v of Object.values(ctx.builds)) binaryStable(ctx, v);
   const reviewNotePath = 'docs/reviews/2026-10-11-prf03-rust-boundary-draft.md';
@@ -560,7 +582,7 @@ async function pipeline(ctx) {
     featureExactReceipt: review.path, inventory: cells.map(({ name, kind }) => ({ name, kind })), ...ctx.rows };
   const bundle = { version: 1, environment: envRef, sources, ancestry: ancestryRef, builds: ctx.builds,
     allCapturedAt: ctx.allCapturedAt, inventory: inv, featureExactDraft: review, processes: ctx.processes.map(({ row, ...p }) => p),
-    negativePairs, iaiRows, nativePairs, work: ctx.work, workDefaulted: ctx.workDefaulted ?? false, review: null,
+    negativePairs, iaiRows, nativePairs, telemetry: ctx.telemetry, work: ctx.work, workDefaulted: ctx.workDefaulted ?? false, review: null,
     input: putJson(ctx.out, 'input.json', input),
     limitations: ['Normal iai benchmark entry runs the whole group in a future explicitly authorized --run; only frozen inventory cells enter the judge. Unrelated outputs retained as audit.'] };
   putJson(ctx.out, 'bundle.json', bundle);
@@ -570,6 +592,8 @@ const CLOCK_SKEW_MS = 1000;
 export function aggregate(dir, { reviewFile, synthetic = false } = {}) {
   const bundle = JSON.parse(readFileSync(local(dir, 'bundle.json'))); assert.equal(bundle.version, 1);
   const input = getJson(dir, bundle.input), env = getJson(dir, bundle.environment);
+  assert.ok(Array.isArray(bundle.telemetry) && bundle.telemetry.length >= 3, 'host/WSL load telemetry missing');
+  for (const t of bundle.telemetry) { const rec = getJson(dir, t.ref); text(rec.label); assert.ok(Number.isFinite(Date.parse(rec.at))); text(rec.wslLoadavg); }
   assert.equal(input.environmentSha256, bundle.environment.sha256);
   for (const k of ['rustc', 'cargo', 'target', 'os', 'cpu', 'allocator', 'flags', 'armAllocatorSourceHashes']) assert.ok(k in env);
   const sources = bundle.sources;
@@ -615,7 +639,7 @@ export function aggregate(dir, { reviewFile, synthetic = false } = {}) {
     assert.equal(b.locked, true); assert.equal(b.jobs, 3); assert.equal(b.rustcWrapper, ''); assert.equal(b.cargoBuildRustcWrapper, '');
     assert.equal(b.profile, 'release'); assert.ok(Date.parse(b.capturedAt) <= capture);
     assert.ok(Date.parse(sources[b.sourceArm].capturedAt) <= Date.parse(b.capturedAt));
-    assert.ok(b.binaryPath.startsWith(`target/gate-prf03-${b.arm}-${b.role}/`));
+    assert.ok(b.binaryPath.startsWith(`target/gate-prf03-${dirLabel(b.arm)}-${b.role}/`));
     const process = getJson(dir, b.process); assert.equal(process.code, 0); assert.equal(process.type, 'build');
     get(dir, process.stdout); get(dir, process.stderr);
   }
@@ -828,10 +852,11 @@ function fixtureRepos(base) {
 }
 function fixtureTransport() {
   let pid = 10000;
-  return { path: p => p.replaceAll('\\', '/'), async execute(r) {
+  return { path: p => p.replaceAll('\\', '/'), hostLoad: async () => 7, async execute(r) {
+    if (r.type === 'telemetry') return { code: 0, stdout: '0.10 0.10 0.10 1/100 1\n8\n', stderr: '' };
     if (r.type === 'environment') return { code: 0, stdout: 'rustc fixture\nhost: x86_64-unknown-linux-gnu\ncargo fixture\nLinux fixture\nmodel name fixture cpu\niai-callgrind-runner 0.14.2\ncargo-user-config-checked\n', stderr: '' };
     if (r.type === 'build') {
-      const [name] = ROLES[r.role]; const binaryPath = `target/gate-prf03-${r.arm}-${r.role}/release/${r.role === 'iai' ? 'deps' : 'examples'}/${name}`;
+      const [name] = ROLES[r.role]; const binaryPath = `target/gate-prf03-${dirLabel(r.arm)}-${r.role}/release/${r.role === 'iai' ? 'deps' : 'examples'}/${name}`;
       const file = local(r.cwd, binaryPath); mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, `fake executable ${r.arm} ${r.role}\n`, { flag: 'wx' });
       return { code: 0, stdout: JSON.stringify({ reason: 'compiler-artifact', target: { name }, executable: this.path(file) }) + '\n', stderr: '' };
@@ -1015,6 +1040,10 @@ export async function selfTest() {
       const expected = mode === 'C0-identical' ? /C0 identical bytes/ : mode === 'source-drift' ? /clean committed arm/ : mode === 'ancestry-unrelated' ? /A not ancestor/ : mode === 'wrong-negative-error' ? /negative must fail/ : /AssertionError/;
       await assert.rejects(pipeline({ arms: scenarioArms, out: resolve(base, `failed-${mode}`), transport, work: 8 }), expected); checks++;
     }
+    assertEqualShape('/w/prf03-arm-a', '/w/prf03-arm-b'); checks++;
+    assert.throws(() => assertEqualShape('/w/prf03-arm-a', '/w/r19-prf03-impl'), /identical length/); checks++;
+    assert.equal(dirLabel('C0').length, dirLabel('A').length); assert.equal(dirLabel('B').length, dirLabel('A').length); checks++;
+    reject(b => b.telemetry = []);
     const cli = parseCli(['--run', 'bundle', '--arm-a', ROOT, '--arm-b', 'explicit-future-arm']);
     assert.equal(cli.work, 8192); assert.equal(cli.workDefaulted, true); assert.equal(cli.arms.A, ROOT); checks++;
     assert.equal(parseCli(['--run', '--out', 'bundle', '--arm-a', ROOT, '--arm-b', 'b', '--work', '8']).work, 8); checks++;

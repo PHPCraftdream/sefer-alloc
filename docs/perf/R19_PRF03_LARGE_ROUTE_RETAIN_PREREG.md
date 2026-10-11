@@ -218,6 +218,31 @@ conflicts, this amendment governs.
    rules enforced by the runner aggregate and by personal review. Re-frozen hashes below
    supersede the A1 freeze.
 
+## Amendment A3 (harness confounder removal, before any further build; criteria unchanged)
+
+Applied on the reviewer-role decision of 2026-10-12
+(`docs/reviews/2026-10-12-prf03-run01-decision-reviewer.md`) after run01
+(`docs/perf/R19_PRF03_B_VS_A_GATE.md`, judge verdict INCONCLUSIVE, retained unchanged). No
+threshold, formula (`T = max(10, |C0 - A1|)`), cell kind, arm definition, mimalloc exact-zero
+rule, R1 bound or native threshold changes; the judge file is untouched.
+
+1. Equal path shape. Arms A and B are run from worktrees whose FULL paths have identical length
+   (runner assertion), and the build and observation directories use one-character labels for
+   A, B and C0 (`C` for C0), so that the cwd, argv, environment and binary-path lengths of the
+   three iai binaries are equal. Run01 showed an identical +7 Ir in libc `memset` in sefer cells
+   and in mimalloc cells, which execute none of B's code; the mechanism (path-length dependent
+   alignment of a stack or buffer) is a hypothesis, not established. If a residual mimalloc or
+   control difference remains with equal shapes, it is investigated at the level of libc call
+   addresses and sizes; it is never removed by subtraction, cell removal or a relaxed exact zero.
+2. Load telemetry. The runner records WSL `/proc/loadavg` and `nproc` and the Windows host CPU
+   load percentage before the measurement, after every iai group, before every native (n, sample)
+   triple and at the end. These are retained receipts in the bundle (`telemetry`) and are
+   descriptive: the decision rule of the native axis stays the frozen A/A noise (at most 5 % on
+   every axis, otherwise INCONCLUSIVE).
+3. Evidence scope. A candidate other than `217c5339` (B2) is gated by a complete new run against
+   A; old iai rows and new native rows are never combined into one run, and every attempt is
+   published.
+
 ## Freeze hashes (no self-hash)
 
 Companion `R19_PRF03_LARGE_ROUTE_RETAIN_PREREG.sha256` contains the SHA256 of
