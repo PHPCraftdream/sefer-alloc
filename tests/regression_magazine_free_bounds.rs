@@ -52,6 +52,9 @@ fn magazine_free_rejects_metadata_and_uncarved_offsets() {
         unsafe { heap.dealloc(p, layout) };
     }
     heap.dbg_flush_all();
+    // Keep the slot LIVE: the sibling test must never inherit this used heap,
+    // whose partly consumed segment breaks its fresh-heap geometry assumptions.
+    core::mem::forget(lease);
 }
 
 #[test]
@@ -108,4 +111,7 @@ fn small_magazine_free_rejects_metadata_and_uncarved_offsets() {
         unsafe { heap.dealloc(p, layout) };
     }
     heap.dbg_flush_all();
+    // Keep the slot LIVE: the sibling test must never inherit this used heap,
+    // whose partly consumed segment breaks its fresh-heap geometry assumptions.
+    core::mem::forget(lease);
 }
