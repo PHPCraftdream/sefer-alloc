@@ -3165,10 +3165,19 @@ jobs:
       - run: |
           cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom" \
             --test loom_sidecar_bitmap \
+            --test loom_sidecar_summary \
             --test loom_terminal_owner_drain \
             --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_conditional_two_words_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_conditional_same_word_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_pending_pause_strict_inclusion ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_spurious_bit_benign ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_negative_summary_before_pending - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_negative_clear_after_word_cut - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_negative_strict_uses_summary - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_summary_negative_producer_never_sets_clean_summary - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test unpublished_and_detached_instances_hold_the_reservation_credit ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_producer_retirement_allows_premature_release - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
