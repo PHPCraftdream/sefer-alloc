@@ -3982,7 +3982,29 @@ jobs:
           # resolves to x86_64-unknown-linux-musl whose std is NOT installed
           # (E0463). Force the gnu target (its std ships with the toolchain).
           targets: x86_64-unknown-linux-gnu
-          components: rust-src
+          components: rust-src, llvm-tools-preview
+      - name: Configure fuzz symbolization
+        shell: bash
+        run: |
+          set -euo pipefail
+          host=$(rustc +nightly -vV | sed -n 's/^host: //p')
+          symbolizer="$(rustc +nightly --print sysroot)/lib/rustlib/$host/bin/llvm-symbolizer"
+          # Some llvm-tools-preview distributions do not ship llvm-symbolizer.
+          if [[ ! -x "$symbolizer" ]]; then
+            symbolizer=$(command -v llvm-symbolizer || true)
+          fi
+          if [[ ! -x "$symbolizer" ]]; then
+            for candidate in /usr/bin/llvm-symbolizer-[0-9]*; do
+              if [[ -x "$candidate" ]]; then symbolizer="$candidate"; break; fi
+            done
+          fi
+          # ASan supports binutils addr2line when explicitly enabled.
+          if [[ ! -x "$symbolizer" ]]; then
+            symbolizer=$(command -v addr2line)
+          fi
+          test -x "$symbolizer"
+          echo "ASAN_SYMBOLIZER_PATH=$symbolizer" >> "$GITHUB_ENV"
+          echo "ASAN_OPTIONS=symbolize=1:allow_addr2line=1" >> "$GITHUB_ENV"
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
         with:
@@ -4002,6 +4024,8 @@ jobs:
         run: cargo +nightly fuzz run global_alloc_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
       - name: fuzz run heap_core_ops (10 min)
         working-directory: fuzz
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/fuzz/lsan.supp:print_suppressions=1
         run: cargo +nightly fuzz run heap_core_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
 
   docs:

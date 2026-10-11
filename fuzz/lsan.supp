@@ -1,0 +1,4 @@
+# Process-lifetime System-backed route array retained by an mmap registry heap.
+# See fuzz/README.md for lifecycle, evidence, and an unsuppressed audit command.
+# Wildcard accommodates symbolizer type delimiter variations; type+method stay narrow.
+leak:route_slots::RouteSlots*::ensure_capacity

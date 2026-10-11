@@ -121,6 +121,77 @@ cargo +nightly fuzz tmin region_ops -- artifact.bin
 Corpora and crash artifacts are written under `fuzz/artifacts/region_ops/` and
 `fuzz/corpus/region_ops/`.
 
+## LeakSanitizer: registry route metadata
+
+The weekly `fuzz-run` job enables symbolization for all three targets, but applies
+[`lsan.supp`](lsan.supp) **only to `heap_core_ops`**. Leak detection and exit-time
+checks remain enabled. The suppression `route_slots::RouteSlots*::ensure_capacity`
+uses `*` to accommodate symbolizer type delimiter variations while matching the
+specific type and method. The actual addr2line frame remains evidence:
+`<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::ensure_capacity`.
+
+Lifecycle: [`RouteSlots::ensure_capacity` and `Drop`](../src/alloc_core/segment/segment_table/route_slots.rs)
+allocate the array through `System`, free the previous array on growth, and free
+the final array on drop. [`SegmentTable::attach_owner`](../src/alloc_core/segment/segment_table/segment_table_impl.rs)
+retains an existing routes array rather than replacing it on reattachment.
+[`AllocCore`'s lifecycle documentation](../src/alloc_core/alloc_core/lifecycle.rs)
+explains that registry heaps retain their cores for process lifetime;
+[`registry bootstrap`](../src/registry/bootstrap/mod.rs) uses mmap-backed chunks
+on Unix. The working explanation is that LSan cannot see the retained array's
+root in that mmap memory. **This root-visibility diagnosis remains a hypothesis**:
+the local observation establishes the allocation site, not LSan's root traversal.
+
+Evidence: [solution research §2.B](../docs/reviews/2026-10-11-solution-research-ci-api02.md)
+records scheduled run `37315754670`, job `111781954504`: exit-time 128 B / one
+allocation, with an **unsymbolized** historical stack. A local WSL nightly
+ASan/libFuzzer corpus-init replay subsequently reproduced 128 B / one allocation
+at `route_slots.rs:48`, symbolized through `/usr/bin/addr2line`. The same binary
+and three committed seeds passed with this suppression: audit output was
+`count 1`, `bytes 128`. This does not symbolize or identify the historical binary.
+A single-file seed replay passed without an exit-time report; it is not equivalent
+to libFuzzer corpus-loop shutdown.
+
+### Short, read-only corpus audit
+
+Run from the repository root on Linux/WSL. Cargo-fuzz 0.13.2 rejects `--locked`;
+for a locked local replay, build its existing harness directly (no target changes):
+
+```sh
+RUSTC_WRAPPER= CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/tmp/r19-ci-fuzz-target \
+CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+RUSTFLAGS='--cfg fuzzing -C debuginfo=2 -Zsanitizer=address -C llvm-args=-sanitizer-coverage-level=4 -C llvm-args=-sanitizer-coverage-inline-8bit-counters -C llvm-args=-sanitizer-coverage-pc-table -C llvm-args=-sanitizer-coverage-trace-compares' \
+cargo +nightly build --locked --release --manifest-path fuzz/Cargo.toml \
+  --bin heap_core_ops --target x86_64-unknown-linux-gnu
+
+# Prefer an executable llvm-symbolizer; addr2line was verified locally.
+export ASAN_SYMBOLIZER_PATH=/usr/bin/addr2line
+export ASAN_OPTIONS=symbolize=1:allow_addr2line=1
+bin=/tmp/r19-ci-fuzz-target/x86_64-unknown-linux-gnu/release/heap_core_ops
+# Without suppression: expect the exit-time report.
+LSAN_OPTIONS=print_suppressions=1 "$bin" fuzz/corpus/heap_core_ops \
+  -runs=1 -max_total_time=5 -timeout=5 -artifact_prefix=/tmp/r19-ci-fuzz-target/
+# With suppression: audit its count and bytes, not just exit status.
+LSAN_OPTIONS="suppressions=$PWD/fuzz/lsan.supp:print_suppressions=1" \
+  "$bin" fuzz/corpus/heap_core_ops \
+  -runs=1 -max_total_time=5 -timeout=5 -artifact_prefix=/tmp/r19-ci-fuzz-target/
+```
+
+`-runs=1` stops after corpus initialization (observed: five runs for three seeds),
+without mutation or new corpus entries. This is a shutdown replay, **not a coverage
+campaign**; the direct build emitted a no-interesting-inputs/coverage warning.
+CI first checks the rustup LLVM tools path, then executable system/versioned
+llvm-symbolizers, finally addr2line; missing tools fail setup rather than silently
+losing symbols. Some llvm-tools-preview distributions omit llvm-symbolizer.
+
+The suppression can hide genuine leaks of arrays allocated at this same site,
+including a missing free on growth. Existing routed-core construction hooks and
+sidecar counters do not observe RouteSlots array alloc/free totals. A trustworthy
+bounded-array test needs a RouteSlots-specific live-array/live-byte observer
+(including growth frees and final drop), plus actual registry slot reuse/claim
+observation; no textual substitute is added. Reconsider/remove the suppression
+when registry teardown changes, or when audit count/bytes unexpectedly grow.
+Disabling leak detection is an emergency fallback only, **not configured here**.
+
 ## Status
 
 This target is part of Phase 5's hardening gate (see
