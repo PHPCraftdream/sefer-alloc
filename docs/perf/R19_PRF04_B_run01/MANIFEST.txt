@@ -1,0 +1,4 @@
+samples.json sha256=2d4a672221a83b00983dfcea77bef2c70d63c80e7b1652a9421de5f01d579e6d bytes=4147759 (tier 3, not committed)
+per-slot files omitted: 492 (NNNN_sample.json, same data as samples.json)
+reproduce: node scripts/r19_prf04_gate2b.mjs --run <outdir> --arm-a <A worktree> --arm-b <B worktree>
+re-derive excerpt: node scripts/r19_prf04_gate2b_excerpt.mjs <outdir>

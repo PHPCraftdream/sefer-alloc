@@ -1,0 +1,17 @@
+axis,arm,k,w,n,commit_idle_median,rss_idle_median,wall_ns_median,first_call_p99_median,numerator,denominator,ratio,noise,bound,pairs,mean_delta,t_stat,p_value,inconclusive,kill
+commit,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,5374722048,5420187648,0.9916118033262601,0.000010579619571993934,unavailable,unavailable,unavailable,unavailable,unavailable,false,false
+live,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,-1127750,8735600,-0.12909817299326892,0.13807496544795547,0.05,40,-23615815,-0.8940929990648315,0.37675680969157654,true,false
+churn,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,-53711500,3278041500,-0.016385241004422915,0.04636067036426167,0.04636067036426167,40,266779962.5,0.8071316533663473,0.4244859100622661,false,false
+wave_p99,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,-3389200,4097600,-0.8271183131589223,0.034231059652655424,unavailable,unavailable,unavailable,unavailable,unavailable,false,false
+secondary_cell,A,2,16,5,24801280,21950464,47284400,206000,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,A,2,128,5,177917952,144306176,410317500,226700,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,A,8,16,5,155717632,125947904,127685000,1424600,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,A,8,128,5,1226412032,978587648,2026221700,533000,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,A,32,16,5,680058880,542846976,954529400,3083200,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+primary_cell,A,32,128,5,5420187648,4317294592,14269873000,4097600,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,B,2,16,5,4411392,5509120,44461500,103200,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,B,2,128,5,4411392,5517312,294276600,82400,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,B,8,16,5,12599296,12185600,116841500,238900,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,B,8,128,5,12652544,12288000,2017664100,251600,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+secondary_cell,B,32,16,5,45350912,38608896,728985400,982900,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
+primary_cell,B,32,128,5,45465600,38805504,8851544700,708400,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable,unavailable
