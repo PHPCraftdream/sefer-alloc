@@ -1458,6 +1458,7 @@ jobs:
       # as executable repository tooling with stale allowlist checks.
       - run: node scripts/verify-dbg-hook-safety.mjs
       - run: node scripts/verify-loom-target-wiring.mjs
+      - run: node scripts/verify-miri-target-wiring.mjs
       - run: node scripts/run-check-matrix.mjs --kind check --kind test
       # R30-5: the generated "feature ABSENT" compile-check enumeration for
       # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
@@ -3005,6 +3006,18 @@ jobs:
       # even when the directory sidecar is never actually reserved.
       - name: segment_directory_a5_miri
         run: cargo miri test --features "alloc-segment-directory internals" --test segment_directory_a5_miri
+      # VER-03: explicit GREEN targets, matching scripts/miri-matrix.mjs.
+      # Inherit strict provenance and Stacked Borrows from this job.
+      - name: r11_ph4a_lease_miri
+        run: cargo miri test --locked --features "alloc-global alloc-xthread internals" --test r11_ph4a_lease_miri
+      - name: r11_ph4b_lease_miri
+        run: cargo miri test --locked --features "alloc-global alloc-xthread internals" --test r11_ph4b_lease_miri
+      - name: regression_r2_05_diag_provenance_miri
+        run: cargo miri test --locked --features "alloc-core internals" --test regression_r2_05_diag_provenance_miri
+      - name: regression_w3_stats_aliasing_miri
+        run: cargo miri test --locked --features "std" --test regression_w3_stats_aliasing_miri
+      - name: class_leaves_publication_miri
+        run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
 
   miri-alloc-core:
     # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,
@@ -3085,6 +3098,9 @@ jobs:
           --test regression_xthread_large_free_no_leak
           --test regression_xthread_thread_free_alias_miri
           --test regression_xthread_small_ring_miri
+      # VER-03: inherit plain provenance, Stacked Borrows and preemption=0.5.
+      - name: regression_r2_06_header_race_miri
+        run: cargo miri test --locked --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_r2_06_header_race_miri
       - name: tiny terminal owner invariant
         run: |
           cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test r6_terminal_owner_drain -- --exact requested_sizes_one_through_seven_retire_once_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-terminal-owner-tiny.log"
