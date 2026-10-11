@@ -2338,6 +2338,68 @@ fn large_cache_hit_only_4mib() {
     }
 }
 
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[path = "support/r19_prf03.rs"]
+mod prf03;
+
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_eviction_prefill_only_41x4mib() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    prf03::eviction_round(heap);
+}
+
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_eviction_hit_only_41x4mib() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    prf03::eviction_round(heap);
+    prf03::eviction_round(heap);
+}
+
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_payload_prefill_only_4mib() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    prf03::payload_prefill(heap, |_, _| {});
+}
+
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_payload_hit_only_4mib() {
+    let _ = bootstrap::ensure();
+    let heap = claim_leaked_heap();
+    prf03::payload_prefill(heap, |_, _| {});
+    prf03::payload_round(heap, 8, |_, _| {});
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_eviction_prefill_only_41x4mib() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_eviction_hit_only_41x4mib() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_payload_prefill_only_4mib() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_payload_hit_only_4mib() {
+    black_box(0u8);
+}
+
 // R24-8/R25-7-style no-op stubs so `library_benchmark_group!` resolves when
 // `alloc-decommit` is absent (`large_cache`/`HeapRegistry::claim` are not
 // available without it).
@@ -3538,6 +3600,10 @@ library_benchmark_group!(
         large_alloc_free_cycle,
         large_cache_prefill_only_4mib,
         large_cache_hit_only_4mib,
+        large_cache_eviction_prefill_only_41x4mib,
+        large_cache_eviction_hit_only_41x4mib,
+        large_cache_payload_prefill_only_4mib,
+        large_cache_payload_hit_only_4mib,
         large_cache_free_slot_search_prefill_only,
         large_cache_free_slot_search_cycle_only,
         realloc_grow,

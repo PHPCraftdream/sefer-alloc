@@ -1761,6 +1761,14 @@ harness = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
 [[example]]
+name = "r19_prf03_native_mt"
+required-features = ["production"]
+
+[[example]]
+name = "r19_prf03_paired_oracle"
+required-features = ["production", "bench-internals", "internals"]
+
+[[example]]
 name = "r19_prf02_activation"
 required-features = ["production", "internals", "bench-internals"]
 
