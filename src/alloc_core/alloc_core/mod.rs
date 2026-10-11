@@ -92,6 +92,7 @@ mod sidecar_test_hooks;
 /// `dealloc`, `realloc`) and the in-place realloc fast-path family.
 #[path = "mem/mod.rs"]
 mod mem;
+#[cfg(feature = "alloc-global")]
 pub(crate) use mem::OwnedBlock;
 
 /// Group module: NUMA-node caching, the registry-walk/membership accessors

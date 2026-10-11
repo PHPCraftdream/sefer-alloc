@@ -144,6 +144,7 @@ use large::alloc_core_large_cache;
 pub(crate) use large::large_cache_extended;
 
 pub use alloc_core::AllocCore;
+#[cfg(feature = "alloc-global")]
 pub(crate) use alloc_core::OwnedBlock;
 /// The dropped-free counter, re-exported crate-wide so
 /// `HeapCore::publish_foreign` can bump it (like

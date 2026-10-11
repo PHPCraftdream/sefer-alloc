@@ -7,7 +7,9 @@
 //! movement; no behavior changed.
 
 mod mem_impl;
+#[cfg(feature = "alloc-global")]
 mod owned_block;
 mod realloc_fastpath;
 
+#[cfg(feature = "alloc-global")]
 pub(crate) use owned_block::OwnedBlock;

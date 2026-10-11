@@ -5,6 +5,7 @@
 //! did: `alloc_with_class` (size class) and `dealloc_with_base` (base key).
 //! They do not exist under `production`.
 
+#[cfg(feature = "alloc-global")]
 use super::OwnedBlock;
 use core::alloc::Layout;
 
@@ -42,6 +43,7 @@ impl AllocCore {
         Some((base, block))
     }
 
+    #[cfg(feature = "alloc-global")]
     #[inline(always)]
     pub(crate) fn owned_block_of(&mut self, ptr: *mut u8) -> Option<OwnedBlock> {
         self.canonical_block_of(ptr)
