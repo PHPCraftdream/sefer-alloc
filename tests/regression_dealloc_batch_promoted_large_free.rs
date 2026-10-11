@@ -85,7 +85,8 @@ fn dealloc_batch_promoted_large_free_releases_eagerly() {
         unsafe { p.write(0xAB) };
 
         let new_size = PROMOTION_THRESHOLD + 1024 * (round + 1);
-        let grown = heap.realloc(p, old_layout, new_size);
+        // SAFETY: `p` is a live allocation of `old_layout` from `heap`, resized once.
+        let grown = unsafe { heap.realloc(p, old_layout, new_size) };
         assert!(!grown.is_null(), "round {round}: growing realloc failed");
         // SAFETY: grown valid for new_size >= old_size bytes; the growth
         // copy must have preserved byte 0.
@@ -102,7 +103,7 @@ fn dealloc_batch_promoted_large_free_releases_eagerly() {
         // layout the growing `realloc` above returned it for), made by
         // `heap`'s own realloc, freed exactly once here — through the
         // batched entry point specifically under test.
-        heap.dealloc_batch(grown_layout, &[grown]);
+        unsafe { heap.dealloc_batch(grown_layout, &[grown]) };
 
         let released_after = a.stats().segments_released_total;
         assert_eq!(
