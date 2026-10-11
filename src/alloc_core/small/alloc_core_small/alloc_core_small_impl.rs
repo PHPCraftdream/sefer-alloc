@@ -395,24 +395,32 @@ impl AllocCore {
     }
 
     #[cfg(feature = "hardened")]
-    #[inline(always)]
-    fn free_continuation(
-        segment: *mut u8,
-        off: u32,
-        class_idx: usize,
-        next: *mut u8,
-    ) -> Result<u32, ()> {
-        if next.is_null() {
-            return Ok(FREE_LIST_NULL);
-        }
-        let next_off = Node::continuation_offset(segment, next).ok_or(())?;
-        if next_off == off || !Self::valid_free_node(segment, next_off, class_idx) {
-            return Err(());
-        }
-        Ok(next_off)
+    #[cold]
+    #[inline(never)]
+    fn free_list_corrupted() -> ! {
+        // Corrupt allocator-owned state cannot be recovered as an OOM. Abort
+        // deliberately skips unwinding, destructors, and the panic hook.
+        crate::alloc_core::platform::fatal::fatal(
+            b"sefer-alloc: hardened: Small free-list corruption detected; aborting\n",
+        )
     }
 
-    /// Pop a free block; `Err` leaves the class head and bitmap unchanged.
+    #[cfg(feature = "hardened")]
+    #[inline(always)]
+    fn free_continuation(segment: *mut u8, off: u32, class_idx: usize, next: *mut u8) -> u32 {
+        if next.is_null() {
+            return FREE_LIST_NULL;
+        }
+        let next_off =
+            Node::continuation_offset(segment, next).unwrap_or_else(|| Self::free_list_corrupted());
+        if next_off == off || !Self::valid_free_node(segment, next_off, class_idx) {
+            Self::free_list_corrupted();
+        }
+        next_off
+    }
+
+    /// Pop a free block; `Err` is an uncommitted class-spill OOM, leaving
+    /// the class head and bitmap unchanged. Hardened corruption aborts.
     #[inline(always)]
     fn pop_free(&mut self, segment: *mut u8, class_idx: usize) -> Result<Option<*mut u8>, ()> {
         let mut meta = SegmentMeta::new(segment);
@@ -423,7 +431,7 @@ impl AllocCore {
         }
         #[cfg(feature = "hardened")]
         if !Self::valid_free_node(segment, head_off, class_idx) {
-            return Err(());
+            Self::free_list_corrupted();
         }
         let block_ptr = Node::deref(segment, head_off as usize);
         let Some(block_nn) = NonNull::new(block_ptr) else {
@@ -431,7 +439,7 @@ impl AllocCore {
         };
         let next = Node::read_next(block_nn);
         #[cfg(feature = "hardened")]
-        let new_head = Self::free_continuation(segment, head_off, class_idx, next)?;
+        let new_head = Self::free_continuation(segment, head_off, class_idx, next);
         #[cfg(not(feature = "hardened"))]
         let new_head = if next.is_null() {
             FREE_LIST_NULL
@@ -524,6 +532,8 @@ impl AllocCore {
             .unwrap_or(0)
     }
 
+    /// `Err` is only an uncommitted class-spill OOM; hardened validation
+    /// failures abort rather than being converted to an empty drain.
     pub(in crate::alloc_core) fn try_drain_freelist_batch(
         &mut self,
         segment: *mut u8,
@@ -555,7 +565,7 @@ impl AllocCore {
             while probed < out.len() && probe != FREE_LIST_NULL {
                 #[cfg(feature = "hardened")]
                 if !Self::valid_free_node(segment, probe, class_idx) {
-                    return Err(());
+                    Self::free_list_corrupted();
                 }
                 let block = Node::deref(segment, probe as usize);
                 let Some(nn) = NonNull::new(block) else {
@@ -571,23 +581,23 @@ impl AllocCore {
                 let next = Node::read_next(nn);
                 #[cfg(feature = "hardened")]
                 {
-                    let next_off = Self::free_continuation(segment, probe, class_idx, next)?;
+                    let next_off = Self::free_continuation(segment, probe, class_idx, next);
                     if next_off == bt.head(class_idx) {
-                        return Err(());
+                        Self::free_list_corrupted();
                     }
                     probe = next_off;
                     if probed % 2 == 1 {
-                        let slow_block =
-                            NonNull::new(Node::deref(segment, slow as usize)).ok_or(())?;
+                        let slow_block = NonNull::new(Node::deref(segment, slow as usize))
+                            .unwrap_or_else(|| Self::free_list_corrupted());
                         slow = Self::free_continuation(
                             segment,
                             slow,
                             class_idx,
                             Node::read_next(slow_block),
-                        )?;
+                        );
                     }
                     if probe != FREE_LIST_NULL && probe == slow {
-                        return Err(());
+                        Self::free_list_corrupted();
                     }
                 }
                 #[cfg(not(feature = "hardened"))]

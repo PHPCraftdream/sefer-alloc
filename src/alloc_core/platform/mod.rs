@@ -1,4 +1,6 @@
 //! OS/platform shims and confined raw-memory seams.
+#[cfg(feature = "hardened")]
+pub(crate) mod fatal;
 pub(crate) mod node;
 /// NUMA OS-seam: NUMA-node detection and segment binding.
 /// `pub` (not `pub(crate)`) only because `alloc_core` itself is

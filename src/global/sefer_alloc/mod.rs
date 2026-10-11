@@ -172,6 +172,16 @@
 //! These are not ordinary allocation OOM. Direct process abort does not
 //! unwind or run the panic hook; panic-capable checks are a separate category.
 //!
+//! **Failure policy.** Three categories. A detected invalid input rejected
+//! before any metadata mutation is a no-op or null return, counted where a
+//! counter exists. Detected corruption of allocator-owned state aborts: a null
+//! would be indistinguishable from OOM and leave the class permanently
+//! degraded. Under `hardened`, Small free-list head/continuation validation
+//! and cycle detection abort after a one-line stderr diagnostic; production
+//! does not validate free-list links. A repeatable resource shortage (OOM)
+//! returns null. Abort sites older than this split are not retrofitted with
+//! counters or diagnostics.
+//!
 //! **Caller boundary.** Missing routes or rejected foreign publication can
 //! drop a free (no-op), but this does not make arbitrary pointers safe.
 //! Invalid layouts, stale/interior/unmapped pointers, wrong layouts and

@@ -1821,6 +1821,9 @@ jobs:
       - name: test (--features "production hardened")
         if: ${{ !cancelled() }}
         run: cargo test --features "production hardened internals" --no-fail-fast
+      - name: test (Small sidecar preflight, production hardened)
+        if: ${{ !cancelled() }}
+        run: cargo test --locked --test r11_p3_small_sidecar_preflight --features "production hardened internals bench-internals"
       # R14 hotfix (task #299): `tests/r11_4_dealloc_batch_hardened_guards.rs`
       # exercises `HeapCore::dealloc_batch`'s hardened guards (F7/H1), which
       # requires `batch-api` directly -- `hardened` alone does not pull it in
