@@ -225,6 +225,10 @@ pub(super) fn small_free_guard(
         ))
     ))]
     if matches!(&kind, BlockKind::Large) {
+        // SEC-03: only this already-selected Large arm reads payload geometry.
+        if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
+            return SmallFreeGuard::RejectNoOp;
+        }
         return SmallFreeGuard::RouteToLargeFree;
     }
 
@@ -238,6 +242,11 @@ pub(super) fn small_free_guard(
                 || (SegmentHeader::large_size_at(base) == layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK)
                     && SegmentHeader::large_align_at(base) == layout.align())
             {
+                // Preserve hardened layout rejection below: only a layout
+                // accepted for Large routing reaches the address rejection.
+                if crate::alloc_core::AllocCore::reject_large_interior_free(base, ptr) {
+                    return SmallFreeGuard::RejectNoOp;
+                }
                 return SmallFreeGuard::RouteToLargeFree;
             }
             #[cfg(feature = "alloc-stats")]

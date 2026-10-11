@@ -146,6 +146,9 @@ impl HeapCore {
             // `segment_bases().any(|b| b == base)`. Same semantics: `true` iff
             // `base` is one of THIS heap's registered, live segments.
             if let Some((base, block)) = own_block {
+                if AllocCore::large_payload_mismatch(base, block) {
+                    return core::ptr::null_mut();
+                }
                 // Own-segment pointer. The resize proceeds in up to three
                 // phases (see the doc comment above): A1 Large drain, in-place
                 // attempt, then move leg — all funnelled through the

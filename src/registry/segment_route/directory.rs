@@ -174,7 +174,12 @@ impl EntryHandle {
     pub(super) fn contains_payload(&self, addr: usize, size: usize) -> bool {
         let entry = self.entry();
         addr >= entry.payload
-            && (!matches!(entry.kind, RouteKind::Large) || addr == entry.payload)
+            && (!matches!(entry.kind, RouteKind::Large)
+                || crate::alloc_core::AllocCore::large_payload_address_matches(
+                    addr,
+                    entry.payload,
+                    0,
+                ))
             && addr.checked_add(size).is_some_and(|end| end <= entry.end)
     }
 
@@ -875,7 +880,12 @@ impl RouteDirectory {
         let entry = unsafe { &*raw };
         if addr < entry.payload
             || addr >= entry.end
-            || (matches!(entry.kind, RouteKind::Large) && addr != entry.payload)
+            || (matches!(entry.kind, RouteKind::Large)
+                && !crate::alloc_core::AllocCore::large_payload_address_matches(
+                    addr,
+                    entry.payload,
+                    0,
+                ))
         {
             return None;
         }

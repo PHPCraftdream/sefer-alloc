@@ -7,10 +7,10 @@
 
 use core::alloc::Layout;
 
+#[cfg(feature = "alloc-stats")]
+use super::super::counters::LARGE_ZERO_PASS_CALLS;
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 use super::super::counters::SMALL_ZERO_PASS_CALLS;
-#[cfg(feature = "alloc-stats")]
-use super::super::counters::{FOREIGN_OR_UNROUTABLE_FREES, LARGE_ZERO_PASS_CALLS};
 #[cfg(feature = "alloc-decommit")]
 use super::super::CachedLarge;
 use crate::alloc_core::alloc_core::AllocCore;
@@ -205,8 +205,8 @@ impl AllocCore {
     ///   [`alloc`](Self::alloc)/[`alloc_zeroed`](Self::alloc_zeroed)/
     ///   [`realloc`](Self::realloc). It MUST NOT be an interior pointer
     ///   (`base + interior_offset`): the foreign/interior defences are
-    ///   best-effort, not a soundness guarantee, and an interior Large free
-    ///   would release the whole reservation of a still-live neighbour.
+    ///   best-effort, not a soundness guarantee. Recognized own-thread Large
+    ///   non-payload addresses are rejected before consuming the live credit.
     /// - `layout` exactly matches the layout the allocation was made with.
     /// - The allocation is freed **at most once**: a double-free, and any
     ///   re-issue of `ptr` after this call (before a later `alloc` happens to
@@ -228,12 +228,11 @@ impl AllocCore {
         // The caller pointer is only an address key. Metadata and free-list
         // access use the root-derived block, never that key's provenance.
         let Some((base, block)) = self.canonical_block_of(ptr) else {
-            // Make the drop observable (`FOREIGN_OR_UNROUTABLE_FREES`); gated on
-            // `alloc-stats` so a standalone `AllocCore` pays nothing by default.
-            // Unreachable under `alloc-global`: `HeapCore::dealloc_routing`
-            // already proved ownership and counts its own drops.
-            #[cfg(feature = "alloc-stats")]
-            FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            // Count an unresolved address once, including a biased Large
+            // pre-payload address whose numeric key differs from the issued key.
+            #[cfg(any(feature = "alloc-global", feature = "alloc-stats"))]
+            crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return;
         };
         // SAFETY: the caller owns the live block; `base` is the table's
@@ -260,6 +259,9 @@ impl AllocCore {
         // race-free against the owner's disjoint `bump` writes.
         match SegmentHeader::kind_at(base) {
             SegmentKind::Large => {
+                if Self::reject_large_interior_free(base, ptr) {
+                    return;
+                }
                 // LIVE carries this instance's sole credit until the owner
                 // claims it. A failed claim must not unregister or unmap it.
                 let terminal_meta = SegmentMeta::new(base);
@@ -652,6 +654,9 @@ impl AllocCore {
             // registered.
             return core::ptr::null_mut();
         };
+        if Self::large_payload_mismatch(base, block) {
+            return core::ptr::null_mut();
+        }
         if let Some(p) =
             self.realloc_inplace_fast_path_known_base(base, block, old_layout, new_size)
         {

@@ -98,6 +98,42 @@ const LARGE_RESERVED_CAP_BYTES: usize = 16 * SEGMENT;
 const LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 4;
 
 impl AllocCore {
+    /// Pure address equality shared by owner metadata and foreign descriptors.
+    /// No pointer is dereferenced; overflowing geometry cannot match.
+    #[inline]
+    pub(crate) fn large_payload_address_matches(
+        address: usize,
+        base: usize,
+        payload_offset: usize,
+    ) -> bool {
+        base.checked_add(payload_offset) == Some(address)
+    }
+
+    /// `base` must be this owner's canonical live metadata root, including
+    /// biased NUMA roots. The caller has already resolved table membership.
+    #[inline]
+    pub(crate) fn large_payload_mismatch(base: *mut u8, ptr: *mut u8) -> bool {
+        SegmentHeader::kind_at(base) == SegmentKind::Large
+            && !Self::large_payload_address_matches(
+                ptr.addr(),
+                base.addr(),
+                SegmentHeader::read_at(base).payload_offset,
+            )
+    }
+
+    /// Reject before any lifecycle credit or hardened small-layout guard.
+    /// Callers return immediately on rejection, so each free is counted once.
+    #[inline]
+    pub(crate) fn reject_large_interior_free(base: *mut u8, ptr: *mut u8) -> bool {
+        if !Self::large_payload_mismatch(base, ptr) {
+            return false;
+        }
+        #[cfg(any(feature = "alloc-global", feature = "alloc-stats"))]
+        crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
     /// place the allocation at the first page-aligned offset past the header,
     /// register the segment, and return the allocation pointer.
