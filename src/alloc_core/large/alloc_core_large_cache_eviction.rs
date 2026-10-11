@@ -69,6 +69,9 @@ impl AllocCore {
     #[cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
     pub(crate) fn evict_all(&mut self) {
         while self.evict_one_oldest() {}
+        // An emptied cache restarts accounting like a fresh heap.
+        self.last_decay_tick = None;
+        self.large_cache_decay_op_count = 0;
     }
 
     // ── Phase 2 test seams ────────────────────────────────────────────────────
@@ -120,12 +123,27 @@ impl AllocCore {
         self.maybe_decay_large_cache();
     }
 
+    /// TEST-ONLY: backdate an existing decay timer without running decay.
+    /// Missing timers and unrepresentable subtraction leave all bookkeeping
+    /// unchanged. Success primes the next eligible call to read the clock.
+    /// Only inert timer/stride bookkeeping changes; no pointers are accessed.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_backdate_decay_timer(&mut self, by: core::time::Duration) {
+        let Some(tick) = self.last_decay_tick.and_then(|tick| tick.checked_sub(by)) else {
+            return;
+        };
+        self.last_decay_tick = Some(tick);
+        self.large_cache_decay_op_count = DECAY_CLOCK_CHECK_STRIDE - 1;
+    }
+
     /// TEST-ONLY (Phase 2): override the decay configuration at runtime.
     /// Lets tests specify exact parameters without relying on env vars
     /// (which are process-global and therefore flaky in parallel runs).
     ///
     /// - `rate_bp`: decay rate in basis points (100 = 1%, 1000 = 10%).
-    /// - `interval_ms`: elapsed-time period for counting due steps, not minimum spacing between invocations. Nonzero intervals use bounded catch-up (up to eight steps, timer advanced by `due * interval`, remaining debt retained); 0 runs one step on every eligible call and bypasses the R32-8 stride throttle (R2-18).
+    /// - `interval_ms`: elapsed-time period for counting due steps, not minimum spacing between invocations. Nonzero intervals use bounded catch-up (up to eight steps, timer advanced by `due * interval` while excess remains, debt discarded once the batch reaches headroom); 0 runs one step on every eligible call and bypasses the R32-8 stride throttle (R2-18).
     /// - `headroom`: target cache size in bytes.
     #[cfg(feature = "internals")]
     #[doc(hidden)]

@@ -457,10 +457,10 @@ impl AllocCore {
     /// `DECAY_CLOCK_CHECK_STRIDE - 1` large ops LATE (i.e. up to that many
     /// alloc/dealloc calls after the `decay_interval` wall-clock deadline
     /// technically passed), instead of firing on the very next call as
-    /// before. It can NEVER fire EARLY (the stride only delays a clock read,
-    /// never fabricates elapsed time), so a decay tick is never more
-    /// aggressive than the un-throttled behavior — only, at most, slightly
-    /// less prompt. On a workload with plenty of large-op traffic (the exact
+    /// before. The stride never fabricates elapsed time, but a delayed read
+    /// can batch several due steps; this is not a minimum-spacing or
+    /// per-invocation aggressiveness guarantee. On a workload with plenty of
+    /// large-op traffic (the exact
     /// regime `LowHeadroom`/`Trimmed64MiB` are chosen for), `stride - 1`
     /// large ops is a small sliver of the 1-second default `decay_interval`;
     /// on a workload with sparse large-op traffic the guard was already
@@ -485,9 +485,12 @@ impl AllocCore {
     /// by [`DECAY_CATCHUP_MAX_STEPS`] — not just one. R34-10 found that the
     /// old single-step-per-read shape let the retention gap accumulate to 4
     /// segments and persist for 95% of the run; the catch-up loop closes that
-    /// persistence (the gap drops to 0 on the first clock read instead of
-    /// staying at 3–4 segments). The timer advances by `due * decay_interval`
-    /// (not to `now`) so the sub-interval remainder carries over honestly.
+    /// persistence. After the batch, the timer advances by `due * interval`
+    /// only while excess remains, retaining fractional and capped whole-interval
+    /// debt. A batch reaching headroom instead sets the timer to `now`,
+    /// discarding debt; full cache trim resets the timer and stride counter.
+    /// Below-headroom calls still leave accounting untouched: the first batch
+    /// after below-headroom idle can still take eight steps (V5 is deferred).
     ///
     /// [`dbg_force_decay_tick`]: Self::dbg_force_decay_tick
     #[cfg(feature = "alloc-decommit")]
@@ -588,9 +591,9 @@ impl AllocCore {
         // retention gap (peak 4 segments) and NEVER caught up (persisted at
         // ≥3 segments for 95% of the run). Fix: once the clock IS read and
         // the interval has elapsed, fire as many steps as intervals are due,
-        // bounded by `DECAY_CATCHUP_MAX_STEPS`. The timer advances by
-        // `due * decay_interval` (NOT to `now`) so the sub-interval remainder
-        // carries over honestly to the next check. This does not change WHEN
+        // bounded by `DECAY_CATCHUP_MAX_STEPS`. Retain fractional and capped
+        // whole-interval debt only while excess remains after the batch.
+        // This does not change WHEN
         // the clock is read (the R32-8 stride benefit is preserved — see
         // `docs/perf/R34_11_CATCHUP_DECAY_GATE.md`), only HOW MANY decay
         // steps fire once it is.
@@ -603,14 +606,20 @@ impl AllocCore {
         } else {
             let ratio =
                 (elapsed.as_nanos() / interval.as_nanos()).min(DECAY_CATCHUP_MAX_STEPS as u128);
-            let due = u32::try_from(ratio).unwrap_or(DECAY_CATCHUP_MAX_STEPS);
-            if let Some(t) = self.last_decay_tick {
-                self.last_decay_tick = Some(t + interval * due);
-            }
-            due
+            u32::try_from(ratio).unwrap_or(DECAY_CATCHUP_MAX_STEPS)
         };
         for _ in 0..intervals_due {
             self.run_decay_step();
+        }
+        if !interval.is_zero() {
+            // Debt is owed only while excess remains; later excess gets a
+            // fresh interval once this batch has cleared the old excess.
+            self.last_decay_tick =
+                if self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
+                    Some(now)
+                } else {
+                    self.last_decay_tick.map(|t| t + interval * intervals_due)
+                };
         }
     }
 

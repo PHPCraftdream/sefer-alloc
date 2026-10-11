@@ -152,7 +152,7 @@ pub(in crate::alloc_core) struct LargeCacheDecayConfig {
     /// Fraction of the excess to release per tick, in basis points.
     /// 1000 = 10%, 5000 = 50%, 10000 = 100%.
     pub(in crate::alloc_core) decay_rate_bp: u32,
-    /// Minimum wall-clock interval between consecutive decay ticks.
+    /// Elapsed-time period for counting due decay steps, not minimum spacing.
     pub(in crate::alloc_core) decay_interval: core::time::Duration,
     /// Target cache size in bytes. The "excess" above this level is subject
     /// to decay. On Phase 2 we treat `live_bytes = 0`; the target is just

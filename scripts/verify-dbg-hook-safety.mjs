@@ -189,6 +189,10 @@ const SAFE_MUTATORS = [
     "rewinds the decay timer then calls the real maybe_decay_large_cache production path; eviction logic itself unchanged"
   ],
   [
+    "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_backdate_decay_timer",
+    "changes only inert timer/stride bookkeeping; checked subtraction cannot access pointers or allocator metadata, so arbitrary durations cannot cause UB"
+  ],
+  [
     "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_set_decay_config",
     "overwrites decay-heuristic tuning knobs only; no allocator-metadata/pointer correctness implication"
   ],

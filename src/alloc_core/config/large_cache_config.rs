@@ -311,12 +311,14 @@ impl LargeCacheConfig {
     ///
     /// For a nonzero interval, the first eligible call primes the timer.
     /// Subsequent eligible clock checks process `due = min(elapsed / interval, 8)`
-    /// steps inline and advance the stored timer by `due * interval`, not to
-    /// the current time. The sub-interval remainder and any whole intervals
-    /// beyond the cap remain due for later invocations. Catch-up batches can
-    /// therefore run without a fresh full interval between them; this is not
-    /// a minimum spacing guarantee. Calls at or below headroom leave the timer
-    /// unchanged, so excess returning later can encounter accumulated debt.
+    /// steps inline. While excess remains after the batch, the timer advances
+    /// by `due * interval`, retaining fractional and capped whole-interval debt.
+    /// A batch returning the cache to headroom instead sets the timer to the
+    /// current time and discards debt; full cache trim resets timer and stride.
+    /// Catch-up is not a minimum spacing guarantee while excess remains.
+    /// Calls at or below headroom still leave accounting unchanged: the first
+    /// batch after below-headroom idle can still take up to eight steps
+    /// (limiting that first batch is deferred as V5).
     /// See `docs/perf/R34_11_CATCHUP_DECAY_GATE.md` §1 for the accepted design.
     ///
     /// A value of `0` means "tick on every eligible large alloc/free" (useful
@@ -358,8 +360,9 @@ impl LargeCacheConfig {
     ///   is primed, the clock is consulted every 64th such event. Each check
     ///   processes up to eight due intervals using the bounded catch-up policy
     ///   described on [`decay_interval_ms`](Self::decay_interval_ms); remaining
-    ///   debt can trigger another batch at a later check without a fresh full
-    ///   interval. A zero `decay_interval_ms` configuration bypasses the stride
+    ///   debt can trigger another batch while excess remains without a fresh
+    ///   full interval. A batch reaching headroom discards debt; full trim resets
+    ///   the timer. A zero `decay_interval_ms` configuration bypasses the stride
     ///   and runs one step on every eligible event, the first one included.
     ///   No background thread; idle processes pay nothing.
     ///

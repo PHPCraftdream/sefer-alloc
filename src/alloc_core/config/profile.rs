@@ -190,12 +190,15 @@ pub enum LargeCachePolicy {
     /// clock checks by up to 63 eligible large ops — see that report §4 for
     /// the original trade. R34-11 subsequently added bounded catch-up:
     /// each eligible clock check processes up to eight due intervals and
-    /// advances the timer by `due * interval`, retaining excess interval debt
-    /// for later checks (`docs/perf/R34_11_CATCHUP_DECAY_GATE.md` §1).
-    /// No step runs before its interval is due, but multiple steps can run
-    /// together, and remaining debt can trigger another batch without a
-    /// fresh full interval. Decay is therefore not guaranteed to be less
-    /// aggressive per invocation than the original single-step policy.
+    /// advances the timer by `due * interval` only while excess remains,
+    /// retaining fractional and capped whole-interval debt for later checks.
+    /// A batch reaching headroom discards debt by setting the timer to `now`;
+    /// full cache trim resets timer and stride. Below-headroom calls still
+    /// leave accounting unchanged, so the first batch after below-headroom
+    /// idle can take eight steps (V5 is deferred). Multiple steps can run
+    /// together, and debt can trigger another batch without a fresh interval
+    /// while excess remains. This is not a minimum-spacing guarantee or a
+    /// promise of less aggressive invocations than the single-step policy.
     /// The residual cost after the fix is smaller but NOT zero: this
     /// policy still pays materially more clock reads than
     /// [`LargeCachePolicy::Default`] at 256 MiB headroom, whose working set
