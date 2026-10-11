@@ -71,9 +71,12 @@ function derive(d, frozen) {
         assert.equal(r.environmentSha256, d.environmentSha256);
         features(r.features, primary); features(r.oracleFeatures, paired);
         text(r.receipt); source(r); config(r.config, 'isolated-process');
-        integer(r.hit); integer(r.prefill); integer(r.routedScans);
+        integer(r.hit);
+        if (['R1', 'R2', 'R3'].includes(c.kind)) {
+          integer(r.prefill); integer(r.routedScans);
+          assert.equal(r.routedScans, rows[0].routedScans);
+        } else { assert.equal(r.prefill, null); assert.equal(r.routedScans, null); }
         assert.deepEqual(r.config.requested, rows[0].config.requested);
-        assert.equal(r.routedScans, rows[0].routedScans);
         if (['R2', 'R3'].includes(c.kind)) assert.equal(r.activation, true);
         const isB = r.arm.startsWith('B');
         if (c.kind === 'R1') {
@@ -90,7 +93,7 @@ function derive(d, frozen) {
           else { aBinary ??= r.binarySha256; assert.equal(r.binarySha256, aBinary); }
         }
       }
-      const values = rows.map(r => r.hit - r.prefill);
+      const values = rows.map(r => r.hit - (r.prefill ?? 0));
       const [a1, a2, b1, b2, c0] = values;
       const t = Math.max(10, Math.abs(c0 - a1));
       assert.ok(Number.isSafeInteger(t));
@@ -157,9 +160,10 @@ function selftest() {
     featureExactReceipt: 'synthetic', inventory, iai: [], native: [] };
   for (const c of inventory) for (const arm of arms) {
     const b = arm.startsWith('B');
+    const regime = ['R1', 'R2', 'R3'].includes(c.kind);
     d.iai.push({ ...row(b), name: c.name, arm, features: primary, oracleFeatures: paired,
       receipt: 'synthetic', binarySha256: (arm === 'C0' ? 'c' : b ? 'b' : 'a').repeat(64),
-      hit: b && c.kind === 'R1' ? 800 : 1000, prefill: 0, routedScans: 0, activation: true,
+      hit: b && c.kind === 'R1' ? 800 : 1000, prefill: regime ? 0 : null, routedScans: regime ? 0 : null, activation: true,
       oracle: { tailHitDelta: 1, incarnationDelta: b ? 0 : 1, cachedCensus: b ? 1 : 0 } });
   }
   for (const n of [1, 4, 8]) for (const arm of ['A', 'AA', 'B']) for (let i = 0; i < 9; i++)
@@ -180,6 +184,11 @@ function selftest() {
   mutate(x => x.iai[0].source.capturedAt = x.iai[0].startedAt);
   mutate(x => x.native[0].config.runId = x.native[1].config.runId);
   mutate(x => x.iai[0].hit = NaN);
+  mutate(x => x.iai[15].routedScans = 0);
+  mutate(x => x.iai[15].prefill = 0);
+  mutate(x => x.iai[0].routedScans = null);
+  mutate(x => x.iai[0].prefill = null);
+  mutate(x => x.iai[2].routedScans = 1);
   mutate(x => x.inventory.pop());
   mutate(x => x.iai[2].hit = 801, 'NO-GO');
   mutate(x => x.iai[1].hit = 1011, 'INCONCLUSIVE');
