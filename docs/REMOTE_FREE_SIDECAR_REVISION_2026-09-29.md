@@ -31,9 +31,16 @@ stored entry, never the lookup pointer supplied by the caller.
   and reclaimed later without waiting in strict trim. Outstanding allocation
   credits, not descriptor pins, prevent premature reservation release.
 - The remote Small publisher touches only the sidecar: its class is recorded
-  by the owner at issue, and `pending[word].fetch_or(mask, AcqRel)` is its
-  terminal publication. After this operation it may release its *sidecar*
-  pin, but may not access the reservation or its ownership ledger.
+  by the owner at issue. Terminal `pending[word].fetch_or(mask, AcqRel)` is
+  the linearization point and the producer's last access to the reclaimable
+  reservation and ownership ledger. Afterwards the producer may only (1) set
+  the discovery-summary bit in the SAME sidecar, using an address obtained
+  before the terminal RMW while its `RoutePin` remains held, and (2) release
+  the pin. The permitted C-prime notification loads summary with `Relaxed`
+  and performs `fetch_or(Release)` only if the bit is clean; discovery clears
+  summary with `swap(0, AcqRel)` BEFORE cutting pending words with `AcqRel`.
+  Strict trim and periodic maintenance ignore summary. This permission does
+  not assert a runtime summary implementation or actual-type acceptance.
 - An exclusive owner visits each bitmap word once with `swap(0, AcqRel)` and
   reclaims the returned bits exactly once. A per-word cut replaces the former
   single per-segment exchange; a free published before trim entry is covered

@@ -103,7 +103,12 @@ impl<'a> SidecarBitmap<'a> {
     /// uniform leaf reports its class for every granule it covers, so an
     /// interior pointer into an issued block is NOT rejected here; the producer
     /// cannot read block geometry without touching a segment that a malformed
-    /// free may not keep alive. No sidecar access is permitted after this RMW.
+    /// free may not keep alive. This pending RMW is the linearization point and
+    /// last producer access to the reclaimable reservation and ledger. Afterwards
+    /// only a discovery-summary bit in the SAME sidecar may be set, using an
+    /// address obtained before this RMW while RoutePin is held, then the pin
+    /// released. Strict trim and periodic maintenance ignore summary; this
+    /// permission does not imply a runtime summary implementation.
     /// Exactly one producer publishes each valid allocation instance. An
     /// unpublished producer retains its segment credit; a published one
     /// retains it until reclaim.

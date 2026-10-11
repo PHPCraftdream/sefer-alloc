@@ -405,7 +405,7 @@ immutable descriptor).
 
 ### 9.3 Terminal publication at the last user allocation touch
 
-The successful terminal CAS is the producer's **last descriptor-state
+For Large, the successful terminal CAS is the producer's **last descriptor-state
 access**, not an access to reservation bytes (`reservation_state.rs:35-38`).
 It transfers the unique allocation credit; the caller must not access or
 free the allocation or reservation afterwards, nor access the terminal
@@ -415,10 +415,18 @@ refcounts on the INDEPENDENT descriptor and may free the System-allocated
 sidecar ("touches only the independently allocated descriptor/sidecar",
 `pin.rs:37-38`). That metadata-only `Drop` is not a reservation touch or
 another terminal-state access.
-Small/Primordial use the sidecar bitmap `fetch_or` terminal publication
-(`src/registry/segment_route/small_sidecar.rs:148-150` delegates to
-`src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:99-118`, with the
-RMW at `:117`); Large uses the `Live → Pending` CAS
+Small/Primordial use the sidecar bitmap `fetch_or` terminal publication.
+The terminal `pending[w].fetch_or(AcqRel)` is the linearization point and
+last producer access to the reclaimable reservation and ledger. Afterwards
+only (1) setting a discovery-summary bit in the SAME sidecar, using an
+address obtained before the terminal RMW while its `RoutePin` is held, and
+(2) releasing the pin are permitted. C-prime loads summary with `Relaxed`
+and uses `fetch_or(Release)` only if the bit is clean; discovery must clear
+summary with `swap(0, AcqRel)` BEFORE `pending[w].swap(0, AcqRel)`.
+Strict trim and periodic maintenance ignore summary. This permitted
+protocol is modeled by the reduced shadow `tests/loom_sidecar_summary.rs`;
+this text permits it, it does not assert that a runtime summary exists, and
+the shadow is not an actual-type lifetime/provenance proof. Large retains the `Live → Pending` CAS rule
 above. Nothing in production waits on, or is scheduled by, the producer
 after publication; the Miri-only pause gates
 (`src/registry/heap_core_xthread/routing.rs`,
