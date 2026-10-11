@@ -191,6 +191,15 @@ const BENCH_OPS = {
   multiseg_cold_256k: 68,
   // seg-cycle decommit: SEGCYCLE_ROUNDS (6) × SEGCYCLE_BATCH (34) = 204 pairs.
   seg_cycle_decommit_256k: 204,
+  // PRF01 growth completes N alloc/free pairs, with NO frees until all N allocs.
+  growth16_n: 32768,
+  growth16_2n: 65536,
+  growth16_4n: 131072,
+  // Producer custom child body is dealloc-only with excluded setup: subtracting
+  // a full bootstrap proxy here is invalid. Ir/free is derived by the PRF01 judge.
+  r19_prf01_joined_producer_same_word: null,
+  // Publication setup is excluded; no bootstrap proxy subtraction applies.
+  r19_prf01_publication: null,
   // R22-15: mimalloc arms mirror their SeferAlloc siblings' op counts exactly
   // (same CHURN_OPS / COLD_BATCH / 2-round loops in benches/perf_gate_iai.rs).
   mimalloc_small_churn_16b: 64,

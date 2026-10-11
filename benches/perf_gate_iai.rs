@@ -62,6 +62,10 @@ use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 #[cfg(target_os = "linux")]
 use mimalloc::MiMalloc;
 #[cfg(target_os = "linux")]
+#[path = "support/r19_prf01.rs"]
+mod prf01_support;
+
+#[cfg(target_os = "linux")]
 use sefer_alloc::SeferAlloc;
 
 // R22-17 (task #368): dealloc-only isolation arms need `HeapCore`/
@@ -3631,6 +3635,11 @@ library_benchmark_group!(
         churn_write_256b,
         multiseg_cold_256k,
         seg_cycle_decommit_256k,
+        growth16_n,
+        growth16_2n,
+        growth16_4n,
+        r19_prf01_joined_producer_same_word,
+        r19_prf01_publication,
         mimalloc_small_churn_16b,
         mimalloc_small_churn_16b_2n,
         mimalloc_churn_256b,
@@ -3647,6 +3656,43 @@ library_benchmark_group!(
         decomp_full_cycle_8x,
         decomp_os_roundtrip_8x,
 );
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn growth16_n() {
+    prf01_support::R19Prf01::growth16(32_768);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn growth16_2n() {
+    prf01_support::R19Prf01::growth16(65_536);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn growth16_4n() {
+    prf01_support::R19Prf01::growth16(131_072);
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark(
+    setup = prf01_support::R19Prf01::producer_setup,
+    config = iai_callgrind::LibraryBenchmarkConfig::default().entry_point(
+        iai_callgrind::EntryPoint::Custom(
+            "<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window".to_owned()
+        )
+    )
+)]
+fn r19_prf01_joined_producer_same_word(owner: prf01_support::R19Prf01) {
+    owner.producer_window();
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark(setup = prf01_support::R19Prf01::publication_setup)]
+fn r19_prf01_publication(owner: prf01_support::R19Prf01) {
+    owner.publication_window();
+}
 
 #[cfg(target_os = "linux")]
 main!(library_benchmark_groups = perf_gate);

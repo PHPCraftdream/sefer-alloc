@@ -19,6 +19,26 @@ use core::sync::atomic::Ordering;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
+    /// Actual logical SmallSidecar layout in this oracle binary; not RSS.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    #[must_use]
+    pub fn dbg_prf01_small_sidecar_size() -> usize {
+        core::mem::size_of::<crate::registry::segment_route::SmallSidecar>()
+    }
+
+    /// Read-only process-wide discovery totals: pending words visited,
+    /// pending words exchanged, nonempty cuts, successful discovery reclaims,
+    /// constructed routed scans, summary words visited, summary RMWs, summary
+    /// loads. The last three are true constant zero in A. Oracle build only;
+    /// no reset, pointer input, allocation, or allocator policy mutation.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    #[must_use]
+    pub fn dbg_prf01_sidecar_oracle() -> [u64; 8] {
+        crate::alloc_core::remote_bitmap::Prf01SidecarOracle::snapshot()
+    }
+
     /// Configure thread-local measurement; returns visited, empty, exchanged,
     /// nonempty and allocation-discovery routed scan counts, in that order.
     /// No raw pointer access; baseline selects the original AcqRel exchange.

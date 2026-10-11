@@ -1,3 +1,7 @@
+#[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+mod prf01_sidecar_oracle;
+#[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+pub(crate) use prf01_sidecar_oracle::Prf01SidecarOracle;
 mod bitmap_cut;
 mod bitmap_record;
 mod bitmap_scan;

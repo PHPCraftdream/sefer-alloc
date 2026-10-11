@@ -101,8 +101,17 @@ function parseFnDefs() {
   let pendingCfg = null; // { text, line } | null
   let accum = null; // { text, depth } | null — mid multi-line #[cfg(...)]
 
+  let benchmarkAttributeDepth = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (benchmarkAttributeDepth > 0) {
+      benchmarkAttributeDepth += (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+      continue;
+    }
+    if (/^\s*#\[library_benchmark\(/.test(line)) {
+      benchmarkAttributeDepth = (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+      continue;
+    }
 
     if (accum) {
       accum.text += '\n' + line;
@@ -127,7 +136,7 @@ function parseFnDefs() {
       continue;
     }
 
-    if (/^\s*#\[library_benchmark\]\s*$/.test(line)) continue; // transparent
+    if (/^\s*#\[library_benchmark(?:\([^\n]*\))?\]\s*$/.test(line)) continue; // transparent, including setup
 
     const fnMatch = /^\s*fn\s+(\w+)\s*\(/.exec(line);
     if (fnMatch) {
@@ -180,15 +189,16 @@ function extractFeatureTokens(cfgText) {
 }
 
 function extractGroupMembers(fileText) {
-  const gm =
-    /library_benchmark_group!\(\s*name\s*=\s*perf_gate;\s*benchmarks\s*=\s*([\s\S]*?)\);/.exec(
-      fileText,
-    );
+  const gm = /library_benchmark_group!\(\s*name\s*=\s*perf_gate;\s*benchmarks\s*=\s*([\s\S]*?)\);/.exec(fileText);
   if (!gm) throw new Error('could not find library_benchmark_group! block');
-  return gm[1]
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const members = gm[1].split(',').map(s => s.trim()).filter(Boolean);
+  const expected = ['growth16_n', 'growth16_2n', 'growth16_4n', 'r19_prf01_joined_producer_same_word', 'r19_prf01_publication'];
+  const index = members.indexOf('seg_cycle_decommit_256k') + 1;
+  if (index === 0 || JSON.stringify(members.slice(index, index + 5)) !== JSON.stringify(expected)) throw new Error('PRF01 requires contiguous five cells after seg_cycle');
+  for (const name of expected) if (members.filter(n => n === name).length !== 1) throw new Error(`PRF01 duplicate/missing ${name}`);
+  if ((fileText.match(/library_benchmark_group!\(/g) ?? []).length !== 1) throw new Error('expected only existing perf_gate group');
+  if (!/main!\(library_benchmark_groups\s*=\s*perf_gate\)/.test(fileText)) throw new Error('original main wiring changed');
+  return members;
 }
 
 const defs = parseFnDefs();

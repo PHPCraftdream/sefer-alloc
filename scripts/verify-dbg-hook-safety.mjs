@@ -18,6 +18,10 @@ import { REPO_ROOT } from './lib.mjs';
 
 // Pure observers: read-only, no allocator-state mutation.
 const PURE_OBSERVERS = [
+  // PRF01: oracle-only relaxed totals, constant-zero A summary; no pointer/reset/policy.
+  "src/registry/heap_core/diag/queries.rs::dbg_prf01_sidecar_oracle",
+  // PRF01: actual type layout only, no allocator instance or pointer access.
+  "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
   "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
   // C1: numeric results of resolved-default comparison under the claiming lease.

@@ -152,13 +152,30 @@ impl AllocCore {
             };
             #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
             crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
+            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+            crate::alloc_core::remote_bitmap::Prf01SidecarOracle::constructed();
+            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+            let (mut visited, mut nonempty, mut reclaimed) = (0u64, 0u64, 0u64);
             while let Some(mut cut) = scan.next_cut() {
+                #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+                {
+                    visited += 1;
+                    nonempty += u64::from(!cut.is_empty());
+                }
                 while let Some(record) = cut.pop() {
                     if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+                        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+                        {
+                            reclaimed += 1;
+                        }
                         changed_classes |= 1u64 << record.class;
                     }
                 }
             }
+            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+            crate::alloc_core::remote_bitmap::Prf01SidecarOracle::completed(
+                visited, nonempty, reclaimed,
+            );
         }
         if changed_classes == 0 {
             return SidecarDrainOutcome::Skipped;
