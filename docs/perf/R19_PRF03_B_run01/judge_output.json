@@ -1,0 +1,531 @@
+{
+  "verdict": "INCONCLUSIVE",
+  "tables": {
+    "iai": [
+      {
+        "name": "small_churn_16b",
+        "kind": "control",
+        "A1": 56640,
+        "A2": 56640,
+        "B1": 56696,
+        "B2": 56696,
+        "C0": 56640,
+        "T": 10,
+        "deltas": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "pass": false
+      },
+      {
+        "name": "alloc_magazine_prefill_only_16b",
+        "kind": "control",
+        "A1": 55916,
+        "A2": 55916,
+        "B1": 56029,
+        "B2": 56029,
+        "C0": 55916,
+        "T": 10,
+        "deltas": [
+          113,
+          113,
+          113,
+          113
+        ],
+        "pass": false
+      },
+      {
+        "name": "alloc_magazine_hit_only_16b",
+        "kind": "control",
+        "A1": 56274,
+        "A2": 56274,
+        "B1": 56374,
+        "B2": 56374,
+        "C0": 56274,
+        "T": 10,
+        "deltas": [
+          100,
+          100,
+          100,
+          100
+        ],
+        "pass": false
+      },
+      {
+        "name": "large_alloc_free_cycle",
+        "kind": "affected",
+        "A1": 49920,
+        "A2": 49920,
+        "B1": 49782,
+        "B2": 49782,
+        "C0": 49920,
+        "T": 10,
+        "deltas": [
+          -138,
+          -138,
+          -138,
+          -138
+        ],
+        "pass": true
+      },
+      {
+        "name": "large_cache_hit_only_4mib",
+        "kind": "R1",
+        "A1": 1259,
+        "A2": 1259,
+        "B1": 824,
+        "B2": 824,
+        "C0": 1259,
+        "T": 10,
+        "deltas": [
+          -435,
+          -435,
+          -435,
+          -435
+        ],
+        "pass": true
+      },
+      {
+        "name": "large_cache_eviction_hit_only_41x4mib",
+        "kind": "R2",
+        "A1": 109619,
+        "A2": 109619,
+        "B1": 109055,
+        "B2": 109055,
+        "C0": 109631,
+        "T": 12,
+        "deltas": [
+          -564,
+          -564,
+          -564,
+          -564
+        ],
+        "pass": true
+      },
+      {
+        "name": "large_cache_payload_hit_only_4mib",
+        "kind": "R3",
+        "A1": 1287,
+        "A2": 1287,
+        "B1": 1438,
+        "B2": 1438,
+        "C0": 1299,
+        "T": 12,
+        "deltas": [
+          151,
+          151,
+          151,
+          151
+        ],
+        "pass": false
+      },
+      {
+        "name": "large_cache_free_slot_search_prefill_only",
+        "kind": "affected",
+        "A1": 63358,
+        "A2": 63358,
+        "B1": 63572,
+        "B2": 63572,
+        "C0": 63358,
+        "T": 10,
+        "deltas": [
+          214,
+          214,
+          214,
+          214
+        ],
+        "pass": true
+      },
+      {
+        "name": "large_cache_free_slot_search_cycle_only",
+        "kind": "affected",
+        "A1": 74518,
+        "A2": 74518,
+        "B1": 70737,
+        "B2": 70737,
+        "C0": 74518,
+        "T": 10,
+        "deltas": [
+          -3781,
+          -3781,
+          -3781,
+          -3781
+        ],
+        "pass": true
+      },
+      {
+        "name": "realloc_grow",
+        "kind": "affected",
+        "A1": 582505,
+        "A2": 582505,
+        "B1": 582232,
+        "B2": 582232,
+        "C0": 582505,
+        "T": 10,
+        "deltas": [
+          -273,
+          -273,
+          -273,
+          -273
+        ],
+        "pass": true
+      },
+      {
+        "name": "cold_alloc_only_256x16b",
+        "kind": "control",
+        "A1": 114383,
+        "A2": 114383,
+        "B1": 114438,
+        "B2": 114438,
+        "C0": 114383,
+        "T": 10,
+        "deltas": [
+          55,
+          55,
+          55,
+          55
+        ],
+        "pass": false
+      },
+      {
+        "name": "cold_alloc_only_256x16b_2n",
+        "kind": "control",
+        "A1": 185497,
+        "A2": 185497,
+        "B1": 185552,
+        "B2": 185552,
+        "C0": 185497,
+        "T": 10,
+        "deltas": [
+          55,
+          55,
+          55,
+          55
+        ],
+        "pass": false
+      },
+      {
+        "name": "cold_alloc_only_256x16b_4n",
+        "kind": "control",
+        "A1": 326165,
+        "A2": 326165,
+        "B1": 326220,
+        "B2": 326220,
+        "C0": 326165,
+        "T": 10,
+        "deltas": [
+          55,
+          55,
+          55,
+          55
+        ],
+        "pass": false
+      },
+      {
+        "name": "churn_256b",
+        "kind": "control",
+        "A1": 56640,
+        "A2": 56640,
+        "B1": 56708,
+        "B2": 56708,
+        "C0": 56640,
+        "T": 10,
+        "deltas": [
+          68,
+          68,
+          68,
+          68
+        ],
+        "pass": false
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "kind": "mimalloc",
+        "A1": 16629,
+        "A2": 16629,
+        "B1": 16629,
+        "B2": 16629,
+        "C0": 16629,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "kind": "mimalloc",
+        "A1": 21557,
+        "A2": 21557,
+        "B1": 21557,
+        "B2": 21557,
+        "C0": 21557,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "kind": "mimalloc",
+        "A1": 16130,
+        "A2": 16130,
+        "B1": 16130,
+        "B2": 16130,
+        "C0": 16130,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "kind": "mimalloc",
+        "A1": 32325,
+        "A2": 32325,
+        "B1": 32325,
+        "B2": 32325,
+        "C0": 32325,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "kind": "mimalloc",
+        "A1": 58389,
+        "A2": 58389,
+        "B1": 58389,
+        "B2": 58389,
+        "C0": 58389,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "kind": "mimalloc",
+        "A1": 106653,
+        "A2": 106653,
+        "B1": 106653,
+        "B2": 106653,
+        "C0": 106653,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "kind": "mimalloc",
+        "A1": 24584,
+        "A2": 24584,
+        "B1": 24584,
+        "B2": 24584,
+        "C0": 24584,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "kind": "mimalloc",
+        "A1": 42968,
+        "A2": 42968,
+        "B1": 42968,
+        "B2": 42968,
+        "C0": 42968,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "kind": "mimalloc",
+        "A1": 75872,
+        "A2": 75872,
+        "B1": 75872,
+        "B2": 75872,
+        "C0": 75872,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "kind": "mimalloc",
+        "A1": 33329,
+        "A2": 33329,
+        "B1": 33329,
+        "B2": 33329,
+        "C0": 33329,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "kind": "mimalloc",
+        "A1": 53020,
+        "A2": 53020,
+        "B1": 53027,
+        "B2": 53027,
+        "C0": 53020,
+        "T": 10,
+        "deltas": [
+          7,
+          7,
+          7,
+          7
+        ],
+        "pass": false
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "kind": "mimalloc",
+        "A1": 54024,
+        "A2": 54024,
+        "B1": 54031,
+        "B2": 54031,
+        "C0": 54024,
+        "T": 10,
+        "deltas": [
+          7,
+          7,
+          7,
+          7
+        ],
+        "pass": false
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "kind": "mimalloc",
+        "A1": 13050,
+        "A2": 13050,
+        "B1": 13050,
+        "B2": 13050,
+        "C0": 13050,
+        "T": 10,
+        "deltas": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "pass": true
+      }
+    ],
+    "native": [
+      {
+        "n": 1,
+        "metric": "nsPerOp",
+        "A": 177.3096923828125,
+        "AA": 174.324951171875,
+        "B": 143.9659423828125,
+        "noise": 0.016833491563977388,
+        "maxNoise": 0.05,
+        "pass": true
+      },
+      {
+        "n": 1,
+        "metric": "p99Ns",
+        "A": 310,
+        "AA": 309,
+        "B": 207,
+        "noise": 0.0032258064516129032,
+        "maxNoise": 0.05,
+        "pass": true
+      },
+      {
+        "n": 4,
+        "metric": "nsPerOp",
+        "A": 155.7293701171875,
+        "AA": 138.2064208984375,
+        "B": 114.9898681640625,
+        "noise": 0.11252180115776396,
+        "maxNoise": 0.05,
+        "pass": true
+      },
+      {
+        "n": 4,
+        "metric": "p99Ns",
+        "A": 721,
+        "AA": 720,
+        "B": 309,
+        "noise": 0.0013869625520110957,
+        "maxNoise": 0.05,
+        "pass": true
+      },
+      {
+        "n": 8,
+        "metric": "nsPerOp",
+        "A": 128.1864013671875,
+        "AA": 139.213623046875,
+        "B": 104.461669921875,
+        "noise": 0.08602489470080554,
+        "maxNoise": 0.05,
+        "pass": true
+      },
+      {
+        "n": 8,
+        "metric": "p99Ns",
+        "A": 1133,
+        "AA": 1236,
+        "B": 309,
+        "noise": 0.09090909090909091,
+        "maxNoise": 0.05,
+        "pass": true
+      }
+    ]
+  },
+  "validatedProcesses": 358,
+  "synthetic": false
+}
+

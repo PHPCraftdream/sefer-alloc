@@ -566,6 +566,7 @@ async function pipeline(ctx) {
   putJson(ctx.out, 'bundle.json', bundle);
   return aggregate(ctx.out, { reviewFile: ctx.reviewFile });
 }
+const CLOCK_SKEW_MS = 1000;
 export function aggregate(dir, { reviewFile, synthetic = false } = {}) {
   const bundle = JSON.parse(readFileSync(local(dir, 'bundle.json'))); assert.equal(bundle.version, 1);
   const input = getJson(dir, bundle.input), env = getJson(dir, bundle.environment);
@@ -624,7 +625,10 @@ export function aggregate(dir, { reviewFile, synthetic = false } = {}) {
   for (const p of bundle.processes) {
     assert.ok(!ids.has(p.id), 'duplicate process runId'); ids.add(p.id);
     const envelopeFields = structuredClone(p);
-    assert.ok(Date.parse(p.startedAt) > capture, 'process precedes ALL identities');
+    // In-process timestamps come from the Linux (WSL) clock, host receipts from the Windows clock: measured offset
+    // was about -0.3..+0.4 s. Ordering against the captures is therefore decided by the HOST receipt below (strict);
+    // the in-process clock is only cross-checked within +-CLOCK_SKEW_MS.
+    assert.ok(Date.parse(p.startedAt) > capture - CLOCK_SKEW_MS, 'process precedes ALL identities');
     const b = bundle.builds[`${p.role === 'iai' ? p.arm === 'C0' ? 'C0' : p.arm.startsWith('B') ? 'B' : 'A' : p.arm}-${p.role}`];
     assert.ok(b); assert.equal(p.binarySha256, b.binarySha256); assert.equal(p.sourceIdentitySha256, b.sourceIdentitySha256);
     const sourceArm = p.role === 'iai' ? (p.arm.startsWith('B') ? 'B' : 'A') : p.arm;
@@ -633,8 +637,8 @@ export function aggregate(dir, { reviewFile, synthetic = false } = {}) {
     const process = getJson(dir, p.process); assert.equal(process.timedOut, false);
     get(dir, process.stdout); const stderr = get(dir, process.stderr).toString();
     assert.ok(Date.parse(process.startedAt) > capture);
-    assert.ok(Date.parse(p.startedAt) >= Date.parse(process.startedAt));
-    assert.ok(Date.parse(p.startedAt) <= Date.parse(process.endedAt) + 1000);
+    assert.ok(Date.parse(p.startedAt) >= Date.parse(process.startedAt) - CLOCK_SKEW_MS);
+    assert.ok(Date.parse(p.startedAt) <= Date.parse(process.endedAt) + CLOCK_SKEW_MS);
     if (p.expectedReject) {
       assert.notEqual(process.code, 0); assert.equal(process.type, 'observation');
       assert.ok(['R2', 'R3'].includes(p.regime));
@@ -728,7 +732,7 @@ export function aggregate(dir, { reviewFile, synthetic = false } = {}) {
     const t = entry(pair.twin, 'twin'), n = entry(pair.native, 'native');
     assert.equal(bundle.processes.indexOf(n), bundle.processes.indexOf(t) + 1, 'twin/native not adjacent');
     assert.equal(t.arm, n.arm); assert.equal(t.row.n, row.n); assert.equal(n.row.n, row.n);
-    assert.ok(Date.parse(t.startedAt) <= Date.parse(n.startedAt));
+    assert.ok(Date.parse(t.startedAt) <= Date.parse(n.startedAt) + CLOCK_SKEW_MS); // adjacency above fixes the order; in-process WSL clocks only agree within the skew
     assert.equal(t.requestedConfigDebugSha256, n.requestedConfigDebugSha256);
     const arm = row.arm === 'B' ? 'B' : 'A'; assert.equal(n.arm, arm); assert.deepEqual(row.source, ownSource(sources[arm]));
     assert.equal(row.receipt, n.raw.path); assert.equal(row.binarySha256, n.binarySha256); assert.equal(row.startedAt, n.startedAt);
@@ -850,7 +854,8 @@ function fixtureTransport() {
     const twin = r.role === 'twin', native = r.role === 'native', paired = r.role === 'paired';
     const debug = 'LargeCacheConfig { fixture: DEFAULT }';
     // The fake transport does not measure: fixed outputs are selftest-only.
-    const start = Date.now();
+    // The in-process clock lags the host clock by about 0.3 s, like the WSL clock measured in the real run.
+    const start = Date.now() - 300;
     const c = { requested: { cacheBudget: { policy: 'unbounded' }, cacheSlots: 8, maintenance: false,
       workCount: native || twin ? Number(r.args[1]) : r.args[0].startsWith('probe-') ? null : r.args[0] === 'R2' ? 82 : 9 },
       resolved: null, configConflictsDelta: 0, processBoundary: 'isolated-process', runId: r.id, pid: ++pid };
@@ -919,7 +924,7 @@ export async function selfTest() {
     reject(b => b.sources.A.identitySha256 = sha('drift'));
     reject(b => b.sources.B.baseHead = 'f'.repeat(40));
     reject(b => b.processes[0].binarySha256 = sha('binary drift'));
-    reject(b => b.processes[0].startedAt = b.allCapturedAt);
+    reject(b => b.processes[0].startedAt = new Date(Date.parse(b.allCapturedAt) - 5000).toISOString());
     reject(b => { const pair = b.nativePairs[0]; [pair.twin, pair.native] = [pair.native, pair.twin]; });
     reject(b => b.negativePairs = []);
     const rejectWith = (mutate, expected) => {
