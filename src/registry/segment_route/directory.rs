@@ -171,6 +171,10 @@ impl EntryHandle {
     pub(super) fn root(&self) -> *mut u8 {
         self.entry().root.load(Ordering::Relaxed)
     }
+    pub(super) fn payload_addr(&self) -> usize {
+        self.entry().payload
+    }
+
     pub(super) fn contains_payload(&self, addr: usize, size: usize) -> bool {
         let entry = self.entry();
         addr >= entry.payload
@@ -713,6 +717,15 @@ impl RouteDirectory {
         }
     }
 
+    /// Monotonic incarnation IDs issued, including failed registrations after
+    /// ID assignment. Relaxed observation only; not a route-publication fence
+    /// or a count of successful/live registrations. Deltas need isolation.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn incarnations_issued_for_test(&self) -> u64 {
+        self.next_incarnation.load(Ordering::Relaxed)
+    }
+
     pub fn global() -> &'static Self {
         static ROUTES: RouteDirectory = RouteDirectory::new();
         &ROUTES
@@ -922,6 +935,14 @@ impl RouteDirectory {
             return None;
         }
         let incarnation = entry.incarnation;
+        if matches!(entry.kind, RouteKind::Large) {
+            // SAFETY: shard guard retains the initialized System-backed state;
+            // no reservation bytes are accessed for this phase filter.
+            if !unsafe { &*entry.sidecar.load(Ordering::Acquire).cast::<LargeState>() }.is_issued()
+            {
+                return None;
+            }
+        }
         let pin = EntryHandle::pin_from_array(raw);
         if guard.find(key) != Some(pin.ptr()) || pin.incarnation() != incarnation {
             std::process::abort();

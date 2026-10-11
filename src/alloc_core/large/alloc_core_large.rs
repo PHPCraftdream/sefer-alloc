@@ -280,24 +280,18 @@ impl AllocCore {
                 }
             }
             if let Some(idx) = hit_idx {
-                let slot = self.large_cache_slot_take(idx);
+                let mut slot = self.large_cache_slot_take(idx);
                 let terminal_meta = crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
                 let generation = match terminal_meta.begin_large_reuse() {
                     Some(generation) => generation,
                     None => {
                         self.large_cache_used_bytes =
                             self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                        let state = LargeReservationState::new(terminal_meta.large_state_atomic());
-                        let word = terminal_meta.terminal_snapshot().large_state;
-                        if !state.release_cached(
-                            crate::alloc_core::segment_header::large_generation(word),
-                        ) {
-                            std::process::abort();
-                        }
-                        os::release_segment(slot.reservation, slot.reservation_len);
+                        Self::release_cached_large(slot);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
+                let route_generation = slot.begin_route_reuse(Node::offset(slot.base, hdr_aligned));
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
@@ -453,20 +447,12 @@ impl AllocCore {
                 // are already written above (F12's targeted writes + R34-14's
                 // owner/deferred resets), but the slot never becomes visible
                 // in that failure branch, so there is nothing to unwind.
-                let id = match self.table.register_payload(
-                    slot.base,
-                    slot.reserved_capacity,
-                    SegmentKind::Large,
-                    Node::offset(slot.base, hdr_aligned),
-                ) {
+                let id = match slot
+                    .register_reuse(&mut self.table, Node::offset(slot.base, hdr_aligned))
+                {
                     Some(id) => id,
                     None => {
-                        if !LargeReservationState::new(terminal_meta.large_state_atomic())
-                            .release_initializing(generation)
-                        {
-                            std::process::abort();
-                        }
-                        os::release_segment(slot.reservation, slot.reservation_len);
+                        Self::release_cached_large(slot);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
@@ -515,6 +501,7 @@ impl AllocCore {
                         core::sync::atomic::Ordering::Relaxed,
                     );
                 }
+                self.table.finish_large_route_reuse(id, route_generation);
                 return (Node::deref(slot.base, hdr_aligned), false);
             }
         }
@@ -771,7 +758,7 @@ impl AllocCore {
         // Remove from the table FIRST (frees the slot for reuse regardless of
         // which branch below runs) — mirrors the own-thread cache-deposit
         // ordering in `dealloc`'s Large branch.
-        self.table.unregister(base);
+        let parked = self.table.unregister_parking(base);
 
         #[cfg(feature = "alloc-decommit")]
         {
@@ -839,18 +826,20 @@ impl AllocCore {
                 if !state.cache_consumed(generation) {
                     std::process::abort();
                 }
+                parked.cache_consumed();
                 let seq = self.large_cache_seq;
                 self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                 self.large_cache_slot_set(
                     slot_idx,
-                    CachedLarge {
-                        reservation: hdr.reservation,
-                        reservation_len: hdr.reservation_len,
+                    CachedLarge::new(
+                        hdr.reservation,
+                        hdr.reservation_len,
                         base,
                         usable_size,
                         reserved_capacity,
                         seq,
-                    },
+                        parked,
+                    ),
                 );
                 self.large_cache_used_bytes += usable_size;
                 return;
@@ -861,6 +850,7 @@ impl AllocCore {
         // the OS reservation immediately. The slot is already unregistered
         // above, so there is no dangling table entry pointing at unmapped
         // memory.
+        parked.release_before_unmap();
         if !state.release_consumed(generation) {
             std::process::abort();
         }

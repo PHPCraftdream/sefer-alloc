@@ -36,11 +36,14 @@ fn cache_registration_refusal_is_not_a_served_hit() {
     unsafe { core.dealloc(hit, layout) };
     assert_eq!(core.dbg_large_cache_used(), cached_bytes);
 
+    // A same-payload hit retains its parked registration and never registers;
+    // the refusal path is reached when the payload offset changes (alignment).
+    let moved = Layout::from_size_align(layout.size(), 65536).unwrap();
     let hits = core.dbg_large_cache_hits();
     let reserved = AllocCore::dbg_segments_reserved_total();
     let released = AllocCore::dbg_segments_released_total();
     RouteDirectory::fail_next_registration_for_test();
-    let fallback = core.alloc(layout);
+    let fallback = core.alloc(moved);
     assert!(
         !fallback.is_null(),
         "slow fallback must serve the allocation"
@@ -61,14 +64,15 @@ fn cache_registration_refusal_is_not_a_served_hit() {
         fallback.write_bytes(0x5a, layout.size());
         assert_eq!(fallback.read(), 0x5a);
         assert_eq!(fallback.add(layout.size() - 1).read(), 0x5a);
-        core.dealloc(fallback, layout);
+        core.dealloc(fallback, moved);
     }
-    assert_eq!(core.dbg_large_cache_used(), cached_bytes);
+    let moved_cached_bytes = core.dbg_large_cache_used();
+    assert!(moved_cached_bytes > 0);
 
     let hits = core.dbg_large_cache_hits();
     let reserved = AllocCore::dbg_segments_reserved_total();
     let released = AllocCore::dbg_segments_released_total();
-    let control = core.alloc(layout);
+    let control = core.alloc(moved);
     assert!(!control.is_null());
     assert_eq!(control, fallback);
     assert_eq!(core.dbg_large_cache_hits() - hits, 1);
@@ -76,7 +80,7 @@ fn cache_registration_refusal_is_not_a_served_hit() {
     assert_eq!(AllocCore::dbg_segments_released_total() - released, 0);
     assert!(RouteDirectory::global().lookup(control).is_some());
     // SAFETY: control is live with the matching layout and freed exactly once.
-    unsafe { core.dealloc(control, layout) };
+    unsafe { core.dealloc(control, moved) };
     assert_eq!(core.dbg_active_kind_census(), (1, 0, true));
-    assert_eq!(core.dbg_large_cache_used(), cached_bytes);
+    assert_eq!(core.dbg_large_cache_used(), moved_cached_bytes);
 }

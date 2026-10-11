@@ -104,7 +104,8 @@ fn recycled_table_slot_behind_cursor_is_revisited() {
     assert!(!reissued.is_null());
     assert_eq!(heap.dbg_table_count(), table_count);
     let next = RouteDirectory::global().lookup(reissued).unwrap();
-    assert_ne!(next.incarnation(), old_incarnation);
+    // Same-payload cache reuse retains the parked registration.
+    assert_eq!(next.incarnation(), old_incarnation);
     // SAFETY: reissued is a new unique Large issue.
     assert!(unsafe { next.publish_large() });
     let mut next_misses = 0;

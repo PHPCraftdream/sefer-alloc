@@ -45,8 +45,11 @@ fn standalone_drop_releases_live_and_cached_large_once() {
 #[test]
 fn drop_uses_phase_credit_protocol() {
     let source = include_str!("../src/alloc_core/alloc_core/lifecycle.rs");
+    let release = include_str!("../src/alloc_core/alloc_core/alloc_core_impl.rs");
     assert!(!source.contains(".mark_large_released()"));
-    assert!(source.contains(".release_cached(generation)"));
+    // Drop retires cached Large through the sole release function.
+    assert!(source.contains("Self::release_cached_large(cached)"));
+    assert!(release.contains(".release_cached(generation)"));
     assert!(source.contains(".claim_live()"));
     assert!(source.contains(".release_consumed(generation)"));
 }

@@ -22,6 +22,10 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_sidecar_oracle",
   // PRF01: actual type layout only, no allocator instance or pointer access.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
+  // Owner-thread release-boundary count/census only; no callback or reservation reads.
+  "src/alloc_core/large/alloc_core_large_cache_eviction.rs::dbg_cached_large_release_boundary",
+  // PRF03: Relaxed ID-total load only; no mutation, reset, pointer or publication.
+  "src/registry/segment_route/directory.rs::incarnations_issued_for_test",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
   "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
   // C1: numeric results of resolved-default comparison under the claiming lease.

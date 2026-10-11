@@ -9,7 +9,7 @@ use sefer_alloc::registry::segment_route::RouteDirectory;
 use sefer_alloc::{AllocCore, LargeCacheConfig, SegmentLayout, SmallSegmentPoolConfig};
 
 #[test]
-fn cached_large_is_inactive_and_reissue_gets_fresh_incarnation() {
+fn cached_large_is_inactive_and_same_payload_reissue_retains_incarnation() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
     core.dbg_set_large_cache_budget(None);
     let layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
@@ -27,7 +27,8 @@ fn cached_large_is_inactive_and_reissue_gets_fresh_incarnation() {
     let second = core.alloc(layout);
     assert!(!second.is_null());
     assert_eq!(second, first);
-    assert_ne!(
+    // Same-payload cache reuse retains the parked registration.
+    assert_eq!(
         RouteDirectory::global()
             .lookup(second)
             .unwrap()

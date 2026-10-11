@@ -6,15 +6,51 @@ use crate::alloc_core::alloc_core::{AllocCore, LargeCacheHitCounter};
 use crate::alloc_core::alloc_core::{LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 use crate::alloc_core::alloc_core::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
-use crate::alloc_core::large::reservation_state::LargeReservationState;
 #[cfg(feature = "internals")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
-use crate::alloc_core::os;
-use crate::alloc_core::segment_header::{large_generation, SegmentMeta};
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+use crate::alloc_core::segment_header::SegmentMeta;
 
 use super::alloc_core_large_cache::{CombinedSlot, DECAY_CLOCK_CHECK_STRIDE};
 
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "bench-internals",
+    feature = "internals",
+    debug_assertions
+))]
+std::thread_local! {
+    // Read-only boundary evidence, local to this owner; no callback or pointer access.
+    static RELEASE_BOUNDARY: core::cell::Cell<(usize, usize)> = const { core::cell::Cell::new((0, 0)) };
+}
+
 impl AllocCore {
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals",
+        debug_assertions
+    ))]
+    pub(in crate::alloc_core) fn observe_cached_large_release_boundary() {
+        let census = crate::registry::segment_route::RouteDirectory::global()
+            .live_route_census_for_test()
+            .2;
+        RELEASE_BOUNDARY.with(|snapshot| snapshot.set((snapshot.get().0.wrapping_add(1), census)));
+    }
+
+    /// Owner-thread snapshot (release count, Large census) just before OS unmap,
+    /// after route unlink and physical credit release. No reservation access.
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals",
+        debug_assertions
+    ))]
+    #[doc(hidden)]
+    pub fn dbg_cached_large_release_boundary() -> (usize, usize) {
+        RELEASE_BOUNDARY.with(core::cell::Cell::get)
+    }
+
     /// Test-only snapshot of the oldest cached Large reservation.
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
@@ -42,16 +78,8 @@ impl AllocCore {
             self.large_cache_used_bytes = self
                 .large_cache_used_bytes
                 .saturating_sub(victim.usable_size);
-            // Release the OS reservation. The slot was unregistered from the
-            // table on deposit (same as `try_evict_to_fit`), so we release
-            // directly without touching the table.
-            let meta = SegmentMeta::new(victim.base);
-            let generation = large_generation(meta.terminal_snapshot().large_state);
-            if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
-                std::process::abort();
-            }
-            os::release_segment(victim.reservation, victim.reservation_len);
             released += victim.usable_size;
+            Self::release_cached_large(victim);
         }
     }
 
@@ -254,12 +282,7 @@ impl AllocCore {
         self.large_cache_used_bytes = self
             .large_cache_used_bytes
             .saturating_sub(victim.usable_size);
-        let meta = SegmentMeta::new(victim.base);
-        let generation = large_generation(meta.terminal_snapshot().large_state);
-        if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
-            std::process::abort();
-        }
-        os::release_segment(victim.reservation, victim.reservation_len);
+        Self::release_cached_large(victim);
         true
     }
 

@@ -20,6 +20,7 @@ mod registration;
 mod route_cut;
 mod route_record;
 mod route_scan;
+mod route_word_state;
 mod shard_lock;
 mod small_sidecar;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
@@ -34,6 +35,7 @@ pub use registration::RouteRegistration;
 pub use route_cut::RouteCut;
 pub use route_record::RouteRecord;
 pub use route_scan::RouteScan;
+pub use route_word_state::RouteWordState;
 pub use small_sidecar::SmallSidecar;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
 pub use terminal_publication_gate::TerminalPublicationGate;

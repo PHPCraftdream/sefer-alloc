@@ -169,7 +169,8 @@ fn null_slot_and_reused_large_route_charge_one_unit_each() {
     assert!(!second.is_null());
     assert_eq!(core.dbg_segment_id_of(second) as usize, index);
     let next = RouteDirectory::global().lookup(second).unwrap();
-    assert_ne!(next.incarnation(), incarnation);
+    // Same-payload cache reuse retains the parked registration.
+    assert_eq!(next.incarnation(), incarnation);
     cursor = (index, 3_999);
     // SAFETY: second is a fresh unique issue, not the retired first instance.
     assert!(unsafe { next.publish_large() });

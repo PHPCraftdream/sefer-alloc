@@ -39,7 +39,8 @@ fn realloc_grown_large_routes_remote_free_to_its_owner() {
         reissued, grown,
         "owner allocation must consume the resized descriptor"
     );
-    assert_ne!(
+    // Same-payload cache reuse retains the parked registration.
+    assert_eq!(
         RouteDirectory::global()
             .lookup(reissued)
             .unwrap()
