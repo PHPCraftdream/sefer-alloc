@@ -2,11 +2,11 @@
 //! former flat `heap_core_free.rs`, itself a split of `heap_core.rs`,
 //! task R6-CQ-7b): the single `dealloc_own_thread_with_base` method — the
 //! Э9 (P7.1, task #160) variant of the own-thread dealloc taking the
-//! pre-computed segment `base`, whose magazine/bitmap oracles all operate
-//! on it. Compiled only under `alloc-global` + `fastbin` (the only build
-//! with a magazine and the only consumer of `base` on this path), hence the
-//! module gate on the declaration in `free/mod.rs`.
+//! table-derived root/block witness, whose magazine/bitmap oracles operate
+//! on the stored root. Compiled only under `alloc-global` + `fastbin`,
+//! hence the module gate on the declaration in `free/mod.rs`.
 
+use crate::alloc_core::OwnedBlock;
 use core::alloc::Layout;
 
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
@@ -337,31 +337,16 @@ use super::dealloc::medium_promotion_reachable;
 use super::dealloc::HARDENED_LARGE_NOOP_COUNT;
 
 impl HeapCore {
-    /// Э9 (P7.1, task #160): own-thread dealloc body, taking a pre-computed
-    /// `base = os::segment_base_of_ptr(ptr)` so the cross-thread
-    /// [`dealloc_routing`](Self::dealloc_routing) path — which already
-    /// computed `base` for its `contains_base` ownership check — does not
-    /// recompute it. Behaviour is byte-identical to the former inline body:
-    /// the R1 `off >= bump` stale-free guard and the Э6 magazine/bitmap M2
-    /// oracles all operate on this passed-in `base` (which equals what they
-    /// used to compute locally, `segment_base_of_ptr` being pure).
+    /// Own-thread free consumes a table-derived root/block witness without
+    /// repeating the mutable canonical lookup. The allocation stays live
+    /// until this call; magazine and bitmap guards are unchanged.
     ///
-    /// Only compiled under fastbin (the only build with a magazine + the only
-    /// consumer of `base` on this path).
+    /// Only compiled under fastbin (the magazine path).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
-    pub(crate) fn dealloc_own_thread_with_base(
-        &mut self,
-        ptr: *mut u8,
-        layout: Layout,
-        base: *mut u8,
-    ) {
-        let Some((root, block)) = self.core.canonical_block_of(ptr) else {
-            return;
-        };
-        if root.addr() != base.addr() {
-            return;
-        }
+    pub(crate) fn dealloc_own_thread_with_base(&mut self, owned: OwnedBlock, layout: Layout) {
+        let (root, block) = (owned.root(), owned.block());
+        debug_assert_eq!(self.core.canonical_root_for(block), Some(root));
         {
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
             use crate::registry::heap_core::state::tcache::{FLUSH_N, FREE_PARK_CAP, TCACHE_CAP};
@@ -393,16 +378,15 @@ impl HeapCore {
                     // the M2 oracles, the Э6 double-free-oracle redesign
                     // history, and the RESIDUAL M2 LIMIT this pair does NOT
                     // cover — task #164/X7).
-                    let (off, meta) = match small_free_guard(root, ptr, c, layout) {
+                    let (off, meta) = match small_free_guard(root, block, c, layout) {
                         SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(root)),
                         SmallFreeGuard::RejectNoOp => return,
                         SmallFreeGuard::RouteToLargeFree => {
                             // SAFETY: this own-thread body is reached only
                             // from `HeapCore::dealloc`, an `unsafe fn` whose
-                            // caller bound `ptr`/`layout` to the
-                            // `GlobalAlloc::dealloc` contract; `base` was
-                            // proven ours by `dealloc_routing`'s
-                            // `contains_base` check. The substrate routes by
+                            // caller bound the block/layout to the free contract;
+                            // the witness retains the table-derived root.
+                            // The substrate routes by
                             // `kind` (Large) and frees the segment via
                             // `span_usable`, ignoring the layout.
                             #[allow(unsafe_code)]
@@ -461,7 +445,7 @@ impl HeapCore {
                     // block never entered the magazine, so no bitmap/slot
                     // bookkeeping to undo.
                     if cap < TCACHE_CAP {
-                        // SAFETY (R6-MS-3): `ptr` is a valid, currently-live
+                        // SAFETY (R6-MS-3): `block` is a valid, currently-live
                         // small-class-`c` allocation owned by this heap — the
                         // same guarantee `small_free_guard`'s `Accept` arm
                         // already established for the ordinary push path
@@ -557,11 +541,10 @@ impl HeapCore {
             }
         }
         // Large / non-small / non-fastbin: delegate to core.
-        // SAFETY: `dealloc_own_thread_with_base` is reached only from
-        // `HeapCore::dealloc` (own-thread or routing path) with a caller-bound
-        // `ptr`/`layout` honouring the `GlobalAlloc::dealloc` contract; the
-        // magazine oracles above already returned for the small fastbin case,
-        // and we forward the same pair to the substrate.
+        // SAFETY: dealloc/realloc callers keep the witnessed allocation live
+        // and bind its block/layout to the free contract. The magazine guards
+        // returned above for small fastbin blocks; the substrate resolves the
+        // same block again for this non-small path.
         #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
         unsafe {
             self.core.dealloc(block, layout)

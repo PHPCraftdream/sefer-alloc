@@ -5,6 +5,7 @@
 //! did: `alloc_with_class` (size class) and `dealloc_with_base` (base key).
 //! They do not exist under `production`.
 
+use super::OwnedBlock;
 use core::alloc::Layout;
 
 #[cfg(feature = "alloc-stats")]
@@ -39,6 +40,12 @@ impl AllocCore {
         let base = self.table.canonical_base_of_mut(candidate)?;
         let block = Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
         Some((base, block))
+    }
+
+    #[inline(always)]
+    pub(crate) fn owned_block_of(&mut self, ptr: *mut u8) -> Option<OwnedBlock> {
+        self.canonical_block_of(ptr)
+            .map(|(root, block)| OwnedBlock::new(root, block))
     }
 
     /// Allocate `layout.size()` bytes satisfying `layout.align()`.

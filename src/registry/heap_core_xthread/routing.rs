@@ -8,11 +8,11 @@ impl HeapCore {
     #[inline(always)]
     #[allow(unsafe_code)]
     pub(crate) fn dealloc_routing(&mut self, ptr: *mut u8, layout: Layout) {
-        if let Some((base, block)) = self.core.canonical_block_of(ptr) {
+        if let Some(owned) = self.core.owned_block_of(ptr) {
             #[cfg(feature = "fastbin")]
-            self.dealloc_own_thread_with_base(block, layout, base);
+            self.dealloc_own_thread_with_base(owned, layout);
             #[cfg(not(feature = "fastbin"))]
-            self.dealloc_own_thread(block, layout, base);
+            self.dealloc_own_thread(owned.block(), layout, owned.root());
             return;
         }
         // SAFETY: reached only from the allocator's unique current-instance free.

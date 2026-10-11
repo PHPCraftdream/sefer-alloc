@@ -7,4 +7,7 @@
 //! movement; no behavior changed.
 
 mod mem_impl;
+mod owned_block;
 mod realloc_fastpath;
+
+pub(crate) use owned_block::OwnedBlock;

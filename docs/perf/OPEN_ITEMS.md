@@ -3055,13 +3055,6 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     - **Next trigger:** a revisit needs (1) an owner decision that `realloc` may keep the address on a Large shrink that retains at least half the size (an observable behaviour change; payload content and `Layout` contracts are unchanged); and (2) a fresh preregistration with a control strategy justified before measurement, including enough same-source control samples and/or a control built from the candidate source to resolve the observed ±12/−14 Ir scale. Do not infer a code-shape effect from the existing control delta. A post-hoc re-reading of this result does not qualify.
     - **Evidence:** `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md` (+ `_summary.csv`, `_identity.json.gz`, `docs/perf/_raw_r16_perf83_{A1,A2,B1,B2,C0,rss}.log`); `scripts/r16_perf83_iai.mjs`, `scripts/r16_perf83_gate_table.mjs`; `tests/r16_perf83_activation.rs`; `examples/r16_perf83_large_shrink_rss.rs`; `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H1 and appendix A (W3).
 
-85. **[L] oxx R17 PRF-02 — own-thread free resolves the segment root twice.** (Filed 2026-10-11, src review round 17; solution researched 2026-10-11.)
-
-    - **Status:** OPEN — decision recorded, implementation scheduled (round 19, witness type `OwnedBlock`); not measured. No `perf(runtime)` claim until the gate below passes.
-    - **Current-number-or-verdict:** `src/registry/heap_core_xthread/routing.rs` resolves `(base, block)` through `canonical_block_of`, then `dealloc_own_thread_with_base` resolves the same key again; the second lookup is a provable no-op on the three production callers (static analysis, not a run). Historical own-free cost, paired `dealloc_free_only_16b_n9 − n8`: 45 → 65 → 70 → 70 Ir across the committed logs; static estimate of the removable share is -11…-15 Ir per own free and of commit `36ba3758`'s new lower-bound check +4…6 Ir (both ESTIMATES, no committed iai log after `265a571a`). The old "free ≤ 50 Ir" target is not reachable without dropping mandatory guards (Ph3b, R1-01, SEC-01).
-    - **Next trigger:** preregistered A/B iai gate on `HeapCore::dealloc` with three arms (before `36ba3758`, HEAD, HEAD + `OwnedBlock`), mimalloc control ΔIr = 0 and a path-activation oracle (Tier-1 lookup count = 1 per free); sketch in the research report §5.
-    - **Evidence:** `docs/reviews/2026-10-11-solution-research-free-path-prf02.md`; `docs/reviews/2026-10-08-src-review-oxx-round-17-performance.md` R17-PRF-02; raw logs `docs/perf/_raw_task1999_alloc_zeroed_stub_gap_after_1982.log`, `_raw_ph6b_iai_base_run1.log`, `_raw_ph6b_iai_cand_run1.log`, `_raw_r16_perf84_A1.log`.
-
 86. **[L] oxx R17 PRF-03 — the Large cache drops and re-registers the directory route on every deposit/hit cycle.** (Filed 2026-10-11, src review round 17; solution researched 2026-10-11.)
 
     - **Status:** OPEN — decision recorded (variant B, keep the route registered while the block sits in the cache), implementation scheduled behind a preregistered gate; not measured.
@@ -3089,6 +3082,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
+
+- **R17-PRF-02 / item 85 — own-thread free resolved the segment root twice.** Closed R19 (2026-10-11): `OwnedBlock` {root, block} witness shipped as `perf(runtime)`; deterministic iai on `HeapCore` (base `042e88fb`, two identical repeats per arm): production push 69 -> 52 Ir (-17 of 69, -24.6 %), churn 84 -> 70 Ir per pair (-14 of 84, -16.7 %); wall-clock not measured. The first gate returned NO-GO (symmetric Large band), the gate was re-registered (R19-PRF02-R) and B passed; the Unknown-only C-prime attempt was rejected (+11 Ir/push). Full closure: the `85` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **R17-CQ-01 / R17-CON-02 / R17-SEC-04 — hardened generation table with no runtime reader.** Closed R18-3 (2026-10-09): removed the table, layout bytes, writers, and table-only tests after confirming there was no runtime consumer; no RSS/Ir result is claimed. Full closure: the `R17-CQ-01 / R17-CON-02 / R17-SEC-04` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure trail".
 

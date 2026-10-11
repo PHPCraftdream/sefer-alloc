@@ -255,7 +255,13 @@ impl HeapCore {
         // SAFETY: this method carries the identical `# Safety` contract as
         // `HeapCore::dealloc`/`dealloc_own_thread_with_base`, forwarded to
         // THIS caller verbatim.
-        self.dealloc_own_thread_with_base(ptr, layout, base);
+        let Some(owned) = self.core.owned_block_of(ptr) else {
+            return;
+        };
+        if owned.root().addr() != base.addr() {
+            return;
+        }
+        self.dealloc_own_thread_with_base(owned, layout);
     }
 
     /// R28-1 (task #430) MEASUREMENT-ONLY: run `AllocCore::flush_class`

@@ -140,12 +140,13 @@ impl HeapCore {
         }
         #[cfg(feature = "alloc-global")]
         {
-            let own_block = self.core.canonical_block_of(ptr);
+            let own_block = self.core.owned_block_of(ptr);
             // Task #135 (Part 2): O(1) membership test (`AllocCore::contains_base`
             // → the OPT-B hash table) replaces the O(segment count) linear scan
             // `segment_bases().any(|b| b == base)`. Same semantics: `true` iff
             // `base` is one of THIS heap's registered, live segments.
-            if let Some((base, block)) = own_block {
+            if let Some(owned) = own_block {
+                let (base, block) = (owned.root(), owned.block());
                 if AllocCore::large_payload_mismatch(base, block) {
                     return core::ptr::null_mut();
                 }
@@ -309,7 +310,7 @@ impl HeapCore {
                         BlockKind::Small { .. } | BlockKind::Primordial
                     )
                 {
-                    if let Some(p) = self.try_promote_to_large(base, block, old_layout, new_size) {
+                    if let Some(p) = self.try_promote_to_large(owned, old_layout, new_size) {
                         return p;
                     }
                 }
@@ -404,7 +405,7 @@ impl HeapCore {
                 // `dealloc_routing`'s identical two-arm call (`heap_core_
                 // xthread.rs`).
                 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-                self.dealloc_own_thread_with_base(block, old_layout, base);
+                self.dealloc_own_thread_with_base(owned, old_layout);
                 #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
                 self.dealloc_own_thread(block, old_layout, base);
                 return new_ptr;
@@ -547,11 +548,11 @@ impl HeapCore {
     /// not hand-written.
     fn try_promote_to_large(
         &mut self,
-        base: *mut u8,
-        ptr: *mut u8,
+        owned: crate::alloc_core::OwnedBlock,
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
+        let (base, ptr) = (owned.root(), owned.block());
         // R2-1 parity with the move leg just below: bound the read by the
         // block's actual committed span, not the caller-supplied
         // `old_layout.size()` — a bogus layout must not drive an OOB read.
@@ -653,7 +654,7 @@ impl HeapCore {
         // `fn`s (each wraps its own internal `unsafe { self.core.dealloc(..)
         // }` call) — no `unsafe` block needed at this call site.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-        self.dealloc_own_thread_with_base(ptr, old_layout, base);
+        self.dealloc_own_thread_with_base(owned, old_layout);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
         self.dealloc_own_thread(ptr, old_layout, base);
         Some(new_ptr)
