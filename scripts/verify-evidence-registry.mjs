@@ -23,6 +23,16 @@
 // registry that predates the merge of its evidence commits is incomplete,
 // not wrong. --strict closes that gap for PASS/KNOWN-* rows.
 //
+// Source scopes: docs/evidence/source_scope.csv has the exact header
+// id,paths,scope_base,anchors,note. paths is a semicolon-separated list of
+// repository-relative literal files/directories (no globs). Empty scope_base
+// means source_sha; otherwise it must resolve to an ancestor commit of HEAD.
+// Optional anchors are semicolon-separated path::text entries within scope;
+// each text must occur exactly once in that file at HEAD.
+// For PASS/KNOWN-DEFECT/KNOWN-RED, scope drift and anchors are checked without
+// a baseline limit. Comparisons are committed base-vs-HEAD (even HEAD-vs-HEAD),
+// not dirty-working-tree scope checks.
+//
 // Usage: node scripts/verify-evidence-registry.mjs
 //          [--registry <path>] [--required <path>] [--repo-root <path>]
 //          [--strict] [--baseline <git-ref>] [--strict-baseline] [--json]
@@ -336,6 +346,121 @@ function isListedSpike(sha) {
   return /^[0-9a-f]{8,40}$/.test(s) && spikeShas.some((full) => full.startsWith(s));
 }
 
+// ------------------------------------------------ source-scope cache ----
+// Optional for old fixture repositories; an existing malformed file fails closed.
+const SOURCE_SCOPE_HEADER = ['id', 'paths', 'scope_base', 'anchors', 'note'];
+const scopeById = new Map();
+const unscopedStrong = new Map();
+const srcDriftUnscoped = new Set();
+const sourceDiffCache = new Map();
+const sourceLogCache = new Map();
+const scopeBaseCache = new Map();
+const headSourceCache = new Map();
+function safeScopePath(p) {
+  return p !== '' && p === p.trim() && !/[\\:*?\[\]\x00-\x1f\x7f]/.test(p) &&
+    !p.startsWith('/') && p.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+}
+function scopeBase(ref) {
+  if (scopeBaseCache.has(ref)) return scopeBaseCache.get(ref);
+  let full = null;
+  try {
+    full = git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], false);
+    const r = spawnSync('git', ['merge-base', '--is-ancestor', full, 'HEAD'],
+      { cwd: repoRoot, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(r.status === 1
+      ? `${ref} is not an ancestor of HEAD` : `git ancestry check failed: ${r.stderr || r.error}`);
+  } catch (e) { full = { error: e.message }; }
+  scopeBaseCache.set(ref, full);
+  return full;
+}
+function loadSourceScopes() {
+  const path = join(repoRoot, 'docs', 'evidence', 'source_scope.csv');
+  if (!existsSync(path)) return;
+  try {
+    const parsed = readCsv(path);
+    if (parsed.unterminated) violation('source-scope-schema', '-', 'source_scope.csv has an unterminated quote');
+    if (JSON.stringify(parsed.rows[0] ?? []) !== JSON.stringify(SOURCE_SCOPE_HEADER)) {
+      violation('source-scope-schema', '-', `source_scope.csv header must be exactly ${SOURCE_SCOPE_HEADER.join(',')}`);
+      return;
+    }
+    const ids = new Set();
+    const registryIds = new Set(rows.map((r) => r.id));
+    for (const cells of parsed.rows.slice(1)) {
+      const sc = toRow(SOURCE_SCOPE_HEADER, cells), id = sc.id;
+      let valid = true;
+      const bad = (message) => { valid = false; violation('source-scope-schema', id, message); };
+      if (cells.length !== SOURCE_SCOPE_HEADER.length) bad('source_scope.csv row must have 5 columns');
+      if (!ID_RE.test(id) || id !== id.trim()) bad('invalid source scope id');
+      if (ids.has(id)) bad('duplicate source scope id');
+      ids.add(id);
+      if (!registryIds.has(id)) bad('source scope id is absent from registry');
+      const paths = sc.paths.split(';').map((p) => p.trim());
+      if (paths.some((p) => !safeScopePath(p))) bad('paths must be nonempty safe repository-relative literal paths (no magic/globs/dotdot/absolute paths)');
+      const anchors = [];
+      if (sc.anchors !== '') for (const token of sc.anchors.split(';')) {
+        const at = token.indexOf('::');
+        const p = token.slice(0, at).trim(), text = token.slice(at + 2);
+        if (at < 0 || !safeScopePath(p) || text.trim() === '' ||
+            !paths.some((scope) => p === scope || p.startsWith(`${scope}/`))) {
+          bad('anchors must be path::nonempty text within declared scope');
+        } else anchors.push([p, text]);
+      }
+      let base = null;
+      if (sc.scope_base !== '') {
+        if (sc.scope_base !== sc.scope_base.trim()) bad('scope_base has surrounding whitespace');
+        base = scopeBase(sc.scope_base);
+        if (base?.error) bad(`invalid scope_base: ${base.error}`);
+      }
+      // Keep invalid entries visible as scoped; schema violations already make RED.
+      scopeById.set(id, { paths: [...new Set(paths)].sort(), anchors, base, valid });
+    }
+  } catch (e) { violation('source-scope-schema', '-', `cannot read source_scope.csv: ${e.message}`); }
+}
+function checkSourceScope(row) {
+  if (!STRONG_STATUS.has(row.status)) return;
+  const sc = scopeById.get(row.id);
+  if (!sc) {
+    const sha = row.source_sha.trim();
+    if (/^[0-9a-f]{8,40}$/i.test(sha)) {
+      const idn = identity(sha);
+      if (idn.resolved && idn.ancestor === true) unscopedStrong.set(row.id, idn.resolved);
+    }
+    return;
+  }
+  if (!sc.valid) return;
+  const base = sc.base || scopeBase(row.source_sha.trim());
+  if (!base || base.error) {
+    violation('source-scope-git', row.id, base?.error || 'source scope base could not be resolved');
+    return;
+  }
+  const key = JSON.stringify([base, sc.paths]);
+  try {
+    if (!sourceDiffCache.has(key)) sourceDiffCache.set(key,
+      git(['--literal-pathspecs', 'diff', '--name-only', base, 'HEAD', '--', ...sc.paths], false));
+    const changed = sourceDiffCache.get(key);
+    if (changed) violation('evidence-src-stale', row.id,
+      `src scope changed since ${base}: ${changed.split('\n').join(', ')}`);
+    for (const [p, text] of sc.anchors) {
+      if (!headSourceCache.has(p)) headSourceCache.set(p, gitRaw(['show', `HEAD:${p}`], false));
+      const content = headSourceCache.get(p);
+      let n = 0;
+      for (let at = content.indexOf(text); at >= 0; at = content.indexOf(text, at + 1)) n++;
+      if (n !== 1) violation('evidence-anchor', row.id, `${p}: anchor "${text}" occurs ${n} times`);
+    }
+  } catch (e) { violation('source-scope-git', row.id, e.message); }
+}
+function reportUnscopedDrift(id, sha) {
+  try {
+    if (!sourceLogCache.has(sha)) sourceLogCache.set(sha,
+      git(['--literal-pathspecs', 'log', '--format=%H', `${sha}..HEAD`, '--', 'src', 'Cargo.toml', 'build.rs'], false));
+    const n = sourceLogCache.get(sha).split('\n').filter(Boolean).length;
+    if (n > 0) {
+      srcDriftUnscoped.add(id);
+      emit(`SRC-DRIFT-UNSCOPED: ${id} ${n} commits`);
+    }
+  } catch (e) { violation('source-scope-git', id, e.message); }
+}
+
 // ------------------------------------------------------ tests cache ----
 
 const TESTS_RE = /(tests\/[A-Za-z0-9_\-\/]+\.rs)/g;
@@ -479,7 +604,9 @@ for (const req of requiredRows) {
   }
 }
 
+loadSourceScopes();
 for (const row of rows) {
+  checkSourceScope(row);
   const id = row.id;
   if (id !== id.trim() || id === '' || !ID_RE.test(id)) {
     violation('id-format', id, `id must match ${ID_RE} and have no surrounding whitespace`);
@@ -491,6 +618,9 @@ for (const row of rows) {
   if (!BOOL.has(row.mutant_rejected)) violation('bool-mutant-rejected', id, `mutant_rejected must be true/false/empty, got "${row.mutant_rejected}"`);
   const isVerdict = VERDICT_STATUS.has(row.status);
   const isStrong = STRONG_STATUS.has(row.status);
+  if (row.status === 'CONDITIONAL' && row.status_reason.trim() === '') {
+    violation('status-reason-required', id, 'CONDITIONAL requires status_reason');
+  }
 
   // (a) forbidden auto-elevations
   if (row.status === 'PASS' && row.activation.trim() === '') {
@@ -891,6 +1021,7 @@ function loadBaseline() {
   })) };
 }
 
+let sourceBaseline = null;
 if (opts.baseline) {
   const b = loadBaseline();
   if (b.error) {
@@ -899,6 +1030,16 @@ if (opts.baseline) {
       violation('baseline-unresolved', '-', `${b.error} (--strict-baseline)`);
     }
   } else {
+    sourceBaseline = b.map;
+    // Class 3 applies only after a valid baseline has been loaded.
+    for (const cur of rows) {
+      if (!STRONG_STATUS.has(cur.status) || scopeById.has(cur.id)) continue;
+      const base = b.map.get(cur.id);
+      if (!base || newEvidence(base, cur)) {
+        violation('src-scope-required', cur.id,
+          'new/refreshed strong row needs a docs/evidence/source_scope.csv entry');
+      }
+    }
     let retired = new Set();
     const retiredPath = join(repoRoot, 'docs', 'evidence', 'retired_ids.csv');
     if (existsSync(retiredPath)) {
@@ -943,6 +1084,13 @@ if (opts.baseline) {
     }
   }
 }
+
+for (const [id, sha] of unscopedStrong) {
+  const base = sourceBaseline?.get(id);
+  if (sourceBaseline && (!base || newEvidence(base, byId.get(id)))) continue;
+  reportUnscopedDrift(id, sha);
+}
+emit(`[evidence-registry] src drift (unscoped legacy): ${srcDriftUnscoped.size} rows`);
 
 // --------------------------------------------------------- verdict ----
 
@@ -993,6 +1141,7 @@ if (opts.json) {
     requiredMissing,
     pendingRequired,
     counters: { byStatus, byPhase, byScope, published,
+      srcDriftUnscoped: srcDriftUnscoped.size,
       unpublished: identityUnresolved.length,
       requiredCells: { total: requiredRows.length, missing: requiredMissing.length,
         outOfExpect: requiredOutOfExpect } },

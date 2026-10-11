@@ -244,14 +244,17 @@ function sha256FileLf(path) {
   return createHash('sha256').update(lf(readFileSync(path, 'utf8'))).digest('hex');
 }
 
-// Two-commit tmp git repo: commit1 = full fixture, commit2 = registry
-// without row B. Returns { root, c1, reg, req }.
+// Fixture source files exist before the evidence pin; source-only cases commit
+// their drift separately, leaving receipts and registry evidence unchanged.
 function makeRatchetRepo(dir, { commit2 = true, bExpects = 'NOT_RUN|PASS' } = {}) {
   runGit(['init', '-b', 'main'], dir);
   const docsEv = join(dir, 'docs', 'evidence');
   const reviews = join(dir, 'docs', 'reviews');
   mkdirSync(docsEv, { recursive: true });
   mkdirSync(reviews, { recursive: true });
+  mkdirSync(join(dir, 'src'));
+  writeFileSync(join(dir, 'src', 'a.rs'), 'pub fn a() { /* fixture anchor */ }\n');
+  writeFileSync(join(dir, 'src', 'b.rs'), 'pub fn b() {}\n');
   writeFileSync(join(reviews, 'fixture.md'), 'fixture receipt\n');
   const pin = sha256FileLf(join(reviews, 'fixture.md'));
   const rowA = passRow({
@@ -692,6 +695,7 @@ ratchet('r2-retired-covers-removal', (dir) => {
   notMarker: 'RED: baseline-' });
 ratchet('r3-promotion-without-evidence', (dir) => {
   const repo = makeRatchetRepo(dir, { commit2: false });
+  writeSourceScopes(repo, ['B']);
   writeFileSync(join(repo.root, 'docs', 'evidence', 'registry.csv'),
     toCsv(HEADER, [repo.rowA, { ...repo.rowB, status: 'PASS' }].map(objCells)));
   runGit(['add', '.'], repo.root);
@@ -702,6 +706,8 @@ ratchet('r3-promotion-without-evidence', (dir) => {
 // Promotion needs NEW evidence: a different normalised source_sha, receipt set
 // or pins. A fresh marker alone, whitespace, short-sha or token-order edits do not count.
 function promoteB(repo, patch) {
+  // Keep the old promotion-rule cases isolated from src-scope-required.
+  writeSourceScopes(repo, ['B']);
   writeFileSync(join(repo.root, 'docs', 'evidence', 'registry.csv'),
     toCsv(HEADER, [repo.rowA, { ...repo.rowB, status: 'PASS', ...patch }].map(objCells)));
   runGit(['add', '.'], repo.root);
@@ -756,6 +762,67 @@ ratchet('r6-baseline-unresolved-strict', (dir) => {
     req: repo.req, extra: ['--baseline', UNPUBLISHED_SHA, '--strict-baseline'] }) };
 }, { expectExit: 1, expectMarker: 'RED: baseline-unresolved row -:' });
 
+// --- VER-02: protected source scope, legacy drift and exact anchors ---
+function writeSourceScopes(repo, ids, anchors = '') {
+  writeFileSync(join(repo.root, 'docs', 'evidence', 'source_scope.csv'),
+    toCsv(['id', 'paths', 'scope_base', 'anchors', 'note'],
+      ids.map((id) => [id, 'src/a.rs', '', anchors, 'VER-02 fixture'])));
+}
+function sourceCase(dir, { scoped = true, changed = null, conditional = false,
+  newRow = false, refreshed = false, anchors = '' } = {}) {
+  const repo = makeRatchetRepo(dir, { commit2: false });
+  if (scoped) writeSourceScopes(repo, ['A'], anchors);
+  if (changed) writeFileSync(join(repo.root, 'src', changed),
+    changed === 'a.rs' ? 'pub fn a_changed() {}\n' : 'pub fn b_changed() {}\n');
+  let a = repo.rowA;
+  if (conditional) a = { ...a, status: 'CONDITIONAL', mutant_rejected: '',
+    status_reason: `src drift since ${a.source_sha}: src/a.rs` };
+  if (refreshed) a = { ...a, source_sha: repo.c1 };
+  // B is unrelated fixture bookkeeping, not awaiting evidence in these cases.
+  const rows = [a, { ...repo.rowB, status: 'BUILD_ONLY' }];
+  const required = [reqRow('A', { expects: conditional ? 'PASS|CONDITIONAL' : 'PASS' }),
+    reqRow('B', { expects: 'NOT_RUN|BUILD_ONLY|PASS' })];
+  if (newRow) {
+    rows.push({ ...repo.rowA, id: 'C', source_cell: 'fixture:C' });
+    required.push(reqRow('C'));
+  }
+  writeFileSync(repo.reg, toCsv(HEADER, rows.map(objCells)));
+  writeFileSync(repo.req, toCsv(REQUIRED_HEADER,
+    required.map((r) => REQUIRED_HEADER.map((h) => r[h]))));
+  runGit(['add', '.'], repo.root);
+  runGit([...GIT_ID, 'commit', '-m', 'VER-02 source-scope fixture'], repo.root);
+  return { repo, args: judgeArgs(repo.root, { root: repo.root, reg: repo.reg,
+    req: repo.req, extra: ['--strict', '--baseline', repo.c1, '--json'] }) };
+}
+const sourceExpect = (rule = null, id = 'A', drift = 0, conditional = false, newRow = false) => ({
+  expectExit: rule ? 1 : 0,
+  expectVerdict: `[evidence-registry] VERDICT: ${rule ? 'RED' : conditional ? 'INCOMPLETE' : 'GREEN'} (strict)`,
+  ...(rule ? { expectMarker: `RED: ${rule} row ${id}:` } : { notMarker: 'RED:' }),
+  sourceCheck: { rule, id, drift, conditional, newRow },
+});
+ratchet('ver02-1-scoped-a-unrelated-b-green',
+  (dir) => sourceCase(dir, { changed: 'b.rs' }), sourceExpect());
+ratchet('ver02-2-scoped-a-source-drift-red',
+  (dir) => sourceCase(dir, { changed: 'a.rs' }), sourceExpect('evidence-src-stale'));
+// CONDITIONAL is pending under the existing judge: exit 0 / INCOMPLETE, not
+// literal GREEN. Keep required-cell coverage rather than weakening that rule.
+ratchet('ver02-3-source-drift-conditional-not-red',
+  (dir) => sourceCase(dir, { changed: 'a.rs', conditional: true }),
+  sourceExpect(null, 'A', 0, true));
+ratchet('ver02-4-legacy-unscoped-source-drift-count-one',
+  (dir) => sourceCase(dir, { scoped: false, changed: 'a.rs' }), sourceExpect(null, 'A', 1));
+ratchet('ver02-5-new-strong-unscoped-red',
+  (dir) => sourceCase(dir, { newRow: true }), sourceExpect('src-scope-required', 'C', 0, false, true));
+ratchet('ver02-5-refreshed-strong-unscoped-red',
+  (dir) => sourceCase(dir, { scoped: false, refreshed: true }), sourceExpect('src-scope-required'));
+for (const occurrences of [0, 2]) {
+  ratchet(`ver02-6-anchor-${occurrences}-occurrences-red`, (dir) => {
+    // Source itself stays byte-identical: isolate anchor failure from drift.
+    const text = occurrences === 0 ? 'missing fixture anchor' : 'f';
+    return sourceCase(dir, { anchors: `src/a.rs::${text}` });
+  }, sourceExpect('evidence-anchor'));
+}
+
 // required_cells.csv copy with row B dropped (for r2).
 function realRequiredOf(repo) {
   const rows = parseCsv(readFileSync(repo.req, 'utf8'));
@@ -788,6 +855,34 @@ for (const c of cases) {
       const { repo, args } = c.build(dir);
       res = runJudge(args);
     }
+    let sourceOk = true;
+    let sourceDetails = '';
+    if (c.sourceCheck) {
+      const payload = JSON.parse(res.stdout);
+      const human = res.stderr;
+      const s = c.sourceCheck;
+      const wanted = s.rule ? [{ rule: s.rule, id: s.id }] : [];
+      const actual = payload.violations.map(({ rule, id }) => ({ rule, id }));
+      const driftLines = human.split('\n').filter((l) => l.startsWith('SRC-DRIFT-UNSCOPED:'));
+      sourceOk = JSON.stringify(actual) === JSON.stringify(wanted)
+        && payload.counters.srcDriftUnscoped === s.drift
+        && payload.counters.byStatus.PASS === (s.conditional ? 0 : s.newRow ? 2 : 1)
+        && payload.counters.byStatus.CONDITIONAL === (s.conditional ? 1 : 0)
+        && payload.counters.published === (s.newRow ? 2 : 1)
+        && payload.counters.requiredCells.total === (s.newRow ? 3 : 2)
+        && payload.counters.requiredCells.missing === 0
+        && payload.counters.requiredCells.outOfExpect === 0
+        && driftLines.length === s.drift
+        && (s.drift === 0 || driftLines[0] === 'SRC-DRIFT-UNSCOPED: A 1 commits');
+      if (s.rule === 'evidence-anchor') {
+        const n = c.name.includes('anchor-0-') ? 0 : 2;
+        const text = n === 0 ? 'missing fixture anchor' : 'f';
+        sourceOk &&= redLines(human)[0] ===
+          `RED: evidence-anchor row A: src/a.rs: anchor "${text}" occurs ${n} times`;
+      }
+      sourceDetails = ` srcDriftUnscoped=${payload.counters.srcDriftUnscoped} (want ${s.drift})`;
+      res = { ...res, stdout: human, stderr: '' };
+    }
     const exitOk = res.code === c.expectExit;
     const markerOk = !c.expectMarker || markerHit(res.stdout, c.expectMarker);
     const verdictOk = !c.expectVerdict || markerHit(res.stdout, c.expectVerdict);
@@ -795,7 +890,7 @@ for (const c of cases) {
     const singleOk = !c.mutation?.exactlyOneRed ||
       (redLines(res.stdout).length === 1 &&
         redLines(res.stdout)[0].startsWith(c.mutation.exactlyOneRed));
-    ok = exitOk && markerOk && verdictOk && notOk && singleOk;
+    ok = exitOk && markerOk && verdictOk && notOk && singleOk && sourceOk;
     if (!ok) {
       observed = `exit=${res.code} (want ${c.expectExit})`
         + ` out=[${res.stdout.split('\n')
@@ -805,6 +900,7 @@ for (const c of cases) {
         + (c.expectVerdict ? ` verdict=${verdictOk ? 'hit' : 'MISS'}` : '')
         + (!notOk ? ` forbidden-marker=${c.notMarker}` : '')
         + (!singleOk ? ` redLines=[${redLines(res.stdout).join(' ;; ')}]` : '')
+        + (!sourceOk ? ` source assertions=FAIL${sourceDetails}` : '')
         + (res.stderr ? ` stderr: ${res.stderr.split('\n')[0]}` : '');
       failed.push(c.name);
     }
@@ -827,6 +923,7 @@ console.log('case'.padEnd(w) + ' | expected | observed | ok');
 for (const r of results) {
   console.log(r.name.padEnd(w) + ` | ${r.expected} | ${r.observed} | ${r.ok ? 'yes' : 'NO'}`);
 }
+console.log(`EVIDENCE-REGISTRY-SELFTEST: ${results.length - failed.length} passed; ${failed.length} failed; ${results.length} total`);
 if (failed.length > 0) {
   console.error(`EVIDENCE-REGISTRY-SELFTEST: FAILED cases: ${failed.join(', ')}`);
   process.exit(1);
