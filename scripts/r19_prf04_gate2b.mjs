@@ -346,7 +346,7 @@ function run(out,armA,armB) {
   const executables={};
   for(const [arm,cwd] of Object.entries(arms)) {
     const env={...process.env,RUSTC_WRAPPER:'',CARGO_BUILD_JOBS:'3',CARGO_TARGET_DIR:resolve(cwd,'target')};
-    const copyDir=resolve(cwd,'target',`r19_prf04_gate2b_${digest(relative(root,out)).slice(0,16)}_${arm}`);assert(!existsSync(copyDir),'binary output exists');mkdirSync(copyDir);
+    const copyDir=resolve(cwd,'target',`r19_prf04_gate2b_${digest(relative(root,out)).slice(0,16)}_${arm}`);assert(!existsSync(copyDir),'binary output exists');mkdirSync(copyDir,{recursive:true});
     const binaries={},metadata={};executables[arm]={};
     for(const [diagnostic,features] of [[false,'production'],[true,'production bench-internals alloc-stats internals']]) {
       command(cwd,'cargo',['build','--locked','--release','--jobs','3','--example','r19_prf04_gate2b','--example','r19_prf04_gate2b_observer','--features',features],env);
