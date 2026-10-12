@@ -34,10 +34,10 @@
 // not dirty-working-tree scope checks.
 //
 // Usage: node scripts/verify-evidence-registry.mjs
-//          [--registry <path>] [--required <path>] [--repo-root <path>]
+//          [--registry <path>] [--required <path>] [--source-scope <path>] [--repo-root <path>]
 //          [--strict] [--baseline <git-ref>] [--strict-baseline] [--json]
-// Paths default to <git-root>/docs/evidence/{registry,required}.csv; repo root
-// defaults to `git rev-parse --show-toplevel`.
+// Paths default to <git-root>/docs/evidence/{registry,required_cells,source_scope}.csv;
+// repo root defaults to `git rev-parse --show-toplevel`.
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -81,6 +81,7 @@ function usage() {
 `usage: node scripts/verify-evidence-registry.mjs [options]
   --registry <path>    path to registry.csv (default <repo-root>/docs/evidence/registry.csv)
   --required <path>    path to required_cells.csv (default <repo-root>/docs/evidence/required_cells.csv)
+  --source-scope <path>  path to source_scope.csv (default <repo-root>/docs/evidence/source_scope.csv)
   --repo-root <path>   repository root (default: git rev-parse --show-toplevel)
   --strict             strict mode: identity/required shortfalls become RED
   --baseline <ref>     ratchet against docs/evidence/registry.csv at <git-ref>
@@ -89,14 +90,14 @@ function usage() {
 }
 
 const argv = process.argv.slice(2);
-const opts = { registry: null, required: null, repoRoot: null, json: false,
+const opts = { registry: null, required: null, sourceScope: null, repoRoot: null, json: false,
   strict: false, baseline: null, strictBaseline: false };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--json') { opts.json = true; continue; }
   if (a === '--strict') { opts.strict = true; continue; }
   if (a === '--strict-baseline') { opts.strictBaseline = true; continue; }
-  const key = { '--registry': 'registry', '--required': 'required',
+  const key = { '--registry': 'registry', '--required': 'required', '--source-scope': 'sourceScope',
     '--repo-root': 'repoRoot', '--baseline': 'baseline' }[a];
   if (!key || i + 1 >= argv.length) { usage(); process.exit(2); }
   opts[key] = argv[++i];
@@ -374,7 +375,7 @@ function scopeBase(ref) {
   return full;
 }
 function loadSourceScopes() {
-  const path = join(repoRoot, 'docs', 'evidence', 'source_scope.csv');
+  const path = opts.sourceScope ? resolve(opts.sourceScope) : join(repoRoot, 'docs', 'evidence', 'source_scope.csv');
   if (!existsSync(path)) return;
   try {
     const parsed = readCsv(path);

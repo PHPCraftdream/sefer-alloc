@@ -322,6 +322,11 @@ fx('green-control-strict', baseRegistry(), baseRequired(), { extra: ['--strict']
 fx('green-control-crlf', baseRegistry(), baseRequired(), { crlf: true },
   { expectExit: 0, expectVerdict: '[evidence-registry] VERDICT: GREEN' });
 
+// The source-scope file is injectable: an id absent from the fixture registry is RED.
+fx('source-scope-override-is-used', baseRegistry(), baseRequired(),
+  { scopeText: 'id,paths,scope_base,anchors,note\nZ-absent,src/a.rs,,,override\n' },
+  { expectExit: 1, expectMarker: 'RED: source-scope-schema row Z-absent:' });
+
 // --- B1: csv structure ---
 fx('csv-unterminated-quote',
   baseRegistry().map((r) => r.id === 'E-pass'
@@ -842,7 +847,11 @@ for (const c of cases) {
     let res;
     if (c.kind === 'fixture') {
       writeFixture(dir, c.registryRows, c.requiredRows, c.opts);
-      res = runJudge(judgeArgs(dir, { extra: c.opts.extra ?? [],
+      // Fixture registries use synthetic ids; the repository's own scope file must not leak in.
+      const scope = join(dir, 'source_scope.csv');
+      writeFileSync(scope, c.opts.scopeText ?? 'id,paths,scope_base,anchors,note\n');
+      res = runJudge(judgeArgs(dir, { extra: [...(c.opts.extra ?? []),
+        ...(c.opts.rootFn ? [] : ['--source-scope', scope])],
         root: c.opts.rootFn ? c.opts.rootFn(dir) : repoRoot }));
     } else if (c.kind === 'real') {
       realFixture(dir, c.mutation ?? {});
