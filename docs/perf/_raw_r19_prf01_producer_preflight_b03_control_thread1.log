@@ -1,0 +1,23 @@
+# TRUNCATED — only the thread profile of the consumed A-only diagnostic preflight is kept; the valgrind log and the empty base file are cited by hash in R19_PRF01_PRODUCER_PREFLIGHT_B03_reparse.json; the private arm root is replaced by <arm-root> — full output reproducible only from the retained target directory
+# callgrind format
+version: 1
+creator: callgrind-3.22.0
+pid: 820696
+cmd:  ./target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/c/release/deps/perf_gate_iai-d6c0a015a99d2b61 --iai-run perf_gate 89 0 perf_gate_iai::perf_gate::r19_prf01_joined_producer_same_word
+part: 1
+thread: 1
+
+
+desc: I1 cache: 32768 B, 64 B, 8-way associative
+desc: D1 cache: 32768 B, 64 B, 8-way associative
+desc: LL cache: 8388608 B, 64 B, 16-way associative
+
+desc: Timerange: Basic block 0 - 2213962
+desc: Trigger: Program termination
+
+positions: line
+events: Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw
+summary: 0
+
+
+totals: 0

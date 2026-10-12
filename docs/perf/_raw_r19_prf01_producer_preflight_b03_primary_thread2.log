@@ -1,0 +1,98 @@
+# TRUNCATED — only the thread profile of the consumed A-only diagnostic preflight is kept; the valgrind log and the empty base file are cited by hash in R19_PRF01_PRODUCER_PREFLIGHT_B03_reparse.json; the private arm root is replaced by <arm-root> — full output reproducible only from the retained target directory
+# callgrind format
+version: 1
+creator: callgrind-3.22.0
+pid: 820662
+cmd:  ./target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/p/release/deps/perf_gate_iai-6a994302539a9d7d --iai-run perf_gate 89 0 perf_gate_iai::perf_gate::r19_prf01_joined_producer_same_word
+part: 1
+thread: 2
+
+
+desc: I1 cache: 32768 B, 64 B, 8-way associative
+desc: D1 cache: 32768 B, 64 B, 8-way associative
+desc: LL cache: 8388608 B, 64 B, 16-way associative
+
+desc: Timerange: Basic block 0 - 2512014
+desc: Trigger: Program termination
+
+positions: line
+events: Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw
+summary: 1515559 430089 180236 27 535 2 14 0 1
+
+
+ob=/usr/lib/x86_64-linux-gnu/libc.so.6
+fl=./misc/../sysdeps/unix/sysv/linux/x86_64/clone.S
+fn=clone
+cfi=./nptl/./nptl/pthread_create.c
+cfn=start_thread
+calls=1 338 
+100 1515559 430089 180236 27 535 2 14 0 1
+
+fl=./nptl/./nptl/pthread_create.c
+fn=start_thread
+cob=<arm-root>/target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/p/release/deps/perf_gate_iai-6a994302539a9d7d
+cfi=???
+cfn=<std::sys::thread::unix::Thread>::new::thread_start
+calls=1 0 
+447 1515559 430089 180236 27 535 2 14 0 1
+
+ob=<arm-root>/target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/p/release/deps/perf_gate_iai-6a994302539a9d7d
+fl=???
+fn=<sefer_alloc::registry::segment_route::pin::RoutePin>::publish_small
+0 159744 49152 28672 3 14 0 3
+
+fn=<sefer_alloc::registry::segment_route::directory::Shard>::find
+0 57344 0 16384 1 0 1 0 0 1
+cfn=<sefer_alloc::registry::segment_route::directory::Shard>::locate
+calls=8192 0 
+0 573440 131072 32768 5 5
+0 180224 90112 0 1
+
+fn=<std::thread::lifecycle::spawn_unchecked<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+cfn=std::sys::backtrace::__rust_begin_short_backtrace::<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>
+calls=1 0 
+0 1515559 430089 180236 27 535 2 14 0 1
+
+fn=<sefer_alloc::registry::segment_route::directory::Shard>::locate
+0 573440 131072 32768 5 5
+
+fn=<sefer_alloc::registry::segment_route::directory::RouteDirectory>::lookup
+0 122880 0 36864 3 0 1
+cfn=<sefer_alloc::registry::segment_route::directory::Shard>::find
+calls=4096 0 
+0 405504 110592 24576 7 5 1 0 0 1
+0 126976 49152 12288 2
+cfn=<sefer_alloc::registry::segment_route::directory::Shard>::find
+calls=4096 0 
+0 405504 110592 24576
+0 65536 16384 12288 1
+
+fn=<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window
+0 57375 16386 4108 4 514 0 4
+cfn=<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+calls=4096 0 
+0 1441792 401408 176128 22 20 2 9 0 1
+0 16392 12295 0 1 1 0 1
+
+fn=<std::sys::thread::unix::Thread>::new::thread_start
+cfn=<std::thread::lifecycle::spawn_unchecked<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+calls=1 0 
+0 1515559 430089 180236 27 535 2 14 0 1
+
+fn=std::sys::backtrace::__rust_begin_short_backtrace::<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>
+cfn=<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window
+calls=1 0 
+0 1515559 430089 180236 27 535 2 14 0 1
+
+fn=<sefer_alloc::registry::heap_core::core::HeapCore>::publish_foreign
+0 57344 8192 28672 2 1 0 2
+cfn=<sefer_alloc::registry::segment_route::directory::RouteDirectory>::lookup
+calls=4096 0 
+0 1126400 286720 110592 13 5 2 0 0 1
+0 53248 28672 8192 2 0 0 2
+cfn=<sefer_alloc::registry::segment_route::pin::RoutePin>::publish_small
+calls=4096 0 
+0 159744 49152 28672 3 14 0 3
+0 45056 28672 0 2 0 0 2
+
+totals: 1515559 430089 180236 27 535 2 14 0 1

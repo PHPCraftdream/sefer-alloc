@@ -1,0 +1,74 @@
+{
+  "scope": "diagnostic only; offline re-parse of the retained raw files of one consumed preflight; never gate evidence",
+  "captureSha256": "d153969eb8ebe53afe8acffba12c6f88d376dad5df50bd46e3cfb536681d860f",
+  "primary": {
+    "totalIr": 1515559,
+    "childIr": 1515559,
+    "boundaryExecutions": 1,
+    "threads": [
+      "1",
+      "2"
+    ],
+    "executedFree": true
+  },
+  "control": {
+    "totalIr": 1,
+    "childIr": 1,
+    "boundaryExecutions": 1,
+    "threads": [
+      "1",
+      "2"
+    ]
+  },
+  "boundaryOverheadIr": 1,
+  "workloadIr": 1515558,
+  "controlWorkloadIr": 0,
+  "deltaIr": 1515558,
+  "childFreeCountDeclared": 4096,
+  "files": {
+    "iai": [
+      {
+        "name": "callgrind.log.#820662",
+        "size": 5548,
+        "sha256": "93f953e7101850eacafdc2878454058fd770d81ec4ca8ae759bfd7460f208fc1"
+      },
+      {
+        "name": "callgrind.out.#820662",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "callgrind.out.#820662-01",
+        "size": 602,
+        "sha256": "84beb9a62fb145ae32dd6dbf701c991a5f9e66d30564d6f0c012e2c7515337d6"
+      },
+      {
+        "name": "callgrind.out.#820662-02",
+        "size": 3781,
+        "sha256": "50011fae7f2b1069c9e64ea047fd4b0932a0b6663baa58a455ff047c78ea6a8a"
+      }
+    ],
+    "control": [
+      {
+        "name": "callgrind.log.#820696",
+        "size": 5360,
+        "sha256": "bd1067d411d61882976889a1bfd1807fd4280aa9ff99c4528591b11b3cca7c25"
+      },
+      {
+        "name": "callgrind.out.#820696",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "callgrind.out.#820696-01",
+        "size": 602,
+        "sha256": "1de82453d0dc4521233c1b9960c8ca94c7b0e6c5ea2a4539dedbdd2fac674d51"
+      },
+      {
+        "name": "callgrind.out.#820696-02",
+        "size": 2223,
+        "sha256": "88c789ea82156c0cb1c99fb50f7732bb050bacc1430e1026dfc6c0f9599a321e"
+      }
+    ]
+  }
+}

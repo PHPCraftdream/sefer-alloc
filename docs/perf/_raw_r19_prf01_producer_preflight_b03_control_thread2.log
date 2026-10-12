@@ -1,0 +1,59 @@
+# TRUNCATED — only the thread profile of the consumed A-only diagnostic preflight is kept; the valgrind log and the empty base file are cited by hash in R19_PRF01_PRODUCER_PREFLIGHT_B03_reparse.json; the private arm root is replaced by <arm-root> — full output reproducible only from the retained target directory
+# callgrind format
+version: 1
+creator: callgrind-3.22.0
+pid: 820696
+cmd:  ./target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/c/release/deps/perf_gate_iai-d6c0a015a99d2b61 --iai-run perf_gate 89 0 perf_gate_iai::perf_gate::r19_prf01_joined_producer_same_word
+part: 1
+thread: 2
+
+
+desc: I1 cache: 32768 B, 64 B, 8-way associative
+desc: D1 cache: 32768 B, 64 B, 8-way associative
+desc: LL cache: 8388608 B, 64 B, 16-way associative
+
+desc: Timerange: Basic block 0 - 2213962
+desc: Trigger: Program termination
+
+positions: line
+events: Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw
+summary: 1 1 0 1
+
+
+ob=/usr/lib/x86_64-linux-gnu/libc.so.6
+fl=./misc/../sysdeps/unix/sysv/linux/x86_64/clone.S
+fn=clone
+cfi=./nptl/./nptl/pthread_create.c
+cfn=start_thread
+calls=1 338 
+100 1 1 0 1
+
+fl=./nptl/./nptl/pthread_create.c
+fn=start_thread
+cob=<arm-root>/target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/c/release/deps/perf_gate_iai-d6c0a015a99d2b61
+cfi=???
+cfn=<std::sys::thread::unix::Thread>::new::thread_start
+calls=1 0 
+447 1 1 0 1
+
+ob=<arm-root>/target/prf01-prepared-ff5c68aa-82fe-4c70-8fe4-64cac7c878ca/c/release/deps/perf_gate_iai-d6c0a015a99d2b61
+fl=???
+fn=<std::thread::lifecycle::spawn_unchecked<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+cfn=std::sys::backtrace::__rust_begin_short_backtrace::<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>
+calls=1 0 
+0 1 1 0 1
+
+fn=<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window
+0 1 1 0 1
+
+fn=<std::sys::thread::unix::Thread>::new::thread_start
+cfn=<std::thread::lifecycle::spawn_unchecked<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+calls=1 0 
+0 1 1 0 1
+
+fn=std::sys::backtrace::__rust_begin_short_backtrace::<<perf_gate_iai::prf01_support::R19Prf01>::remote_free::{closure#0}::{closure#0}, ()>
+cfn=<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window
+calls=1 0 
+0 1 1 0 1
+
+totals: 1 1 0 1
