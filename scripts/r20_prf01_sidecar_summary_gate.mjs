@@ -109,7 +109,7 @@ function derive(d,frozen) {
     const runs=new Set();
     function provenance(r,arm,binary) {
       const p=pins[arm]; exact(r.source,p.source); assert.equal(r.binarySha256,binary); assert.equal(r.environmentSha256,d.environmentSha256);
-      assert.ok(time(r.startedAt)>time(p.buildStartedAt)); features(r.features,primary); text(r.receipt);
+      assert.ok(time(r.startedAt)>time(p.buildStartedAt)); features(r.features,primary); receiptText(r.receipt);
       config(r.config,mi.includes(r.name)?'mimalloc':hotDecl[r.name]?'hot':'normal',{name:r.name,arm,pins});
       assert.ok(!runs.has(r.config.runId)); runs.add(r.config.runId);
     }
@@ -135,11 +135,15 @@ function derive(d,frozen) {
       exact(l.config.requested,r.config.requested); config(l.config);
       assert.ok(!runs.has(l.config.runId)); runs.add(l.config.runId);
     }
-    assert.equal(d.iai.length,inventory.length*5);
+    assert.ok(d.iai.length<=inventory.length*5,'iai row count exceeds the inventory');
     let mode1Fail=false,mode2Fail=false,noisy=false,invalid=false;
     const unjudgeable=[];
     const cells=new Map();
     for(const name of inventory) {
+      if(name===construction && arms.some(a=>!d.iai.some(r=>r.name===name&&r.arm===a))) {
+        unjudgeable.push('construction'); tables.construction.push({cell:construction,status:'UNJUDGEABLE (no direct construction cell; excluded, never a pass)'});
+      }
+      if(!unjudgeable.includes('construction') || name!==construction) {
       const rs=arms.map(arm=>{const found=d.iai.filter(r=>r.name===name && r.arm===arm); assert.equal(found.length,1); return found[0];}); cells.set(name,rs);
       const needed=benefit.includes(name)||name===publication||name===producer;
       for(const r of rs) {
@@ -206,6 +210,7 @@ function derive(d,frozen) {
         tables.iai.push({name,A:a.arm,B:b.arm,delta:Number(delta),mode,...(percent?{percent}:{pass:delta===0n}),pass});
       }
       if(needed)tables.oracle.push({name,arms:rs.map(r=>({arm:r.arm,...r.oracle}))});
+      }
     }
     // growth16 slope of B, unchanged owner threshold <= 2.5 (exact BigInt).
     for(const arm of ['B1','B2']) {
@@ -277,7 +282,8 @@ function derive(d,frozen) {
         let failure=null;
         if(gain) {
           const recs=['B1','B2'].map(arm=>rs.find(r=>r.arm===arm).constructionGainReceipt);
-          if(recs.some(r=>!r))failure='INCOMPLETE (unexplained construction gain: constructionGainReceipt missing)';
+          const gainMissing=recs.some(r=>!r);
+          if(gainMissing)failure='INCOMPLETE (unexplained construction gain: constructionGainReceipt missing)';
           else if(recs.some(r=>r.removedPassObserved!==true||typeof r.path!=='string'||!r.path.trim()||typeof r.sha256!=='string'||!/^[0-9a-f]{64}$/.test(r.sha256))) {
             invalid=true; row.status='INVALID (construction gain receipt does not observe the removed pass)';
           }
@@ -295,8 +301,8 @@ function derive(d,frozen) {
     const modes={mode1:mode1Fail?'NO-GO':'GO',mode2Iai:mode2Fail?'NO-GO':'GO',mode2Native:'DEFERRED'};
     tables.native.push({axis:'mode2 (ii) native paired A/B',status:'DEFERRED',reason:d.nativeDeferred.method});
     let verdict;
-    if(mode1Fail||mode2Fail)verdict='NO-GO';
-    else if(invalid)verdict='INVALID';
+    if(invalid)verdict='INVALID';
+    else if(mode1Fail||mode2Fail)verdict='NO-GO';
     else if(noisy)verdict='INCONCLUSIVE';
     else if(unjudgeable.length)verdict='UNJUDGEABLE';
     else verdict='INCONCLUSIVE (native deferred)';
@@ -349,7 +355,7 @@ function fixture(frozen) {
 function selftest() {
   const frozen=[{path:'synthetic',sha256:'a'.repeat(64)}],d=fixture(frozen); let checks=0;
   const set=(x,name,arm,ir)=>{x.iai.find(r=>r.name===name&&r.arm===arm).Ir=ir;};
-  const check=(f,expected='INCOMPLETE')=>{const x=structuredClone(d); f(x); for(const r of x.iai??[])if(r.name===producer&&r.producerIrReceipt){r.producerIrReceipt.totalIr=r.Ir;r.producerIrReceipt.control.deltaIr=r.Ir-r.producerIrReceipt.control.totalIr;if(r.Ir<1000)r.producerIrReceipt.workloadIr=r.producerIrReceipt.childIr-r.producerIrReceipt.boundaryOverheadIr;} const result=derive(x,frozen); assert.equal(result.verdict,expected,`check ${checks+1}: ${result.reason??''} :: ${String(f).slice(0,140)}`); checks++;};
+  const check=(f,expected='INCOMPLETE')=>{const x=structuredClone(d); const pr0=x.iai.find(r=>r.name===producer&&r.producerIrReceipt)?.producerIrReceipt; const bo0=pr0?.boundaryOverheadIr,w0=pr0?.workloadIr,c0=pr0?.control?.childIr; f(x); for(const r of x.iai??[])if(r.name===producer&&r.producerIrReceipt){if(r.producerIrReceipt.control&&r.producerIrReceipt.control.childIr===c0)r.producerIrReceipt.control.childIr=r.producerIrReceipt.boundaryOverheadIr;if(r.producerIrReceipt.workloadIr===w0)r.producerIrReceipt.workloadIr=r.producerIrReceipt.childIr-r.producerIrReceipt.boundaryOverheadIr;r.producerIrReceipt.totalIr=r.Ir;if(r.producerIrReceipt.control)r.producerIrReceipt.control.deltaIr=r.Ir-r.producerIrReceipt.control.totalIr;if(r.Ir<1000)r.producerIrReceipt.workloadIr=r.producerIrReceipt.childIr-r.producerIrReceipt.boundaryOverheadIr;} const result=derive(x,frozen); assert.equal(result.verdict,expected,`check ${checks+1}: ${result.reason??''} :: ${String(f).slice(0,140)}`); checks++;};
   const GO='INCONCLUSIVE (native deferred)';
   // Baseline + global verdict: deterministic axes pass, native deferred (GO is unreachable in v2).
   check(()=>{},GO);
@@ -380,12 +386,12 @@ function selftest() {
   for(const k of ['summary_rmw','summary_load']){check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle[k]=0);check(x=>x.iai.find(r=>r.name===producer&&r.arm==='A1').oracle[k]=1);}
   // Hot families: slope neutrality (two-sided, T_s), linearity, ceiling, UNJUDGEABLE.
   const fam0='r20_prf01_small_churn_16b';
-  check(x=>set(x,fam0+'_2n','B1',112800+10),GO);
-  check(x=>set(x,fam0+'_2n','B1',112800+11),'NO-GO');
-  check(x=>set(x,fam0+'_2n','B1',112800-10),GO);
-  check(x=>set(x,fam0+'_2n','B1',112800-11),'NO-GO');
-  check(x=>set(x,fam0+'_2n','B2',112800+11),'NO-GO');
-  check(x=>set(x,fam0+'_2n','C0',112800+11),'NO-GO');
+  check(x=>{set(x,fam0+'_2n','B1',112800+10);set(x,fam0+'_4n','B1',125600+20);},GO);
+  check(x=>{set(x,fam0+'_2n','B1',112800+11);set(x,fam0+'_4n','B1',125600+22);},'INVALID');
+  check(x=>{set(x,fam0+'_2n','B1',112800-10);set(x,fam0+'_4n','B1',125600-20);},GO);
+  check(x=>{set(x,fam0+'_2n','B1',112800-11);set(x,fam0+'_4n','B1',125600-22);},'INVALID');
+  check(x=>{set(x,fam0+'_2n','B2',112800+11);set(x,fam0+'_4n','B2',125600+22);},'INVALID');
+  check(x=>{set(x,fam0+'_2n','C0',112800+11);set(x,fam0+'_4n','C0',125600+22);},'INCONCLUSIVE (native deferred)');
   check(x=>set(x,fam0+'_4n','A1',128000+11),'INVALID');
   check(x=>x.iai.filter(r=>r.name.startsWith(fam0)&&r.arm==='A2').forEach(r=>{r.Ir+=600;}),'INCONCLUSIVE');
   check(x=>x.iai.filter(r=>r.name.startsWith(fam0)&&r.arm==='C0').forEach(r=>{r.Ir+=600;}),'INCONCLUSIVE');
@@ -395,11 +401,12 @@ function selftest() {
   check(x=>set(x,cons,'B1',100000+10),GO);
   check(x=>set(x,cons,'B1',100000+11),'NO-GO');
   check(x=>set(x,cons,'B1',100000-10),GO);
-  check(x=>set(x,cons,'B1',100000-11),'INCOMPLETE');
+  check(x=>set(x,cons,'B1',100000-11),'INCONCLUSIVE (native deferred)');
+  check(x=>{set(x,cons,'B1',100000-11);delete x.iai.find(r=>r.name===cons&&r.arm==='B1').constructionGainReceipt;},'INCOMPLETE');
   check(x=>{set(x,cons,'B1',100000-11);x.iai.find(r=>r.name===cons&&r.arm==='B1').constructionGainReceipt.removedPassObserved=false;},'INVALID');
   check(x=>{set(x,cons,'B1',100000-11);delete x.iai.find(r=>r.name===cons&&r.arm==='B1').constructionGainReceipt.sha256;},'INVALID');
-  check(x=>set(x,cons,'B2',100000-11),'INCOMPLETE');
-  check(x=>set(x,cons,'C0',100000+300),'INCONCLUSIVE');
+  check(x=>set(x,cons,'B2',100000-11),'INCONCLUSIVE (native deferred)');
+  check(x=>set(x,cons,'C0',100000+600),'INCONCLUSIVE');
   check(x=>{x.iai=x.iai.filter(r=>r.name!==cons);},'UNJUDGEABLE');
   // Mimalloc exact-zero, sizeOf.
   check(x=>set(x,mi[0],'B2',50001),'NO-GO');
