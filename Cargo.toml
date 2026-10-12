@@ -111,7 +111,7 @@ loom = "0.7"
 # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
 # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
 # `numa-aware-mock` feature by the mock-gated integration tests).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -2402,6 +2402,14 @@ required-features = ["production"]
 [[example]]
 name = "sol_f1_dbg_carve_batch_negative_probe"
 required-features = ["alloc-core"]
+
+[[example]]
+name = "r19_prf01_fanin_native"
+required-features = ["production"]
+
+[[example]]
+name = "r19_prf01_oracle"
+required-features = ["production", "bench-internals", "internals"]
 
 # R2-20: this regression uses the arbitrary-handle test hook, which is
 # deliberately absent from ordinary `experimental` builds. Keep the Cargo test
