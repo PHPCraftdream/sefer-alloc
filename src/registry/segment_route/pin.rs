@@ -1,8 +1,11 @@
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 use core::ptr::NonNull;
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 use core::sync::atomic::AtomicU64;
 
 use super::directory::EntryHandle;
 use super::RouteKind;
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 use crate::alloc_core::remote_bitmap::SidecarBitmap;
 
 /// Counted descriptor and sidecar capability, not a reservation credit.
