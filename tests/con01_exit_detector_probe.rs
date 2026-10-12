@@ -8,6 +8,9 @@ mod probe {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
+    const HAMMER_RUNS: usize = 20;
+    const HAMMER_THREADS: usize = 4;
+
     struct Witness(&'static str);
 
     impl Drop for Witness {
@@ -24,6 +27,7 @@ mod probe {
         static JOINED: Witness = const { Witness("joined") };
         static EXIT: Witness = const { Witness("process_exit") };
         static RETURN: Witness = const { Witness("main_return") };
+        static HAMMER: Witness = const { Witness("hammer") };
     }
 
     pub(super) fn run() {
@@ -39,6 +43,17 @@ mod probe {
                     std::process::exit(0);
                 }
                 "main_return" => RETURN.with(|_| ()),
+                "hammer" => {
+                    // Waiters probing in a loop, as the lock-wait loops do.
+                    for _ in 0..HAMMER_THREADS {
+                        std::thread::spawn(|| loop {
+                            std::hint::black_box(process_exit_in_progress());
+                        });
+                    }
+                    HAMMER.with(|_| ());
+                    std::thread::sleep(Duration::from_millis(5));
+                    std::process::exit(0);
+                }
                 _ => panic!("unknown probe mode: {mode}"),
             }
             return;
@@ -46,11 +61,16 @@ mod probe {
 
         let exe = std::env::current_exe().expect("probe executable");
         let mut results = Vec::new();
+        // Repeated: a probe thread terminated inside the loader lookup skips
+        // the TLS destructors only on some interleavings.
         for (mode, expected) in [
             ("joined", false),
             ("process_exit", true),
             ("main_return", true),
-        ] {
+        ]
+        .into_iter()
+        .chain(std::iter::repeat_n(("hammer", true), HAMMER_RUNS))
+        {
             let mut child = Command::new(&exe)
                 .arg(mode)
                 .stdout(Stdio::piped())
