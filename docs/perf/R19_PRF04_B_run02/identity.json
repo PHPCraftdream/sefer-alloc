@@ -1,0 +1,4051 @@
+{
+  "schema": 2,
+  "captured_at_ms": 1791768335384,
+  "prereg_sha256": "27ba9e4148be61cc19304e16e37090603c12530f006f588c8379714531e3157b",
+  "arms": {
+    "A": {
+      "commit": "175e7398db175569a65a7c77ff20511bec8e592b",
+      "tree": "bec4f59026d96614d2c41696a029b8d25e5123ac",
+      "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "harness": {
+        "examples/r19_prf04_gate2b.rs": "6ab8dd0269433a497b1da533f296594b39f686337747022a3af3de5e8647de18",
+        "examples/r19_prf04_gate2b_observer.rs": "61c7dc665bb75b21494e625a19c5aa887983e73ce5e064ee5988e0d503f25a25",
+        "examples/r19_prf04_gate2b_shared/harness.rs": "869b3da330f0e08e355574843aaeaeccf4cbd7a99fee6c7be704a41f939492db",
+        "scripts/r19_prf04_gate2b.mjs": "67e5981b3402aa99fb703c7ab6cc4367ab0dc4288807c75d35484ff057997e7a"
+      },
+      "label": "A",
+      "binaries": {
+        "production": "6262625412d4113fff639f05ebbdf7027629bbfa68e11f832dde59c8b82bb488",
+        "observer_production": "e3793c327382d9fe3b3b81ebc98efdec208076891224a1b95051c62b8b953453",
+        "diagnostic": "76fdacc24008a3956ab42d4e3f06d5bbca1025714a723281fc1f5129a0e363ae",
+        "observer_diagnostic": "e1595481e9502fdca6e0fc5c07c427c7d905ade70d06494cf1c98458eee6eb9c"
+      },
+      "metadata": {
+        "production": [
+          {
+            "name": "aho-corasick",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "aligned-vmem",
+            "features": [
+              "lazy-commit"
+            ]
+          },
+          {
+            "name": "allocator-api2",
+            "features": [
+              "alloc"
+            ]
+          },
+          {
+            "name": "anes",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "anstyle",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "autocfg",
+            "features": []
+          },
+          {
+            "name": "bench-scale-tool",
+            "features": []
+          },
+          {
+            "name": "bincode",
+            "features": []
+          },
+          {
+            "name": "bit-set",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bit-vec",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bitflags",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "bumpalo",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "bytes",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "captrack",
+            "features": [
+              "default",
+              "telemetry"
+            ]
+          },
+          {
+            "name": "captrack-macros",
+            "features": []
+          },
+          {
+            "name": "cast",
+            "features": []
+          },
+          {
+            "name": "cc",
+            "features": []
+          },
+          {
+            "name": "cfg-if",
+            "features": []
+          },
+          {
+            "name": "ciborium",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-io",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-ll",
+            "features": []
+          },
+          {
+            "name": "clap",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_builder",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_lex",
+            "features": []
+          },
+          {
+            "name": "criterion",
+            "features": [
+              "cargo_bench_support",
+              "default",
+              "plotters",
+              "rayon"
+            ]
+          },
+          {
+            "name": "criterion-plot",
+            "features": []
+          },
+          {
+            "name": "crossbeam-deque",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-epoch",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-utils",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crunchy",
+            "features": [
+              "default",
+              "limit_128"
+            ]
+          },
+          {
+            "name": "ctor",
+            "features": []
+          },
+          {
+            "name": "dashmap",
+            "features": []
+          },
+          {
+            "name": "derive_more",
+            "features": [
+              "as_ref",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "derive_more-impl",
+            "features": [
+              "as_ref",
+              "default",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "either",
+            "features": [
+              "std",
+              "use_std"
+            ]
+          },
+          {
+            "name": "equivalent",
+            "features": []
+          },
+          {
+            "name": "errno",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "fastrand",
+            "features": [
+              "alloc",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "find-msvc-tools",
+            "features": []
+          },
+          {
+            "name": "fnv",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "foldhash",
+            "features": []
+          },
+          {
+            "name": "futures-core",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-task",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-util",
+            "features": [
+              "alloc",
+              "slab",
+              "std"
+            ]
+          },
+          {
+            "name": "generator",
+            "features": []
+          },
+          {
+            "name": "getrandom",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "getrandom",
+            "features": []
+          },
+          {
+            "name": "globalalloc-model",
+            "features": [
+              "default",
+              "proptest"
+            ]
+          },
+          {
+            "name": "half",
+            "features": []
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "raw"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "allocator-api2",
+              "default",
+              "default-hasher",
+              "equivalent",
+              "inline-more",
+              "raw-entry"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": []
+          },
+          {
+            "name": "hermit-abi",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "iai-callgrind",
+            "features": [
+              "benchmark",
+              "default",
+              "iai-callgrind-runner"
+            ]
+          },
+          {
+            "name": "iai-callgrind-macros",
+            "features": []
+          },
+          {
+            "name": "iai-callgrind-runner",
+            "features": [
+              "api"
+            ]
+          },
+          {
+            "name": "indexmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "is-terminal",
+            "features": []
+          },
+          {
+            "name": "itertools",
+            "features": [
+              "default",
+              "use_alloc",
+              "use_std"
+            ]
+          },
+          {
+            "name": "itoa",
+            "features": []
+          },
+          {
+            "name": "js-sys",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "lazy_static",
+            "features": []
+          },
+          {
+            "name": "libc",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "libm",
+            "features": [
+              "arch",
+              "default"
+            ]
+          },
+          {
+            "name": "libmimalloc-sys",
+            "features": []
+          },
+          {
+            "name": "linux-raw-sys",
+            "features": [
+              "auxvec",
+              "elf",
+              "errno",
+              "general",
+              "ioctl",
+              "no_std"
+            ]
+          },
+          {
+            "name": "lock_api",
+            "features": [
+              "atomic_usize",
+              "default"
+            ]
+          },
+          {
+            "name": "log",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "loom",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "malloc-bench-rs",
+            "features": []
+          },
+          {
+            "name": "matchers",
+            "features": []
+          },
+          {
+            "name": "memchr",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "mimalloc",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "nu-ansi-term",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "num-traits",
+            "features": [
+              "default",
+              "libm",
+              "std"
+            ]
+          },
+          {
+            "name": "numa-shim",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "once-ptr-cell",
+            "features": []
+          },
+          {
+            "name": "once_cell",
+            "features": [
+              "alloc",
+              "default",
+              "race",
+              "std"
+            ]
+          },
+          {
+            "name": "oorandom",
+            "features": []
+          },
+          {
+            "name": "parking_lot_core",
+            "features": []
+          },
+          {
+            "name": "pin-project-lite",
+            "features": []
+          },
+          {
+            "name": "plotters",
+            "features": [
+              "area_series",
+              "line_series",
+              "plotters-svg",
+              "svg_backend"
+            ]
+          },
+          {
+            "name": "plotters-backend",
+            "features": []
+          },
+          {
+            "name": "plotters-svg",
+            "features": []
+          },
+          {
+            "name": "ppv-lite86",
+            "features": [
+              "simd",
+              "std"
+            ]
+          },
+          {
+            "name": "proc-macro-error-attr2",
+            "features": []
+          },
+          {
+            "name": "proc-macro-error2",
+            "features": [
+              "default",
+              "syn-error"
+            ]
+          },
+          {
+            "name": "proc-macro2",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "proc-memstat",
+            "features": []
+          },
+          {
+            "name": "proc-probe",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "proptest",
+            "features": [
+              "alloc",
+              "bit-set",
+              "default",
+              "fork",
+              "no_std",
+              "regex-syntax",
+              "rusty-fork",
+              "std",
+              "tempfile",
+              "timeout"
+            ]
+          },
+          {
+            "name": "quick-error",
+            "features": []
+          },
+          {
+            "name": "quote",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "rand",
+            "features": [
+              "alloc",
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_chacha",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "rand_core",
+            "features": [
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_xorshift",
+            "features": []
+          },
+          {
+            "name": "rayon",
+            "features": []
+          },
+          {
+            "name": "rayon-core",
+            "features": []
+          },
+          {
+            "name": "redox_syscall",
+            "features": [
+              "default",
+              "userspace"
+            ]
+          },
+          {
+            "name": "regex",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "regex-automata",
+            "features": [
+              "alloc",
+              "dfa-build",
+              "dfa-search",
+              "meta",
+              "nfa-pikevm",
+              "nfa-thompson",
+              "std",
+              "syntax"
+            ]
+          },
+          {
+            "name": "regex-syntax",
+            "features": [
+              "default",
+              "std",
+              "unicode",
+              "unicode-age",
+              "unicode-bool",
+              "unicode-case",
+              "unicode-gencat",
+              "unicode-perl",
+              "unicode-script",
+              "unicode-segment"
+            ]
+          },
+          {
+            "name": "rustc_version",
+            "features": []
+          },
+          {
+            "name": "rustix",
+            "features": [
+              "alloc",
+              "default",
+              "fs",
+              "std"
+            ]
+          },
+          {
+            "name": "rustversion",
+            "features": []
+          },
+          {
+            "name": "rusty-fork",
+            "features": [
+              "timeout",
+              "wait-timeout"
+            ]
+          },
+          {
+            "name": "saa",
+            "features": []
+          },
+          {
+            "name": "same-file",
+            "features": []
+          },
+          {
+            "name": "scc",
+            "features": []
+          },
+          {
+            "name": "scoped-tls",
+            "features": []
+          },
+          {
+            "name": "scopeguard",
+            "features": []
+          },
+          {
+            "name": "sdd",
+            "features": []
+          },
+          {
+            "name": "sefer-alloc",
+            "features": [
+              "alloc-core",
+              "alloc-decommit",
+              "alloc-global",
+              "alloc-segment-directory",
+              "alloc-xthread",
+              "default",
+              "fastbin",
+              "primordial-lazy-commit",
+              "production",
+              "std"
+            ]
+          },
+          {
+            "name": "sefer-region",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "semver",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "serde",
+            "features": [
+              "alloc",
+              "default",
+              "derive",
+              "serde_derive",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_core",
+            "features": [
+              "alloc",
+              "result",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_derive",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "serde_json",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "sharded-slab",
+            "features": []
+          },
+          {
+            "name": "shlex",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "size-classes",
+            "features": []
+          },
+          {
+            "name": "slab",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "slotmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "smallvec",
+            "features": []
+          },
+          {
+            "name": "syn",
+            "features": [
+              "clone-impls",
+              "default",
+              "derive",
+              "extra-traits",
+              "full",
+              "parsing",
+              "printing",
+              "proc-macro",
+              "visit",
+              "visit-mut"
+            ]
+          },
+          {
+            "name": "tagged-index-stack",
+            "features": []
+          },
+          {
+            "name": "tempfile",
+            "features": [
+              "default",
+              "getrandom"
+            ]
+          },
+          {
+            "name": "thread_local",
+            "features": []
+          },
+          {
+            "name": "tinytemplate",
+            "features": []
+          },
+          {
+            "name": "tokio",
+            "features": [
+              "default",
+              "macros",
+              "rt",
+              "rt-multi-thread",
+              "sync",
+              "time",
+              "tokio-macros"
+            ]
+          },
+          {
+            "name": "tokio-macros",
+            "features": []
+          },
+          {
+            "name": "tracing",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-core",
+            "features": [
+              "default",
+              "once_cell",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-log",
+            "features": [
+              "log-tracer",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-subscriber",
+            "features": [
+              "alloc",
+              "ansi",
+              "default",
+              "env-filter",
+              "fmt",
+              "matchers",
+              "nu-ansi-term",
+              "once_cell",
+              "registry",
+              "sharded-slab",
+              "smallvec",
+              "std",
+              "thread_local",
+              "tracing",
+              "tracing-log"
+            ]
+          },
+          {
+            "name": "unarray",
+            "features": []
+          },
+          {
+            "name": "unicode-ident",
+            "features": []
+          },
+          {
+            "name": "valuable",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "version_check",
+            "features": []
+          },
+          {
+            "name": "wait-timeout",
+            "features": []
+          },
+          {
+            "name": "walkdir",
+            "features": []
+          },
+          {
+            "name": "wasip2",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "wasm-bindgen-macro",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-macro-support",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-shared",
+            "features": []
+          },
+          {
+            "name": "web-sys",
+            "features": [
+              "CanvasRenderingContext2d",
+              "Document",
+              "DomRect",
+              "DomRectReadOnly",
+              "Element",
+              "EventTarget",
+              "HtmlCanvasElement",
+              "HtmlElement",
+              "Node",
+              "Window",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "winapi-util",
+            "features": []
+          },
+          {
+            "name": "windows-link",
+            "features": []
+          },
+          {
+            "name": "windows-result",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "windows-sys",
+            "features": [
+              "Win32",
+              "Win32_Foundation",
+              "Win32_Networking",
+              "Win32_Networking_WinSock",
+              "Win32_Security",
+              "Win32_Storage",
+              "Win32_Storage_FileSystem",
+              "Win32_System",
+              "Win32_System_Console",
+              "Win32_System_Diagnostics",
+              "Win32_System_Diagnostics_Debug",
+              "Win32_System_SystemInformation",
+              "default"
+            ]
+          },
+          {
+            "name": "wit-bindgen",
+            "features": []
+          },
+          {
+            "name": "zerocopy",
+            "features": [
+              "derive",
+              "simd",
+              "zerocopy-derive"
+            ]
+          },
+          {
+            "name": "zerocopy-derive",
+            "features": []
+          },
+          {
+            "name": "zmij",
+            "features": []
+          }
+        ],
+        "diagnostic": [
+          {
+            "name": "aho-corasick",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "aligned-vmem",
+            "features": [
+              "bench-internals",
+              "lazy-commit"
+            ]
+          },
+          {
+            "name": "allocator-api2",
+            "features": [
+              "alloc"
+            ]
+          },
+          {
+            "name": "anes",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "anstyle",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "autocfg",
+            "features": []
+          },
+          {
+            "name": "bench-scale-tool",
+            "features": []
+          },
+          {
+            "name": "bincode",
+            "features": []
+          },
+          {
+            "name": "bit-set",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bit-vec",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bitflags",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "bumpalo",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "bytes",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "captrack",
+            "features": [
+              "default",
+              "telemetry"
+            ]
+          },
+          {
+            "name": "captrack-macros",
+            "features": []
+          },
+          {
+            "name": "cast",
+            "features": []
+          },
+          {
+            "name": "cc",
+            "features": []
+          },
+          {
+            "name": "cfg-if",
+            "features": []
+          },
+          {
+            "name": "ciborium",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-io",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-ll",
+            "features": []
+          },
+          {
+            "name": "clap",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_builder",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_lex",
+            "features": []
+          },
+          {
+            "name": "criterion",
+            "features": [
+              "cargo_bench_support",
+              "default",
+              "plotters",
+              "rayon"
+            ]
+          },
+          {
+            "name": "criterion-plot",
+            "features": []
+          },
+          {
+            "name": "crossbeam-deque",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-epoch",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-utils",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crunchy",
+            "features": [
+              "default",
+              "limit_128"
+            ]
+          },
+          {
+            "name": "ctor",
+            "features": []
+          },
+          {
+            "name": "dashmap",
+            "features": []
+          },
+          {
+            "name": "derive_more",
+            "features": [
+              "as_ref",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "derive_more-impl",
+            "features": [
+              "as_ref",
+              "default",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "either",
+            "features": [
+              "std",
+              "use_std"
+            ]
+          },
+          {
+            "name": "equivalent",
+            "features": []
+          },
+          {
+            "name": "errno",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "fastrand",
+            "features": [
+              "alloc",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "find-msvc-tools",
+            "features": []
+          },
+          {
+            "name": "fnv",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "foldhash",
+            "features": []
+          },
+          {
+            "name": "futures-core",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-task",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-util",
+            "features": [
+              "alloc",
+              "slab",
+              "std"
+            ]
+          },
+          {
+            "name": "generator",
+            "features": []
+          },
+          {
+            "name": "getrandom",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "getrandom",
+            "features": []
+          },
+          {
+            "name": "globalalloc-model",
+            "features": [
+              "default",
+              "internals",
+              "proptest"
+            ]
+          },
+          {
+            "name": "half",
+            "features": []
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "raw"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "allocator-api2",
+              "default",
+              "default-hasher",
+              "equivalent",
+              "inline-more",
+              "raw-entry"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": []
+          },
+          {
+            "name": "hermit-abi",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "iai-callgrind",
+            "features": [
+              "benchmark",
+              "default",
+              "iai-callgrind-runner"
+            ]
+          },
+          {
+            "name": "iai-callgrind-macros",
+            "features": []
+          },
+          {
+            "name": "iai-callgrind-runner",
+            "features": [
+              "api"
+            ]
+          },
+          {
+            "name": "indexmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "is-terminal",
+            "features": []
+          },
+          {
+            "name": "itertools",
+            "features": [
+              "default",
+              "use_alloc",
+              "use_std"
+            ]
+          },
+          {
+            "name": "itoa",
+            "features": []
+          },
+          {
+            "name": "js-sys",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "lazy_static",
+            "features": []
+          },
+          {
+            "name": "libc",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "libm",
+            "features": [
+              "arch",
+              "default"
+            ]
+          },
+          {
+            "name": "libmimalloc-sys",
+            "features": []
+          },
+          {
+            "name": "linux-raw-sys",
+            "features": [
+              "auxvec",
+              "elf",
+              "errno",
+              "general",
+              "ioctl",
+              "no_std"
+            ]
+          },
+          {
+            "name": "lock_api",
+            "features": [
+              "atomic_usize",
+              "default"
+            ]
+          },
+          {
+            "name": "log",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "loom",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "malloc-bench-rs",
+            "features": []
+          },
+          {
+            "name": "matchers",
+            "features": []
+          },
+          {
+            "name": "memchr",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "mimalloc",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "nu-ansi-term",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "num-traits",
+            "features": [
+              "default",
+              "libm",
+              "std"
+            ]
+          },
+          {
+            "name": "numa-shim",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "once-ptr-cell",
+            "features": []
+          },
+          {
+            "name": "once_cell",
+            "features": [
+              "alloc",
+              "default",
+              "race",
+              "std"
+            ]
+          },
+          {
+            "name": "oorandom",
+            "features": []
+          },
+          {
+            "name": "parking_lot_core",
+            "features": []
+          },
+          {
+            "name": "pin-project-lite",
+            "features": []
+          },
+          {
+            "name": "plotters",
+            "features": [
+              "area_series",
+              "line_series",
+              "plotters-svg",
+              "svg_backend"
+            ]
+          },
+          {
+            "name": "plotters-backend",
+            "features": []
+          },
+          {
+            "name": "plotters-svg",
+            "features": []
+          },
+          {
+            "name": "ppv-lite86",
+            "features": [
+              "simd",
+              "std"
+            ]
+          },
+          {
+            "name": "proc-macro-error-attr2",
+            "features": []
+          },
+          {
+            "name": "proc-macro-error2",
+            "features": [
+              "default",
+              "syn-error"
+            ]
+          },
+          {
+            "name": "proc-macro2",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "proc-memstat",
+            "features": []
+          },
+          {
+            "name": "proc-probe",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "proptest",
+            "features": [
+              "alloc",
+              "bit-set",
+              "default",
+              "fork",
+              "no_std",
+              "regex-syntax",
+              "rusty-fork",
+              "std",
+              "tempfile",
+              "timeout"
+            ]
+          },
+          {
+            "name": "quick-error",
+            "features": []
+          },
+          {
+            "name": "quote",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "rand",
+            "features": [
+              "alloc",
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_chacha",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "rand_core",
+            "features": [
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_xorshift",
+            "features": []
+          },
+          {
+            "name": "rayon",
+            "features": []
+          },
+          {
+            "name": "rayon-core",
+            "features": []
+          },
+          {
+            "name": "redox_syscall",
+            "features": [
+              "default",
+              "userspace"
+            ]
+          },
+          {
+            "name": "regex",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "regex-automata",
+            "features": [
+              "alloc",
+              "dfa-build",
+              "dfa-search",
+              "meta",
+              "nfa-pikevm",
+              "nfa-thompson",
+              "std",
+              "syntax"
+            ]
+          },
+          {
+            "name": "regex-syntax",
+            "features": [
+              "default",
+              "std",
+              "unicode",
+              "unicode-age",
+              "unicode-bool",
+              "unicode-case",
+              "unicode-gencat",
+              "unicode-perl",
+              "unicode-script",
+              "unicode-segment"
+            ]
+          },
+          {
+            "name": "rustc_version",
+            "features": []
+          },
+          {
+            "name": "rustix",
+            "features": [
+              "alloc",
+              "default",
+              "fs",
+              "std"
+            ]
+          },
+          {
+            "name": "rustversion",
+            "features": []
+          },
+          {
+            "name": "rusty-fork",
+            "features": [
+              "timeout",
+              "wait-timeout"
+            ]
+          },
+          {
+            "name": "saa",
+            "features": []
+          },
+          {
+            "name": "same-file",
+            "features": []
+          },
+          {
+            "name": "scc",
+            "features": []
+          },
+          {
+            "name": "scoped-tls",
+            "features": []
+          },
+          {
+            "name": "scopeguard",
+            "features": []
+          },
+          {
+            "name": "sdd",
+            "features": []
+          },
+          {
+            "name": "sefer-alloc",
+            "features": [
+              "alloc-core",
+              "alloc-decommit",
+              "alloc-global",
+              "alloc-segment-directory",
+              "alloc-stats",
+              "alloc-xthread",
+              "bench-internals",
+              "default",
+              "fastbin",
+              "internals",
+              "primordial-lazy-commit",
+              "production",
+              "std"
+            ]
+          },
+          {
+            "name": "sefer-region",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "semver",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "serde",
+            "features": [
+              "alloc",
+              "default",
+              "derive",
+              "serde_derive",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_core",
+            "features": [
+              "alloc",
+              "result",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_derive",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "serde_json",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "sharded-slab",
+            "features": []
+          },
+          {
+            "name": "shlex",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "size-classes",
+            "features": []
+          },
+          {
+            "name": "slab",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "slotmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "smallvec",
+            "features": []
+          },
+          {
+            "name": "syn",
+            "features": [
+              "clone-impls",
+              "default",
+              "derive",
+              "extra-traits",
+              "full",
+              "parsing",
+              "printing",
+              "proc-macro",
+              "visit",
+              "visit-mut"
+            ]
+          },
+          {
+            "name": "tagged-index-stack",
+            "features": []
+          },
+          {
+            "name": "tempfile",
+            "features": [
+              "default",
+              "getrandom"
+            ]
+          },
+          {
+            "name": "thread_local",
+            "features": []
+          },
+          {
+            "name": "tinytemplate",
+            "features": []
+          },
+          {
+            "name": "tokio",
+            "features": [
+              "default",
+              "macros",
+              "rt",
+              "rt-multi-thread",
+              "sync",
+              "time",
+              "tokio-macros"
+            ]
+          },
+          {
+            "name": "tokio-macros",
+            "features": []
+          },
+          {
+            "name": "tracing",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-core",
+            "features": [
+              "default",
+              "once_cell",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-log",
+            "features": [
+              "log-tracer",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-subscriber",
+            "features": [
+              "alloc",
+              "ansi",
+              "default",
+              "env-filter",
+              "fmt",
+              "matchers",
+              "nu-ansi-term",
+              "once_cell",
+              "registry",
+              "sharded-slab",
+              "smallvec",
+              "std",
+              "thread_local",
+              "tracing",
+              "tracing-log"
+            ]
+          },
+          {
+            "name": "unarray",
+            "features": []
+          },
+          {
+            "name": "unicode-ident",
+            "features": []
+          },
+          {
+            "name": "valuable",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "version_check",
+            "features": []
+          },
+          {
+            "name": "wait-timeout",
+            "features": []
+          },
+          {
+            "name": "walkdir",
+            "features": []
+          },
+          {
+            "name": "wasip2",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "wasm-bindgen-macro",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-macro-support",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-shared",
+            "features": []
+          },
+          {
+            "name": "web-sys",
+            "features": [
+              "CanvasRenderingContext2d",
+              "Document",
+              "DomRect",
+              "DomRectReadOnly",
+              "Element",
+              "EventTarget",
+              "HtmlCanvasElement",
+              "HtmlElement",
+              "Node",
+              "Window",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "winapi-util",
+            "features": []
+          },
+          {
+            "name": "windows-link",
+            "features": []
+          },
+          {
+            "name": "windows-result",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "windows-sys",
+            "features": [
+              "Win32",
+              "Win32_Foundation",
+              "Win32_Networking",
+              "Win32_Networking_WinSock",
+              "Win32_Security",
+              "Win32_Storage",
+              "Win32_Storage_FileSystem",
+              "Win32_System",
+              "Win32_System_Console",
+              "Win32_System_Diagnostics",
+              "Win32_System_Diagnostics_Debug",
+              "Win32_System_SystemInformation",
+              "default"
+            ]
+          },
+          {
+            "name": "wit-bindgen",
+            "features": []
+          },
+          {
+            "name": "zerocopy",
+            "features": [
+              "derive",
+              "simd",
+              "zerocopy-derive"
+            ]
+          },
+          {
+            "name": "zerocopy-derive",
+            "features": []
+          },
+          {
+            "name": "zmij",
+            "features": []
+          }
+        ]
+      },
+      "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+      "target": "x86_64-pc-windows-msvc",
+      "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
+      "profile": "release",
+      "locked": true,
+      "default_features": true,
+      "production_features": "production",
+      "diagnostic_features": "production bench-internals alloc-stats internals"
+    },
+    "B": {
+      "commit": "9ad4ccf61dce8d078e51ad17e1a4d1a1eaf4e376",
+      "tree": "78b374f66c3ad815acbc9053b2d4f373e44ac6f2",
+      "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "harness": {
+        "examples/r19_prf04_gate2b.rs": "6ab8dd0269433a497b1da533f296594b39f686337747022a3af3de5e8647de18",
+        "examples/r19_prf04_gate2b_observer.rs": "61c7dc665bb75b21494e625a19c5aa887983e73ce5e064ee5988e0d503f25a25",
+        "examples/r19_prf04_gate2b_shared/harness.rs": "869b3da330f0e08e355574843aaeaeccf4cbd7a99fee6c7be704a41f939492db",
+        "scripts/r19_prf04_gate2b.mjs": "67e5981b3402aa99fb703c7ab6cc4367ab0dc4288807c75d35484ff057997e7a"
+      },
+      "label": "B",
+      "binaries": {
+        "production": "95c2be7dc7759df6802479b69f17cd45233ce89ae788c35dac49668e605b5fbe",
+        "observer_production": "34555573d60cbc2d9d7669c9027f8d4e82fabf88c355bc7270c1989f93a5e537",
+        "diagnostic": "778fd3c6655ccc5c1169e5b8f3d8e1b61e2f54d1942866c1ee8fa07d05e9585a",
+        "observer_diagnostic": "d0dd275bd1f5cb61de4461df4232cc697c37e15b8ef7528e7989155ca3d71f95"
+      },
+      "metadata": {
+        "production": [
+          {
+            "name": "aho-corasick",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "aligned-vmem",
+            "features": [
+              "lazy-commit"
+            ]
+          },
+          {
+            "name": "allocator-api2",
+            "features": [
+              "alloc"
+            ]
+          },
+          {
+            "name": "anes",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "anstyle",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "autocfg",
+            "features": []
+          },
+          {
+            "name": "bench-scale-tool",
+            "features": []
+          },
+          {
+            "name": "bincode",
+            "features": []
+          },
+          {
+            "name": "bit-set",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bit-vec",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bitflags",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "bumpalo",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "bytes",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "captrack",
+            "features": [
+              "default",
+              "telemetry"
+            ]
+          },
+          {
+            "name": "captrack-macros",
+            "features": []
+          },
+          {
+            "name": "cast",
+            "features": []
+          },
+          {
+            "name": "cc",
+            "features": []
+          },
+          {
+            "name": "cfg-if",
+            "features": []
+          },
+          {
+            "name": "ciborium",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-io",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-ll",
+            "features": []
+          },
+          {
+            "name": "clap",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_builder",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_lex",
+            "features": []
+          },
+          {
+            "name": "criterion",
+            "features": [
+              "cargo_bench_support",
+              "default",
+              "plotters",
+              "rayon"
+            ]
+          },
+          {
+            "name": "criterion-plot",
+            "features": []
+          },
+          {
+            "name": "crossbeam-deque",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-epoch",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-utils",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crunchy",
+            "features": [
+              "default",
+              "limit_128"
+            ]
+          },
+          {
+            "name": "ctor",
+            "features": []
+          },
+          {
+            "name": "dashmap",
+            "features": []
+          },
+          {
+            "name": "derive_more",
+            "features": [
+              "as_ref",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "derive_more-impl",
+            "features": [
+              "as_ref",
+              "default",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "either",
+            "features": [
+              "std",
+              "use_std"
+            ]
+          },
+          {
+            "name": "equivalent",
+            "features": []
+          },
+          {
+            "name": "errno",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "fastrand",
+            "features": [
+              "alloc",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "find-msvc-tools",
+            "features": []
+          },
+          {
+            "name": "fnv",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "foldhash",
+            "features": []
+          },
+          {
+            "name": "futures-core",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-task",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-util",
+            "features": [
+              "alloc",
+              "slab",
+              "std"
+            ]
+          },
+          {
+            "name": "generator",
+            "features": []
+          },
+          {
+            "name": "getrandom",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "getrandom",
+            "features": []
+          },
+          {
+            "name": "globalalloc-model",
+            "features": [
+              "default",
+              "proptest"
+            ]
+          },
+          {
+            "name": "half",
+            "features": []
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "raw"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "allocator-api2",
+              "default",
+              "default-hasher",
+              "equivalent",
+              "inline-more",
+              "raw-entry"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": []
+          },
+          {
+            "name": "hermit-abi",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "iai-callgrind",
+            "features": [
+              "benchmark",
+              "default",
+              "iai-callgrind-runner"
+            ]
+          },
+          {
+            "name": "iai-callgrind-macros",
+            "features": []
+          },
+          {
+            "name": "iai-callgrind-runner",
+            "features": [
+              "api"
+            ]
+          },
+          {
+            "name": "indexmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "is-terminal",
+            "features": []
+          },
+          {
+            "name": "itertools",
+            "features": [
+              "default",
+              "use_alloc",
+              "use_std"
+            ]
+          },
+          {
+            "name": "itoa",
+            "features": []
+          },
+          {
+            "name": "js-sys",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "lazy_static",
+            "features": []
+          },
+          {
+            "name": "libc",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "libm",
+            "features": [
+              "arch",
+              "default"
+            ]
+          },
+          {
+            "name": "libmimalloc-sys",
+            "features": []
+          },
+          {
+            "name": "linux-raw-sys",
+            "features": [
+              "auxvec",
+              "elf",
+              "errno",
+              "general",
+              "ioctl",
+              "no_std"
+            ]
+          },
+          {
+            "name": "lock_api",
+            "features": [
+              "atomic_usize",
+              "default"
+            ]
+          },
+          {
+            "name": "log",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "loom",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "malloc-bench-rs",
+            "features": []
+          },
+          {
+            "name": "matchers",
+            "features": []
+          },
+          {
+            "name": "memchr",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "mimalloc",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "nu-ansi-term",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "num-traits",
+            "features": [
+              "default",
+              "libm",
+              "std"
+            ]
+          },
+          {
+            "name": "numa-shim",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "once-ptr-cell",
+            "features": []
+          },
+          {
+            "name": "once_cell",
+            "features": [
+              "alloc",
+              "default",
+              "race",
+              "std"
+            ]
+          },
+          {
+            "name": "oorandom",
+            "features": []
+          },
+          {
+            "name": "parking_lot_core",
+            "features": []
+          },
+          {
+            "name": "pin-project-lite",
+            "features": []
+          },
+          {
+            "name": "plotters",
+            "features": [
+              "area_series",
+              "line_series",
+              "plotters-svg",
+              "svg_backend"
+            ]
+          },
+          {
+            "name": "plotters-backend",
+            "features": []
+          },
+          {
+            "name": "plotters-svg",
+            "features": []
+          },
+          {
+            "name": "ppv-lite86",
+            "features": [
+              "simd",
+              "std"
+            ]
+          },
+          {
+            "name": "proc-macro-error-attr2",
+            "features": []
+          },
+          {
+            "name": "proc-macro-error2",
+            "features": [
+              "default",
+              "syn-error"
+            ]
+          },
+          {
+            "name": "proc-macro2",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "proc-memstat",
+            "features": []
+          },
+          {
+            "name": "proc-probe",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "proptest",
+            "features": [
+              "alloc",
+              "bit-set",
+              "default",
+              "fork",
+              "no_std",
+              "regex-syntax",
+              "rusty-fork",
+              "std",
+              "tempfile",
+              "timeout"
+            ]
+          },
+          {
+            "name": "quick-error",
+            "features": []
+          },
+          {
+            "name": "quote",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "rand",
+            "features": [
+              "alloc",
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_chacha",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "rand_core",
+            "features": [
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_xorshift",
+            "features": []
+          },
+          {
+            "name": "rayon",
+            "features": []
+          },
+          {
+            "name": "rayon-core",
+            "features": []
+          },
+          {
+            "name": "redox_syscall",
+            "features": [
+              "default",
+              "userspace"
+            ]
+          },
+          {
+            "name": "regex",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "regex-automata",
+            "features": [
+              "alloc",
+              "dfa-build",
+              "dfa-search",
+              "meta",
+              "nfa-pikevm",
+              "nfa-thompson",
+              "std",
+              "syntax"
+            ]
+          },
+          {
+            "name": "regex-syntax",
+            "features": [
+              "default",
+              "std",
+              "unicode",
+              "unicode-age",
+              "unicode-bool",
+              "unicode-case",
+              "unicode-gencat",
+              "unicode-perl",
+              "unicode-script",
+              "unicode-segment"
+            ]
+          },
+          {
+            "name": "rustc_version",
+            "features": []
+          },
+          {
+            "name": "rustix",
+            "features": [
+              "alloc",
+              "default",
+              "fs",
+              "std"
+            ]
+          },
+          {
+            "name": "rustversion",
+            "features": []
+          },
+          {
+            "name": "rusty-fork",
+            "features": [
+              "timeout",
+              "wait-timeout"
+            ]
+          },
+          {
+            "name": "saa",
+            "features": []
+          },
+          {
+            "name": "same-file",
+            "features": []
+          },
+          {
+            "name": "scc",
+            "features": []
+          },
+          {
+            "name": "scoped-tls",
+            "features": []
+          },
+          {
+            "name": "scopeguard",
+            "features": []
+          },
+          {
+            "name": "sdd",
+            "features": []
+          },
+          {
+            "name": "sefer-alloc",
+            "features": [
+              "alloc-core",
+              "alloc-decommit",
+              "alloc-global",
+              "alloc-segment-directory",
+              "alloc-xthread",
+              "default",
+              "fastbin",
+              "primordial-lazy-commit",
+              "production",
+              "std"
+            ]
+          },
+          {
+            "name": "sefer-region",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "semver",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "serde",
+            "features": [
+              "alloc",
+              "default",
+              "derive",
+              "serde_derive",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_core",
+            "features": [
+              "alloc",
+              "result",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_derive",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "serde_json",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "sharded-slab",
+            "features": []
+          },
+          {
+            "name": "shlex",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "size-classes",
+            "features": []
+          },
+          {
+            "name": "slab",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "slotmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "smallvec",
+            "features": []
+          },
+          {
+            "name": "syn",
+            "features": [
+              "clone-impls",
+              "default",
+              "derive",
+              "extra-traits",
+              "full",
+              "parsing",
+              "printing",
+              "proc-macro",
+              "visit",
+              "visit-mut"
+            ]
+          },
+          {
+            "name": "tagged-index-stack",
+            "features": []
+          },
+          {
+            "name": "tempfile",
+            "features": [
+              "default",
+              "getrandom"
+            ]
+          },
+          {
+            "name": "thread_local",
+            "features": []
+          },
+          {
+            "name": "tinytemplate",
+            "features": []
+          },
+          {
+            "name": "tokio",
+            "features": [
+              "default",
+              "macros",
+              "rt",
+              "rt-multi-thread",
+              "sync",
+              "time",
+              "tokio-macros"
+            ]
+          },
+          {
+            "name": "tokio-macros",
+            "features": []
+          },
+          {
+            "name": "tracing",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-core",
+            "features": [
+              "default",
+              "once_cell",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-log",
+            "features": [
+              "log-tracer",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-subscriber",
+            "features": [
+              "alloc",
+              "ansi",
+              "default",
+              "env-filter",
+              "fmt",
+              "matchers",
+              "nu-ansi-term",
+              "once_cell",
+              "registry",
+              "sharded-slab",
+              "smallvec",
+              "std",
+              "thread_local",
+              "tracing",
+              "tracing-log"
+            ]
+          },
+          {
+            "name": "unarray",
+            "features": []
+          },
+          {
+            "name": "unicode-ident",
+            "features": []
+          },
+          {
+            "name": "valuable",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "version_check",
+            "features": []
+          },
+          {
+            "name": "wait-timeout",
+            "features": []
+          },
+          {
+            "name": "walkdir",
+            "features": []
+          },
+          {
+            "name": "wasip2",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "wasm-bindgen-macro",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-macro-support",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-shared",
+            "features": []
+          },
+          {
+            "name": "web-sys",
+            "features": [
+              "CanvasRenderingContext2d",
+              "Document",
+              "DomRect",
+              "DomRectReadOnly",
+              "Element",
+              "EventTarget",
+              "HtmlCanvasElement",
+              "HtmlElement",
+              "Node",
+              "Window",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "winapi-util",
+            "features": []
+          },
+          {
+            "name": "windows-link",
+            "features": []
+          },
+          {
+            "name": "windows-result",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "windows-sys",
+            "features": [
+              "Win32",
+              "Win32_Foundation",
+              "Win32_Networking",
+              "Win32_Networking_WinSock",
+              "Win32_Security",
+              "Win32_Storage",
+              "Win32_Storage_FileSystem",
+              "Win32_System",
+              "Win32_System_Console",
+              "Win32_System_Diagnostics",
+              "Win32_System_Diagnostics_Debug",
+              "Win32_System_SystemInformation",
+              "default"
+            ]
+          },
+          {
+            "name": "wit-bindgen",
+            "features": []
+          },
+          {
+            "name": "zerocopy",
+            "features": [
+              "derive",
+              "simd",
+              "zerocopy-derive"
+            ]
+          },
+          {
+            "name": "zerocopy-derive",
+            "features": []
+          },
+          {
+            "name": "zmij",
+            "features": []
+          }
+        ],
+        "diagnostic": [
+          {
+            "name": "aho-corasick",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "aligned-vmem",
+            "features": [
+              "bench-internals",
+              "lazy-commit"
+            ]
+          },
+          {
+            "name": "allocator-api2",
+            "features": [
+              "alloc"
+            ]
+          },
+          {
+            "name": "anes",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "anstyle",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "autocfg",
+            "features": []
+          },
+          {
+            "name": "bench-scale-tool",
+            "features": []
+          },
+          {
+            "name": "bincode",
+            "features": []
+          },
+          {
+            "name": "bit-set",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bit-vec",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "bitflags",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "bumpalo",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "bytes",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "captrack",
+            "features": [
+              "default",
+              "telemetry"
+            ]
+          },
+          {
+            "name": "captrack-macros",
+            "features": []
+          },
+          {
+            "name": "cast",
+            "features": []
+          },
+          {
+            "name": "cc",
+            "features": []
+          },
+          {
+            "name": "cfg-if",
+            "features": []
+          },
+          {
+            "name": "ciborium",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-io",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "ciborium-ll",
+            "features": []
+          },
+          {
+            "name": "clap",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_builder",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "clap_lex",
+            "features": []
+          },
+          {
+            "name": "criterion",
+            "features": [
+              "cargo_bench_support",
+              "default",
+              "plotters",
+              "rayon"
+            ]
+          },
+          {
+            "name": "criterion-plot",
+            "features": []
+          },
+          {
+            "name": "crossbeam-deque",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-epoch",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "crossbeam-utils",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "crunchy",
+            "features": [
+              "default",
+              "limit_128"
+            ]
+          },
+          {
+            "name": "ctor",
+            "features": []
+          },
+          {
+            "name": "dashmap",
+            "features": []
+          },
+          {
+            "name": "derive_more",
+            "features": [
+              "as_ref",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "derive_more-impl",
+            "features": [
+              "as_ref",
+              "default",
+              "deref",
+              "deref_mut"
+            ]
+          },
+          {
+            "name": "either",
+            "features": [
+              "std",
+              "use_std"
+            ]
+          },
+          {
+            "name": "equivalent",
+            "features": []
+          },
+          {
+            "name": "errno",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "fastrand",
+            "features": [
+              "alloc",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "find-msvc-tools",
+            "features": []
+          },
+          {
+            "name": "fnv",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "foldhash",
+            "features": []
+          },
+          {
+            "name": "futures-core",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-task",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "futures-util",
+            "features": [
+              "alloc",
+              "slab",
+              "std"
+            ]
+          },
+          {
+            "name": "generator",
+            "features": []
+          },
+          {
+            "name": "getrandom",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "getrandom",
+            "features": []
+          },
+          {
+            "name": "globalalloc-model",
+            "features": [
+              "default",
+              "internals",
+              "proptest"
+            ]
+          },
+          {
+            "name": "half",
+            "features": []
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "raw"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": [
+              "allocator-api2",
+              "default",
+              "default-hasher",
+              "equivalent",
+              "inline-more",
+              "raw-entry"
+            ]
+          },
+          {
+            "name": "hashbrown",
+            "features": []
+          },
+          {
+            "name": "hermit-abi",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "iai-callgrind",
+            "features": [
+              "benchmark",
+              "default",
+              "iai-callgrind-runner"
+            ]
+          },
+          {
+            "name": "iai-callgrind-macros",
+            "features": []
+          },
+          {
+            "name": "iai-callgrind-runner",
+            "features": [
+              "api"
+            ]
+          },
+          {
+            "name": "indexmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "is-terminal",
+            "features": []
+          },
+          {
+            "name": "itertools",
+            "features": [
+              "default",
+              "use_alloc",
+              "use_std"
+            ]
+          },
+          {
+            "name": "itoa",
+            "features": []
+          },
+          {
+            "name": "js-sys",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "lazy_static",
+            "features": []
+          },
+          {
+            "name": "libc",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "libm",
+            "features": [
+              "arch",
+              "default"
+            ]
+          },
+          {
+            "name": "libmimalloc-sys",
+            "features": []
+          },
+          {
+            "name": "linux-raw-sys",
+            "features": [
+              "auxvec",
+              "elf",
+              "errno",
+              "general",
+              "ioctl",
+              "no_std"
+            ]
+          },
+          {
+            "name": "lock_api",
+            "features": [
+              "atomic_usize",
+              "default"
+            ]
+          },
+          {
+            "name": "log",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "loom",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "malloc-bench-rs",
+            "features": []
+          },
+          {
+            "name": "matchers",
+            "features": []
+          },
+          {
+            "name": "memchr",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "mimalloc",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "nu-ansi-term",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "num-traits",
+            "features": [
+              "default",
+              "libm",
+              "std"
+            ]
+          },
+          {
+            "name": "numa-shim",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "once-ptr-cell",
+            "features": []
+          },
+          {
+            "name": "once_cell",
+            "features": [
+              "alloc",
+              "default",
+              "race",
+              "std"
+            ]
+          },
+          {
+            "name": "oorandom",
+            "features": []
+          },
+          {
+            "name": "parking_lot_core",
+            "features": []
+          },
+          {
+            "name": "pin-project-lite",
+            "features": []
+          },
+          {
+            "name": "plotters",
+            "features": [
+              "area_series",
+              "line_series",
+              "plotters-svg",
+              "svg_backend"
+            ]
+          },
+          {
+            "name": "plotters-backend",
+            "features": []
+          },
+          {
+            "name": "plotters-svg",
+            "features": []
+          },
+          {
+            "name": "ppv-lite86",
+            "features": [
+              "simd",
+              "std"
+            ]
+          },
+          {
+            "name": "proc-macro-error-attr2",
+            "features": []
+          },
+          {
+            "name": "proc-macro-error2",
+            "features": [
+              "default",
+              "syn-error"
+            ]
+          },
+          {
+            "name": "proc-macro2",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "proc-memstat",
+            "features": []
+          },
+          {
+            "name": "proc-probe",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "proptest",
+            "features": [
+              "alloc",
+              "bit-set",
+              "default",
+              "fork",
+              "no_std",
+              "regex-syntax",
+              "rusty-fork",
+              "std",
+              "tempfile",
+              "timeout"
+            ]
+          },
+          {
+            "name": "quick-error",
+            "features": []
+          },
+          {
+            "name": "quote",
+            "features": [
+              "default",
+              "proc-macro"
+            ]
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "r-efi",
+            "features": []
+          },
+          {
+            "name": "rand",
+            "features": [
+              "alloc",
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_chacha",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "rand_core",
+            "features": [
+              "os_rng",
+              "std"
+            ]
+          },
+          {
+            "name": "rand_xorshift",
+            "features": []
+          },
+          {
+            "name": "rayon",
+            "features": []
+          },
+          {
+            "name": "rayon-core",
+            "features": []
+          },
+          {
+            "name": "redox_syscall",
+            "features": [
+              "default",
+              "userspace"
+            ]
+          },
+          {
+            "name": "regex",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "regex-automata",
+            "features": [
+              "alloc",
+              "dfa-build",
+              "dfa-search",
+              "meta",
+              "nfa-pikevm",
+              "nfa-thompson",
+              "std",
+              "syntax"
+            ]
+          },
+          {
+            "name": "regex-syntax",
+            "features": [
+              "default",
+              "std",
+              "unicode",
+              "unicode-age",
+              "unicode-bool",
+              "unicode-case",
+              "unicode-gencat",
+              "unicode-perl",
+              "unicode-script",
+              "unicode-segment"
+            ]
+          },
+          {
+            "name": "rustc_version",
+            "features": []
+          },
+          {
+            "name": "rustix",
+            "features": [
+              "alloc",
+              "default",
+              "fs",
+              "std"
+            ]
+          },
+          {
+            "name": "rustversion",
+            "features": []
+          },
+          {
+            "name": "rusty-fork",
+            "features": [
+              "timeout",
+              "wait-timeout"
+            ]
+          },
+          {
+            "name": "saa",
+            "features": []
+          },
+          {
+            "name": "same-file",
+            "features": []
+          },
+          {
+            "name": "scc",
+            "features": []
+          },
+          {
+            "name": "scoped-tls",
+            "features": []
+          },
+          {
+            "name": "scopeguard",
+            "features": []
+          },
+          {
+            "name": "sdd",
+            "features": []
+          },
+          {
+            "name": "sefer-alloc",
+            "features": [
+              "alloc-core",
+              "alloc-decommit",
+              "alloc-global",
+              "alloc-segment-directory",
+              "alloc-stats",
+              "alloc-xthread",
+              "bench-internals",
+              "default",
+              "fastbin",
+              "internals",
+              "primordial-lazy-commit",
+              "production",
+              "std"
+            ]
+          },
+          {
+            "name": "sefer-region",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "semver",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "serde",
+            "features": [
+              "alloc",
+              "default",
+              "derive",
+              "serde_derive",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_core",
+            "features": [
+              "alloc",
+              "result",
+              "std"
+            ]
+          },
+          {
+            "name": "serde_derive",
+            "features": [
+              "default"
+            ]
+          },
+          {
+            "name": "serde_json",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "sharded-slab",
+            "features": []
+          },
+          {
+            "name": "shlex",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "size-classes",
+            "features": []
+          },
+          {
+            "name": "slab",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "slotmap",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "smallvec",
+            "features": []
+          },
+          {
+            "name": "syn",
+            "features": [
+              "clone-impls",
+              "default",
+              "derive",
+              "extra-traits",
+              "full",
+              "parsing",
+              "printing",
+              "proc-macro",
+              "visit",
+              "visit-mut"
+            ]
+          },
+          {
+            "name": "tagged-index-stack",
+            "features": []
+          },
+          {
+            "name": "tempfile",
+            "features": [
+              "default",
+              "getrandom"
+            ]
+          },
+          {
+            "name": "thread_local",
+            "features": []
+          },
+          {
+            "name": "tinytemplate",
+            "features": []
+          },
+          {
+            "name": "tokio",
+            "features": [
+              "default",
+              "macros",
+              "rt",
+              "rt-multi-thread",
+              "sync",
+              "time",
+              "tokio-macros"
+            ]
+          },
+          {
+            "name": "tokio-macros",
+            "features": []
+          },
+          {
+            "name": "tracing",
+            "features": [
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-core",
+            "features": [
+              "default",
+              "once_cell",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-log",
+            "features": [
+              "log-tracer",
+              "std"
+            ]
+          },
+          {
+            "name": "tracing-subscriber",
+            "features": [
+              "alloc",
+              "ansi",
+              "default",
+              "env-filter",
+              "fmt",
+              "matchers",
+              "nu-ansi-term",
+              "once_cell",
+              "registry",
+              "sharded-slab",
+              "smallvec",
+              "std",
+              "thread_local",
+              "tracing",
+              "tracing-log"
+            ]
+          },
+          {
+            "name": "unarray",
+            "features": []
+          },
+          {
+            "name": "unicode-ident",
+            "features": []
+          },
+          {
+            "name": "valuable",
+            "features": [
+              "alloc",
+              "std"
+            ]
+          },
+          {
+            "name": "version_check",
+            "features": []
+          },
+          {
+            "name": "wait-timeout",
+            "features": []
+          },
+          {
+            "name": "walkdir",
+            "features": []
+          },
+          {
+            "name": "wasip2",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "wasm-bindgen-macro",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-macro-support",
+            "features": []
+          },
+          {
+            "name": "wasm-bindgen-shared",
+            "features": []
+          },
+          {
+            "name": "web-sys",
+            "features": [
+              "CanvasRenderingContext2d",
+              "Document",
+              "DomRect",
+              "DomRectReadOnly",
+              "Element",
+              "EventTarget",
+              "HtmlCanvasElement",
+              "HtmlElement",
+              "Node",
+              "Window",
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "winapi-util",
+            "features": []
+          },
+          {
+            "name": "windows-link",
+            "features": []
+          },
+          {
+            "name": "windows-result",
+            "features": [
+              "default",
+              "std"
+            ]
+          },
+          {
+            "name": "windows-sys",
+            "features": [
+              "Win32",
+              "Win32_Foundation",
+              "Win32_Networking",
+              "Win32_Networking_WinSock",
+              "Win32_Security",
+              "Win32_Storage",
+              "Win32_Storage_FileSystem",
+              "Win32_System",
+              "Win32_System_Console",
+              "Win32_System_Diagnostics",
+              "Win32_System_Diagnostics_Debug",
+              "Win32_System_SystemInformation",
+              "default"
+            ]
+          },
+          {
+            "name": "wit-bindgen",
+            "features": []
+          },
+          {
+            "name": "zerocopy",
+            "features": [
+              "derive",
+              "simd",
+              "zerocopy-derive"
+            ]
+          },
+          {
+            "name": "zerocopy-derive",
+            "features": []
+          },
+          {
+            "name": "zmij",
+            "features": []
+          }
+        ]
+      },
+      "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+      "target": "x86_64-pc-windows-msvc",
+      "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
+      "profile": "release",
+      "locked": true,
+      "default_features": true,
+      "production_features": "production",
+      "diagnostic_features": "production bench-internals alloc-stats internals"
+    }
+  },
+  "os": {
+    "platform": "win32",
+    "release": "10.0.19045",
+    "arch": "x64",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+  }
+}

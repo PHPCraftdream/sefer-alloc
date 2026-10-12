@@ -1,0 +1,194 @@
+{
+  "verdict": "NO-GO",
+  "benefit": true,
+  "missing_commit": false,
+  "axes": [
+    {
+      "axis": "commit",
+      "a": 5420199936,
+      "b": 45465600,
+      "missing": false,
+      "benefit": true,
+      "numerator": 5374734336,
+      "denominator": 5420199936,
+      "ratio": 0.9916118223429313,
+      "noise": 0.000009824043818258212,
+      "inconclusive": false,
+      "kill": false
+    },
+    {
+      "axis": "live",
+      "numerator": 1429800,
+      "denominator": 7494400,
+      "ratio": 0.1907824508966695,
+      "noise": 0.043310022111379645,
+      "bound": 0.05,
+      "t": {
+        "mean": -1229900,
+        "t": -0.039506125232203315,
+        "p": 0.9686884179886748,
+        "n": 40
+      },
+      "inconclusive": false,
+      "kill": true,
+      "invalid": false,
+      "pairs": 40,
+      "t_stat": -0.039506125232203315,
+      "p_value": 0.9686884179886748,
+      "mean_delta": -1229900
+    },
+    {
+      "axis": "churn",
+      "numerator": -157062600,
+      "denominator": 2851333100,
+      "ratio": -0.05508391846606768,
+      "noise": 0.0049853400936290156,
+      "bound": 0.02,
+      "t": {
+        "mean": -124842825,
+        "t": -0.9094053795814646,
+        "p": 0.3687222973427694,
+        "n": 40
+      },
+      "inconclusive": false,
+      "kill": false,
+      "invalid": false,
+      "pairs": 40,
+      "t_stat": -0.9094053795814646,
+      "p_value": 0.3687222973427694,
+      "mean_delta": -124842825
+    },
+    {
+      "axis": "wave_p99",
+      "numerator": -2559200,
+      "denominator": 3005200,
+      "ratio": -0.8515905763343538,
+      "noise": 0.04212980308896382,
+      "inconclusive": false,
+      "kill": false
+    }
+  ],
+  "cells": [
+    {
+      "arm": "A",
+      "k": 2,
+      "w": 16,
+      "n": 5,
+      "commit_idle_median": 24801280,
+      "rss_idle_median": 21901312,
+      "wall_ns_median": 35304100,
+      "first_call_p99_median": 106600
+    },
+    {
+      "arm": "A",
+      "k": 2,
+      "w": 128,
+      "n": 5,
+      "commit_idle_median": 177881088,
+      "rss_idle_median": 144179200,
+      "wall_ns_median": 500347500,
+      "first_call_p99_median": 155700
+    },
+    {
+      "arm": "A",
+      "k": 8,
+      "w": 16,
+      "n": 5,
+      "commit_idle_median": 155717632,
+      "rss_idle_median": 125935616,
+      "wall_ns_median": 174679100,
+      "first_call_p99_median": 255400
+    },
+    {
+      "arm": "A",
+      "k": 8,
+      "w": 128,
+      "n": 5,
+      "commit_idle_median": 1226403840,
+      "rss_idle_median": 978276352,
+      "wall_ns_median": 2861328300,
+      "first_call_p99_median": 969400
+    },
+    {
+      "arm": "A",
+      "k": 32,
+      "w": 16,
+      "n": 5,
+      "commit_idle_median": 680034304,
+      "rss_idle_median": 542777344,
+      "wall_ns_median": 1584352000,
+      "first_call_p99_median": 1693400
+    },
+    {
+      "arm": "A",
+      "k": 32,
+      "w": 128,
+      "n": 5,
+      "commit_idle_median": 5420199936,
+      "rss_idle_median": 2042642432,
+      "wall_ns_median": 13637800600,
+      "first_call_p99_median": 3005200
+    },
+    {
+      "arm": "B",
+      "k": 2,
+      "w": 16,
+      "n": 5,
+      "commit_idle_median": 4395008,
+      "rss_idle_median": 5480448,
+      "wall_ns_median": 39200100,
+      "first_call_p99_median": 66800
+    },
+    {
+      "arm": "B",
+      "k": 2,
+      "w": 128,
+      "n": 5,
+      "commit_idle_median": 4407296,
+      "rss_idle_median": 5505024,
+      "wall_ns_median": 381190100,
+      "first_call_p99_median": 69600
+    },
+    {
+      "arm": "B",
+      "k": 8,
+      "w": 16,
+      "n": 5,
+      "commit_idle_median": 12599296,
+      "rss_idle_median": 12173312,
+      "wall_ns_median": 101866400,
+      "first_call_p99_median": 232500
+    },
+    {
+      "arm": "B",
+      "k": 8,
+      "w": 128,
+      "n": 5,
+      "commit_idle_median": 12623872,
+      "rss_idle_median": 12263424,
+      "wall_ns_median": 2478461100,
+      "first_call_p99_median": 220800
+    },
+    {
+      "arm": "B",
+      "k": 32,
+      "w": 16,
+      "n": 5,
+      "commit_idle_median": 45309952,
+      "rss_idle_median": 38547456,
+      "wall_ns_median": 985310200,
+      "first_call_p99_median": 514100
+    },
+    {
+      "arm": "B",
+      "k": 32,
+      "w": 128,
+      "n": 5,
+      "commit_idle_median": 45465600,
+      "rss_idle_median": 35700736,
+      "wall_ns_median": 10501423400,
+      "first_call_p99_median": 446000
+    }
+  ],
+  "samples": 492
+}
