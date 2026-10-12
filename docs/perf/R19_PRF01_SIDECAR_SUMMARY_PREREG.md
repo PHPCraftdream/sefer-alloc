@@ -435,3 +435,47 @@ formula, arm, measured boundary or inventory entry changes.
    (`--capture`, then `--run` with the independent identity review receipt, no rebuild between the
    phases; any drift or rebuild requires a new capture and review); this realises the earlier
    requirement and changes no rule. The re-frozen hashes below supersede the previous freeze.
+
+## Amendment B — preservation of the producer boundary and separation of the empty control (before the first gate build)
+
+Applied on the reviewer-role decision of 2026-10-12 after the A-only producer preflight showed that the
+removed-frees control binary does not contain the exact boundary symbol (the empty `#[inline(never)]`
+function and its call were eliminated). No gate build with a captured identity existed. This amendment
+replaces the requirement `producerIrReceipt.control.childIr = 0`. It changes the coverage check, not the
+measured boundary, the workload, the inventory, the arms or the performance thresholds. Version remains 1.
+
+1. The primary and the removed-workload control both keep the exact symbol
+   `<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window`, the same signature, `#[inline(never)]`
+   and exactly one executed call from the joined child thread. The same minimal anti-elimination anchor is used in
+   both variants; its implementation is fixed in the source before any build or measurement, and the presence of
+   the symbol and the execution of the call are VERIFIED (symbol table of every launched binary, disassembly,
+   profile), not assumed from the properties of `black_box` or inline asm.
+2. The control is built from the same source as its primary, with the same toolchain, target, profile, features and
+   flags, plus only `cfg(r19_prf01_producer_control)`. In the control the window holds only the anchor and the
+   necessary function entry/exit: no loop over the addresses, no allocator call, no remote free, no pending or
+   summary publication and no helper work. Setup, geometry, handoff and spawn/join are kept; the owner frees the
+   remaining live allocations after the join, outside the counted boundary.
+3. `childIr` stays the raw measured Ir of the child thread inside the counted boundary. `boundaryOverheadIr` is one
+   value shared by the pair, measured as `control.childIr`; it is the control baseline, not an independently proven
+   overhead of the primary. For every control `1 <= boundaryOverheadIr <= 16`; the constant 16 is fixed here, before
+   any profile, and is never raised after data. Define `workloadIr = childIr - boundaryOverheadIr`: the primary needs
+   `workloadIr > 0` and the control `workloadIr = 0`. This is an arithmetic remainder against the empty control, not by
+   itself proof that remote frees ran; the emptiness of the control and the execution of the primary workload need
+   independent review of the source, the machine code, the raw child profile and the linked oracle.
+4. `primary.childFreeCount = 4096` stays and `control.childFreeCount = 0` is added; both variants execute the boundary
+   exactly once. `totalIr` stays the sum of all thread-profile Ir, `primary.totalIr = row.Ir`, the two totals differ and
+   `deltaIr = primary.totalIr - control.totalIr > 0`. A missing child profile is never read as zero.
+5. The performance criterion stays `(row.IrB - row.IrA) / 4096 <= 6` for every frozen cross pair. Subtracting the
+   control or the overhead from `row.Ir` is forbidden. Any coverage violation makes the evidence INCOMPLETE.
+6. The runner checks `nm -C --defined-only` on EVERY launched primary/control (C0 included), the exact definition plus
+   disassembly showing the call from the child and the emptiness of the control, saves the full argv of both runs
+   (same collection settings and dispatcher, only allowed binary/output path differences; `EntryPoint::Custom`, one
+   exact toggle, `collectAtStart=false`, no default or broad toggle, `separateThreads=true`), maps the raw profiles to
+   the process and child thread, checks one execution of the boundary and computes `totalIr` over all thread profiles
+   without gaps or double counting of parts/dumps. Against a cheap empty primary: source/disassembly/profile review plus
+   the separate oracle of the actual 4096 remote frees and the retained B summary-load/RMW checks.
+7. Judge changes are limited to the coverage schema and its selftests (overhead 0/1/16/17, wrong subtraction, empty
+   primary, call counts, missing control receipts, wrong symbol/toggle/cfg/argv/linkage, child Ir above total). The
+   re-frozen hashes supersede the previous freeze. A preflight that exceeds 16, loses the symbol or loses the coverage
+   does not permit re-picking the anchor or the limit after data; that needs a separate public decision and a new
+   preregistration. The diagnostic A-only preflight builds are kept without relabelling.

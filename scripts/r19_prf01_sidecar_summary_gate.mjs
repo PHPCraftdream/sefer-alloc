@@ -158,10 +158,19 @@ function derive(d,frozen) {
           assert.ok(time(p.startedAt)>time(r.source.capturedAt));
           assert.equal(p.control.workload,'child remote frees removed'); assert.equal(p.control.environmentSha256,r.environmentSha256);
           source(p.control.source); hex(p.control.binarySha256); assert.notEqual(p.control.binarySha256,r.binarySha256);
-          nat(p.control.childIr); assert.equal(p.control.childIr,0); nat(p.control.totalIr); nat(p.totalIr); assert.equal(p.totalIr,r.Ir);
+          nat(p.control.childIr); nat(p.control.totalIr); nat(p.totalIr); assert.equal(p.totalIr,r.Ir);
           assert.ok(p.childIr<=p.totalIr,'child Ir is a part of the total and cannot exceed it');
           assert.notEqual(p.control.totalIr,p.totalIr); assert.equal(p.control.deltaIr,p.totalIr-p.control.totalIr);
           assert.ok(p.control.deltaIr>0);
+          // Amendment B: the control keeps the exact boundary; its own overhead is the shared, bounded baseline.
+          const c=p.control; nat(p.boundaryOverheadIr); assert.ok(p.boundaryOverheadIr>=1&&p.boundaryOverheadIr<=16,'boundary overhead outside the frozen 1..16 range');
+          assert.equal(c.childIr,p.boundaryOverheadIr); nat(p.workloadIr); assert.equal(p.workloadIr,p.childIr-p.boundaryOverheadIr); assert.ok(p.workloadIr>0);
+          assert.equal(c.workloadIr,0); assert.equal(c.childFreeCount,0); assert.equal(p.boundaryExecutions,1); assert.equal(c.boundaryExecutions,1);
+          assert.ok(c.childIr<=c.totalIr,'control child Ir is a part of its total');
+          receipt(c.symbolReceipt); receipt(c.profileReceipt); assert.equal(c.symbol,p.symbol); assert.equal(c.toggleCollect,p.symbol);
+          exact(c.cfg,['r19_prf01_producer_control']); features(c.features,primary); exact(c.source,r.source); text(c.generatedArguments);
+          assert.equal(c.runnerVersion,'0.14.2'); text(c.valgrindVersion); assert.equal(c.collectAtStart,false); assert.equal(c.defaultToggle,false);
+          assert.equal(c.entryPoint,'Custom'); assert.equal(c.separateThreads,true); assert.equal(c.aggregation,'sum of all thread profile Ir');
           assert.equal(p.control.parentSetupUnchanged,true); assert.equal(p.control.collectionUnchanged,true);
           assert.equal(r.config.requested.workCount,4096); assert.equal(r.config.requested.blockBytes,16); assert.equal(r.config.requested.segmentCount,1);
           assert.equal(r.scenario,'joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window');
@@ -238,7 +247,7 @@ function fixture(frozen) {
     if(hot.includes(name)) r.config=hotCfg(name,a);
     if(mi.includes(name)) r.config={requested:null,resolved:null,configConflictsDelta:null,notApplicableReason:'mimalloc does not resolve SeferAlloc configuration',processBoundary:'isolated-process',runId:r.config.runId,pid:r.config.pid};
     if(needed && name!==publication) {r.oracle.strict_trim_remaining=null;r.oracle.unobservedReasons={strict_trim_remaining:'No strict trim remainder observation in this workload window'};}
-    if(name===producer) r.producerIrReceipt={binarySha256:r.binarySha256,source:r.source,environmentSha256:r.environmentSha256,features:primary,cfg:[],receipt:rec,symbolReceipt:rec,profileReceipt:rec,symbol:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,toggleCollect:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',generatedArguments:'synthetic',aggregation:'sum of all thread profile Ir',childFreeCount:4096,childIr:900,totalIr:r.Ir,startedAt:r.startedAt,control:{receipt:rec,workload:'child remote frees removed',source:src('c'),binarySha256:h('8'),environmentSha256:r.environmentSha256,childIr:0,totalIr:100,deltaIr:r.Ir-100,parentSetupUnchanged:true,collectionUnchanged:true}};
+    if(name===producer) r.producerIrReceipt={binarySha256:r.binarySha256,source:r.source,environmentSha256:r.environmentSha256,features:primary,cfg:[],receipt:rec,symbolReceipt:rec,profileReceipt:rec,symbol:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,toggleCollect:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',generatedArguments:'synthetic',aggregation:'sum of all thread profile Ir',childFreeCount:4096,childIr:900,boundaryOverheadIr:8,workloadIr:892,boundaryExecutions:1,totalIr:r.Ir,startedAt:r.startedAt,control:{receipt:rec,workload:'child remote frees removed',source:r.source,binarySha256:h('8'),environmentSha256:r.environmentSha256,childIr:8,workloadIr:0,childFreeCount:0,boundaryExecutions:1,symbolReceipt:rec,profileReceipt:rec,symbol:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',toggleCollect:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',cfg:['r19_prf01_producer_control'],features:primary,generatedArguments:'synthetic',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,aggregation:'sum of all thread profile Ir',totalIr:100,deltaIr:r.Ir-100,parentSetupUnchanged:true,collectionUnchanged:true}};
     d.iai.push(r);
   }
   for(const job of d.schedule) {const a=job.arm==='B'?'B':'A'; d.native.push({...row(a,d.identities[a].binaries.native,['production'],cfg(4096)),...job,entry:'installed #[global_allocator] SeferAlloc',p50Ns:100,p99Ns:200,nsPerOp:100});}
@@ -352,6 +361,20 @@ function selftest() {
   check(x=>pr(x).symbol='broad'); check(x=>pr(x).toggleCollect='broad'); check(x=>pr(x).separateThreads=false);
   check(x=>pr(x).aggregation='parent only'); check(x=>pr(x).totalIr++);
   check(x=>pr(x).control.childIr=1); check(x=>pr(x).control.totalIr=pr(x).totalIr);
+  // Amendment B: shared bounded boundary overhead, workload remainder, control linkage.
+  const cr=x=>pr(x).control;
+  const setOverhead=(x,o)=>{pr(x).boundaryOverheadIr=o;cr(x).childIr=o;pr(x).workloadIr=pr(x).childIr-o;};
+  check(x=>setOverhead(x,0)); check(x=>setOverhead(x,17)); check(x=>setOverhead(x,16),'GO'); check(x=>setOverhead(x,1),'GO');
+  check(x=>pr(x).workloadIr=pr(x).workloadIr+1);
+  check(x=>{pr(x).childIr=pr(x).boundaryOverheadIr;pr(x).workloadIr=0;});
+  check(x=>cr(x).workloadIr=1); check(x=>cr(x).childFreeCount=1); check(x=>pr(x).boundaryExecutions=2); check(x=>cr(x).boundaryExecutions=0);
+  check(x=>cr(x).childIr=cr(x).totalIr+1);
+  for(const k of ['symbolReceipt','profileReceipt','symbol','toggleCollect','cfg','features','source','generatedArguments','runnerVersion','valgrindVersion','collectAtStart','defaultToggle','entryPoint','separateThreads','aggregation','workloadIr','childFreeCount','boundaryExecutions'])check(x=>delete cr(x)[k]);
+  for(const k of ['boundaryOverheadIr','workloadIr','boundaryExecutions'])check(x=>delete pr(x)[k]);
+  check(x=>cr(x).symbol='<other>::producer_free_window'); check(x=>cr(x).toggleCollect='*'); check(x=>cr(x).cfg=[]);
+  check(x=>cr(x).cfg=['r19_prf01_producer_control','extra']); check(x=>cr(x).features=[...primary,'alloc-stats']);
+  check(x=>cr(x).source={...cr(x).source,identitySha256:'0'.repeat(64)});
+  check(x=>cr(x).collectAtStart=true); check(x=>cr(x).separateThreads=false); check(x=>cr(x).entryPoint='Default'); check(x=>cr(x).defaultToggle=true);
   check(x=>pr(x).control.deltaIr=0); check(x=>pr(x).control.parentSetupUnchanged=false);
   check(x=>pr(x).control.collectionUnchanged=false); check(x=>pr(x).control.environmentSha256='0'.repeat(64));
   check(x=>pr(x).control.binarySha256=pr(x).binarySha256); check(x=>delete pr(x).control.receipt);
