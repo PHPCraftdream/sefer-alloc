@@ -226,16 +226,6 @@ pub(crate) struct SegmentTable {
 }
 
 impl SegmentTable {
-    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
-    pub(crate) fn route_slots_system_totals() -> (usize, usize, usize, usize) {
-        RouteSlots::system_totals()
-    }
-
-    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
-    pub(crate) fn route_slot_bytes() -> usize {
-        RouteSlots::slot_bytes()
-    }
-
     /// Construct the registry view over an already-laid-down array in the
     /// primordial segment. Used by the bootstrap after it has carved the slot
     /// array, hash table, and active-kind index. This only wraps pointers.

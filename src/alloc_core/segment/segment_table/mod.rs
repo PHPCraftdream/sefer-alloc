@@ -69,6 +69,10 @@ pub(crate) use issue_transaction::IssueTransaction;
 #[path = "route_slots.rs"]
 mod route_slots;
 
+#[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+#[path = "route_slots_observers.rs"]
+mod route_slots_observers;
+
 #[path = "segment_table_impl.rs"]
 mod segment_table_impl;
 pub use segment_table_impl::*;
