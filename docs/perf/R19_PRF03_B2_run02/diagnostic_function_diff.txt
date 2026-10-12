@@ -1,0 +1,32 @@
+# Exclusive Ir per function, arm A1 vs arm B1 (columns: B-A, A, B). Derived by scripts/r19_prf03_cg_diff.mjs from retained raw profiles (tier 3, not committed).
+### small_churn_16b (A1 exclusive 56696 Ir, B1 exclusive 56582 Ir, delta -114)
+   -101     2688     2587  __memcpy_avx_unaligned_erms
+    -13      326      313  <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+
+### cold_alloc_only_256x16b (A1 exclusive 115384 Ir, B1 exclusive 115277 Ir, delta -107)
+   -101     2700     2599  __memcpy_avx_unaligned_erms
+    -13      326      313  <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner
+      7    42314    42321  __memset_avx2_unaligned_erms
+
+### mimalloc_recycle_alloc_free_256x16b (A1 exclusive 53020 Ir, B1 exclusive 53020 Ir, delta 0)
+
+
+### large_cache_payload_prefill_only_4mib (A1 exclusive 58567 Ir, B1 exclusive 58856 Ir, delta 289)
+   -888      888        0  <sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::unregister
+    840        0      840  <sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::unregister_parking
+    384     1428     1812  perf_gate_iai::large_cache_payload_prefill_only_4mib::__iai_callgrind_wrapper_mod::large_cache_payload_prefill_only_4mib
+    304        0      304  <sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+    169     1239     1408  <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::alloc_large
+   -145     1145     1000  <sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+   -113     2700     2587  __memcpy_avx_unaligned_erms
+   -108      864      756  _int_free
+
+### large_cache_payload_hit_only_4mib (A1 exclusive 59848 Ir, B1 exclusive 60256 Ir, delta 408)
+   -999      999        0  <sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::unregister
+    945        0      945  <sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::unregister_parking
+    415     1580     1995  perf_gate_iai::large_cache_payload_hit_only_4mib::__iai_callgrind_wrapper_mod::large_cache_payload_hit_only_4mib
+    342        0      342  <sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::prepare
+    201     1399     1600  <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::alloc_large
+   -163     1288     1125  <sefer_alloc::alloc_core::segment::segment_table::segment_table_impl::SegmentTable>::register_payload
+   -113     2700     2587  __memcpy_avx_unaligned_erms
+   -108      972      864  _int_free

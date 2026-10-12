@@ -73,7 +73,7 @@ Findings:
   reused when the payload offset changes, so B discards it and registers a fresh one; the function-level profile
   (section 4) shows the extra work in `register_payload_parked` and `unregister_impl` versus A's `register_payload`
   and `unregister`, about 17 Ir more per cycle over the 9 cycles of the body.
-- **Eight `control` cells fail by +55 ... +113 Ir** against T = 10, and two **mimalloc** cells by +7 against the
+- **Seven `control` cells fail by +55 ... +113 Ir** against T = 10, and two **mimalloc** cells by +7 against the
   required exact zero. The function-level diff (section 4) attributes the sefer-cell deltas to libc
   `__memcpy_avx_unaligned_erms` (+48 Ir, a larger by-value copy; consistent with, but not separately verified as, the
   cache slot type growing by the route handle) and `__memset_avx2_unaligned_erms` (+7 Ir); the **same +7 memset appears in the mimalloc cells**, which
