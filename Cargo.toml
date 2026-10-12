@@ -2480,3 +2480,22 @@ codegen-units = 1
 # (warns "`panic` setting is ignored for `bench` profile") because the
 # libtest/criterion harness requires unwinding to catch a failing
 # iteration/assertion. Left out; `lto`/`codegen-units` still apply.
+
+# PRF-03 (task r20): observation-only measurement harness for Large-cache hit
+# statistics and changed-payload hits (the R3 retained-route cost the r19
+# candidate paid). Drives synthetic workload models under the real
+# `#[global_allocator]` (`SeferAlloc`) and prints one JSON line per workload
+# of PRF-03 probe-counter deltas. The probe itself is compiled out without
+# `bench-internals` (see `src/alloc_core/large/payload_change_probe.rs`);
+# `alloc-decommit` is required because the large-segment cache only exists
+# under it. Measurement-only — no runtime behavior change.
+[[example]]
+name = "r20_prf03_large_hit_activation"
+required-features = ["alloc-global", "alloc-decommit", "internals", "bench-internals"]
+
+# PRF-03 (task r20): counterfactual assertions on the payload-change probe
+# deltas (same-payload hit counts 0 changes; higher-alignment hit counts >= 1;
+# requests == hits + misses). Requires the same feature set as the probe.
+[[test]]
+name = "r20_prf03_payload_probe"
+required-features = ["alloc-global", "alloc-decommit", "internals", "bench-internals"]

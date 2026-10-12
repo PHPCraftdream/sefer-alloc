@@ -1,0 +1,27 @@
+# raw log: PRF-03 Large-cache payload-change probe — scaled activation run
+# date: 2026-10-12
+# command: cargo run --locked --release --features "production internals bench-internals" --example r20_prf03_large_hit_activation
+# toolchain: rustc 1.97.0 (2d8144b78 2026-07-07)
+# base-commit: 2f207d638e116072226b8b63f5780c2bd72c92a9
+# patch-sha: c972761cf0acd157a255ae3bec59424250c0776e  (git diff | git hash-object --stdin)
+# status-digest (git status --porcelain at measurement time):
+#    M Cargo.toml
+#    M src/alloc_core/large/alloc_core_large.rs
+#    M src/alloc_core/large/mod.rs
+#    M src/alloc_core/mod.rs
+#   ?? examples/r20_prf03_large_hit_activation.rs
+#   ?? scripts/r20_prf03_large_hit_activation_table.mjs
+#   ?? src/alloc_core/large/payload_change_probe.rs
+#   ?? tests/r20_prf03_payload_probe.rs
+note: Large path engages for size > SMALL_MAX (~252 KiB geo-top; first Large at 253 KiB; 1.75 MiB only under medium-classes)
+{"workload": "bench_table_replay_model", "models": "benches/global_alloc.rs sized scenarios (16B..1024B, small-class)", "large_requests": 0, "hits": 0, "misses": 0, "changed_payload_hits": 0}
+{"workload": "growing_vec_u8", "models": "log/video-buffer realloc doubling growth 64KiB..64MiB", "large_requests": 360, "hits": 354, "misses": 6, "changed_payload_hits": 0}
+{"workload": "file_read_whole", "models": "whole-file read buffers of varied sizes, freed and repeated", "large_requests": 600, "hits": 600, "misses": 0, "changed_payload_hits": 0}
+{"workload": "serialize_reuse", "models": "per-request serialization into a reused scratch buffer", "large_requests": 400, "hits": 400, "misses": 0, "changed_payload_hits": 0}
+{"workload": "fixed_size_pool", "models": "connection/object pool of fixed-size large buffers churning", "large_requests": 800, "hits": 794, "misses": 6, "changed_payload_hits": 0}
+{"workload": "alternating_align", "models": "align 16/4096/64KiB alternation on one size (changed-payload UPPER BOUND)", "large_requests": 120, "hits": 120, "misses": 0, "changed_payload_hits": 79}
+{"workload": "size_sweep", "size": 65536, "large_requests": 0}
+{"workload": "size_sweep", "size": 258048, "large_requests": 0}
+{"workload": "size_sweep", "size": 259072, "large_requests": 1}
+{"workload": "size_sweep", "size": 1048576, "large_requests": 1}
+{"workload": "TOTAL", "models": "aggregate of all workloads", "large_requests": 2282, "hits": 2270, "misses": 12, "changed_payload_hits": 80}

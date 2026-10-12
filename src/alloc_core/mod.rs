@@ -142,6 +142,10 @@ use large::alloc_core_large;
 use large::alloc_core_large_cache;
 #[cfg(feature = "large-cache-extended")]
 pub(crate) use large::large_cache_extended;
+// Measurement-only surface for the PRF-03 activation measurement (task r20);
+// compiled out without `internals` + `bench-internals`.
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+pub use large::payload_change_probe::{r20_prf03_large_probe_snapshot, LargePayloadProbeSnapshot};
 
 pub use alloc_core::AllocCore;
 #[cfg(feature = "alloc-global")]

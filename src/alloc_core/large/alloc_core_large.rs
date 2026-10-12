@@ -248,6 +248,11 @@ impl AllocCore {
         // every 4 MiB request.
         #[cfg(feature = "alloc-decommit")]
         if align < SEGMENT {
+            // PRF-03 probe (task r20): count this cache-eligible request.
+            // Measurement-only; the call is fully compiled out without
+            // `bench-internals` (identical non-bench hot path).
+            #[cfg(feature = "bench-internals")]
+            super::payload_change_probe::record_request();
             // G11 (task #51) — BEST-FIT: consider every cached entry and pick the compatible
             // entry with the SMALLEST `usable_size`, instead of taking the first
             // fit. A cached entry is compatible when it is big enough
@@ -295,6 +300,9 @@ impl AllocCore {
                             std::process::abort();
                         }
                         os::release_segment(slot.reservation, slot.reservation_len);
+                        // PRF-03 probe: refused reuse counts as a miss.
+                        #[cfg(feature = "bench-internals")]
+                        super::payload_change_probe::record_miss();
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
@@ -420,6 +428,15 @@ impl AllocCore {
                 // never holds Small/Primordial spans) and does not need
                 // rewriting; `segment_id` keeps its own pre-existing
                 // post-`register()` 1-word patch below.
+                // PRF-03 probe (task r20): count the hit and compare the new
+                // payload offset against the slot's PREVIOUS header value —
+                // the read MUST happen before the header rewrite below. The
+                // r19 retained-route would have had to drop/re-register the
+                // route exactly when these differ (the R3 cost we measure).
+                #[cfg(feature = "bench-internals")]
+                super::payload_change_probe::record_hit(
+                    SegmentHeader::read_at(slot.base).payload_offset != hdr_aligned,
+                );
                 SegmentHeader::set_magic_at(
                     slot.base,
                     crate::alloc_core::segment_header::SEGMENT_MAGIC,
@@ -467,6 +484,9 @@ impl AllocCore {
                             std::process::abort();
                         }
                         os::release_segment(slot.reservation, slot.reservation_len);
+                        // PRF-03 probe: failed registration counts as a miss.
+                        #[cfg(feature = "bench-internals")]
+                        super::payload_change_probe::record_miss();
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
@@ -519,6 +539,12 @@ impl AllocCore {
             }
         }
 
+        // PRF-03 probe: the no-fit fall-through (reached only by the same
+        // `align < SEGMENT` requests counted above) counts as a miss.
+        #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
+        if align < SEGMENT {
+            super::payload_change_probe::record_miss();
+        }
         self.alloc_large_slow(size, align, usable, hdr_aligned)
     }
 

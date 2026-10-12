@@ -25,3 +25,8 @@ mod alloc_core_large_cache_eviction;
 #[cfg(feature = "large-cache-extended")]
 pub(crate) mod large_cache_extended;
 pub(crate) mod reservation_state;
+
+/// PRF-03 decision-data probe (task r20): observation-only Large-cache
+/// payload-change counters, fully compiled out without `bench-internals`.
+#[cfg(feature = "bench-internals")]
+pub(crate) mod payload_change_probe;
