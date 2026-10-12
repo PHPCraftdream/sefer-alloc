@@ -4172,11 +4172,21 @@ jobs:
           node-version: '22'
       - name: powerset summary self-test
         run: node scripts/powerset-summary.mjs --self-test
+      # Fix for the 2026-10-12 weekly red (run 38260710015): cargo-hack
+      # --no-dev-deps temporarily rewrites the manifests (drops dev-deps), so
+      # cargo wants to update Cargo.lock and `--locked` (added in 091ca50c)
+      # rejects that for all 390 combinations ("cannot update the lock file").
+      # Determinism is kept without --locked: `cargo fetch --locked` once
+      # pins+downloads exactly the committed lockfile, then every hack
+      # invocation runs `--offline` so cargo may reconcile the lock locally
+      # but can never hit the network or pull a different version.
+      - name: cargo fetch --locked (pin the lockfile once, offline hack runs follow)
+        run: cargo fetch --locked
       - name: cargo hack check --feature-powerset --depth 2
         shell: bash
         run: |
           set -o pipefail
-          cargo hack check --locked --feature-powerset --depth 2 --no-dev-deps --keep-going 2>&1 | tee powerset-root.log
+          cargo hack check --offline --feature-powerset --depth 2 --no-dev-deps --keep-going 2>&1 | tee powerset-root.log
       - name: Summarize powerset (root)
         if: ${{ !cancelled() }}
         run: node scripts/powerset-summary.mjs powerset-root.log >> "$GITHUB_STEP_SUMMARY"
@@ -4213,7 +4223,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo hack check --locked --feature-powerset --depth 2 -p aligned-vmem --all-targets --keep-going 2>&1 | tee powerset-aligned-vmem.log
+          cargo hack check --offline --feature-powerset --depth 2 -p aligned-vmem --all-targets --keep-going 2>&1 | tee powerset-aligned-vmem.log
       - name: Summarize powerset (aligned-vmem)
         if: ${{ !cancelled() }}
         run: node scripts/powerset-summary.mjs powerset-aligned-vmem.log >> "$GITHUB_STEP_SUMMARY"
@@ -4222,7 +4232,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo hack check --locked --feature-powerset --depth 3 --no-dev-deps --keep-going --include-features fastbin,medium-classes,medium-classes-wide,exact-span-large,large-reserved-capacity,numa-aware,hardened,alloc-decommit,alloc-segment-directory,virgin-zero-skip 2>&1 | tee powerset-policy.log
+          cargo hack check --offline --feature-powerset --depth 3 --no-dev-deps --keep-going --include-features fastbin,medium-classes,medium-classes-wide,exact-span-large,large-reserved-capacity,numa-aware,hardened,alloc-decommit,alloc-segment-directory,virgin-zero-skip 2>&1 | tee powerset-policy.log
       - name: Summarize powerset (policy)
         if: ${{ !cancelled() }}
         run: node scripts/powerset-summary.mjs powerset-policy.log >> "$GITHUB_STEP_SUMMARY"
@@ -4233,7 +4243,7 @@ jobs:
           set -euo pipefail
           msrv=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"])')
           rustup toolchain install "$msrv" --profile minimal
-          cargo +"$msrv" hack check --locked --each-feature --no-dev-deps --keep-going 2>&1 | tee powerset-msrv.log
+          cargo +"$msrv" hack check --offline --each-feature --no-dev-deps --keep-going 2>&1 | tee powerset-msrv.log
       - name: Summarize powerset (MSRV)
         if: ${{ !cancelled() }}
         run: node scripts/powerset-summary.mjs powerset-msrv.log >> "$GITHUB_STEP_SUMMARY"
