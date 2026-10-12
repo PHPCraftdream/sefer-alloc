@@ -1,0 +1,33 @@
+{
+  "mode": "recycled",
+  "n": 32,
+  "arm": "B",
+  "warmup_k": 1,
+  "wave_slots": 64,
+  "claim_sources_before": {
+    "hint": 0,
+    "bump": 1,
+    "cap_scan": 0,
+    "recovery": 0,
+    "free_set": 0,
+    "claim_sources_len": 5,
+    "high_water": 1
+  },
+  "claim_sources_after": {
+    "hint": 32,
+    "bump": 1,
+    "cap_scan": 0,
+    "recovery": 0,
+    "free_set": 0,
+    "claim_sources_len": 5,
+    "high_water": 1
+  },
+  "claim_sources_len": 5,
+  "missing_fifth_explicit_zero": false,
+  "bump_delta": 0,
+  "hint_delta": 32,
+  "reclaim_delta": 32,
+  "new_heaps": 0,
+  "free_set_delta": 0,
+  "ok": true
+}

@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "rehearsal": false,
+  "capturedAt": "2026-10-12T18:52:20.186Z",
+  "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+  "pickedCommit": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+  "pickRequested": "6951a9d01886693310258b0ad9a1df462a1b948e",
+  "frozen": [
+    {
+      "path": "docs/perf/R20_PRF04_CLAIM_PATH_PREREG.md",
+      "sha256": "e587ae20e6affe3cdb414b35c1cfa7a330f49f530a773ea67cac97e972bf7894"
+    },
+    {
+      "path": "scripts/r20_prf04_claim_path_gate.mjs",
+      "sha256": "34b8d895a4936936eba2cf4673962a912395b7d3b5bf7a6153b615bf9b804988"
+    },
+    {
+      "path": "scripts/r20_prf04_claim_path_run.mjs",
+      "sha256": "97fe49a744959fcb3fea13154c0cdb33a56677922508ef159ea3a83042955a2a"
+    },
+    {
+      "path": "docs/perf/R20_CONTROL_GEOMETRY_RULE.md",
+      "sha256": "c3a498cb268178b19b94d407a6280d7b1d0251ff54db75d24955b192c360acef"
+    },
+    {
+      "path": "benches/r20_prf04_claim_iai.rs",
+      "sha256": "76172d9c39e12ff8e29e37e30a9ae344ac14eaa9aa29ad516e19d385fd802d2f"
+    },
+    {
+      "path": "benches/support/r20_prf04.rs",
+      "sha256": "27e7f5832ae01867448c6c43a58a571576ba66c20d1c18180be7ab667fd6e0ac"
+    },
+    {
+      "path": "examples/r20_prf04_claim_path_oracle.rs",
+      "sha256": "e0dd80e62a94c5240205b3ba1bf871e89f5ecbf6fd0485f7402df46442b3e167"
+    },
+    {
+      "path": "docs/perf/_raw_r20_prf04_harness_characterization.log",
+      "sha256": "29264cdd7231603687850aed8d486f28f2b218a7b312bfc6e12974387a6cafdd"
+    },
+    {
+      "path": "docs/perf/_raw_r20_prf04_cold_profile.log",
+      "sha256": "cf408b4b621094c14a84e29fcb20882a450163e99042ab3fb0917fc1455a187a"
+    }
+  ],
+  "wtDir": "<repo>/worktrees/r20p4",
+  "pathLengths": [
+    41,
+    41,
+    41
+  ],
+  "arches": {
+    "A": {
+      "label": "A",
+      "wt": "<repo>/worktrees/r20p4/A",
+      "head": "f5194740d57247e43a33a02879025299311d09e7",
+      "tree": "840e0ea21d0fc0e1797b1a3174c2522aca4d84a8",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+      "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-12T18:52:19.352Z"
+    },
+    "B": {
+      "label": "B",
+      "wt": "<repo>/worktrees/r20p4/B",
+      "head": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+      "tree": "ec918dbc57d844dde85b099d7d0bf53989897e23",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+      "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-12T18:52:19.775Z"
+    },
+    "C": {
+      "label": "A",
+      "wt": "<repo>/worktrees/r20p4/A",
+      "head": "f5194740d57247e43a33a02879025299311d09e7",
+      "tree": "840e0ea21d0fc0e1797b1a3174c2522aca4d84a8",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+      "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-12T18:52:19.352Z"
+    }
+  }
+}

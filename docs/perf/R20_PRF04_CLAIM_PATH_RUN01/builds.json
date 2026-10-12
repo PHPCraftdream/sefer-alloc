@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-12T19:02:41.991Z",
+  "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+  "arms": {
+    "A": {
+      "iai": {
+        "target": "r20_prf04_claim_iai",
+        "exe": "/tmp/r20p4/A/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1",
+        "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+        "features": "production internals",
+        "rustflags": "",
+        "targetDir": "/tmp/r20p4/A"
+      },
+      "oracle": {
+        "target": "r20_prf04_claim_path_oracle",
+        "exe": "/tmp/r20p4/A/debug/examples/r20_prf04_claim_path_oracle",
+        "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+        "features": "production bench-internals internals",
+        "rustflags": "",
+        "targetDir": "/tmp/r20p4/A"
+      }
+    },
+    "B": {
+      "iai": {
+        "target": "r20_prf04_claim_iai",
+        "exe": "/tmp/r20p4/B/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1",
+        "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+        "features": "production internals",
+        "rustflags": "",
+        "targetDir": "/tmp/r20p4/B"
+      },
+      "oracle": {
+        "target": "r20_prf04_claim_path_oracle",
+        "exe": "/tmp/r20p4/B/debug/examples/r20_prf04_claim_path_oracle",
+        "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+        "features": "production bench-internals internals",
+        "rustflags": "",
+        "targetDir": "/tmp/r20p4/B"
+      }
+    },
+    "C": {
+      "iai": {
+        "target": "r20_prf04_claim_iai",
+        "exe": "/tmp/r20p4/C/release/deps/r20_prf04_claim_iai-84cd327049308a5c",
+        "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+        "features": "production internals",
+        "rustflags": "-C debuginfo=line-tables-only",
+        "targetDir": "/tmp/r20p4/C"
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+    Finished `bench` profile [optimized] target(s) in 3.33s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/r20_prf04_claim_iai.rs (/tmp/r20p4/B/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_start_first_claim
+  Instructions:                       47143|N/A                  (*********)
+  L1 Hits:                            90519|N/A                  (*********)
+  L2 Hits:                              153|N/A                  (*********)
+  RAM Hits:                             986|N/A                  (*********)
+  Total read+write:                   91658|N/A                  (*********)
+  Estimated Cycles:                  125794|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_cold_first_claim_n
+  Instructions:                      602010|N/A                  (*********)
+  L1 Hits:                          1148537|N/A                  (*********)
+  L2 Hits:                             2523|N/A                  (*********)
+  RAM Hits:                           10895|N/A                  (*********)
+  Total read+write:                 1161955|N/A                  (*********)
+  Estimated Cycles:                 1542477|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_cold_first_claim_2n
+  Instructions:                     1203780|N/A                  (*********)
+  L1 Hits:                          2296430|N/A                  (*********)
+  L2 Hits:                             5110|N/A                  (*********)
+  RAM Hits:                           21580|N/A                  (*********)
+  Total read+write:                 2323120|N/A                  (*********)
+  Estimated Cycles:                 3077280|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_cold_first_claim_4n
+  Instructions:                     2407236|N/A                  (*********)
+  L1 Hits:                          4603464|N/A                  (*********)
+  L2 Hits:                            10432|N/A                  (*********)
+  RAM Hits:                           42912|N/A                  (*********)
+  Total read+write:                 4656808|N/A                  (*********)
+  Estimated Cycles:                 6157544|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_recycled_first_claim_n
+  Instructions:                       99038|N/A                  (*********)
+  L1 Hits:                           156991|N/A                  (*********)
+  L2 Hits:                              185|N/A                  (*********)
+  RAM Hits:                            1020|N/A                  (*********)
+  Total read+write:                  158196|N/A                  (*********)
+  Estimated Cycles:                  193616|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_recycled_first_claim_2n
+  Instructions:                      150910|N/A                  (*********)
+  L1 Hits:                           223503|N/A                  (*********)
+  L2 Hits:                              185|N/A                  (*********)
+  RAM Hits:                            1020|N/A                  (*********)
+  Total read+write:                  224708|N/A                  (*********)
+  Estimated Cycles:                  260128|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_recycled_first_claim_4n
+  Instructions:                      254654|N/A                  (*********)
+  L1 Hits:                           356527|N/A                  (*********)
+  L2 Hits:                              185|N/A                  (*********)
+  RAM Hits:                            1020|N/A                  (*********)
+  Total read+write:                  357732|N/A                  (*********)
+  Estimated Cycles:                  393152|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_wave_first_claim_n
+  Instructions:                     2459372|N/A                  (*********)
+  L1 Hits:                          4667379|N/A                  (*********)
+  L2 Hits:                            11793|N/A                  (*********)
+  RAM Hits:                           43006|N/A                  (*********)
+  Total read+write:                 4722178|N/A                  (*********)
+  Estimated Cycles:                 6231554|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_wave_first_claim_2n
+  Instructions:                     2511228|N/A                  (*********)
+  L1 Hits:                          4732403|N/A                  (*********)
+  L2 Hits:                            13113|N/A                  (*********)
+  RAM Hits:                           43046|N/A                  (*********)
+  Total read+write:                 4788562|N/A                  (*********)
+  Estimated Cycles:                 6304578|N/A                  (*********)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_wave_first_claim_4n
+  Instructions:                     2614949|N/A                  (*********)
+  L1 Hits:                          4862485|N/A                  (*********)
+  L2 Hits:                            15746|N/A                  (*********)
+  RAM Hits:                           43111|N/A                  (*********)
+  Total read+write:                 4921342|N/A                  (*********)
+  Estimated Cycles:                 6450100|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 10 without regressions; 0 regressed; 10 benchmarks finished in 12.3456s
