@@ -33,6 +33,13 @@ For a control family `F` with cells at `N`, `2N` (and `4N` where the family has 
    `T_s = max(10, |s_A1 − s_A2|, |s_C0 − s_A1|)` — the same structure as the R19 `T`, applied to the slope.
 3. **Linearity check.** Where a `4N` cell exists, `|(Ir(4N) − Ir(2N)) − 2·(Ir(2N) − Ir(N))| <= T_s` for every arm;
    if it fails the family is **INVALID** (warm-up is not linear) and yields no verdict.
+3a. **Non-affine families (two windows).** A family whose cost is known **before any B build exists**, from an A-only
+   characterization with an identified mechanism, not to be affine in `N` (for example a per-operation cost that
+   follows the host allocator's growth pattern) may declare in its preregistration that the affine test of item 3 is
+   replaced by two disjoint windows, `w1 = Ir(2N) − Ir(N)` and `w2 = Ir(4N) − Ir(2N)`. Every neutrality check is then
+   applied to each window with that window's own `T_s`, and a violation in either window decides. The substitution,
+   its mechanism and the characterization data are part of the frozen preregistration; neither a budget nor `T_s`
+   changes, and a family that merely fails item 3 without a declared mechanism is still **INVALID**.
 4. **Construction (one-sided, separate cell).** `K_X = Ir_X(N) − s_X` is the one-time part (construction, bootstrap,
    first scan). `K_B − K_A <= budget_K`, where `budget_K` is written into the preregistration by the owner **before**
    the B build exists, together with the principle it comes from (for example the accepted layout change), never from a

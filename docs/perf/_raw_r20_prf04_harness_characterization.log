@@ -1,0 +1,69 @@
+# R20 PRF-04 harness characterization (arm A only; NOT gate data; no B build exists)
+# base: main 8d6ae58d6d42658a94b10dc64c70dfb9393bf742 + the uncommitted PRF-04 harness (cells benches/support/r20_prf04.rs)
+# features: production internals; iai-callgrind 0.14.2 under valgrind; one process per cell
+# env: valgrind-3.22.0
+# env: rustc 1.98.1 (48a229cea 2026-09-01)
+# env: Linux x86_64
+# env: Model name:                              11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+# probe: a one-off temporary bench (NOT committed) calling prf04::cold_first_claim(k) / prf04::recycled_first_claim(k)
+#   for the k listed; the committed cells call the same bodies at k = 16, 32, 64.
+# command: cargo bench --locked --bench <probe> --features "production internals"  (in WSL, target dir outside the repo)
+# merged from two probe runs; every k present in both runs had identical Instructions (asserted).
+# columns: family k instructions
+cold 1 47111
+cold 2 94248
+cold 3 141359
+cold 4 149611
+cold 5 196722
+cold 6 243833
+cold 7 290944
+cold 8 299900
+cold 9 347007
+cold 10 394118
+cold 11 441229
+cold 12 450889
+cold 13 498000
+cold 14 545111
+cold 15 592222
+cold 16 602586
+cold 17 649697
+cold 18 696808
+cold 19 743919
+cold 20 754987
+cold 21 802098
+cold 22 849205
+cold 23 895797
+cold 24 903450
+cold 25 950538
+cold 26 997626
+cold 27 1044714
+cold 28 1053071
+cold 29 1100159
+cold 30 1147247
+cold 31 1194335
+cold 32 1203396
+cold 33 1249939
+cold 34 1296482
+cold 35 1343021
+cold 36 1354065
+cold 37 1400608
+cold 38 1447151
+cold 39 1493694
+cold 40 1503778
+cold 44 1652531
+cold 48 1804416
+cold 56 2105314
+cold 60 2254323
+cold 62 2347409
+cold 63 2393952
+cold 64 2406468
+recycled 1 50398
+recycled 2 53625
+recycled 4 60079
+recycled 8 72987
+recycled 16 98803
+recycled 32 150435
+recycled 64 253699
+# derived marginals (Ir(k) - Ir(k-1), consecutive k only), cold:
+# 2:47137 3:47111 4:8252 5:47111 6:47111 7:47111 8:8956 9:47107 10:47111 11:47111 12:9660 13:47111 14:47111 15:47111 16:10364 17:47111 18:47111 19:47111 20:11068 21:47111 22:47107 23:46592 24:7653 25:47088 26:47088 27:47088 28:8357 29:47088 30:47088 31:47088 32:9061 33:46543 34:46543 35:46539 36:11044 37:46543 38:46543 39:46543 40:10084 63:46543 64:12516
+# recycled marginal per claim between probed k (constant): 2-1:3227.0 4-2:3227.0 8-4:3227.0 16-8:3227.0 32-16:3227.0 64-32:3227.0
