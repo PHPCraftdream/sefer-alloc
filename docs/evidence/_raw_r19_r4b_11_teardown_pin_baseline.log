@@ -1,0 +1,20 @@
+# R19 re-verification receipt
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e (working tree differs from HEAD only by uncommitted docs)
+# command: cargo test --locked -j3 --features 'production internals' --test r11_ph4b_teardown_ordering_pinned
+# private machine paths are replaced by <path>
+# started: 2026-10-12T12:02:32+02:00
+
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 42s
+     Running tests\r11_ph4b_teardown_ordering_pinned.rs (target\debug\deps\r11_ph4b_teardown_ordering_pinned-1d0c6f4c3bab55ee.exe)
+
+running 2 tests
+test lease_release_cas_is_release_ordered ... ok
+test teardown_stamps_torn_then_trims_then_releases_the_slot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+exit=0

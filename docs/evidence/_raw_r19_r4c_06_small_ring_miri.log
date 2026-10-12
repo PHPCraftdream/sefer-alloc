@@ -1,0 +1,71 @@
+# R19 re-verification receipt
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e (working tree differs from HEAD only by uncommitted docs)
+# command: MIRIFLAGS='-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5' cargo +nightly miri test --locked --features 'alloc-global alloc-xthread alloc-decommit internals bench-internals' --test regression_xthread_small_ring_miri
+# private machine paths are replaced by <path>
+# started: 2026-10-12T11:42:16+02:00
+
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+warning: unused import: `alloc_core::OwnedBlock`
+   --> src\alloc_core\mod.rs:148:16
+    |
+148 | pub(crate) use alloc_core::OwnedBlock;
+    |                ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.68s
+     Running tests\regression_xthread_small_ring_miri.rs (target\miri\x86_64-pc-windows-msvc\debug\deps\regression_xthread_small_ring_miri-3313fec43834b1fe.exe)
+
+running 1 test
+test xthread_small_ring_two_producers_push_owner_drains ... warning: integer-to-pointer cast
+   --> tests\regression_xthread_small_ring_miri.rs:127:42
+    |
+127 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
+    |                                          ^^^^^^^^^^^^^^^ integer-to-pointer cast
+    |
+    = help: this program is using integer-to-pointer casts or (equivalently) `ptr::with_exposed_provenance`, which means that Miri might miss pointer bugs in this program
+    = help: see https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html for more details on that operation
+    = help: to ensure that Miri does not miss bugs in your program, use Strict Provenance APIs (https://doc.rust-lang.org/nightly/std/ptr/index.html#strict-provenance, https://crates.io/crates/sptr) instead
+    = help: you can then set `MIRIFLAGS=-Zmiri-strict-provenance` to ensure you are not relying on `with_exposed_provenance` semantics
+    = help: alternatively, `MIRIFLAGS=-Zmiri-permissive-provenance` disables this warning
+    = note: this is on thread `unnamed-2`
+note: the current function got called indirectly due to this code
+   --> tests\regression_xthread_small_ring_miri.rs:112:18
+    |
+112 |       let prod_a = thread::spawn(move || {
+    |  __________________^
+113 | |         let _ = bootstrap::ensure();
+114 | |         let mut remote_lease =
+115 | |             HeapRegistry::dbg_claim_lease().expect("producer A HeapRegistry::claim failed");
+...   |
+129 | |         drop(remote_lease);
+130 | |     });
+    | |______^
+
+warning: integer-to-pointer cast
+   --> tests\regression_xthread_small_ring_miri.rs:145:42
+    |
+145 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
+    |                                          ^^^^^^^^^^^^^^^ integer-to-pointer cast
+    |
+    = note: this is on thread `unnamed-3`
+note: the current function got called indirectly due to this code
+   --> tests\regression_xthread_small_ring_miri.rs:134:18
+    |
+134 |       let prod_b = thread::spawn(move || {
+    |  __________________^
+135 | |         let _ = bootstrap::ensure();
+136 | |         let mut remote_lease =
+137 | |             HeapRegistry::dbg_claim_lease().expect("producer B HeapRegistry::claim failed");
+...   |
+147 | |         drop(remote_lease);
+148 | |     });
+    | |______^
+
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 119.81s
+
+exit=0

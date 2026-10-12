@@ -1,0 +1,33 @@
+# R19 re-verification receipt (mutant)
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e plus a temporary source mutant (reverted afterwards): in AbandonGuard::drop (src/global/tls_heap.rs) the mark_local_torn() call was moved from before the process-exit check to after the final drop(lease)
+# command: cargo test --locked -j3 --features 'production internals' --test r11_ph4b_teardown_ordering_pinned
+# private machine paths are replaced by <path>
+# started: 2026-10-12T12:10:08+02:00
+
+applied (mutant described above)
+ src/global/tls_heap.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.51s
+     Running tests\r11_ph4b_teardown_ordering_pinned.rs (target\debug\deps\r11_ph4b_teardown_ordering_pinned-1d0c6f4c3bab55ee.exe)
+
+running 2 tests
+test lease_release_cas_is_release_ordered ... ok
+test teardown_stamps_torn_then_trims_then_releases_the_slot ... FAILED
+
+failures:
+
+---- teardown_stamps_torn_then_trims_then_releases_the_slot stdout ----
+
+thread 'teardown_stamps_torn_then_trims_then_releases_the_slot' (54196) panicked at tests\r11_ph4b_teardown_ordering_pinned.rs:73:9:
+the process-exit early release must follow mark_local_torn() and              precede trim_for_recycle() without touching the core
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    teardown_stamps_torn_then_trims_then_releases_the_slot
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test r11_ph4b_teardown_ordering_pinned`
+MUTANT_EXIT=101

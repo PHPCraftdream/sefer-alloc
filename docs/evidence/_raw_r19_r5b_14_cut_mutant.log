@@ -1,0 +1,39 @@
+# R19 re-verification receipt (mutant)
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e plus a temporary source mutant (reverted afterwards): in src/alloc_core/segment/remote_bitmap/bitmap_scan.rs the three swap(0, Ordering::AcqRel) calls were changed to Ordering::Relaxed
+# command: cargo test --locked -j3 --features 'production' --test r11_ph5b_c5_sidecar_ordering_pinned
+# private machine paths are replaced by <path>
+# started: 2026-10-12T12:10:32+02:00
+
+applied (mutant described above)
+ src/alloc_core/segment/remote_bitmap/bitmap_scan.rs | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.57s
+     Running tests\r11_ph5b_c5_sidecar_ordering_pinned.rs (target\debug\deps\r11_ph5b_c5_sidecar_ordering_pinned-cda5e8cb4c86e743.exe)
+
+running 6 tests
+test mixed_leaf_published_after_its_initialization ... ok
+test owner_cut_is_acqrel_swap ... FAILED
+test owner_issue_class_store_is_release ... ok
+test producer_publish_is_acqrel_fetch_or ... ok
+test class_leaves_ordering_inventory_is_exact ... ok
+test production_small_sidecar_uses_class_leaves ... ok
+
+failures:
+
+---- owner_cut_is_acqrel_swap stdout ----
+
+thread 'owner_cut_is_acqrel_swap' (44948) panicked at tests\r11_ph5b_c5_sidecar_ordering_pinned.rs:202:5:
+the owner's word cut must be an AcqRel swap(0) (pairs with publish)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    owner_cut_is_acqrel_swap
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+error: test failed, to rerun pass `--test r11_ph5b_c5_sidecar_ordering_pinned`
+MUTANT_EXIT=101

@@ -1,0 +1,44 @@
+# R19 re-verification receipt
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e (working tree differs from HEAD only by uncommitted docs)
+# command: node scripts/loom.mjs loom_sidecar_bitmap loom_terminal_large loom_terminal_owner_drain
+# private machine paths are replaced by <path>
+# started: 2026-10-12T11:22:13+02:00
+
+[loom] tests: loom_sidecar_bitmap, loom_terminal_large, loom_terminal_owner_drain
+
+[loom] --features alloc-core,alloc-xthread,tagged-index-stack/loom: 3 test(s) selected — loom_sidecar_bitmap, loom_terminal_large, loom_terminal_owner_drain
+
+
+[loom] --features alloc-core,alloc-xthread,tagged-index-stack/loom: loom_sidecar_bitmap, loom_terminal_large, loom_terminal_owner_drain
+   Compiling once-ptr-cell v0.1.0 (<path>
+   Compiling size-classes v0.1.0 (<path>
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `release` profile [optimized] target(s) in 2m 26s
+     Running tests\loom_sidecar_bitmap.rs (target\release\deps\loom_sidecar_bitmap-f28d41bc007a0f3e.exe)
+
+running 3 tests
+test loom_sidecar_paused_producer_and_reused_bit ... ok
+test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok
+test loom_sidecar_class_publication_and_two_producers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\loom_terminal_large.rs (target\release\deps\loom_terminal_large-aa7e313249143a18.exe)
+
+running 2 tests
+test owner_cache_or_release_is_exclusive ... ok
+test producer_owner_cut_and_duplicate_admission ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+     Running tests\loom_terminal_owner_drain.rs (target\release\deps\loom_terminal_owner_drain-d120a54842617da8.exe)
+
+running 2 tests
+test negative_producer_retirement_allows_premature_release - should panic ... ok
+test unpublished_and_detached_instances_hold_the_reservation_credit ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+
+[loom --features alloc-core,alloc-xthread,tagged-index-stack/loom] PASS
+exit=0

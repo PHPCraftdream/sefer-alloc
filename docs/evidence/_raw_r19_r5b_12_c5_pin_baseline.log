@@ -1,0 +1,24 @@
+# R19 re-verification receipt
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e (working tree differs from HEAD only by uncommitted docs)
+# command: cargo test --locked -j3 --features production --test r11_ph5b_c5_sidecar_ordering_pinned
+# private machine paths are replaced by <path>
+# started: 2026-10-12T12:05:49+02:00
+
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 01s
+     Running tests\r11_ph5b_c5_sidecar_ordering_pinned.rs (target\debug\deps\r11_ph5b_c5_sidecar_ordering_pinned-cda5e8cb4c86e743.exe)
+
+running 6 tests
+test mixed_leaf_published_after_its_initialization ... ok
+test owner_cut_is_acqrel_swap ... ok
+test class_leaves_ordering_inventory_is_exact ... ok
+test owner_issue_class_store_is_release ... ok
+test producer_publish_is_acqrel_fetch_or ... ok
+test production_small_sidecar_uses_class_leaves ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s
+
+exit=0

@@ -1,0 +1,21 @@
+# R19 re-verification receipt
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e (working tree differs from HEAD only by uncommitted docs)
+# command: MIRIFLAGS='-Zmiri-strict-provenance -Zmiri-disable-isolation' cargo +nightly miri test --locked --features 'alloc-core alloc-decommit internals' --test decommit_miri_cycle
+# private machine paths are replaced by <path>
+# started: 2026-10-12T11:24:42+02:00
+
+Preparing a sysroot for Miri (target: x86_64-pc-windows-msvc)... done
+WARNING: Ignoring `RUSTC_WRAPPER` environment variable, Miri does not support wrapping.
+   Compiling once-ptr-cell v0.1.0 (<path>
+   Compiling size-classes v0.1.0 (<path>
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.04s
+     Running tests\decommit_miri_cycle.rs (target\miri\x86_64-pc-windows-msvc\debug\deps\decommit_miri_cycle-8812551a11cce1aa.exe)
+
+running 2 tests
+test dbg_is_decommitted_for_sound_under_provenance_less_input ... ok
+test decommit_recommit_cycle_bookkeeping ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 533.69s
+
+exit=0

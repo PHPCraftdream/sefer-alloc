@@ -1,0 +1,46 @@
+# R19 re-verification receipt (mutant)
+# commit 3f44fa0f43d2498542d109e80ef66c5e1bb0cf83 tree cee6f61d17977ab99addf1e3dbbb87c342bd099e plus a temporary source mutant (reverted afterwards): in src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs the producer publish fetch_or(1 << (granule % 64), Ordering::AcqRel) was changed to Ordering::Relaxed
+# command: cargo test --locked -j3 --features 'production' --test r11_ph5b_c5_sidecar_ordering_pinned
+# private machine paths are replaced by <path>
+# started: 2026-10-12T12:10:20+02:00
+
+applied (mutant described above)
+ src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+   Compiling sefer-alloc v0.3.0 (<path>
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.76s
+     Running tests\r11_ph5b_c5_sidecar_ordering_pinned.rs (target\debug\deps\r11_ph5b_c5_sidecar_ordering_pinned-cda5e8cb4c86e743.exe)
+
+running 6 tests
+test owner_cut_is_acqrel_swap ... ok
+test owner_issue_class_store_is_release ... ok
+test producer_publish_is_acqrel_fetch_or ... FAILED
+test class_leaves_ordering_inventory_is_exact ... ok
+test mixed_leaf_published_after_its_initialization ... ok
+test production_small_sidecar_uses_class_leaves ... ok
+
+failures:
+
+---- producer_publish_is_acqrel_fetch_or stdout ----
+
+thread 'producer_publish_is_acqrel_fetch_or' (66384) panicked at tests\r11_ph5b_c5_sidecar_ordering_pinned.rs:184:5:
+producer publication must be an AcqRel fetch_or on the pending word:
+fn publish(&self, offset: u32) -> bool {
+        let Some(granule) = Self::granule(offset) else {
+            return false;
+        };
+        if self.classes.encoded(granule) == 0 {
+            return false;
+        }
+        self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Relaxed);
+        true
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    producer_publish_is_acqrel_fetch_or
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+error: test failed, to rerun pass `--test r11_ph5b_c5_sidecar_ordering_pinned`
+MUTANT_EXIT=101
