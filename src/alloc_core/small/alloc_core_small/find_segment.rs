@@ -130,7 +130,8 @@ impl AllocCore {
 
     /// Consume one canonical Small root, dropping every cut and route borrow
     /// before reclaim finalization can release its reservation. Called only
-    /// on actual free-list/refill misses, never on a magazine hit.
+    /// on actual free-list/refill misses, never on a magazine hit. Discovery
+    /// uses summary; strict and bounded maintenance retain their fixed scans.
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline]
     pub(super) fn drain_segment_sidecar(&mut self, base: *mut u8) -> SidecarDrainOutcome {
@@ -146,7 +147,7 @@ impl AllocCore {
             let start_word = Self::sidecar_payload_start_word(base).min(end_word);
             let Some(mut scan) = self
                 .table
-                .scan_small_route_from(index, base, high_water, start_word)
+                .scan_small_route_from(index, base, high_water, start_word, true)
             else {
                 std::process::abort();
             };
@@ -174,7 +175,10 @@ impl AllocCore {
             }
             #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
             crate::alloc_core::remote_bitmap::Prf01SidecarOracle::completed(
-                visited, nonempty, reclaimed,
+                visited,
+                nonempty,
+                reclaimed,
+                scan.summary_words_visited(),
             );
         }
         if changed_classes == 0 {

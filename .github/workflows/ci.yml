@@ -3021,6 +3021,8 @@ jobs:
         run: cargo miri test --locked --features "std" --test regression_w3_stats_aliasing_miri
       - name: class_leaves_publication_miri
         run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
+      - name: r20_prf01_summary_transition_miri
+        run: cargo miri test --locked --features "alloc-core" --test r20_prf01_summary_transition_miri
 
   miri-alloc-core:
     # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,

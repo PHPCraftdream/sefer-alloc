@@ -349,10 +349,16 @@ impl SegmentTable {
         base: *mut u8,
         high_water: usize,
         word: usize,
+        // true: discovery summary-guided scan (clears summary before cuts);
+        // false: fixed full pending scan (strict trim, maintenance, resume).
+        summarized: bool,
     ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
-        self.routes
-            .as_ref()?
-            .scan_small_from(index, base, high_water, word)
+        let routes = self.routes.as_ref()?;
+        if summarized {
+            routes.scan_small_summarized_from(index, base, high_water, word)
+        } else {
+            routes.scan_small_from(index, base, high_water, word)
+        }
     }
 
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]

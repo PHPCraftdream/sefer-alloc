@@ -25,9 +25,12 @@ mod tests {
     use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Barrier};
 
-    fn backing() -> (Vec<AtomicU64>, Vec<AtomicU8>) {
+    fn backing() -> (Vec<AtomicU64>, Vec<AtomicU64>, Vec<AtomicU8>) {
         (
             (0..SidecarBitmap::WORDS)
+                .map(|_| AtomicU64::new(0))
+                .collect(),
+            (0..SidecarBitmap::SUMMARY_WORDS)
                 .map(|_| AtomicU64::new(0))
                 .collect(),
             (0..SidecarBitmap::GRANULES)
@@ -38,8 +41,8 @@ mod tests {
 
     #[test]
     fn r18_concurrent_publications_survive_empty_cuts_and_resume() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, summary, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
         assert!(map.issue(1024, 3));
         assert!(map.issue(1040, 4));
         let mut first = map.scan_from(2048, 1).unwrap();
@@ -95,8 +98,8 @@ mod tests {
     fn r18_candidate_skips_empty_exchange_and_drains_exact_record() {
         use super::remote_bitmap::BitmapScan;
 
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, summary, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
         BitmapScan::measure_scans(true, false);
         let mut empty = map.scan(1024).unwrap();
         assert!(empty.next_cut().unwrap().is_empty());
@@ -124,8 +127,8 @@ mod tests {
 
     #[test]
     fn r6_geometry_and_fixed_high_water() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, summary, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
         assert_eq!(SidecarBitmap::WORDS, 4096);
         assert_eq!(SidecarBitmap::GRANULES, 262_144);
         assert!(!map.issue(1, 0));
@@ -173,8 +176,8 @@ mod tests {
 
     #[test]
     fn r6_paused_before_and_after_terminal_publish() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, summary, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
         assert!(map.issue(16, 3));
         let mut before = map.scan(1024).unwrap();
         assert!(before.next_cut().unwrap().is_empty());
@@ -229,8 +232,8 @@ mod tests {
 
     #[test]
     fn r6_reuse_bit_and_republish_class() {
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, summary, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
         let offset = 64;
         assert!(map.issue(offset, 2));
         assert!(map.publish(offset));
@@ -249,8 +252,8 @@ mod tests {
         const CHILD: &str = "SEFER_R6_SIDECAR_INVALID_CLASS_CHILD";
         if let Some(mode) = std::env::var_os(CHILD) {
             let mode = mode.to_string_lossy().into_owned();
-            let (words, classes) = backing();
-            let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+            let (words, summary, classes) = backing();
+            let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
             match mode.as_str() {
                 "pre:255" => classes[1].store(u8::MAX, Ordering::Relaxed),
                 // The class is cleared after a valid publication: the owner's own
@@ -272,8 +275,8 @@ mod tests {
 
         // A zero class at publication time is dropped by the producer (R12-01):
         // nothing reaches the owner. In-process: it needs no child.
-        let (words, classes) = backing();
-        let map = SidecarBitmap::from_initialized(&words, &classes).unwrap();
+        let (words, summary, classes) = backing();
+        let map = SidecarBitmap::from_initialized(&words, &summary, &classes).unwrap();
         classes[1].store(0, Ordering::Relaxed);
         assert!(!map.publish(16), "zero class must be dropped at publish");
 

@@ -41,6 +41,7 @@ const FEATURES = {
   loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
   loom_sidecar_bitmap: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_sidecar_summary: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_r20_prf01_summary_transition: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_large: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_owner_drain: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_registry_free_slots: 'alloc-global,alloc-xthread,tagged-index-stack/loom',

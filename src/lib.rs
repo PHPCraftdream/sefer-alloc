@@ -255,8 +255,14 @@
 //                             the shard lock.
 //                             (under `alloc-global`)
 //      * `registry::segment_route::small_sidecar` — in-place construction of
-//                             pending atomics and the owner class map.
-//                             (under `alloc-global`)
+//                             pending atomics, discovery summary atomics
+//                             and the owner class map.
+//                             (under `alloc-global`; `registry::segment_
+//                             route::pin`, a tier-2 item-level-allow file,
+//                             owns the paused publication capability: owned
+//                             post-LP notification with a pre-LP sidecar
+//                             atomic address; resume writes only the sidecar.
+//                             Under `internals bench-internals`)
 //      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes` —
 //                             genuine System mixed-leaf pointers, initialization,
 //                             and exact deallocation after the last route pin.

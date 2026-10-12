@@ -150,7 +150,7 @@ fn production_small_sidecar_uses_class_leaves() {
     ));
     let body = fn_body(&text, "bitmap");
     assert_eq!(
-        body.matches("SidecarBitmap::from_leaves(&self.pending, &self.classes)")
+        body.matches("SidecarBitmap::from_leaves(&self.pending, &self.summary, &self.classes)")
             .count(),
         1,
         "production bitmap must borrow ClassLeaves:\n{body}"
@@ -180,7 +180,7 @@ fn production_small_sidecar_uses_class_leaves() {
 
 #[test]
 fn producer_publish_is_acqrel_fetch_or() {
-    let body = fn_body(&bitmap_src(), "publish");
+    let body = fn_body(&bitmap_src(), "publish_pending_half");
     assert!(
         body.contains(".fetch_or(1 << (granule % 64), Ordering::AcqRel)"),
         "producer publication must be an AcqRel fetch_or on the pending word:\n{body}"
