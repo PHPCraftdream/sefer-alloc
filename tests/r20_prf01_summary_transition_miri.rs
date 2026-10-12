@@ -15,6 +15,8 @@ mod alloc_core {
     }
 }
 
+// Only SidecarBitmap/ClassLeaves are exercised; the included siblings are partly unused.
+#[allow(dead_code)]
 #[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 
