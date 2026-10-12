@@ -120,6 +120,8 @@ Item 199 owns only API-05's public feature-sensitive SegmentLayout geometry
 contract. Existing statuses/triggers are unchanged; no new closure or runtime
 verification is claimed. Evidence: `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md`, R18 appendix.
 
+**Round 19 close-out (2026-10-12).** Items 107, 188, 190 and 195 are FIXED IN TREE and stay open as `[T]` cards until a CI run after the next push confirms them (nothing was pushed): the generated NUMA Clippy row, the ClassLeaves ordering pin plus real-type Miri target, the Miri target manifest with its wiring verifier, and the powerset keep-going / MSRV each-feature sweeps. Item 189 is PARTIAL (the source-scope mechanism landed, no row is migrated yet). Items 185, 200 and 204 are PARTIAL and item 205 is local-complete with landing CI pending; items 201 and 202 are recorded decisions, not fixes. No item was moved to `RESOLVED.md` this round, so lookup rows and card counts are unchanged. Perf-side outcomes of PRF-01..04 are in `docs/perf/OPEN_ITEMS.md`. Evidence: `docs/perf/round-manifests/R19_MANIFEST.md`.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;

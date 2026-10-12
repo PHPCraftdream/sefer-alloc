@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Round 19: owner-decision work, performance gates PRF-01..04 and verification infrastructure (2026-10-11 to 2026-10-12)
+
+Runtime improvements this round: 1 in builds with `alloc-global` + `fastbin`
+(PRF-02, deterministic Ir only; no wall-clock claim). The other three
+performance candidates (PRF-01, PRF-03, PRF-04) were gated against frozen
+criteria and rejected; none is merged. `production` feature composition,
+dependency versions and `Cargo.lock` are unchanged.
+
+- [performance] PRF-02: own-thread free and realloc resolve the segment root
+  once through an `OwnedBlock { root, block }` witness. Deterministic iai on
+  `HeapCore` (two identical repeats per arm): production push 69 -> 52 Ir
+  (-17 of 69), churn 84 -> 70 Ir per pair (-14 of 84); mimalloc control delta 0.
+  Wall-clock was not measured. Report `docs/perf/R19_PRF02R_REGATE.md`.
+- [correctness fix] Large-cache decay no longer carries debt across a batch
+  that already returned the cache to headroom, and a full trim restarts the
+  timer and stride counter (`fix(perf)`, no speed claim).
+- [correctness fix] An own-thread free or realloc of an interior pointer into a
+  Large segment is rejected before it can claim the segment's live credit
+  (`fix(perf)`; Ir not measured).
+- [correctness fix] Under `hardened`, a rejected Small free-list link is a fatal
+  abort with a one-line diagnostic instead of a pseudo-OOM; `Err(())` remains
+  only for class-spill OOM. Production does not validate free-list links.
+- [correctness fix] Windows: a late alloc/free in an exiting thread's TLS
+  destructors no longer waits forever on a route-directory or fallback lock
+  held by a thread killed by `ExitProcess`; a subprocess oracle with a timeout
+  and a `windows-latest` CI row cover it. Other targets are unchanged.
+- [correctness fix] Windows: the shutdown query is resolved once and cached.
+  It used to look up `RtlDllShutdownInProgress` on every probe, and the lock-wait
+  loops probe repeatedly; a waiter killed by `ExitProcess` inside that lookup made
+  Windows skip the detach callbacks, so TLS destructors did not run (about 5% of
+  `con01_exit_stranded_lock` runs, 35% in the new `hammer` probe mode on the old
+  code, 0 of 600 after the fix) (`fix(global)`).
+- [test] Three closeout-gate reds were fixed in place: the 1000-line file cap
+  (`segment_table_impl.rs`, a pure move of the bench-only route-slot observers),
+  the CON-01 lock-count oracle under `exact-object-proto`, and the PRF-02R
+  realloc-tail test, now gated on the real promotion predicate.
+- [process] The evidence registry's nine rows made stale by R19's own test edits
+  (Loom R0-21, Miri R4c-05..08, teardown pin R4b-11, C5 pin R5b-12..14) were re-run
+  and re-pinned with committed raw logs; each now has a `source_scope.csv` entry.
+  The judge takes `--source-scope` so selftest fixtures ignore the repository scope
+  file (selftest 107/107).
+- [measurement] PRF-01 sidecar summary C': benefit cells pass (multiseg B/A
+  0.113, seg_cycle B/A 0.090, growth16 slope 2.144) but every hot control moves
+  +569 Ir against T = 10 and the producer pays +9.03 Ir per remote free against
+  <= +6: rejected; the frozen judge's own verdict is INCOMPLETE (native p50 = 0
+  from timer granularity). `docs/perf/R19_PRF01_C_PRIME_GATE_RUN01.md`.
+- [measurement] PRF-03 retained Large route (two candidates) and PRF-04
+  registry claim wave: rejected under the frozen criteria; HUMAN questions about
+  new protocols stay open in `docs/perf/OPEN_ITEMS.md` (items 86, 87).
+- [CI] Miri runs from one target manifest with a wiring check; Kani transition
+  models for Large words and the saturation hint; a Loom model of the sidecar
+  summary word; RouteSlots array bound test; weekly feature sweeps keep running
+  and summarize failures; evidence-registry rows are invalidated by source
+  scope.
+
 ### Root allocator `src/` review round 18 remediation (2026-10-09)
 
 Runtime improvements this round: 0 in the production default. R18 repairs an
