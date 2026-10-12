@@ -1,0 +1,8 @@
+workload,large_requests,hits,misses,changed_payload_hits,hit_pct_of_requests,changed_pct_of_hits,changed_pct_of_requests
+bench_table_replay_model,0,0,0,0,n/a,n/a,n/a
+growing_vec_u8,360,354,6,0,98.33,0.00,0.00
+file_read_whole,600,600,0,0,100.00,0.00,0.00
+serialize_reuse,400,400,0,0,100.00,0.00,0.00
+fixed_size_pool,800,794,6,0,99.25,0.00,0.00
+alternating_align,120,120,0,79,100.00,65.83,65.83
+TOTAL,2282,2270,12,80,99.47,3.52,3.51
