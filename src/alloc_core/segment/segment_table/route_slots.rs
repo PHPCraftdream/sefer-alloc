@@ -231,6 +231,21 @@ impl RouteSlots {
         route.claim_large_pending().is_some()
     }
 
+    #[inline(always)]
+    pub(super) fn claim_large_owner_live(&self, index: usize, base: *mut u8) -> bool {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-exclusive access to an initialized slot with index < cap.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route.claim_large_owner_live().is_ok()
+    }
+
     pub(super) fn get(&self, index: usize) -> &RouteRegistration<'static> {
         if index >= self.cap {
             std::process::abort();

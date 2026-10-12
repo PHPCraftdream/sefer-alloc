@@ -328,7 +328,7 @@ impl AllocCore {
     /// cases; callers only ever call this on a slot just proven empty by
     /// `large_cache_find_free_slot`).
     #[cfg(feature = "alloc-decommit")]
-    #[inline]
+    #[inline(always)]
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
                           // boundary when `large-cache-extended` is on. Sound: `self
                           // .large_cache_extension` was produced only by

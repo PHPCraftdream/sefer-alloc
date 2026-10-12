@@ -174,7 +174,7 @@ pub(in crate::alloc_core) struct LargeCacheDecayConfig {
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) struct CachedLarge {
     /// Start of the original OS reservation.
-    pub(in crate::alloc_core) reservation: *mut u8,
+    pub(in crate::alloc_core) reservation: core::ptr::NonNull<u8>,
     /// Total size of the OS reservation.
     pub(in crate::alloc_core) reservation_len: usize,
     /// Canonical usable root of the reservation.
@@ -214,6 +214,10 @@ impl CachedLarge {
         seq: u64,
         route: crate::alloc_core::segment_table::ParkedRoute,
     ) -> Self {
+        // Successful OS reservations stamp their original NonNull pointer in
+        // the header. Preserve that provenance and reject corrupted null credit.
+        let reservation =
+            core::ptr::NonNull::new(reservation).unwrap_or_else(|| std::process::abort());
         Self {
             reservation,
             reservation_len,
@@ -225,7 +229,7 @@ impl CachedLarge {
         }
     }
     pub(in crate::alloc_core) fn begin_route_reuse(&mut self, payload: *mut u8) -> Option<u64> {
-        self.route.discard_if_payload_changed(payload);
+        self.route.discard_if_identity_changed(self.base, payload);
         self.route.begin_reuse()
     }
     pub(in crate::alloc_core) fn register_reuse(
@@ -273,7 +277,7 @@ impl AllocCore {
             debug_assertions
         ))]
         Self::observe_cached_large_release_boundary();
-        crate::alloc_core::os::release_segment(cached.reservation, cached.reservation_len);
+        crate::alloc_core::os::release_segment(cached.reservation.as_ptr(), cached.reservation_len);
     }
 }
 

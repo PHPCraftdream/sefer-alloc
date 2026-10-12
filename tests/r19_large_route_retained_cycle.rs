@@ -126,28 +126,66 @@ fn eviction_boundary_observes_unlinked_large_route() {
     let heap = lease.core();
     let layout = Layout::from_size_align(4 * 1024 * 1024, 16).unwrap();
     let before = RouteDirectory::global().live_route_census_for_test().2;
-    let pointers: Vec<_> = (0..9).map(|_| heap.alloc(layout)).collect();
+    // The extension's default byte budget can bind before its 40-slot cap.
+    // Use the real admission boundary, asserting every deposit before eviction.
+    let max_slots = heap.dbg_large_cache_slot_sizes().len();
+    #[cfg(feature = "large-cache-extended")]
+    let max_slots = max_slots + heap.dbg_large_cache_extended_slot_sizes().len();
+    let pointers: Vec<_> = (0..=max_slots).map(|_| heap.alloc(layout)).collect();
     assert!(pointers.iter().all(|ptr| !ptr.is_null()));
-    for &ptr in &pointers[..8] {
-        // SAFETY: distinct unique live instances with exact layouts.
-        unsafe { heap.dealloc(ptr, layout) };
-    }
-    assert_eq!(
-        RouteDirectory::global().live_route_census_for_test().2,
-        before + 9
-    );
     let releases = AllocCore::dbg_cached_large_release_boundary().0;
-    // SAFETY: ninth unique instance; full base cache forces FIFO eviction.
-    unsafe { heap.dealloc(pointers[8], layout) };
-    let boundary = AllocCore::dbg_cached_large_release_boundary();
-    assert_eq!(boundary.0, releases + 1);
-    assert_eq!(
-        boundary.1,
-        before + 8,
-        "victim absent JUST BEFORE OS release"
-    );
-    assert_eq!(
-        RouteDirectory::global().live_route_census_for_test().2,
-        before + 8
+    let mut evicted = false;
+    for (index, &ptr) in pointers.iter().enumerate() {
+        let used = heap.dbg_large_cache_used();
+        // SAFETY: distinct unique live instance with its exact layout.
+        unsafe { heap.dealloc(ptr, layout) };
+        let boundary = AllocCore::dbg_cached_large_release_boundary();
+        if !evicted && boundary.0 == releases {
+            assert!(heap.dbg_large_cache_used() > used);
+            assert_eq!(
+                RouteDirectory::global().live_route_census_for_test().2,
+                before + pointers.len()
+            );
+            continue;
+        }
+        if !evicted {
+            assert!(index >= heap.dbg_large_cache_slot_sizes().len());
+            let occupied = heap.dbg_large_cache_slot_sizes().iter().flatten().count();
+            #[cfg(feature = "large-cache-extended")]
+            let occupied = occupied
+                + heap
+                    .dbg_large_cache_extended_slot_sizes()
+                    .iter()
+                    .flatten()
+                    .count();
+            assert_eq!(occupied, index);
+            assert!(
+                occupied == heap.dbg_large_cache_total_slots()
+                    || heap.dbg_large_cache_budget().is_some_and(|budget| {
+                        let unit = heap
+                            .dbg_large_cache_slot_sizes()
+                            .into_iter()
+                            .flatten()
+                            .next()
+                            .unwrap();
+                        used + unit > budget
+                    })
+            );
+            assert_eq!(boundary.0, releases + 1);
+            assert_eq!(
+                boundary.1,
+                before + pointers.len() - 1,
+                "victim absent JUST BEFORE OS release"
+            );
+            assert_eq!(
+                RouteDirectory::global().live_route_census_for_test().2,
+                before + pointers.len() - 1
+            );
+            evicted = true;
+        }
+    }
+    assert!(
+        evicted,
+        "one more object than the actual slot cap must evict"
     );
 }

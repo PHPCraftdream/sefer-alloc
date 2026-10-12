@@ -370,6 +370,21 @@ impl AllocCore {
         self.large_cache_hits_sink = Some(counter);
     }
 
+    /// Actual private cache layouts, exposed only for layout regression tests.
+    #[cfg(all(
+        feature = "bench-internals",
+        feature = "alloc-decommit",
+        feature = "internals"
+    ))]
+    #[doc(hidden)]
+    pub const fn dbg_large_cache_layout() -> (usize, usize, usize) {
+        (
+            core::mem::size_of::<crate::alloc_core::segment_table::ParkedRoute>(),
+            core::mem::size_of::<crate::alloc_core::alloc_core::CachedLarge>(),
+            core::mem::size_of::<Option<crate::alloc_core::alloc_core::CachedLarge>>(),
+        )
+    }
+
     /// TEST-ONLY (Phase 1 large-cache budget): return the `usable_size` of
     /// each large-cache slot as an array of `Option<usize>` (None = empty slot,
     /// Some(sz) = occupied with that many bytes). Lets tests verify the

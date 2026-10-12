@@ -388,7 +388,7 @@ impl AllocCore {
                         "F12: large-cache slot's in-memory reserved_capacity diverged from slot.reserved_capacity"
                     );
                     debug_assert_eq!(
-                        pre.reservation, slot.reservation,
+                        pre.reservation, slot.reservation.as_ptr(),
                         "F12: large-cache slot's in-memory reservation diverged from slot.reservation"
                     );
                     debug_assert_eq!(

@@ -11,6 +11,8 @@
 //! reclaimed on the last pin. Pins do not keep reservation memory alive: an independent
 //! owner ledger must do that until every unpublished free is accounted for.
 
+mod global_route_owner;
+pub(crate) use global_route_owner::GlobalRouteOwner;
 mod directory;
 mod error;
 mod kind;

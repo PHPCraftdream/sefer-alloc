@@ -402,10 +402,31 @@ impl SegmentTable {
         kind: SegmentKind,
         payload: *mut u8,
     ) -> Option<u32> {
-        self.register_payload_parked(base, len, kind, payload, &mut super::ParkedRoute::none())
+        self.register_payload_impl::<false>(
+            base,
+            len,
+            kind,
+            payload,
+            &mut super::ParkedRoute::none(),
+        )
     }
 
     pub(crate) fn register_payload_parked(
+        &mut self,
+        base: *mut u8,
+        len: usize,
+        kind: SegmentKind,
+        payload: *mut u8,
+        parked: &mut super::ParkedRoute,
+    ) -> Option<u32> {
+        if parked.is_present() {
+            self.register_payload_impl::<true>(base, len, kind, payload, parked)
+        } else {
+            self.register_payload(base, len, kind, payload)
+        }
+    }
+
+    fn register_payload_impl<const RETAINED: bool>(
         &mut self,
         base: *mut u8,
         len: usize,
@@ -426,8 +447,12 @@ impl SegmentTable {
         #[cfg(feature = "alloc-global")]
         let route = if let Some(routes) = &mut self.routes {
             let needed = self.count as usize + usize::from(!has_free);
-            Some(if let Some(route) = parked.take_matching(base, payload) {
-                route
+            Some(if RETAINED {
+                if let Some(route) = parked.take_matching(base, payload) {
+                    route
+                } else {
+                    routes.prepare(needed, base, len, kind, payload)?
+                }
             } else {
                 routes.prepare(needed, base, len, kind, payload)?
             })

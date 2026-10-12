@@ -156,6 +156,20 @@ impl EntryHandle {
         }
     }
 
+    pub(super) fn into_owner_pointer(self) -> ptr::NonNull<()> {
+        let this = mem::ManuallyDrop::new(self);
+        ptr::NonNull::new(this.ptr().cast()).unwrap_or_else(|| std::process::abort())
+    }
+
+    /// # Safety
+    /// Pointer must carry one live Entry count transferred by into_owner_pointer;
+    /// the caller must suppress Drop for borrowed views or consume the count once.
+    pub(super) unsafe fn from_owner_pointer(pointer: ptr::NonNull<()>) -> Self {
+        Self {
+            ptr: AtomicPtr::new(pointer.as_ptr().cast()),
+        }
+    }
+
     pub(super) fn key(&self) -> usize {
         self.entry().key
     }

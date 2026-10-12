@@ -47,18 +47,15 @@ impl SegmentTable {
     )]
     pub(crate) fn unregister(&mut self, base: *mut u8) {
         // The returned (empty) parked route drops at the end of the statement.
-        self.unregister_impl(base, false);
+        self.unregister_impl::<false>(base);
     }
 
+    #[inline(always)]
     pub(crate) fn claim_large_owner_live(&self, base: *mut u8) -> bool {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &self.routes {
             let id = SegmentHeader::segment_id_at(base) as usize;
-            let route = routes.get(id);
-            if route.root() != base {
-                std::process::abort();
-            }
-            return route.claim_large_owner_live().is_ok();
+            return routes.claim_large_owner_live(id, base);
         }
         #[cfg(not(feature = "alloc-global"))]
         let _ = base;
@@ -83,12 +80,10 @@ impl SegmentTable {
         allow(dead_code)
     )]
     pub(crate) fn unregister_parking(&mut self, base: *mut u8) -> super::ParkedRoute {
-        self.unregister_impl(base, true)
+        self.unregister_impl::<true>(base)
     }
 
-    fn unregister_impl(&mut self, base: *mut u8, retain_route: bool) -> super::ParkedRoute {
-        #[cfg(not(feature = "alloc-global"))]
-        let _ = retain_route;
+    fn unregister_impl<const RETAIN_ROUTE: bool>(&mut self, base: *mut u8) -> super::ParkedRoute {
         let id = crate::alloc_core::segment_header::SegmentHeader::segment_id_at(base);
         let slot_id = if self.base_at(id as usize) == base {
             id as usize
@@ -115,7 +110,7 @@ impl SegmentTable {
         );
         #[cfg(feature = "alloc-global")]
         let parked = if let Some(routes) = &mut self.routes {
-            if retain_route {
+            if RETAIN_ROUTE {
                 super::ParkedRoute::new(routes.take(slot_id))
             } else {
                 routes.remove(slot_id);

@@ -14,6 +14,36 @@ pub struct RouteRegistration<'a> {
 }
 
 impl RouteRegistration<'_> {
+    pub(crate) fn into_global_owner(self) -> super::GlobalRouteOwner {
+        if !core::ptr::eq(self.directory, RouteDirectory::global()) {
+            std::process::abort();
+        }
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: this suppresses registration Drop; the entry count is moved
+        // once into the global owner and neither cloned nor decremented.
+        #[allow(unsafe_code)]
+        let entry = unsafe { ManuallyDrop::take(&mut this.entry) };
+        // SAFETY: entry came from this global registration and transfers its
+        // live owner count without any decrement or pointer reconstruction.
+        #[allow(unsafe_code)]
+        unsafe {
+            super::GlobalRouteOwner::new(entry.into_owner_pointer())
+        }
+    }
+
+    /// # Safety
+    /// pointer owns the live count transferred by into_global_owner. Borrowed
+    /// views must suppress Drop; ownership may be reconstructed exactly once.
+    #[allow(unsafe_code)]
+    pub(super) unsafe fn from_global_owner(pointer: core::ptr::NonNull<()>) -> Self {
+        Self {
+            directory: RouteDirectory::global(),
+            // SAFETY: caller supplies the transferred live count.
+            entry: ManuallyDrop::new(unsafe { EntryHandle::from_owner_pointer(pointer) }),
+            owner_only: PhantomData,
+        }
+    }
+
     /// Allocator-origin usable root, never reconstructed from an address key.
     pub fn root(&self) -> *mut u8 {
         self.entry.root()
