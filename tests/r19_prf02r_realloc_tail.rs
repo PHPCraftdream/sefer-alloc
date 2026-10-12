@@ -1,11 +1,12 @@
+// The last cfg term is the predicate of `HeapCore::dbg_promotion_compiled`: the promotion
+// leg exists only there; under --all-features (exact-span-large + numa-aware) it does not.
+// The gate verifier tokenizes the attribute text, so the note stays outside it.
 #![cfg(all(
     feature = "internals",
     feature = "bench-internals",
     feature = "fastbin",
     feature = "alloc-global",
     feature = "medium-classes",
-    // Same predicate as `HeapCore::dbg_promotion_compiled`: the promotion leg exists
-    // only here; under --all-features (exact-span-large + numa-aware) it does not.
     any(
         not(feature = "exact-span-large"),
         all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
