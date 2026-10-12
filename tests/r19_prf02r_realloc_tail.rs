@@ -3,7 +3,13 @@
     feature = "bench-internals",
     feature = "fastbin",
     feature = "alloc-global",
-    feature = "medium-classes"
+    feature = "medium-classes",
+    // Same predicate as `HeapCore::dbg_promotion_compiled`: the promotion leg exists
+    // only here; under --all-features (exact-span-large + numa-aware) it does not.
+    any(
+        not(feature = "exact-span-large"),
+        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+    )
 ))]
 
 use core::alloc::Layout;
