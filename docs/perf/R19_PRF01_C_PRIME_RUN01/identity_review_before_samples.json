@@ -1,0 +1,243 @@
+{
+  "status": "reviewed",
+  "reviewer": "orchestrator (Claude Sonnet 5.5), independent of the rush worker that wrote the runner",
+  "captureSha256": "c7d733b9d97f1a1cd5bd83cd0de7fe582674d728b0744496251b85dc6ec2c726",
+  "reviewedAt": "2026-10-12T04:11:04.106Z",
+  "authorization": "full-group-and-native",
+  "linkage": {
+    "sources": {
+      "A": "a7f18030959f474f734ffe1f0b0e3403e1c2d645ee455032df6b9df3605c1933",
+      "B": "0b56a0a775e1bc263c237b83848f18f73d995527e2f0395e847f04100d04ed1e"
+    },
+    "binaries": {
+      "A-iai": {
+        "sha256": "52d2a6e0f9a39c8d5fbb91746b02fbb6dcf6809abbb3f47e51c5efac05ab90e3",
+        "stat": {
+          "size": "1108688",
+          "mtimeNs": "1791777290754160900",
+          "ctimeNs": "1791777290754160900",
+          "ino": "34621422142889976",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "iai",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": []
+      },
+      "A-oracle": {
+        "sha256": "bbb11e8bf9a3de26b7375aa6b7b56ea78fe45f2096dc08f4b1d99ec45585e854",
+        "stat": {
+          "size": "810768",
+          "mtimeNs": "1791777384441325500",
+          "ctimeNs": "1791777384839436700",
+          "ino": "2814749774692514",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "oracle",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": [
+          "r19_sidecar_summary_oracle"
+        ]
+      },
+      "A-native": {
+        "sha256": "684c698c6b179b61005d05d827fd98ae6a1a8ae1b7b63f870d7cdd7f961ba0d9",
+        "stat": {
+          "size": "698232",
+          "mtimeNs": "1791777457044493500",
+          "ctimeNs": "1791777457111863800",
+          "ino": "8444249308909043",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "native",
+        "features": [
+          "production"
+        ],
+        "cfg": []
+      },
+      "A-twin": {
+        "sha256": "b2f685f622ce8a55bb5004ef454b36b078ff77d832693a1a2623d0eb9d7459e9",
+        "stat": {
+          "size": "705728",
+          "mtimeNs": "1791777525208257700",
+          "ctimeNs": "1791777525272238800",
+          "ino": "21673573212768898",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "twin",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": []
+      },
+      "A-control": {
+        "sha256": "b45b3398519d8e58cc2bb9a1af8da411d30d6f2cadea34ac1027665e79580537",
+        "stat": {
+          "size": "1108304",
+          "mtimeNs": "1791777614910139800",
+          "ctimeNs": "1791777614910639700",
+          "ino": "2814749774691631",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "control",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": [
+          "r19_prf01_producer_control"
+        ]
+      },
+      "B-iai": {
+        "sha256": "1c4b00cc106505ffaa9b567417ed749b663482f8e625f8f80e325a1a3eb8e075",
+        "stat": {
+          "size": "1109864",
+          "mtimeNs": "1791777709063744800",
+          "ctimeNs": "1791777709064079500",
+          "ino": "1407374891145596",
+          "dev": "3097580576"
+        },
+        "sourceArm": "B",
+        "role": "iai",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": []
+      },
+      "B-oracle": {
+        "sha256": "b5d678fa704e8029167c6888fbff2be5b1688828b3c8eb44d0f20a0543d308b6",
+        "stat": {
+          "size": "812880",
+          "mtimeNs": "1791777775688278400",
+          "ctimeNs": "1791777775745418600",
+          "ino": "2251799821283281",
+          "dev": "3097580576"
+        },
+        "sourceArm": "B",
+        "role": "oracle",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": [
+          "r19_sidecar_summary_oracle"
+        ]
+      },
+      "B-native": {
+        "sha256": "c77549141ac296db90c8b053298c259595a441473f3a707b732c6dc97982d10e",
+        "stat": {
+          "size": "698712",
+          "mtimeNs": "1791777837766509400",
+          "ctimeNs": "1791777837827929000",
+          "ino": "1688849867864390",
+          "dev": "3097580576"
+        },
+        "sourceArm": "B",
+        "role": "native",
+        "features": [
+          "production"
+        ],
+        "cfg": []
+      },
+      "B-twin": {
+        "sha256": "39e65e2af358135b62a63dfd3212c50978af0bb64d4b01953f0451eb9b89cc9c",
+        "stat": {
+          "size": "706920",
+          "mtimeNs": "1791777898294823700",
+          "ctimeNs": "1791777898364851100",
+          "ino": "1970324844578028",
+          "dev": "3097580576"
+        },
+        "sourceArm": "B",
+        "role": "twin",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": []
+      },
+      "B-control": {
+        "sha256": "e07fbb186c39e15f9e7ad090fe415ba72182edd7767bebc5b7ad29402d178a67",
+        "stat": {
+          "size": "1109480",
+          "mtimeNs": "1791777999304695000",
+          "ctimeNs": "1791777999305779100",
+          "ino": "2251799821298221",
+          "dev": "3097580576"
+        },
+        "sourceArm": "B",
+        "role": "control",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": [
+          "r19_prf01_producer_control"
+        ]
+      },
+      "C0-iai": {
+        "sha256": "3dd201dd86433e0cd0f31f08e9b5c560af50ea71be268f1afcfb2a5616b2349d",
+        "stat": {
+          "size": "1108688",
+          "mtimeNs": "1791778094907917000",
+          "ctimeNs": "1791778094908726700",
+          "ino": "5348024565122603",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "iai",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": []
+      },
+      "C0-control": {
+        "sha256": "8ea0843bf280a0d2b6e6de6c2d6d5bfc62506f5c4769a8194035da0bc13347bc",
+        "stat": {
+          "size": "1108304",
+          "mtimeNs": "1791778194846519700",
+          "ctimeNs": "1791778194846519700",
+          "ino": "1125899914465261",
+          "dev": "3097580576"
+        },
+        "sourceArm": "A",
+        "role": "control",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "cfg": [
+          "r19_prf01_producer_control"
+        ]
+      }
+    },
+    "environmentSha256": "e0165c073d1887335453454171ab30ed3f4d4e67fc20c83886e61ba5ebeac73e",
+    "inventorySha256": "d13e4deaafcf8e26d786c937fa7e8df1bbcd8b0de095a53c1b8504071130e46a"
+  },
+  "sourceReview": "A is the clean tree of main 0fffe021 (git tree 257b8828), B is the clean tree of 6a8c9d97 (git tree b263cbbb), both recomputed from git; patch and untracked manifests are the empty digests; B differs from A by exactly the PRF-01 candidate commit (src/tests/seam inventory; the src/tests/scripts/ARCHITECTURE diff hash equals that of the previously verified candidate commit 856580e7); the harness digest map is identical in A and B and equal to the runner tree.",
+  "binaryReview": "sha256 of all twelve retained binaries recomputed outside the runner and equal to the capture receipts and linkage; features and cfg per role match the frozen role table; C0 is the A source built under an equal-length alternative path label.",
+  "boundaryReview": "nm shows exactly one definition of producer_free_window and objdump exactly one direct call site in each of A/B/C0 primary and control binaries; every control symbol is a single ret followed by int3 padding, every primary symbol is the full remote-free loop.",
+  "pathReview": "arm roots have identical length; run is to start from the A arm; no inherited compiler/cargo/iai override beyond what the runner rejects."
+}

@@ -1,0 +1,38 @@
+# R19 PRF-01 C-prime run01 manifest (derived by a script, not typed)
+# The retained evidence directory is NOT committed (about 122 MB); it lives at worktrees/prf01-a/target/prf01-cap01 on the measuring host.
+# Hashes below let a reviewer re-verify any retained copy; committed excerpts are in this directory.
+
+arm A commit 0fffe021ae3667b6010f6fe3c1990b7c033c4317 tree 257b8828d9e0574cbdb68ed851eaa13a0a6813df
+arm B commit 6a8c9d973f4e436383ec599dd00c98a6e5e9b7fd tree b263cbbb67e6a5be51567e95de29f57d26a1c1f3
+source identity A a7f18030959f474f734ffe1f0b0e3403e1c2d645ee455032df6b9df3605c1933
+source identity B 0b56a0a775e1bc263c237b83848f18f73d995527e2f0395e847f04100d04ed1e
+capture.json sha256 c7d733b9d97f1a1cd5bd83cd0de7fe582674d728b0744496251b85dc6ec2c726
+identity-review-before-samples.json sha256 9fecc7b1608c95b9adc305ada0fb540e6f878e5c06907c2d2ba686d8cd92ebf6
+run-start.json sha256 ec840b523ca4a9ab767680783b890521519007b7c532fe5192879451aa0df4c2
+bundle.json sha256 d147a386ed8b60a994a43964b1eb5fcf1ba6d0168f7adf950e34a7bd851a2dd6 bytes 2472084
+judge-input sha256 659dbfe7d02c322d2bd9b312528cc03bd4df376698c301532dba535721d7e35b bytes 744980 (committed gzip: input.json.gz, gzip mtime 0)
+tree raw: files 530 bytes 3145420 listing-sha256 1091f60f54404999baf62fb88b6b7a5e828cc4476694e52914400c6497a50b06
+tree audit: files 3200 bytes 21317850 listing-sha256 df077d3dc39d3aec976b032eb2a3e9c22508b16ab56f2566bdd220335f7233a8
+tree logs: files 1428 bytes 15456370 listing-sha256 6f10885dd3d593dd2697807d772c1ce3958b29fb4297a5b2c2e209970649734c
+tree telemetry: files 115 bytes 35672 listing-sha256 a32bfbf576a67ecc31bc13767acd58d774ecdb388b981dca97de1ec2832c445b
+tree binaries: files 12 bytes 11086568 listing-sha256 1fa750e9dc6113eb50d19729b23e612d508a985daa7c9a9f8a4d6366c2d44b1d
+tree boundary: files 22 bytes 543784 listing-sha256 7542536ac2d336d4e31b0fa3b6f6558bfb776f4202267f456a2e3f48a4b17d26
+tree source: files 2806 bytes 51678070 listing-sha256 bb0b520f259a87ae84b75ce06e3b47555b9a7ea3faa1bddb6ca9de88f1a6d332
+
+binary A-control sha256 b45b3398519d8e58cc2bb9a1af8da411d30d6f2cadea34ac1027665e79580537
+binary A-iai sha256 52d2a6e0f9a39c8d5fbb91746b02fbb6dcf6809abbb3f47e51c5efac05ab90e3
+binary A-native sha256 684c698c6b179b61005d05d827fd98ae6a1a8ae1b7b63f870d7cdd7f961ba0d9
+binary A-oracle sha256 bbb11e8bf9a3de26b7375aa6b7b56ea78fe45f2096dc08f4b1d99ec45585e854
+binary A-twin sha256 b2f685f622ce8a55bb5004ef454b36b078ff77d832693a1a2623d0eb9d7459e9
+binary B-control sha256 e07fbb186c39e15f9e7ad090fe415ba72182edd7767bebc5b7ad29402d178a67
+binary B-iai sha256 1c4b00cc106505ffaa9b567417ed749b663482f8e625f8f80e325a1a3eb8e075
+binary B-native sha256 c77549141ac296db90c8b053298c259595a441473f3a707b732c6dc97982d10e
+binary B-oracle sha256 b5d678fa704e8029167c6888fbff2be5b1688828b3c8eb44d0f20a0543d308b6
+binary B-twin sha256 39e65e2af358135b62a63dfd3212c50978af0bb64d4b01953f0451eb9b89cc9c
+binary C0-control sha256 8ea0843bf280a0d2b6e6de6c2d6d5bfc62506f5c4769a8194035da0bc13347bc
+binary C0-iai sha256 3dd201dd86433e0cd0f31f08e9b5c560af50ea71be268f1afcfb2a5616b2349d
+
+# Reproduction of the derived tables (read-only):
+node scripts/r19_prf01_gate_excerpt.mjs --judge-output docs/perf/R19_PRF01_C_PRIME_RUN01/judge_output.json --judge-input <gunzip input.json.gz> --out-dir docs/perf/R19_PRF01_C_PRIME_RUN01
+# Re-aggregation of the retained directory (offline, nothing is launched):
+node scripts/r19_prf01_sidecar_summary_run.mjs --aggregate worktrees/prf01-a/target/prf01-cap01 --review-receipt docs/perf/R19_PRF01_C_PRIME_RUN01/review_receipt.json

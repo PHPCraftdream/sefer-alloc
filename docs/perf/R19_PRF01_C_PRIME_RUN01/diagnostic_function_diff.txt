@@ -1,0 +1,28 @@
+##### small_churn_16b (A1 vs B1; producer: child-thread profile)
+exclusive totals A=56708 B=57277 delta=569
+    512    42180    42692 __memset_avx2_unaligned_erms
+     32        0       32 <sefer_alloc::registry::segment_route::route_scan::RouteScan>::next_cut
+     25       59       84 <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+
+##### churn_256b (A1 vs B1; producer: child-thread profile)
+exclusive totals A=56696 B=57265 delta=569
+    512    42180    42692 __memset_avx2_unaligned_erms
+     32        0       32 <sefer_alloc::registry::segment_route::route_scan::RouteScan>::next_cut
+     25       59       84 <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+
+##### churn_write_256b (A1 vs B1; producer: child-thread profile)
+exclusive totals A=56900 B=57469 delta=569
+    512    42180    42692 __memset_avx2_unaligned_erms
+     32        0       32 <sefer_alloc::registry::segment_route::route_scan::RouteScan>::next_cut
+     25       59       84 <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+
+##### aligned_churn_640b_a128 (A1 vs B1; producer: child-thread profile)
+exclusive totals A=56702 B=57271 delta=569
+    512    42180    42692 __memset_avx2_unaligned_erms
+     32        0       32 <sefer_alloc::registry::segment_route::route_scan::RouteScan>::next_cut
+     25       59       84 <sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::drain_segment_sidecar
+
+##### r19_prf01_joined_producer_same_word (A1 vs B1; producer: child-thread profile)
+exclusive totals A=1515559 B=1552551 delta=36992
+  36992   159744   196736 <sefer_alloc::registry::segment_route::pin::RoutePin>::publish_small
+

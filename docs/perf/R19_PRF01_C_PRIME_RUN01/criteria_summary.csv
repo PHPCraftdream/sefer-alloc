@@ -1,0 +1,12 @@
+criterion,numerator/denominator or operands,value,frozen limit,pass
+multiseg_cold_256k B/A,454636/4026117,0.112922,<= 0.25,true
+seg_cycle_decommit_256k B/A,1118770/12368927,0.090450,<= 0.25,true
+growth16 slope B1 (Ir4n-Ir2n)/(Ir2n-Irn),35782898/16687226,2.144329,<= 2.5,true
+growth16 slope B2 (Ir4n-Ir2n)/(Ir2n-Irn),35782898/16687226,2.144329,<= 2.5,true
+hot control small_churn_16b |B-A|,569 vs T=10 (4 cross pairs),569,<= T,false
+hot control churn_256b |B-A|,569 vs T=10 (4 cross pairs),569,<= T,false
+hot control churn_write_256b |B-A|,569 vs T=10 (4 cross pairs),569,<= T,false
+hot control aligned_churn_640b_a128 |B-A|,569 vs T=10 (4 cross pairs),569,<= T,false
+mimalloc cells delta (13 cells x 4 pairs),52/52 rows with delta 0,0,== 0,true
+producer (IrB-IrA)/4096 remote frees,36992/4096,9.03125,<= 6,false
+size_of SmallSidecar B-A (bytes),42496-41984,512,== 512,true
