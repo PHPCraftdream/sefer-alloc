@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Code structure limits (2026-10-12)
+
+Runtime improvements: 0. A process change only.
+
+- [process] CLAUDE.md now states two structure limits and `npm run check` plus the
+  `check-matrix` CI job enforce them (`scripts/verify-structure-limits.mjs`): at most 7
+  entries per `src/**` and `crates/*/src/**` directory and 1000 lines per code file
+  outside `docs/`. Existing debt (9 directories, 28 files) is a ratchet in
+  `docs/structure_limits_baseline.csv`: new violations and growth are red, and so is a
+  shrink that does not lower the baseline. The 1000-line check for the root `src/`
+  (`tests/src_file_size_cap.rs`) is unchanged.
+
 ### Round 19: owner-decision work, performance gates PRF-01..04 and verification infrastructure (2026-10-11 to 2026-10-12)
 
 Runtime improvements this round: 1 in builds with `alloc-global` + `fastbin`

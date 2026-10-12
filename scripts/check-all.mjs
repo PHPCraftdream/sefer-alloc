@@ -288,6 +288,10 @@
 //      mutation self-test + REGISTRY.md --check; appended at the array END so
 //      all numbers above stay stable; pure node scans, no cargo — check-all
 //      fails only on the judge's RED, its honest INCOMPLETE stays exit 0)
+//   56. node scripts/verify-structure-limits.mjs   (CLAUDE.md "File and module
+//      structure": at most 7 entries per src directory and 1000 lines per code
+//      file, debt ratcheted by docs/structure_limits_baseline.csv; appended at
+//      the array END so every number above stays stable; pure node scan, no cargo)
 //
 // This does NOT replace CI (CI additionally runs miri, loom, TSan, multi-arch,
 // no_std, MSRV — see .github/workflows/ci.yml) — it is the FAST subset that
@@ -1141,6 +1145,12 @@ const steps = [
     name: 'generate-evidence-registry-md --check (Ph7 generated REGISTRY.md freshness)',
     cmd: 'node',
     args: ['scripts/generate-evidence-registry-md.mjs', '--check'],
+  },
+  // Structure limits (7 entries per src directory, 1000 lines per code file) with a debt ratchet.
+  {
+    name: 'verify-structure-limits (directory width and file length, ratcheted baseline)',
+    cmd: 'node',
+    args: ['scripts/verify-structure-limits.mjs'],
   },
 ];
 

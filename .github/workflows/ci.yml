@@ -1459,6 +1459,9 @@ jobs:
       - run: node scripts/verify-dbg-hook-safety.mjs
       - run: node scripts/verify-loom-target-wiring.mjs
       - run: node scripts/verify-miri-target-wiring.mjs
+      # CLAUDE.md structure limits: at most 7 entries per src directory and 1000
+      # lines per code file; existing debt is ratcheted by docs/structure_limits_baseline.csv.
+      - run: node scripts/verify-structure-limits.mjs
       - run: node scripts/run-check-matrix.mjs --kind check --kind test
       # R30-5: the generated "feature ABSENT" compile-check enumeration for
       # every conditionally-registered iai arm in benches/perf_gate_iai.rs —

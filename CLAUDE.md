@@ -34,6 +34,19 @@ Core instructions, mandatory for all code in this repository. They
 - **`mod.rs` — reexports only, no code.** The `mod.rs` file contains
   exclusively `mod`/`pub mod`/`pub use` declarations. No logic, types,
   functions, or tests belong in `mod.rs` — it only wires modules together.
+- **Structure limits, checked automatically.** A source directory (`src/**` and
+  `crates/*/src/**`) holds at most **7 entries** (files plus subdirectories); a
+  code file (`.rs .mjs .js .py .sh`, anywhere outside `docs/`) has at most **1000
+  lines**. `scripts/verify-structure-limits.mjs` enforces both in `npm run check`
+  and in the `check-matrix` CI job; `tests/src_file_size_cap.rs` stays as the
+  strict zero-tolerance check for the root `src/`. Debt that existed when the
+  rule landed is a ratchet in `docs/structure_limits_baseline.csv`: a new
+  violation, growth, or a shrink that does not lower the baseline is red, so the
+  debt can only fall. Fix a violation by splitting (a pure move) — never by
+  raising a limit or by adding a baseline row. `tests/`, `examples/`, `benches/`,
+  `scripts/` and `docs/` are exempt from the directory rule (Cargo discovers
+  `tests/*.rs` only when flat; `docs/` holds generated reports), not from the
+  file-length rule.
 
 ## Tests
 
