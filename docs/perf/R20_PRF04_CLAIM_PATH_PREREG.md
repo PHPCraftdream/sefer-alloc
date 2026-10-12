@@ -31,11 +31,15 @@ release (LIVE → FREE plus `reuse_hint`). PRF-04 (V4/V4′) changes only code i
 that claim/release path, so this is the layer the decision applies to; the TLS
 wrapper around it (`finish_bind`, the abandon guard) is untouched by the candidate
 and constant across arms. This is **not** the `#[global_allocator]` layer: a cell
-at that layer runs the claim on a spawned thread, and callgrind records **0 Ir** in
-worker-thread output files (only the thread that enters the benchmark function is
-collected — verified, see below), so such a cell would measure spawn/join cost and
-miss the claim entirely. The true thread/`GlobalAlloc` path stays a **descriptive
-native** measurement (deferred, below).
+at that layer runs the claim on a spawned thread, and under the default iai-callgrind
+toggle (entered by the benchmark function, which runs on the main thread) callgrind
+records **0 Ir** in worker-thread output files (verified, see below), so such a cell
+would measure spawn/join cost and miss the claim. Collecting a child thread needs a
+per-thread `EntryPoint::Custom` toggle on a named child symbol with its own
+symbol/coverage receipts (as the PRF-01 producer cell has); that machinery is not
+needed here because the registry-layer cell executes the same `claim_impl` on the
+collected thread. The true thread/`GlobalAlloc` path stays a **descriptive native**
+measurement (deferred, below).
 
 Feature sets: the Ir cells are built with `production internals` (no
 `bench-internals`: the claim-source counters and the `live_config_matches` probe exist
