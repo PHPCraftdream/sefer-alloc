@@ -102,14 +102,17 @@ pub(super) fn bump_count(reg: &Registry) -> Option<usize> {
     }
 }
 
-/// The claim selector, parameterised so a small deterministic model can
-/// exercise the production fast path without constructing 4096 heaps.
+/// The claim selector: hint → free-set → saturation → bump → cap scan.
+/// Reuse candidates must be below the observed high-water mark; only the
+/// caller's slot-state CAS grants ownership. Parameterised so a deterministic
+/// model can exercise the fast path without constructing 4096 heaps.
 #[doc(hidden)]
 pub fn pick_with_saturation(
     hint: &AtomicU32,
     count: &AtomicU32,
     saturation: &SaturationHint,
     max: usize,
+    reuse: impl FnOnce() -> Option<usize>,
     scan: impl FnOnce() -> Option<usize>,
     bump: impl FnOnce() -> Option<usize>,
 ) -> Option<usize> {
@@ -117,6 +120,13 @@ pub fn pick_with_saturation(
     let before = (count.load(Ordering::Acquire) as usize).min(max);
     if candidate < before {
         return Some(candidate);
+    }
+    if let Some(index) = reuse() {
+        // A hint is published after its slot was minted; the Acquire take makes a
+        // fresh count cover it even when `before` predates the mint.
+        if index < (count.load(Ordering::Acquire) as usize).min(max) {
+            return Some(index);
+        }
     }
     if before == max && saturation.is_saturated() {
         return None;

@@ -94,8 +94,8 @@ fn main() {
     #[cfg(feature = "bench-internals")]
     let sources = {
         let end = sefer_alloc::registry::HeapRegistry::dbg_registry_claim_sources();
-        let delta = std::array::from_fn::<_, 4, _>(|i| end[i] - sources_before[i]);
-        assert_eq!(delta, [(w - 1) as u64, expected as u64, 0, 0]);
+        let delta = std::array::from_fn::<_, 5, _>(|i| end[i] - sources_before[i]);
+        assert_eq!(delta, [(w - 1) as u64, expected as u64, 0, 0, 0]);
         let config = sefer_alloc::registry::HeapRegistry::dbg_registry_default_config_results();
         assert_eq!(config[0] - config_before[0], (w * K) as u64);
         assert_eq!(config[1] - config_before[1], 0);
@@ -109,7 +109,7 @@ fn main() {
     #[cfg(not(feature = "bench-internals"))]
     let config_results: Option<[u64; 2]> = None;
     #[cfg(not(feature = "bench-internals"))]
-    let sources: Option<[u64; 4]> = None;
+    let sources: Option<[u64; 5]> = None;
     #[cfg(feature = "alloc-stats")]
     let routed_scans =
         Some(sefer_alloc::alloc_core::AllocCore::dbg_routed_miss_scans() - scans_before);

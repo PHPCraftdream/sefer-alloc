@@ -24,7 +24,7 @@ fn failed_new_chunk_recovers_older_free_then_retries_minted_index() {
     }
     assert!(!reg.dbg_chunk_is_materialised(1));
     // Two releases overwrite the one-entry hint. Reclaim the latest one,
-    // leaving an older FREE heap with no hint while fresh capacity remains.
+    // then verify the free-set reuses the older FREE heap before fresh capacity.
     let (old0, old1) = (held[0].slot_index(), held[1].slot_index());
     for _ in 0..2 {
         // Each lease is a distinct live claim; its Drop recycles the slot.
@@ -32,10 +32,24 @@ fn failed_new_chunk_recovers_older_free_then_retries_minted_index() {
     }
     let latest = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_eq!(latest.slot_index(), old1);
+    let _reset = OomReset;
+    bootstrap::dbg_set_inject_chunk_oom(true);
+    let reused = HeapRegistry::dbg_claim_lease().expect("free-set reuse before chunk OOM");
+    assert_eq!(reused.slot_index(), old0);
+    assert_eq!(bootstrap::count_for_test(), 64);
+    assert!(!reg.dbg_chunk_is_materialised(1));
+    bootstrap::dbg_set_inject_chunk_oom(false);
+    drop(reused);
+    drop(latest);
+    let latest = HeapRegistry::dbg_claim_lease().expect("claim");
+    assert_eq!(latest.slot_index(), old1);
     assert_eq!(reg.dbg_slot_state(0), STATE_FREE);
     assert_eq!(reg.dbg_slot_state(1), STATE_LIVE);
 
-    let _reset = OomReset;
+    reg.dbg_forget_free_slot_hint(old0 as usize);
+    reg.dbg_forget_free_slot_hint(bootstrap::MAX_HEAPS);
+    reg.dbg_forget_free_slot_hint(usize::MAX);
+    assert_eq!(reg.dbg_slot_state(old0 as usize), STATE_FREE);
     bootstrap::dbg_set_inject_chunk_oom(true);
     let recovered = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_eq!(
