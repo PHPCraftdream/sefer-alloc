@@ -13,6 +13,8 @@ const primary = ['bench-internals','internals','production'];
 const benefit = ['multiseg_cold_256k','seg_cycle_decommit_256k','growth16_n','growth16_2n','growth16_4n'];
 const hot = ['small_churn_16b','churn_256b','churn_write_256b','aligned_churn_640b_a128'];
 const mi = ['mimalloc_small_churn_16b','mimalloc_small_churn_16b_2n','mimalloc_churn_256b','mimalloc_cold_alloc_free_256x16b','mimalloc_cold_alloc_free_256x16b_2n','mimalloc_cold_alloc_free_256x16b_4n','mimalloc_cold_alloc_only_256x16b','mimalloc_cold_alloc_only_256x16b_2n','mimalloc_cold_alloc_only_256x16b_4n','mimalloc_cold_alloc_free_256x64b','mimalloc_recycle_alloc_free_256x16b','mimalloc_recycle_alloc_free_256x64b','mimalloc_bootstrap_proxy'];
+// Amendment A: inventory DECLARATIONS (workCount, blockBytes, Layout alignment) of the four hot controls.
+const hotDecl = {small_churn_16b:[64,16,8],churn_256b:[64,256,8],churn_write_256b:[64,256,8],aligned_churn_640b_a128:[64,640,128]};
 const publication = 'r19_prf01_publication';
 const producer = 'r19_prf01_joined_producer_same_word';
 const inventory = [...benefit,...hot,...mi,publication,producer];
@@ -27,8 +29,8 @@ const features = (a,b) => { assert.ok(Array.isArray(a)); exact([...a].sort(),[..
 const time = x => { text(x); assert.match(x,/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/); const t=Date.parse(x); assert.ok(Number.isFinite(t)); return t; };
 const receipt = r => { text(r.path); assert.ok(!r.path.startsWith('/') && !r.path.includes('..') && !/[\\:]/.test(r.path)); hex(r.sha256); };
 function source(s) { commit(s.baseHead); for(const k of ['patchSha256','untrackedSha256','identitySha256'])hex(s[k]); time(s.capturedAt); }
-function config(c, mimalloc = false) {
-  if (mimalloc) {
+function config(c, mode = 'normal', ctx = null) {
+  if (mode === 'mimalloc') {
     exact(c.requested, null); exact(c.resolved, null); exact(c.configConflictsDelta, null);
     text(c.notApplicableReason);
     assert.equal(c.processBoundary,'isolated-process'); text(c.runId); nat(c.pid); assert.ok(c.pid>0);
@@ -37,7 +39,21 @@ function config(c, mimalloc = false) {
   exact(c.requested,c.resolved); assert.ok(c.requested && typeof c.requested==='object' && !Array.isArray(c.requested));
   for(const k of ['maintenance','workCount','segmentCount','blockBytes','cachePolicy'])assert.ok(k in c.requested);
   assert.equal(c.requested.maintenance,false); nat(c.requested.workCount); assert.ok(c.requested.workCount>0);
-  nat(c.requested.segmentCount); assert.ok(c.requested.segmentCount>0); nat(c.requested.blockBytes); assert.ok(c.requested.blockBytes>0); text(c.requested.cachePolicy);
+  nat(c.requested.blockBytes); assert.ok(c.requested.blockBytes>0); text(c.requested.cachePolicy);
+  if (mode === 'hot') {
+    // Amendment A: the body runs only under Callgrind; geometry fields are declarations, segmentCount is unobserved (null).
+    const [work,block,alignment] = hotDecl[ctx.name]; assert.ok(Array.isArray(hotDecl[ctx.name]));
+    assert.strictEqual(c.requested.segmentCount,null); assert.strictEqual(c.resolved.segmentCount,null);
+    assert.equal(c.requested.workCount,work); assert.equal(c.requested.blockBytes,block);
+    assert.ok(c.unobservedReasons && typeof c.unobservedReasons==='object'); text(c.unobservedReasons.segmentCount);
+    const d=c.declaredProvenance; assert.ok(d && typeof d==='object'); receipt(d.receipt); assert.equal(d.cell,ctx.name);
+    exact(d.fields,['workCount','blockBytes','alignment']); assert.equal(d.alignment,alignment);
+    const r=c.resolvedProvenance; assert.ok(r && typeof r==='object'); text(r.runId); nat(r.pid); assert.ok(r.pid>0);
+    assert.equal(r.arm,ctx.arm); assert.equal(r.binarySha256,ctx.pins[ctx.arm].binaries.oracle); receipt(r.receipt);
+    assert.equal(r.claimPath,'global'); exact([...r.copiedFields].sort(),['cachePolicy','configConflictsDelta','maintenance']);
+  } else {
+    nat(c.requested.segmentCount); assert.ok(c.requested.segmentCount>0);
+  }
   assert.equal(c.configConflictsDelta,0); assert.equal(c.processBoundary,'isolated-process'); text(c.runId); nat(c.pid); assert.ok(c.pid>0);
 }
 function schedule() {
@@ -81,7 +97,7 @@ function derive(d,frozen) {
     const runs=new Set();
     function provenance(r,arm,binary,expectedFeatures) {
       const p=pins[arm]; exact(r.source,p.source); assert.equal(r.binarySha256,binary); assert.equal(r.environmentSha256,d.environmentSha256);
-      assert.ok(time(r.startedAt)>time(p.buildStartedAt)); features(r.features,expectedFeatures); receipt(r.receipt); config(r.config,mi.includes(r.name));
+      assert.ok(time(r.startedAt)>time(p.buildStartedAt)); features(r.features,expectedFeatures); receipt(r.receipt); config(r.config,mi.includes(r.name)?'mimalloc':hot.includes(r.name)?'hot':'normal',{name:r.name,arm,pins});
       assert.ok(!runs.has(r.config.runId)); runs.add(r.config.runId);
     }
     function oracle(r,needed) {
@@ -205,6 +221,7 @@ function fixture(frozen) {
   const p=(c,bs)=>({label:c==='a'?'A':'B',source:src(c),measurementCommit:c.repeat(40),environmentSha256:h('e'),binaries:{iai:h(bs[0]),oracle:h(bs[1]),native:h(bs[2])},buildStartedAt:'2026-10-11T01:00:00Z',features:primary,nativeFeatures:['production'],oracleCfg:['r19_sidecar_summary_oracle'],primaryCfg:[],buildReceipt:rec,toolchain:{rustc:'synthetic',target:'synthetic',profile:'bench',flags:'none'}});
   let id=0;
   const cfg=(workCount=1,blockBytes=16)=>{const requested={maintenance:false,workCount,segmentCount:1,blockBytes,cachePolicy:'default'}; return {requested,resolved:{...requested},configConflictsDelta:0,processBoundary:'isolated-process',runId:`synthetic-${++id}`,pid:id};};
+  const hotCfg=(name,a)=>{const [w,b,al]=hotDecl[name]; const requested={maintenance:false,workCount:w,segmentCount:null,blockBytes:b,cachePolicy:'default'}; return {requested,resolved:{...requested},configConflictsDelta:0,processBoundary:'isolated-process',runId:`synthetic-${++id}`,pid:id,unobservedReasons:{segmentCount:'measured body has no paired geometry observer'},declaredProvenance:{receipt:rec,cell:name,fields:['workCount','blockBytes','alignment'],alignment:al},resolvedProvenance:{runId:'probe-'+a,pid:999,arm:a,binarySha256:d.identities[a].binaries.oracle,receipt:rec,claimPath:'global',copiedFields:['cachePolicy','configConflictsDelta','maintenance']}};};
   const d={version:1,hashes:frozen,entry:'SeferAlloc::GlobalAlloc->HeapCore routed',environmentSha256:h('e'),inventoryReceipt:rec,featureExactReceipt:rec,identityReviewReceipt:rec,environmentReceipt:rec,inventory,strictTrim:{cell:null,reason:'No existing strict-trim iai cell in benches/perf_gate_iai.rs'},identities:{A:p('a','123'),B:p('b','456'),C0:{source:src('a'),binarySha256:h('7'),buildStartedAt:'2026-10-11T01:00:00Z',buildReceipt:rec}},ancestry:{result:'A ancestor B',chain:['a'.repeat(40),'b'.repeat(40)],receipt:rec},sizeOf:{A:41984,B:42496,receipt:rec},iai:[],native:[],schedule:schedule()};
   function row(a,binary,features,configuration) {return {environmentSha256:d.environmentSha256,binarySha256:binary,source:d.identities[a].source,startedAt:'2026-10-11T02:00:00Z',features,receipt:rec,config:configuration};}
   for(const name of inventory)for(const arm of arms) {
@@ -218,6 +235,7 @@ function fixture(frozen) {
       if(name===publication) {r.oracle.routed_scans=1;r.oracle.discovery_records_reclaimed=34;}
       if(name===producer) {r.scenario='joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window';if(isB){r.oracle.summary_rmw=1;r.oracle.summary_load=4096;}}
     }
+    if(hot.includes(name)) r.config=hotCfg(name,a);
     if(mi.includes(name)) r.config={requested:null,resolved:null,configConflictsDelta:null,notApplicableReason:'mimalloc does not resolve SeferAlloc configuration',processBoundary:'isolated-process',runId:r.config.runId,pid:r.config.pid};
     if(needed && name!==publication) {r.oracle.strict_trim_remaining=null;r.oracle.unobservedReasons={strict_trim_remaining:'No strict trim remainder observation in this workload window'};}
     if(name===producer) r.producerIrReceipt={binarySha256:r.binarySha256,source:r.source,environmentSha256:r.environmentSha256,features:primary,cfg:[],receipt:rec,symbolReceipt:rec,profileReceipt:rec,symbol:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,toggleCollect:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',generatedArguments:'synthetic',aggregation:'sum of all thread profile Ir',childFreeCount:4096,childIr:900,totalIr:r.Ir,startedAt:r.startedAt,control:{receipt:rec,workload:'child remote frees removed',source:src('c'),binarySha256:h('8'),environmentSha256:r.environmentSha256,childIr:0,totalIr:100,deltaIr:r.Ir-100,parentSetupUnchanged:true,collectionUnchanged:true}};
@@ -232,6 +250,30 @@ function selftest() {
   check(()=>{},'GO'); check(x=>x.version=2); check(x=>x.hashes=[]); check(x=>x.inventory.pop()); check(x=>x.iai.pop()); check(x=>x.native.pop()); check(x=>x.schedule.reverse());
   check(x=>x.entry='AllocCore'); check(x=>x.strictTrim.cell='invented'); check(x=>x.ancestry.chain.reverse()); check(x=>delete x.ancestry.receipt); check(x=>delete x.featureExactReceipt);
   for(const key of ['inventoryReceipt','environmentReceipt','identityReviewReceipt'])check(x=>delete x[key]);
+  // Amendment A: hot-control geometry is declared, segmentCount is null, allocator config is copied from a same-arm probe.
+  const hotRows=(x,name)=>x.iai.filter(r=>r.name===name), h0='small_churn_16b';
+  for(const arm of ['A1','B2']) {
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.requested.segmentCount=1);
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolved.segmentCount=1);
+    check(x=>delete x.iai.find(r=>r.name===h0&&r.arm===arm).config.requested.segmentCount);
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.unobservedReasons.segmentCount='');
+    check(x=>delete x.iai.find(r=>r.name===h0&&r.arm===arm).config.unobservedReasons);
+    check(x=>delete x.iai.find(r=>r.name===h0&&r.arm===arm).config.declaredProvenance);
+    check(x=>delete x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolvedProvenance);
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.declaredProvenance.cell='churn_256b');
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.declaredProvenance.alignment=16);
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolvedProvenance.arm=arm.startsWith('B')?'A':'B');
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolvedProvenance.claimPath='lease');
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolvedProvenance.copiedFields.push('segmentCount'));
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolvedProvenance.copiedFields.pop());
+    check(x=>x.iai.find(r=>r.name===h0&&r.arm===arm).config.resolvedProvenance.binarySha256='9'.repeat(64));
+  }
+  // wrong declared geometry, even identical in all five arms, is rejected
+  check(x=>hotRows(x,'churn_256b').forEach(r=>{r.config.requested.workCount=65;r.config.resolved.workCount=65;}));
+  check(x=>hotRows(x,'aligned_churn_640b_a128').forEach(r=>{r.config.requested.blockBytes=512;r.config.resolved.blockBytes=512;}));
+  // segmentCount stays a positive observed number everywhere else
+  for(const name of [...benefit,publication,producer]) check(x=>{const r=x.iai.find(q=>q.name===name&&q.arm==='A1'); r.config.requested.segmentCount=null; r.config.resolved.segmentCount=null;});
+  check(x=>{const r=x.native[0]; r.config.requested.segmentCount=null; r.config.resolved.segmentCount=null;});
   for(const key of ['source','binarySha256','environmentSha256','features','startedAt','receipt','config','oracle','Ir'])check(x=>delete x.iai[0][key]);
   for(const key of counters) {    if(key!=='strict_trim_remaining')check(x=>x.iai[0].oracle[key]=null); check(x=>delete x.iai[0].oracle[key]);}
   check(x=>x.iai[0].oracle.routed_scans=0); check(x=>x.iai[2].oracle.routed_scans++); check(x=>x.iai[2].oracle.pending_words_visited=1); check(x=>x.iai[2].oracle.summary_words_visited=0);
@@ -295,7 +337,8 @@ function selftest() {
   check(x=>{x.iai[0].oracle.pending_words_visited+=3190;x.iai[0].oracle.pending_words_exchanged+=3190;},'GO');
   check(x=>{for(const r of x.iai.filter(r=>r.arm==='B1'))r.binarySha256=x.identities.B.binaries.iai;
     x.identities.B.binaries.oracle=x.identities.B.binaries.native;
-    for(const r of x.iai.filter(r=>r.arm.startsWith('B')&&r.oracle.linkage))r.oracle.linkage.binarySha256=x.identities.B.binaries.native;},'GO');
+    for(const r of x.iai.filter(r=>r.arm.startsWith('B')&&r.oracle.linkage))r.oracle.linkage.binarySha256=x.identities.B.binaries.native;
+    for(const r of x.iai.filter(r=>r.arm.startsWith('B')&&hot.includes(r.name)))r.config.resolvedProvenance.binarySha256=x.identities.B.binaries.native;},'GO');
   // Owner freezes only an upper slope bound; no unapproved lower bound.
   check(x=>x.iai.find(r=>r.name==='growth16_4n'&&r.arm==='B1').Ir=199,'GO');
   for(const k of ['binarySha256','source','environmentSha256','features','cfg','receipt','symbolReceipt','profileReceipt','symbol','runnerVersion','valgrindVersion','collectAtStart','defaultToggle','entryPoint','separateThreads','toggleCollect','generatedArguments','aggregation','childFreeCount','childIr','totalIr','startedAt','control'])check(x=>delete x.iai.find(r=>r.name===producer).producerIrReceipt[k]);

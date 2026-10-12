@@ -395,3 +395,43 @@ manufacture a benchmark result. Mixed R18/R19 cfg compilation is rejected rather
 than measuring a different algorithm. No B/A sample or p3b baseline refresh is
 a prerequisite for the source-only inventory guard.
 
+## Amendment A (before the first measured gate binary build; thresholds unchanged)
+
+Applied on the reviewer-role decision of 2026-10-12 after the first runner delivery found that the
+frozen `config` schema cannot be satisfied for the four hot controls. No gate build with a captured
+identity existed when this amendment was written (the runner's own smoke builds are not gate
+artifacts). This amendment governs where earlier text conflicts. Version remains 1. No threshold,
+formula, arm, measured boundary or inventory entry changes.
+
+1. Hot controls. For `small_churn_16b`, `churn_256b`, `churn_write_256b` and
+   `aligned_churn_640b_a128`, `config.requested.segmentCount` and `config.resolved.segmentCount`
+   MUST both be `null`, and `config.unobservedReasons.segmentCount` MUST be a nonempty reason: the
+   measured body has no paired geometry observer, and a configuration probe's census is not its
+   segment count. For these four cells `workCount` and `blockBytes` in both objects are inventory
+   DECLARATIONS, not executed-count or geometry observations; their values are respectively
+   (64, 16), (64, 256), (64, 256), (64, 640), and the Layout alignments (8, 8, 8, 128). The
+   inventory retains source/body hashes, `declaredWorkCount` and alignment, reviewed against the
+   pinned cell source; `config.declaredProvenance` references that inventory receipt and names the
+   cell and the declared fields (`workCount`, `blockBytes`, `alignment`).
+2. Allocator configuration of those rows (maintenance, cache policy, config-conflict delta) is copied
+   from an actual probe process of the same source arm, environment and heap-claim path (`global`).
+   `config.resolvedProvenance` retains the probe runId, pid, binarySha256 (the arm's oracle binary),
+   the raw receipt, the claim path and the exact copied fields; geometry declarations and
+   `segmentCount` are never copied from the probe. The measured row keeps its own runId and the actual
+   pid of its Callgrind/Valgrind evidence. Requested and resolved stay exactly equal, including
+   `segmentCount: null`. Controls keep null oracle fields with nonempty per-field reasons and a null
+   oracle linkage.
+3. Rows with a paired geometry oracle. `segmentCount` is the cardinality of the union of the actual
+   Small/Primordial route incarnations backing the workload blocks, observed while those blocks
+   remain live at the documented geometry checkpoints. It is not a peak concurrent segment count, a
+   process-wide census or a registration-attempt count. Publication includes its prepared blocks and
+   discovery batches; the producer counts only the selected 4096 blocks and excludes discarded setup
+   candidates. The retained evidence specifies the checkpoints and a `segmentCountMethod`. Required
+   observed `segmentCount` values stay positive and matched across arms; benefit, publication,
+   producer and native rows keep the positive requirement (null is rejected there).
+4. Judge changes are limited to the `config` check above (a hot-control mode with exact declared
+   pairs, the null/reason/provenance requirements, and the rejection of null elsewhere) and their
+   selftest mutations. Identity review before the first sample is implemented by a two-phase runner
+   (`--capture`, then `--run` with the independent identity review receipt, no rebuild between the
+   phases; any drift or rebuild requires a new capture and review); this realises the earlier
+   requirement and changes no rule. The re-frozen hashes below supersede the previous freeze.
