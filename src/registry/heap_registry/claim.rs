@@ -34,11 +34,11 @@ use crate::registry::heap_slot::{
 pub struct HeapRegistry;
 
 impl HeapRegistry {
-    /// Successful returned leases by selector source: hint, bump, cap scan, recovery.
+    /// Successful returned leases by selector source: hint, bump, cap scan, recovery, free-set.
     /// Relaxed numeric loads only; failed CAS and constructor OOM are excluded.
     #[doc(hidden)]
     #[cfg(feature = "bench-internals")]
-    pub fn dbg_registry_claim_sources() -> [u64; 4] {
+    pub fn dbg_registry_claim_sources() -> [u64; 5] {
         super::counters::CLAIM_SOURCES
             .each_ref()
             .map(|c| c.load(Ordering::Relaxed))
@@ -210,8 +210,8 @@ impl HeapRegistry {
     /// per returned pointer regardless of which hook ran.
     ///
     /// Ph4a: returns a [`HeapLease`] instead of a raw pointer. Operation
-    /// order is unchanged (hint → bump → scan; `trim_for_recycle` on
-    /// re-claim; NUMA invalidation; config-conflict hook). The lease is
+    /// order is hint → free-set → saturation → bump → scan; `trim_for_recycle` on
+    /// re-claim; NUMA invalidation; config-conflict hook. The lease is
     /// formed only AFTER the core is readable: first claim — after the
     /// `initialised` Release publish and the INITIALIZING→LIVE CAS; re-claim
     /// — the slot was already LIVE + initialised when the FREE→LIVE CAS won.
@@ -271,6 +271,7 @@ impl HeapRegistry {
                     {
                         continue;
                     }
+                    reg.free_set.forget(idx);
                     if slot.initialised.load(Ordering::Acquire) {
                         false
                     } else {
@@ -386,7 +387,7 @@ impl HeapRegistry {
         }
     }
 
-    /// Pick from the hint, then capped high-water bump, then full scan at cap.
+    /// Pick from the hint, then exact free-set, capped bump, and full scan at cap.
     /// An unmaterialised index below `count` remains cold-recoverable.
     pub(super) fn pick_slot(
         #[cfg(feature = "bench-internals")] source: &core::cell::Cell<usize>,
@@ -397,6 +398,14 @@ impl HeapRegistry {
             &reg.count,
             &reg.saturation,
             MAX_HEAPS,
+            || {
+                let picked = reg.free_set.take();
+                #[cfg(feature = "bench-internals")]
+                if picked.is_some() {
+                    source.set(4);
+                }
+                picked
+            },
             || {
                 #[cfg(feature = "bench-internals")]
                 source.set(2);
@@ -487,6 +496,7 @@ impl Drop for MaintenanceLease {
         }
         let reg = ensure();
         reg.reuse_hint.store(self.index as u32, Ordering::Relaxed);
+        reg.free_set.publish(self.index);
         reg.saturation.publish_claimable();
     }
 }
@@ -500,8 +510,8 @@ impl Drop for MaintenanceLease {
 /// `!Send + !Sync` (via `PhantomData<*mut ()>`), not `Copy`/`Clone`; no
 /// `unsafe impl Send`/`Sync`. `Drop` returns the slot `LIVE → FREE`
 /// (Release), aborting on a lost CAS (like `MaintenanceLease::drop`); after
-/// the successful CAS it publishes the reuse hint and claimability. The
-/// receiving side of any transfer is the winner of a fresh Acquire CAS
+/// the successful CAS it publishes the reuse hint, free-set bit, and claimability.
+/// The receiving side of any transfer is the winner of a fresh Acquire CAS
 /// (claim or maintenance) — S2 of addendum §2.1.
 // Ph4a (task #2091): `#[doc(hidden)] pub` like the neighbouring
 // `HeapRegistry`/`MaintenanceLease`. (The alternative cfg_attr visibility
@@ -591,6 +601,7 @@ impl Drop for HeapLease {
         // claimability.
         let reg = ensure();
         reg.reuse_hint.store(self.index, Ordering::Relaxed);
+        reg.free_set.publish(self.index as usize);
         reg.saturation.publish_claimable();
     }
 }
@@ -651,5 +662,6 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
         std::process::abort();
     }
     reg.reuse_hint.store(idx, Ordering::Relaxed);
+    reg.free_set.publish(idx as usize);
     reg.saturation.publish_claimable();
 }

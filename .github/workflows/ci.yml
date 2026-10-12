@@ -3252,6 +3252,7 @@ jobs:
             --test loom_r8_maintenance_lease \
             --test loom_active_kind_index \
             --test loom_r11_registry_claim \
+            --test loom_r19_registry_free_set \
             --test loom_r11_ph4a_heap_lease \
             --test loom_r11_ph4b_publish_recycle_drain \
             --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
@@ -3262,6 +3263,12 @@ jobs:
           grep -F "test owner_only_membership_survives_late_terminal_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test clean_bit_clear_mutant_is_rejected ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test completed_free_publication_cannot_leave_false_full_or_two_owners ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test free_set_recycle_claim_maintenance_preserve_availability_and_owners ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test free_set_publish_clear_recheck_preserves_summary ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test free_set_take_consumes_each_bit_once ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_free_set_no_summary_recheck - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_free_set_publish_before_state_cas - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_free_set_take_ignores_old_bit - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test pointer_publication_and_last_pin_retention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_relaxed_pointer_publication - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_early_leaf_release - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"

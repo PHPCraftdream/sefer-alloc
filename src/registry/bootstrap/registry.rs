@@ -28,6 +28,7 @@ use super::ensure::ensure_chunk_slow;
 #[cfg(loom)]
 use super::loom_shim::OncePtrCell;
 use super::saturation::SaturationHint;
+use super::FreeSlotHint;
 use crate::registry::heap_slot::HeapSlot;
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;
@@ -71,14 +72,16 @@ pub struct Registry {
     /// unchanged.
     pub(super) chunks: [OncePtrCell<RegistryChunk>; NUM_CHUNKS],
     /// High-water mark of allocated slots (the next unused slot index). A
-    /// Claim mints indices with a capped CAS after trying one reuse hint;
+    /// claim mints indices with a capped CAS after the hint and exact free-set;
     /// a full reusable-slot scan runs at capacity or on cold OOM recovery.
     pub(crate) count: AtomicU32,
     /// Rotating start of materialised-slot scans; a hint, never ownership.
     pub(crate) scan_cursor: AtomicU32,
     /// Latest recycled/failed-init/chunk-OOM/maintenance-released index. Older FREE
-    /// entries may wait until a capacity or cold-recovery scan.
+    /// entries are found by the exact free-set before minting new indices.
     pub(crate) reuse_hint: AtomicU32,
+    /// Non-intrusive FREE-slot hints; ownership still requires a slot-state CAS.
+    pub(crate) free_set: FreeSlotHint,
     /// Versioned negative-scan hint; never substitutes for a slot CAS.
     pub(crate) saturation: SaturationHint,
 }
@@ -103,6 +106,7 @@ impl Registry {
             count: AtomicU32::new(0),
             scan_cursor: AtomicU32::new(0),
             reuse_hint: AtomicU32::new(MAX_HEAPS as u32),
+            free_set: FreeSlotHint::new(),
             saturation: SaturationHint::new(),
         }
     }
@@ -299,6 +303,22 @@ const _: () = {
 // public API.
 // -------------------------------------------------------------------------
 impl Registry {
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn dbg_free_slot_hint_contains(&self, idx: usize) -> bool {
+        self.free_set.contains(idx)
+    }
+
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn dbg_forget_free_slot_hint(&self, idx: usize) {
+        if idx < MAX_HEAPS {
+            self.free_set.forget(idx);
+        }
+    }
+
     /// Read a slot's `state` atomically (test helper). Materialises the
     /// slot's chunk if not already materialised; an untouched slot is EMPTY.
     #[doc(hidden)]

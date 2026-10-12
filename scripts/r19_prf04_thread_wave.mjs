@@ -62,7 +62,7 @@ export function validate(row) {
   }
   assert(row.rss_idle > 0);
   if (row.diagnostic) {
-    assert.deepEqual(row.claim_sources, [row.w - 1, expected, 0, 0]);
+    assert.deepEqual(row.claim_sources, [row.w - 1, expected, 0, 0, 0]);
     assert.equal(row.claim_sources.reduce((a, b) => a + b, 0), row.w * 32);
     assert.equal(row.resolved_default_matches, true);
     assert.deepEqual(row.resolved_config_results, [row.w * 32, 0]);
@@ -189,7 +189,7 @@ function selfTest() {
     resolved_default_matches: diagnostic, config_conflicts_before: 0, config_conflicts_after: 0,
     count_before: 1, count_after: 2 + w * 31, count_delta: 1 + w * 31,
     segments_reserved_delta: w * 32, rss_before: 100, rss_idle: 200 + w, rss_peak_sampled: 300 + w,
-    commit_idle: 1000 + w * 1000000, claim_sources: diagnostic ? [w - 1, 1 + w * 31, 0, 0] : null,
+    commit_idle: 1000 + w * 1000000, claim_sources: diagnostic ? [w - 1, 1 + w * 31, 0, 0, 0] : null,
     resolved_config_results: diagnostic ? [w * 32, 0] : null,
     routed_scans: diagnostic ? 7 : null, wall_ns: diagnostic ? null : w * 100,
     first_workload_alloc_ns: diagnostic ? null : Array(w * 32).fill(10) });

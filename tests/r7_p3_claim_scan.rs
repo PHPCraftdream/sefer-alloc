@@ -23,6 +23,7 @@ fn pick(
         count,
         saturation,
         CAP,
+        || None,
         || {
             scans.fetch_add(1, Ordering::Relaxed);
             let n = count.load(Ordering::Acquire) as usize;
@@ -45,6 +46,7 @@ fn pre_cap_mints_without_scanning_an_older_free_slot() {
         &count,
         &saturation,
         CAP,
+        || None,
         || {
             scans.fetch_add(1, Ordering::Relaxed);
             Some(1)
@@ -105,6 +107,7 @@ fn publication_during_negative_scan_prevents_stale_saturation() {
         &count,
         &saturation,
         CAP,
+        || None,
         || {
             scans.fetch_add(1, Ordering::Relaxed);
             assert!(states
@@ -135,6 +138,7 @@ fn newly_minted_last_index_cannot_be_hidden_by_older_scan() {
         &count,
         &saturation,
         CAP,
+        || None,
         || {
             scans.fetch_add(1, Ordering::Relaxed);
             None
@@ -220,6 +224,7 @@ fn near_max_publication_during_scan_cannot_restore_saturation() {
         &count,
         &saturation,
         CAP,
+        || None,
         || {
             scans.fetch_add(1, Ordering::Relaxed);
             states[5].store(FREE, Ordering::Release);
