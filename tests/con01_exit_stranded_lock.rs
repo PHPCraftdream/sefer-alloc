@@ -136,7 +136,10 @@ impl Drop for Late {
         eprintln!("CON01_COUNTERS fallback_delta={lock_delta} unroutable_delta={free_delta}");
         let windows_exit = cfg!(windows)
             && std::env::var_os("SEFER_CON01_LIVE").as_deref() == Some(std::ffi::OsStr::new("0"));
-        let expected_locks = if windows_exit { 0 } else { 5 };
+        // `exact-object-proto` serves the narrow u64 alloc and its free without the
+        // fallback lock; the 32-byte, 64-aligned zeroed/realloc/free still take it.
+        let narrow_without_lock = if cfg!(feature = "exact-object-proto") { 2 } else { 0 };
+        let expected_locks = if windows_exit { 0 } else { 5 - narrow_without_lock };
         if matches!(scenario, Scenario::Fallback) && lock_delta != expected_locks {
             fail("fallback lock acquisition delta violated live/exit contract");
         }
