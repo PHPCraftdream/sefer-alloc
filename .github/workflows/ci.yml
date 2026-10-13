@@ -2060,19 +2060,25 @@ jobs:
       - name: Production batch and terminal owner consumption
         shell: bash
         run: |
-          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-production.log"
+          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-production.log"
           grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-production.log"
+          # Re-execs itself with inherited stdout; its child libtest lines split the
+          # parent harness lines grepped above, so it runs alone (exit status only).
+          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global -- fallback_direct_free_before_service_and_busy_terminal_publication
       - name: Non-fastbin batch reclamation
         shell: bash
         run: |
-          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test batch_large_cross_thread_free_high_water_bounded ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
+          # Re-execs itself with inherited stdout; its child libtest lines split the
+          # parent harness lines grepped above, so it runs alone (exit status only).
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global -- fallback_direct_free_before_service_and_busy_terminal_publication
 
   test-windows:
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
