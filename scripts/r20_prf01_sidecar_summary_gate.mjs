@@ -203,7 +203,9 @@ function derive(d,frozen) {
           assert.equal(p.control.parentSetupUnchanged,true); assert.equal(p.control.collectionUnchanged,true);
           assert.equal(r.config.requested.workCount,4096); assert.equal(r.config.requested.blockBytes,16); assert.equal(r.config.requested.segmentCount,1);
           assert.equal(r.scenario,'joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window');
-          if(a==='B') { assert.ok(r.oracle.summary_rmw>0); assert.ok(r.oracle.summary_load>0); }
+          // C'' publishes without reading the summary: the bit is set only when the pending fetch_or returned 0,
+          // so B shows summary RMWs strictly fewer than the frees and no summary load (R19's C' loaded per free).
+          if(a==='B') { assert.ok(r.oracle.summary_rmw>0); assert.ok(r.oracle.summary_rmw<p.childFreeCount); assert.equal(r.oracle.summary_load,0); }
           else { assert.equal(r.oracle.summary_rmw,0); assert.equal(r.oracle.summary_load,0); }
         }
         if(name===publication) {
@@ -342,7 +344,7 @@ function fixture(frozen) {
       if(benefit.includes(name)) { r.oracle.routed_scans=99; if(isB)r.oracle.summary_words_visited=64; else {const v=name===benefit[0]?319063:name===benefit[1]?1004503:100; r.oracle.pending_words_visited=v; r.oracle.pending_words_exchanged=v;} }
       if(name===publication) {r.oracle.routed_scans=1;r.oracle.discovery_records_reclaimed=34;r.oracle.strict_trim_remaining=0;}
       else {r.oracle.strict_trim_remaining=null;r.oracle.unobservedReasons={strict_trim_remaining:'No strict trim remainder observation in this workload window'};}
-      if(name===producer) {r.scenario='joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window';if(isB){r.oracle.summary_rmw=1;r.oracle.summary_load=4096;}}
+      if(name===producer) {r.scenario='joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window';if(isB){r.oracle.summary_rmw=64;r.oracle.summary_load=0;}}
     }
     if(name===producer) r.producerIrReceipt={binarySha256:r.binarySha256,source:r.source,environmentSha256:r.environmentSha256,features:primary,cfg:[],receipt:'synthetic/p',symbolReceipt:'synthetic/nm',profileReceipt:'synthetic/prof',symbol:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,toggleCollect:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',generatedArguments:'synthetic',aggregation:'sum of all thread profile Ir',childFreeCount:4096,childIr:900,boundaryOverheadIr:8,workloadIr:892,boundaryExecutions:1,totalIr:r.Ir,startedAt:r.startedAt,control:{receipt:'synthetic/c',workload:'child remote frees removed',source:r.source,binarySha256:h('8'),environmentSha256:r.environmentSha256,childIr:8,workloadIr:0,childFreeCount:0,boundaryExecutions:1,symbolReceipt:'synthetic/cnm',profileReceipt:'synthetic/cprof',symbol:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',toggleCollect:'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window',cfg:['r19_prf01_producer_control'],features:primary,generatedArguments:'synthetic',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,aggregation:'sum of all thread profile Ir',totalIr:100,deltaIr:r.Ir-100,parentSetupUnchanged:true,collectionUnchanged:true}};
     if(name===construction&&arm.startsWith('B'))r.constructionGainReceipt={path:'docs/perf/r20_prf01_construction_gain_decomposition.txt',sha256:h('9'),removedPassObserved:true,decomposition:'retained Callgrind A/B functional decomposition: the 4096-word pending pass is gone'};
@@ -395,7 +397,10 @@ function selftest() {
   check(x=>x.iai.find(r=>r.name===benefit[2]&&r.arm==='A2').oracle.routed_scans=98);
   check(x=>x.iai.find(r=>r.name===benefit[2]&&r.arm==='A1').oracle.summary_rmw=1);
   check(x=>x.iai.find(r=>r.name===publication&&r.arm==='B2').oracle.discovery_records_reclaimed=0);
-  for(const k of ['summary_rmw','summary_load']){check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle[k]=0);check(x=>x.iai.find(r=>r.name===producer&&r.arm==='A1').oracle[k]=1);}
+  for(const k of ['summary_rmw','summary_load'])check(x=>x.iai.find(r=>r.name===producer&&r.arm==='A1').oracle[k]=1);
+  check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_rmw=0);
+  check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_rmw=4096);
+  check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_load=1);
   // Hot families: slope neutrality (two-sided, T_s), linearity, ceiling, UNJUDGEABLE.
   const fam0='r20_prf01_small_churn_16b';
   check(x=>{set(x,fam0+'_2n','B1',112800+10);set(x,fam0+'_4n','B1',125600+20);},GO);

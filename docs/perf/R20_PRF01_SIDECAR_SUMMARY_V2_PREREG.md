@@ -209,3 +209,14 @@ GO/NO-GO gate result.
   (`|s_B − s_A| ≤ T_s`); it now uses the absolute value. Selftest gained mutants for each of these (149
   checks); the two-sided mutant fails against the previous one-sided code (counterfactual run).
   No measured quantity changed; still no measurement.
+- 2026-10-13 (eighth rehearsal, run 38377475462): the pipeline now ran end to end (prepare, build, oracle,
+  all iai and controls measurements, producer boundary passes, `input.json`, `summary.csv`, judge) and the
+  judge returned INCOMPLETE on `assert.ok(r.oracle.summary_load>0)` for the producer cell of arm B. That
+  assertion was inherited from R19's candidate C′, which loaded the summary on every free (R19 run: B
+  `summary_load` 4096, `summary_rmw` 64). The v2 candidate C″ sets the summary bit only when the pending
+  `fetch_or` returned 0 and never reads the summary on the producer path; the real B oracle shows
+  `summary_rmw` 64 and `summary_load` 0. The expectation for arm B on the producer cell is now
+  `0 < summary_rmw < childFreeCount (4096)` and `summary_load == 0` (arm A: both 0, unchanged); selftest
+  mutants: rmw 0, rmw 4096 (notify on every free), load 1. Replaying the retained rehearsal input through
+  the updated judge gives `REHEARSAL: NO-GO` (expected: B = A′ cannot show the benefit), exit 0.
+  Judge expectation only; still no measurement.
