@@ -87,7 +87,7 @@
 //! single well-defined trim-on-exit could ever legitimately fail to release
 //! at least one of 8 independently cached spans.
 
-#![cfg(feature = "alloc-decommit")]
+#![cfg(all(feature = "alloc-decommit", feature = "alloc-global"))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::thread;

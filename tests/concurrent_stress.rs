@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 //! Concurrent stress test over `Arc<SyncRegion<T>>` (Phase 3a).
 //!
 //! The core property asserted here, beyond "didn't panic":

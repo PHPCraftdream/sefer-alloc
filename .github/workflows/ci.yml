@@ -4196,6 +4196,16 @@ jobs:
       - name: Summarize powerset (root)
         if: ${{ !cancelled() }}
         run: node scripts/powerset-summary.mjs powerset-root.log >> "$GITHUB_STEP_SUMMARY"
+      # Card 95: the root powerset stays lib-only (--no-dev-deps), so these three
+      # test targets are cfg-gated out under the feature sets that used to break
+      # them. A check that compiles is the expected (empty-crate) outcome.
+      - name: Root test targets stay cfg-gated out under their old breaking feature sets (card 95)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --offline --no-default-features --test concurrent_stress
+          cargo check --offline --no-default-features --features alloc-decommit --test regression_r4_3_teardown_trim
+          cargo check --offline --no-default-features --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test r3_1_fallback_remote_free
       # Task #856/W14-3: aligned-vmem crate feature-powerset check. 5 features
       # (lazy-commit, alloc-lazy-commit alias, huge-pages, fault-injection,
       # bench-internals) — mock is no longer a Cargo feature (task #962,
