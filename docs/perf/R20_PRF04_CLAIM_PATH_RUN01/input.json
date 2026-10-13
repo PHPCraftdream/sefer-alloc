@@ -1,0 +1,1368 @@
+{
+  "version": 1,
+  "hashes": [
+    {
+      "path": "docs/perf/R20_PRF04_CLAIM_PATH_PREREG.md",
+      "sha256": "e587ae20e6affe3cdb414b35c1cfa7a330f49f530a773ea67cac97e972bf7894"
+    },
+    {
+      "path": "scripts/r20_prf04_claim_path_gate.mjs",
+      "sha256": "34b8d895a4936936eba2cf4673962a912395b7d3b5bf7a6153b615bf9b804988"
+    },
+    {
+      "path": "scripts/r20_prf04_claim_path_run.mjs",
+      "sha256": "97fe49a744959fcb3fea13154c0cdb33a56677922508ef159ea3a83042955a2a"
+    },
+    {
+      "path": "docs/perf/R20_CONTROL_GEOMETRY_RULE.md",
+      "sha256": "c3a498cb268178b19b94d407a6280d7b1d0251ff54db75d24955b192c360acef"
+    },
+    {
+      "path": "benches/r20_prf04_claim_iai.rs",
+      "sha256": "76172d9c39e12ff8e29e37e30a9ae344ac14eaa9aa29ad516e19d385fd802d2f"
+    },
+    {
+      "path": "benches/support/r20_prf04.rs",
+      "sha256": "27e7f5832ae01867448c6c43a58a571576ba66c20d1c18180be7ab667fd6e0ac"
+    },
+    {
+      "path": "examples/r20_prf04_claim_path_oracle.rs",
+      "sha256": "e0dd80e62a94c5240205b3ba1bf871e89f5ecbf6fd0485f7402df46442b3e167"
+    },
+    {
+      "path": "docs/perf/_raw_r20_prf04_harness_characterization.log",
+      "sha256": "29264cdd7231603687850aed8d486f28f2b218a7b312bfc6e12974387a6cafdd"
+    },
+    {
+      "path": "docs/perf/_raw_r20_prf04_cold_profile.log",
+      "sha256": "cf408b4b621094c14a84e29fcb20882a450163e99042ab3fb0917fc1455a187a"
+    }
+  ],
+  "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+  "inventoryReceipt": "{\"manifest\":\"manifest.json\",\"sha256\":\"db4be2140d79707134cb73fcbea4170518a0f458a5c38eb2520c2c706c0c05d4\",\"capturedAt\":\"2026-10-12T19:04:50.801Z\",\"baseHead\":\"f5194740d57247e43a33a02879025299311d09e7\",\"rehearsal\":false}",
+  "oracleReceipt": "{\"oracle\":\"oracle.json\",\"sha256\":\"e1abe65313b24647cfab5009f214b29274dd2ec1f3968c026cc056d0566e2a7a\"}",
+  "cells": [
+    {
+      "name": "r20_prf04_start_first_claim",
+      "family": "start",
+      "size": "n",
+      "arm": "A1",
+      "ir": 47135,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_n",
+      "family": "cold",
+      "size": "n",
+      "arm": "A1",
+      "ir": 601882,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_2n",
+      "family": "cold",
+      "size": "2n",
+      "arm": "A1",
+      "ir": 1203524,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_4n",
+      "family": "cold",
+      "size": "4n",
+      "arm": "A1",
+      "ir": 2406724,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_n",
+      "family": "recycled",
+      "size": "n",
+      "arm": "A1",
+      "ir": 98779,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_2n",
+      "family": "recycled",
+      "size": "2n",
+      "arm": "A1",
+      "ir": 150411,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_4n",
+      "family": "recycled",
+      "size": "4n",
+      "arm": "A1",
+      "ir": 253675,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_n",
+      "family": "wave",
+      "size": "n",
+      "arm": "A1",
+      "ir": 3000311,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_2n",
+      "family": "wave",
+      "size": "2n",
+      "arm": "A1",
+      "ir": 3603575,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_4n",
+      "family": "wave",
+      "size": "4n",
+      "arm": "A1",
+      "ir": 4809540,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:20.929Z",
+      "receipt": "{\"run\":\"A1\",\"log\":\"logs/A1.log\",\"logSha256\":\"a76a279cba6643742344e31a332c675aeebda5015011c4a95e79efd466854863\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_start_first_claim",
+      "family": "start",
+      "size": "n",
+      "arm": "A2",
+      "ir": 47135,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_n",
+      "family": "cold",
+      "size": "n",
+      "arm": "A2",
+      "ir": 601882,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_2n",
+      "family": "cold",
+      "size": "2n",
+      "arm": "A2",
+      "ir": 1203524,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_4n",
+      "family": "cold",
+      "size": "4n",
+      "arm": "A2",
+      "ir": 2406724,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_n",
+      "family": "recycled",
+      "size": "n",
+      "arm": "A2",
+      "ir": 98779,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_2n",
+      "family": "recycled",
+      "size": "2n",
+      "arm": "A2",
+      "ir": 150411,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_4n",
+      "family": "recycled",
+      "size": "4n",
+      "arm": "A2",
+      "ir": 253675,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_n",
+      "family": "wave",
+      "size": "n",
+      "arm": "A2",
+      "ir": 3000311,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_2n",
+      "family": "wave",
+      "size": "2n",
+      "arm": "A2",
+      "ir": 3603575,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_4n",
+      "family": "wave",
+      "size": "4n",
+      "arm": "A2",
+      "ir": 4809540,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "3812ef03815bf8918f2c17cd55e6d3e19df85a18772ee7a99b4ed7b7ca4c395a",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:03:40.795Z",
+      "receipt": "{\"run\":\"A2\",\"log\":\"logs/A2.log\",\"logSha256\":\"41e28e70f9f1d7c1bd8c925798146c5cc803e6f45fde39273becdc8ed3b918bb\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_start_first_claim",
+      "family": "start",
+      "size": "n",
+      "arm": "B1",
+      "ir": 47143,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_n",
+      "family": "cold",
+      "size": "n",
+      "arm": "B1",
+      "ir": 602010,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_2n",
+      "family": "cold",
+      "size": "2n",
+      "arm": "B1",
+      "ir": 1203780,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_4n",
+      "family": "cold",
+      "size": "4n",
+      "arm": "B1",
+      "ir": 2407236,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_n",
+      "family": "recycled",
+      "size": "n",
+      "arm": "B1",
+      "ir": 99038,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_2n",
+      "family": "recycled",
+      "size": "2n",
+      "arm": "B1",
+      "ir": 150910,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_4n",
+      "family": "recycled",
+      "size": "4n",
+      "arm": "B1",
+      "ir": 254654,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_n",
+      "family": "wave",
+      "size": "n",
+      "arm": "B1",
+      "ir": 2459372,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_2n",
+      "family": "wave",
+      "size": "2n",
+      "arm": "B1",
+      "ir": 2511228,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_4n",
+      "family": "wave",
+      "size": "4n",
+      "arm": "B1",
+      "ir": 2614949,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:00.034Z",
+      "receipt": "{\"run\":\"B1\",\"log\":\"logs/B1.log\",\"logSha256\":\"e0cbf993456a9c09379e8769457a5a9229e33d63186ef212bc1ee9d1e3b21bcd\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_start_first_claim",
+      "family": "start",
+      "size": "n",
+      "arm": "B2",
+      "ir": 47143,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_n",
+      "family": "cold",
+      "size": "n",
+      "arm": "B2",
+      "ir": 602010,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_2n",
+      "family": "cold",
+      "size": "2n",
+      "arm": "B2",
+      "ir": 1203780,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_4n",
+      "family": "cold",
+      "size": "4n",
+      "arm": "B2",
+      "ir": 2407236,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_n",
+      "family": "recycled",
+      "size": "n",
+      "arm": "B2",
+      "ir": 99038,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_2n",
+      "family": "recycled",
+      "size": "2n",
+      "arm": "B2",
+      "ir": 150910,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_4n",
+      "family": "recycled",
+      "size": "4n",
+      "arm": "B2",
+      "ir": 254654,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_n",
+      "family": "wave",
+      "size": "n",
+      "arm": "B2",
+      "ir": 2459372,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_2n",
+      "family": "wave",
+      "size": "2n",
+      "arm": "B2",
+      "ir": 2511228,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_4n",
+      "family": "wave",
+      "size": "4n",
+      "arm": "B2",
+      "ir": 2614949,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "613e48331e7fc9d60e2d71562571e6da7aa19318c043c47d06f03df669086183",
+      "source": {
+        "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+        "capturedAt": "2026-10-12T18:52:19.775Z"
+      },
+      "startedAt": "2026-10-12T19:04:16.277Z",
+      "receipt": "{\"run\":\"B2\",\"log\":\"logs/B2.log\",\"logSha256\":\"625e2d7f434cebacc8743d3dc5b4edd4bf7f4d03fa06e841f31610f9bfbd7c8c\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_start_first_claim",
+      "family": "start",
+      "size": "n",
+      "arm": "C0",
+      "ir": 47135,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_n",
+      "family": "cold",
+      "size": "n",
+      "arm": "C0",
+      "ir": 601882,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_2n",
+      "family": "cold",
+      "size": "2n",
+      "arm": "C0",
+      "ir": 1203524,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_cold_first_claim_4n",
+      "family": "cold",
+      "size": "4n",
+      "arm": "C0",
+      "ir": 2406724,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_n",
+      "family": "recycled",
+      "size": "n",
+      "arm": "C0",
+      "ir": 98779,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_2n",
+      "family": "recycled",
+      "size": "2n",
+      "arm": "C0",
+      "ir": 150411,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_recycled_first_claim_4n",
+      "family": "recycled",
+      "size": "4n",
+      "arm": "C0",
+      "ir": 253675,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_n",
+      "family": "wave",
+      "size": "n",
+      "arm": "C0",
+      "ir": 3000311,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_2n",
+      "family": "wave",
+      "size": "2n",
+      "arm": "C0",
+      "ir": 3603575,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    },
+    {
+      "name": "r20_prf04_wave_first_claim_4n",
+      "family": "wave",
+      "size": "4n",
+      "arm": "C0",
+      "ir": 4809540,
+      "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39",
+      "binarySha256": "f685720de511c87eb3331092b92130a87d18d41f75d4323e91a39f640bdc7e5c",
+      "source": {
+        "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+        "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+        "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+        "capturedAt": "2026-10-12T18:52:19.352Z"
+      },
+      "startedAt": "2026-10-12T19:04:30.502Z",
+      "receipt": "{\"run\":\"C0\",\"log\":\"logs/C0.log\",\"logSha256\":\"a147c6f295674940c831689428dcac13c9c03834f31f550055e6720b36539faf\",\"counterfactual\":null}"
+    }
+  ],
+  "oracle": {
+    "A": {
+      "start": {
+        "n": {
+          "n": 1,
+          "arm": "A",
+          "bumpDelta": 1,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 1,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "cold": {
+        "n": {
+          "n": 16,
+          "arm": "A",
+          "bumpDelta": 16,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 16,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "A",
+          "bumpDelta": 32,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 32,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "A",
+          "bumpDelta": 64,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 64,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "recycled": {
+        "n": {
+          "n": 16,
+          "arm": "A",
+          "bumpDelta": 0,
+          "hintDelta": 16,
+          "reclaimDelta": 16,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "A",
+          "bumpDelta": 0,
+          "hintDelta": 32,
+          "reclaimDelta": 32,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "A",
+          "bumpDelta": 0,
+          "hintDelta": 64,
+          "reclaimDelta": 64,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "wave": {
+        "n": {
+          "n": 16,
+          "arm": "A",
+          "bumpDelta": 15,
+          "hintDelta": 1,
+          "reclaimDelta": 1,
+          "newHeaps": 15,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "A",
+          "bumpDelta": 31,
+          "hintDelta": 1,
+          "reclaimDelta": 1,
+          "newHeaps": 31,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "A",
+          "bumpDelta": 63,
+          "hintDelta": 1,
+          "reclaimDelta": 1,
+          "newHeaps": 63,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      }
+    },
+    "B": {
+      "start": {
+        "n": {
+          "n": 1,
+          "arm": "B",
+          "bumpDelta": 1,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 1,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "cold": {
+        "n": {
+          "n": 16,
+          "arm": "B",
+          "bumpDelta": 16,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 16,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "B",
+          "bumpDelta": 32,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 32,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "B",
+          "bumpDelta": 64,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 64,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "recycled": {
+        "n": {
+          "n": 16,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 16,
+          "reclaimDelta": 16,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 32,
+          "reclaimDelta": 32,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 64,
+          "reclaimDelta": 64,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "wave": {
+        "n": {
+          "n": 16,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 1,
+          "reclaimDelta": 16,
+          "newHeaps": 0,
+          "freeSetDelta": 15,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 1,
+          "reclaimDelta": 32,
+          "newHeaps": 0,
+          "freeSetDelta": 31,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 1,
+          "reclaimDelta": 64,
+          "newHeaps": 0,
+          "freeSetDelta": 63,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      }
+    }
+  }
+}

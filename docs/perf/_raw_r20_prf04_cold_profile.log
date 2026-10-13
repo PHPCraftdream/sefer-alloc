@@ -1,0 +1,52 @@
+# R20 PRF-04 A-only profile of cell r20_prf04_cold_first_claim_n (N=16), arm A, features: production internals
+# source: callgrind output of the committed cell; NOT gate data; no B build was measured
+# command: callgrind_annotate --inclusive=yes|no <callgrind.out of the cell>   (valgrind 3.22.0)
+# --- inclusive cost (children included), top rows ---
+Ir                file:function
+--------------------------------------------------------------------------------
+602,270 (100.0%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+602,270 (100.0%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+602,270 (100.0%)  ???:(below main) [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+602,270 (100.0%)  ???:main [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:r20_prf04_claim_iai::gate::claim_path::__run [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:r20_prf04_claim_iai::gate::r20_prf04_cold_first_claim_n::__iai_callgrind_wrapper_mod::r20_prf04_cold_first_claim_n [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:r20_prf04_claim_iai::gate::r20_prf04_cold_first_claim_n::wrapper [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:r20_prf04_claim_iai::main [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:std::rt::lang_start::<()>::{closure#0} [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:std::rt::lang_start_internal [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,270 (100.0%)  ???:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+602,104 (99.97%)  ???:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::dbg_claim_lease [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+553,194 (91.85%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+539,235 (89.53%)  ???:<sefer_alloc::registry::segment_route::directory::RouteDirectory>::register [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+531,620 (88.27%)  ./malloc/./malloc/malloc.c:calloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+522,752 (86.80%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+520,976 (86.50%)  ./malloc/../string/bits/string_fortified.h:calloc
+520,880 (86.49%)  ???:0x000000000489d740 [???]
+ 43,200 ( 7.17%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 11,541 ( 1.92%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  5,887 ( 0.98%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+# --- self cost (exclusive), top rows ---
+Ir                file:function
+--------------------------------------------------------------------------------
+522,752 (86.80%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 43,200 ( 7.17%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 11,029 ( 1.83%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  8,299 ( 1.38%)  ???:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::dbg_claim_lease [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+  5,080 ( 0.84%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::new_with_config_and_owner [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+  4,192 ( 0.70%)  ???:<sefer_alloc::registry::segment_route::directory::RouteDirectory>::register [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+  3,392 ( 0.56%)  ./malloc/./malloc/malloc.c:calloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+
+# --- cell r20_prf04_recycled_first_claim_2n (N=32), arm A: self cost (exclusive), top rows ---
+Ir                file:function
+--------------------------------------------------------------------------------
+102,129 (67.89%)  ???:<sefer_alloc::registry::heap_registry::claim::HeapRegistry>::dbg_claim_lease [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+ 42,180 (28.04%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  2,700 ( 1.79%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  1,136 ( 0.76%)  ???:r20_prf04_claim_iai::prf04::recycled_first_claim [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+    534 ( 0.35%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    384 ( 0.26%)  ???:<sefer_alloc::alloc_core::alloc_core::alloc_core_impl::AllocCore>::evict_one_oldest [/tmp/sefer-iai-prf04/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1]
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------

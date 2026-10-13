@@ -1,0 +1,75 @@
+exit=0
+verdict: GO
+| family start (construction) | status judged | T_s 10 | windows - |
+|   A1 | n=47135 2n=- 4n=- | windows=- |
+|   A2 | n=47135 2n=- 4n=- | windows=- |
+|   B1 | n=47143 2n=- 4n=- | windows=- |
+|   B2 | n=47143 2n=- 4n=- | windows=- |
+|   C0 | n=47135 2n=- 4n=- | windows=- |
+|   R-construct B1 vs A1 | Ir_B-Ir_A=8 | budget_K=10 | pass=true |
+|   R-construct B2 vs A1 | Ir_B-Ir_A=8 | budget_K=10 | pass=true |
+|   R-construct B1 vs A2 | Ir_B-Ir_A=8 | budget_K=10 | pass=true |
+|   R-construct B2 vs A2 | Ir_B-Ir_A=8 | budget_K=10 | pass=true |
+|   noise | |A1-A2|=0 |C0-A1|=0 | ceiling=235 (0.5% of A1, floor 10) | pass=true |
+|   oracle | pass=true | bad= | missing= |
+| family cold | status judged | T_s 10 | windows 3 |
+|   A1 | n=601882 2n=1203524 4n=2406724 | windows=601882,601642,1203200 |
+|   A2 | n=601882 2n=1203524 4n=2406724 | windows=601882,601642,1203200 |
+|   B1 | n=602010 2n=1203780 4n=2407236 | windows=602010,601770,1203456 |
+|   B2 | n=602010 2n=1203780 4n=2407236 | windows=602010,601770,1203456 |
+|   C0 | n=601882 2n=1203524 4n=2406724 | windows=601882,601642,1203200 |
+|   R-claim B1 vs A1 window 0 | +0.02% (numerator 128, denominator 601882) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 0 | +0.02% (numerator 128, denominator 601882) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 0 | +0.02% (numerator 128, denominator 601882) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 0 | +0.02% (numerator 128, denominator 601882) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A1 window 1 | +0.02% (numerator 128, denominator 601642) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 1 | +0.02% (numerator 128, denominator 601642) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 1 | +0.02% (numerator 128, denominator 601642) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 1 | +0.02% (numerator 128, denominator 601642) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A1 window 2 | +0.02% (numerator 256, denominator 1203200) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 2 | +0.02% (numerator 256, denominator 1203200) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 2 | +0.02% (numerator 256, denominator 1203200) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 2 | +0.02% (numerator 256, denominator 1203200) | budget +5% (owner, one-sided) | pass=true |
+|   noise window 0 | |A1-A2|=0 |C0-A1|=0 | ceiling=3009 (0.5% of A1, floor 10) | pass=true |
+|   noise window 1 | |A1-A2|=0 |C0-A1|=0 | ceiling=3008 (0.5% of A1, floor 10) | pass=true |
+|   noise window 2 | |A1-A2|=0 |C0-A1|=0 | ceiling=6016 (0.5% of A1, floor 10) | pass=true |
+|   oracle | pass=true | bad= | missing= |
+| family recycled | status judged | T_s 10 | windows 1 |
+|   A1 | n=98779 2n=150411 4n=253675 | windows=51632 |
+|   A2 | n=98779 2n=150411 4n=253675 | windows=51632 |
+|   B1 | n=99038 2n=150910 4n=254654 | windows=51872 |
+|   B2 | n=99038 2n=150910 4n=254654 | windows=51872 |
+|   C0 | n=98779 2n=150411 4n=253675 | windows=51632 |
+|   R-claim B1 vs A1 window 0 | +0.46% (numerator 240, denominator 51632) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 0 | +0.46% (numerator 240, denominator 51632) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 0 | +0.46% (numerator 240, denominator 51632) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 0 | +0.46% (numerator 240, denominator 51632) | budget +5% (owner, one-sided) | pass=true |
+|   noise window 0 | |A1-A2|=0 |C0-A1|=0 | ceiling=258 (0.5% of A1, floor 10) | pass=true |
+|   linearity A1 | dev=0 | bound=10 | pass=true |
+|   linearity A2 | dev=0 | bound=10 | pass=true |
+|   linearity B1 | dev=0 | bound=10 | pass=true |
+|   linearity B2 | dev=0 | bound=10 | pass=true |
+|   linearity C0 | dev=0 | bound=10 | pass=true |
+|   oracle | pass=true | bad= | missing= |
+| family wave | status judged | T_s 10 | windows 3 |
+|   A1 | n=3000311 2n=3603575 4n=4809540 | windows=3000311,603264,1205965 |
+|   A2 | n=3000311 2n=3603575 4n=4809540 | windows=3000311,603264,1205965 |
+|   B1 | n=2459372 2n=2511228 4n=2614949 | windows=2459372,51856,103721 |
+|   B2 | n=2459372 2n=2511228 4n=2614949 | windows=2459372,51856,103721 |
+|   C0 | n=3000311 2n=3603575 4n=4809540 | windows=3000311,603264,1205965 |
+|   R-claim B1 vs A1 window 0 | -18.03% (numerator -540939, denominator 3000311) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 0 | -18.03% (numerator -540939, denominator 3000311) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 0 | -18.03% (numerator -540939, denominator 3000311) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 0 | -18.03% (numerator -540939, denominator 3000311) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A1 window 1 | -91.40% (numerator -551408, denominator 603264) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 1 | -91.40% (numerator -551408, denominator 603264) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 1 | -91.40% (numerator -551408, denominator 603264) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 1 | -91.40% (numerator -551408, denominator 603264) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A1 window 2 | -91.40% (numerator -1102244, denominator 1205965) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A1 window 2 | -91.40% (numerator -1102244, denominator 1205965) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B1 vs A2 window 2 | -91.40% (numerator -1102244, denominator 1205965) | budget +5% (owner, one-sided) | pass=true |
+|   R-claim B2 vs A2 window 2 | -91.40% (numerator -1102244, denominator 1205965) | budget +5% (owner, one-sided) | pass=true |
+|   noise window 0 | |A1-A2|=0 |C0-A1|=0 | ceiling=15001 (0.5% of A1, floor 10) | pass=true |
+|   noise window 1 | |A1-A2|=0 |C0-A1|=0 | ceiling=3016 (0.5% of A1, floor 10) | pass=true |
+|   noise window 2 | |A1-A2|=0 |C0-A1|=0 | ceiling=6029 (0.5% of A1, floor 10) | pass=true |
+|   oracle | pass=true | bad= | missing= |

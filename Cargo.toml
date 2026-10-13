@@ -1782,6 +1782,15 @@ name = "r19_prf02_production_iai"
 harness = false
 required-features = ["production", "internals"]
 
+# R20 PRF-04 claim-path Ir cells (own iai target so `perf_gate_iai` does not
+# grow). Measured without `bench-internals`: the claim counters exist only
+# under it, so the path oracle is a separate example.
+[[bench]]
+name = "r20_prf04_claim_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
 # Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
 [[bench]]
 name = "r18_sidecar_scan_iai"
@@ -2409,6 +2418,15 @@ required-features = ["production"]
 
 [[example]]
 name = "r19_prf01_oracle"
+required-features = ["production", "bench-internals", "internals"]
+
+# R20 PRF-04: claim-path oracle for the Ir-gate cells in
+# `benches/support/r20_prf04.rs` — verifies via the bench-internals
+# CLAIM_SOURCES counters that the cold cells measure EMPTY-first-claim bumps
+# and the recycled cells measure reuse-hint reclaims (prereg assertions in
+# the example; see its module doc).
+[[example]]
+name = "r20_prf04_claim_path_oracle"
 required-features = ["production", "bench-internals", "internals"]
 
 # R2-20: this regression uses the arbitrary-handle test hook, which is

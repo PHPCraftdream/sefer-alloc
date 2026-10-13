@@ -33,13 +33,29 @@ For a control family `F` with cells at `N`, `2N` (and `4N` where the family has 
    `T_s = max(10, |s_A1 − s_A2|, |s_C0 − s_A1|)` — the same structure as the R19 `T`, applied to the slope.
 3. **Linearity check.** Where a `4N` cell exists, `|(Ir(4N) − Ir(2N)) − 2·(Ir(2N) − Ir(N))| <= T_s` for every arm;
    if it fails the family is **INVALID** (warm-up is not linear) and yields no verdict.
-4. **Construction (one-sided, separate cell).** `K_X = Ir_X(N) − s_X` is the one-time part (construction, bootstrap,
-   first scan). `K_B − K_A <= budget_K`, where `budget_K` is written into the preregistration by the owner **before**
-   the B build exists, together with the principle it comes from (for example the accepted layout change), never from a
-   seen result. A candidate that adds no construction work gets `budget_K = T_s`.
+3a. **Non-affine families (registered scenario windows).** A family whose cost is not affine in `N`, by a behaviour
+   characterised on A alone before any B build exists, may be judged as a set of registered scenario windows instead of
+   item 3. The exception is narrow: (i) the A-only characterization plan is registered before confirmatory
+   measurement, every probe that was run and every rejected design is disclosed, and the raw artefacts are retained
+   (a mechanism counts as *established* only with a retained profile or attribution, otherwise it is stated as a
+   hypothesis and the exception rests on the observed non-affinity alone); (ii) the windows, their boundaries and
+   lengths, the start states, the qualification criteria, the inventory and a layout-noise ceiling are fixed before the
+   measuring B build and chosen from the semantics of the state, not from how favourable the observed numbers are;
+   (iii) every mandatory window must pass with its own `T_s`, and adjacent windows share an end point, so they are NOT
+   independent confirmations; (iv) the exception changes neither the direction nor the budget of any check, grants no
+   extrapolation beyond the registered states, and never allows construction to be computed from a linear intercept
+   (construction needs its own direct cell, item 4); (v) a failed qualification is INVALID or INCONCLUSIVE, never a wider
+   tolerance. A family that fails item 3 without all of this stays **INVALID**.
+4. **Construction (one-sided, separate cell).** Preferred: a **direct start cell** that executes only the bootstrap and
+   the first operation; its own `Ir` is the construction measurement. For an affine family `K_X = Ir_X(N) − s_X` is the
+   one-time part of THAT family including its warm-up, not a pure construction cost; for a non-affine family no
+   intercept is derived at all (item 3a). `K_B − K_A <= budget_K` (for a start cell, `Ir_B − Ir_A <= budget_K`), where
+   `budget_K` is written into the preregistration by the owner **before** the B build exists, together with the
+   principle it comes from (for example the accepted layout change), never from a seen result. A candidate that adds
+   no construction work gets `budget_K = T_s`.
 5. **Inventory.** Every control family in a gate inventory carries its `2N` sibling (and `4N` for cold/first-touch
-   families). A family without siblings is listed as **UNJUDGEABLE** and is excluded from the verdict, never silently
-   treated as a pass.
+   families). A family without siblings is listed as **UNJUDGEABLE**, is excluded from the other checks and is never
+   silently treated as a pass: the gate verdict is then never GO.
 6. **Producer/consumer price.** A per-event budget (for example PRF-01's `<= +6 Ir` per remote free) stays computed on
    its own window cell with the fixed construction overhead cancelled as in PRF-01 Amendment B; it is not replaced by
    this rule and its budget is not changed.

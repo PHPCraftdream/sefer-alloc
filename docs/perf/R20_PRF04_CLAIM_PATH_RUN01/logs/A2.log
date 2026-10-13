@@ -1,0 +1,76 @@
+    Finished `bench` profile [optimized] target(s) in 3.59s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/r20_prf04_claim_iai.rs (/tmp/r20p4/A/release/deps/r20_prf04_claim_iai-0237dd104b9d19a1)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_start_first_claim
+  Instructions:                       47135|47135                (No change)
+  L1 Hits:                            90508|90508                (No change)
+  L2 Hits:                              157|157                  (No change)
+  RAM Hits:                             984|984                  (No change)
+  Total read+write:                   91649|91649                (No change)
+  Estimated Cycles:                  125733|125733               (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_cold_first_claim_n
+  Instructions:                      601882|601882               (No change)
+  L1 Hits:                          1148390|1148390              (No change)
+  L2 Hits:                             2498|2498                 (No change)
+  RAM Hits:                           10893|10893                (No change)
+  Total read+write:                 1161781|1161781              (No change)
+  Estimated Cycles:                 1542135|1542135              (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_cold_first_claim_2n
+  Instructions:                     1203524|1203524              (No change)
+  L1 Hits:                          2296134|2296134              (No change)
+  L2 Hits:                             5059|5059                 (No change)
+  RAM Hits:                           21577|21577                (No change)
+  Total read+write:                 2322770|2322770              (No change)
+  Estimated Cycles:                 3076624|3076624              (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_cold_first_claim_4n
+  Instructions:                     2406724|2406724              (No change)
+  L1 Hits:                          4602865|4602865              (No change)
+  L2 Hits:                            10333|10333                (No change)
+  RAM Hits:                           42908|42908                (No change)
+  Total read+write:                 4656106|4656106              (No change)
+  Estimated Cycles:                 6156310|6156310              (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_recycled_first_claim_n
+  Instructions:                       98779|98779                (No change)
+  L1 Hits:                           156651|156651               (No change)
+  L2 Hits:                              187|187                  (No change)
+  RAM Hits:                            1015|1015                 (No change)
+  Total read+write:                  157853|157853               (No change)
+  Estimated Cycles:                  193111|193111               (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_recycled_first_claim_2n
+  Instructions:                      150411|150411               (No change)
+  L1 Hits:                           222843|222843               (No change)
+  L2 Hits:                              187|187                  (No change)
+  RAM Hits:                            1015|1015                 (No change)
+  Total read+write:                  224045|224045               (No change)
+  Estimated Cycles:                  259303|259303               (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_recycled_first_claim_4n
+  Instructions:                      253675|253675               (No change)
+  L1 Hits:                           355227|355227               (No change)
+  L2 Hits:                              187|187                  (No change)
+  RAM Hits:                            1015|1015                 (No change)
+  Total read+write:                  356429|356429               (No change)
+  Estimated Cycles:                  391687|391687               (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_wave_first_claim_n
+  Instructions:                     3000311|3000311              (No change)
+  L1 Hits:                          5738122|5738122              (No change)
+  L2 Hits:                            13122|13122                (No change)
+  RAM Hits:                           53357|53357                (No change)
+  Total read+write:                 5804601|5804601              (No change)
+  Estimated Cycles:                 7671227|7671227              (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_wave_first_claim_2n
+  Instructions:                     3603575|3603575              (No change)
+  L1 Hits:                          6894912|6894912              (No change)
+  L2 Hits:                            15776|15776                (No change)
+  RAM Hits:                           64053|64053                (No change)
+  Total read+write:                 6974741|6974741              (No change)
+  Estimated Cycles:                 9215647|9215647              (No change)
+r20_prf04_claim_iai::gate::claim_path::r20_prf04_wave_first_claim_4n
+  Instructions:                     4809540|4809540              (No change)
+  L1 Hits:                          9206970|9206970              (No change)
+  L2 Hits:                            21095|21095                (No change)
+  RAM Hits:                           85431|85431                (No change)
+  Total read+write:                 9313496|9313496              (No change)
+  Estimated Cycles:                12302530|12302530             (No change)
+
+Iai-Callgrind result: Ok. 10 without regressions; 0 regressed; 10 benchmarks finished in 15.1726s

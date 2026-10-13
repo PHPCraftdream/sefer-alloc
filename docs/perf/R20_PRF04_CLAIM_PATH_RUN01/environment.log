@@ -1,0 +1,14 @@
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+cargo 1.98.1 (797e8a9bc 2026-08-05)
+valgrind-3.22.0
+Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+cpu-model: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+iai-features: production internals
+oracle-features: production bench-internals internals

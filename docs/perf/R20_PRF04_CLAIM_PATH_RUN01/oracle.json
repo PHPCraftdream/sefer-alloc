@@ -1,0 +1,1108 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-12T19:03:20.106Z",
+  "records": {
+    "A": {
+      "start": {
+        "n": {
+          "n": 1,
+          "arm": "A",
+          "bumpDelta": 1,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 1,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "cold": {
+        "n": {
+          "n": 16,
+          "arm": "A",
+          "bumpDelta": 16,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 16,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "A",
+          "bumpDelta": 32,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 32,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "A",
+          "bumpDelta": 64,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 64,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "recycled": {
+        "n": {
+          "n": 16,
+          "arm": "A",
+          "bumpDelta": 0,
+          "hintDelta": 16,
+          "reclaimDelta": 16,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "A",
+          "bumpDelta": 0,
+          "hintDelta": 32,
+          "reclaimDelta": 32,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "A",
+          "bumpDelta": 0,
+          "hintDelta": 64,
+          "reclaimDelta": 64,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "wave": {
+        "n": {
+          "n": 16,
+          "arm": "A",
+          "bumpDelta": 15,
+          "hintDelta": 1,
+          "reclaimDelta": 1,
+          "newHeaps": 15,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "A",
+          "bumpDelta": 31,
+          "hintDelta": 1,
+          "reclaimDelta": 1,
+          "newHeaps": 31,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "A",
+          "bumpDelta": 63,
+          "hintDelta": 1,
+          "reclaimDelta": 1,
+          "newHeaps": 63,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 4,
+          "missingFifthExplicitZero": true,
+          "binarySha256": "9f40901a0fad18a5123f24f582efc093769402451b4ffb11b37fe543b767e521",
+          "source": {
+            "baseHead": "f5194740d57247e43a33a02879025299311d09e7",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "e9c41020f85d36b1b5e24e86792a72174de22ededf18e491df22ff9bfda826be",
+            "capturedAt": "2026-10-12T18:52:19.352Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      }
+    },
+    "B": {
+      "start": {
+        "n": {
+          "n": 1,
+          "arm": "B",
+          "bumpDelta": 1,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 1,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "cold": {
+        "n": {
+          "n": 16,
+          "arm": "B",
+          "bumpDelta": 16,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 16,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "B",
+          "bumpDelta": 32,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 32,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "B",
+          "bumpDelta": 64,
+          "hintDelta": 0,
+          "reclaimDelta": 0,
+          "newHeaps": 64,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "recycled": {
+        "n": {
+          "n": 16,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 16,
+          "reclaimDelta": 16,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 32,
+          "reclaimDelta": 32,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 64,
+          "reclaimDelta": 64,
+          "newHeaps": 0,
+          "freeSetDelta": 0,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      },
+      "wave": {
+        "n": {
+          "n": 16,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 1,
+          "reclaimDelta": 16,
+          "newHeaps": 0,
+          "freeSetDelta": 15,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "2n": {
+          "n": 32,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 1,
+          "reclaimDelta": 32,
+          "newHeaps": 0,
+          "freeSetDelta": 31,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        },
+        "4n": {
+          "n": 64,
+          "arm": "B",
+          "bumpDelta": 0,
+          "hintDelta": 1,
+          "reclaimDelta": 64,
+          "newHeaps": 0,
+          "freeSetDelta": 63,
+          "claimSourcesLen": 5,
+          "missingFifthExplicitZero": false,
+          "binarySha256": "c58ca4743970b0af609514215532476652800987d707895dba040dbd09e49d87",
+          "source": {
+            "baseHead": "ef0d2657ed75b03d5231ad017993972ae1d41180",
+            "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+            "identitySha256": "0610a5f1fd3fc2496974887a9e859681e22532d9e1beb11d4c193dd5e7e77d94",
+            "capturedAt": "2026-10-12T18:52:19.775Z"
+          },
+          "environmentSha256": "9043508718b63e231fe487072b0c7df0d362ab9f2d6065174a68fb82d27c5f39"
+        }
+      }
+    }
+  },
+  "raw": {
+    "A": {
+      "start": {
+        "n": {
+          "mode": "start",
+          "n": 1,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 1,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 1,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      },
+      "cold": {
+        "n": {
+          "mode": "cold",
+          "n": 16,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 16,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 16
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 16,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 16,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "2n": {
+          "mode": "cold",
+          "n": 32,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 32,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 32
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 32,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 32,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "4n": {
+          "mode": "cold",
+          "n": 64,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 64
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 64,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 64,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      },
+      "recycled": {
+        "n": {
+          "mode": "recycled",
+          "n": 16,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_after": {
+            "hint": 16,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 0,
+          "hint_delta": 16,
+          "reclaim_delta": 16,
+          "new_heaps": 0,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "2n": {
+          "mode": "recycled",
+          "n": 32,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_after": {
+            "hint": 32,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 0,
+          "hint_delta": 32,
+          "reclaim_delta": 32,
+          "new_heaps": 0,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "4n": {
+          "mode": "recycled",
+          "n": 64,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_after": {
+            "hint": 64,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 1
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 0,
+          "hint_delta": 64,
+          "reclaim_delta": 64,
+          "new_heaps": 0,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      },
+      "wave": {
+        "n": {
+          "mode": "wave",
+          "n": 16,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 64
+          },
+          "claim_sources_after": {
+            "hint": 1,
+            "bump": 79,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 79
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 15,
+          "hint_delta": 1,
+          "reclaim_delta": 1,
+          "new_heaps": 15,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "2n": {
+          "mode": "wave",
+          "n": 32,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 64
+          },
+          "claim_sources_after": {
+            "hint": 1,
+            "bump": 95,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 95
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 31,
+          "hint_delta": 1,
+          "reclaim_delta": 1,
+          "new_heaps": 31,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "4n": {
+          "mode": "wave",
+          "n": 64,
+          "arm": "A",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 64
+          },
+          "claim_sources_after": {
+            "hint": 1,
+            "bump": 127,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 4,
+            "high_water": 127
+          },
+          "claim_sources_len": 4,
+          "missing_fifth_explicit_zero": true,
+          "bump_delta": 63,
+          "hint_delta": 1,
+          "reclaim_delta": 1,
+          "new_heaps": 63,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      }
+    },
+    "B": {
+      "start": {
+        "n": {
+          "mode": "start",
+          "n": 1,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 1,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 1,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      },
+      "cold": {
+        "n": {
+          "mode": "cold",
+          "n": 16,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 16,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 16
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 16,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 16,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "2n": {
+          "mode": "cold",
+          "n": 32,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 32,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 32
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 32,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 32,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "4n": {
+          "mode": "cold",
+          "n": 64,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 0,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 0
+          },
+          "claim_sources_after": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 64,
+          "hint_delta": 0,
+          "reclaim_delta": 0,
+          "new_heaps": 64,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      },
+      "recycled": {
+        "n": {
+          "mode": "recycled",
+          "n": 16,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_after": {
+            "hint": 16,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 0,
+          "hint_delta": 16,
+          "reclaim_delta": 16,
+          "new_heaps": 0,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "2n": {
+          "mode": "recycled",
+          "n": 32,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_after": {
+            "hint": 32,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 0,
+          "hint_delta": 32,
+          "reclaim_delta": 32,
+          "new_heaps": 0,
+          "free_set_delta": 0,
+          "ok": true
+        },
+        "4n": {
+          "mode": "recycled",
+          "n": 64,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_after": {
+            "hint": 64,
+            "bump": 1,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 1
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 0,
+          "hint_delta": 64,
+          "reclaim_delta": 64,
+          "new_heaps": 0,
+          "free_set_delta": 0,
+          "ok": true
+        }
+      },
+      "wave": {
+        "n": {
+          "mode": "wave",
+          "n": 16,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_after": {
+            "hint": 1,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 15,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 0,
+          "hint_delta": 1,
+          "reclaim_delta": 16,
+          "new_heaps": 0,
+          "free_set_delta": 15,
+          "ok": true
+        },
+        "2n": {
+          "mode": "wave",
+          "n": 32,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_after": {
+            "hint": 1,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 31,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 0,
+          "hint_delta": 1,
+          "reclaim_delta": 32,
+          "new_heaps": 0,
+          "free_set_delta": 31,
+          "ok": true
+        },
+        "4n": {
+          "mode": "wave",
+          "n": 64,
+          "arm": "B",
+          "warmup_k": 1,
+          "wave_slots": 64,
+          "claim_sources_before": {
+            "hint": 0,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 0,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_after": {
+            "hint": 1,
+            "bump": 64,
+            "cap_scan": 0,
+            "recovery": 0,
+            "free_set": 63,
+            "claim_sources_len": 5,
+            "high_water": 64
+          },
+          "claim_sources_len": 5,
+          "missing_fifth_explicit_zero": false,
+          "bump_delta": 0,
+          "hint_delta": 1,
+          "reclaim_delta": 64,
+          "new_heaps": 0,
+          "free_set_delta": 63,
+          "ok": true
+        }
+      }
+    }
+  }
+}
