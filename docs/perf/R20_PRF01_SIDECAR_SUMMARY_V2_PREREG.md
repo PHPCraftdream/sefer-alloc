@@ -96,10 +96,12 @@ run01 verdict (C′ NO-GO: +569 Ir per hot control = one-time sidecar constructi
    mimalloc, sizeOf) is still NO-GO/INVALID. The deferred method: batch-timer over a fixed remote-free
    batch, per-process p50/p99 of batch times divided by the batch size, on a quiet bare-metal host.
 
-## Cells and inventory (judge-frozen, 32 names)
+## Cells and inventory (judge-frozen, 33 names)
 
 5 benefit + 12 hot-family cells (`r20_prf01_{small_churn_16b,churn_256b,churn_write_256b,aligned_churn_640b_a128}_{n,2n,4n}`)
-+ 1 construction + 13 mimalloc + publication + producer = 32 names × 5 arms = 160 rows. The original
++ 1 construction + 13 mimalloc + publication + producer = 33 names × 5 arms = 165 rows.
+The iai target contributes 20 cells (5 benefit + 13 mimalloc + publication + producer); the controls
+target contributes 13 cells (12 hot + construction). The original
 whole-body hot cells of `perf_gate_iai.rs` still execute (the runner runs the whole group per label)
 but are NOT judge rows in v2; their Ir is retained in the raw logs only.
 
@@ -131,6 +133,16 @@ pattern (`CHURN_OPS_2N`).
   capture/identity-review protocol; identity is bound per stage (prepare manifest + per-run binary
   SHA256 + clean-tree checks), and the producer boundary receipts (nm/disassembly/profile,
   Amendment B coverage) are produced by the runner's measure stage per arm as in R19.
+
+## Rehearsal contract
+
+If present, `rehearsal` must be boolean; the runner emits `rehearsal: true` only in rehearsal.
+Only the two A/B distinct-source-identity and distinct-measurement-commit assertions are relaxed.
+A distinct, validated `B.oracleSource` is required only in rehearsal and forbidden otherwise; B oracle
+linkages are checked against it, while all other checks remain unchanged. Verdicts are prefixed
+`REHEARSAL: ` except INVALID, INCOMPLETE and UNJUDGEABLE. Prefixed verdicts and the unprefixed
+`INCONCLUSIVE (native deferred)` exit 0; all other verdicts exit 1. Rehearsal produces no usable
+GO/NO-GO gate result.
 
 ## Not covered (stated, not hidden)
 
@@ -181,3 +193,19 @@ pattern (`CHURN_OPS_2N`).
   and the colour escapes broke the cell-header match (raw output retained by the new diagnostics showed
   all 13 `Instructions:` blocks). The controls command now sets it, and `parseIr` also strips ANSI
   sequences before matching. Output formatting only; re-frozen, still no measurement.
+- 2026-10-13 (seventh rehearsal, run 38368482309, plus a static review of the never-executed remainder of
+  `measure`): rehearsal 7 passed prepare/build/oracle and both iai measurements and failed at the producer
+  boundary of C0 (the C arm had no producer-control build). A static pass over the rest of `measure`
+  against the judge found, and this re-freeze fixes, before any measurement:
+  (1) runner: C builds the producer-control binary; measurements execute the recorded executables
+  directly (the former `cargo bench` re-invocation could rebuild a different binary than the recorded
+  one); per-label oracle observations (unique run ids; C0 reuses A's oracle binary explicitly); measured
+  PIDs, profile inventories and string receipts; CSV derived from the final input;
+  (2) judge: controls-target rows are checked against the controls binary pins (new
+  `identities.C0.controlsBinarySha256`), not the iai binary; an explicit `rehearsal` contract (section
+  above) replaces the impossible requirement that a B = A′ rehearsal pass the real-run A/B identity
+  asserts; counts corrected to 33 names / 165 rows;
+  (3) judge: the hot-family slope check was one-sided although the rule and this document say two-sided
+  (`|s_B − s_A| ≤ T_s`); it now uses the absolute value. Selftest gained mutants for each of these (149
+  checks); the two-sided mutant fails against the previous one-sided code (counterfactual run).
+  No measured quantity changed; still no measurement.
