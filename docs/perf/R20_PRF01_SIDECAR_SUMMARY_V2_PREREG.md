@@ -170,3 +170,9 @@ pattern (`CHURN_OPS_2N`).
   `crate::group::cell` line (optional trailing arguments, nothing after the name but whitespace). Replayed
   offline on the captured output it returns `small_churn_16b = 54293`, the value printed by iai.
   Parser only; no measured quantity changed. Re-frozen, still no measurement.
+- 2026-10-13 (fifth rehearsal, run 38361458401): parsing now works; the A1 iai output with
+  `IAI_CALLGRIND_LOG=debug` plus valgrind `--verbose` exceeded the runner's 400 KiB per-log cap
+  (`raw log A1/perf_gate_iai over 409600 bytes`). The cap is raised to the CLAUDE.md tier-3 ceiling of 2 MiB
+  and the message now prints the actual size. Logs between 200 KiB and 2 MiB are gzipped (or truncated with
+  a marker) when committed as evidence, hashes recorded on the uncompressed text. Cap only; re-frozen,
+  still no measurement.

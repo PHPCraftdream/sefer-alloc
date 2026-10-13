@@ -72,7 +72,8 @@ const HOT_DECL = { [CONSTRUCTION]: [1, 16, 8],
     [`r20_prf01_${f}_${s}`, [ops, f === 'small_churn_16b' ? 16 : f === 'aligned_churn_640b_a128' ? 640 : 256, f === 'aligned_churn_640b_a128' ? 128 : 8]]))) };
 const RUNS = ['A1', 'A2', 'B1', 'B2', 'C0'];
 const RUN_ARM = { A1: 'A', A2: 'A', B1: 'B', B2: 'B', C0: 'C' };
-const RAW_LOG_LIMIT = 400 * 1024;
+// CLAUDE.md artifact tiers: <200 KiB verbatim, 200 KiB-2 MiB truncated or gzipped when committed, >2 MiB never in git.
+const RAW_LOG_LIMIT = 2 * 1024 * 1024;
 const PRODUCER_SETTINGS = ['--tool=callgrind', '--error-exitcode=0', '--trace-children=yes', '--fair-sched=try',
   '--I1=32768,8,64', '--D1=32768,8,64', '--LL=8388608,16,64', '--cache-sim=yes', '--compress-strings=no',
   '--compress-pos=no', '--dump-line=yes', '--dump-instr=no', '--combine-dumps=no', '--separate-threads=yes'];
@@ -513,7 +514,7 @@ function benchRun(run, arm, target, cellNames) {
   const r = wslOk(script, `bench ${target} run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
   checkCells(ir, cellNames, r.out, `${run}-${target}`);
-  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/${target} over ${RAW_LOG_LIMIT} bytes`);
+  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/${target} is ${Buffer.byteLength(r.out)} bytes, over ${RAW_LOG_LIMIT}`);
   const log = putText(`logs/${run}-${target}.log`, r.out);
   fs.rmSync(join(WT_DIR, arm, home), { recursive: true, force: true });
   return { run, arm, startedAt, ir, log };
@@ -528,7 +529,7 @@ function controlsRun(run, arm, cellNames) {
   const r = wslOk(script, `controls run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
   checkCells(ir, cellNames, r.out, `${run}-controls`);
-  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/controls over ${RAW_LOG_LIMIT} bytes`);
+  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/controls is ${Buffer.byteLength(r.out)} bytes, over ${RAW_LOG_LIMIT}`);
   const log = putText(`logs/${run}-controls.log`, r.out);
   fs.rmSync(join(WT_DIR, arm, home), { recursive: true, force: true });
   return { run, arm, startedAt, ir, log };
