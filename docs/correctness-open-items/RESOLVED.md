@@ -15,6 +15,18 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 107 — strict-Clippy coverage of `numa-aware internals`: CLOSED (2026-10-13)
+
+- **Status:** CLOSED by direct CI evidence. The generated row `clippy-numa-aware-internals` (`scripts/check-matrix.mjs`) and the workflow step `clippy (--features "numa-aware internals")` (`.github/workflows/ci.yml` job `clippy`, `cargo clippy --lib --features "numa-aware internals" -- -D warnings`, ci.yml:1375; commits `091ca50c`, `0895712a`) ran green in run `38347654258` (main, `c197c70c`, job `clippy` success) and run `38328098911` (workflow_dispatch, `fix/weekly-ci-reds`).
+- **Current verdict:** the originally-red `numa-aware internals` strict-Clippy combination is now a persistent per-PR CI gate, not a one-off local receipt. History: filed 2026-08-24 (task #1309) against six clippy errors at `00f9119`.
+- **Next trigger:** none. A future regression would surface as the `clippy` job turning red; the card subject no longer exists.
+
+### 188 — ordering pin does not bind production ClassLeaves publication: CLOSED (2026-10-13)
+
+- **Status:** CLOSED by direct CI evidence. `tests/r11_ph5b_c5_sidecar_ordering_pinned` pins the exact atomic-operation/ordering inventory of the production ClassLeaves, and `class_leaves_publication_miri` runs the real ClassLeaves under strict-provenance Miri (`19536b19`, wired `491df5cd`). The CI step (`miri (core)` job, ci.yml:3028) ran green in run `38347654258` (main, `c197c70c`) and run `38328098911`. The previously un-run third mutant (constructor replaced by `from_initialized`) remains author-reported only, noted as a receipt limitation, not a gap in the landed pin.
+- **Current verdict:** the card Next trigger — bind production source orderings and reject a production-only ordering mutant, separately from copied-model controls — was satisfied locally (Release->Relaxed and Acquire->Relaxed mutants turned the pin red and Miri reported the data race, `19536b19`) and the remote CI confirmation the card awaited has now arrived.
+- **Next trigger:** none. A pin/oracle regression would surface as the `miri (core)` job turning red.
+
 ### 184 — Src review R17-API-01: CLOSED (2026-10-09)
 
 - **Status:** CLOSED by the NUMA-only `SegmentMeta` import-gate repair.

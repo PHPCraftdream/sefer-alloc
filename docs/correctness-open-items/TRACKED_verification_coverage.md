@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an `unsafe` seam or algorithmic invariant has (or lacks) interpreter/model-checker PROOF coverage (miri, loom, kani) -- distinct from ordinary CI gate wiring (a test that exists but does not run under some job) and from platform empirical verification (real hardware, not a formal tool).
 
-**Card count:** 12 numbered records (9 open; 3 retained closed/resolved).
+**Card count:** 11 numbered records (8 open; 3 retained closed/resolved); item 188 is CLOSED and not a current record here (`RESOLVED.md`).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -233,12 +233,7 @@ split the same day.)
     - **Next trigger:** a route-lifetime/model change: model the acquisition/unlink/last-drop schedule, bind it to the real lock/refcount protocol, and review positive plus negative controls before claiming coverage.
     - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-CON-04(a); `tests/loom_r11_small_sidecar.rs`, `tests/r6_route_directory.rs`; `src/registry/segment_route/directory.rs` pin increment/drop and locked lookup/remove.
 
-188. **[T] Ordering pin does not bind production ClassLeaves publication.**
-
-    - **Status:** FIXED IN TREE (2026-10-12), CI confirmation pending — `r11_ph5b_c5_sidecar_ordering_pinned` now pins the exact atomic-operation/ordering inventory of the production ClassLeaves and that `SmallSidecar` builds its bitmap from ClassLeaves, and `class_leaves_publication_miri` runs the real ClassLeaves under strict-provenance Miri (`19536b19`). Mutants recorded in that commit: Release->Relaxed on the mixed-leaf store and Acquire->Relaxed on the load turned the pin red and Miri reported the data race; the third (constructor replaced by `from_initialized`) was reported by the author and not re-run in the commit. The target is GREEN in `scripts/miri-matrix.mjs` and wired in CI (`491df5cd`); that CI step has not run remotely. The lines below are the pre-fix record.
-    - **Current-number-or-verdict:** `r11_ph5b_c5_sidecar_ordering_pinned` pins Dense backing, while shipping `SmallSidecar::bitmap` uses `from_leaves`. The mixed-pointer shadow/negative control exists, but does not pin `leaf_classes.rs`'s Release publication and Acquire consumption.
-    - **Next trigger:** a ClassLeaves/publication or pin-test edit: bind production source orderings and demonstrate that a production-only ordering mutant is rejected, separately from copied-model controls.
-    - **Evidence:** `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R17-VER-01; `tests/r11_ph5b_c5_sidecar_ordering_pinned.rs`, `tests/loom_r11_small_sidecar.rs`; `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs` and `small_sidecar.rs`.
+Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure record is in `RESOLVED.md`.
 
 192. **[T] Hash backshift proptest uses generic insert, not production identity insert.**
 
