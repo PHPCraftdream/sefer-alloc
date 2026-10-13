@@ -31,11 +31,25 @@ run01 verdict (C′ NO-GO: +569 Ir per hot control = one-time sidecar constructi
   `nonempty_cuts ≤ pending_words_exchanged ≤ pending_words_visited`.
 - Mode 2 (i) producer price: `(IrB − IrA)/4096 ≤ +6` on the matched child-body boundary
   (`EntryPoint::Custom` on
-  `<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window`), **budget not raised**; oracle
-  `summary_rmw > 0` and `summary_load > 0` separately on B; producerIrReceipt with Amendments A+B
-  coverage (boundary symbol, `boundaryOverheadIr ∈ 1..16`, `workloadIr > 0`, removed-frees control,
-  nm/disassembly/profile receipts) — exactly the R19 schema; C″ has NO summary load in A-terms (the
-  bit is set only on a 0→non-0 word transition), and must satisfy the ≤ +6 budget anyway.
+  `<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window`), **budget not raised**; oracle on
+  B: `0 < summary_rmw < childFreeCount (4096)` and `summary_load == 0` (arm A: both 0, unchanged —
+  re-freeze 8 entry below); producerIrReceipt with Amendments A+B coverage (boundary symbol,
+  `boundaryOverheadIr ∈ 1..16`, `workloadIr > 0`, removed-frees control, nm/disassembly/profile
+  receipts) — exactly the R19 schema; C″ must satisfy the ≤ +6 budget anyway.
+  **Evidence classification (re-freeze 9):** B's `summary_load == 0` is a SOURCE-DERIVED expectation,
+  NOT a dynamic observation. The oracle's load counter is fed 0 by construction at `edf90675`
+  (`src/alloc_core/segment/remote_bitmap/prf01_sidecar_oracle.rs` adds the supplied arguments; the
+  summary `fetch_or` in `sidecar_bitmap.rs` is followed by `published(1, 0)`), so the `== 0`
+  check is kept as FORMAT CONSISTENCY and cannot by itself catch an uninstrumented summary load. The
+  absence of a producer summary preload is established by (a) reading the C″ source
+  (`git show edf90675:src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`: the summary half is
+  called only when the pending `fetch_or` returned 0, `notify = prev == 0`; the owner scanner's
+  summary `swap` is a consumer-side operation) and (b) the Loom model
+  `tests/loom_r20_prf01_summary_transition.rs`. The runner retains the producer-boundary
+  disassembly (`boundary/*-disassembly.log`) as a RETAINED ARTEFACT FOR MANUAL REVIEW of the
+  no-separate-preload property; the judge does NOT verify this property from it (its validator checks
+  symbol presence and callers only). The summary RMW's inherent read is not conflated with the
+  prohibited standalone load.
 - `size_of::<SmallSidecar>()` B − A == exactly 512 (assert).
 - Publication cell `r19_prf01_publication` and its oracle; the 13 mimalloc cells with ΔIr = 0 exactly
   (all cross pairs); `strictTrim` records no cell.
@@ -62,9 +76,14 @@ run01 verdict (C′ NO-GO: +569 Ir per hot control = one-time sidecar constructi
    - linearity `|(Ir(4N) − Ir(2N)) − 2·(Ir(2N) − Ir(N))| ≤ T_s` for EVERY arm; hot churn is expected
      affine; a violation is **INVALID** (rule §2.3). No 3a exception is registered: no non-affinity of
      these families was ever characterised on A, so the 3a route is not open for this gate;
-   - note recorded BEFORE data: with the affine 4N cell present, a B slope shift of δ also shifts B's
-     second window by δ, so `|δ| > T_s` always breaks B's linearity — the two-sided bound and the
-     linearity check fail together; this is a property of the rule, not a hidden threshold.
+   - note recorded BEFORE data, corrected by re-freeze 9 (before any measurement): each arm's
+     linearity is judged against ITS OWN N/2N slope (`|(Ir(4N) − Ir(2N)) − 2·s_arm| ≤ T_s`), so a pure
+     affine shift of B by δ does NOT algebraically break B's linearity (an affine B keeps its own
+     second window equal to twice its own first window). The check that actually catches a B slope
+     shift is the separate two-sided slope bound `|s_B − s_A| ≤ T_s`. The two checks are independent
+     and either can fail alone; neither introduces a hidden threshold. An earlier draft of this note
+     claimed a B slope shift "always breaks linearity"; that was algebraically wrong and is corrected
+     here.
    - N = 64 (= `CHURN_OPS`), 2N = 128 (= `CHURN_OPS_2N`), 4N = 256; op counts and
      workCount/blockBytes/alignment declarations are Amendment A declarations (workCount
      64/128/256; blockBytes 16/256/256/640; alignment 8/8/8/128; `segmentCount` null with reason).
@@ -79,15 +98,30 @@ run01 verdict (C′ NO-GO: +569 Ir per hot control = one-time sidecar constructi
    A/B functional decomposition showing the removed pass disappear; missing receipt → **INCOMPLETE**;
    a receipt that does not observe the removed pass (`removedPassObserved !== true`, bad path/sha)
    → **INVALID**. `budget_K` is per registration; the cell performs exactly one registration.
+   **Receipt completion WITHOUT re-measurement (re-freeze 9):** the runner retains the construction
+   cell's Callgrind profiles before deleting the observation home
+   (`profiles/<run>-construction-<i>.out` plus `profiles/<run>-construction-inventory.json` with
+   per-file sha256). If the gate returns INCOMPLETE on a missing `constructionGainReceipt`, a human
+   annotates the retained profiles (e.g. `callgrind_annotate`), writes the decomposition, adds
+   `constructionGainReceipt {path, sha256, removedPassObserved: true, decomposition}` to BOTH B rows
+   in `input.json`, and re-runs ONLY the judge (`--input`); the judge is deterministic and no
+   measurement is repeated. `scripts/r20_prf01_verify_artifacts.mjs` (acceptance step, see
+   "Arches, runner, freeze" below) checks the receipt's file existence, its sha256 and a nonempty
+   `decomposition`. Without the receipt the verdict honestly stays INCOMPLETE; the gain guard
+   itself is not relaxed.
 3. **Layout-noise ceiling (PRF-04 lesson).** For every hot family window (the raw N cell and both
    windows Ir(2N)−Ir(N), Ir(4N)−Ir(2N)) and for the construction cell: `|A1 − A2|` and `|C0 − A1|`
    must each be ≤ `max(10, ⌊A1/200⌋)` (numerator the absolute difference, denominator the A1 value of
    that quantity). Above the ceiling the verdict is **INCONCLUSIVE**; the ceiling never widens any
    budget or T_s and is never raised after data.
 4. **Verdicts.** Priority: INCOMPLETE > INVALID > NO-GO > INCONCLUSIVE > UNJUDGEABLE > GO.
-   UNJUDGEABLE (a hot family without its 2N/4N siblings, or a missing construction cell) is excluded
-   from the other checks, listed in the table, and the gate verdict is then never GO. A missing row
-   of any other judged cell is INCOMPLETE.
+   AS IMPLEMENTED, stated to match the code (re-freeze 9): a hot family WITHOUT its 2N/4N sibling
+   rows fails row collection (exactly one row per arm per cell) and yields **INCOMPLETE** — the
+   judge's family-level UNJUDGEABLE branch is unreachable for missing rows (noted in the judge
+   source), so UNJUDGEABLE is in practice reachable only for a MISSING CONSTRUCTION CELL (excluded
+   from the other checks, listed in the table, gate verdict then never GO). A missing row of any
+   other judged cell is INCOMPLETE. Any `counterfactual` field in a real (non-rehearsal) input is
+   INVALID.
 5. **Native axis Mode 2 (ii) is DEFERRED**, not launched in v2 (the R19 run01 WSL2 evidence: 13 of
    108 native rows had p50Ns = 0 — clock quantisation). The judge requires the input marker
    `nativeDeferred {deferred: true, method}` naming the batch-timer method and returns
@@ -125,14 +159,52 @@ pattern (`CHURN_OPS_2N`).
   `--rehearsal` runs the full pipeline with the iai arm B = A′ (A source under label B, distinguished
   by the registered flag); the oracle stage still uses the real B build for path activation only.
 - Frozen set (SHA256 in the companion `.sha256`, this document first): this document, the judge, the
-  runner, `docs/perf/R20_CONTROL_GEOMETRY_RULE.md`, `benches/r20_prf01_controls_iai.rs`,
+  runner, the acceptance script `scripts/r20_prf01_verify_artifacts.mjs`, `docs/perf/R20_CONTROL_GEOMETRY_RULE.md`, `benches/r20_prf01_controls_iai.rs`,
   `benches/support/r20_prf01_controls.rs`, `benches/support/r19_prf01.rs`, `benches/perf_gate_iai.rs`,
   `tests/r19_prf01_sidecar_oracle.rs`, `examples/r19_prf01_oracle.rs`. Companion excludes itself.
   Any edit requires an explicit re-freeze BEFORE any measurement.
-- Known limitation disclosed: the runner does NOT reproduce the full R19 two-phase
-  capture/identity-review protocol; identity is bound per stage (prepare manifest + per-run binary
-  SHA256 + clean-tree checks), and the producer boundary receipts (nm/disassembly/profile,
-  Amendment B coverage) are produced by the runner's measure stage per arm as in R19.
+- Per-stage identity binding (implemented, re-freeze 9): the `--build`, `--oracle` and
+  `--measure` stages each RECOMPUTE the arch identity (HEAD/tree/identitySha256, clean-tree) of
+  every arm A, B, C — in rehearsal including the B = A′ proxy and the real-B `oracleB` — and
+  compare it with `manifest.json`; any mismatch aborts the stage immediately, as does a moved
+  runner HEAD. Stage files are bound to one another: `builds.json` records `manifestSha256`,
+  `oracle.json` records `manifestSha256` and `buildsSha256`, and `--measure` refuses to
+  run on any mismatch. The official out-dir
+  `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01` lives in the PRIMARY checkout and is NOT part of
+  the worktrees A/B/C; the cleanliness/identity checks deliberately do not depend on it. Residual
+  limitation: the R19 two-phase capture/identity-review protocol is still not reproduced; producer
+  boundary receipts (nm/disassembly/profile, Amendment B coverage) are produced by the measure stage
+  per arm as in R19.
+- Receipt-hash anchoring and acceptance (re-freeze 9): the runner writes `receiptHashes` into
+  `input.json` — the sha256 of every out-dir file referenced by any receipt field
+  (`environment.log`, `manifest.json`, `builds.json`, `oracle.json`, `logs/*`,
+  `boundary/*`, `profiles/*`, `oracle/*`) plus the retained construction inventories. The
+  judge treats the field as optional schema and NEVER uses it in the verdict. The acceptance step
+  AFTER the judge is `node scripts/r20_prf01_verify_artifacts.mjs <out-dir>`: it verifies every
+  `receiptHashes` entry (existence + sha256), that every receipt string field of the input is
+  anchored in the map and exists, ancestry vs manifest, input binary pins vs `builds.json`, and —
+  when present — the `constructionGainReceipt` (path exists, sha256 matches, nonempty
+  `decomposition`). The orchestrator must run it (exit 0) BEFORE treating the official verdict as
+  usable.
+- `--slop` is allowed ONLY together with `--rehearsal`; an official measure with `--slop` is
+  refused by the runner. When applied, the counterfactual is recorded durably in `input.json`
+  (`counterfactual: {slop: true, …}`) and as a comment line in `summary.csv`, and the judge
+  returns INVALID for ANY `counterfactual` field in a non-rehearsal input.
+- Rehearsal self-identification (re-freeze 9): the judge result carries `rehearsal: true` and its
+  `modes.mode1`/`modes.mode2Iai` values are rewritten with the same `REHEARSAL: ` prefix as the
+  global verdict. Only the complete global verdict plus run identity is authoritative.
+- Tool versions: the producer receipts record the iai-callgrind-runner version DERIVED from the
+  captured environment (`iai-callgrind-runner --version` in `environment.log`), not a literal;
+  the CI workflow pins the runner at `^0.14`. Valgrind's version is captured in the same
+  `environment.log`. At the 2 MiB `RAW_LOG_LIMIT` the runner FIRST stores the redacted log,
+  then fails, so the evidence survives the abort.
+- Dispatch recipe (frozen): after the PR merges, dispatch the BASELINE ref on `main` with
+  `runner=scripts/r20_prf01_sidecar_summary_run.mjs` and
+  `stages=prepare,build,oracle,measure` (no rehearsal, no cleanup), `slop=false`. The candidate
+  `edf90675` must remain reachable in the checkout (branch `r20-prf01-cdp-main` is not deleted).
+  Artifacts are captured from the out-dir BEFORE any cleanup. Technical-failure rules: a failure
+  BEFORE `input.json` is written does not consume the one-shot, provided no candidate-B Ir was
+  produced; once `input.json` exists, the result stands as recorded.
 
 ## Rehearsal contract
 
@@ -142,7 +214,9 @@ A distinct, validated `B.oracleSource` is required only in rehearsal and forbidd
 linkages are checked against it, while all other checks remain unchanged. Verdicts are prefixed
 `REHEARSAL: ` except INVALID, INCOMPLETE and UNJUDGEABLE. Prefixed verdicts and the unprefixed
 `INCONCLUSIVE (native deferred)` exit 0; all other verdicts exit 1. Rehearsal produces no usable
-GO/NO-GO gate result.
+GO/NO-GO gate result. The judge result additionally self-identifies (re-freeze 9): it carries
+`rehearsal: true` and rewrites `modes.mode1`/`modes.mode2Iai` with the same `REHEARSAL: `
+prefix as the global verdict, so mode-field-only consumers cannot mislabel rehearsal data.
 
 ## Not covered (stated, not hidden)
 
@@ -151,11 +225,25 @@ GO/NO-GO gate result.
   wall-clock latency (Ir does not cover them).
 - A function-level Callgrind decomposition of the whole A/B sidecar path beyond the required
   construction-gain receipt; a selector-only cell with an absolute Ir budget.
+- `summary_load == 0` on the producer cell is a format-consistency check over a source-derived
+  expectation, not an Ir-level proof of "no summary read" (see the Mode 2 (i) evidence
+  classification); no judge-side check automates the producer disassembly review — it is a retained
+  artefact for manual review.
 - If the candidate changes sidecar layout or initialisation again, this A-characterisation no longer
   qualifies that combination; a new identity and preregistration are required. The R19 numbers are
   never recomputed.
 
 ## Re-freeze log (before any measurement)
+
+> **Terminology and corrections (re-freeze 9), applied to the entries below without rewriting
+> them:** "still no measurement" means NO CANDIDATE PRIMARY Ir under this official protocol. The
+> rehearsals plainly measured A, A′ (the iai arm labelled B) and C0, and ran the real-B oracle for
+> path activation; all of that is disclosed in the entries. The ninth rehearsal was still running in
+> CI when this re-freeze was frozen; the orchestrator appends its record. Correction to the second
+> entry's wording: `git diff 3033c499 edf90675 -- src` is TWO changed re-export cfg lines plus
+> THREE added cfg import lines — five lines total, all cfg-only ("three cfg-only lines" there is
+> imprecise); unchanged production codegen of the `production` build was inspected, not
+> experimentally verified.
 
 - 2026-10-13: the first CI rehearsal (r20-gates run 38356350870, native Linux) aborted in the runner's
   `publicText`, which converted the repository root with the Windows-only `winToWsl` on every
@@ -220,3 +308,14 @@ GO/NO-GO gate result.
   mutants: rmw 0, rmw 4096 (notify on every free), load 1. Replaying the retained rehearsal input through
   the updated judge gives `REHEARSAL: NO-GO` (expected: B = A′ cannot show the benefit), exit 0.
   Judge expectation only; still no measurement.
+- 2026-10-13 (re-freeze 9, after an independent read-only review of the gate and before the official run):
+  the review's MAJOR findings are closed in the runner, judge and this document: `summary_load == 0` is
+  classified as source-derived (not an observation); construction-cell Callgrind profiles are retained so the
+  `constructionGainReceipt` can be completed without re-measuring; build/oracle/measure re-verify the captured
+  arm identities and bind builds.json/oracle.json to the manifest; `input.receiptHashes` plus the new frozen
+  acceptance script `scripts/r20_prf01_verify_artifacts.mjs` authenticate the receipt files after the judge;
+  `--slop` is rehearsal-only and a `counterfactual` marker makes a real input INVALID; rehearsal results carry
+  a marker and prefixed mode fields; prose contradictions are corrected (see the Dispatch recipe section).
+  Selftest 157 checks; the new mutants fail on the previous judge (counterfactual). Eighth/ninth rehearsal
+  runs (38377475462, 38382265194) preceded this edit; the ninth ran the previous code. No candidate
+  primary Ir exists under the official protocol.

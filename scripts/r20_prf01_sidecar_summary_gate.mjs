@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 const root = new URL('../', import.meta.url);
 const files = ['docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_PREREG.md', 'scripts/r20_prf01_sidecar_summary_gate.mjs',
-  'scripts/r20_prf01_sidecar_summary_run.mjs', 'docs/perf/R20_CONTROL_GEOMETRY_RULE.md',
+  'scripts/r20_prf01_sidecar_summary_run.mjs', 'scripts/r20_prf01_verify_artifacts.mjs', 'docs/perf/R20_CONTROL_GEOMETRY_RULE.md',
   'benches/r20_prf01_controls_iai.rs', 'benches/support/r20_prf01_controls.rs',
   'benches/support/r19_prf01.rs', 'benches/perf_gate_iai.rs', 'tests/r19_prf01_sidecar_oracle.rs',
   'examples/r19_prf01_oracle.rs'];
@@ -33,6 +33,7 @@ const OPS = {n:64,'2n':128,'4n':256};
 const hotDecl = {r20_prf01_start_one_alloc_free_16b:[1,16,8],
   ...Object.fromEntries(hotFamilies.flatMap(f => Object.entries(OPS).map(([s,ops]) =>
     [`r20_prf01_${f}_${s}`, [ops, f === 'small_churn_16b' ? 16 : f === 'aligned_churn_640b_a128' ? 640 : 256, f === 'aligned_churn_640b_a128' ? 128 : 8]])))};
+const SUMMARY_LOAD_SEMANTICS = "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof";
 const counters = ['pending_words_visited','pending_words_exchanged','nonempty_cuts','discovery_records_reclaimed','routed_scans','summary_words_visited','summary_rmw','summary_load','strict_trim_remaining'];
 const text = x => assert.ok(typeof x === 'string' && x.trim().length > 0);
 const hex = x => { text(x); assert.match(x,/^[0-9a-f]{64}$/); };
@@ -85,6 +86,12 @@ function derive(d,frozen) {
   try {
     assert.ok(!Object.hasOwn(d,'rehearsal') || typeof d.rehearsal==='boolean');
     const rehearsal=d.rehearsal===true;
+    // Counterfactual durability (re-freeze 9): a counterfactual marker (e.g. the runner's --slop
+    // negative control) in a REAL (non-rehearsal) input makes the whole input INVALID.
+    const cfInvalid=Object.hasOwn(d,'counterfactual')&&!rehearsal;
+    // Optional receipt-hash anchor map (acceptance input for scripts/r20_prf01_verify_artifacts.mjs):
+    // schema-checked here, NEVER used in the verdict.
+    if(Object.hasOwn(d,'receiptHashes')){assert.ok(d.receiptHashes&&typeof d.receiptHashes==='object'&&!Array.isArray(d.receiptHashes));for(const k of Object.keys(d.receiptHashes))hex(d.receiptHashes[k]);}
     assert.equal(d.version,1); exact(d.hashes,frozen); hex(d.environmentSha256);
     for(const k of ['inventoryReceipt','identityReviewReceipt','environmentReceipt','oracleReceipt'])receiptText(d[k]);
     exact(d.inventory,inventory);
@@ -180,7 +187,7 @@ function derive(d,frozen) {
           assert.equal(p.binarySha256,r.binarySha256); exact(p.source,r.source); assert.equal(p.environmentSha256,r.environmentSha256);
           features(p.features,primary); exact(p.cfg,[]); text(p.receipt); text(p.symbolReceipt); text(p.profileReceipt); text(p.control.receipt);
           assert.equal(p.symbol,'<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window');
-          assert.equal(p.runnerVersion,'0.14.2'); text(p.valgrindVersion);
+          assert.match(p.runnerVersion,/^0[.]14[.]/); text(p.valgrindVersion);
           assert.equal(p.collectAtStart,false); assert.equal(p.defaultToggle,false); assert.equal(p.entryPoint,'Custom'); assert.equal(p.separateThreads,true);
           assert.equal(p.toggleCollect,p.symbol); text(p.generatedArguments); assert.equal(p.aggregation,'sum of all thread profile Ir');
           assert.equal(p.childFreeCount,4096); nat(p.childIr); assert.ok(p.childIr>0);
@@ -198,13 +205,21 @@ function derive(d,frozen) {
           assert.ok(c.childIr<=c.totalIr,'control child Ir is a part of its total');
           text(c.symbolReceipt); text(c.profileReceipt); assert.equal(c.symbol,p.symbol); assert.equal(c.toggleCollect,p.symbol);
           exact(c.cfg,['r19_prf01_producer_control']); features(c.features,primary); exact(c.source,r.source); text(c.generatedArguments);
-          assert.equal(c.runnerVersion,'0.14.2'); text(c.valgrindVersion); assert.equal(c.collectAtStart,false); assert.equal(c.defaultToggle,false);
+          assert.match(c.runnerVersion,/^0[.]14[.]/); text(c.valgrindVersion); assert.equal(c.collectAtStart,false); assert.equal(c.defaultToggle,false);
           assert.equal(c.entryPoint,'Custom'); assert.equal(c.separateThreads,true); assert.equal(c.aggregation,'sum of all thread profile Ir');
           assert.equal(p.control.parentSetupUnchanged,true); assert.equal(p.control.collectionUnchanged,true);
           assert.equal(r.config.requested.workCount,4096); assert.equal(r.config.requested.blockBytes,16); assert.equal(r.config.requested.segmentCount,1);
           assert.equal(r.scenario,'joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window');
-          // C'' publishes without reading the summary: the bit is set only when the pending fetch_or returned 0,
-          // so B shows summary RMWs strictly fewer than the frees and no summary load (R19's C' loaded per free).
+          // C'' publishes without reading the summary: the bit is set only when the pending fetch_or
+          // returned 0, so B shows summary RMWs strictly fewer than the frees (R19's C' loaded per free).
+          // SUMMARY LOAD CLASSIFICATION (re-freeze 9): B's summary_load == 0 is a SOURCE-DERIVED
+          // expectation, not a dynamic observation -- the oracle counter is fed 0 by construction, so
+          // this check is format consistency only and cannot catch an uninstrumented summary preload.
+          // Absence of a producer preload is established by reading the C'' source (the publish
+          // sequence in sidecar_bitmap.rs) and the Loom model
+          // tests/loom_r20_prf01_summary_transition.rs; the retained boundary/*-disassembly.log
+          // artefacts support MANUAL review, which the judge does not automate (its validator checks
+          // symbol presence/callers only). The summary RMW's inherent read is not the standalone load.
           if(a==='B') { assert.ok(r.oracle.summary_rmw>0); assert.ok(r.oracle.summary_rmw<p.childFreeCount); assert.equal(r.oracle.summary_load,0); }
           else { assert.equal(r.oracle.summary_rmw,0); assert.equal(r.oracle.summary_load,0); }
         }
@@ -223,7 +238,7 @@ function derive(d,frozen) {
         if(mode==='mode1')mode1Fail ||= !pass; if(mode==='mode2')mode2Fail ||= !pass;
         tables.iai.push({name,A:a.arm,B:b.arm,delta:Number(delta),mode,...(percent?{percent}:{pass:delta===0n}),pass});
       }
-      if(needed)tables.oracle.push({name,arms:rs.map(r=>({arm:r.arm,...r.oracle}))});
+      if(needed)tables.oracle.push({name,summaryLoadSemantics:SUMMARY_LOAD_SEMANTICS,arms:rs.map(r=>({arm:r.arm,...r.oracle}))});
       }
     }
     // growth16 slope of B, unchanged owner threshold <= 2.5 (exact BigInt).
@@ -237,6 +252,10 @@ function derive(d,frozen) {
     // layout-noise ceiling on the raw N cell and both windows.
     for(const f of hotFamilies)judgeHotFamily(f);
     function judgeHotFamily(f) {
+      // NOTE (re-freeze 9, stated to match behaviour): the UNJUDGEABLE branch below is UNREACHABLE
+      // for missing sibling rows -- row collection above (exactly one row per arm per cell) throws
+      // INCOMPLETE before the family check runs. UNJUDGEABLE is in practice reachable only for a
+      // missing construction cell.
       const cell=s=>`r20_prf01_${f}_${s}`;
       if(['n','2n','4n'].some(s=>arms.some(a=>!d.iai.some(r=>r.name===cell(s)&&r.arm===a)))) {
         unjudgeable.push(f); tables.hot.push({family:f,status:'UNJUDGEABLE (missing sibling; excluded, never a pass)'}); return;
@@ -312,16 +331,19 @@ function derive(d,frozen) {
     const sizePass=d.sizeOf.B-d.sizeOf.A===512; mode1Fail ||= !sizePass;
     tables.size.push({A:d.sizeOf.A,B:d.sizeOf.B,numerator:d.sizeOf.B-d.sizeOf.A,expected:512,pass:sizePass});
     // Native axis: DEFERRED (never launched in v2). Any deterministic failure still => NO-GO.
-    const modes={mode1:mode1Fail?'NO-GO':'GO',mode2Iai:mode2Fail?'NO-GO':'GO',mode2Native:'DEFERRED'};
+    let modes={mode1:mode1Fail?'NO-GO':'GO',mode2Iai:mode2Fail?'NO-GO':'GO',mode2Native:'DEFERRED'};
+    // Rehearsal self-identification (re-freeze 9): the result carries the marker and its usable mode
+    // verdicts get the same REHEARSAL: prefix as the global verdict.
+    if(rehearsal)modes={...modes,mode1:'REHEARSAL: '+modes.mode1,mode2Iai:'REHEARSAL: '+modes.mode2Iai};
     tables.native.push({axis:'mode2 (ii) native paired A/B',status:'DEFERRED',reason:d.nativeDeferred.method});
     let verdict;
-    if(invalid)verdict='INVALID';
+    if(invalid||cfInvalid)verdict='INVALID';
     else if(mode1Fail||mode2Fail)verdict='NO-GO';
     else if(noisy)verdict='INCONCLUSIVE';
     else if(unjudgeable.length)verdict='UNJUDGEABLE';
     else verdict='INCONCLUSIVE (native deferred)';
-    return {version:1,verdict:verdictFor(verdict,rehearsal),modes,unjudgeable,tables};
-  } catch(e) { return {version:1,verdict:'INCOMPLETE',modes:{mode1:'INCOMPLETE',mode2Iai:'INCOMPLETE',mode2Native:'DEFERRED'},reason:e.message,tables}; }
+    return {version:1,rehearsal,verdict:verdictFor(verdict,rehearsal),modes,unjudgeable,tables};
+  } catch(e) { return {version:1,...(d&&d.rehearsal===true?{rehearsal:true}:{}),verdict:'INCOMPLETE',modes:{mode1:'INCOMPLETE',mode2Iai:'INCOMPLETE',mode2Native:'DEFERRED'},reason:e.message,tables}; }
 }
 function fixture(frozen) {
   const h=c=>c.repeat(64),src=c=>({baseHead:c.repeat(40),patchSha256:h(c),untrackedSha256:h(c),identitySha256:h(c),capturedAt:'2026-10-11T00:00:00Z'});
@@ -401,6 +423,13 @@ function selftest() {
   check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_rmw=0);
   check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_rmw=4096);
   check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_load=1);
+  // Counterfactual durability (re-freeze 9): counterfactual data in a real input is INVALID; in a
+  // rehearsal input it stays a prefixed rehearsal result.
+  check(x=>x.counterfactual={slop:true,arm:'B1',cell:'r20_prf01_small_churn_16b_2n',deltaIr:11},'INVALID');
+  // Optional receiptHashes map: schema-only, never verdict-relevant when well-formed.
+  check(x=>x.receiptHashes={},GO);
+  check(x=>x.receiptHashes={'logs/A1-perf_gate_iai.log':'zz'});
+  check(x=>x.receiptHashes=['x']);
   // Hot families: slope neutrality (two-sided, T_s), linearity, ceiling, UNJUDGEABLE.
   const fam0='r20_prf01_small_churn_16b';
   check(x=>{set(x,fam0+'_2n','B1',112800+10);set(x,fam0+'_4n','B1',125600+20);},GO);
@@ -497,6 +526,15 @@ function selftest() {
   for(const value of ['true',null,1])check(x=>x.rehearsal=value);
   check(x=>x.rehearsal=false,GO);
   check(x=>{rehearse(x);set(x,benefit[0],'B1',1000001);},'REHEARSAL: NO-GO');
+    check(x=>{rehearse(x);x.counterfactual={slop:true,arm:'B1',cell:'r20_prf01_small_churn_16b_2n',deltaIr:11};},'REHEARSAL: '+GO);
+  // Rehearsal result self-identification (re-freeze 9): marker + prefixed mode verdicts, also on INCOMPLETE.
+  {
+    const mark=x=>{rehearse(x);return x;};
+    const res=derive(mark(structuredClone(d)),frozen);
+    assert.equal(res.rehearsal,true); assert.match(res.modes.mode1,/^REHEARSAL: /); assert.match(res.modes.mode2Iai,/^REHEARSAL: /); checks++;
+    const y=mark(structuredClone(d)); y.nativeDeferred=null;
+    const res2=derive(y,frozen); assert.equal(res2.verdict,'INCOMPLETE'); assert.equal(res2.rehearsal,true); checks++;
+  }
   check(x=>{rehearse(x);set(x,fam0+'_4n','A1',128000+11);},'INVALID');
   check(x=>{rehearse(x);delete x.nativeDeferred;},'INCOMPLETE');
   check(x=>{rehearse(x);x.iai=x.iai.filter(r=>r.name!==construction);},'UNJUDGEABLE');
