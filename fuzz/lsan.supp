@@ -1,4 +1,12 @@
 # Process-lifetime System-backed route array retained by an mmap registry heap.
 # See fuzz/README.md for lifecycle, evidence, and an unsuppressed audit command.
-# Wildcard accommodates symbolizer type delimiter variations; type+method stay narrow.
-leak:route_slots::RouteSlots*::ensure_capacity
+# Wildcards on both ends: the CI symbolizer (llvm-symbolizer with debug info)
+# prints the allocation frame's function name as the bare, namespace-free
+# `ensure_capacity` (observed in scheduled run 38260710015, job 114850160710,
+# frame #5), so a namespace-qualified pattern like
+# `route_slots::RouteSlots*::ensure_capacity` never matched and the leak was
+# still reported. `*ensure_capacity*` matches that bare name and any
+# namespace-qualified rendering of the same site; the method name is unique to
+# this call site in the tree (verified by grep), so this stays a narrow,
+# site-specific suppression and does not hide unrelated leaks.
+leak:*ensure_capacity*

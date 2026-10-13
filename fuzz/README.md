@@ -125,9 +125,15 @@ Corpora and crash artifacts are written under `fuzz/artifacts/region_ops/` and
 
 The weekly `fuzz-run` job enables symbolization for all three targets, but applies
 [`lsan.supp`](lsan.supp) **only to `heap_core_ops`**. Leak detection and exit-time
-checks remain enabled. The suppression `route_slots::RouteSlots*::ensure_capacity`
-uses `*` to accommodate symbolizer type delimiter variations while matching the
-specific type and method. The actual addr2line frame remains evidence:
+checks remain enabled. The suppression `*ensure_capacity*`
+matches the specific method. The namespace-qualified pattern
+`route_slots::RouteSlots*::ensure_capacity` originally shipped here did NOT
+match under CI: scheduled run 38260710015 (2026-10-12, job 114850160710)
+symbolized the allocation frame's function as the bare, namespace-free
+`ensure_capacity` (`route_slots.rs:70:37`), so the qualified regex missed it and
+the job still went red on the documented process-lifetime array. Wildcards on
+both ends match the bare and qualified renderings; `ensure_capacity` is unique
+to this call site in the tree. The actual addr2line frame remains evidence:
 `<sefer_alloc::alloc_core::segment::segment_table::route_slots::RouteSlots>::ensure_capacity`.
 
 Lifecycle: [`RouteSlots::ensure_capacity` and `Drop`](../src/alloc_core/segment/segment_table/route_slots.rs)
