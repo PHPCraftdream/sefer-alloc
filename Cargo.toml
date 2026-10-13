@@ -1760,6 +1760,16 @@ name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
+# R20 PRF-01 v2 control-geometry cells (own iai target so `perf_gate_iai`
+# does not grow; see benches/r20_prf01_controls_iai.rs and
+# docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_PREREG.md). Same feature set as
+# `perf_gate_iai` so the bodies build identically.
+[[bench]]
+name = "r20_prf01_controls_iai"
+harness = false
+test = false
+required-features = ["alloc-global", "bench-internals", "internals"]
+
 [[example]]
 name = "r19_prf03_native_mt"
 required-features = ["production"]
