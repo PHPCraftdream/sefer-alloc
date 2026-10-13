@@ -142,3 +142,11 @@ pattern (`CHURN_OPS_2N`).
 - If the candidate changes sidecar layout or initialisation again, this A-characterisation no longer
   qualifies that combination; a new identity and preregistration are required. The R19 numbers are
   never recomputed.
+
+## Re-freeze log (before any measurement)
+
+- 2026-10-13: the first CI rehearsal (r20-gates run 38356350870, native Linux) aborted in the runner's
+  `publicText`, which converted the repository root with the Windows-only `winToWsl` on every
+  platform (`AssertionError: not an absolute Windows path`). Fix: `toHost(REPO_ROOT)`, the identity on
+  Linux. No measurement existed at that point, so the runner hash and this document were re-frozen in
+  the companion `.sha256`.

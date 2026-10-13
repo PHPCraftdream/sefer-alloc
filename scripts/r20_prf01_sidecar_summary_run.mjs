@@ -89,7 +89,7 @@ const winToWsl = p => {
 const toHost = p => (IS_WIN ? winToWsl(p) : p);
 // Private checkout paths never reach a stored artifact.
 const publicText = t => String(t)
-  .replaceAll(winToWsl(REPO_ROOT), '<repo>').replaceAll(REPO_ROOT.replace(/\\/g, '/'), '<repo>')
+  .replaceAll(toHost(REPO_ROOT), '<repo>').replaceAll(REPO_ROOT.replace(/\\/g, '/'), '<repo>')
   .replace(/[A-Za-z]:[\/][^\s"'<>|)]+/g, '<private>')
   .replace(/\/mnt\/[a-z]\/[^\s"'<>|)]+/g, '<private>')
   .replace(/\/home\/[^\s/"'<>|)]+/g, '<home>');
