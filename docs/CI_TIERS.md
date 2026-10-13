@@ -119,3 +119,45 @@ landing diff**, plus a green nightly for the heavy groups.
 - Known limits: the mapping is coarse (per top-level source directory), cross-OS and Miri coverage of a
   `src/**`-only PR is deferred to the nightly run, and the planner does not understand which test a change
   can affect. When in doubt, label the PR `full-ci`.
+
+## Gate runs are PR checks
+
+`.github/workflows/r20-gates.yml` is a separate workflow, not part of the job
+table above. It drives the pre-registered Ir gate runners
+(`scripts/r20_*_run.mjs`) and has two modes: the owner's manual
+`workflow_dispatch` (inputs unchanged) and a pull-request mode.
+
+To run the gates on a PR:
+
+1. Add a `.github/gate-run.json` to the PR branch, e.g.
+   `{"runner": "scripts/r20_prf01_sidecar_summary_run.mjs", "stages": "prepare,build,oracle,measure", "rehearsal": false, "slop": false, "outDir": "docs/perf/R20_PRF01_SIDECAR_SUMMARY_G0_RUN01"}`.
+   An official PRF-01 gate run MUST point `outDir` at a FRESH directory:
+   the default `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01` already contains
+   `manifest.json`, and the runner refuses to overwrite it. `outDir` is
+   incompatible with `rehearsal: true` (the runner rejects `--out-dir` for
+   rehearsal stages). Fields: `outDir` (optional, `docs/perf/R20_<NAME>` or
+   `target/r20<name>`) and `note` (optional, single-line, at most 200
+   characters, no control characters).
+2. Add the `gate-run` label to the PR (labeling, a branch update, or a reopen
+   while the label is present all trigger the run).
+
+Gate config is validated by `scripts/r20-gate-config.mjs` (`--selftest` runs
+in CI, in the `docs-consistency` job of `ci.yml`). The `runner` must be a file
+under `scripts/` matching `^scripts/r20_[a-z0-9_]+_run\.mjs$` and existing on
+disk; the `stages` field uses the same whitelist (comma-separated, no
+duplicates). An invalid or missing `.github/gate-run.json` is a red check with
+an `::error::` message in the log. All runners are GitHub-hosted
+`ubuntu-24.04` machines — nothing here runs self-hosted. The `gate-run` label
+can only be added by a user with triage/write access to the repository, so a
+run cannot be triggered from a fork without a maintainer's participation.
+
+What you see: a "r20 gate runner" check on the PR, a step summary with the
+environment, `verdict.txt` and (for the prf01 sidecar runner) the acceptance
+result, and an artifact named `r20-gates-<PR number>`. PR runs never cancel
+each other (concurrency is keyed on the PR number, `cancel-in-progress:
+false`).
+
+Security note: `pull_request` events can also fire from forks. The workflow
+carries no secrets and checks out with `persist-credentials: false`, so a
+forked PR cannot exfiltrate tokens through it; the runner path and stages are
+still validated against the same allowlists before any invocation.
