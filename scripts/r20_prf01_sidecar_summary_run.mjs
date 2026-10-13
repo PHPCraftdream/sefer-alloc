@@ -482,7 +482,8 @@ function producerPass(label, arm, role, cellIndex) {
 
 function parseIr(out, cellNames) {
   const ir = {}; let current = null;
-  for (const line of out.split(/\r?\n/)) {
+  for (const raw of out.split(/\r?\n/)) {
+    const line = raw.replace(/\x1b\[[0-9;]*m/g, ''); // colour never reaches the cell regexes
     // Header lines are bare `crate::group::cell`; IAI_CALLGRIND_LOG=debug lines look like
     // `iai_callgrind_runner::runner::tool: Debug: ...` and must not overwrite the current cell.
     const h = /^(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)(?:\s.*)?$/.exec(line);
@@ -524,7 +525,7 @@ function controlsRun(run, arm, cellNames) {
   const home = `target/prf01-${run}-controls-obs-${Date.now()}`;
   const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"',
     `cd ${toHost(join(WT_DIR, arm === 'B' && ctx.manifest.rehearsal ? 'A' : arm))}`,
-    `RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_TARGET_DIR=${b.targetDir} cargo bench --locked --bench ${CONTROLS_TARGET} --features '${FEATURES}' -- --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
+    `IAI_CALLGRIND_COLOR=never RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_TARGET_DIR=${b.targetDir} cargo bench --locked --bench ${CONTROLS_TARGET} --features '${FEATURES}' -- --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
   const startedAt = now();
   const r = wslOk(script, `controls run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);

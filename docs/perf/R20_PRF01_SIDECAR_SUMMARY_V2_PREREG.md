@@ -176,3 +176,8 @@ pattern (`CHURN_OPS_2N`).
   and the message now prints the actual size. Logs between 200 KiB and 2 MiB are gzipped (or truncated with
   a marker) when committed as evidence, hashes recorded on the uncompressed text. Cap only; re-frozen,
   still no measurement.
+- 2026-10-13 (sixth rehearsal, run 38362638571): `perf_gate_iai` parsed 20/20 cells; the controls bench
+  parsed 0/13 because its command, unlike the other iai invocations, did not set `IAI_CALLGRIND_COLOR=never`
+  and the colour escapes broke the cell-header match (raw output retained by the new diagnostics showed
+  all 13 `Instructions:` blocks). The controls command now sets it, and `parseIr` also strips ANSI
+  sequences before matching. Output formatting only; re-frozen, still no measurement.
