@@ -30,6 +30,9 @@ fn sidecar_granule_index_exhaustive() {
     assert_eq!(SidecarBitmap::WORDS, words);
     assert!(classes >= 2);
     let pending: Vec<_> = (0..words).map(|_| AtomicU64::new(0)).collect();
+    let summary: Vec<_> = (0..SidecarBitmap::SUMMARY_WORDS)
+        .map(|_| AtomicU64::new(0))
+        .collect();
     let mut storage = Box::<ClassLeaves>::new_uninit();
     // SAFETY: Box provides one private, aligned, writable ClassLeaves slot.
     // No ClassLeaves reference or Drop exists before initialize_at returns;
@@ -38,7 +41,7 @@ fn sidecar_granule_index_exhaustive() {
     // SAFETY: initialize_at completed initialization of every value-bearing
     // field. This Box owns the slot and outlives the bitmap and every cut.
     let leaves = unsafe { storage.assume_init() };
-    let map = SidecarBitmap::from_leaves(&pending, &leaves).unwrap();
+    let map = SidecarBitmap::from_leaves(&pending, &summary, &leaves).unwrap();
 
     // Oracle: 4 KiB class leaves; bit position comes from the byte position
     // within a u64-sized pending word, independently of SidecarBitmap::granule.

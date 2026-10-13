@@ -12,6 +12,14 @@ use r19_prf01::R19Prf01;
 use sefer_alloc::{registry::HeapCore, SeferAlloc};
 use std::process::Command;
 
+const A_SIDECAR_BYTES: usize = 41_984;
+
+fn has_summary() -> bool {
+    let bytes = HeapCore::dbg_prf01_small_sidecar_size();
+    assert!([A_SIDECAR_BYTES, A_SIDECAR_BYTES + 512].contains(&bytes));
+    bytes == A_SIDECAR_BYTES + 512
+}
+
 const SCENARIO_ENV: &str = "SEFER_PRF01_SCENARIO";
 
 fn child(test: &str, scenario: &str) {
@@ -77,17 +85,22 @@ fn growth_oracles() {
                 counts[4] > 0,
                 "actual routed discovery scan construction missing"
             );
-            assert!(
-                counts[0].abs_diff(expected) <= expected / 100,
-                "frozen 1% tolerance"
-            );
-            assert_eq!(
-                counts[0], counts[1],
-                "A must exchange every visited pending word"
-            );
+            if has_summary() {
+                assert_eq!(&counts[..2], &[0, 0]);
+                assert!(counts[5] > 0);
+            } else {
+                assert!(
+                    counts[0].abs_diff(expected) <= expected / 100,
+                    "frozen 1% tolerance"
+                );
+                assert_eq!(
+                    counts[0], counts[1],
+                    "A must exchange every visited pending word"
+                );
+                assert_eq!(&counts[5..], &[0, 0, 0]);
+            }
             assert_eq!(counts[2], 0);
             assert_eq!(counts[3], 0);
-            assert_eq!(&counts[5..], &[0, 0, 0]);
         })
         .join()
         .unwrap();
@@ -127,7 +140,12 @@ fn publication_oracle() {
             remaining, 0,
             "no joined publication left for strict trim after discovery"
         );
-        assert_eq!(&counts[5..], &[0, 0, 0]);
+        if has_summary() {
+            assert!(counts[5] > 0);
+            assert_eq!(counts[0], counts[1]);
+        } else {
+            assert_eq!(&counts[5..], &[0, 0, 0]);
+        }
     })
     .join()
     .unwrap();
@@ -146,10 +164,21 @@ fn producer_oracle() {
         owner.producer_window();
         let counts = delta(before, HeapCore::dbg_prf01_sidecar_oracle());
         print_counts("r19_prf01_joined_producer_same_word", counts, None);
-        assert_eq!(
-            counts, [0; 8],
-            "producer alone must not invoke owner discovery in A"
-        );
+        if has_summary() {
+            assert_eq!(&counts[..6], &[0; 6], "producer cannot run discovery");
+            // C'': no summary LOADS at all. The bit is set only on the pending
+            // word's 0 -> non-0 transition, so summary RMWs equal the number of
+            // transitions, not the 4096 frees. Oracle slot update is
+            // published(1, 0): one RMW, zero loads per set bit.
+            assert_eq!(counts[7], 0, "C'' producers perform no summary loads");
+            assert!(counts[6] > 0, "at least one 0 -> non-0 transition");
+            assert!(counts[6] <= 4096, "transitions cannot exceed frees");
+        } else {
+            assert_eq!(
+                counts, [0; 8],
+                "producer alone must not invoke owner discovery in A"
+            );
+        }
         let allocator = SeferAlloc::new();
         let trim_before = allocator.dbg_sidecar_ingress_stats();
         allocator.trim_current_thread();

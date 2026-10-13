@@ -3027,6 +3027,8 @@ jobs:
         run: cargo miri test --locked --features "std" --test regression_w3_stats_aliasing_miri
       - name: class_leaves_publication_miri
         run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
+      - name: r20_prf01_summary_transition_miri
+        run: cargo miri test --locked --features "alloc-core" --test r20_prf01_summary_transition_miri
 
   miri-alloc-core:
     # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,
@@ -3195,6 +3197,7 @@ jobs:
           cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom" \
             --test loom_sidecar_bitmap \
             --test loom_sidecar_summary \
+            --test loom_r20_prf01_summary_transition \
             --test loom_terminal_owner_drain \
             --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
@@ -3210,6 +3213,11 @@ jobs:
           grep -F "test unpublished_and_detached_instances_hold_the_reservation_credit ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_producer_retirement_allows_premature_release - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_c2_transition_two_words_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_c2_transition_same_word_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_c2_negative_notify_on_every_free - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_c2_negative_clear_after_cut - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_c2_negative_summary_hoisted_above_lp - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
         shell: bash
 
   loom-experimental:

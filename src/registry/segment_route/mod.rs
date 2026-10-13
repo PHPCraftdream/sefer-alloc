@@ -29,6 +29,8 @@ pub use directory::RouteDirectory;
 pub use error::RouteError;
 pub use kind::RouteKind;
 pub use large_state::LargeState;
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+pub use pin::PausedPublish;
 pub use pin::RoutePin;
 pub use registration::RouteRegistration;
 pub use route_cut::RouteCut;

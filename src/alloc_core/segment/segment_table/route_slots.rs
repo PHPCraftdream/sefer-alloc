@@ -217,6 +217,29 @@ impl RouteSlots {
         route.small_sidecar()?.scan_from(high_water, word)
     }
 
+    pub(super) fn scan_small_summarized_from(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+        word: usize,
+    ) -> Option<RouteScan<'_>> {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: exclusive owner reads an initialized live slot; the route
+        // remains owned by this table throughout the returned scan borrow.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route
+            .small_sidecar()?
+            .scan_summarized_from(high_water, word)
+    }
+
     pub(super) fn claim_large_pending(&self, index: usize, base: *mut u8) -> bool {
         if index >= self.cap {
             std::process::abort();

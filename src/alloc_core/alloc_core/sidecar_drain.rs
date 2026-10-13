@@ -127,7 +127,7 @@ impl AllocCore {
                     {
                         let Some(mut scan) = self
                             .table
-                            .scan_small_route_from(index, base, high_water, cursor.1)
+                            .scan_small_route_from(index, base, high_water, cursor.1, false)
                         else {
                             std::process::abort();
                         };

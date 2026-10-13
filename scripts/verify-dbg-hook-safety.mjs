@@ -330,6 +330,9 @@ const UNSAFE_HOOKS = [
   "src/alloc_core/alloc_core/sidecar_test_hooks.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_reclaim_sidecar_record_for_test",
+  // OPT-04 counterfactual: test-only forwarder to SmallSidecar::initialize_at;
+  // gated bench-internals+internals, private-storage contract documented at the hook.
+  "src/registry/segment_route/small_sidecar.rs::dbg_initialize_at_for_test",
   CURRENT_RESERVATION_HOOK
 ];
 const SIDECAR_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:publish_small_sidecar_free|reclaim_sidecar_record_for_test)$/.test(id)));
@@ -338,6 +341,9 @@ BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
 
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
+  { id: 'src/registry/segment_route/small_sidecar.rs::scan_summarized_for_test', kind: 'mutator', reason: 'actual owner scan clears atomic pending/summary under the existing sidecar shared scan contract; not an observer', gates: ['internals', 'bench-internals'] },
+  { id: 'src/registry/segment_route/pin.rs::dbg_publish_pending_only_for_test', kind: 'unsafe', reason: 'unique issued block ownership transfers once through shared actual first publication half under consumed RoutePin; drops paused handle to omit discovery notification', gates: ['internals', 'bench-internals'] },
+  { id: 'src/registry/segment_route/pin.rs::dbg_pause_publish_for_test', kind: 'unsafe', reason: 'unique issued block ownership transfers once at actual pending LP; non-Clone handle retains RoutePin and pre-LP same-sidecar summary address through actual resume half', gates: ['internals', 'bench-internals'] },
   { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['src/alloc_core/segment/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
