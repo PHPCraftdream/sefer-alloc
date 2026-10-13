@@ -10,7 +10,7 @@
 //
 // Commands:
 //   --prepare   worktrees <primary>/worktrees/r20p1/{A,B,C} (equal length,
-//               one-letter labels); B = A + cherry-pick 3033c499 on a temp
+//               one-letter labels); B = A + cherry-pick edf90675 on a temp
 //               branch; identity manifest BEFORE any measurement.
 //   --build     per-arm builds (native on Linux, wsl.exe on Windows):
 //               perf_gate_iai (iai), r20_prf01_controls_iai (controls),
@@ -56,7 +56,7 @@ const FEATURES = 'production bench-internals internals';
 const ORACLE_CFG = 'r19_sidecar_summary_oracle';
 const CONTROL_CFG = 'r19_prf01_producer_control';
 const DISTINGUISH_RUSTFLAGS = '-C debuginfo=line-tables-only';
-const PICK = '3033c499';
+const PICK = 'edf90675';
 const PRODUCER = 'r19_prf01_joined_producer_same_word';
 const PRODUCER_SYMBOL = '<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window';
 const BENEFIT = ['multiseg_cold_256k', 'seg_cycle_decommit_256k', 'growth16_n', 'growth16_2n', 'growth16_4n'];

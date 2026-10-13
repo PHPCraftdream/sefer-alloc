@@ -41,7 +41,7 @@ run01 verdict (C′ NO-GO: +569 Ir per hot control = one-time sidecar constructi
   (all cross pairs); `strictTrim` records no cell.
 - Arm identities: A1/A2 = one A binary, B1/B2 = one B binary, C0 = A source under a different path
   label with the REGISTERED build difference `-C debuginfo=line-tables-only`; A/B/C full worktree
-  paths of equal length with one-letter labels; B = A + one cherry-pick of `3033c499` (branch
+  paths of equal length with one-letter labels; B = A + one cherry-pick of `edf90675` (branch
   `r20-prf01-cdp`; verified to apply cleanly onto this base) and the pick must not touch the judge,
   the runner or this document.
 - Native axis method (for the deferred future run): installed `#[global_allocator]`, fan-in
@@ -113,7 +113,7 @@ pattern (`CHURN_OPS_2N`).
 ## Arches, runner, freeze
 
 - A = clean committed HEAD of the worktree holding the runner, judge and this document (the runner
-  refuses a dirty tree); B = A + cherry-pick `3033c499`; C0 = A source, third worktree, equal-length
+  refuses a dirty tree); B = A + cherry-pick `edf90675`; C0 = A source, third worktree, equal-length
   path, `-C debuginfo=line-tables-only` (registered; changes no code, only makes the binary distinct).
 - The runner (`scripts/r20_prf01_sidecar_summary_run.mjs`) stages `--prepare/--build/--oracle/
   --measure/--rehearsal/--cleanup` with `--slop` as negative control, takes the repository root from
@@ -150,3 +150,11 @@ pattern (`CHURN_OPS_2N`).
   platform (`AssertionError: not an absolute Windows path`). Fix: `toHost(REPO_ROOT)`, the identity on
   Linux. No measurement existed at that point, so the runner hash and this document were re-frozen in
   the companion `.sha256`.
+- 2026-10-13 (second rehearsal, run 38356819349): `git cherry-pick 3033c499` onto the current gate tip
+  conflicted in `README.md` (test/bench inventory counts that moved after C'' was cut). The candidate is
+  therefore re-cut as ONE commit `edf90675` (branch `r20-prf01-cdp-main`): a squash of `r20-prf01-cdp`
+  (3033c499 + its CI/test/docs fixes) applied onto this gate branch tip with only the README counts
+  resolved (390 tests / 92 examples / 28 benches / 15 root Loom models, checked against disk).
+  `git diff 3033c499 edf90675 -- src` is limited to three cfg-only lines (the re-export gate inherited from
+  main and the gated `PausedPublish` imports); production codegen of the `production` build is unchanged.
+  The runner's `PICK` is now `edf90675`; hashes re-frozen, still no measurement.
