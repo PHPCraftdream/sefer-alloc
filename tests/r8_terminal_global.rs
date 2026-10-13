@@ -265,22 +265,15 @@ fn fallback_direct_free_before_service_and_busy_terminal_publication() {
     // process-global. A fresh child proves the requested zero budget really
     // governs this scenario without interference from other test threads.
     if std::env::var_os("SEFER_R8_FALLBACK_CHILD").is_none() {
-        // Captured, not inherited: the child libtest prints to the shared stdout
-        // and would split the parent harness's `test X ... ok` lines that CI greps.
-        let out = std::process::Command::new(std::env::current_exe().unwrap())
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "fallback_direct_free_before_service_and_busy_terminal_publication",
             ])
             .env("SEFER_R8_FALLBACK_CHILD", "1")
-            .output()
+            .status()
             .unwrap();
-        assert!(
-            out.status.success(),
-            "isolated real fallback free scenario\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        );
+        assert!(status.success(), "isolated real fallback free scenario");
         return;
     }
     use sefer_alloc::global::tls_heap;
