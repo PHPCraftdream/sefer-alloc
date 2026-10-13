@@ -24,6 +24,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request supersedes the older run: superseded
+# runs are cancelled (they were the main source of the job queue during fix
+# series). Never cancel runs on `main`, schedules or manual dispatches.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   # `-D warnings` is the strict-CI policy (Phase F3, task #124). Re-enabled
