@@ -262,6 +262,11 @@ function main() {
   const outPath = process.env.GITHUB_OUTPUT;
   if (outPath) appendFileSync(outPath, Object.entries(result).map(([k, v]) => `${k}=${v}\n`).join(''));
   else console.log(JSON.stringify(result));
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const on = Object.keys(result).filter(k => result[k]);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+      `### CI plan\n\n- event: \`${event}\`, changed files: ${files ? files.length : 'unknown (full plan)'}\n- groups on: ${on.map(g => `\`${g}\``).join(', ')}\n`);
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` ||
