@@ -1,6 +1,4 @@
-use core::sync::atomic::{AtomicU64, Ordering};
-
-use super::{sidecar_bitmap::ClassMap, BitmapCut};
+use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
 
 #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
 std::thread_local! {
