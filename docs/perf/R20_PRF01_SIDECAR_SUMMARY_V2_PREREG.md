@@ -158,3 +158,8 @@ pattern (`CHURN_OPS_2N`).
   `git diff 3033c499 edf90675 -- src` is limited to three cfg-only lines (the re-export gate inherited from
   main and the gated `PausedPublish` imports); production codegen of the `production` build is unchanged.
   The runner's `PICK` is now `edf90675`; hashes re-frozen, still no measurement.
+- 2026-10-13 (third rehearsal, run 38357969386): prepare/build/oracle passed on native Linux; `measure`
+  parsed 0 of 20 cells from the iai output of run A1 and aborted before storing the raw text. The runner
+  now writes the unparsed output to `logs/<run>-<target>.unparsed.log` (and its head into the assertion
+  message) before failing; diagnostics only, no change to any measured quantity. Re-frozen, still no
+  measurement.

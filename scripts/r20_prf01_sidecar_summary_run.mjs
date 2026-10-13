@@ -492,6 +492,14 @@ function parseIr(out, cellNames) {
   }
   return ir;
 }
+// A parse miss must leave the raw output behind: the stage dir is uploaded as a CI artifact.
+function checkCells(ir, cellNames, out, what) {
+  const got = Object.keys(ir).sort(), want = [...cellNames].sort();
+  if (JSON.stringify(got) === JSON.stringify(want)) return;
+  putText(`logs/${what}.unparsed.log`, out.slice(0, RAW_LOG_LIMIT));
+  const head = out.split(/\r?\n/).slice(0, 60).join('\n');
+  assert.fail(`${what}: parsed ${got.length}/${want.length} cells; missing: ${want.filter(c => !(c in ir)).join(',')}\n--- output head ---\n${head}`);
+}
 function benchRun(run, arm, target, cellNames) {
   const b = { ...ctx.builds.arms[arm].iai, arm, role: 'iai' };
   assert.ok(boundaryEvidence(b, `${run}-iai`).verification, 'boundary precheck');
@@ -502,7 +510,7 @@ function benchRun(run, arm, target, cellNames) {
   const startedAt = now();
   const r = wslOk(script, `bench ${target} run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
-  assert.deepEqual(Object.keys(ir).sort(), [...cellNames].sort(), `run ${run}: missing cells of ${target}`);
+  checkCells(ir, cellNames, r.out, `${run}-${target}`);
   assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/${target} over ${RAW_LOG_LIMIT} bytes`);
   const log = putText(`logs/${run}-${target}.log`, r.out);
   fs.rmSync(join(WT_DIR, arm, home), { recursive: true, force: true });
@@ -517,7 +525,7 @@ function controlsRun(run, arm, cellNames) {
   const startedAt = now();
   const r = wslOk(script, `controls run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
-  assert.deepEqual(Object.keys(ir).sort(), [...cellNames].sort(), `controls run ${run}: missing cells`);
+  checkCells(ir, cellNames, r.out, `${run}-controls`);
   assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/controls over ${RAW_LOG_LIMIT} bytes`);
   const log = putText(`logs/${run}-controls.log`, r.out);
   fs.rmSync(join(WT_DIR, arm, home), { recursive: true, force: true });
