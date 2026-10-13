@@ -13,7 +13,8 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 6 * * 1'   # NUMA real-kernel job (weekly Monday 06:00 UTC)
+    - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC: full tier + numa-real-kernel, fuzz-run, feature-powerset
+    - cron: '0 3 * * *'   # nightly 03:00 UTC: full tier of the regular jobs (docs/CI_TIERS.md)
   workflow_dispatch:
 
 # SEC-4 (task #201): least-privilege token scope. No job in this workflow
@@ -4080,7 +4081,7 @@ jobs:
     # below keeps all other jobs unaffected.
     name: NUMA on real Linux kernel (numactl smoke + env-guarded tests)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * 1' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -4177,7 +4178,7 @@ jobs:
     # job exists to produce, not a flaky failure.
     name: fuzz targets run (weekly, 10 min/target)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * 1' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
@@ -4316,7 +4317,7 @@ jobs:
     # is unrelated to what this job is checking).
     name: cargo-hack feature-powerset (depth 2, check-only, weekly)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * 1' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
