@@ -122,6 +122,21 @@ verification is claimed. Evidence: `docs/reviews/2026-10-08-src-review-xxs-round
 
 **Round 19 close-out (2026-10-12).** Items 107, 188, 190 and 195 are FIXED IN TREE and stay open as `[T]` cards until a CI run after the next push confirms them (nothing was pushed): the generated NUMA Clippy row, the ClassLeaves ordering pin plus real-type Miri target, the Miri target manifest with its wiring verifier, and the powerset keep-going / MSRV each-feature sweeps. Item 189 is PARTIAL (the source-scope mechanism landed, no row is migrated yet). Items 185, 200 and 204 are PARTIAL and item 205 is local-complete with landing CI pending; items 201 and 202 are recorded decisions, not fixes. No item was moved to `RESOLVED.md` this round, so lookup rows and card counts are unchanged. Perf-side outcomes of PRF-01..04 are in `docs/perf/OPEN_ITEMS.md`. Evidence: `docs/perf/round-manifests/R19_MANIFEST.md`.
 
+**CI recheck of cards 107/188/190/195 (2026-10-13).** Items 107 and 188 are
+CLOSED on direct green-CI evidence: the `clippy` job (with its
+`numa-aware internals` step, ci.yml:1375) and the `miri (core)` job (with
+`class_leaves_publication_miri`, ci.yml:3028) ran success in run
+`38347654258` (main, `c197c70c`) and run `38328098911`; closure records are
+in `RESOLVED.md`. Item 190 stays OPEN, narrowed: its landed wiring verifier
+(`check-matrix` job, ci.yml:1461) and all Miri jobs are green in the same
+runs, but the README/ARCHITECTURE stale inventory prose remains explicitly
+unreconciled. Item 195 stays OPEN: dispatched run `38328098911` ran the
+weekly powerset keep-going + MSRV each-feature + PowerPC oracle green, but
+the controlled failing-member / feature-gated-incompatibility controls were
+not run and no scheduled run on main has exercised the fixed job yet (last
+scheduled run `38260710015` predates the fixes and was red in exactly that
+job). Lookup rows updated; card counts in the tier files re-typed.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -229,7 +244,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   scoping/`needs_drop`/scanner-name-prefix follow-ups (item 9) — not four
   unrelated findings that happen to mention `dbg_`.
 - **`docs/correctness-open-items/TRACKED_verification_coverage.md`**
-  (12 numbered records: 9 open + 3 retained closed) — miri / loom / kani
+  (12 numbered records: 8 open + 4 retained closed) — miri / loom / kani
   proof coverage. Criterion: whether an `unsafe` seam or algorithmic invariant
   has (or lacks) interpreter/model-checker PROOF coverage — distinct from
   ordinary CI gate wiring (a test exists but does not run under some job) and
@@ -253,7 +268,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
 - **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (28
-  cards; item 175 was added in R16 and closed the same day, now in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
+  cards; items 175 and 107 are retained CLOSED pointers in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
@@ -454,7 +469,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 104 | `TRACKED_publish_readiness.md` |
 | 105 | `TRACKED_publish_readiness.md` |
 | 106 | `TRACKED_publish_readiness.md` |
-| 107 | `TRACKED_ci_gate_coverage.md` |
+| 107 | `RESOLVED.md` |
 | 108 | `TRACKED_publish_readiness.md` |
 | 109 | `TRACKED_publish_readiness.md` |
 | 110 | `TRACKED_publish_readiness.md` |
@@ -533,7 +548,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 185 | `TRACKED_platform_contracts.md` |
 | 186 | `TRACKED_verification_coverage.md` |
 | 187 | `TRACKED_ci_gate_coverage.md` |
-| 188 | `TRACKED_verification_coverage.md` |
+| 188 | `RESOLVED.md` |
 | 189 | `TRACKED_ci_gate_coverage.md` |
 | 190 | `TRACKED_ci_gate_coverage.md` |
 | 191 | `TRACKED_misc.md` |
