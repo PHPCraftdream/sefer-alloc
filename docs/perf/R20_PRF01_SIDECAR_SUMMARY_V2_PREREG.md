@@ -319,3 +319,11 @@ prefix as the global verdict, so mode-field-only consumers cannot mislabel rehea
   Selftest 157 checks; the new mutants fail on the previous judge (counterfactual). Eighth/ninth rehearsal
   runs (38377475462, 38382265194) preceded this edit; the ninth ran the previous code. No candidate
   primary Ir exists under the official protocol.
+- 2026-10-13 (re-freeze 10, first official dispatch, run 38424122185 on main `91aa0e9a`): the run aborted in
+  the `build` stage with `runner worktree must be clean and committed`. `prepare` had already written
+  `manifest.json` into the official out-dir `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01/`, which sits
+  inside the checkout, and `baseHead()` counted that untracked directory as dirt. The rehearsals used the
+  git-ignored `target/r20p1-rehearsal`, so this path was first exercised by the official run. Fix:
+  `baseHead()` excludes the stage's own out-dir from the cleanliness check (pathspec `:(exclude)<out-dir>`);
+  any other uncommitted or untracked path still fails it. No oracle or measure stage ran and no measured
+  quantity exists; the aborted run produced only `manifest.json`. Runner hash and this document re-frozen.
