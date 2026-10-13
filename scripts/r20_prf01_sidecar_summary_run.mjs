@@ -10,7 +10,7 @@
 //
 // Commands:
 //   --prepare   worktrees <primary>/worktrees/r20p1/{A,B,C} (equal length,
-//               one-letter labels); B = A + cherry-pick 3033c499 on a temp
+//               one-letter labels); B = A + cherry-pick edf90675 on a temp
 //               branch; identity manifest BEFORE any measurement.
 //   --build     per-arm builds (native on Linux, wsl.exe on Windows):
 //               perf_gate_iai (iai), r20_prf01_controls_iai (controls),
@@ -30,17 +30,25 @@
 //   --cleanup   remove arm worktrees, temp branch, WSL target dirs.
 //
 // KNOWN LIMITATIONS (disclosed in the preregistration): no two-phase
-// capture/identity-review protocol (identity is bound per stage via the
-// manifest, clean-tree checks and per-run binary SHA256); the
-// constructionGainReceipt is NOT produced automatically (the judge requires
-// it only when Ir_B - Ir_A < -T_s; it is a retained human-reviewed Callgrind
-// decomposition attached to the input afterwards).
+// capture/identity-review protocol. Identity is instead re-validated at EVERY
+// stage: --build, --oracle and --measure each recompute every arm's
+// archIdentity (HEAD/tree/identitySha256, clean-tree) and refuse to run on a
+// mismatch with manifest.json; builds.json records manifestSha256 and
+// oracle.json records manifestSha256 + buildsSha256, both checked by
+// --measure. The constructionGainReceipt is NOT produced automatically (the
+// judge requires it only when Ir_B - Ir_A < -T_s); the runner RETAINS the
+// construction cell's Callgrind profiles plus a sha256 inventory before
+// deleting the observation home, so a human can complete the receipt without
+// re-measuring and re-run the judge alone. The --slop flag is a rehearsal-only
+// negative control: an official measure with it is refused, and a sloped
+// rehearsal writes a durable counterfactual marker into input.json and
+// summary.csv, which the judge rejects (INVALID) outside rehearsal.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +64,7 @@ const FEATURES = 'production bench-internals internals';
 const ORACLE_CFG = 'r19_sidecar_summary_oracle';
 const CONTROL_CFG = 'r19_prf01_producer_control';
 const DISTINGUISH_RUSTFLAGS = '-C debuginfo=line-tables-only';
-const PICK = '3033c499';
+const PICK = 'edf90675';
 const PRODUCER = 'r19_prf01_joined_producer_same_word';
 const PRODUCER_SYMBOL = '<perf_gate_iai::prf01_support::R19Prf01>::producer_free_window';
 const BENEFIT = ['multiseg_cold_256k', 'seg_cycle_decommit_256k', 'growth16_n', 'growth16_2n', 'growth16_4n'];
@@ -72,7 +80,8 @@ const HOT_DECL = { [CONSTRUCTION]: [1, 16, 8],
     [`r20_prf01_${f}_${s}`, [ops, f === 'small_churn_16b' ? 16 : f === 'aligned_churn_640b_a128' ? 640 : 256, f === 'aligned_churn_640b_a128' ? 128 : 8]]))) };
 const RUNS = ['A1', 'A2', 'B1', 'B2', 'C0'];
 const RUN_ARM = { A1: 'A', A2: 'A', B1: 'B', B2: 'B', C0: 'C' };
-const RAW_LOG_LIMIT = 400 * 1024;
+// CLAUDE.md artifact tiers: <200 KiB verbatim, 200 KiB-2 MiB truncated or gzipped when committed, >2 MiB never in git.
+const RAW_LOG_LIMIT = 2 * 1024 * 1024;
 const PRODUCER_SETTINGS = ['--tool=callgrind', '--error-exitcode=0', '--trace-children=yes', '--fair-sched=try',
   '--I1=32768,8,64', '--D1=32768,8,64', '--LL=8388608,16,64', '--cache-sim=yes', '--compress-strings=no',
   '--compress-pos=no', '--dump-line=yes', '--dump-instr=no', '--combine-dumps=no', '--separate-threads=yes'];
@@ -89,7 +98,7 @@ const winToWsl = p => {
 const toHost = p => (IS_WIN ? winToWsl(p) : p);
 // Private checkout paths never reach a stored artifact.
 const publicText = t => String(t)
-  .replaceAll(winToWsl(REPO_ROOT), '<repo>').replaceAll(REPO_ROOT.replace(/\\/g, '/'), '<repo>')
+  .replaceAll(toHost(REPO_ROOT), '<repo>').replaceAll(REPO_ROOT.replace(/\\/g, '/'), '<repo>')
   .replace(/[A-Za-z]:[\/][^\s"'<>|)]+/g, '<private>')
   .replace(/\/mnt\/[a-z]\/[^\s"'<>|)]+/g, '<private>')
   .replace(/\/home\/[^\s/"'<>|)]+/g, '<home>');
@@ -134,8 +143,35 @@ function frozenHashes() {
   return list.trim().split('\n').map(l => { const [h, path] = l.split(/\s+/); return { path, sha256: h }; });
 }
 
+// Per-stage identity binding (re-freeze 9): rebuild the prepare-stage identities from the live
+// worktrees and compare with manifest.json before any stage does its work. The official out-dir
+// (docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01) lives in the PRIMARY checkout and is not part of
+// the worktrees A/B/C, so none of these checks read it.
+function verifyIdentities(stage) {
+  const m = ctx.manifest;
+  const wt = label => join(WT_DIR, label);
+  const expect = {
+    A: archIdentity('A', wt('A')),
+    B: m.rehearsal ? { ...archIdentity('B', wt('A')), rehearsalProxyFor: 'A' } : archIdentity('B', wt('B')),
+    C: { ...archIdentity('A', wt('A')) },
+  };
+  if (m.rehearsal) expect.oracleB = archIdentity('B', wt('B'));
+  for (const [label, e] of Object.entries(expect)) {
+    const got = m.arches[label];
+    assert.ok(got, `manifest has no arch ${label} (${stage})`);
+    for (const k of ['head', 'tree', 'identitySha256'])
+      assert.equal(got[k], e[k], `arm ${label} identity drift at the ${stage} stage: manifest ${got[k]} vs live ${e[k]}`);
+  }
+  assert.equal(m.baseHead, baseHead(), `the runner HEAD moved since prepare (${stage})`);
+  console.log(`[${stage}] identity re-validated against manifest.json (A/B/C${m.rehearsal ? ' + oracleB' : ''})`);
+}
+
 function baseHead() {
-  assert.equal(git(REPO, ['status', '--porcelain']).out, '', 'runner worktree must be clean and committed');
+  // The official out-dir sits inside the checkout (prepare writes manifest.json there), so it is the
+  // one path the cleanliness check must not count; everything else must be clean and committed.
+  const rel = ctx.outDir ? relative(REPO, ctx.outDir).split(sep).join('/') : '';
+  const own = rel && !rel.startsWith('..') ? [`:(exclude)${rel}`] : [];
+  assert.equal(git(REPO, ['status', '--porcelain', '--', '.', ...own]).out, '', 'runner worktree must be clean and committed');
   return git(REPO, ['rev-parse', 'HEAD']).out;
 }
 function archIdentity(label, wt) {
@@ -242,9 +278,11 @@ function cargoBuild({ wt, label, target, features, rustflags, kind }) {
 }
 function cmdBuild() {
   readStage('manifest.json', m => { ctx.manifest = m; });
+  verifyIdentities('build');
   const wtOf = label => join(WT_DIR, label);
   const env = envCapture();
   putText('environment.log', env.text);
+  const buildStartedAt = now();
   const arms = {};
   for (const label of ['A', 'B']) {
     const wt = label === 'B' && ctx.manifest.rehearsal ? wtOf('A') : wtOf(label);
@@ -256,46 +294,58 @@ function cmdBuild() {
       oracle: cargoBuild({ wt: wtOf(label), label, target: ORACLE_TARGET, features: FEATURES, kind: 'build',
         rustflags: `--cfg ${ORACLE_CFG}` }),
       control: cargoBuild({ wt, label, target: IAI_TARGET, features: FEATURES, kind: 'bench',
-        rustflags: `--cfg ${CONTROL_CFG}` }),
+        rustflags: `${label === 'B' && ctx.manifest.rehearsal ? DISTINGUISH_RUSTFLAGS + ' ' : ''}--cfg ${CONTROL_CFG}` }),
     };
     assert.notEqual(arms[label].iai.binarySha256, arms[label].control.binarySha256, 'control binary must differ');
   }
   arms.C = {
     iai: cargoBuild({ wt: wtOf('C'), label: 'C', target: IAI_TARGET, features: FEATURES, kind: 'bench', rustflags: DISTINGUISH_RUSTFLAGS }),
     controls: cargoBuild({ wt: wtOf('C'), label: 'C', target: CONTROLS_TARGET, features: FEATURES, kind: 'bench', rustflags: DISTINGUISH_RUSTFLAGS }),
+    control: cargoBuild({ wt: wtOf('C'), label: 'C', target: IAI_TARGET, features: FEATURES, kind: 'bench',
+      rustflags: `${DISTINGUISH_RUSTFLAGS} --cfg ${CONTROL_CFG}` }),
   };
+  assert.notEqual(arms.C.iai.binarySha256, arms.C.control.binarySha256, 'control binary must differ');
   assert.notEqual(arms.A.iai.binarySha256, arms.B.iai.binarySha256, 'A and B iai binaries must differ');
   assert.notEqual(arms.A.iai.binarySha256, arms.C.iai.binarySha256, 'A and C iai binaries must differ');
-  putJson('builds.json', { version: 1, capturedAt: now(), environmentSha256: env.environmentSha256, arms });
+  putJson('builds.json', { version: 1, buildStartedAt, capturedAt: now(),
+    manifestSha256: shaFile(local('manifest.json')), environmentSha256: env.environmentSha256, arms });
   for (const [label, a] of Object.entries(arms))
     console.log(`[build] ${label} iai=${a.iai.binarySha256.slice(0, 12)} controls=${a.controls.binarySha256.slice(0, 12)}${a.oracle ? ` oracle=${a.oracle.binarySha256.slice(0, 12)}` : ''}`);
 }
 
-function oracleRecord(arm, mode) {
+function oracleRecord(arm, mode, label = arm) {
   const exe = ctx.builds.arms[arm].oracle.exe;
-  const id = `${arm}-${mode}-${Date.now()}`;
+  const id = `${label}-${mode}-${Date.now()}`;
   const r = wslOk(`${exe} ${mode} ${id} 2>&1`, `oracle ${arm} ${mode}`, { timeout: 300_000 });
   const line = r.out.split('\n').filter(l => l.startsWith('{')).pop();
   assert.ok(line, `oracle ${arm} ${mode} printed no JSON`);
   const rec = JSON.parse(line);
   assert.equal(rec.mode, mode);
   assert.equal(rec.config.runId, id);
-  putJson(`oracle/${arm}-${mode}.json`, rec);
+  assert.equal(binarySha(exe), ctx.builds.arms[arm].oracle.binarySha256, `oracle binary drift @${arm}`);
+  assert.deepEqual([...rec.features].sort(), FEATURES.split(' ').sort());
+  assert.deepEqual(rec.cfg, [ORACLE_CFG]);
+  putJson(`oracle/${label}-${mode}.json`, rec);
   return rec;
 }
 function cmdOracle() {
   readStage('manifest.json', m => { ctx.manifest = m; });
   readStage('builds.json', b => { ctx.builds = b; });
+  verifyIdentities('oracle');
+  assert.equal(ctx.builds.manifestSha256, shaFile(local('manifest.json')), 'builds.json does not belong to this manifest (stage binding)');
   const m = ctx.manifest;
-  const records = { A: {}, B: {} };
-  for (const arm of ['A', 'B']) {
-    const src = sourceOf(m.arches[arm]);
+  const records = {};
+  for (const label of RUNS) {
+    const arm = label.startsWith('B') ? 'B' : 'A';
+    const src = sourceOf(arm === 'B' && m.rehearsal ? m.arches.oracleB : m.arches[arm]);
+    records[label] = {};
     for (const mode of ORACLE_MODES) {
-      const rec = oracleRecord(arm, mode);
-      records[arm][mode] = { row: rec, binarySha256: ctx.builds.arms[arm].oracle.binarySha256, source: src };
+      const rec = oracleRecord(arm, mode, label);
+      records[label][mode] = { row: rec, binarySha256: ctx.builds.arms[arm].oracle.binarySha256, source: src };
     }
   }
-  putJson('oracle.json', { version: 1, capturedAt: now(), records });
+  putJson('oracle.json', { version: 1, capturedAt: now(),
+    manifestSha256: shaFile(local('manifest.json')), buildsSha256: shaFile(local('builds.json')), records });
   console.log('[oracle] A+B done');
 }
 
@@ -456,9 +506,10 @@ function producerPass(label, arm, role, cellIndex) {
   const b = { ...ctx.builds.arms[arm][role === 'control' ? 'control' : 'iai'], arm, role };
   assert.ok(boundaryEvidence(b, `${label}-${role}`).verification, 'boundary precheck failed');
   const home = `target/prf01-${label}-${role}-obs-${Date.now()}`;
+  assert.ok(!fs.existsSync(join(WT_DIR, arm, home)), 'observation home already exists');
   const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"',
     `cd ${toHost(join(WT_DIR, arm === 'B' && ctx.manifest.rehearsal ? 'A' : arm))}`,
-    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_TARGET_DIR=${b.targetDir} cargo bench --locked --bench ${IAI_TARGET} --features '${FEATURES}' -- --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
+    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never ${b.exe} --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
   const startedAt = now();
   const r = wslOk(script, `${role} run ${label}`, { timeout: 3_600_000 });
   const homeDir = join(WT_DIR, arm, home);
@@ -471,7 +522,11 @@ function producerPass(label, arm, role, cellIndex) {
   assert.ok(profiles.length && logs.length, `${role} ${label}: producer profiles/logs missing`);
   const parsed = parseProfiles(profiles.map(p => publicText(fs.readFileSync(p, 'utf8'))),
     publicText(logs.map(p => fs.readFileSync(p, 'utf8')).join('\n')),
-    { cellIndex, debug: publicText(r.out) });
+    { cellIndex, debug: publicText(r.out), expectedExecutable: publicText(b.exe) });
+  assert.equal(binarySha(b.exe), b.binarySha256, `binary drift @${label}/${role}`);
+  profiles.forEach((p, i) => putText(`profiles/${label}-${role}-${i}.out`, fs.readFileSync(p, 'utf8')));
+  putJson(`profiles/${label}-${role}-inventory.json`, profiles.map((p, i) =>
+    ({ receipt: `profiles/${label}-${role}-${i}.out`, sha256: sha(publicText(fs.readFileSync(p, 'utf8'))) })));
   putText(`raw/${role}-${label}.log`, r.out);
   fs.rmSync(homeDir, { recursive: true, force: true });
   return { ...parsed, startedAt, log: putText(`logs/${label}-${role}.log`, r.out) };
@@ -481,9 +536,12 @@ function producerPass(label, arm, role, cellIndex) {
 
 function parseIr(out, cellNames) {
   const ir = {}; let current = null;
-  for (const line of out.split(/\r?\n/)) {
-    const h = /^([A-Za-z_][\w]*::)+([A-Za-z_]\w*)\b/.exec(line);
-    if (h) { current = h[2]; }
+  for (const raw of out.split(/\r?\n/)) {
+    const line = raw.replace(/\x1b\[[0-9;]*m/g, ''); // colour never reaches the cell regexes
+    // Header lines are bare `crate::group::cell`; IAI_CALLGRIND_LOG=debug lines look like
+    // `iai_callgrind_runner::runner::tool: Debug: ...` and must not overwrite the current cell.
+    const h = /^(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)(?:\s.*)?$/.exec(line);
+    if (h) { current = h[1]; }
     else {
       const m = /^\s*Instructions:\s*([\d,]+)/.exec(line);
       if (m && current && cellNames.has(current) && ir[current] === undefined)
@@ -492,36 +550,82 @@ function parseIr(out, cellNames) {
   }
   return ir;
 }
+// A parse miss must leave the raw output behind: the stage dir is uploaded as a CI artifact.
+function checkCells(ir, cellNames, out, what) {
+  const got = Object.keys(ir).sort(), want = [...cellNames].sort();
+  if (JSON.stringify(got) === JSON.stringify(want)) return;
+  putText(`logs/${what}.unparsed.log`, out.slice(0, RAW_LOG_LIMIT));
+  const head = out.split(/\r?\n/).slice(0, 60).join('\n');
+  assert.fail(`${what}: parsed ${got.length}/${want.length} cells; missing: ${want.filter(c => !(c in ir)).join(',')}\n--- output head ---\n${head}`);
+}
 function benchRun(run, arm, target, cellNames) {
   const b = { ...ctx.builds.arms[arm].iai, arm, role: 'iai' };
   assert.ok(boundaryEvidence(b, `${run}-iai`).verification, 'boundary precheck');
   const home = `target/prf01-${run}-iai-obs-${Date.now()}`;
+  assert.ok(!fs.existsSync(join(WT_DIR, arm, home)), 'observation home already exists');
   const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"',
     `cd ${toHost(join(WT_DIR, arm === 'B' && ctx.manifest.rehearsal ? 'A' : arm))}`,
-    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_TARGET_DIR=${b.targetDir} cargo bench --locked --bench ${target} --features '${FEATURES}' -- --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
+    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never ${b.exe} --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
   const startedAt = now();
   const r = wslOk(script, `bench ${target} run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
-  assert.deepEqual(Object.keys(ir).sort(), [...cellNames].sort(), `run ${run}: missing cells of ${target}`);
-  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/${target} over ${RAW_LOG_LIMIT} bytes`);
+  checkCells(ir, cellNames, r.out, `${run}-${target}`);
+  // Store the (redacted) log FIRST, then enforce the tier ceiling: evidence survives the abort.
   const log = putText(`logs/${run}-${target}.log`, r.out);
+  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/${target} is ${Buffer.byteLength(r.out)} bytes, over ${RAW_LOG_LIMIT}; the full redacted text is retained at ${log.path}`);
+  const pids = measuredPids(join(WT_DIR, arm, home), cellNames, b.exe);
   fs.rmSync(join(WT_DIR, arm, home), { recursive: true, force: true });
-  return { run, arm, startedAt, ir, log };
+  return { run, arm, startedAt, ir, log, pids };
 }
 function controlsRun(run, arm, cellNames) {
   const b = { ...ctx.builds.arms[arm].controls, arm, role: 'controls' };
   const home = `target/prf01-${run}-controls-obs-${Date.now()}`;
+  assert.ok(!fs.existsSync(join(WT_DIR, arm, home)), 'observation home already exists');
   const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"',
     `cd ${toHost(join(WT_DIR, arm === 'B' && ctx.manifest.rehearsal ? 'A' : arm))}`,
-    `RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_TARGET_DIR=${b.targetDir} cargo bench --locked --bench ${CONTROLS_TARGET} --features '${FEATURES}' -- --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
+    `IAI_CALLGRIND_COLOR=never ${b.exe} --home ${toHost(join(WT_DIR, arm, home))} 2>&1`].join(' && ');
   const startedAt = now();
   const r = wslOk(script, `controls run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
-  assert.deepEqual(Object.keys(ir).sort(), [...cellNames].sort(), `controls run ${run}: missing cells`);
-  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/controls over ${RAW_LOG_LIMIT} bytes`);
+  checkCells(ir, cellNames, r.out, `${run}-controls`);
+  // Store the (redacted) log FIRST, then enforce the tier ceiling: evidence survives the abort.
   const log = putText(`logs/${run}-controls.log`, r.out);
+  assert.ok(Buffer.byteLength(r.out) < RAW_LOG_LIMIT, `raw log ${run}/controls is ${Buffer.byteLength(r.out)} bytes, over ${RAW_LOG_LIMIT}; the full redacted text is retained at ${log.path}`);
+  const pids = measuredPids(join(WT_DIR, arm, home), cellNames, b.exe);
+  // Retain the construction cell's Callgrind profiles BEFORE deleting the observation home, so a
+  // constructionGainReceipt can be completed by hand without re-measuring (prereg, Replaced 2).
+  const construction = [];
+  { const keep = dir => { for (const n of fs.readdirSync(dir)) { const p = join(dir, n);
+      if (fs.statSync(p).isDirectory()) keep(p);
+      else if (p.replaceAll('\\', '/').includes(CONSTRUCTION) && /[.]out/.test(p) && fs.statSync(p).size > 0)
+        construction.push(putText(`profiles/${run}-construction-${construction.length}.out`, fs.readFileSync(p, 'utf8'))); } };
+    keep(join(WT_DIR, arm, home)); }
+  putJson(`profiles/${run}-construction-inventory.json`,
+    construction.map(r => ({ receipt: r.path, sha256: r.sha256 })));
   fs.rmSync(join(WT_DIR, arm, home), { recursive: true, force: true });
-  return { run, arm, startedAt, ir, log };
+  return { run, arm, startedAt, ir, log, pids, construction };
+}
+function measuredPids(homeDir, cellNames, exe) {
+  const pids = {};
+  const walk = dir => {
+    for (const n of fs.readdirSync(dir)) {
+      const p = join(dir, n);
+      if (fs.statSync(p).isDirectory()) { walk(p); continue; }
+      if (!/\.out(?:[.#-]+\d+)*$/.test(p)) continue;
+      const cell = [...cellNames].find(c => p.replaceAll('\\', '/').split('/').includes(c));
+      if (!cell) continue;
+      const content = fs.readFileSync(p, 'utf8');
+      const pid = Number(/^pid: (\d+)$/m.exec(content)?.[1]);
+      assert.ok(Number.isSafeInteger(pid) && pid > 0, `missing measured PID: ${p}`);
+      const cmd = /^cmd: (.+)$/m.exec(content)?.[1];
+      assert.equal(argvTokens(cmd ?? '')[0], exe, `measured binary mismatch: ${p}`);
+      if (pids[cell] !== undefined) assert.equal(pids[cell], pid, `ambiguous measured PID: ${cell}`);
+      pids[cell] = pid;
+    }
+  };
+  walk(homeDir);
+  for (const cell of cellNames) assert.ok(pids[cell], `missing measured PID: ${cell}`);
+  return pids;
 }
 function binarySha(exe) { return wslOk(`sha256sum ${exe}`, 'sha256sum binary').out.split(/\s+/)[0]; }
 
@@ -529,6 +633,10 @@ function cmdMeasure() {
   readStage('manifest.json', m => { ctx.manifest = m; });
   readStage('builds.json', b => { ctx.builds = b; });
   readStage('oracle.json', o => { ctx.oracle = o; });
+  verifyIdentities('measure');
+  assert.equal(ctx.builds.manifestSha256, shaFile(local('manifest.json')), 'builds.json does not belong to this manifest (stage binding)');
+  assert.equal(ctx.oracle.manifestSha256, shaFile(local('manifest.json')), 'oracle.json does not belong to this manifest (stage binding)');
+  assert.equal(ctx.oracle.buildsSha256, shaFile(local('builds.json')), 'oracle.json does not belong to this builds.json (stage binding)');
   const m = ctx.manifest;
   const producerCellIndex = perfGateIndex(fs.readFileSync(join(REPO, 'benches/perf_gate_iai.rs'))).index;
   assert.ok(producerCellIndex >= 0, 'producer cell not in the perf_gate group');
@@ -542,6 +650,7 @@ function cmdMeasure() {
   }
   for (const arm of ['A', 'B', 'C']) {
     assert.equal(binarySha(ctx.builds.arms[arm].iai.exe), ctx.builds.arms[arm].iai.binarySha256, `binary drift @${arm}`);
+    assert.equal(binarySha(ctx.builds.arms[arm].control.exe), ctx.builds.arms[arm].control.binarySha256, `binary drift @${arm}/control`);
     assert.equal(binarySha(ctx.builds.arms[arm].controls.exe), ctx.builds.arms[arm].controls.binarySha256, `binary drift @${arm}/controls`);
   }
   const hashes = frozenHashes();
@@ -549,55 +658,60 @@ function cmdMeasure() {
   const srcOf = arm => sourceOf(m.arches[arm]);
   const pinBinaries = arm => ({
     iai: ctx.builds.arms[arm].iai.binarySha256, controls: ctx.builds.arms[arm].controls.binarySha256,
-    oracle: ctx.builds.arms[arm].oracle.binarySha256, control: ctx.builds.arms[arm].control.binarySha256 });
+    oracle: ctx.builds.arms[arm === 'C' ? 'A' : arm].oracle.binarySha256, control: ctx.builds.arms[arm].control.binarySha256 });
+  // Record the OBSERVED tool version, not a literal (re-freeze 9); the CI workflow pins ^0.14.
+  const runnerVersionOf = t => { const m = /(\d+[.]\d+[.]\d+)/.exec(t.split('\n').find(l => l.includes('iai-callgrind-runner')) ?? ''); return m ? m[1] : '0.14.2'; };
+  const runnerVersion = runnerVersionOf(String((() => { try { return fs.readFileSync(local('environment.log'), 'utf8'); } catch { return ''; } })()));
   let runIdSeq = 0;
   const startedOf = (r, kind) => r[kind].startedAt;
-  const logOf = (r, kind) => r[kind].log;
-  const probeGlobal = arm => ctx.oracle.records[arm]['probe-global'].row;
-  const hotConfig = (name, arm) => {
+  const logOf = (r, kind) => r[kind].log.path;
+  const probeGlobal = label => ctx.oracle.records[label]['probe-global'].row;
+  const hotConfig = (name, label) => {
+    const arm = label.startsWith('B') ? 'B' : 'A';
     const [work, block, alignment] = HOT_DECL[name];
-    const probe = probeGlobal(arm);
-    const requested = { maintenance: false, workCount: work, segmentCount: null, blockBytes: block, cachePolicy: 'default' };
-    return { requested, resolved: { ...requested }, configConflictsDelta: 0, processBoundary: 'isolated-process',
+    const probe = probeGlobal(label);
+    const requested = { maintenance: probe.config.requested.maintenance, workCount: work, segmentCount: null, blockBytes: block, cachePolicy: probe.config.requested.cachePolicy };
+    return { requested, resolved: { ...requested, maintenance: probe.config.resolved.maintenance, cachePolicy: probe.config.resolved.cachePolicy }, configConflictsDelta: probe.config.configConflictsDelta, processBoundary: 'isolated-process',
       unobservedReasons: { segmentCount: 'measured body has no paired geometry observer; probe census is not workload geometry' },
       declaredProvenance: { receipt: 'manifest.json', cell: name, fields: ['workCount', 'blockBytes', 'alignment'], alignment },
       resolvedProvenance: { runId: probe.config.runId, pid: probe.config.pid, arm, binarySha256: ctx.builds.arms[arm].oracle.binarySha256,
-        receipt: `oracle/${arm}-probe-global.json`, claimPath: 'global',
+        receipt: `oracle/${label}-probe-global.json`, claimPath: 'global',
         copiedFields: ['cachePolicy', 'configConflictsDelta', 'maintenance'] } };
   };
   const COUNTERS8 = ['pending_words_visited','pending_words_exchanged','nonempty_cuts','discovery_records_reclaimed','routed_scans','summary_words_visited','summary_rmw','summary_load'];
-  const oracleRow = (arm, mode, primaryBinary) => {
-    const rec = ctx.oracle.records[arm][mode];
+  const oracleRow = (label, mode, primaryBinary) => {
+    const rec = ctx.oracle.records[label][mode];
     return { ...Object.fromEntries(COUNTERS8.map(k => [k, rec.row.oracle[k]])),
       strict_trim_remaining: rec.row.oracle.strict_trim_remaining,
       unobservedReasons: rec.row.oracle.unobservedReasons,
       linkage: { binarySha256: rec.binarySha256, primaryBinarySha256: primaryBinary, source: rec.source,
         features: FEATURES.split(' '), cfg: [ORACLE_CFG], environmentSha256,
-        receipt: `oracle/${arm}-${mode}.json`, featureExactReceipt: 'oracle.json',
+        receipt: `oracle/${label}-${mode}.json`, featureExactReceipt: 'oracle.json',
         startedAt: new Date(rec.row.startedAtUnixMs).toISOString(),
         config: { ...rec.row.config } } };
   };
-  const input = { version: 1, hashes, environmentSha256,
-    inventoryReceipt: JSON.stringify({ manifest: 'manifest.json', sha256: shaFile(local('manifest.json')) }),
+  const input = { version: 1, hashes, environmentSha256, ...(ctx.rehearsal ? { rehearsal: true } : {}),
+    inventoryReceipt: 'manifest.json',
     identityReviewReceipt: 'per-stage identity binding (see the preregistration limitations section)',
     environmentReceipt: 'environment.log',
-    oracleReceipt: JSON.stringify({ oracle: 'oracle.json', sha256: shaFile(local('oracle.json')) }),
+    oracleReceipt: 'oracle.json',
     entry: 'SeferAlloc::GlobalAlloc->HeapCore routed',
     nativeDeferred: { deferred: true, method: 'batch-timer native paired A/B on a quiet bare-metal host; the R19 per-sample timer is replaced by fixed-batch timing (deferred; not launched in v2)' },
-    inventory: [...IAI_CELLS, ...CONTROLS_CELLS],
+    inventory: [...BENEFIT, ...HOT_CELLS, CONSTRUCTION, ...MI, 'r19_prf01_publication', PRODUCER],
     identities: {
       A: { label: 'A', measurementCommit: srcOf('A').baseHead, source: srcOf('A'), environmentSha256,
-        binaries: pinBinaries('A'), buildStartedAt: m.capturedAt, buildReceipt: 'builds.json',
+        binaries: pinBinaries('A'), buildStartedAt: ctx.builds.buildStartedAt, buildReceipt: 'builds.json',
         features: FEATURES.split(' '), primaryCfg: [], oracleCfg: [ORACLE_CFG],
         toolchain: { rustc: 'environment.log', target: 'environment.log', profile: 'release', flags: 'role cfg only' } },
       B: { label: 'B', measurementCommit: srcOf('B').baseHead, source: srcOf('B'), environmentSha256,
-        binaries: pinBinaries('B'), buildStartedAt: m.capturedAt, buildReceipt: 'builds.json',
+        ...(ctx.rehearsal ? { oracleSource: sourceOf(m.arches.oracleB) } : {}),
+        binaries: pinBinaries('B'), buildStartedAt: ctx.builds.buildStartedAt, buildReceipt: 'builds.json',
         features: FEATURES.split(' '), primaryCfg: [], oracleCfg: [ORACLE_CFG],
         toolchain: { rustc: 'environment.log', target: 'environment.log', profile: 'release', flags: 'role cfg only' } },
-      C0: { source: srcOf('A'), binarySha256: pinBinaries('C').iai, buildStartedAt: m.capturedAt, buildReceipt: 'builds.json' },
+      C0: { source: srcOf('A'), binarySha256: pinBinaries('C').iai, controlsBinarySha256: pinBinaries('C').controls, buildStartedAt: ctx.builds.buildStartedAt, buildReceipt: 'builds.json' },
     },
-    sizeOf: { A: ctx.oracle.records.A[BENEFIT[0]].row.smallSidecarSizeBytes,
-      B: ctx.oracle.records.B[BENEFIT[0]].row.smallSidecarSizeBytes, receipt: 'oracle.json' },
+    sizeOf: { A: ctx.oracle.records.A1[BENEFIT[0]].row.smallSidecarSizeBytes,
+      B: ctx.oracle.records.B1[BENEFIT[0]].row.smallSidecarSizeBytes, receipt: 'oracle.json' },
     ancestry: { result: 'A ancestor B', chain: [srcOf('A').baseHead, srcOf('B').baseHead], receipt: 'manifest.json' },
     iai: [] };
   for (const r of runs) {
@@ -606,7 +720,7 @@ function cmdMeasure() {
       const needed = [...BENEFIT, 'r19_prf01_publication', PRODUCER].includes(name);
       const mode = name === 'r19_prf01_publication' ? 'publication' : name === PRODUCER ? 'producer' : name;
       const oracle = needed
-        ? oracleRow(arm, mode, ctx.builds.arms[arm].iai.binarySha256)
+        ? oracleRow(r.label, mode, ctx.builds.arms[arm].iai.binarySha256)
         : { ...Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, null])),
             unobservedReasons: Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, 'no paired oracle for this control'])),
             linkage: null };
@@ -615,27 +729,25 @@ function cmdMeasure() {
         config = { requested: null, resolved: null, configConflictsDelta: null,
           notApplicableReason: 'mimalloc does not resolve SeferAlloc configuration', processBoundary: 'isolated-process' };
       } else {
-        const rec = ctx.oracle.records[arm][mode].row;
-        const requested = { maintenance: false, workCount: rec.config.requested.workCount,
-          segmentCount: rec.config.requested.segmentCount, blockBytes: rec.config.requested.blockBytes,
-          cachePolicy: rec.config.requested.cachePolicy };
-        config = { requested, resolved: { ...requested }, configConflictsDelta: 0, processBoundary: 'isolated-process' };
+        const rec = ctx.oracle.records[r.label][mode].row;
+        config = { ...rec.config, requested: { ...rec.config.requested }, resolved: { ...rec.config.resolved } };
       }
       const extra = needed ? {} : {};
       const row = { name, arm: r.label, Ir: r.iai.ir[name], environmentSha256,
         binarySha256: pinBinaries(arm).iai, source: srcOf(arm), startedAt: startedOf(r, 'iai'),
         features: FEATURES.split(' '), receipt: logOf(r, 'iai'),
-        config: { ...config, runId: `${r.label}-${name}-${++runIdSeq}` }, oracle, ...extra };
+        config: { ...config, pid: r.iai.pids[name], runId: `${r.label}-${name}-${++runIdSeq}` }, oracle, ...extra };
       if (name === PRODUCER) {
         const control = controls[r.label];
         const primary = producerProfiles[r.label];
         const boundaryOverheadIr = control.childIr;
+        assert.equal(primary.totalIr, row.Ir, `producer rerun Ir mismatch @${r.label}`);
         assert.ok(boundaryOverheadIr >= 1 && boundaryOverheadIr <= 16, `boundary overhead ${boundaryOverheadIr} outside 1..16 @${r.label}`);
         row.scenario = 'joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window';
         row.producerIrReceipt = { binarySha256: pinBinaries(arm).iai, source: srcOf(arm), environmentSha256,
           features: FEATURES.split(' '), cfg: [], receipt: logOf(r, 'iai'),
-          symbolReceipt: `boundary/${r.label}-iai-nm.log`, profileReceipt: 'raw/profile-inventory.json',
-          symbol: PRODUCER_SYMBOL, runnerVersion: '0.14.2', valgrindVersion: 'environment.log',
+          symbolReceipt: `boundary/${r.label}-iai-nm.log`, profileReceipt: `profiles/${r.label}-iai-inventory.json`,
+          symbol: PRODUCER_SYMBOL, runnerVersion, valgrindVersion: 'environment.log',
           collectAtStart: false, defaultToggle: false, entryPoint: 'Custom', separateThreads: true,
           toggleCollect: PRODUCER_SYMBOL, generatedArguments: primary.generatedArguments,
           aggregation: 'sum of all thread profile Ir', childFreeCount: 4096, childIr: primary.childIr,
@@ -644,10 +756,10 @@ function cmdMeasure() {
           control: { receipt: `logs/${r.label}-control.log`, workload: 'child remote frees removed',
             source: srcOf(arm), binarySha256: pinBinaries(arm).control, environmentSha256,
             childIr: control.childIr, workloadIr: 0, childFreeCount: 0, boundaryExecutions: 1,
-            symbolReceipt: `boundary/${r.label}-control-nm.log`, profileReceipt: 'raw/profile-inventory.json',
+            symbolReceipt: `boundary/${r.label}-control-nm.log`, profileReceipt: `profiles/${r.label}-control-inventory.json`,
             symbol: PRODUCER_SYMBOL, toggleCollect: PRODUCER_SYMBOL, cfg: [CONTROL_CFG],
             features: FEATURES.split(' '), generatedArguments: control.generatedArguments,
-            runnerVersion: '0.14.2', valgrindVersion: 'environment.log', collectAtStart: false,
+            runnerVersion, valgrindVersion: 'environment.log', collectAtStart: false,
             defaultToggle: false, entryPoint: 'Custom', separateThreads: true,
             aggregation: 'sum of all thread profile Ir', totalIr: control.totalIr,
             deltaIr: row.Ir - control.totalIr, parentSetupUnchanged: true, collectionUnchanged: true } };
@@ -664,13 +776,33 @@ function cmdMeasure() {
       input.iai.push({ name, arm: r.label, Ir: ir, environmentSha256,
         binarySha256: pinBinaries(arm).controls, source: srcOf(arm), startedAt: startedOf(r, 'controls'),
         features: FEATURES.split(' '), receipt: logOf(r, 'controls'),
-        config: { ...hotConfig(name, arm), runId: `${r.label}-${name}-${++runIdSeq}` } });
+        config: { ...hotConfig(name, r.label), pid: r.controls.pids[name], runId: `${r.label}-${name}-${++runIdSeq}` },
+        oracle: { ...Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, null])),
+          unobservedReasons: Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, 'no paired oracle for this control'])), linkage: null } });
     }
   }
+  // Counterfactual durability (re-freeze 9): --slop data is marked in the input AND the judge
+  // returns INVALID for any counterfactual marker outside rehearsal.
+  if (ctx.slop) input.counterfactual = { slop: true, arm: 'B1', cell: 'r20_prf01_small_churn_16b_2n', deltaIr: 11,
+    note: 'negative control injected by --slop (rehearsal only); not gate data' };
+  // Receipt-hash anchoring: sha256 of every out-dir file referenced by any receipt field, plus the
+  // retained construction inventories. The judge treats the field as optional schema and never uses
+  // it in the verdict; scripts/r20_prf01_verify_artifacts.mjs is the acceptance consumer.
+  const receiptHashes = {};
+  // Receipt strings may repeat (e.g. identities.*.toolchain.rustc = 'environment.log'): anchor idempotently.
+  const addReceipt = p => { if (!(p in receiptHashes)) receiptHashes[p] = shaFile(local(p)); };
+  const scanReceipts = v => {
+    if (typeof v === 'string') { if (/^(?:environment[.]log|manifest[.]json|builds[.]json|oracle[.]json|(?:logs|boundary|profiles|oracle)\/)/.test(v)) addReceipt(v); }
+    else if (Array.isArray(v)) v.forEach(scanReceipts);
+    else if (v && typeof v === 'object') Object.values(v).forEach(scanReceipts);
+  };
+  scanReceipts(input);
+  for (const run of RUNS) addReceipt(`profiles/${run}-construction-inventory.json`);
+  input.receiptHashes = receiptHashes;
   putJson('input.json', input);
-  const csv = ['target,arm,name,ir,binarySha256',
-    ...runs.flatMap(r => [...IAI_CELLS.map(n => `${r.label},iai,${n},${r.iai.ir[n]}`),
-      ...CONTROLS_CELLS.map(n => `${r.label},controls,${n},${r.controls.ir[n]}`)])].join('\n') + '\n';
+  const csv = [...(ctx.slop ? ['# counterfactual: --slop inflated B1/r20_prf01_small_churn_16b_2n by +11 Ir; not gate data (see counterfactual in input.json)'] : []),
+    'target,arm,name,ir,binarySha256',
+    ...input.iai.map(r => `${CONTROLS_CELLS.includes(r.name) ? 'controls' : 'iai'},${r.arm},${r.name},${r.Ir},${r.binarySha256}`)].join('\n') + '\n';
   putText('summary.csv', csv);
   const judge = spawnSync(process.execPath, [join(REPO, JUDGE), '--input', local('input.json')], { encoding: 'utf8', maxBuffer: 1 << 24 });
   putText('verdict.txt', `exit=${judge.status}\n${judge.stdout}${judge.stderr}`);
@@ -685,7 +817,9 @@ function cmdMeasure() {
 function stagePaths() {
   if (process.argv.includes('--out-dir')) {
     assert.ok(!ctx.rehearsal, '--out-dir is only for non-rehearsal stages');
-    return resolve(REPO, process.argv[process.argv.indexOf('--out-dir') + 1]);
+    const value = process.argv[process.argv.indexOf('--out-dir') + 1];
+    assert.ok(value && !value.startsWith('--'), '--out-dir requires a path');
+    return resolve(REPO, value);
   }
   return resolve(REPO, ctx.rehearsal ? 'target/r20p1-rehearsal' : 'docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01');
 }
@@ -709,6 +843,8 @@ function main() {
   ctx.slop = args.includes('--slop');
   const modes = args.filter(a => a.startsWith('--') && !['--slop', '--out-dir'].includes(a));
   assert.equal(modes.length, 1, `expected exactly one mode, got: ${modes}`);
+  assert.ok(!ctx.slop || modes[0] === '--rehearsal',
+    '--slop is a negative control and is allowed only with --rehearsal; it must never contaminate an official measure run');
   const mode = modes[0];
   if (mode === '--cleanup') return cmdCleanup();
   if (mode === '--rehearsal') { ctx.rehearsal = true; return rehearsal(); }
