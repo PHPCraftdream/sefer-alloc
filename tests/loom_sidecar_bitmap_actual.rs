@@ -238,6 +238,7 @@ struct ShadowWord {
 /// load and the store is lost.
 fn mutant_cut_load_store(word: &ShadowWord) -> u64 {
     let bits = word.bits.load(Ordering::Acquire);
+    thread::yield_now();
     word.bits.store(0, Ordering::Release);
     bits
 }
@@ -252,14 +253,17 @@ fn loom_actual_negative_cut_via_load_store_loses_concurrent_bit() {
         let producer = {
             let word = Arc::clone(&word);
             thread::spawn(move || {
-                thread::yield_now();
                 word.bits.fetch_or(1, Ordering::AcqRel);
             })
         };
-        let mut seen = mutant_cut_load_store(&word);
+        let owner = {
+            let word = Arc::clone(&word);
+            thread::spawn(move || mutant_cut_load_store(&word))
+        };
+        let cut = owner.join().unwrap();
         producer.join().unwrap();
-        seen |= word.bits.swap(0, Ordering::AcqRel);
-        assert_eq!(seen, 1, "published bit lost by load+store cut");
+        let remaining = word.bits.load(Ordering::Acquire);
+        assert_eq!(cut | remaining, 1, "published bit lost by load+store cut");
     });
 }
 
