@@ -13,7 +13,8 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 6 * * 1'   # NUMA real-kernel job (weekly Monday 06:00 UTC)
+    - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC: full tier + numa-real-kernel, fuzz-run, feature-powerset
+    - cron: '0 3 * * *'   # nightly 03:00 UTC: full tier of the regular jobs (docs/CI_TIERS.md)
   workflow_dispatch:
 
 # SEC-4 (task #201): least-privilege token scope. No job in this workflow
@@ -23,6 +24,13 @@ on:
 # cannot widen it even if the repo default token were read/write.
 permissions:
   contents: read
+
+# A newer push to the same pull request supersedes the older run: superseded
+# runs are cancelled (they were the main source of the job queue during fix
+# series). Never cancel runs on `main`, schedules or manual dispatches.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,6 +48,65 @@ env:
   # `test` matrices below at the time this was re-enabled.
 
 jobs:
+  # Tiered runs (docs/CI_TIERS.md): `changes` maps the files of this change to job groups with
+  # scripts/ci-plan.mjs; every gated job below carries `needs: changes` and an `if:` on one group.
+  # Job-level conditions (not workflow-level `paths:`) so a skipped job reports "skipped", which
+  # branch protection treats as passing, instead of leaving a required check pending forever.
+  changes:
+    name: plan (which job groups this change needs)
+    runs-on: ubuntu-latest
+    outputs:
+      always: ${{ steps.plan.outputs.always }}
+      fast: ${{ steps.plan.outputs.fast }}
+      seam: ${{ steps.plan.outputs.seam }}
+      os: ${{ steps.plan.outputs.os }}
+      full: ${{ steps.plan.outputs.full }}
+      crate_aligned_vmem: ${{ steps.plan.outputs.crate_aligned_vmem }}
+      crate_globalalloc_model: ${{ steps.plan.outputs.crate_globalalloc_model }}
+      crate_numa_shim: ${{ steps.plan.outputs.crate_numa_shim }}
+      crate_once_ptr_cell: ${{ steps.plan.outputs.crate_once_ptr_cell }}
+      crate_proc: ${{ steps.plan.outputs.crate_proc }}
+      crate_sefer_region: ${{ steps.plan.outputs.crate_sefer_region }}
+      crate_size_classes: ${{ steps.plan.outputs.crate_size_classes }}
+      crate_tagged_index_stack: ${{ steps.plan.outputs.crate_tagged_index_stack }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Self-test the planner
+        run: node scripts/ci-plan.mjs --selftest
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: node scripts/ci-plan.mjs --event "$EVENT" --base "$BASE" --head "$HEAD_SHA" --labels "$LABELS"
+
+  # Cheap, always-on consistency checks: the doc/inventory tests and the repository guard
+  # scripts that read README/ARCHITECTURE/ci.yml. A docs-only PR still runs these, so a stale
+  # count in a document cannot slip through the skipped build/test groups.
+  docs-consistency:
+    name: docs consistency (always)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node scripts/verify-structure-limits.mjs
+      - run: node scripts/verify-ci-sentinels.mjs
+      - run: node scripts/verify-loom-target-wiring.mjs
+      - run: node scripts/verify-miri-target-wiring.mjs
+      - run: node scripts/verify-root-package-list.mjs
+      - run: node scripts/ci-plan.mjs --check-doc
+      - run: cargo test --locked --test no_stale_doc_references --test r1_03_pool_docs_contract --test unsafe_allow_placement
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
@@ -51,6 +118,8 @@ jobs:
       - run: cargo fmt --all -- --check
 
   sefer-region-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_region == 'true'
     # Task #793/F15: permanent release-gating checks for sefer-region beyond
     # what test-workspace already covers (that job already runs `cargo test
     # -p sefer-region` default-features and the `--no-default-features`
@@ -134,6 +203,8 @@ jobs:
           fi
 
   aligned-vmem-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_aligned_vmem == 'true'
     # Task #847/V18: clippy coverage for the aligned-vmem crate. Previously
     # only `cargo test -p aligned-vmem --no-run` compiled library + integration
     # tests; `benches/vmem_bench.rs` was never compiled in CI, so renaming any
@@ -389,6 +460,8 @@ jobs:
       - run: cargo semver-checks check-release --package aligned-vmem
 
   aligned-vmem-hugetlb-real:
+    needs: changes
+    if: needs.changes.outputs.crate_aligned_vmem == 'true'
     # Task #1151: the ONLY row anywhere that gives `reserve_aligned_huge` a
     # real HugeTLB pool to draw from. Without it, every huge-page test on
     # every runner takes the "no pool configured" fallback and the crate's
@@ -638,6 +711,8 @@ jobs:
         shell: bash
 
   aligned-vmem-miri:
+    needs: changes
+    if: needs.changes.outputs.crate_aligned_vmem == 'true'
     # Task #1057 — closes docs/CORRECTNESS_OPEN_ITEMS.md items 41 and 61: this
     # crate had NO step anywhere in CI that ran `cargo miri test -p
     # aligned-vmem` — only the compile-only `RUSTFLAGS="--cfg miri
@@ -684,6 +759,8 @@ jobs:
       - run: cargo miri test -p aligned-vmem --all-features
 
   once-ptr-cell-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_once_ptr_cell == 'true'
     # Publication readiness review, run 5 (Sol-codex), F7, task #1396: every
     # other standalone crate with its own package-gates job (sefer-region,
     # aligned-vmem) has one that actually packages/publish-dry-runs the
@@ -709,6 +786,8 @@ jobs:
       - run: cargo publish --dry-run -p once-ptr-cell
 
   size-classes-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_size_classes == 'true'
     # size-classes publication audit run 1 (Sol-codex, P3-3): every other
     # standalone crate with its own package-gates job (sefer-region,
     # aligned-vmem, once-ptr-cell) has one that actually packages/
@@ -734,6 +813,8 @@ jobs:
       - run: cargo publish --dry-run -p size-classes
 
   tagged-index-stack-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_tagged_index_stack == 'true'
     # Package verification for the standalone crate: the dry-run checks the
     # manifest and package contents, while the extracted-package steps below
     # test the published artifact in isolation. The crate's own test, clippy,
@@ -859,6 +940,8 @@ jobs:
         run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode build-check
 
   once-ptr-cell-miri:
+    needs: changes
+    if: needs.changes.outputs.crate_once_ptr_cell == 'true'
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
     # crate's central soundness argument is a provenance one (a sentinel built
     # via without_provenance_mut, never dereferenced; three
@@ -882,6 +965,8 @@ jobs:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 
   globalalloc-model-miri:
+    needs: changes
+    if: needs.changes.outputs.crate_globalalloc_model == 'true'
     # Pre-publish review run 1 (2026-09-06), P2-9: `drive()`'s pointer
     # arithmetic and the M1/M3 read-back loops are this crate's entire unsafe
     # surface, and tests/miri_bounded.rs advertised "bounded-miri coverage"
@@ -1043,6 +1128,8 @@ jobs:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 
   proc-memstat-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_proc == 'true'
     # Sol-codex proc-memstat review round 1, P3-4: NOTHING in this workflow
     # ran this crate. There was no `-p proc-memstat` invocation anywhere, and
     # the `test-workspace` job lists its packages explicitly. The workspace is
@@ -1180,6 +1267,8 @@ jobs:
         run: cargo publish --dry-run -p proc-memstat
 
   proc-probe-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_proc == 'true'
     # Sol-codex proc-probe review round 1, P3-3: NOTHING in main CI ran this
     # crate's own gates. The workspace is non-virtual with no default-members,
     # and the `test-workspace` job lists its packages explicitly — proc-probe
@@ -1273,6 +1362,8 @@ jobs:
         run: cargo build -p proc-probe --no-default-features --target thumbv7em-none-eabi
 
   clippy:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
     # internals, the last added by R34-3/task #522) are transcribed
@@ -1401,6 +1492,8 @@ jobs:
       - run: node scripts/generate-evidence-registry-md.mjs --check
 
   check-matrix:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # R30-5 (task #454): runs the NON-clippy rows of `scripts/check-matrix.mjs`'s
     # `PER_PR_ROWS` manifest via the shared `scripts/run-check-matrix.mjs`
     # runner (the SAME script `scripts/check-all.mjs`'s local `npm run check`
@@ -1712,6 +1805,8 @@ jobs:
   # this repo learned the hard way once already). The job's own overall
   # conclusion still correctly reports failure if any step failed.
   test-core:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     name: test (core tiers)
     runs-on: ubuntu-latest
     steps:
@@ -1732,6 +1827,8 @@ jobs:
         run: cargo test --features "alloc-core internals" --no-fail-fast
 
   test-xthread:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     name: test (xthread progression)
     runs-on: ubuntu-latest
     steps:
@@ -1800,6 +1897,8 @@ jobs:
         shell: bash
 
   test-hardened:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     name: test (hardened tier)
     runs-on: ubuntu-latest
     steps:
@@ -1869,6 +1968,8 @@ jobs:
         run: cargo test --features "hardened medium-classes internals" --no-fail-fast
 
   test-gated-bodies:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # C2 (bug-hunt review 2026-07-09): the steps below ship tests whose
     # BODIES are gated behind `#[cfg(feature = "...")]`, so NO plain
     # `cargo test` run exercises their behavior — the preprocessor strips
@@ -1927,6 +2028,8 @@ jobs:
         shell: bash
 
   test-feature-isolation:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # Exact opt-in combinations complement the generated per-PR matrix.
     # Terminal/sidecar/service runtime rows live in check-matrix.mjs and run
     # through run-check-matrix.mjs; do not duplicate their feature strings here.
@@ -2052,6 +2155,8 @@ jobs:
         run: cargo check --features "production numa-aware"
 
   global-regressions:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     name: global allocator regressions (G1/G3)
     runs-on: ubuntu-latest
     steps:
@@ -2081,6 +2186,8 @@ jobs:
           cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global -- fallback_direct_free_before_service_and_busy_terminal_publication
 
   test-windows:
+    needs: changes
+    if: needs.changes.outputs.os == 'true'
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
     # ran on a Windows kernel in CI — the ALLOCATOR itself (the aligned-vmem
     # VirtualAlloc / MEM_DECOMMIT reserve/commit/decommit path) was only ever
@@ -2247,6 +2354,8 @@ jobs:
         shell: bash
 
   test-macos:
+    needs: changes
+    if: needs.changes.outputs.os == 'true'
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
     # decommit path (and the BSD `MAP_ANON = 0x1000` mmap constant) actually run
     # here — neither the Linux nor the Windows jobs exercise the XNU vmem
@@ -2293,6 +2402,8 @@ jobs:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
 
   test-workspace:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # `cargo test` at the repo root tests ONLY the root package; the workspace
     # member crates' own test suites are not covered. Run each member
     # explicitly with the profile or feature set that owns its contract:
@@ -2615,6 +2726,8 @@ jobs:
       - run: cargo test -p sefer-region --release --no-fail-fast
 
   msrv:
+    needs: changes
+    if: needs.changes.outputs.os == 'true'
     # MSRV gate: `rust-version = "1.93"` is declared but not enforced by
     # cargo on a newer toolchain, so a post-1.93 stdlib API or language
     # feature would slip through stable CI. Raised from 1.88 by fxx R2-01
@@ -2800,6 +2913,8 @@ jobs:
       - run: cargo check -p globalalloc-model --all-features
 
   msrv-runtime-windows:
+    needs: changes
+    if: needs.changes.outputs.os == 'true'
     # fxx R2-01 (docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md):
     # on rustc <= 1.92 std keeps its TLS-destructor list on the global
     # allocator; on targets without `__cxa_thread_atexit_impl` (Windows,
@@ -2816,6 +2931,8 @@ jobs:
       - run: cargo test --features production --test global_alloc_installed --test global_alloc_mt
 
   no_std:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
     # alloc. A build check is sufficient evidence; there is no std in the core
     # to link against, so `cargo build --no-default-features` failing would
@@ -2854,6 +2971,8 @@ jobs:
   # `--test region_invariants` (selects the BINARY; all 5 tests inside it run)
   # like every other entry in this matrix already did correctly.
   miri-core:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     name: miri (core)
     runs-on: ubuntu-latest
     env:
@@ -3029,6 +3148,8 @@ jobs:
         run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
 
   miri-alloc-core:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,
     # all `alloc-core`-only (no unsafe in the test bodies themselves —
     # verified locally under this exact MIRIFLAGS before originally adding
@@ -3062,6 +3183,8 @@ jobs:
           --test stress_boundary_sweep
 
   miri-fastbin:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # R3 (#155): the fastbin M2 oracle path had ZERO miri coverage — the Э6
     # "free path never touches the block body" strict-provenance claim was
     # never checked under miri. Plus the bump-direct carve path's pointer
@@ -3088,6 +3211,8 @@ jobs:
           --test regression_bump_direct_refill
 
   miri-plain:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # Real cross-thread allocator regressions use the sidecar terminal protocol.
     # Keep non-strict provenance coverage separate from strict core invariants.
     name: miri-plain
@@ -3119,6 +3244,8 @@ jobs:
   # Loom checks terminal publication/cuts, owner credits, registry free slots,
   # and the maintenance lease separately from actual allocator runtime tests.
   kani:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # Sequential proofs: Node local-buffer primitives, vacant experimental
     # AtomicSlot facts, real Large codec/transitions and SaturationHint versions.
     # Loom tests are shadow protocol models, not real AtomicSlot proofs.
@@ -3140,6 +3267,8 @@ jobs:
         run: cargo kani --features "alloc-core experimental alloc-global internals"
 
   loom-alloc-global:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     name: loom (alloc-global)
     runs-on: ubuntu-latest
     env:
@@ -3181,6 +3310,8 @@ jobs:
         shell: bash
 
   loom-xthread:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     name: loom (alloc-core alloc-xthread)
     runs-on: ubuntu-latest
     # `tagged-index-stack` is a `cfg(any(loom, kani))` target dependency of the root
@@ -3213,6 +3344,8 @@ jobs:
         shell: bash
 
   loom-experimental:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     name: loom (experimental)
     runs-on: ubuntu-latest
     env:
@@ -3242,6 +3375,8 @@ jobs:
         shell: bash
 
   loom-misc:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # Root registry models enable the dependency's loom feature explicitly:
     # cfg loom alone is insufficient when alloc-global pulls tagged-index-stack.
     name: loom (misc)
@@ -3274,6 +3409,8 @@ jobs:
         shell: bash
 
   tsan:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # ThreadSanitizer (weak-memory / data-race detector) gate for the
     # cross-thread allocator path. TSan catches missing-synchronization /
     # data-race bugs in terminal publication and owner consumption
@@ -3351,6 +3488,8 @@ jobs:
           --test stress_concurrent_boundaries
 
   asan:
+    needs: changes
+    if: needs.changes.outputs.seam == 'true'
     # R34-20 (task #539, audit finding G6 [low]): AddressSanitizer gate for the
     # allocator's own raw-pointer memory operations (the `os` mmap/munmap seam,
     # the intrusive free-list `node` seam, the realloc copy legs). ASan
@@ -3431,6 +3570,8 @@ jobs:
           --test asan_alloc_core
 
   multi-arch:
+    needs: changes
+    if: needs.changes.outputs.os == 'true'
     # x86 is a strong-memory model; aarch64 is weak-memory and can surface
     # ordering bugs the x86 run hides. We cross-compile and run via `cross` for
     # aarch64. (The concurrent tiers carry the ordering-sensitive `unsafe`.)
@@ -3549,6 +3690,8 @@ jobs:
           if-no-files-found: error
 
   numa-shim-mock:
+    needs: changes
+    if: needs.changes.outputs.crate_numa_shim == 'true'
     # NUMA Phase 1: verify wrapping logic on every CI run without real
     # multi-NUMA hardware.  Runs on Linux; the mock is platform-agnostic
     # but Linux is the cheapest runner and covers the most-used NUMA path.
@@ -3717,6 +3860,8 @@ jobs:
       - run: RUSTDOCFLAGS="--cfg numa_shim_mock -D warnings" cargo doc -p numa-shim --no-deps
 
   numa-shim-windows:
+    needs: changes
+    if: needs.changes.outputs.crate_numa_shim == 'true'
     # Run the numa-shim real-syscall path on a real Windows kernel.
     # `windows-latest` is single-NUMA (node=0), but that exercises the
     # FULL VirtualAllocExNuma + Reservation::from_raw_parts code path:
@@ -3784,6 +3929,8 @@ jobs:
           RUSTFLAGS: "--cfg numa_shim_mock"
 
   numa-shim-macos:
+    needs: changes
+    if: needs.changes.outputs.crate_numa_shim == 'true'
     # macOS has no public per-allocation NUMA API. task #1306: the reservation
     # path (`reserve_preferred_on_node`) surfaces this as an explicit
     # `Err(ReserveNumaError::UnsupportedPlatform)` (no silent unbound no-op —
@@ -3843,6 +3990,8 @@ jobs:
         shell: bash
 
   numa-shim-macos-miri:
+    needs: changes
+    if: needs.changes.outputs.crate_numa_shim == 'true'
     # Publish-readiness task #635 (P1, F1 of the 2026-08-06 numa-shim review):
     # `crates/numa-shim/src/lib.rs`'s `#[cfg(target_os = "macos")] mod platform`
     # block (the macOS stub) was missing the `not(miri)` guard that its three
@@ -3933,7 +4082,7 @@ jobs:
     # below keeps all other jobs unaffected.
     name: NUMA on real Linux kernel (numactl smoke + env-guarded tests)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * 1' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -3969,6 +4118,8 @@ jobs:
         run: cargo test --features "production numa-aware internals" --test numa_seam -- --nocapture
 
   fuzz-build:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     # BUILD-ONLY gate for the libFuzzer targets (`region_ops`,
     # `global_alloc_ops`, `heap_core_ops`). Running the fuzzers is CPU-hour
     # heavy and lives on a separate scheduled/manual cadence (see
@@ -4028,7 +4179,7 @@ jobs:
     # job exists to produce, not a flaky failure.
     name: fuzz targets run (weekly, 10 min/target)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * 1' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
@@ -4085,6 +4236,8 @@ jobs:
         run: cargo +nightly fuzz run heap_core_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
 
   docs:
+    needs: changes
+    if: needs.changes.outputs.fast == 'true'
     name: rustdoc
     runs-on: ubuntu-latest
     steps:
@@ -4165,7 +4318,7 @@ jobs:
     # is unrelated to what this job is checking).
     name: cargo-hack feature-powerset (depth 2, check-only, weekly)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * 1' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable

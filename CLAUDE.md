@@ -542,7 +542,16 @@ Core instructions, mandatory for all code in this repository. They
   `clippy` check to pass before merge — is repo-settings-side, outside any file
   a commit can touch, and is recommended; short of that, the local rule plus
   the post-push CI confirmation above is the realistic ceiling, and both must
-  actually be done.
+  actually be done. **Tiered runs (2026-10-13, `docs/CI_TIERS.md`):** CI no
+  longer runs every job for every change. `scripts/ci-plan.mjs` selects the job
+  groups a diff needs (a documents-only change runs the cheap always-on jobs; a
+  `src/**` change adds the build/test and unsafe-seam groups; the cross-OS and
+  MSRV groups follow dependency/platform paths); a push to `main` runs the
+  diff-selected groups without the heavy `seam`/`os` ones. "Green on the landing
+  SHA" therefore means green **for the class of the landing diff**; the full set
+  runs nightly on `main`, on `workflow_dispatch`, on the `full-ci` PR label and
+  whenever `ci.yml` or the planner changes, and the most recent nightly must be
+  green before a sprint is closed.
 - **`npm run bench:table`** — the companion canonical wall-clock comparison
   table (SeferAlloc vs mimalloc vs System, fixed ns/op units, fixed bench
   set) for whenever comparative numbers are asked for. Exists because ad-hoc
