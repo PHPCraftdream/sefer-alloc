@@ -163,3 +163,10 @@ pattern (`CHURN_OPS_2N`).
   now writes the unparsed output to `logs/<run>-<target>.unparsed.log` (and its head into the assertion
   message) before failing; diagnostics only, no change to any measured quantity. Re-frozen, still no
   measurement.
+- 2026-10-13 (fourth rehearsal, run 38360504407): the retained raw output showed the cause of the 0/20 parse.
+  The runner runs the iai target with `IAI_CALLGRIND_LOG=debug`; the old header regex
+  `^(\w+::)+name\b` also matched the debug lines `iai_callgrind_runner::runner::tool: Debug: ...` and
+  overwrote the current cell name before the `Instructions:` line. The header regex now requires a bare
+  `crate::group::cell` line (optional trailing arguments, nothing after the name but whitespace). Replayed
+  offline on the captured output it returns `small_churn_16b = 54293`, the value printed by iai.
+  Parser only; no measured quantity changed. Re-frozen, still no measurement.

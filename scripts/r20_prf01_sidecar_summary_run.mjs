@@ -482,8 +482,10 @@ function producerPass(label, arm, role, cellIndex) {
 function parseIr(out, cellNames) {
   const ir = {}; let current = null;
   for (const line of out.split(/\r?\n/)) {
-    const h = /^([A-Za-z_][\w]*::)+([A-Za-z_]\w*)\b/.exec(line);
-    if (h) { current = h[2]; }
+    // Header lines are bare `crate::group::cell`; IAI_CALLGRIND_LOG=debug lines look like
+    // `iai_callgrind_runner::runner::tool: Debug: ...` and must not overwrite the current cell.
+    const h = /^(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)(?:\s.*)?$/.exec(line);
+    if (h) { current = h[1]; }
     else {
       const m = /^\s*Instructions:\s*([\d,]+)/.exec(line);
       if (m && current && cellNames.has(current) && ir[current] === undefined)
