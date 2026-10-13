@@ -1,5 +1,6 @@
 #![cfg(all(
     feature = "alloc-global",
+    feature = "fastbin",
     feature = "alloc-xthread",
     feature = "alloc-decommit",
     feature = "internals",
