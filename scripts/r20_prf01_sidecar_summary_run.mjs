@@ -48,7 +48,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -167,7 +167,11 @@ function verifyIdentities(stage) {
 }
 
 function baseHead() {
-  assert.equal(git(REPO, ['status', '--porcelain']).out, '', 'runner worktree must be clean and committed');
+  // The official out-dir sits inside the checkout (prepare writes manifest.json there), so it is the
+  // one path the cleanliness check must not count; everything else must be clean and committed.
+  const rel = ctx.outDir ? relative(REPO, ctx.outDir).split(sep).join('/') : '';
+  const own = rel && !rel.startsWith('..') ? [`:(exclude)${rel}`] : [];
+  assert.equal(git(REPO, ['status', '--porcelain', '--', '.', ...own]).out, '', 'runner worktree must be clean and committed');
   return git(REPO, ['rev-parse', 'HEAD']).out;
 }
 function archIdentity(label, wt) {
