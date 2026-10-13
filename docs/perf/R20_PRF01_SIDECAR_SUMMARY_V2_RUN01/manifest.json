@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "rehearsal": false,
+  "capturedAt": "2026-10-13T16:35:42.231Z",
+  "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+  "pickedCommit": "5a6019f95986e31802653697083bf39987b4da5d",
+  "pickRequested": "edf9067585e6769f5dce191b66ac548edda449f2",
+  "frozen": [
+    {
+      "path": "docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_PREREG.md",
+      "sha256": "7277f51dc1cc1e12e4b975108fc01dea2be69e80c2dde77783d36485c3da198f"
+    },
+    {
+      "path": "scripts/r20_prf01_sidecar_summary_gate.mjs",
+      "sha256": "d1ffb8d975aaecb6cc3e74cfdb02ab12ea355ff64adfa8cdb8a03fd75e5a579a"
+    },
+    {
+      "path": "scripts/r20_prf01_sidecar_summary_run.mjs",
+      "sha256": "10b2d02e68ddad025df442fb04e29ff609af09c1991a8dced116602c6cdd1bc1"
+    },
+    {
+      "path": "scripts/r20_prf01_verify_artifacts.mjs",
+      "sha256": "7983dbf5e08065394ee4bdb5ccb80fdcc248c99f467b011368073fe18cb99598"
+    },
+    {
+      "path": "docs/perf/R20_CONTROL_GEOMETRY_RULE.md",
+      "sha256": "c3a498cb268178b19b94d407a6280d7b1d0251ff54db75d24955b192c360acef"
+    },
+    {
+      "path": "benches/r20_prf01_controls_iai.rs",
+      "sha256": "c635cf637eb3f93a4ad734be36d755f50871a748be97d7e0303adf9600ca8648"
+    },
+    {
+      "path": "benches/support/r20_prf01_controls.rs",
+      "sha256": "1095aa348f3006da280b05a0c2bfa667001fccfba6961cf85ac9ca0bd7b34066"
+    },
+    {
+      "path": "benches/support/r19_prf01.rs",
+      "sha256": "842cae010bbd1374def178e91c9947dd6685d9f2bd6c7fa187fed90cf4d6a4a7"
+    },
+    {
+      "path": "benches/perf_gate_iai.rs",
+      "sha256": "9f81800e5dbbf120f8537ed937d5af4989aefd6c74710bb8868ade4ba0309837"
+    },
+    {
+      "path": "tests/r19_prf01_sidecar_oracle.rs",
+      "sha256": "cf3c6cf76dc675efa87aec8a030c720c6c02d45c7ac248fba9802464fcf8453c"
+    },
+    {
+      "path": "examples/r19_prf01_oracle.rs",
+      "sha256": "14cf7163687e0d3d35bbf1ddc431bf4ea68dd09fb0f644225020b56c4c1d9448"
+    }
+  ],
+  "wtDir": "<repo>/worktrees/r20p1",
+  "pathLengths": [
+    59,
+    59,
+    59
+  ],
+  "arches": {
+    "A": {
+      "label": "A",
+      "wt": "<repo>/worktrees/r20p1/A",
+      "head": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+      "tree": "6b04b34f25fc3e74f1db71b1bf7663d92018e4be",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+      "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-13T16:35:42.118Z"
+    },
+    "B": {
+      "label": "B",
+      "wt": "<repo>/worktrees/r20p1/B",
+      "head": "5a6019f95986e31802653697083bf39987b4da5d",
+      "tree": "e5dac9b9209e397860f286810e2da07e96225235",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+      "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-13T16:35:42.231Z"
+    },
+    "C": {
+      "label": "A",
+      "wt": "<repo>/worktrees/r20p1/A",
+      "head": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+      "tree": "6b04b34f25fc3e74f1db71b1bf7663d92018e4be",
+      "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+      "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-13T16:35:42.118Z"
+    }
+  }
+}

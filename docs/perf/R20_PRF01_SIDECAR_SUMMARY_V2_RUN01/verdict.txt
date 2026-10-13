@@ -1,0 +1,3991 @@
+exit=1
+{
+  "version": 1,
+  "rehearsal": false,
+  "verdict": "NO-GO",
+  "modes": {
+    "mode1": "GO",
+    "mode2Iai": "NO-GO",
+    "mode2Native": "DEFERRED"
+  },
+  "unjudgeable": [],
+  "tables": {
+    "iai": [
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A1",
+        "B": "B1",
+        "delta": -3640431,
+        "mode": "mode1",
+        "percent": "+3802/10000 (numerator 1529868, denominator 4022898)",
+        "pass": true
+      },
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A1",
+        "B": "B2",
+        "delta": -3640431,
+        "mode": "mode1",
+        "percent": "+3802/10000 (numerator 1529868, denominator 4022898)",
+        "pass": true
+      },
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A2",
+        "B": "B1",
+        "delta": -3640431,
+        "mode": "mode1",
+        "percent": "+3802/10000 (numerator 1529868, denominator 4022898)",
+        "pass": true
+      },
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A2",
+        "B": "B2",
+        "delta": -3640431,
+        "mode": "mode1",
+        "percent": "+3802/10000 (numerator 1529868, denominator 4022898)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A1",
+        "B": "B1",
+        "delta": -11468315,
+        "mode": "mode1",
+        "percent": "+2898/10000 (numerator 3583204, denominator 12364116)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A1",
+        "B": "B2",
+        "delta": -11468315,
+        "mode": "mode1",
+        "percent": "+2898/10000 (numerator 3583204, denominator 12364116)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A2",
+        "B": "B1",
+        "delta": -11468315,
+        "mode": "mode1",
+        "percent": "+2898/10000 (numerator 3583204, denominator 12364116)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A2",
+        "B": "B2",
+        "delta": -11468315,
+        "mode": "mode1",
+        "percent": "+2898/10000 (numerator 3583204, denominator 12364116)",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": -5751942,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": -5751942,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": -5751942,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": -5751942,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": -23513886,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": -23513886,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": -23513886,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": -23513886,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": -95066190,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": -95066190,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": -95066190,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": -95066190,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 648,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 641,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A1",
+        "B": "B1",
+        "delta": -4058309,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A1",
+        "B": "B2",
+        "delta": -4058309,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A2",
+        "B": "B1",
+        "delta": -4058309,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A2",
+        "B": "B2",
+        "delta": -4058309,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A1",
+        "B": "B1",
+        "delta": 53376,
+        "mode": "mode2",
+        "percent": "+130312/10000 (numerator 53376, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A1",
+        "B": "B2",
+        "delta": 53376,
+        "mode": "mode2",
+        "percent": "+130312/10000 (numerator 53376, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A2",
+        "B": "B1",
+        "delta": 53376,
+        "mode": "mode2",
+        "percent": "+130312/10000 (numerator 53376, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A2",
+        "B": "B2",
+        "delta": 53376,
+        "mode": "mode2",
+        "percent": "+130312/10000 (numerator 53376, denominator 4096)",
+        "pass": false
+      }
+    ],
+    "slope": [
+      {
+        "arm": "B1",
+        "numerator": "34394066",
+        "denominator": "16336874",
+        "limit": "<= 2.5 (owner)",
+        "pass": true
+      },
+      {
+        "arm": "B2",
+        "numerator": "34394066",
+        "denominator": "16336874",
+        "limit": "<= 2.5 (owner)",
+        "pass": true
+      }
+    ],
+    "hot": [
+      {
+        "family": "small_churn_16b",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54406,
+            "2n": 59526,
+            "4n": 69766
+          },
+          "A2": {
+            "n": 54406,
+            "2n": 59526,
+            "4n": 69766
+          },
+          "B1": {
+            "n": 55047,
+            "2n": 60167,
+            "4n": 70407
+          },
+          "B2": {
+            "n": 55047,
+            "2n": 60167,
+            "4n": 70407
+          },
+          "C0": {
+            "n": 54406,
+            "2n": 59526,
+            "4n": 69766
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 272 (numerator |A1-A2| or |C0-A1|, denominator A1=54406)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 25 (numerator |A1-A2| or |C0-A1|, denominator A1=5120)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 51 (numerator |A1-A2| or |C0-A1|, denominator A1=10240)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      },
+      {
+        "family": "churn_256b",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54406,
+            "2n": 59526,
+            "4n": 69766
+          },
+          "A2": {
+            "n": 54406,
+            "2n": 59526,
+            "4n": 69766
+          },
+          "B1": {
+            "n": 55054,
+            "2n": 60174,
+            "4n": 70414
+          },
+          "B2": {
+            "n": 55054,
+            "2n": 60174,
+            "4n": 70414
+          },
+          "C0": {
+            "n": 54406,
+            "2n": 59526,
+            "4n": 69766
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 272 (numerator |A1-A2| or |C0-A1|, denominator A1=54406)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 25 (numerator |A1-A2| or |C0-A1|, denominator A1=5120)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 51 (numerator |A1-A2| or |C0-A1|, denominator A1=10240)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      },
+      {
+        "family": "churn_write_256b",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54598,
+            "2n": 59910,
+            "4n": 70534
+          },
+          "A2": {
+            "n": 54598,
+            "2n": 59910,
+            "4n": 70534
+          },
+          "B1": {
+            "n": 55239,
+            "2n": 60551,
+            "4n": 71175
+          },
+          "B2": {
+            "n": 55239,
+            "2n": 60551,
+            "4n": 71175
+          },
+          "C0": {
+            "n": 54598,
+            "2n": 59910,
+            "4n": 70534
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 272 (numerator |A1-A2| or |C0-A1|, denominator A1=54598)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 26 (numerator |A1-A2| or |C0-A1|, denominator A1=5312)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 53 (numerator |A1-A2| or |C0-A1|, denominator A1=10624)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      },
+      {
+        "family": "aligned_churn_640b_a128",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54400,
+            "2n": 59520,
+            "4n": 69760
+          },
+          "A2": {
+            "n": 54400,
+            "2n": 59520,
+            "4n": 69760
+          },
+          "B1": {
+            "n": 55041,
+            "2n": 60161,
+            "4n": 70401
+          },
+          "B2": {
+            "n": 55041,
+            "2n": 60161,
+            "4n": 70401
+          },
+          "C0": {
+            "n": 54400,
+            "2n": 59520,
+            "4n": 69760
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 272 (numerator |A1-A2| or |C0-A1|, denominator A1=54400)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 25 (numerator |A1-A2| or |C0-A1|, denominator A1=5120)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 51 (numerator |A1-A2| or |C0-A1|, denominator A1=10240)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      }
+    ],
+    "construction": [
+      {
+        "cell": "r20_prf01_start_one_alloc_free_16b",
+        "status": "judged",
+        "arms": {
+          "A1": 49356,
+          "A2": 49356,
+          "B1": 49997,
+          "B2": 49997,
+          "C0": 49356
+        },
+        "checks": {
+          "noise": {
+            "aa": "0",
+            "c0": "0",
+            "ceiling": "max(10, floor(A1/200)) = 246",
+            "pass": true
+          },
+          "R_construct": [
+            {
+              "pair": "B1 vs A1",
+              "delta": "641",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            },
+            {
+              "pair": "B2 vs A1",
+              "delta": "641",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            },
+            {
+              "pair": "B1 vs A2",
+              "delta": "641",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            },
+            {
+              "pair": "B2 vs A2",
+              "delta": "641",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            }
+          ]
+        },
+        "T_s": 10,
+        "budget_K": "0 Ir of net work (owner, 2026-10-12) + T_s"
+      }
+    ],
+    "oracle": [
+      {
+        "name": "multiseg_cold_256k",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 319063,
+            "pending_words_exchanged": 319063,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 99,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-multiseg_cold_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:54.258Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 22755,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "A1-multiseg_cold_256k-1791909654178"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 319063,
+            "pending_words_exchanged": 319063,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 99,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-multiseg_cold_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:56.396Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 24719,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "A2-multiseg_cold_256k-1791909656315"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 99,
+            "summary_words_visited": 5116,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-multiseg_cold_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:58.541Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 26684,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "B1-multiseg_cold_256k-1791909658462"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 99,
+            "summary_words_visited": 5116,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-multiseg_cold_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:00.327Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 28648,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "B2-multiseg_cold_256k-1791909660245"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 319063,
+            "pending_words_exchanged": 319063,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 99,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-multiseg_cold_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:02.120Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 30613,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "C0-multiseg_cold_256k-1791909662040"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 1004503,
+            "pending_words_exchanged": 1004503,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 275,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-seg_cycle_decommit_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:54.440Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 22973,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "runId": "A1-seg_cycle_decommit_256k-1791909654360"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 1004503,
+            "pending_words_exchanged": 1004503,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 275,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-seg_cycle_decommit_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:56.578Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 24937,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "runId": "A2-seg_cycle_decommit_256k-1791909656497"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 275,
+            "summary_words_visited": 16088,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-seg_cycle_decommit_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:58.712Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 26902,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "runId": "B1-seg_cycle_decommit_256k-1791909658632"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 275,
+            "summary_words_visited": 16088,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-seg_cycle_decommit_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:00.498Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 28866,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "runId": "B2-seg_cycle_decommit_256k-1791909660418"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 1004503,
+            "pending_words_exchanged": 1004503,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 275,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-seg_cycle_decommit_256k.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:02.305Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 30831,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 204
+                },
+                "runId": "C0-seg_cycle_decommit_256k-1791909662222"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "growth16_n",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 524800,
+            "pending_words_exchanged": 524800,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 2048,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-growth16_n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:54.640Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 23191,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "runId": "A1-growth16_n-1791909654560"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 524800,
+            "pending_words_exchanged": 524800,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 2048,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-growth16_n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:56.779Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 25155,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "runId": "A2-growth16_n-1791909656699"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 2048,
+            "summary_words_visited": 11127,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-growth16_n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:58.885Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 27120,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "runId": "B1-growth16_n-1791909658805"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 2048,
+            "summary_words_visited": 11127,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-growth16_n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:00.671Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 29084,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "runId": "B2-growth16_n-1791909660590"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 524800,
+            "pending_words_exchanged": 524800,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 2048,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-growth16_n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:02.505Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 31049,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 32768
+                },
+                "runId": "C0-growth16_n-1791909662425"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "growth16_2n",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 2098176,
+            "pending_words_exchanged": 2098176,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 4096,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-growth16_2n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:54.857Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 23409,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "runId": "A1-growth16_2n-1791909654777"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 2098176,
+            "pending_words_exchanged": 2098176,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 4096,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-growth16_2n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:57.010Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 25373,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "runId": "A2-growth16_2n-1791909656928"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 4096,
+            "summary_words_visited": 38639,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-growth16_2n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:59.089Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 27338,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "runId": "B1-growth16_2n-1791909659009"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 4096,
+            "summary_words_visited": 38639,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-growth16_2n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:00.876Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 29302,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "runId": "B2-growth16_2n-1791909660795"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 2098176,
+            "pending_words_exchanged": 2098176,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 4096,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-growth16_2n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:02.722Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 31267,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 65536
+                },
+                "runId": "C0-growth16_2n-1791909662642"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "growth16_4n",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 8390656,
+            "pending_words_exchanged": 8390656,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 8192,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-growth16_4n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:55.148Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 23627,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "runId": "A1-growth16_4n-1791909655069"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 8390656,
+            "pending_words_exchanged": 8390656,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 8192,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-growth16_4n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:57.302Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 25591,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "runId": "A2-growth16_4n-1791909657223"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 8192,
+            "summary_words_visited": 142815,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-growth16_4n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:59.324Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 27556,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "runId": "B1-growth16_4n-1791909659244"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 8192,
+            "summary_words_visited": 142815,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-growth16_4n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:01.114Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 29520,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "runId": "B2-growth16_4n-1791909661033"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 8390656,
+            "pending_words_exchanged": 8390656,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 8192,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-growth16_4n.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:03.014Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 31485,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 131072
+                },
+                "runId": "C0-growth16_4n-1791909662934"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "r19_prf01_publication",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 355593,
+            "pending_words_exchanged": 355593,
+            "nonempty_cuts": 34,
+            "discovery_records_reclaimed": 34,
+            "routed_scans": 92,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": 0,
+            "unobservedReasons": {},
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-publication.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:55.679Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 23845,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "A1-publication-1791909655599"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 355593,
+            "pending_words_exchanged": 355593,
+            "nonempty_cuts": 34,
+            "discovery_records_reclaimed": 34,
+            "routed_scans": 92,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": 0,
+            "unobservedReasons": {},
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-publication.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:57.831Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 25809,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "A2-publication-1791909657752"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 34,
+            "pending_words_exchanged": 34,
+            "nonempty_cuts": 34,
+            "discovery_records_reclaimed": 34,
+            "routed_scans": 92,
+            "summary_words_visited": 5692,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": 0,
+            "unobservedReasons": {},
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-publication.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:59.625Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 27774,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "B1-publication-1791909659546"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 34,
+            "pending_words_exchanged": 34,
+            "nonempty_cuts": 34,
+            "discovery_records_reclaimed": 34,
+            "routed_scans": 92,
+            "summary_words_visited": 5692,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": 0,
+            "unobservedReasons": {},
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-publication.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:01.419Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 29738,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "B2-publication-1791909661338"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 355593,
+            "pending_words_exchanged": 355593,
+            "nonempty_cuts": 34,
+            "discovery_records_reclaimed": 34,
+            "routed_scans": 92,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": 0,
+            "unobservedReasons": {},
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-publication.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:03.545Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 31703,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "resolved": {
+                  "blockBytes": 258752,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 3,
+                  "workCount": 68
+                },
+                "runId": "C0-publication-1791909663464"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "summaryLoadSemantics": "B summary_load == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof",
+        "arms": [
+          {
+            "arm": "A1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 0,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A1-producer.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:55.867Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 24064,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "runId": "A1-producer-1791909655786"
+              }
+            }
+          },
+          {
+            "arm": "A2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 0,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/A2-producer.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:58.016Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 26028,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "runId": "A2-producer-1791909657937"
+              }
+            }
+          },
+          {
+            "arm": "B1",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 0,
+            "summary_words_visited": 0,
+            "summary_rmw": 64,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B1-producer.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:40:59.797Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 27993,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "runId": "B1-producer-1791909659717"
+              }
+            }
+          },
+          {
+            "arm": "B2",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 0,
+            "summary_words_visited": 0,
+            "summary_rmw": 64,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+              "primaryBinarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+              "source": {
+                "baseHead": "5a6019f95986e31802653697083bf39987b4da5d",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "b4bbd75aa3de8b01df8b458b7a40f9d397f586ea7e3eb4df8d66d6b3fc65ba4d",
+                "capturedAt": "2026-10-13T16:35:42.231Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/B2-producer.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:01.591Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 29957,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "runId": "B2-producer-1791909661512"
+              }
+            }
+          },
+          {
+            "arm": "C0",
+            "pending_words_visited": 0,
+            "pending_words_exchanged": 0,
+            "nonempty_cuts": 0,
+            "discovery_records_reclaimed": 0,
+            "routed_scans": 0,
+            "summary_words_visited": 0,
+            "summary_rmw": 0,
+            "summary_load": 0,
+            "strict_trim_remaining": null,
+            "unobservedReasons": {
+              "strict_trim_remaining": "only publication observes strict-trim remainder"
+            },
+            "linkage": {
+              "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+              "primaryBinarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+              "source": {
+                "baseHead": "09e05067461b12bcc5c0de65baeacc3bb8359343",
+                "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "untrackedSha256": "055539df4a0b804c58caf46c0cd2941af10d64c1395ddd8e50b5f55d945841e6",
+                "identitySha256": "cea789355f3490c8cfaab264c3e924844f3ebd46df5e7659158031eeb3dbe343",
+                "capturedAt": "2026-10-13T16:35:42.118Z"
+              },
+              "features": [
+                "production",
+                "bench-internals",
+                "internals"
+              ],
+              "cfg": [
+                "r19_sidecar_summary_oracle"
+              ],
+              "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+              "receipt": "oracle/C0-producer.json",
+              "featureExactReceipt": "oracle.json",
+              "startedAt": "2026-10-13T16:41:03.731Z",
+              "config": {
+                "configConflictsDelta": 0,
+                "pid": 31922,
+                "processBoundary": "isolated-process",
+                "requested": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "resolved": {
+                  "blockBytes": 16,
+                  "cacheBudget": {
+                    "policy": "unbounded"
+                  },
+                  "cachePolicy": "default",
+                  "cacheSlots": 8,
+                  "maintenance": false,
+                  "segmentCount": 1,
+                  "workCount": 4096
+                },
+                "runId": "C0-producer-1791909663651"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "native": [
+      {
+        "axis": "mode2 (ii) native paired A/B",
+        "status": "DEFERRED",
+        "reason": "batch-timer native paired A/B on a quiet bare-metal host; the R19 per-sample timer is replaced by fixed-batch timing (deferred; not launched in v2)"
+      }
+    ],
+    "size": [
+      {
+        "A": 41984,
+        "B": 42496,
+        "numerator": 512,
+        "expected": 512,
+        "pass": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "buildStartedAt": "2026-10-13T16:35:43.051Z",
+  "capturedAt": "2026-10-13T16:40:53.578Z",
+  "manifestSha256": "e0427f88df8181f08db353da0335ff03215694afd689735f560c55bd89f8115c",
+  "environmentSha256": "ca94d55ce72f981cc9e4635b96ce45541ca7bc940b05bf4ba5b9cde841442c94",
+  "arms": {
+    "A": {
+      "iai": {
+        "target": "perf_gate_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/A-perf_gate_iai-p/release/deps/perf_gate_iai-2e42ba49ae71a277",
+        "binarySha256": "e3e849d63cbad28a43d9068704bc317e5a55bc0941af4d75a5631b464d01ca97",
+        "features": "production bench-internals internals",
+        "rustflags": "",
+        "cfg": "",
+        "targetDir": "/tmp/r20p1/A-perf_gate_iai-p"
+      },
+      "controls": {
+        "target": "r20_prf01_controls_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/A-r20_prf01_controls_iai-p/release/deps/r20_prf01_controls_iai-8fe793be28433bb8",
+        "binarySha256": "2c812a62ba4f3d2ead3fcf9b5206721a55faae05004d4e061b06c2f76efa3156",
+        "features": "production bench-internals internals",
+        "rustflags": "",
+        "cfg": "",
+        "targetDir": "/tmp/r20p1/A-r20_prf01_controls_iai-p"
+      },
+      "oracle": {
+        "target": "r19_prf01_oracle",
+        "kind": "build",
+        "exe": "/tmp/r20p1/A-r19_prf01_oracle-c/debug/examples/r19_prf01_oracle",
+        "binarySha256": "188fd2b09b1297a005b9d9af93558d45c9714c31df54d556bd6c248dcb55e452",
+        "features": "production bench-internals internals",
+        "rustflags": "--cfg r19_sidecar_summary_oracle",
+        "cfg": "--cfg r19_sidecar_summary_oracle",
+        "targetDir": "/tmp/r20p1/A-r19_prf01_oracle-c"
+      },
+      "control": {
+        "target": "perf_gate_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/A-perf_gate_iai-c/release/deps/perf_gate_iai-69ebbad4c51b81a1",
+        "binarySha256": "a6f47918787089ffbefba23267c70314838db2b58bcd816e43828e8b2a214cc2",
+        "features": "production bench-internals internals",
+        "rustflags": "--cfg r19_prf01_producer_control",
+        "cfg": "--cfg r19_prf01_producer_control",
+        "targetDir": "/tmp/r20p1/A-perf_gate_iai-c"
+      }
+    },
+    "B": {
+      "iai": {
+        "target": "perf_gate_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/B-perf_gate_iai-p/release/deps/perf_gate_iai-2e42ba49ae71a277",
+        "binarySha256": "e99fe7bb85d524f4839d94d3962e2d50d3577abb03d66270a211aa960f0b8d7d",
+        "features": "production bench-internals internals",
+        "rustflags": "",
+        "cfg": "",
+        "targetDir": "/tmp/r20p1/B-perf_gate_iai-p"
+      },
+      "controls": {
+        "target": "r20_prf01_controls_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/B-r20_prf01_controls_iai-p/release/deps/r20_prf01_controls_iai-8fe793be28433bb8",
+        "binarySha256": "439309997af7d3b766c1ed3268e3e6b00ec194874def453ebb024f9210fdf5c1",
+        "features": "production bench-internals internals",
+        "rustflags": "",
+        "cfg": "",
+        "targetDir": "/tmp/r20p1/B-r20_prf01_controls_iai-p"
+      },
+      "oracle": {
+        "target": "r19_prf01_oracle",
+        "kind": "build",
+        "exe": "/tmp/r20p1/B-r19_prf01_oracle-c/debug/examples/r19_prf01_oracle",
+        "binarySha256": "25c88309500b5d3442d82b017036c969b9d19a7ddf96cc640ea55ac4a5805d6e",
+        "features": "production bench-internals internals",
+        "rustflags": "--cfg r19_sidecar_summary_oracle",
+        "cfg": "--cfg r19_sidecar_summary_oracle",
+        "targetDir": "/tmp/r20p1/B-r19_prf01_oracle-c"
+      },
+      "control": {
+        "target": "perf_gate_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/B-perf_gate_iai-c/release/deps/perf_gate_iai-69ebbad4c51b81a1",
+        "binarySha256": "3d83fa60285b14a8bdf7daabc1cadc093454a23c282133cec2eb52858c5c4152",
+        "features": "production bench-internals internals",
+        "rustflags": "--cfg r19_prf01_producer_control",
+        "cfg": "--cfg r19_prf01_producer_control",
+        "targetDir": "/tmp/r20p1/B-perf_gate_iai-c"
+      }
+    },
+    "C": {
+      "iai": {
+        "target": "perf_gate_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/C-perf_gate_iai-c/release/deps/perf_gate_iai-b2f688f7a29f5146",
+        "binarySha256": "9943b629a4c55d949ae316845700da131ee3cccbc9909d2ccc2550c25ce14a5f",
+        "features": "production bench-internals internals",
+        "rustflags": "-C debuginfo=line-tables-only",
+        "cfg": "-C debuginfo=line-tables-only",
+        "targetDir": "/tmp/r20p1/C-perf_gate_iai-c"
+      },
+      "controls": {
+        "target": "r20_prf01_controls_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/C-r20_prf01_controls_iai-c/release/deps/r20_prf01_controls_iai-f677ea263453c751",
+        "binarySha256": "aaf8378f884075aa532f5d6cf239b0e6cedf6e92186f152c5e2984d037aec61b",
+        "features": "production bench-internals internals",
+        "rustflags": "-C debuginfo=line-tables-only",
+        "cfg": "-C debuginfo=line-tables-only",
+        "targetDir": "/tmp/r20p1/C-r20_prf01_controls_iai-c"
+      },
+      "control": {
+        "target": "perf_gate_iai",
+        "kind": "bench",
+        "exe": "/tmp/r20p1/C-perf_gate_iai-c/release/deps/perf_gate_iai-38e09d454b8d20a7",
+        "binarySha256": "ba3b34fb5ecce2b152e4832a8b000b6b40defdf9eb4adcd580082a461268e3d5",
+        "features": "production bench-internals internals",
+        "rustflags": "-C debuginfo=line-tables-only --cfg r19_prf01_producer_control",
+        "cfg": "-C debuginfo=line-tables-only --cfg r19_prf01_producer_control",
+        "targetDir": "/tmp/r20p1/C-perf_gate_iai-c"
+      }
+    }
+  }
+}
