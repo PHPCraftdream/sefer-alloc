@@ -163,12 +163,16 @@ fn parser_rejects_non_result_and_malformed_lines() {
 fn snapshot_re_export_matches_proc_memstat() {
     let a = proc_probe::snapshot();
     let b = proc_memstat::snapshot();
-    // Both call the same OS query; fields are the same TYPE (MemStat) and on a
-    // quiet instant read back-to-back are consistent (peak monotonic).
+    // Both call the same OS query; fields are the same TYPE (MemStat) and the
+    // same platform support shows through. Values are NOT compared across the
+    // two reads: Linux `VmHWM` is derived from lazily-synced per-thread RSS
+    // counters, so under the parallel test threads of this process it can dip
+    // between reads. Monotonicity is pinned in `proc-memstat`'s
+    // `tests/monotonicity.rs`, in a fresh process.
     let _typed: proc_probe::MemStat = a;
-    if let (Some(pa), Some(pb)) = (a.peak_rss, b.peak_rss) {
-        assert!(pb >= pa, "peak_rss must be non-decreasing across two reads");
-    }
+    assert_eq!(a.peak_rss.is_some(), b.peak_rss.is_some());
+    assert_eq!(a.commit_charge.is_some(), b.commit_charge.is_some());
+    assert_eq!(a.virtual_size.is_some(), b.virtual_size.is_some());
 }
 
 /// The fallible re-export must be reachable through `proc-probe` alone
