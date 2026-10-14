@@ -703,7 +703,8 @@ function boundaryEvidence(b, tag, producerSymbol, callerPattern) {
 function producerPass(label, arm, role, cellIndex, name, bKey) {
   const spec=PRODUCER_SPECS[name];
   const b={...ctx.builds.arms[arm][bKey],arm,role};
-  const callerPattern = spec.customSymbol
+  // The C3 cells' producers spawn from r20_prf01_c3_cells_iai::gate::run_remote's closure.
+  const callerPattern = spec.target === 'r20_prf01_c3_cells_iai'
     ? /std::thread.*(?:closure|spawn)|r20_prf01_c3_cells_iai.*closure/
     : /std::thread.*(?:closure|spawn)|R19Prf01.*remote_free.*closure/;
   assert.ok(boundaryEvidence(
