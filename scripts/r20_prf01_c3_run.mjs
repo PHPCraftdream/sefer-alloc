@@ -258,7 +258,7 @@ function ensureWorktree(label, ref) {
   return wt;
 }
 function parseDispatch() {
-  const rawCandidate = parseArg('--candidate');
+  const rawCandidate = parseArg('--candidate') ?? C3.CANDIDATE;
   let candidate = null;
   if (!ctx.rehearsal) {
     assert.ok(
