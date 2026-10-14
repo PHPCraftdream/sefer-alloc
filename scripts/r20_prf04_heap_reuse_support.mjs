@@ -6,8 +6,10 @@ export const ORACLE_COUNTERS = Object.freeze([
   'heap_reuse_spill_bits_delta',
   'heap_reuse_take_hits',
 ]);
-const L2_ALLOC_CALLER_PATTERN =
-  /^r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<[^>]+>::alloc_inner$/;
+// Demangled inherent-impl form: `<r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<false>>::alloc_inner`.
+const L2_FIRST_ALLOC = 'r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc';
+const L2_ALLOC_CALLER_PATTERN = new RegExp(
+  `^(?:<${L2_FIRST_ALLOC}<(?:false|true)>>|${L2_FIRST_ALLOC}<_>)::alloc_inner$`);
 export const isL2AllocCaller = name => L2_ALLOC_CALLER_PATTERN.test(name);
 export function hasL2FirstBindPath(names) {
   return names.some(name => /tls_heap::bind_slow_tagged/.test(name)) &&
