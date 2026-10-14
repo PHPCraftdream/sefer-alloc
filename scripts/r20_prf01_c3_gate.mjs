@@ -81,14 +81,15 @@ function config(c, mode = 'normal', ctx = null) {
     const d=c.declaredProvenance; assert.ok(d && typeof d==='object'); text(d.receipt); assert.equal(d.cell,ctx.name);
     exact(d.fields,['workCount','blockBytes','alignment']); assert.equal(d.alignment,alignment);
     const r=c.resolvedProvenance; assert.ok(r && typeof r==='object'); text(r.runId); nat(r.pid); assert.ok(r.pid>0);
-    assert.equal(r.arm,ctx.arm); assert.equal(r.binarySha256,ctx.pins[ctx.arm].binaries.oracle); text(r.receipt);
+    assert.equal(r.arm,ctx.arm); assert.equal(r.binarySha256,ctx.rowArm==='C0'?ctx.pins.C0.oracleBinarySha256:ctx.pins[ctx.arm].binaries.oracle); text(r.receipt);
     assert.equal(r.claimPath,'global'); exact([...r.copiedFields].sort(),['cachePolicy','configConflictsDelta','maintenance']);
   } else {
     nat(c.requested.segmentCount); assert.ok(c.requested.segmentCount>0);
   }
   assert.equal(c.configConflictsDelta,0); assert.equal(c.processBoundary,'isolated-process'); text(c.runId); nat(c.pid); assert.ok(c.pid>0);
 }
-const verdictFor = (verdict,rehearsal) => rehearsal && !['INVALID','INCOMPLETE','UNJUDGEABLE'].includes(verdict) ? `REHEARSAL: ${verdict}` : verdict;
+const REHEARSAL_VALIDATED='REHEARSAL: HARNESS VALIDATED (main only; candidate counters unavailable)';
+const verdictFor = (verdict,rehearsal) => rehearsal && verdict==='GO (deterministic; native deferred)' ? REHEARSAL_VALIDATED : rehearsal && !['INVALID','INCOMPLETE','UNJUDGEABLE'].includes(verdict) ? `REHEARSAL: ${verdict}` : verdict;
 const exitFor = verdict => verdict.startsWith('REHEARSAL: ')||verdict==='GO (deterministic; native deferred)' ? 0 : 1;
 function derive(d,frozen) {
   const tables={iai:[],slope:[],hot:[],construction:[],oracle:[],native:[],size:[]};
@@ -112,6 +113,7 @@ function derive(d,frozen) {
     text(d.nativeDeferred.method);
     assert.match(d.nativeDeferred.method,/deferred|bare-metal|quiet/i);
     const pins=d.identities;
+    assert.ok(!Object.hasOwn(pins.B,'oracleSource'));
     for(const role of ['c3','trim']){hex(pins.A.binaries[role]);hex(pins.B.binaries[role]);}
     hex(pins.C0.c3BinarySha256);hex(pins.C0.trimBinarySha256);
     for(const arm of ['A','B']) {
@@ -122,14 +124,11 @@ function derive(d,frozen) {
 
       assert.ok(time(p.source.capturedAt)<time(p.buildStartedAt));
       features(p.features,primary);
-      exact(p.oracleCfg,['r19_sidecar_summary_oracle']); exact(p.primaryCfg,[]);
+      exact(p.oracleCfg,['r19_sidecar_summary_oracle',...(arm==='B'&&!rehearsal?['r20_prf01_c3_oracle']:[])]); exact(p.primaryCfg,[]);
       text(p.buildReceipt);
     }
-    if(rehearsal) {
-      source(pins.B.oracleSource);
-      assert.notEqual(pins.B.oracleSource.identitySha256,pins.A.source.identitySha256);
-    } else assert.ok(!Object.hasOwn(pins.B,'oracleSource'));
-    hex(pins.C0.binarySha256); hex(pins.C0.controlsBinarySha256); exact(pins.C0.source,pins.A.source); text(pins.C0.buildReceipt);
+    if(rehearsal) exact(pins.B.source,pins.A.source);
+    hex(pins.C0.binarySha256); hex(pins.C0.controlsBinarySha256); hex(pins.C0.oracleBinarySha256); exact(pins.C0.source,pins.A.source); text(pins.C0.buildReceipt);
     assert.ok(time(pins.C0.source.capturedAt)<time(pins.C0.buildStartedAt));
     assert.notEqual(pins.C0.binarySha256,pins.A.binaries.iai);
     assert.notEqual(pins.C0.controlsBinarySha256,pins.A.binaries.controls);
@@ -143,18 +142,21 @@ function derive(d,frozen) {
     function provenance(r,arm,binary) {
       const p=pins[arm]; exact(r.source,p.source); assert.equal(r.binarySha256,binary); assert.equal(r.environmentSha256,d.environmentSha256);
       assert.ok(time(r.startedAt)>time(p.buildStartedAt)); features(r.features,primary); receiptText(r.receipt);
-      config(r.config,mi.includes(r.name)?'mimalloc':hotDecl[r.name]?'hot':'normal',{name:r.name,arm,pins});
+      config(r.config,mi.includes(r.name)?'mimalloc':hotDecl[r.name]?'hot':'normal',{name:r.name,arm,pins,rowArm:r.arm});
       assert.ok(!runs.has(r.config.runId)); runs.add(r.config.runId);
     }
     function oracle(r,needed) {
       const raw=r.oracle; assert.ok(raw && typeof raw==='object');
       const o={...raw};
-      for(const k of [...SUMMARY_ONLY_COUNTERS,'unique_pending_words'])if(!needed)o[k]=null;
+      if(!needed)for(const k of [...counters,'unique_pending_words'])o[k]=null;
       exact(Object.keys(o).sort(),[...counters,'unique_pending_words','unobservedReasons','linkage'].sort());
       if(!needed) {
+        for(const k of [...counters,'unique_pending_words']) {
+          assert.equal(o[k],null);
+          text(o.unobservedReasons[k]);
+        }
         exact(Object.keys(o.unobservedReasons).sort(),[...counters,'unique_pending_words'].sort());
         assert.equal(o.linkage,null);
-        for(const k of [...counters,'unique_pending_words'])if(o[k]===null)text(o.unobservedReasons[k]);
         return;
       }
       const observedOracleReasons=[
@@ -163,7 +165,14 @@ function derive(d,frozen) {
       ].sort();
       const unobservedOracleKeys=Object.keys(o.unobservedReasons).sort();
       exact(unobservedOracleKeys,observedOracleReasons);
-      for(const k of counters)if(k!=='unique_pending_words') {
+      const candidateOnly = ['summary_words_visited','summary_hint_loads','summary_hint_rmw','quiescent_summary_missing_bits'];
+      for(const k of ['summary_words_visited','summary_hint_loads','summary_hint_rmw','quiescent_summary_missing_bits']) {
+        if(rehearsal && r.arm.startsWith('B')) { assert.equal(o[k],null); text(o.unobservedReasons[k]); }
+        else if(r.arm.startsWith('B')) { nat(o[k],`${r.name}/${r.arm}/${k}`); assert.equal(o.unobservedReasons[k],undefined); }
+        else if(o[k]===null || o[k]===undefined) text(o.unobservedReasons[k]);
+        else { assert.equal(o[k],0); assert.equal(o.unobservedReasons[k],undefined); }
+      }
+      for(const k of counters)if(k!=='unique_pending_words'&&!candidateOnly.includes(k)) {
         if(SUMMARY_ONLY_COUNTERS.includes(k)&&(r.arm.startsWith('A')||r.arm==='C0')) {
           assert.equal(o[k],0);
           assert.equal(o.unobservedReasons[k],undefined);
@@ -175,7 +184,7 @@ function derive(d,frozen) {
           assert.equal(o.unobservedReasons[k],undefined);
         }
       }
-      if(Object.hasOwn(PRODUCERS,r.name)&&r.arm.startsWith('B')) {
+      if(Object.hasOwn(PRODUCERS,r.name)&&r.arm.startsWith('B')&&!rehearsal) {
         nat(o.quiescent_summary_missing_bits);
         nat(o.sizeof_small_sidecar);
         assert.equal(o.sizeof_small_sidecar,41984);
@@ -185,11 +194,12 @@ function derive(d,frozen) {
         assert.ok(o.pending_words_exchanged<=o.pending_words_visited);
       }
       const l=o.linkage;
+      const officialB = r.arm.startsWith('B')&&!rehearsal;
       const p=pins[r.arm.startsWith('B')?'B':'A'];
-      assert.equal(l.binarySha256,p.binaries.oracle);
-      exact(l.source,rehearsal && r.arm.startsWith('B')?pins.B.oracleSource:r.source);
+      assert.equal(l.binarySha256,r.arm==='C0'?pins.C0.oracleBinarySha256:p.binaries.oracle);
+      exact(l.source,r.source);
       features(l.features,primary);
-      exact(l.cfg,['r19_sidecar_summary_oracle']);
+      exact(l.cfg,['r19_sidecar_summary_oracle',...(officialB?['r20_prf01_c3_oracle']:[])]);
       assert.equal(l.environmentSha256,d.environmentSha256); text(l.receipt); text(l.featureExactReceipt);
       assert.ok(time(l.startedAt)>time(p.buildStartedAt));
       assert.equal(l.primaryBinarySha256,r.binarySha256);
@@ -220,7 +230,7 @@ function derive(d,frozen) {
       provenance(r,a,expectedBinary);
         if(r.arm==='C0')assert.ok(time(r.startedAt)>time(pins.C0.buildStartedAt));
         nat(r.Ir); assert.ok(r.Ir>0); exact(r.config.requested,rs[0].config.requested); oracle(r,needed);
-        if(benefit.includes(name)) {
+        if(!rehearsal && benefit.includes(name)) {
           assert.ok(r.oracle.routed_scans>0);
           assert.equal(r.oracle.routed_scans,rs[0].oracle.routed_scans);
           assert.equal(r.oracle.nonempty_cuts,0);
@@ -247,7 +257,7 @@ function derive(d,frozen) {
           assert.equal(r.config.requested.blockBytes,16);
         }
         if(Object.hasOwn(PRODUCERS,name)) {
-          if(r.arm.startsWith('B')) {
+          if(r.arm.startsWith('B')&&!rehearsal) {
             nat(r.oracle.quiescent_summary_missing_bits);
             nat(r.oracle.sizeof_small_sidecar);
             assert.equal(r.oracle.quiescent_summary_missing_bits,0,'producer must be quiescent before discovery');
@@ -264,9 +274,16 @@ function derive(d,frozen) {
               else assert.equal(observedRmw,4096);
             }
           } else {
-            assert.equal(r.oracle.summary_hint_rmw,0);
-            assert.equal(r.oracle.summary_hint_loads,0);
-            assert.equal(r.oracle.unique_pending_words,0);
+            assert.ok(r.oracle.summary_hint_rmw===null||r.oracle.summary_hint_rmw===0);
+            assert.ok(r.oracle.summary_hint_loads===null||r.oracle.summary_hint_loads===0);
+            const words=r.oracle.unique_pending_words;
+            if(name===LARGE_REMOTE_FREE) {
+              assert.equal(words,0);
+            } else {
+              nat(words,'baseline unique pending-word count');
+              if(name===DISTINCT_WORD_PRODUCER)assert.equal(words,4096);
+              else assert.ok(words>0&&words<4096,'baseline geometry must be observed, not forced to zero');
+            }
           }
           const p=r.producerIrReceipt; assert.ok(p && typeof p==='object');
           assert.equal(p.binarySha256,r.binarySha256); exact(p.source,r.source); assert.equal(p.environmentSha256,r.environmentSha256);
@@ -539,6 +556,7 @@ function selftest() {
     checks++;
   };
   const GO='GO (deterministic; native deferred)';
+  const REHEARSAL_GO=REHEARSAL_VALIDATED;
   // Baseline + global verdict: deterministic axes pass, native deferred (GO is unreachable in v2).
   check(()=>{},GO);
   // Deferral marker and freeze integrity.
@@ -715,11 +733,16 @@ function selftest() {
   check(x=>{const r=x.iai.find(q=>q.name===fam0+'_n'&&q.arm==='A1');r.config.resolvedProvenance.copiedFields.push('segmentCount');});
   check(x=>{x.iai.filter(r=>r.name===fam0+'_2n').forEach(r=>{r.config.requested.workCount=65;r.config.resolved.workCount=65;});});
   const rehearse=x=>{
-    x.rehearsal=true; x.identities.B.oracleSource=structuredClone(x.identities.B.source);
+    x.rehearsal=true;
+    x.identities.B.oracleCfg=['r19_sidecar_summary_oracle'];
     x.identities.B.source=structuredClone(x.identities.A.source);
     x.identities.B.measurementCommit=x.identities.A.measurementCommit;
     for(const r of x.iai.filter(r=>r.arm.startsWith('B'))) {
+      const baseline=x.iai.find(a=>a.name===r.name&&a.arm==='A1');
+      for(const key of counters)r.oracle[key]=baseline.oracle[key];
       r.source=x.identities.B.source;
+      if(r.oracle.linkage) { r.oracle.linkage.source=r.source; r.oracle.linkage.cfg=['r19_sidecar_summary_oracle']; }
+      for(const key of ['summary_words_visited','summary_hint_loads','summary_hint_rmw','quiescent_summary_missing_bits']) {r.oracle[key]=null;r.oracle.unobservedReasons[key]='candidate-only instrumentation absent from main rehearsal';}
       if(r.producerIrReceipt) {
         r.producerIrReceipt.source=r.source; r.producerIrReceipt.control.source=r.source;
       }
@@ -735,18 +758,18 @@ function selftest() {
   check(x=>x.identities.C0.controlsBinarySha256=x.identities.A.binaries.controls);
   check(x=>x.identities.B.source.identitySha256=x.identities.A.source.identitySha256);
   check(x=>{x.identities.B.measurementCommit=x.identities.A.measurementCommit;x.identities.B.source.baseHead=x.identities.A.source.baseHead;});
-  check(x=>{rehearse(x);return x;},'REHEARSAL: '+GO);
-  check(x=>{rehearse(x);delete x.identities.B.oracleSource;});
-  check(x=>{rehearse(x);x.identities.B.oracleSource.identitySha256='bad';});
-  check(x=>{rehearse(x);x.identities.B.oracleSource=structuredClone(x.identities.A.source);});
-  check(x=>x.identities.B.oracleSource=structuredClone(x.identities.B.source));
-  check(x=>{x.rehearsal=false;x.identities.B.oracleSource=structuredClone(x.identities.B.source);});
-  check(x=>{rehearse(x);x.iai.find(r=>r.arm==='B1'&&r.name===benefit[0]).oracle.linkage.source=x.identities.B.source;});
-  check(x=>{rehearse(x);x.iai[0].oracle.linkage.source=x.identities.B.oracleSource;});
+  for(const key of ['summary_words_visited','summary_hint_loads','summary_hint_rmw','quiescent_summary_missing_bits']) {
+    check(x=>{const r=x.iai.find(r=>r.arm==='B1'&&r.name===benefit[0]);r.oracle[key]=null;delete r.oracle.unobservedReasons[key];});
+  }
+  check(x=>{rehearse(x);return x;},REHEARSAL_GO);
+  check(x=>{rehearse(x);x.identities.B.oracleCfg=['wrong'];});
+  check(x=>{rehearse(x);const r=x.iai.find(r=>r.arm==='B1'&&r.name===benefit[0]);delete r.oracle.unobservedReasons.summary_words_visited;});
+  check(x=>{rehearse(x);x.iai.find(r=>r.arm==='B1'&&r.name===benefit[0]).oracle.linkage.source.identitySha256='bad';});
+  check(x=>{rehearse(x);x.identities.B.oracleSource={};});
   for(const value of ['true',null,1])check(x=>x.rehearsal=value);
   check(x=>x.rehearsal=false,GO);
   check(x=>{rehearse(x);set(x,benefit[0],'B1',1000001);},'REHEARSAL: NO-GO');
-    check(x=>{rehearse(x);x.counterfactual={slop:true,arm:'B1',cell:'r20_prf01_small_churn_16b_2n',deltaIr:11};},'REHEARSAL: '+GO);
+    check(x=>{rehearse(x);x.counterfactual={slop:true,arm:'B1',cell:'r20_prf01_small_churn_16b_2n',deltaIr:11};},REHEARSAL_GO);
   // Rehearsal result self-identification (re-freeze 9): marker + prefixed mode verdicts, also on INCOMPLETE.
   {
     const mark=x=>{rehearse(x);return x;};
@@ -766,9 +789,9 @@ function selftest() {
   check(x=>{rehearse(x);delete x.nativeDeferred;},'INCOMPLETE');
   check(x=>{rehearse(x);x.iai=x.iai.filter(r=>r.name!==construction);},'UNJUDGEABLE');
     for(const [verdict,wrapped,code] of [
-      ['GO (deterministic; native deferred)','REHEARSAL: GO (deterministic; native deferred)',0],
+      ['GO (deterministic; native deferred)',REHEARSAL_GO,0],
       ['NO-GO','REHEARSAL: NO-GO',0],
-      [GO,'REHEARSAL: '+GO,0],
+      [GO,REHEARSAL_GO,0],
       ['INCONCLUSIVE','REHEARSAL: INCONCLUSIVE',0],
       ['INVALID','INVALID',1],
       ['INCOMPLETE','INCOMPLETE',1],

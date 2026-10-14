@@ -49,6 +49,7 @@ import fs from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import * as C3 from './r20_prf01_c3_support.mjs';
 import { fileURLToPath } from 'node:url';
+import { applyHarnessOverlay, validateC3OracleCounters, selfTestC3OracleCounters, selfTestMergeHarnessCargo, mergeHarnessCargo, measureToInput as buildMeasureInput } from './r20_prf01_c3_runner_support.mjs';
 
 const RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(RUNNER_DIR, '..');
@@ -79,6 +80,7 @@ const ORACLE_TARGET = 'r20_prf01_c3_oracle';
 const TRIM_TARGET = C3.TRIM_TARGET;
 const FEATURES = C3.FEATURES.join(' ');
 const ORACLE_CFG = 'r19_sidecar_summary_oracle';
+const SUMMARY_ORACLE_CFG = 'r20_prf01_c3_oracle';
 const CONTROL_CFG = 'r19_prf01_producer_control';
 const C3_CONTROL_CFG = 'r20_prf01_c3_producer_control';
 const DISTINGUISH_RUSTFLAGS = '-C debuginfo=line-tables-only';
@@ -236,10 +238,11 @@ function ensureWorktree(label, ref) {
   if (fs.existsSync(wt)) {
     assert.equal(git(wt, ['rev-parse', 'HEAD']).out, ref,
       `worktree ${label} is not at ${ref}; remove it manually and rerun`);
-    return wt;
+  } else {
+    fs.mkdirSync(RUN_ROOT, { recursive: true });
+    git(REPO, worktreeAddArgs(wt, ref));
   }
-  fs.mkdirSync(RUN_ROOT, { recursive: true });
-  git(REPO, worktreeAddArgs(wt, ref));
+  applyHarnessOverlay({ sourceRoot: REPO, targetRoot: wt, frozenFiles: C3.FROZEN_FILES });
   return wt;
 }
 function parseDispatch() {
@@ -274,7 +277,10 @@ function cmdPrepare() {
   const a = ensureWorktree('A', dispatch.base);
   const b = ensureWorktree('B', ctx.rehearsal ? dispatch.base : dispatch.candidate);
   const c = ensureWorktree('C', dispatch.base);
-  const arches = { A: archIdentity('A', a), B: archIdentity('B', b), C: archIdentity('C', c) };
+  const capturedAt = now();
+  const arches = Object.fromEntries(['A', 'B', 'C'].map(label => [
+    label, { ...archIdentity(label, { A: a, B: b, C: c }[label]), capturedAt },
+  ]));
   const source = sourceOf(arches.A);
   arches.C = { ...arches.C, ...source };
   if (ctx.rehearsal) assert.deepEqual(sourceOf(arches.B), sourceOf(arches.A), 'rehearsal B must use A source');
@@ -283,7 +289,7 @@ function cmdPrepare() {
   const pathLengths = Object.values(ctx.armDirs).map(p => p.length);
   assert.equal(new Set(pathLengths).size, 1, 'A/B/C full path lengths must be equal');
   putJson('manifest.json', { version: 1, rehearsal: ctx.rehearsal, candidate: ctx.candidate,
-    capturedAt: now(), baseHead: dispatch.base, frozen, arches,
+    capturedAt, baseHead: dispatch.base, frozen, arches,
     ...cleanupOwnership(RUN_ROOT, ['A','B','C']), pathLengths });
   console.log(`[prepare] candidate=${ctx.candidate} base=${dispatch.base} rehearsal=${ctx.rehearsal}`);
 }
@@ -352,12 +358,15 @@ function loadManifest() {
     'manifest candidate/base SHA missing',
   );
 }
+function expectedOracleCfg(label, rehearsal) {
+  return [ORACLE_CFG, ...(label === 'B' && !rehearsal ? [SUMMARY_ORACLE_CFG] : [])];
+}
 function buildRolePlan(label, rehearsal) {
   const flags = rehearsalRustflags(label, rehearsal);
   const withCfg = cfg => [flags, cfg].filter(Boolean).join(' ') || undefined;
   return {
     primary: flags,
-    oracle: withCfg(`--cfg ${ORACLE_CFG}`),
+    oracle: withCfg(expectedOracleCfg(label, rehearsal).map(cfg => `--cfg ${cfg}`).join(' ')),
     control: withCfg(`--cfg ${CONTROL_CFG}`),
     c3Control: withCfg(`--cfg ${C3_CONTROL_CFG}`),
   };
@@ -405,21 +414,6 @@ function cmdBuild() {
   }
 }
 
-function oracleRecord(arm, mode, label = arm) {
-  const exe = ctx.builds.arms[arm].oracle.exe;
-  const id = `${label}-${mode}-${Date.now()}`;
-  const r = wslOk(`${exe} ${mode} ${id} 2>&1`, `oracle ${arm} ${mode}`, { timeout: 300_000 });
-  const line = r.out.split('\n').filter(l => l.startsWith('{')).pop();
-  assert.ok(line, `oracle ${arm} ${mode} printed no JSON`);
-  const rec = JSON.parse(line);
-  assert.equal(rec.mode, mode);
-  assert.equal(rec.config.runId, id);
-  assert.equal(binarySha(exe), ctx.builds.arms[arm].oracle.binarySha256, `oracle binary drift @${arm}`);
-  assert.deepEqual([...rec.features].sort(), FEATURES.split(' ').sort());
-  assert.deepEqual(rec.cfg, [ORACLE_CFG]);
-  putJson(`oracle/${label}-${mode}.json`, rec);
-  return rec;
-}
 function cmdOracle() {
   loadManifest();
   readStage('builds.json', b => { ctx.builds = b; });
@@ -437,13 +431,15 @@ function cmdOracle() {
       const run = wslOk(`${exe} --c3-json ${name} ${id}`, `oracle ${label}/${name}`, {timeout:300_000});
       const rec = JSON.parse(run.out.split(/\r?\n/).filter(x=>x.startsWith('{')).pop() ?? 'null');
       assert.ok(rec && rec.cell === name && rec.processId === id, `C3 oracle identity mismatch ${label}/${name}`);
+      const cfg = expectedOracleCfg(arm, ctx.rehearsal);
+      assert.deepEqual(rec.cfg, cfg, `oracle cfg mismatch ${label}/${name}`);
+      assert.deepEqual([...rec.features].sort(), FEATURES.split(' ').sort(), `oracle features mismatch ${label}/${name}`);
+      assert.equal(binarySha(exe), ctx.builds.arms[arm].oracle.binarySha256, `oracle binary hash mismatch ${label}/${name}`);
       assert.ok(rec.oracle && typeof rec.oracle === 'object', `C3 oracle fields missing ${label}/${name}`);
-      for (const key of C3.C3_ORACLE_COUNTERS) {
-        const value = rec.oracle[key];
-        if (value !== null && value !== undefined) {
-          assert.ok(Number.isSafeInteger(value) && value >= 0, `invalid ${key}`);
-        }
-      }
+      if (rec.startedAtUnixMs !== undefined) rec.startedAt = new Date(rec.startedAtUnixMs).toISOString();
+      assert.ok(typeof rec.startedAt === 'string' && !Number.isNaN(Date.parse(rec.startedAt)), 'oracle startedAt missing');
+      assert.equal(rec.config?.runId, id, `oracle config runId mismatch ${label}/${name}`);
+      validateC3OracleCounters({ oracle: rec.oracle, arm, rehearsal: ctx.rehearsal, needed: BENEFIT.includes(name) || C3.PUBLICATION === name || Object.hasOwn(C3.PRODUCERS, name) || C3.TRIM_CELLS.includes(name), required: C3.C3_ORACLE_COUNTERS, candidateOnly: ['summary_words_visited', 'summary_hint_loads', 'summary_hint_rmw', 'quiescent_summary_missing_bits'] });
       records[label][name] = {
         row: rec,
         binarySha256: ctx.builds.arms[arm].oracle.binarySha256,
@@ -823,9 +819,9 @@ function measuredPids(homeDir, cellNames, exe) {
 }
 function binarySha(exe) { return wslOk(`sha256sum ${exe}`, 'sha256sum binary').out.split(/\s+/)[0]; }
 
-function measureToInputOriginal(runs, producerRuns) {
+function measureToInput(runs, producerRuns) {
   return buildMeasureInput(runs, producerRuns, {
-    ctx, C3, shaFile, REPO, sourceOf, ORACLE_CFG, PRODUCER_SPECS, local, putJson, putText,
+    ctx, C3, shaFile, REPO, sourceOf, ORACLE_CFG, SUMMARY_ORACLE_CFG, PRODUCER_SPECS, local, putJson, putText,
     assert, fs, join,
   });
 }
@@ -973,8 +969,13 @@ function main() {
   } catch (error) { console.error(`[${mode}] ${error.message}`); process.exitCode = 1; }
 }
 function runnerSelftest() {
+  selfTestC3OracleCounters();
+  selfTestMergeHarnessCargo();
+  const actualCargo = fs.readFileSync(join(REPO, 'Cargo.toml'), 'utf8');
+  assert.equal(mergeHarnessCargo(actualCargo, actualCargo), actualCargo);
   return C3.runRunnerSelftest({
     sourceIdentity, sha, parseProfiles, producerSettings: PRODUCER_SETTINGS, worktreeAddArgs,
+    buildRolePlan, expectedOracleCfg,
     cleanupOwnership, rehearsalRustflags, rehearsalExitCode, rehearsalVerdict,
     distinguishRustflags: DISTINGUISH_RUSTFLAGS,
   });

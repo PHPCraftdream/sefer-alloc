@@ -42,6 +42,7 @@ export function verifyArtifacts(outDir) {
   // 1. C3 inventory and row-role schema.
   if (JSON.stringify(input.inventory) !== JSON.stringify(INVENTORY)) fail('input.inventory does not match shared C3 inventory');
   const requiredArms = ARMS;
+  const rehearsal = input.rehearsal === true;
   const seenRows = new Set();
   for (const r of input.iai ?? []) {
     const key = `${r.arm}/${r.name}`;
@@ -52,13 +53,21 @@ export function verifyArtifacts(outDir) {
     const stageArm = r.arm.startsWith('A') ? 'A' : r.arm.startsWith('B') ? 'B' : 'C';
     const recorded = builds.arms?.[stageArm]?.[role]?.binarySha256;
     let pinned;
-    if (r.arm === 'C0') pinned = role === 'iai' ? input.identities?.C0?.binarySha256 : role === 'controls' ? input.identities?.C0?.controlsBinarySha256 : input.identities?.C0?.binaries?.[role];
+    if (r.arm === 'C0') pinned = role === 'iai' ? input.identities?.C0?.binarySha256 : role === 'controls' ? input.identities?.C0?.controlsBinarySha256 : input.identities?.C0?.[`${role}BinarySha256`];
     else pinned = input.identities?.[stageArm]?.binaries?.[role];
     if (typeof recorded !== 'string' || !/^[0-9a-f]{64}$/.test(recorded) || !pinned || pinned !== recorded || r.binarySha256 !== recorded)
       fail(`${key}: missing or mismatched binarySha256 for builds.json ${role}`);
     if (r.oracle?.linkage) {
+      const c0OraclePin = input.identities?.C0?.oracleBinarySha256;
+      const cOracle = builds.arms?.C?.oracle?.binarySha256;
+      if (!c0OraclePin || !cOracle || c0OraclePin !== cOracle)
+        fail('identities.C0.oracleBinarySha256 missing or does not match builds.json arms.C.oracle.binarySha256');
       for (const counter of SUMMARY_ONLY_COUNTERS) {
-        if (!summaryCounterAllowed(r.oracle[counter], r.arm === 'C0' || r.arm.startsWith('A') ? 'A' : 'B'))
+        const summaryArm = rehearsal || r.arm === 'C0' || r.arm.startsWith('A') ? 'A' : 'B';
+        const value = r.oracle[counter];
+        const reason = r.oracle.unobservedReasons?.[counter];
+        const allowed = summaryCounterAllowed(value, summaryArm) && (value !== null || (typeof reason === 'string' && reason.trim().length > 0));
+        if (!allowed)
           fail(`${key}: oracle.${counter} is invalid for arm ${r.arm}`);
       }
     }
@@ -125,7 +134,6 @@ export function verifyArtifacts(outDir) {
 
   // 3. ancestry vs manifest: A is the ancestor, the chain is both baseHeads, distinct unless rehearsal.
   const headOf = arm => manifest.arches?.[arm]?.head;
-  const rehearsal = input.rehearsal === true;
   const chain = input.ancestry?.chain;
   if (!Array.isArray(chain) || chain.length !== 2) fail('ancestry.chain must be a two-element array');
   else {
@@ -146,7 +154,7 @@ export function verifyArtifacts(outDir) {
 
   // 4. Input binary pins vs builds.json.
   for (const arm of ['A', 'B']) {
-    for (const role of ['iai', 'controls', 'oracle', 'control', 'c3', 'trim', 'controlDistinct']) {
+    for (const role of ['iai', 'controls', 'oracle', 'control', 'c3', 'trim', 'c3Control']) {
       const pinned = input.identities?.[arm]?.binaries?.[role];
       const recorded = builds.arms?.[arm]?.[role]?.binarySha256;
       if (!pinned || !recorded || pinned !== recorded)
@@ -159,12 +167,16 @@ export function verifyArtifacts(outDir) {
     if (!pinned || !recorded || pinned !== recorded)
       fail(`identities.C0.${field} missing or does not match builds.json arms.C.${role}.binarySha256`);
   }
-  for (const role of ['c3', 'trim', 'controlDistinct']) {
-    const pinned = input.identities?.C0?.binaries?.[role];
+  for (const role of ['c3', 'trim', 'c3Control']) {
+    const pinned = input.identities?.C0?.[`${role}BinarySha256`];
     const recorded = builds.arms?.C?.[role]?.binarySha256;
     if (!pinned || !recorded || pinned !== recorded)
-      fail(`identities.C0.binaries.${role} missing or does not match builds.json arms.C.${role}.binarySha256`);
+      fail(`identities.C0.${role}BinarySha256 missing or does not match builds.json arms.C.${role}.binarySha256`);
   }
+  const c0OraclePin = input.identities?.C0?.oracleBinarySha256;
+  const cOracle = builds.arms?.C?.oracle?.binarySha256;
+  if (!c0OraclePin || !cOracle || c0OraclePin !== cOracle)
+    fail('identities.C0.oracleBinarySha256 missing or does not match builds.json arms.C.oracle.binarySha256');
   ok('binary pins checked against builds.json');
 
   // 5. constructionGainReceipt: existing out-dir file, matching sha256, nonempty decomposition.
@@ -197,14 +209,14 @@ function selftest() {
     const files = new Map();
     const add = (p, text = `fixture:${p}`) => { const file = join(dir, p); fs.mkdirSync(resolve(file, '..'), { recursive: true }); writeFileSync(file, text); files.set(p, hash(text)); return p; };
     const heads = { A: 'a'.repeat(40), B: 'b'.repeat(40), C: 'a'.repeat(40) };
-    const binaries = Object.fromEntries(['iai','controls','oracle','control','c3','trim','controlDistinct'].map((role, i) => [role, (i + 1).toString(16).repeat(64)]));
-    binaries.controls = binaries.controlDistinct;
+    const binaries = Object.fromEntries(['iai','controls','oracle','control','c3','trim','c3Control'].map((role, i) => [role, (i + 1).toString(16).repeat(64)]));
+    binaries.controls = binaries.control;
     const source = arm => ({ baseHead: heads[arm], patchSha256: 'd'.repeat(64), untrackedSha256: 'e'.repeat(64), identitySha256: (arm === 'A' ? 'f' : '1').repeat(64), capturedAt: '2026-10-13T00:00:00Z' });
     const receipt = name => add(`logs/${name}.log`);
     const identities = {
       A: { source: source('A'), binaries: { ...binaries }, buildReceipt: receipt('build-A') },
       B: { source: source('B'), binaries: { ...binaries }, buildReceipt: receipt('build-B') },
-      C0: { source: source('A'), binarySha256: binaries.iai, controlsBinarySha256: binaries.controls, binaries: { ...binaries }, buildReceipt: receipt('build-C0') },
+      C0: { source: source('A'), binarySha256: binaries.iai, controlsBinarySha256: binaries.controls, oracleBinarySha256: binaries.oracle, c3BinarySha256: binaries.c3, trimBinarySha256: binaries.trim, c3ControlBinarySha256: binaries.c3Control, buildReceipt: receipt('build-C0') },
     };
     const iai = [];
     for (const name of INVENTORY) for (const arm of ['A1','A2','B1','B2','C0']) {
@@ -242,9 +254,13 @@ function selftest() {
   expect('identity mismatch', x => { x.input.identities.A.source.baseHead = '9'.repeat(40); }, false);
   expect('role-inconsistent binary', x => { x.input.identities.A.binaries.controls = x.input.identities.A.binaries.iai; }, false);
   expect('C0 source mismatch', x => { x.input.identities.C0.source.baseHead = '9'.repeat(40); }, false);
+  expect('C0 oracle pin mismatch', x => { x.input.identities.C0.oracleBinarySha256 = '0'.repeat(64); }, false);
   expect('unsafe receipt traversal', x => { const p = '../outside'; x.input.receiptHashes[p] = '0'.repeat(64); }, false);
   expect('A summary omitted, B present', x => { const r=x.input.iai.find(v=>v.arm==='A1'&&v.name===INVENTORY[0]); for (const k of SUMMARY_ONLY_COUNTERS) delete r.oracle[k]; const b=x.input.iai.find(v=>v.arm==='B1'&&v.name===INVENTORY[0]); b.oracle.summary_words_visited=2; }, true);
   expect('B summary omitted', x => { const r=x.input.iai.find(v=>v.arm==='B1'&&v.name===INVENTORY[0]); delete r.oracle.summary_words_visited; }, false);
+  expect('rehearsal B summaries omitted', x => { x.input.rehearsal = true; x.input.identities.B.source.baseHead = x.input.ancestry.chain[0]; x.input.ancestry.chain = [x.input.ancestry.chain[0], x.input.ancestry.chain[0]]; for (const r of x.input.iai.filter(v=>v.arm.startsWith('B') && v.oracle?.linkage)) for (const k of SUMMARY_ONLY_COUNTERS) { r.oracle[k] = null; r.oracle.unobservedReasons ??= {}; r.oracle.unobservedReasons[k] = 'actual rehearsal counter unobserved'; } }, true);
+  expect('official B null summary rejected', x => { const r=x.input.iai.find(v=>v.arm==='B1'&&v.name===INVENTORY[0]); r.oracle.summary_words_visited=null; r.oracle.unobservedReasons={summary_words_visited:'missing'}; }, false);
+  expect('rehearsal missing C0 actual binary', x => { x.input.identities.C0.binarySha256 = '0'.repeat(64); }, false);
   expect('A summary truly absent', x => { const r=x.input.iai.find(v=>v.arm==='A1'&&v.name===INVENTORY[0]); delete r.oracle.summary_words_visited; }, true);
   console.log(`C3 verifier selftest PASS (${checks} checks)`);
 }

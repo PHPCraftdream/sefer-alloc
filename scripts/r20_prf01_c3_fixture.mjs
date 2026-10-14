@@ -24,7 +24,7 @@ export function fixture(frozen, context) {
     buildStartedAt: '2026-10-11T01:00:00Z',
     features: primary,
     primaryCfg: [],
-    oracleCfg: ['r19_sidecar_summary_oracle'],
+    oracleCfg: ['r19_sidecar_summary_oracle', ...(c === 'b' ? ['r20_prf01_c3_oracle'] : [])],
     buildReceipt: 'synthetic/build',
     toolchain: {rustc: 'synthetic', target: 'synthetic', profile: 'bench', flags: 'none'},
   });
@@ -55,7 +55,7 @@ export function fixture(frozen, context) {
       },
       resolvedProvenance: {
         runId: 'probe-' + id, pid: 999, arm: a,
-        binarySha256: a === 'B' ? h('6') : h('2'),
+        binarySha256: a === 'C0' ? d.identities.C0.oracleBinarySha256 : a === 'B' ? h('6') : h('2'),
         receipt: 'synthetic/probe', claimPath: 'global',
         copiedFields: ['cachePolicy', 'configConflictsDelta', 'maintenance'],
       },
@@ -78,7 +78,7 @@ export function fixture(frozen, context) {
       A: p('a', '1234'),
       B: p('b', '5678'),
       C0: {
-        source: src('a'), binarySha256: h('7'), controlsBinarySha256: h('9'),
+        source: src('a'), binarySha256: h('7'), controlsBinarySha256: h('9'), oracleBinarySha256: h('d'),
         c3BinarySha256: h('a'), trimBinarySha256: h('b'),
         buildStartedAt: '2026-10-11T01:00:00Z', buildReceipt: 'synthetic/c0',
       },
@@ -100,11 +100,11 @@ export function fixture(frozen, context) {
     };
   }
   const linkage = (r, pin) => ({
-    binarySha256: pin.binaries.oracle,
+    binarySha256: r.arm === 'C0' ? d.identities.C0.oracleBinarySha256 : pin.binaries.oracle,
     primaryBinarySha256: r.binarySha256,
     source: r.source,
     features: primary,
-    cfg: ['r19_sidecar_summary_oracle'],
+    cfg: ['r19_sidecar_summary_oracle', ...(r.arm.startsWith('B') ? ['r20_prf01_c3_oracle'] : [])],
     environmentSha256: d.environmentSha256,
     receipt: 'synthetic/oracle-log',
     featureExactReceipt: 'synthetic/review',
@@ -138,6 +138,7 @@ export function fixture(frozen, context) {
           isHot ? hotCfg(name, a) : cfg(work, blockBytes),
         ),
       };
+      if (isHot && arm === 'C0') r.config.resolvedProvenance.binarySha256 = d.identities.C0.oracleBinarySha256;
       r.Ir = 100000;
       if (mi.includes(name)) {
         r.config = {
@@ -150,14 +151,8 @@ export function fixture(frozen, context) {
         || Object.hasOwn(PRODUCERS, name) || TRIM_CELLS.includes(name);
       r.oracle = Object.fromEntries([...counters, 'unique_pending_words']
         .map(k => [k, needed ? 0 : null]));
-      r.oracle.unobservedReasons = needed
-        ? Object.fromEntries([...counters, 'unique_pending_words']
-          .filter(k => r.oracle[k] === null)
-          .map(k => [k, 'unobserved in synthetic fixture']))
-        : Object.fromEntries([...counters, 'unique_pending_words']
-          .filter(k => r.oracle[k] === null)
-          .map(k => [k, 'compiled out in primary; no paired observer for this control']));
-      r.oracle.linkage = null;
+      const reasonKeys = [...counters.filter(k => r.oracle[k] === null), ...(r.oracle.unique_pending_words === null ? ['unique_pending_words'] : [])];
+      r.oracle.unobservedReasons = Object.fromEntries(reasonKeys.map(k => [k, needed ? 'unobserved in synthetic fixture' : 'compiled out in primary; no paired observer for this control']));
       if (needed && arm.startsWith('A')) {
         for (const k of [...SUMMARY_ONLY_COUNTERS, 'unique_pending_words']) {
           r.oracle[k] = 0;
@@ -168,6 +163,7 @@ export function fixture(frozen, context) {
         r.oracle.unique_pending_words = null;
         r.oracle.unobservedReasons.unique_pending_words = 'no producer counter observed in this control';
       }
+      r.oracle.linkage = null;
       if (needed) {
         r.oracle.linkage = linkage(r, pin);
         if (benefit.includes(name)) {
@@ -222,7 +218,7 @@ export function fixture(frozen, context) {
             } else delete r.oracle.unobservedReasons[k];
           }
         }
-        for (const k of Object.keys(r.oracle.unobservedReasons)) {
+        for (const k of [...counters, 'unique_pending_words']) {
           if (r.oracle[k] !== null) delete r.oracle.unobservedReasons[k];
         }
       }
@@ -282,6 +278,19 @@ export function fixture(frozen, context) {
         r.config.resolved.workCount = free;
         r.config.requested.blockBytes = block;
         r.config.resolved.blockBytes = block;
+      }
+      if (Object.hasOwn(PRODUCERS, name)) {
+        r.oracle.unique_pending_words = name === LARGE_REMOTE_FREE ? 0
+          : name === DISTINCT_WORD_PRODUCER ? 4096 : 64;
+        delete r.oracle.unobservedReasons.unique_pending_words;
+      }
+      if (arm === 'A1' || arm === 'A2' || arm === 'C0') {
+        if (Object.hasOwn(PRODUCERS, name)) {
+          r.oracle.summary_hint_rmw = null;
+          r.oracle.summary_hint_loads = null;
+          r.oracle.unobservedReasons.summary_hint_rmw = 'not observed in fixture';
+          r.oracle.unobservedReasons.summary_hint_loads = 'not observed in fixture';
+        }
       }
       if (name === context.construction && arm.startsWith('B')) {
         r.constructionGainReceipt = {

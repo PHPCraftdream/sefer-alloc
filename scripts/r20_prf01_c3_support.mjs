@@ -73,6 +73,7 @@ export function validateSources() {
 
 export function runRunnerSelftest({
   sourceIdentity, sha, parseProfiles, producerSettings, worktreeAddArgs,
+  buildRolePlan, expectedOracleCfg,
   cleanupOwnership, rehearsalRustflags, rehearsalExitCode, rehearsalVerdict,
   distinguishRustflags,
 }) {
@@ -116,6 +117,26 @@ export function runRunnerSelftest({
     'worktree', 'add', '--detach', '/tmp/A', 'a'.repeat(40),
   ]);
   assert.deepEqual(cleanupOwnership('/root', ['A', 'B', 'C']).ownedWorktrees, ['A', 'B', 'C']);
+  assert.deepEqual(buildRolePlan('A', false), {
+    primary: undefined,
+    oracle: '--cfg r19_sidecar_summary_oracle',
+    control: '--cfg r19_prf01_producer_control',
+    c3Control: '--cfg r20_prf01_c3_producer_control',
+  });
+  assert.deepEqual(buildRolePlan('B', false), {
+    primary: undefined,
+    oracle: '--cfg r19_sidecar_summary_oracle --cfg r20_prf01_c3_oracle',
+    control: '--cfg r19_prf01_producer_control',
+    c3Control: '--cfg r20_prf01_c3_producer_control',
+  });
+  assert.deepEqual(buildRolePlan('B', true), {
+    primary: distinguishRustflags,
+    oracle: `${distinguishRustflags} --cfg r19_sidecar_summary_oracle`,
+    control: `${distinguishRustflags} --cfg r19_prf01_producer_control`,
+    c3Control: `${distinguishRustflags} --cfg r20_prf01_c3_producer_control`,
+  });
+  assert.deepEqual(expectedOracleCfg('B', false), ['r19_sidecar_summary_oracle', 'r20_prf01_c3_oracle']);
+  assert.deepEqual(expectedOracleCfg('B', true), ['r19_sidecar_summary_oracle']);
   assert.equal(rehearsalRustflags('B', true), distinguishRustflags);
   assert.equal(rehearsalRustflags('A', true), undefined);
   assert.equal(rehearsalRustflags('B', false), undefined);
