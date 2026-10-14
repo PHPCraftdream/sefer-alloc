@@ -733,7 +733,8 @@ function producerPass(label, arm, role, cellIndex, name, bKey) {
     }
   };
   walk(homeDir);
-  const own = files.filter(p => p.replaceAll('\\', '/').includes(name));
+  // Match below the observation home: the home directory name itself contains the cell name.
+  const own = files.filter(p => relative(homeDir, p).replaceAll('\\', '/').includes(name));
   const profiles = own.filter(p => /\.out(?:[.#-]+\d+)*$/.test(p) && fs.statSync(p).size > 0);
   const logs = own.filter(p => /\.log(?:[.#-]+\d+)*$/.test(p));
   assert.ok(profiles.length && logs.length, `${role} ${label}: producer profiles/logs missing`);
