@@ -176,7 +176,8 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 /// filters them out; [`register`](Self::register) reuses them before appending.
 pub(crate) struct SegmentTable {
     #[cfg(feature = "alloc-global")]
-    routes: Option<RouteSlots>,
+    // Read by the bench-only C‴ oracle observer in the sibling route_slots_observers.
+    pub(super) routes: Option<RouteSlots>,
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
