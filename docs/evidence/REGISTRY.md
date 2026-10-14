@@ -2,7 +2,7 @@
 
 > **ВНИМАНИЕ:** этот файл сгенерирован скриптом `scripts/generate-evidence-registry-md.mjs` из `docs/evidence/registry.csv` — НЕ править руками; правки только в `registry.csv`.
 
-Источник: sha256 registry.csv = a9d7261f
+Источник: sha256 registry.csv = 224010f1
 
 ## Сводка по статусам
 

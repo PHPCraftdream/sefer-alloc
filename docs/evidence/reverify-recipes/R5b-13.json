@@ -25,8 +25,8 @@
   ],
   "mutant": {
     "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
-    "find": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);",
-    "replace": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Relaxed);",
+    "find": "self.pending[word].fetch_or(1u64 << (granule % 64), Ordering::AcqRel);",
+    "replace": "self.pending[word].fetch_or(1u64 << (granule % 64), Ordering::Relaxed);",
     "steps": [
       {
         "name": "producer pin mutant",

@@ -180,10 +180,11 @@ fn production_small_sidecar_uses_class_leaves() {
 
 #[test]
 fn producer_publish_is_acqrel_fetch_or() {
-    let body = fn_body(&bitmap_src(), "publish");
+    // Runtime routes publish through publish_hinted; its P2 is the pinned pending RMW.
+    let body = fn_body(&bitmap_src(), "publish_hinted_with_pause");
     assert!(
-        body.contains(".fetch_or(1 << (granule % 64), Ordering::AcqRel)"),
-        "producer publication must be an AcqRel fetch_or on the pending word:\n{body}"
+        body.contains(".fetch_or(1u64 << (granule % 64), Ordering::AcqRel)"),
+        "producer publication P2 must be an AcqRel fetch_or on the pending word:\n{body}"
     );
 }
 
