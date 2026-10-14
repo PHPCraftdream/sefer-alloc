@@ -12,11 +12,9 @@ mod alloc_core {
     }
 }
 
-// Allocation-discovery routing is outside this source-included primitive test.
-#[cfg_attr(
-    all(feature = "bench-internals", r18_sidecar_scan_bench),
-    allow(dead_code)
-)]
+// Allocation-discovery routing and the C‴ hinted publication / summary scan are outside
+// this source-included fixed-protocol primitive test.
+#[allow(dead_code)]
 #[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 
