@@ -1,0 +1,60 @@
+{
+  "id": "R5b-13",
+  "registryActivationHash": "e517e4d17cca3eee88ddc364b83c74707f75e0d6b37fad3160821fa75479b053",
+  "steps": [
+    {
+      "name": "source pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "r11_ph5b_c5_sidecar_ordering_pinned",
+        "--features",
+        "production"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "6 passed; 0 failed",
+          "test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs",
+    "find": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);",
+    "replace": "self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::Relaxed);",
+    "steps": [
+      {
+        "name": "producer pin mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--test",
+          "r11_ph5b_c5_sidecar_ordering_pinned",
+          "--features",
+          "production"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED",
+            "test result: FAILED\\. 5 passed; 1 failed"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED",
+        "test result: FAILED\\. 5 passed; 1 failed"
+      ]
+    }
+  }
+}

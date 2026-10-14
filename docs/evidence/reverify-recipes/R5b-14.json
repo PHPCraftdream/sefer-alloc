@@ -1,0 +1,60 @@
+{
+  "id": "R5b-14",
+  "registryActivationHash": "e517e4d17cca3eee88ddc364b83c74707f75e0d6b37fad3160821fa75479b053",
+  "steps": [
+    {
+      "name": "source pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "r11_ph5b_c5_sidecar_ordering_pinned",
+        "--features",
+        "production"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "6 passed; 0 failed",
+          "test owner_cut_is_acqrel_swap \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/alloc_core/segment/remote_bitmap/bitmap_scan.rs",
+    "find": "        let pending = self.pending.next().unwrap_or_else(|| std::process::abort());\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let baseline = BASELINE_SCAN.with(core::cell::Cell::get);\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let (bits, empty, exchanged) = if baseline {\n            let bits = pending.swap(0, Ordering::AcqRel);\n            (bits, bits == 0, true)\n        } else if pending.load(Ordering::Acquire) == 0 {\n            (0, true, false)\n        } else {\n            (pending.swap(0, Ordering::AcqRel), false, true)\n        };\n        #[cfg(not(all(feature = \"bench-internals\", r18_sidecar_scan_bench)))]\n        let bits = pending.swap(0, Ordering::AcqRel);",
+    "replace": "        let pending = self.pending.next().unwrap_or_else(|| std::process::abort());\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let baseline = BASELINE_SCAN.with(core::cell::Cell::get);\n        #[cfg(all(feature = \"bench-internals\", r18_sidecar_scan_bench))]\n        let (bits, empty, exchanged) = if baseline {\n            let bits = pending.swap(0, Ordering::Relaxed);\n            (bits, bits == 0, true)\n        } else if pending.load(Ordering::Acquire) == 0 {\n            (0, true, false)\n        } else {\n            (pending.swap(0, Ordering::Relaxed), false, true)\n        };\n        #[cfg(not(all(feature = \"bench-internals\", r18_sidecar_scan_bench)))]\n        let bits = pending.swap(0, Ordering::Relaxed);",
+    "steps": [
+      {
+        "name": "owner cut pin mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--test",
+          "r11_ph5b_c5_sidecar_ordering_pinned",
+          "--features",
+          "production"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test owner_cut_is_acqrel_swap \\.\\.\\. FAILED",
+            "test result: FAILED\\. 5 passed; 1 failed"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test owner_cut_is_acqrel_swap \\.\\.\\. FAILED",
+        "test result: FAILED\\. 5 passed; 1 failed"
+      ]
+    }
+  }
+}

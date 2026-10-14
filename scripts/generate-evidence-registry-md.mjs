@@ -177,6 +177,34 @@ for (const g of GATES) {
 }
 L.push('');
 
+L.push('');
+L.push('## Re-verification on CI');
+L.push('');
+L.push('Для перепроверки PR orchestrator коммитит на candidate branch временные `.github/evidence-reverify.json` (`{"rows":[...]}`; список строк можно скопировать из `docs/evidence/reverify-examples/p1-2.json`) и `.github/gate-run.json` (`{"runner":"scripts/r20_evidence_reverify_run.mjs","stages":"prepare,build,oracle","outDir":"target/r20-evidence-reverify"}`), затем добавляет метку `gate-run`. Эти конфиги относятся к candidate PR, не создаются этой задачей; `r20-gates` запускается по метке, отдельный workflow_dispatch не нужен.');
+L.push('');
+L.push('Runner допускает выполнение только в Linux GitHub Actions, на чистом checkout; source identity — HEAD SHA и `HEAD^{tree}`. `prepare` проверяет recipe, activation hash и source fragment без toolchain; `build` ставит nightly+Miri только при необходимости; `oracle` запускает только JSON argv через spawn без shell; `measure` только проверяет готовые результаты. PR linkage рекомендован, но dispatch не ограничен дополнительными env-переменными.');
+L.push('Recipe `docs/evidence/reverify-recipes/<id>.json` строго `{id,registryActivationHash,steps,mutant}`; hash — SHA-256 точных UTF-8 activation bytes registry. Step строго `{name,env,argv,expect}`; env только MIRIFLAGS/RUSTFLAGS/CARGO_*/LOOM_* string. Команды только cargo [+nightly] test|miri, node scripts/*.mjs либо rustup. Неизвестные ключи/типы, hash mismatch, небезопасная команда/путь и mutant fragment не ровно один раз дают INVALID/nonzero; отсутствующая recipe — needs-manual с причиной.');
+L.push('В `steps[].expect` допустимы только integer `exit` и массив `stdoutRegex`; runner объединяет stdout/stderr процесса, но поле схемы остаётся единым. Mutant aggregate expectation проверяет общий output mutant steps и nonzero exit; spawn/signal failure всегда отвергается.');
+L.push('R5b-13 verifies producer publication: `SidecarBitmap::publish` fetch_or AcqRel becomes Relaxed and the named pin test fails. R5b-14 weakens all three owner pending.swap branches in one unique multiline fragment; because that pin only requires one AcqRel occurrence, changing one branch survives. LF-normalized matching retains the original byte buffer/SHA for restoration.');
+L.push('R0-21 launches three direct Cargo release test targets (3+2+2); the two named built-in should-panic witnesses are required in their target outputs. R4c-05/06 preserve KNOWN-RED only after strict-red signatures including target source location and named plain positive test both pass.');
+L.push('Raw stdout and stderr stream to per-ID receipts with byte-offset boundaries; every recipe step regex scans only the child byte range, never command/environment metadata.');
+L.push('');
+L.push('The selftest synthesizes registry/selector and artifact manifests; its async mutant callback verifies replacement still exists after an awaited turn before throwing, then checks byte-exact rollback. It also tests fragment counts 0/2 and receipt/status/duplicate/proposal tampering without invoking toolchains.');
+L.push('');
+L.push('Stage semantics: `prepare` only preflight/plans and never invokes rustc; `build` performs needed CI toolchain setup only; combined `build,oracle` continues into oracle; `measure` is standalone and verifies artifacts without rewriting them.');
+L.push('');
+L.push('Размер raw-log receipt: менее 200 KiB — хранить полный текст verbatim. Для 200 KiB–2 MiB сохранить в Git выборочные исходные sections с маркером `# TRUNCATED`, точной командой воспроизведения и SHA-256 полного лога; либо приложить gzip полного лога как архив, а текстовый receipt оставить для LF SHA verifier. Более 2 MiB полного лога не помещать в Git (включая сжатый вариант): хранить его как CI artifact, а в Git добавить hash manifest, точную команду, минимальный excerpt <200 KiB и summary.');
+
+L.push('');
+L.push('### Re-verification handoff rules');
+L.push('');
+L.push('Реестр обновляйте по ID: строки из `proposed_rows.csv` сливайте в `registry.csv`, не заменяя весь файл.');
+L.push('Raw logs переносите в `docs/evidence` по трем CLAUDE.md tiers: <200 KiB verbatim; 200 KiB–2 MiB — excerpt с marker и командой либо gzip; >2 MiB — вне Git, в Git hash, команда, excerpt и summary.');
+L.push('Указывайте фактически протестированные пути в `source_scope.csv`; пустой `scope_base` привязывает scope к `source_sha`. Закрепите source и receipt hashes; нормализуйте receipt в LF и пересчитайте hash после финального хранения. Для усеченного receipt хэшируйте сохраненный текст; полный лог закрепите manifest hash.');
+L.push('После слияния по ID перегенерируйте REGISTRY.md и проверьте `node scripts/generate-evidence-registry-md.mjs --check`; запустите строгий verifier, например `node scripts/verify-evidence-registry.mjs --strict --baseline origin/main`.');
+L.push('В infrastructure PR `.github/evidence-reverify.json` намеренно отсутствует. Для dry-run используйте supplied config или `--rows`; отсутствующая recipe остается needs-manual с причиной.');
+L.push('');
+
 // (f) full row table
 L.push('## Полная таблица строк');
 L.push('');
