@@ -16,6 +16,10 @@ use core::alloc::Layout;
 use crate::alloc_core::os;
 use core::sync::atomic::Ordering;
 
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+use crate::alloc_core::size_classes::MIN_BLOCK;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
@@ -37,6 +41,33 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_prf01_sidecar_oracle() -> [u64; 8] {
         crate::alloc_core::remote_bitmap::Prf01SidecarOracle::snapshot()
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    pub fn dbg_prf01_strict_words_visited(&self) -> (u64, u64, u64, u64) {
+        let (actual, records) =
+            crate::alloc_core::remote_bitmap::Prf01SidecarOracle::strict_snapshot();
+        let mut end_sum = 0u64;
+        let mut start_sum = 0u64;
+        for base in self.segment_bases() {
+            if matches!(
+                SegmentHeader::kind_at(base),
+                SegmentKind::Small | SegmentKind::Primordial
+            ) {
+                let end = SegmentMeta::new(base).bump_of().div_ceil(MIN_BLOCK * 64);
+                let start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
+                    crate::alloc_core::segment_header::Layout::primordial_meta_end()
+                        / (MIN_BLOCK * 64)
+                } else {
+                    crate::alloc_core::segment_header::Layout::small_meta_end() / (MIN_BLOCK * 64)
+                };
+                let start = start.min(end);
+                end_sum += end as u64;
+                start_sum += start as u64;
+            }
+        }
+        (actual, records, end_sum, start_sum)
     }
 
     /// Configure thread-local measurement; returns visited, empty, exchanged,

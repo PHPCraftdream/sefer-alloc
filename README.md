@@ -771,7 +771,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **93** tier-2 item-scoped allows across **29**
+`src/`, 6 in `crates/`) plus **95** tier-2 item-scoped allows across **29**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1383,8 +1383,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **387 integration test files**,
-**92 example binaries**, **28 benches**, and **15 root Loom models**
+needs its acceptance run. The present tree contains **388 integration test files**,
+**92 example binaries**, **29 benches**, and **15 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1393,9 +1393,9 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (387 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (388 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (92 files) |
-| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (28 files) |
+| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (29 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (17 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | `miri` | Selected provenance/aliasing checks, not a whole-project proof | `scripts/miri-matrix.mjs` is the single manifest of Miri targets (GREEN, EXPECTED-RED with its card, WAIVED); `scripts/miri.mjs` runs it and `scripts/verify-miri-target-wiring.mjs` checks that every Miri test file is classified and wired in CI; it includes terminal `r8_global_box_provenance` cases and existing bounded regressions, including tagged-index-stack `narrow_domain_unchecked_storage`; execution for this snapshot is pending |

@@ -178,25 +178,6 @@ impl RouteSlots {
         prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
     }
 
-    pub(super) fn scan_small(
-        &self,
-        index: usize,
-        base: *mut u8,
-        high_water: usize,
-    ) -> Option<RouteScan<'_>> {
-        if index >= self.cap {
-            std::process::abort();
-        }
-        // SAFETY: owner-only read of an initialized live route slot.
-        let route = unsafe { &*self.slots.add(index) }
-            .as_ref()
-            .unwrap_or_else(|| std::process::abort());
-        if route.root() != base {
-            std::process::abort();
-        }
-        route.small_sidecar()?.scan(high_water)
-    }
-
     pub(super) fn scan_small_from(
         &self,
         index: usize,
