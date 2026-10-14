@@ -93,6 +93,7 @@ const PRODUCER = C3.SAME_WORD_PRODUCER;
 const IAI_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'iai');
 const CONTROLS_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'controls');
 const C3_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'c3');
+const PRODUCER_SPECS = C3.PRODUCERS;
 const TRIM_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'trim');
 const HOT_DECL = {
   [CONSTRUCTION]: [1, 16, 8],
