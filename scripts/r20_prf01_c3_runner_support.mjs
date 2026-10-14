@@ -298,9 +298,8 @@ export function measureToInput(runs, producerRuns, {
     hashes,
     environmentSha256,
     ...(ctx.rehearsal ? { rehearsal: true } : {}),
-    ...(ctx.rehearsal ? { rehearsal: true } : {}),
     inventoryReceipt: 'manifest.json',
-    identityReviewReceipt: 'manifest.json; per-stage identity revalidation',
+    identityReviewReceipt: 'per-stage identity revalidation against manifest (see the preregistration limitations section)',
     environmentReceipt: 'environment.log',
     oracleReceipt: 'oracle.json',
     entry: 'SeferAlloc::GlobalAlloc->HeapCore routed',
@@ -496,7 +495,7 @@ export function measureToInput(runs, producerRuns, {
   const receipts = {};
   const scan = value => {
     if (typeof value === 'string'
-      && /^(?:environment[.]log|manifest[.]json|builds[.]json|oracle[.]json|(?:logs|boundary|profiles|oracle)\/)/
+      && /^(?:environment[.]log|manifest[.]json|builds[.]json|oracle[.]json|(?:logs|boundary|profiles|oracle)\/[^\s;]+)$/
         .test(value)
       && !(value in receipts)) {
       receipts[value] = shaFile(local(value));
