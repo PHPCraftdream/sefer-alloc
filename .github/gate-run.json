@@ -1,7 +1,0 @@
-{
-  "runner": "scripts/r20_prf01_c3_run.mjs",
-  "stages": "rehearsal",
-  "rehearsal": true,
-  "slop": false,
-  "note": "P1-4: C3 harness rehearsal (B = A prime), harness validation only, never gate data"
-}
