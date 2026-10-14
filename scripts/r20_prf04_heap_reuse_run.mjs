@@ -325,6 +325,14 @@ function envCapture() {
   for (const [cmd, args] of [['rustc', ['-Vv']], ['cargo', ['-V']], ['valgrind', ['--version']],
     ['uname', ['-srm']], ['iai-callgrind-runner', ['--version']]]) {
     const r = spawnSync(cmd, args, { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 20 });
+    if (cmd === 'iai-callgrind-runner') {
+      // As in v2: the runner refuses a bare --version call (no library version handshake) but
+      // names its own version in the error; record that text and require the version in it.
+      const text = ((r.stdout ?? '') + (r.stderr ?? '')).replace(/\x1b\[[0-9;]*m/g, '').trim();
+      assert.match(text, /iai-callgrind-runner \(?\d+[.]\d+[.]\d+/, 'iai-callgrind-runner version not reported');
+      rows.push(text);
+      continue;
+    }
     assert.equal(r.status, 0, cmd + ' environment capture failed: ' + r.stderr);
     rows.push(r.stdout.trim());
   }
