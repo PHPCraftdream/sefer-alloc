@@ -111,7 +111,7 @@ loom = "0.7"
 # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
 # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
 # `numa-aware-mock` feature by the mock-gated integration tests).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(r20_prf01_c3_oracle)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(r20_prf01_c3_producer_control)', 'cfg(r20_prf01_c3_oracle)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -1770,6 +1770,13 @@ harness = false
 test = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
+# P1-4 C''' new producer cells; independent target, preserving frozen v2 targets.
+[[bench]]
+name = "r20_prf01_c3_cells_iai"
+harness = false
+test = false
+required-features = ["alloc-global", "bench-internals", "internals"]
+
 [[bench]]
 name = "r20_prf01_trim_iai"
 harness = false
@@ -1797,17 +1804,6 @@ required-features = ["production", "bench-internals", "internals"]
 name = "r19_prf02_production_iai"
 harness = false
 required-features = ["production", "internals"]
-
-# P1-5 actual-source C‴ summary protocol integration oracle.
-[[test]]
-name = "r20_prf01_summary_hint_integration"
-path = "tests/r20_prf01_summary_hint_integration.rs"
-required-features = ["alloc-core", "alloc-decommit", "internals"]
-
-[[test]]
-name = "r20_prf01_summary_transition_miri"
-path = "tests/r20_prf01_summary_transition_miri.rs"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "internals", "bench-internals"]
 
 # PRF-01 strict trim uses the production routed heap, counter oracle and internals.
 [[test]]
@@ -2451,6 +2447,11 @@ required-features = ["production"]
 [[example]]
 name = "r19_prf01_oracle"
 required-features = ["production", "bench-internals", "internals"]
+
+[[example]]
+name = "r20_prf01_c3_oracle"
+required-features = ["production", "bench-internals", "internals"]
+
 
 # R20 PRF-04: claim-path oracle for the Ir-gate cells in
 # `benches/support/r20_prf04.rs` — verifies via the bench-internals
