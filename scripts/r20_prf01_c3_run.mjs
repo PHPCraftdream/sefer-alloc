@@ -153,7 +153,14 @@ function readStage(name, fn) {
 }
 function frozenHashes() {
   const check=spawnSync(process.execPath,[join(REPO,JUDGE),'--check-hashes'],{encoding:'utf8'});
-  assert.equal(check.status,0,`frozen hash drift or snapshot mismatch\n${check.stdout}${check.stderr}`);
+  // A rehearsal is harness validation only and never gate data: before the first freeze it runs
+  // against the live hashes and records that it was unfrozen. Official stages always require freeze.
+  const unfrozen = check.status !== 0 && /not frozen yet/.test(check.stdout);
+  if (unfrozen && ctx.rehearsal) {
+    if (!ctx.unfrozenRehearsal) console.log('[rehearsal] UNFROZEN: prereg .sha256 absent; live hashes used, not gate data');
+    ctx.unfrozenRehearsal = true;
+  }
+  else assert.equal(check.status,0,`frozen hash drift or snapshot mismatch\n${check.stdout}${check.stderr}`);
   const list=spawnSync(process.execPath,[join(REPO,JUDGE),'--hashes'],{encoding:'utf8'});
   assert.equal(list.status,0,'gate --hashes failed');
   const actual = list.stdout.trim().split(/\s+/).reduce((rows, token, index, all) => {
