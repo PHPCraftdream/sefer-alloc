@@ -1,9 +1,12 @@
 mod bitmap_cut;
 mod bitmap_record;
 mod bitmap_scan;
+// Source-include tests compile this module without the drain that uses it.
 #[cfg(feature = "bench-internals")]
+#[allow(dead_code)]
 mod prf01_sidecar_oracle;
 #[cfg(feature = "bench-internals")]
+#[allow(unused_imports)]
 pub(crate) use prf01_sidecar_oracle::Prf01SidecarOracle;
 mod sidecar_bitmap;
 pub(crate) use bitmap_cut::BitmapCut;
