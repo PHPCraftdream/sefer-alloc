@@ -45,6 +45,33 @@ impl HeapCore {
         crate::alloc_core::AllocCore::dbg_large_hot_budget()
     }
 
+    /// Pause a real current Small producer after P2 and before its summary P3.
+    ///
+    /// # Safety
+    /// `ptr` is a live issued Small/Primordial allocation transferred once;
+    /// `after_p2` is test instrumentation and may block, but must return normally
+    /// without accessing allocation or sidecar storage; RoutePin remains held.
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_publish_small_paused_after_p2(
+        &mut self,
+        ptr: *mut u8,
+        after_p2: impl FnOnce(),
+    ) -> bool {
+        let key = ptr.addr() & !(crate::alloc_core::os::SEGMENT - 1);
+        let pin = crate::registry::segment_route::RouteDirectory::global()
+            .lookup(ptr)
+            .unwrap_or_else(|| std::process::abort());
+        let base = self
+            .segment_bases()
+            .find(|base| base.addr() == key)
+            .unwrap_or_else(|| std::process::abort());
+        let offset = (ptr.addr() - base.addr()) as u32;
+        // SAFETY: valid transfer obligation; callback is a test split point and returns normally.
+        unsafe { pin.dbg_publish_small_paused_after_p2(offset, after_p2) }
+    }
+
     /// Publish a current issued Small block through the real descriptor.
     ///
     /// # Safety

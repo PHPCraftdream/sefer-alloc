@@ -47,6 +47,8 @@ export const MIRI_TARGETS = [
   green('miri-core', 'regression_r2_05_diag_provenance_miri', 'alloc-core internals'),
   green('miri-core', 'regression_w3_stats_aliasing_miri', 'std'),
   green('miri-core', 'class_leaves_publication_miri', 'alloc-core'),
+  green('miri-core', 'r20_prf01_summary_transition_miri', 'alloc-global alloc-xthread alloc-decommit internals bench-internals'),
+  green('miri-core', 'r20_prf01_summary_transition_miri', 'alloc-global alloc-xthread alloc-decommit internals bench-internals', { borrows: 'tb' }),
   green('miri-plain', 'regression_r2_06_header_race_miri', plainFeatures, { model: 'plain' }),
   green('local-only', 'regression_realloc_oob_old_layout', 'alloc-core', {
     expect: 'WAIVED', card: 190,

@@ -198,6 +198,49 @@ impl RouteSlots {
         route.small_sidecar()?.scan_from(high_water, word)
     }
 
+    pub(super) fn discover_small_from(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+        word: usize,
+    ) -> Option<crate::alloc_core::remote_bitmap::SummaryScan<'_>> {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-only read of an initialized live route slot.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route.small_sidecar()?.discover_from(high_water, word)
+    }
+
+    #[cfg(all(feature = "bench-internals", r20_prf01_c3_oracle))]
+    pub(super) fn quiescent_summary_missing_bits(
+        &self,
+        index: usize,
+        base: *mut u8,
+        start: usize,
+        end: usize,
+    ) -> u64 {
+        if index >= self.cap {
+            std::process::abort();
+        }
+        // SAFETY: owner-only read of an initialized live route slot.
+        let route = unsafe { &*self.slots.add(index) }
+            .as_ref()
+            .unwrap_or_else(|| std::process::abort());
+        if route.root() != base {
+            std::process::abort();
+        }
+        route
+            .small_sidecar()
+            .map_or(0, |sc| sc.quiescent_summary_missing_bits(start, end))
+    }
+
     pub(super) fn claim_large_pending(&self, index: usize, base: *mut u8) -> bool {
         if index >= self.cap {
             std::process::abort();

@@ -183,7 +183,30 @@ impl AllocCore {
         (reclaimed, units)
     }
 
-    /// Fixes the table high-water at entry and visits each live slot once.
+    #[cfg(all(feature = "bench-internals", r20_prf01_c3_oracle))]
+    pub(crate) fn dbg_prf01_quiescent_summary_missing_bits(&self) -> u64 {
+        let mut missing = 0u64;
+        for index in 0..self.table.count() as usize {
+            let base = self.table.base_at(index);
+            if base.is_null()
+                || !matches!(
+                    SegmentHeader::kind_at(base),
+                    SegmentKind::Small | SegmentKind::Primordial
+                )
+            {
+                continue;
+            }
+            let high_water = SegmentMeta::new(base).bump_of();
+            let end = high_water.div_ceil(MIN_BLOCK * 64);
+            let start = Self::sidecar_payload_start_word(base).min(end);
+            missing = missing.saturating_add(
+                self.table
+                    .quiescent_summary_missing_bits(index, base, start, end),
+            );
+        }
+        missing
+    }
+
     /// Strict trim cuts payload words only: producer rejects class-0 metadata
     /// (`sidecar_bitmap.rs:116-121`); metadata is >=64KiB/page-aligned
     /// (`segment_header_layout.rs:44-72,126-127`).

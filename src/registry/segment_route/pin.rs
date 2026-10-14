@@ -48,6 +48,24 @@ impl RoutePin {
             .small_sidecar()
             .is_some_and(|sidecar| sidecar.publish(offset))
     }
+    /// Bench-internals pause exactly after P2 and before P3.
+    ///
+    /// # Safety
+    /// This pin identifies the current issued Small/Primordial allocation and
+    /// `after_p2` may suspend the call but must return normally and must not
+    /// inspect allocation/sidecar storage; the route pin retains sidecar lifetime.
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    #[doc(hidden)]
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_publish_small_paused_after_p2(
+        self,
+        offset: u32,
+        after_p2: impl FnOnce(),
+    ) -> bool {
+        self.entry
+            .small_sidecar()
+            .is_some_and(|sidecar| sidecar.publish_paused_for_test(offset, after_p2))
+    }
     /// Terminal LIVE(g) -> PENDING(g) CAS, consuming this pin.
     ///
     /// # Safety

@@ -7,7 +7,7 @@ use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
 use crate::alloc_core::os::SEGMENT;
-use crate::alloc_core::remote_bitmap::{ClassLeaves, SidecarBitmap};
+use crate::alloc_core::remote_bitmap::{ClassLeaves, SidecarBitmap, SummaryScan};
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 use super::RouteScan;
@@ -21,6 +21,16 @@ const _: () = {
     assert!(SidecarBitmap::WORDS == 4096);
     assert!(SidecarBitmap::GRANULES == 262_144);
     assert!(SMALL_CLASS_COUNT < u8::MAX as usize);
+    assert!(SidecarBitmap::SUMMARY_WORDS == 64);
+    assert!(core::mem::size_of::<SmallSidecar>() == 41_984);
+    assert!(
+        crate::alloc_core::segment_header::Layout::small_meta_end() / (MIN_BLOCK * 64)
+            >= SidecarBitmap::SUMMARY_WORDS
+    );
+    assert!(
+        crate::alloc_core::segment_header::Layout::primordial_meta_end() / (MIN_BLOCK * 64)
+            >= SidecarBitmap::SUMMARY_WORDS
+    );
 };
 
 #[repr(C)]
@@ -176,7 +186,13 @@ impl SmallSidecar {
 
     /// Producer terminal publication, called by consuming RoutePin.
     pub(super) fn publish(&self, offset: u32) -> bool {
-        self.bitmap().publish(offset)
+        self.bitmap().publish_hinted(offset)
+    }
+
+    #[cfg(any(test, feature = "bench-internals"))]
+    pub(super) fn publish_paused_for_test(&self, offset: u32, after_p2: impl FnOnce()) -> bool {
+        self.bitmap()
+            .publish_hinted_paused_for_test(offset, after_p2)
     }
 
     /// Owner-only bounded per-word cut through the existing bitmap scanner.
@@ -190,5 +206,21 @@ impl SmallSidecar {
         self.bitmap()
             .scan_from(high_water, word)
             .map(|inner| RouteScan { inner })
+    }
+
+    #[cfg(all(feature = "bench-internals", r20_prf01_c3_oracle))]
+    pub(crate) fn quiescent_summary_missing_bits(&self, start: usize, end: usize) -> u64 {
+        self.bitmap().quiescent_summary_missing_bits(start, end)
+    }
+
+    pub(crate) fn discover_from(&self, high_water: usize, word: usize) -> Option<SummaryScan<'_>> {
+        self.bitmap().discover_from(high_water, word)
+    }
+
+    /// Sidecar geometry is pinned in both production and source-include builds.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_size_for_prf01() -> usize {
+        core::mem::size_of::<Self>()
     }
 }

@@ -346,6 +346,19 @@ impl SegmentTable {
     }
 
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub(crate) fn discover_small_route_from(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+        word: usize,
+    ) -> Option<crate::alloc_core::remote_bitmap::SummaryScan<'_>> {
+        self.routes
+            .as_ref()?
+            .discover_small_from(index, base, high_water, word)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) fn claim_large_route(&self, index: usize, base: *mut u8) -> bool {
         self.routes
             .as_ref()

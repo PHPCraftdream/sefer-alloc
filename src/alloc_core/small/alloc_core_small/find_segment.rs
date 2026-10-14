@@ -134,54 +134,109 @@ impl AllocCore {
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline]
     pub(super) fn drain_segment_sidecar(&mut self, base: *mut u8) -> SidecarDrainOutcome {
+        self.drain_segment_sidecar_impl(base, false)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(never)]
+    fn drain_segment_sidecar_forced(&mut self, base: *mut u8) -> SidecarDrainOutcome {
+        self.drain_segment_sidecar_impl(base, true)
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(never)]
+    pub(crate) fn drain_segment_sidecar_impl(
+        &mut self,
+        base: *mut u8,
+        forced: bool,
+    ) -> SidecarDrainOutcome {
         if !self.table.is_routed() {
             return SidecarDrainOutcome::Skipped;
         }
         let index = SegmentHeader::segment_id_at(base) as usize;
         let high_water = SegmentMeta::new(base).bump_of();
-        let mut changed_classes = 0u64;
-        {
-            // Patch S: start at the payload's first word, not word 0.
-            let end_word = high_water.div_ceil(MIN_BLOCK * 64);
-            let start_word = Self::sidecar_payload_start_word(base).min(end_word);
+        let end = high_water.div_ceil(MIN_BLOCK * 64);
+        let start = Self::sidecar_payload_start_word(base).min(end);
+        let mut changed = 0u64;
+        #[cfg(all(
+            feature = "bench-internals",
+            any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+        ))]
+        let (mut visited, mut nonempty, mut reclaimed) = (0u64, 0u64, 0u64);
+        if forced {
             let Some(mut scan) = self
                 .table
-                .scan_small_route_from(index, base, high_water, start_word)
+                .scan_small_route_from(index, base, high_water, start)
             else {
                 std::process::abort();
             };
-            #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
-            crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
-            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-            crate::alloc_core::remote_bitmap::Prf01SidecarOracle::constructed();
-            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-            let (mut visited, mut nonempty, mut reclaimed) = (0u64, 0u64, 0u64);
             while let Some(mut cut) = scan.next_cut() {
-                #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+                #[cfg(all(
+                    feature = "bench-internals",
+                    any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+                ))]
                 {
                     visited += 1;
                     nonempty += u64::from(!cut.is_empty());
                 }
                 while let Some(record) = cut.pop() {
                     if Self::reclaim_sidecar_record(base, record.offset, record.class) {
-                        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+                        #[cfg(all(
+                            feature = "bench-internals",
+                            any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+                        ))]
                         {
                             reclaimed += 1;
                         }
-                        changed_classes |= 1u64 << record.class;
+                        changed |= 1u64 << record.class;
                     }
                 }
             }
-            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+        } else {
+            let Some(mut scan) = self
+                .table
+                .discover_small_route_from(index, base, high_water, start)
+            else {
+                std::process::abort();
+            };
+            while let Some(mut cut) = scan.next_cut() {
+                #[cfg(all(
+                    feature = "bench-internals",
+                    any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+                ))]
+                {
+                    visited += 1;
+                    nonempty += u64::from(!cut.is_empty());
+                }
+                while let Some(record) = cut.pop() {
+                    if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+                        #[cfg(all(
+                            feature = "bench-internals",
+                            any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+                        ))]
+                        {
+                            reclaimed += 1;
+                        }
+                        changed |= 1u64 << record.class;
+                    }
+                }
+            }
+        }
+        #[cfg(all(
+            feature = "bench-internals",
+            any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+        ))]
+        {
+            crate::alloc_core::remote_bitmap::Prf01SidecarOracle::constructed();
             crate::alloc_core::remote_bitmap::Prf01SidecarOracle::completed(
                 visited, nonempty, reclaimed,
             );
         }
-        if changed_classes == 0 {
+        if changed == 0 {
             return SidecarDrainOutcome::Skipped;
         }
         #[cfg(feature = "alloc-segment-directory")]
-        self.sync_directory_for_segment_classes(base, index, changed_classes);
+        self.sync_directory_for_segment_classes(base, index, changed);
         #[cfg(feature = "alloc-decommit")]
         if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
             let pooled = self.release_or_pool_empty_segment(base);
@@ -502,21 +557,22 @@ impl AllocCore {
             let was_nonempty = routed_miss_scan
                 && SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
             // Consume only this canonical candidate before inspecting its bins.
-            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-            match self.drain_segment_sidecar(base) {
-                // Decommitted+released: `base` is unmapped — skip the
-                // BinTable check for it in THIS scan. Decommitted+pooled:
-                // `base` is still live/registered/committed (R1-03, src
-                // review round 1) — fall through to the SAME BinTable check
-                // every other live segment gets below, so a segment that just
-                // emptied (and therefore has every one of its blocks free)
-                // can be reused as a hit in this very scan, not only on a
-                // later call (see `SidecarDrainOutcome::Decommitted`'s doc).
-                #[cfg(feature = "alloc-decommit")]
-                SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                #[cfg(feature = "alloc-decommit")]
-                SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+            if forced {
+                match self.drain_segment_sidecar_forced(base) {
+                    #[cfg(feature = "alloc-decommit")]
+                    SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                    #[cfg(feature = "alloc-decommit")]
+                    SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                    SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+                }
+            } else {
+                match self.drain_segment_sidecar_forced(base) {
+                    #[cfg(feature = "alloc-decommit")]
+                    SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                    #[cfg(feature = "alloc-decommit")]
+                    SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                    SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+                }
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
@@ -723,10 +779,7 @@ impl AllocCore {
             return None;
         }
 
-        // The route scan and all detached cuts end before this reservation
-        // can be pooled/released or its free-list head can be served.
-        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        match self.drain_segment_sidecar(base) {
+        match self.drain_segment_sidecar_forced(base) {
             // P1-b: decommit/pool hysteresis — a RELEASED segment must be
             // skipped (try the next candidate); a POOLED segment (R1-03, src
             // review round 1) is still live/registered/committed, so fall

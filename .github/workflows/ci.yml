@@ -1819,6 +1819,8 @@ jobs:
       - name: test (--features experimental)
         if: ${{ !cancelled() }}
         run: cargo test --features experimental --no-fail-fast # adds LockFreeRegion + EpochRegion (deprecated, legacy)
+      - name: C3 actual-source summary bitmap fixture
+        run: cargo test --features "alloc-core alloc-decommit internals" --test r20_prf01_summary_hint_integration
       # Phases 8–13 allocator descent. Without this, CI never exercised
       # alloc-core (the segment substrate, AllocCore).
       # `internals` added (R34-3/task #522): this row runs the whole
@@ -2987,6 +2989,16 @@ jobs:
       # The core invariants (UB-free slotmap membrane), default features.
       - name: region_invariants
         run: cargo miri test --test region_invariants
+      - name: C3 real pin P2 summary retirement (SB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test r20_prf01_summary_transition_miri
+      - name: C3 real pin P2 summary retirement (TB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test r20_prf01_summary_transition_miri
+      - name: class_leaves_publication_miri
+        run: cargo miri test --locked --features "alloc-core" --test class_leaves_publication_miri
       - name: installed Box narrow-provenance ownership round trip
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
@@ -3135,7 +3147,14 @@ jobs:
       # even when the directory sidecar is never actually reserved.
       - name: segment_directory_a5_miri
         run: cargo miri test --features "alloc-segment-directory internals" --test segment_directory_a5_miri
-      # VER-03: explicit GREEN targets, matching scripts/miri-matrix.mjs.
+      - name: C3 real pin P2 summary retirement (SB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test r20_prf01_summary_transition_miri
+      - name: C3 real pin P2 summary retirement (TB)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: cargo miri test --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test r20_prf01_summary_transition_miri
       # Inherit strict provenance and Stacked Borrows from this job.
       - name: r11_ph4a_lease_miri
         run: cargo miri test --locked --features "alloc-global alloc-xthread internals" --test r11_ph4a_lease_miri
@@ -3331,11 +3350,11 @@ jobs:
             --test loom_terminal_owner_drain \
             --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_hinted_same_word_producers_two_discoveries_exact_union ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_hinted_different_words_share_hint_exact_union ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_publish_racing_strict_trim_union_is_complete ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_actual_negative_cut_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test loom_actual_negative_masked_cut_drops_pending_bits - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_no_summary_setter - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_range_mask_truncates_final_word - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_two_words_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_same_word_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"

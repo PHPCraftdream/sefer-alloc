@@ -7,18 +7,22 @@
 //! or dereferences one. The directory must pin the backing through all
 //! unpublished producers, published bits, and detached cuts.
 
-use super::{AtomicU64, AtomicU8, BitmapScan, Ordering};
+use super::{AtomicU64, AtomicU8, BitmapCut, BitmapScan, Ordering};
 
 #[path = "sidecar_bitmap/leaf_classes.rs"]
 #[cfg_attr(test, allow(dead_code))]
 mod leaf_classes;
+#[path = "sidecar_bitmap/summary_scan.rs"]
+mod summary_scan;
 pub(crate) use leaf_classes::ClassLeaves;
+pub(crate) use summary_scan::SummaryScan;
 
 use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 const GRANULES: usize = SEGMENT / MIN_BLOCK;
 const WORDS: usize = GRANULES / 64;
+const SUMMARY_WORDS: usize = 64;
 
 /// A live segment's external ingress storage. Construction borrows backing;
 /// it does not allocate, initialize, or bind a reservation pointer.
@@ -46,6 +50,7 @@ impl ClassMap<'_> {
 impl<'a> SidecarBitmap<'a> {
     pub(crate) const WORDS: usize = WORDS;
     pub(crate) const GRANULES: usize = GRANULES;
+    pub(crate) const SUMMARY_WORDS: usize = SUMMARY_WORDS;
 
     /// Backing must be separate from reservation bytes and zero-initialized
     /// before segment publication. Its lifetime must extend through all cuts.
@@ -87,22 +92,8 @@ impl<'a> SidecarBitmap<'a> {
         }
     }
 
-    /// Producer terminal AcqRel RMW. No header or reservation access; the
-    /// class map is read (Acquire) once BEFORE the RMW, only to drop a granule
-    /// that was never issued (segment metadata, uncarved tail) instead of
-    /// publishing a record the owner's `BitmapCut::pop` would abort on. A
-    /// uniform leaf reports its class for every granule it covers, so an
-    /// interior pointer into an issued block is NOT rejected here; the producer
-    /// cannot read block geometry without touching a segment that a malformed
-    /// free may not keep alive. This pending RMW is the linearization point and
-    /// last producer access to the reclaimable reservation and ledger. Afterwards
-    /// only a discovery-summary bit in the SAME sidecar may be set, using an
-    /// address obtained before this RMW while RoutePin is held, then the pin
-    /// released. Strict trim and periodic maintenance ignore summary; this
-    /// permission does not imply a runtime summary implementation.
-    /// Exactly one producer publishes each valid allocation instance. An
-    /// unpublished producer retains its segment credit; a published one
-    /// retains it until reclaim.
+    /// Fixed-only fixture helper; runtime routes must call `publish_hinted`.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn publish(&self, offset: u32) -> bool {
         let Some(granule) = Self::granule(offset) else {
             return false;
@@ -112,6 +103,94 @@ impl<'a> SidecarBitmap<'a> {
         }
         self.pending[granule / 64].fetch_or(1 << (granule % 64), Ordering::AcqRel);
         true
+    }
+
+    /// Runtime Small/Primordial publication: terminal pending P2, then hint P3.
+    #[inline]
+    pub(crate) fn publish_hinted(&self, offset: u32) -> bool {
+        self.publish_hinted_with_pause(offset, || {})
+    }
+
+    /// Test-only split-point witness; closure executes after P2 while caller retains RoutePin.
+    #[cfg(any(test, feature = "bench-internals"))]
+    pub(crate) fn publish_hinted_with_pause_for_test(
+        &self,
+        offset: u32,
+        after_p2: impl FnOnce(),
+    ) -> bool {
+        self.publish_hinted_with_pause(offset, after_p2)
+    }
+
+    #[inline]
+    fn publish_hinted_with_pause(&self, offset: u32, after_p2: impl FnOnce()) -> bool {
+        let Some(granule) = Self::granule(offset) else {
+            return false;
+        };
+        if self.classes.encoded(granule) == 0 {
+            return false;
+        }
+        let word = granule / 64;
+        let pending = self.pending;
+        self.pending[word].fetch_or(1u64 << (granule % 64), Ordering::AcqRel);
+        after_p2();
+        // Arithmetic on the slice base occurs after P2, without raw pointers.
+        let summary = &pending[word / 64];
+        #[cfg(all(
+            feature = "bench-internals",
+            any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+        ))]
+        super::Prf01SidecarOracle::summary_hint_load();
+        let summary_bits = summary.load(Ordering::Relaxed);
+        if (summary_bits >> (word & 63)) & 1 == 0 {
+            Self::set_summary_hint(summary, 1u64 << (word & 63));
+        }
+        true
+    }
+
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn publish_hinted_paused_for_test(
+        &self,
+        offset: u32,
+        after_p2: impl FnOnce(),
+    ) -> bool {
+        self.publish_hinted_with_pause_for_test(offset, after_p2)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn set_summary_hint(summary: &AtomicU64, bit: u64) {
+        summary.fetch_or(bit, Ordering::Release);
+        #[cfg(all(
+            feature = "bench-internals",
+            any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+        ))]
+        super::Prf01SidecarOracle::summary_hint_rmw();
+    }
+
+    #[cfg(all(
+        feature = "bench-internals",
+        any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+    ))]
+    pub(crate) fn quiescent_summary_missing_bits(&self, start_word: usize, end_word: usize) -> u64 {
+        let mut missing = 0u64;
+        for word in start_word..end_word {
+            let pending = self.pending[word].load(Ordering::Relaxed);
+            if pending != 0 {
+                let summary_bits = self.pending[word / 64].load(Ordering::Relaxed);
+                if summary_bits & (1u64 << (word & 63)) == 0 {
+                    missing += 1;
+                }
+            }
+        }
+        missing
+    }
+
+    pub(crate) fn discover_from(
+        &self,
+        high_water: usize,
+        start_word: usize,
+    ) -> Option<SummaryScan<'a>> {
+        SummaryScan::new(self.pending, self.classes, high_water, start_word)
     }
 
     /// Owner fixes an exclusive upper bound in bytes. The caller's high water

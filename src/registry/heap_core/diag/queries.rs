@@ -25,17 +25,36 @@ use crate::registry::heap_core::HeapCore;
 impl HeapCore {
     /// Actual logical SmallSidecar layout in this oracle binary; not RSS.
     #[doc(hidden)]
-    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    #[cfg(all(
+        feature = "bench-internals",
+        any(r19_sidecar_summary_oracle, r20_prf01_c3_oracle)
+    ))]
     #[must_use]
     pub fn dbg_prf01_small_sidecar_size() -> usize {
         core::mem::size_of::<crate::registry::segment_route::SmallSidecar>()
     }
 
+    /// C3 fields in order: `pending_words_visited`, `summary_words_visited`,
+    /// `summary_hint_loads`, `summary_hint_rmw`, `discovery_records_reclaimed`,
+    /// `quiescent_summary_missing_bits`, `sizeof_small_sidecar`.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", r20_prf01_c3_oracle))]
+    #[must_use]
+    pub fn dbg_prf01_c3_oracle(&self) -> [u64; 7] {
+        let missing = self.core.dbg_prf01_quiescent_summary_missing_bits();
+        crate::alloc_core::remote_bitmap::Prf01SidecarOracle::c3_snapshot(missing)
+    }
+
+    #[cfg(all(feature = "bench-internals", r20_prf01_c3_oracle))]
+    #[doc(hidden)]
+    pub fn dbg_prf01_c3_quiescent_summary_missing_bits(&self) -> u64 {
+        self.core.dbg_prf01_quiescent_summary_missing_bits()
+    }
+
     /// Read-only process-wide discovery totals: pending words visited,
     /// pending words exchanged, nonempty cuts, successful discovery reclaims,
     /// constructed routed scans, summary words visited, summary RMWs, summary
-    /// loads. The last three are true constant zero in A. Oracle build only;
-    /// no reset, pointer input, allocation, or allocator policy mutation.
+    /// loads. Values use Relaxed diagnostics only, never influence policy.
     #[doc(hidden)]
     #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
     #[must_use]

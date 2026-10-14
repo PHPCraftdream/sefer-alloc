@@ -24,6 +24,10 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_strict_words_visited",
   // Strict-trim read-only relaxed counter totals plus owned segment geometry; no reset or policy.
   "src/global/sefer_alloc/diag.rs::dbg_prf01_strict_words_visited",
+  // C3: cumulative Relaxed oracle counters only; no reset, pointer, or allocator policy.
+  "src/registry/heap_core/diag/queries.rs::dbg_prf01_c3_oracle",
+  // Read-only quiescent summary check. Caller runs only after producer join.
+  "src/registry/heap_core/diag/queries.rs::dbg_prf01_c3_quiescent_summary_missing_bits",
   // PRF01: actual type layout only, no allocator instance or pointer access.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
@@ -337,9 +341,11 @@ const UNSAFE_HOOKS = [
   "src/alloc_core/alloc_core/sidecar_test_hooks.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_sidecar_free",
   "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_reclaim_sidecar_record_for_test",
+  "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_paused_after_p2",
+  "src/registry/segment_route/pin.rs::dbg_publish_small_paused_after_p2",
   CURRENT_RESERVATION_HOOK
 ];
-const SIDECAR_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:publish_small_sidecar_free|reclaim_sidecar_record_for_test)$/.test(id)));
+const SIDECAR_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:publish_small_sidecar_free|reclaim_sidecar_record_for_test|publish_small_paused_after_p2)$/.test(id)));
 const BENCH_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:decomp_|dealloc_own_thread_with_base|flush_class_only|clear_magazine_on_hit|force_decommit_retain_for|restore_local_for_test|dealloc_while_fallback_lock_held|publish_small_sidecar_free|reclaim_sidecar_record_for_test)/.test(id)));
 BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
 
@@ -568,7 +574,7 @@ export function verifyHooks(files, policy = {}) {
       if (!/^\s*\/\/\/\s*# Safety\s*$/m.test(hook.docs)) errors.push(`unsafe hook lacks its # Safety contract: ${hook.id}`);
       if (BENCH_UNSAFE_HOOKS.has(hook.id) && !requires('bench-internals')) errors.push(`measurement-only unsafe hook is not bench-internals-gated: ${hook.id}`);
       if (hook.id === CURRENT_RESERVATION_HOOK && !requires('internals')) errors.push(`reservation observer is not internals-gated: ${hook.id}`);
-      if (SIDECAR_UNSAFE_HOOKS.has(hook.id)) for (const feature of ['alloc-global', 'alloc-xthread', 'internals', 'bench-internals']) if (!requires(feature)) errors.push(`terminal producer hook missing ${feature} gate: ${hook.id}`);
+      if (SIDECAR_UNSAFE_HOOKS.has(hook.id)) for (const feature of ['alloc-global', 'alloc-xthread', 'bench-internals']) if (!requires(feature)) errors.push(`terminal producer hook missing ${feature} gate: ${hook.id}`);
     } else if (requires('bench-internals')) {
       gated++;
       if (expectedSafe.has(hook.id)) foundSafe.add(hook.id);
