@@ -333,16 +333,6 @@ impl SegmentTable {
     }
 
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-    pub(crate) fn scan_small_route(
-        &self,
-        index: usize,
-        base: *mut u8,
-        high_water: usize,
-    ) -> Option<crate::registry::segment_route::RouteScan<'_>> {
-        self.routes.as_ref()?.scan_small(index, base, high_water)
-    }
-
-    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) fn scan_small_route_from(
         &self,
         index: usize,

@@ -40,6 +40,7 @@ const FEATURES = {
   // the coverage for the shipping code (the shadow model is deleted).
   loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
   loom_sidecar_bitmap: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_sidecar_bitmap_actual: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_sidecar_summary: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_large: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_owner_drain: 'alloc-core,alloc-xthread,tagged-index-stack/loom',

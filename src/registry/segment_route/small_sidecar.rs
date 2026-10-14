@@ -6,9 +6,22 @@ use core::sync::atomic::AtomicU64;
 #[cfg(feature = "internals")]
 use core::sync::atomic::Ordering;
 
+use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::remote_bitmap::{ClassLeaves, SidecarBitmap};
+use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 use super::RouteScan;
+
+// Production-geometry pins for the sidecar primitive, moved verbatim from
+// sidecar_bitmap.rs so the actual-source Loom harness can include it with a
+// reduced SEGMENT (tests/loom_sidecar_bitmap_actual.rs).
+const _: () = {
+    assert!(SEGMENT == 4 * 1024 * 1024);
+    assert!(MIN_BLOCK == 16);
+    assert!(SidecarBitmap::WORDS == 4096);
+    assert!(SidecarBitmap::GRANULES == 262_144);
+    assert!(SMALL_CLASS_COUNT < u8::MAX as usize);
+};
 
 #[repr(C)]
 pub struct SmallSidecar {

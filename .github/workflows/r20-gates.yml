@@ -95,6 +95,14 @@ jobs:
           set -euo pipefail
           node scripts/r20-gate-config.mjs --selftest
           if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Label still set, config already removed (the teardown push of a
+            # finished gate run): nothing to run, every later step is skipped.
+            if [ ! -f .github/gate-run.json ]; then
+              echo "::warning::label gate-run is set but .github/gate-run.json is absent; nothing to run, remove the label"
+              echo "R20_SKIP=1" >> "$GITHUB_ENV"
+              echo '## r20-gates: skipped (label set, no .github/gate-run.json)' >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
             config_env="$(node scripts/r20-gate-config.mjs .github/gate-run.json)"
           else
             # Dispatch: re-validate the raw dispatch job env and overwrite inputs.
@@ -103,6 +111,7 @@ jobs:
           printf '%s\n' "$config_env" >> "$GITHUB_ENV"
 
       - name: Snapshot existing verdicts
+        if: env.R20_SKIP != '1'
         run: |
           set -euo pipefail
           snapshot="$RUNNER_TEMP/r20-verdict-before.sha256"
@@ -112,22 +121,27 @@ jobs:
           done
 
       - uses: dtolnay/rust-toolchain@stable
+        if: env.R20_SKIP != '1'
 
       - uses: actions/setup-node@v5
+        if: env.R20_SKIP != '1'
         with:
           node-version: '22'
 
       - name: Install valgrind
+        if: env.R20_SKIP != '1'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y valgrind
 
       - name: Install iai-callgrind-runner
+        if: env.R20_SKIP != '1'
         # Same caret pin as perf-gate.yml — must match the iai-callgrind
         # library version in Cargo.toml (0.14.x).
         run: cargo install iai-callgrind-runner --version "^0.14" --locked
 
       - name: Validate inputs
+        if: env.R20_SKIP != '1'
         # scripts/r20-gate-config.mjs already enforced the regex, the file
         # existence and the stage whitelist; keep only a cheap belt-and-braces
         # check (non-empty runner + file exists) and derive RUNNER/STAGES.
@@ -148,6 +162,7 @@ jobs:
           echo "Validated stages (in order): $stages"
 
       - name: Environment
+        if: env.R20_SKIP != '1'
         env:
           NOTE: ${{ env.NOTE_INPUT }}
         run: |
@@ -169,6 +184,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run stages
+        if: env.R20_SKIP != '1'
         # Inputs reach bash only through the validated env vars above, never
         # via direct ${{ }} interpolation into this script body.
         run: |
@@ -189,14 +205,14 @@ jobs:
           done
 
       - name: Summary
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.R20_SKIP != '1' }}
         run: |
           set -euo pipefail
           {
             echo '## r20-gates result'
             echo ''
-            echo "- runner: \`$RUNNER\`"
-            echo "- stages: \`$STAGES\`"
+            echo "- runner: \`${RUNNER:-unset (failed before Validate inputs)}\`"
+            echo "- stages: \`${STAGES:-unset}\`"
             echo "- HEAD: \`$(git rev-parse HEAD)\`"
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
@@ -235,7 +251,7 @@ jobs:
           # every fresh out-dir that produced a verdict AND still carries its
           # input.json (pre-committed dirs would fail acceptance on stale
           # state). Never fails the job; the PASS/FAIL line is informational.
-          if [ "$RUNNER" = "scripts/r20_prf01_sidecar_summary_run.mjs" ] && [ "${#verdicts[@]}" -gt 0 ]; then
+          if [ "${RUNNER:-}" = "scripts/r20_prf01_sidecar_summary_run.mjs" ] && [ "${#verdicts[@]}" -gt 0 ]; then
             echo '## r20 acceptance' >> "$GITHUB_STEP_SUMMARY"
             for v in "${verdicts[@]}"; do
               if [ ! -f "$(dirname "$v")/input.json" ]; then
@@ -257,7 +273,7 @@ jobs:
           fi
 
       - name: Upload run artifacts
-        if: ${{ always() }}
+        if: ${{ always() && env.R20_SKIP != '1' }}
         uses: actions/upload-artifact@v6
         with:
           name: r20-gates-${{ github.event.pull_request.number || github.run_id }}

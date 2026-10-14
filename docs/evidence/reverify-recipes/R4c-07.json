@@ -1,0 +1,31 @@
+{
+  "id": "R4c-07",
+  "registryActivationHash": "25da33e6ce1e7be846375d57bf9aba838aac9d3d40cda395763ebf7dd2f27c48",
+  "steps": [
+    {
+      "name": "plain xthread thread-free alias test",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit internals bench-internals",
+        "--test",
+        "regression_xthread_thread_free_alias_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test xthread_thread_free_write_overlaps_owner_alloc_mut \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
