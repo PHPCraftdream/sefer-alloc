@@ -48,7 +48,7 @@ export const FROZEN_FILES = Object.freeze([
   'benches/support/r20_prf01_controls.rs', 'benches/support/r19_prf01.rs', 'benches/perf_gate_iai.rs',
   'scripts/r20_prf01_c3_gate.mjs', 'scripts/r20_prf01_c3_run.mjs', 'scripts/r20_prf01_c3_verify_artifacts.mjs',
   'scripts/r20_prf01_sidecar_summary_gate.mjs', 'scripts/r20_prf01_sidecar_summary_run.mjs', 'scripts/r20_prf01_verify_artifacts.mjs',
-  'scripts/r20_prf01_c3_support.mjs', 'tests/r19_prf01_sidecar_oracle.rs', 'examples/r19_prf01_oracle.rs',
+  'scripts/r20_prf01_c3_support.mjs', 'scripts/r20_prf01_c3_fixture.mjs', 'scripts/r20_prf01_c3_runner_support.mjs', 'tests/r19_prf01_sidecar_oracle.rs', 'examples/r19_prf01_oracle.rs',
   'examples/r20_prf01_c3_oracle.rs', 'tests/r9_bounded_background_maintenance.rs',
 ]);
 
@@ -71,6 +71,67 @@ export function validateSources() {
     .concat(checkSource(sourceFiles.trim, byTarget.trim, true));
 }
 
+export function runRunnerSelftest({
+  sourceIdentity, sha, parseProfiles, producerSettings, worktreeAddArgs,
+  cleanupOwnership, rehearsalRustflags, rehearsalExitCode, rehearsalVerdict,
+  distinguishRustflags,
+}) {
+  const sourceA = sourceIdentity('a'.repeat(40), 'b'.repeat(40), []);
+  assert.deepEqual(sourceIdentity('a'.repeat(40), 'b'.repeat(40), []), sourceA,
+    'same-source identity must be label independent');
+  assert.notEqual(
+    sourceIdentity('a'.repeat(40), 'b'.repeat(40), [{ path: FROZEN_FILES[0], sha256: sha('x') }]).identitySha256,
+    sourceA.identitySha256,
+    'overlay mutant must drift',
+  );
+  const frozenExpected = [{ path: 'sample', sha256: sha('x') }];
+  assert.throws(
+    () => assert.deepEqual([{ path: 'sample', sha256: sha('y') }], frozenExpected),
+    'frozen snapshot mutant must reject',
+  );
+  const log = '==123== Command: /tmp/bench --iai-run r20_prf01_c3_cells 2 0';
+  const debug = 'callgrind: Arguments: --callgrind-out-file=producer/x --toggle-collect=exact::same_word '
+    + producerSettings.join(' ');
+  const fixture = 'pid: 123\npart: 1\nthread: 1\ncmd: /tmp/bench --iai-run r20_prf01_c3_cells 2 0\nevents: Ir\ntotals: 10\nfn=std::thread::closure\n1 5\ncfn=exact::same_word\ncalls=1 1\n1 5\nfn=exact::same_word\n1 5\n';
+  const childFixture = 'pid: 123\npart: 1\nthread: 2\ncmd: /tmp/bench --iai-run r20_prf01_c3_cells 2 0\nevents: Ir\ntotals: 5\nfn=std::thread::closure\n1 0\ncfn=exact::same_word\ncalls=1 1\n1 5\nfn=exact::same_word\n1 5\n';
+  const profileOptions = {
+    cellIndex: 2,
+    producerSymbol: 'exact::same_word',
+    groupName: 'r20_prf01_c3_cells',
+    debug,
+    expectedExecutable: '/tmp/bench',
+  };
+  const proof = parseProfiles([fixture, childFixture], log, profileOptions);
+  assert.equal(proof.childIr, 5);
+  assert.equal(proof.boundaryExecutions, 1);
+  assert.throws(() => parseProfiles(
+    [fixture.replace('exact::same_word', 'exact::distinct_word')],
+    log,
+    profileOptions,
+  ));
+  assert.equal(INVENTORY.length, 37);
+  assert.equal(new Set(INVENTORY).size, 37);
+  assert.throws(() => assert.ok(/^[0-9a-f]{40}$/.test('TBD')));
+  assert.deepEqual(worktreeAddArgs('/tmp/A', 'a'.repeat(40)), [
+    'worktree', 'add', '--detach', '/tmp/A', 'a'.repeat(40),
+  ]);
+  assert.deepEqual(cleanupOwnership('/root', ['A', 'B', 'C']).ownedWorktrees, ['A', 'B', 'C']);
+  assert.equal(rehearsalRustflags('B', true), distinguishRustflags);
+  assert.equal(rehearsalRustflags('A', true), undefined);
+  assert.equal(rehearsalRustflags('B', false), undefined);
+  assert.equal(rehearsalExitCode(), 0);
+  for (const status of ['INCOMPLETE', 'judge-exit=0', 'judge-exit=1']) {
+    const verdict = rehearsalVerdict(status, 'REHEARSAL: stale');
+    assert.match(verdict, /^REHEARSAL: /);
+    assert.equal((verdict.match(/REHEARSAL:/g) ?? []).length, 1);
+  }
+  assert.equal(targetFor(LARGE_REMOTE_FREE), 'c3');
+  assert.equal(targetFor(TRIM_CELLS[0]), 'trim');
+  for (const producer of Object.values(PRODUCERS)) {
+    assert.ok(producer.symbol && producer.freeCount > 0);
+  }
+  console.log('C3 runner selftest PASS: synthetic parser boundary exact-symbol proof, distinct-symbol rejection; inventory 37');
+}
 function selftest() {
   assert.equal(INVENTORY.length, 37);
   assert.equal(new Set(INVENTORY).size, INVENTORY.length);

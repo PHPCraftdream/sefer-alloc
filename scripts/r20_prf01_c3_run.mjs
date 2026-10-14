@@ -61,13 +61,14 @@ const sha = b => createHash('sha256').update(b).digest('hex');
 const shaFile = p => sha(fs.readFileSync(p));
 const now = () => new Date().toISOString();
 const IS_WIN = process.platform === 'win32';
-const winToWsl = p => { const m=/^([A-Za-z]):(.*)$/.exec(p); assert.ok(m,`not an absolute Windows path: ${p}`); return `/mnt/${m[1].toLowerCase()}${m[2].replace(/\\/g,'/')}`; };
+const winToWsl = path => {
+  const match = /^([A-Za-z]):(.*)$/.exec(path);
+  assert.ok(match, `not an absolute Windows path: ${path}`);
+  return `/mnt/${match[1].toLowerCase()}${match[2].replace(/\\/g, '/')}`;
+};
 const toHost = p => IS_WIN ? winToWsl(p) : p;
-if (parseArg('--candidate') === 'TBD') throw new Error('--candidate TBD is not permitted');
-const ARM_ROOT = parseArg('--arm-root') ? resolve(parseArg('--arm-root')) : null;
-const armDir = arm => { assert.ok(ARM_ROOT, '--arm-root is required'); return join(ARM_ROOT,arm); };
-const REPO_ROOT = REPO;
-const WT_DIR = ARM_ROOT ?? join(REPO_ROOT,'worktrees','r20p1');
+const RUN_ROOT = resolve(parseArg('--arm-root') ?? join(REPO, 'worktrees', 'r20p1-c3'));
+const armDir = arm => join(RUN_ROOT, arm);
 const JUDGE = 'scripts/r20_prf01_c3_gate.mjs';
 const PREREG = 'docs/perf/R20_PRF01_C3_DEFAULT_PREREG.md';
 const IAI_TARGET = 'perf_gate_iai';
@@ -89,9 +90,17 @@ const IAI_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'iai');
 const CONTROLS_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'controls');
 const C3_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'c3');
 const TRIM_CELLS = C3.INVENTORY.filter(n => C3.targetFor(n) === 'trim');
-const HOT_DECL = { [CONSTRUCTION]: [1, 16, 8],
-  ...Object.fromEntries(HOT_FAMILIES.flatMap(f => [['n', 64], ['2n', 128], ['4n', 256]].map(([s, ops]) =>
-    [`r20_prf01_${f}_${s}`, [ops, f === 'small_churn_16b' ? 16 : f === 'aligned_churn_640b_a128' ? 640 : 256, f === 'aligned_churn_640b_a128' ? 128 : 8]]))) };
+const HOT_DECL = {
+  [CONSTRUCTION]: [1, 16, 8],
+  ...Object.fromEntries(HOT_FAMILIES.flatMap(f =>
+    [['n', 64], ['2n', 128], ['4n', 256]].map(([suffix, ops]) => [
+      `r20_prf01_${f}_${suffix}`,
+      [ops,
+        f === 'small_churn_16b' ? 16 : f === 'aligned_churn_640b_a128' ? 640 : 256,
+        f === 'aligned_churn_640b_a128' ? 128 : 8],
+    ]),
+  )),
+};
 const REQUIRED_STAGES = ['--prepare','--build','--oracle','--measure','--selftest'];
 // Private checkout paths never reach a stored artifact.
 const publicText = t => String(t)
@@ -115,7 +124,11 @@ function wsl(script, { timeout = 600_000 } = {}) {
 }
 function wslOk(script, what, opts) {
   const r = wsl(script, opts);
-  assert.equal(r.code, 0, `${what} failed (exit ${r.code})\n--- stderr tail ---\n${r.err.split('\n').slice(-40).join('\n')}`);
+  assert.equal(
+    r.code,
+    0,
+    `${what} failed (exit ${r.code})\n--- stderr tail ---\n${r.err.split('\n').slice(-40).join('\n')}`,
+  );
   return r;
 }
 
@@ -134,20 +147,15 @@ function readStage(name, fn) {
   assert.ok(fs.existsSync(p), `stage file missing: ${p} (run the earlier subcommand first)`);
   fn(JSON.parse(fs.readFileSync(p, 'utf8')));
 }
-function readFrozenManifest() {
-  const p=parseArg('--frozen-manifest'); assert.ok(p,'--frozen-manifest JSON is required');
-  const value=JSON.parse(fs.readFileSync(resolve(REPO,p),'utf8'));
-  assert.ok(Array.isArray(value)&&value.length,'frozen manifest must be a non-empty [{path,sha256}] array');
-  return value;
-}
 function frozenHashes() {
-  const expected=readFrozenManifest();
-  const check=spawnSync(process.execPath,[join(REPO,JUDGE),'--check-hashes',resolve(REPO,parseArg('--frozen-manifest'))],{encoding:'utf8'});
+  const check=spawnSync(process.execPath,[join(REPO,JUDGE),'--check-hashes'],{encoding:'utf8'});
   assert.equal(check.status,0,`frozen hash drift or snapshot mismatch\n${check.stdout}${check.stderr}`);
   const list=spawnSync(process.execPath,[join(REPO,JUDGE),'--hashes'],{encoding:'utf8'});
   assert.equal(list.status,0,'gate --hashes failed');
-  const actual=list.stdout.trim().split('\n').map(l=>{const [sha256,path]=l.split(/\\s+/);return {path,sha256};});
-  assert.deepEqual(actual,expected,'live frozen hashes differ from operator snapshot');
+  const actual = list.stdout.trim().split(/\s+/).reduce((rows, token, index, all) => {
+    if (index % 2 === 0) rows.push({ sha256: token, path: all[index + 1] });
+    return rows;
+  }, []);
   return actual;
 }
 
@@ -159,11 +167,17 @@ function verifyIdentities(stage) {
   const m=ctx.manifest;
   const hashes=frozenHashes();
   assert.deepEqual(m.frozen,hashes,'frozen operator snapshot drift at '+stage);
-  assert.deepEqual(hashes,C3.FROZEN_FILES.map(path=>({path,sha256:shaFile(join(REPO,path))})),'live frozen file drift at '+stage);
+  assert.deepEqual(
+    hashes,
+    C3.FROZEN_FILES.map(path => ({ path, sha256: shaFile(join(REPO, path)) })),
+    'live frozen file drift at ' + stage,
+  );
   for(const label of ['A','B','C']){
     const live=archIdentity(label,ctx.armDirs[label]),got=m.arches[label];
     assert.ok(got,`manifest has no arm ${label} at ${stage}`);
-    for(const key of ['head','tree','patchSha256','untrackedSha256','identitySha256'])assert.equal(got[key],live[key],`arm ${label} identity drift at ${stage}`);
+    for (const key of ['head', 'tree', 'patchSha256', 'untrackedSha256', 'identitySha256']) {
+      assert.equal(got[key], live[key], `arm ${label} identity drift at ${stage}`);
+    }
   }
   assert.equal(m.candidate,ctx.candidate);
 }
@@ -172,13 +186,20 @@ function baseHead() {
   return git(REPO, ['rev-parse', 'HEAD']).out;
 }
 function harnessOverlay(dir) {
-  const status=git(dir,['status','--porcelain','-z']).out;
-  const changes=[];
-  for(const entry of status.split('\0').filter(Boolean)) {
-    const path=entry.slice(3); assert.ok(C3.FROZEN_FILES.includes(path),`non-frozen overlay path forbidden: ${path}`);
-    const bytes=fs.readFileSync(join(dir,path)); changes.push({path,sha256:sha(bytes),base64:bytes.toString('base64'),untracked:entry.startsWith('?? ')});
+  const status = git(dir, ['status', '--porcelain', '-z']).out;
+  const changes = [];
+  for (const entry of status.split('\0').filter(Boolean)) {
+    const path = entry.slice(3);
+    assert.ok(C3.FROZEN_FILES.includes(path), `non-frozen overlay path forbidden: ${path}`);
+    const bytes = fs.readFileSync(join(dir, path));
+    changes.push({
+      path,
+      sha256: sha(bytes),
+      base64: bytes.toString('base64'),
+      untracked: entry.startsWith('?? '),
+    });
   }
-  return changes.sort((a,b)=>a.path.localeCompare(b.path));
+  return changes.sort((a, b) => a.path.localeCompare(b.path));
 }
 function sourceIdentity(head,tree,overlay) {
   const canonical=overlay.map(({path,sha256})=>({path,sha256}));
@@ -189,39 +210,82 @@ function sourceIdentity(head,tree,overlay) {
 }
 function archIdentity(label, dir) {
   assert.ok(dir && fs.existsSync(dir), `arm directory missing: ${label}`);
-  const head=git(dir,['rev-parse','HEAD']).out,tree=git(dir,['rev-parse','HEAD^{tree}']).out;
+  const head = git(dir, ['rev-parse', 'HEAD']).out;
+  const tree = git(dir, ['rev-parse', 'HEAD^{tree}']).out;
   assert.match(head,/^[0-9a-f]{40}$/); assert.match(tree,/^[0-9a-f]{40}$/);
-  const overlay=harnessOverlay(dir), identity=sourceIdentity(head,tree,overlay);
-  return {label,wt:`<repo>/arms/${label}`,head,tree,...identity,overlay,cargoLockSha256:shaFile(join(dir,'Cargo.lock')),capturedAt:now()};
+  const overlay = harnessOverlay(dir);
+  const identity = sourceIdentity(head, tree, overlay);
+  return { label, wt: `<repo>/worktrees/r20p1-c3/${label}`, head, tree, ...identity,
+    overlay, cargoLockSha256: shaFile(join(dir, 'Cargo.lock')), capturedAt: now() };
 }
-const sourceOf = a => (({ baseHead, tree, patchSha256, untrackedSha256, identitySha256 }) =>
-  ({ baseHead, tree, patchSha256, untrackedSha256, identitySha256 }))(a);
+function sourceOf(a) { return (({ baseHead, tree, patchSha256, untrackedSha256, identitySha256, capturedAt }) =>
+  ({ baseHead, tree, patchSha256, untrackedSha256, identitySha256, capturedAt }))(a); }
+function rehearsalRustflags(label, rehearsal) {
+  return rehearsal && label === 'B' ? DISTINGUISH_RUSTFLAGS : undefined;
+}
+function cleanupOwnership(root, arms) {
+  return { wtDir: '<repo>/worktrees/r20p1-c3', ownedWorktrees: [...arms], root };
+}
+function worktreeAddArgs(path, ref) {
+  return ['worktree', 'add', '--detach', path, ref];
+}
+function ensureWorktree(label, ref) {
+  const wt = armDir(label);
+  if (fs.existsSync(wt)) {
+    assert.equal(git(wt, ['rev-parse', 'HEAD']).out, ref,
+      `worktree ${label} is not at ${ref}; remove it manually and rerun`);
+    return wt;
+  }
+  fs.mkdirSync(RUN_ROOT, { recursive: true });
+  git(REPO, worktreeAddArgs(wt, ref));
+  return wt;
+}
 function parseDispatch() {
-  const rawCandidate=parseArg('--candidate');
-  const candidate=rawCandidate ? git(REPO,['rev-parse',`${rawCandidate}^{commit}`]).out : null;
-  assert.ok(candidate&&/^[0-9a-f]{40}$/.test(candidate),'--candidate must resolve to an immutable commit SHA; TBD rejected');
-  const armDirs=Object.fromEntries(['A','B','C'].map(x=>[x,armDir(x)]));
-  assert.ok(ARM_ROOT&&['A','B','C'].every(x=>fs.existsSync(armDirs[x])),'--arm-root must contain caller-provisioned A/B/C directories');
-  return {candidate,armDirs};
+  const rawCandidate = parseArg('--candidate');
+  let candidate = null;
+  if (!ctx.rehearsal) {
+    assert.ok(
+      rawCandidate && rawCandidate !== 'TBD',
+      '--candidate must be an immutable commit reference; TBD rejected',
+    );
+    candidate = git(REPO, ['rev-parse', `${rawCandidate}^{commit}`]).out;
+    assert.match(candidate, /^[0-9a-f]{40}$/, 'candidate must resolve to a commit SHA');
+  } else if (rawCandidate && rawCandidate !== 'TBD') {
+    candidate = git(REPO, ['rev-parse', `${rawCandidate}^{commit}`]).out;
+  }
+  const base = ctx.rehearsal
+    ? git(REPO, ['rev-parse', 'origin/main']).out
+    : git(REPO, ['merge-base', candidate, 'origin/main']).out;
+  return { candidate: ctx.rehearsal ? base : candidate, base };
 }
 function cmdPrepare() {
-  Object.assign(ctx,parseDispatch());
-  ctx.outDir=stagePaths();
-  assert.ok(!fs.existsSync(local('manifest.json')),`manifest exists, refusing to overwrite: ${local('manifest.json')}`);
+  const dispatch = parseDispatch();
+  ctx.candidate = dispatch.candidate;
+  ctx.armDirs = Object.fromEntries(['A','B','C'].map(label => [label, armDir(label)]));
+  ctx.outDir = stagePaths();
+  assert.ok(
+    !fs.existsSync(local('manifest.json')),
+    `manifest exists, refusing to overwrite: ${local('manifest.json')}`,
+  );
   requireC3Prerequisites('prepare');
-  fs.mkdirSync(ctx.outDir,{recursive:true});
-  const base=git(REPO,['merge-base',ctx.candidate,'origin/main']).out;
-  assert.equal(git(ctx.armDirs.A,['rev-parse','HEAD']).out,base,'arm A must use merge-base commit');
-  assert.equal(git(ctx.armDirs.B,['rev-parse','HEAD']).out,ctx.candidate,'arm B must use candidate commit');
-  assert.equal(git(ctx.armDirs.C,['rev-parse','HEAD']).out,base,'arm C must use merge-base commit');
-  const arches=Object.fromEntries(['A','B','C'].map(x=>[x,archIdentity(x,ctx.armDirs[x])]));
-  assert.deepEqual(sourceOf(arches.C),sourceOf(arches.A),'C0 source overlay must exactly match A');
-  const frozen=frozenHashes();
-  const manifest={version:1,candidate:ctx.candidate,capturedAt:now(),baseHead:base,frozen,arches,pathLengths:Object.values(ctx.armDirs).map(p=>p.length)};
-  assert.equal(new Set(manifest.pathLengths).size,1,'A/B/C full path lengths must be equal');
-  putJson('manifest.json',manifest);
-  console.log(`[prepare] candidate=${ctx.candidate} base=${base}`);
+  fs.mkdirSync(ctx.outDir, { recursive: true });
+  const a = ensureWorktree('A', dispatch.base);
+  const b = ensureWorktree('B', ctx.rehearsal ? dispatch.base : dispatch.candidate);
+  const c = ensureWorktree('C', dispatch.base);
+  const arches = { A: archIdentity('A', a), B: archIdentity('B', b), C: archIdentity('C', c) };
+  const source = sourceOf(arches.A);
+  arches.C = { ...arches.C, ...source };
+  if (ctx.rehearsal) assert.deepEqual(sourceOf(arches.B), sourceOf(arches.A), 'rehearsal B must use A source');
+  assert.deepEqual(sourceOf(arches.C), sourceOf(arches.A), 'C0 source overlay must exactly match A');
+  const frozen = frozenHashes();
+  const pathLengths = Object.values(ctx.armDirs).map(p => p.length);
+  assert.equal(new Set(pathLengths).size, 1, 'A/B/C full path lengths must be equal');
+  putJson('manifest.json', { version: 1, rehearsal: ctx.rehearsal, candidate: ctx.candidate,
+    capturedAt: now(), baseHead: dispatch.base, frozen, arches,
+    ...cleanupOwnership(RUN_ROOT, ['A','B','C']), pathLengths });
+  console.log(`[prepare] candidate=${ctx.candidate} base=${dispatch.base} rehearsal=${ctx.rehearsal}`);
 }
+
 
 function envCapture() {
   const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"', 'rustc -Vv', 'cargo -V',
@@ -242,18 +306,29 @@ function executableOf(jsonOut, target) {
   return hits[hits.length - 1];
 }
 function cargoBuild({ wt, label, target, features, rustflags, kind, role }) {
-  const td = `/tmp/r20p1/${label}-${target}-${role}-${kind}-${createHash('sha1').update(rustflags ?? 'primary').digest('hex').slice(0,10)}`;
+  const td = `/tmp/r20p1/${label}-${target}-${role}-${kind}-`
+    + `${createHash('sha1').update(rustflags ?? 'primary').digest('hex').slice(0, 10)}`;
   const rf = rustflags ? `RUSTFLAGS='${rustflags}' ` : '';
-  const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"',
+  const script = [
+    'set -e',
+    'export PATH="$HOME/.cargo/bin:$PATH"',
     'RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER=',
     `cd ${toHost(wt)}`,
-    `${rf}CARGO_TARGET_DIR=${td} cargo ${kind} --locked --message-format=json-render-diagnostics ${kind === 'bench' ? `--bench ${target} --no-run` : `--example ${target}`} --features '${features}'`,
+    `${rf}CARGO_TARGET_DIR=${td} cargo ${kind} --locked --message-format=json-render-diagnostics`
+      + ` ${kind === 'bench' ? `--bench ${target} --no-run` : `--example ${target}`}`
+      + ` --features '${features}'`,
   ].join(' && ');
   const r = wslOk(script, `build ${target} @${label}`, { timeout: 900_000 });
   const exe = executableOf(r.out, target);
   const sum = wslOk(`sha256sum ${exe}`, 'sha256sum binary').out.split(/\s+/)[0];
-  assert.match(sum, /^[0-9a-f]{64}$/);
-  return { target, kind, exe, binarySha256: sum, features, rustflags: rustflags ?? '', cfg: rustflags ?? '', targetDir: td };
+  assert.match(
+    sum,
+    /^[0-9a-f]{64}$/,
+  );
+  return {
+    target, kind, exe, binarySha256: sum, features,
+    rustflags: rustflags ?? '', cfg: rustflags ?? '', targetDir: td,
+  };
 }
 function requireC3Prerequisites(stage) {
   const missing = C3.validateSources().filter(x => x.status !== 'ok');
@@ -264,10 +339,26 @@ function requireC3Prerequisites(stage) {
 function loadManifest() {
   readStage('manifest.json', m => { ctx.manifest=m; ctx.candidate=m.candidate; });
   ctx.armDirs=Object.fromEntries(['A','B','C'].map(x=>[x,armDir(x)]));
-  assert.equal(git(ctx.armDirs.A,['rev-parse','HEAD']).out,ctx.manifest.baseHead,'manifest A dir must match base SHA');
-  assert.equal(git(ctx.armDirs.B,['rev-parse','HEAD']).out,ctx.candidate,'manifest B dir must match candidate SHA');
-  assert.equal(git(ctx.armDirs.C,['rev-parse','HEAD']).out,ctx.manifest.baseHead,'manifest C dir must match base SHA');
-  assert.ok(ctx.candidate && /^[0-9a-f]{40}$/.test(ctx.candidate), 'manifest candidate SHA missing');
+  ctx.rehearsal = ctx.manifest.rehearsal === true;
+  const base = ctx.manifest.baseHead;
+  const expectedB = ctx.manifest.rehearsal ? base : ctx.manifest.candidate;
+  assert.equal(git(ctx.armDirs.A,['rev-parse','HEAD']).out,base,'manifest A dir must match base SHA');
+  assert.equal(git(ctx.armDirs.B,['rev-parse','HEAD']).out,expectedB,'manifest B dir must match expected source SHA');
+  assert.equal(git(ctx.armDirs.C,['rev-parse','HEAD']).out,base,'manifest C dir must match base SHA');
+  assert.ok(
+    ctx.manifest.candidate && /^[0-9a-f]{40}$/.test(ctx.manifest.candidate),
+    'manifest candidate/base SHA missing',
+  );
+}
+function buildRolePlan(label, rehearsal) {
+  const flags = rehearsalRustflags(label, rehearsal);
+  const withCfg = cfg => [flags, cfg].filter(Boolean).join(' ') || undefined;
+  return {
+    primary: flags,
+    oracle: withCfg(`--cfg ${ORACLE_CFG}`),
+    control: withCfg(`--cfg ${CONTROL_CFG}`),
+    c3Control: withCfg(`--cfg ${C3_CONTROL_CFG}`),
+  };
 }
 function cmdBuild() {
   loadManifest();
@@ -276,24 +367,40 @@ function cmdBuild() {
   const env = envCapture();
   putText('environment.log', env.text);
   const buildStartedAt = now();
-  const buildRole = (label, target, features, rustflags, role=target) => cargoBuild({wt:ctx.armDirs[label],label,target,features,rustflags,kind:role==='oracle'?'build':'bench',role});
+  const buildRole = (label, target, features, rustflags, role = target) => cargoBuild({
+    wt: ctx.armDirs[label], label, target, features, rustflags,
+    kind: role === 'oracle' ? 'build' : 'bench', role,
+  });
   const buildArms = {};
   for (const label of ['A','B','C']) {
-    const c3 = label === 'C' ? DISTINGUISH_RUSTFLAGS : undefined;
+    const plan = buildRolePlan(label, ctx.rehearsal);
     const rows = {
-      iai: buildRole(label, IAI_TARGET, FEATURES, c3),
-      controls: buildRole(label, CONTROLS_TARGET, FEATURES, c3),
-      c3: buildRole(label, 'r20_prf01_c3_cells_iai', FEATURES, c3),
-      trim: buildRole(label, TRIM_TARGET, FEATURES, c3),
-      oracle: buildRole(label, ORACLE_TARGET, FEATURES, `--cfg ${ORACLE_CFG}`, 'oracle'),
-      control: buildRole(label, IAI_TARGET, FEATURES, `--cfg ${CONTROL_CFG}`, 'control'),
-      c3Control: buildRole(label, 'r20_prf01_c3_cells_iai', FEATURES, `--cfg ${C3_CONTROL_CFG}`, 'c3Control'),
+      iai: buildRole(label, IAI_TARGET, FEATURES, plan.primary),
+      controls: buildRole(label, CONTROLS_TARGET, FEATURES, plan.primary),
+      c3: buildRole(label, 'r20_prf01_c3_cells_iai', FEATURES, plan.primary),
+      trim: buildRole(label, TRIM_TARGET, FEATURES, plan.primary),
+      oracle: buildRole(label, ORACLE_TARGET, FEATURES, plan.oracle, 'oracle'),
+      control: buildRole(label, IAI_TARGET, FEATURES, plan.control, 'control'),
+      c3Control: buildRole(label, 'r20_prf01_c3_cells_iai', FEATURES, plan.c3Control, 'c3Control'),
     };
-    for (const [key, val] of Object.entries(rows)) if (key !== 'oracle') assert.notEqual(val.binarySha256, rows[key === 'c3Control' ? 'c3' : key].binarySha256, `${label}/${key} control binary must differ`);
+    assert.notEqual(rows.control.binarySha256, rows.iai.binarySha256,
+      `${label}/control binary must differ from primary`);
+    assert.notEqual(rows.c3Control.binarySha256, rows.c3.binarySha256,
+      `${label}/c3Control binary must differ from primary`);
     buildArms[label] = rows;
   }
-  putJson('builds.json',{version:1,candidate:ctx.candidate,buildStartedAt,capturedAt:now(),manifestSha256:shaFile(local('manifest.json')),environmentSha256:env.environmentSha256,arms:buildArms});
-  for(const [label,a] of Object.entries(buildArms)) console.log(`[build] ${label} targets pinned: ${Object.keys(a).join(',')}`);
+  putJson('builds.json', {
+    version: 1,
+    candidate: ctx.candidate,
+    buildStartedAt,
+    capturedAt: now(),
+    manifestSha256: shaFile(local('manifest.json')),
+    environmentSha256: env.environmentSha256,
+    arms: buildArms,
+  });
+  for (const [label, arms] of Object.entries(buildArms)) {
+    console.log(`[build] ${label} targets pinned: ${Object.keys(arms).join(',')}`);
+  }
 }
 
 function oracleRecord(arm, mode, label = arm) {
@@ -329,12 +436,27 @@ function cmdOracle() {
       const rec = JSON.parse(run.out.split(/\r?\n/).filter(x=>x.startsWith('{')).pop() ?? 'null');
       assert.ok(rec && rec.cell === name && rec.processId === id, `C3 oracle identity mismatch ${label}/${name}`);
       assert.ok(rec.oracle && typeof rec.oracle === 'object', `C3 oracle fields missing ${label}/${name}`);
-      for (const key of C3.C3_ORACLE_COUNTERS) if (rec.oracle[key] !== null && rec.oracle[key] !== undefined) assert.ok(Number.isSafeInteger(rec.oracle[key]) && rec.oracle[key] >= 0, `invalid ${key}`);
-      records[label][name] = {row:rec,binarySha256:ctx.builds.arms[arm].oracle.binarySha256,source:sourceOf(ctx.manifest.arches[arm])};
+      for (const key of C3.C3_ORACLE_COUNTERS) {
+        const value = rec.oracle[key];
+        if (value !== null && value !== undefined) {
+          assert.ok(Number.isSafeInteger(value) && value >= 0, `invalid ${key}`);
+        }
+      }
+      records[label][name] = {
+        row: rec,
+        binarySha256: ctx.builds.arms[arm].oracle.binarySha256,
+        source: sourceOf(ctx.manifest.arches[arm]),
+      };
       putJson(`oracle/${label}-${name}.json`, rec);
     }
   }
-  const rec={version:1,capturedAt:now(),manifestSha256:shaFile(local('manifest.json')),buildsSha256:shaFile(local('builds.json')),records};
+  const rec = {
+    version: 1,
+    capturedAt: now(),
+    manifestSha256: shaFile(local('manifest.json')),
+    buildsSha256: shaFile(local('builds.json')),
+    records,
+  };
   putJson('oracle.json',rec);
 }
 
@@ -352,28 +474,62 @@ function positionToken(token, previous) {
   return naturalBig(token);
 }
 function profileFunctions(s) {
-  const events = /^events: (.+)$/m.exec(s)?.[1].trim().split(/\s+/); assert.ok(events);
-  const ir = events.indexOf('Ir'); assert.ok(ir >= 0);
+  const events = /^events: (.+)$/m.exec(s)?.[1].trim().split(/\s+/);
+  assert.ok(events);
+  const ir = events.indexOf('Ir');
+  assert.ok(ir >= 0);
   const positions = /^positions: (.+)$/m.exec(s)?.[1].trim().split(/\s+/) ?? ['line'];
-  const ids = new Map(), functions = new Map(); let current = null, callee = null, pendingCall = false, previous = Array(positions.length).fill(null);
-  const symbol = value => { const m = /^(?:\((\d+)\)\s*)?(.*)$/.exec(value); if (m[2]) return m[2]; assert.ok(ids.has(m[1]), 'unknown compressed function ID'); return ids.get(m[1]); };
-  const fn = name => { if (!functions.has(name)) functions.set(name, { selfIr: 0n, edges: new Map(), edgeCalls: new Map() }); return functions.get(name); };
-  for (const line of s.split(/\r?\n/)) { const m = /^(?:c?fn)=\((\d+)\)\s+(.+)$/.exec(line); if (m) ids.set(m[1], m[2]); }
+  const ids = new Map();
+  const functions = new Map();
+  let current = null;
+  let callee = null;
+  let pendingCall = false;
+  let previous = Array(positions.length).fill(null);
+  const symbol = value => {
+    const match = /^(?:\((\d+)\)\s*)?(.*)$/.exec(value);
+    if (match[2]) return match[2];
+    assert.ok(ids.has(match[1]), 'unknown compressed function ID');
+    return ids.get(match[1]);
+  };
+  const fn = name => {
+    if (!functions.has(name)) {
+      functions.set(name, { selfIr: 0n, edges: new Map(), edgeCalls: new Map() });
+    }
+    return functions.get(name);
+  };
   for (const line of s.split(/\r?\n/)) {
-    if (line.startsWith('fn=')) { current = symbol(line.slice(3)); fn(current); callee = null; previous = Array(positions.length).fill(null); }
+    const match = /^(?:c?fn)=\((\d+)\)\s+(.+)$/.exec(line);
+    if (match) ids.set(match[1], match[2]);
+  }
+  for (const line of s.split(/\r?\n/)) {
+    if (line.startsWith('fn=')) {
+      current = symbol(line.slice(3));
+      fn(current);
+      callee = null;
+      previous = Array(positions.length).fill(null);
+    }
     else if (line.startsWith('cfn=')) { callee = symbol(line.slice(4)); fn(callee); }
     else if (line.startsWith('calls=')) {
       assert.ok(current && callee && !pendingCall, 'invalid calls record');
       const fields = line.slice(6).trim().split(/\s+/);
       positions.forEach((_, i) => positionToken(fields[i + 1], previous[i]));
-      pendingCall = true; fn(current).edgeCalls.set(callee, (fn(current).edgeCalls.get(callee) ?? 0n) + naturalBig(fields[0]));
+      pendingCall = true;
+      const calls = fn(current).edgeCalls;
+      calls.set(callee, (calls.get(callee) ?? 0n) + naturalBig(fields[0]));
     } else if (/^[*+\-\d]/.test(line)) {
       assert.ok(current, 'cost without function');
       const fields = line.trim().split(/\s+/);
       previous = positions.map((_, i) => positionToken(fields[i], previous[i]));
       const costs = fields.slice(positions.length).map(naturalBig), count = costs[ir] ?? 0n, f = fn(current);
-      if (pendingCall) { f.edges.set(callee, (f.edges.get(callee) ?? 0n) + count); pendingCall = false; } else f.selfIr += count;
-    } else if (line && !/^(?:#|[A-Za-z][A-Za-z_]*(?:=|:))/.test(line)) throw Error('malformed Callgrind record');
+      if (pendingCall) {
+        f.edges.set(callee, (f.edges.get(callee) ?? 0n) + count);
+        pendingCall = false;
+      } else {
+        f.selfIr += count;
+      }
+    } else if (line && !/^(?:#|[A-Za-z][A-Za-z_]*(?:=|:))/.test(line)) {
+        throw Error('malformed Callgrind record');
+      }
   }
   assert.ok(!pendingCall, 'missing final call cost');
   return functions;
@@ -392,7 +548,9 @@ function argvTokens(value) {
 }
 function perfGateIndex(bytes, groupName, producerName) {
   const s=bytes.toString();
-  const group = new RegExp(`library_benchmark_group!\\(\\s*name\\s*=\\s*${groupName};\\s*benchmarks\\s*=([\\s\\S]*?)\\);`).exec(s);
+  const pattern = `library_benchmark_group!\\(\\s*name\\s*=\\s*${groupName};\\s*`
+    + `benchmarks\\s*=([\\s\\S]*?)\\);`;
+  const group = new RegExp(pattern).exec(s);
   assert.ok(group, `${groupName} group missing`);
   const all=group[1].split(',').map(x=>x.trim()).filter(Boolean);
   const index=all.indexOf(producerName); assert.ok(index>=0,`${producerName} absent from ${groupName}`);
@@ -400,16 +558,24 @@ function perfGateIndex(bytes, groupName, producerName) {
 }
 function generatedArguments(debug, log, homeDirName, cellIndex, producerSymbol, groupName) {
   const commands = [...log.matchAll(/^==\d+==\s+Command:\s*(.+)$/gm)].map(m => m[1]);
-  assert.equal(new Set(commands).size, 1, 'ambiguous measured argv'); assert.ok(commands.length);
+  assert.equal(new Set(commands).size, 1, 'ambiguous measured argv');
+  assert.ok(commands.length);
   const measured = commands[0];
   const records = [...debug.matchAll(/callgrind: Arguments: (.+)$/gm)].map(m => m[1]);
-  const candidates = records.filter(x => x.includes('--callgrind-out-file=') && x.includes(homeDirName) && x.includes('--toggle-collect=' + producerSymbol));
+  const candidates = records.filter(argument =>
+    argument.includes('--callgrind-out-file=')
+    && argument.includes(homeDirName)
+    && argument.includes('--toggle-collect=' + producerSymbol));
   assert.equal(candidates.length, 1, 'one actual runner argument record required for the producer cell');
   const tool = candidates[0];
   assert.ok(tool.includes('--separate-threads=yes'), 'separate_threads not captured');
   const toolVector = tool.trim().split(/\s+(?=--[A-Za-z])/).map(x => x.replace(/^"(.*)"$/, '$1'));
   for (const setting of PRODUCER_SETTINGS) {
-    assert.equal(toolVector.filter(x => x.split('=')[0] === setting.split('=')[0]).length, 1, 'missing/duplicate producer setting ' + setting);
+    assert.equal(
+      toolVector.filter(argument => argument.split('=')[0] === setting.split('=')[0]).length,
+      1,
+      'missing/duplicate producer setting ' + setting,
+    );
     assert.ok(toolVector.includes(setting), 'wrong producer setting ' + setting);
   }
   assert.equal(toolVector.filter(x => x.startsWith('--toggle-collect=')).length, 1);
@@ -418,7 +584,12 @@ function generatedArguments(debug, log, homeDirName, cellIndex, producerSymbol, 
   const dispatch = argvTokens(measured);
   assert.equal(dispatch.indexOf('--iai-run'), 1, 'measured dispatcher missing');
   assert.deepEqual(dispatch.slice(2, 5), [groupName, String(cellIndex), '0'], 'measured dispatcher index mismatch');
-  return { toolArguments: tool, measuredArguments: measured, generatedArguments: 'valgrind ' + tool + ' ' + measured, toolVector };
+  return {
+    toolArguments: tool,
+    measuredArguments: measured,
+    generatedArguments: 'valgrind ' + tool + ' ' + measured,
+    toolVector,
+  };
 }
 function parseProfiles(profiles, log, { cellIndex, producerSymbol, groupName, debug = '', expectedExecutable } = {}) {
   const pids = [...new Set([...log.matchAll(/^==(\d+)==/gm)].map(m => Number(m[1])))];
@@ -428,7 +599,11 @@ function parseProfiles(profiles, log, { cellIndex, producerSymbol, groupName, de
   if (expectedExecutable) assert.equal(measured[0], expectedExecutable, 'measured binary mismatch');
   let totalIr = 0n, childIr = 0n, boundaryExecutions = 0n; const threads = new Set();
   for (const s of profiles) {
-    const header = k => { const matches = [...s.matchAll(new RegExp('^' + k + ': (.+)$', 'gm'))]; assert.equal(matches.length, 1, 'ambiguous/missing ' + k); return matches[0][1]; };
+    const header = key => {
+      const matches = [...s.matchAll(new RegExp('^' + key + ': (.+)$', 'gm'))];
+      assert.equal(matches.length, 1, 'ambiguous/missing ' + key);
+      return matches[0][1];
+    };
     assert.equal(safeNumber(naturalBig(header('pid'))), pids[0]);
     assert.equal(safeNumber(naturalBig(header('part'))), 1, 'ambiguous/incomplete profile parts/dumps');
     const tid = header('thread'); assert.match(tid, /^[1-9]\d*$/);
@@ -447,9 +622,14 @@ function parseProfiles(profiles, log, { cellIndex, producerSymbol, groupName, de
       assert.equal(inclusive, vals[index], 'exact inclusive/child total mismatch');
       childIr += vals[index];
       let incoming = 0n;
-      for (const [caller, f] of functions) {
-        const count = f.edgeCalls.get(producerSymbol) ?? 0n;
-        if (count > 0n) { assert.match(caller, /std::thread.*(?:closure|spawn)|R19Prf01.*remote_free.*closure|r20_prf01_c3_cells_iai.*closure/, 'boundary incoming caller not child context'); incoming += count; }
+      for (const [caller, functionData] of functions) {
+        const count = functionData.edgeCalls.get(producerSymbol) ?? 0n;
+        if (count > 0n) {
+          assert.match(caller,
+            /std::thread.*(?:closure|spawn)|R19Prf01.*remote_free.*closure|r20_prf01_c3_cells_iai.*closure/,
+            'boundary incoming caller not child context');
+          incoming += count;
+        }
       }
       assert.equal(incoming, 1n, 'boundary executions unproven or not exactly one');
       boundaryExecutions += incoming;
@@ -461,14 +641,23 @@ function parseProfiles(profiles, log, { cellIndex, producerSymbol, groupName, de
   assert.ok(childIr <= totalIr, 'childIr exceeds totalIr');
   assert.equal(ids.length, 2, 'child profile absent or ambiguous child set');
   assert.equal(boundaryExecutions, 1n, 'boundary executions not one');
-  return { pid: pids[0], totalIr: safeNumber(totalIr), childIr: safeNumber(childIr), boundaryExecutions: safeNumber(boundaryExecutions), ...args };
+  return {
+    pid: pids[0],
+    totalIr: safeNumber(totalIr),
+    childIr: safeNumber(childIr),
+    boundaryExecutions: safeNumber(boundaryExecutions),
+    ...args,
+  };
 }
 function machineBoundary(nm, assembly, control, producerSymbol, callerPattern) {
   const definitions = nm.split(/\r?\n/).filter(l => l.endsWith(' ' + producerSymbol));
   assert.equal(definitions.length, 1, 'exact boundary symbol missing/ambiguous');
   const blocks = [...assembly.matchAll(/^([0-9a-f]+) <(.+)>:\n([\s\S]*?)(?=^[0-9a-f]+ <|$(?![\s\S]))/gm)].map(m => ({ name: m[2], body: m[3].trimEnd() + '\n' }));
-  const exact = blocks.filter(b => b.name === producerSymbol); assert.equal(exact.length, 1, 'exact disassembly definition absent');
-  const callers = blocks.filter(b => callerPattern.test(b.name) && b.body.split('\n').some(l => /\bcallq?\s/.test(l) && l.includes('<' + producerSymbol + '>')));
+  const exact = blocks.filter(block => block.name === producerSymbol);
+  assert.equal(exact.length, 1, 'exact disassembly definition absent');
+  const callers = blocks.filter(block => callerPattern.test(block.name)
+    && block.body.split('\n').some(line =>
+      /\bcallq?\s/.test(line) && line.includes('<' + producerSymbol + '>')));
   assert.ok(callers.length > 0, 'child closure disassembly caller absent');
   const decoded = exact[0].body.split('\n').map(l => /^\s*[0-9a-f]+:\s+([a-z][a-z0-9]*)\b(.*)/.exec(l)).filter(Boolean);
   assert.ok(decoded.length);
@@ -487,33 +676,70 @@ function machineBoundary(nm, assembly, control, producerSymbol, callerPattern) {
 function boundaryEvidence(b, tag, producerSymbol, callerPattern) {
   const nm = wslOk(`nm -C --defined-only ${b.exe}`, `nm @${b.arm}/${tag}`, { timeout: 120_000 });
   const disasm = wslOk(`objdump -Cd --no-show-raw-insn ${b.exe}`, `objdump @${b.arm}/${tag}`, { timeout: 120_000 });
-  const verification = machineBoundary(nm.out, disasm.out, b.role === 'control', producerSymbol, callerPattern);
-  return { binarySha256: b.binarySha256, role: b.role, tag, verification,
-    nm: putText(`boundary/${tag}-nm.log`, nm.out), disassembly: putText(`boundary/${tag}-disassembly.log`, disasm.out) };
+  const verification = machineBoundary(
+    nm.out, disasm.out, b.role === 'control', producerSymbol, callerPattern,
+  );
+  return {
+    binarySha256: b.binarySha256,
+    role: b.role,
+    tag,
+    verification,
+    nm: putText(`boundary/${tag}-nm.log`, nm.out),
+    disassembly: putText(`boundary/${tag}-disassembly.log`, disasm.out),
+  };
 }
 function producerPass(label, arm, role, cellIndex, name, bKey) {
   const spec=PRODUCER_SPECS[name];
   const b={...ctx.builds.arms[arm][bKey],arm,role};
-  const callerPattern=spec.customSymbol?/std::thread.*(?:closure|spawn)|r20_prf01_c3_cells_iai.*closure/:/std::thread.*(?:closure|spawn)|R19Prf01.*remote_free.*closure/;
-  assert.ok(boundaryEvidence(b, `${label}-${name}-${role}`, spec.symbol, callerPattern).verification, 'boundary precheck failed');
+  const callerPattern = spec.customSymbol
+    ? /std::thread.*(?:closure|spawn)|r20_prf01_c3_cells_iai.*closure/
+    : /std::thread.*(?:closure|spawn)|R19Prf01.*remote_free.*closure/;
+  assert.ok(boundaryEvidence(
+    b,
+    `${label}-${name}-${role}`,
+    spec.symbol,
+    callerPattern,
+  ).verification, 'boundary precheck failed');
   const home = `target/prf01-${label}-${name}-${role}-obs-${Date.now()}`;
-  assert.ok(!fs.existsSync(join(armDir(arm),home)),'observation home already exists');
-  const script = ['set -e','export PATH="$HOME/.cargo/bin:$PATH"',`cd ${toHost(armDir(arm))}`,
-    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never ${b.exe} --home ${toHost(join(armDir(arm),home))} 2>&1`].join(' && ');
+  assert.ok(
+    !fs.existsSync(join(armDir(arm), home)),
+    'observation home already exists',
+  );
+  const script = [
+    'set -e',
+    'export PATH="$HOME/.cargo/bin:$PATH"',
+    `cd ${toHost(armDir(arm))}`,
+    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never ${b.exe} --home ${toHost(join(armDir(arm), home))} 2>&1`,
+  ].join(' && ');
   const startedAt = now();
   const r = wslOk(script, `${role} run ${label}`, { timeout: 3_600_000 });
-  const homeDir = join(armDir(arm),home);
+  const homeDir = join(armDir(arm), home);
   const files = [];
-  const walk = dir => { for (const n of fs.readdirSync(dir)) { const p = join(dir, n); if (fs.statSync(p).isDirectory()) walk(p); else files.push(p); } };
+  const walk = dir => {
+    for (const name of fs.readdirSync(dir)) {
+      const path = join(dir, name);
+      if (fs.statSync(path).isDirectory()) walk(path);
+      else files.push(path);
+    }
+  };
   walk(homeDir);
   const own = files.filter(p => p.replaceAll('\\', '/').includes(name));
   const profiles = own.filter(p => /\.out(?:[.#-]+\d+)*$/.test(p) && fs.statSync(p).size > 0);
   const logs = own.filter(p => /\.log(?:[.#-]+\d+)*$/.test(p));
   assert.ok(profiles.length && logs.length, `${role} ${label}: producer profiles/logs missing`);
-  const groupName=name===PRODUCER?'perf_gate':name===C3.LARGE_REMOTE_FREE||name===C3.DISTINCT_WORD_PRODUCER?'r20_prf01_c3_cells':'r20_prf01_trim';
-  const parsed=parseProfiles(profiles.map(p=>publicText(fs.readFileSync(p,'utf8'))),
-    publicText(logs.map(p=>fs.readFileSync(p,'utf8')).join('\n')),
-    {cellIndex,producerSymbol:spec.symbol,groupName,debug:publicText(r.out),expectedExecutable:publicText(b.exe)});
+  const groupName = name === PRODUCER
+    ? 'perf_gate'
+    : name === C3.LARGE_REMOTE_FREE || name === C3.DISTINCT_WORD_PRODUCER
+      ? 'r20_prf01_c3_cells'
+      : 'r20_prf01_trim';
+  const parsed = parseProfiles(
+    profiles.map(path => publicText(fs.readFileSync(path, 'utf8'))),
+    publicText(logs.map(path => fs.readFileSync(path, 'utf8')).join('\n')),
+    {
+      cellIndex, producerSymbol: spec.symbol, groupName,
+      debug: publicText(r.out), expectedExecutable: publicText(b.exe),
+    },
+  );
   assert.equal(binarySha(b.exe), b.binarySha256, `binary drift @${label}/${role}`);
   profiles.forEach((p, i) => putText(`profiles/${label}-${role}-${i}.out`, fs.readFileSync(p, 'utf8')));
   putJson(`profiles/${label}-${role}-inventory.json`, profiles.map((p, i) =>
@@ -554,7 +780,9 @@ function benchRun(run, arm, target, cellNames, key) {
   const home = `target/prf01-${run}-${key}-obs-${Date.now()}`;
   assert.ok(!fs.existsSync(join(armDir(arm), home)), 'observation home already exists');
   const script = ['set -e', 'export PATH="$HOME/.cargo/bin:$PATH"', `cd ${toHost(armDir(arm))}`,
-    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never ${b.exe} --home ${toHost(join(armDir(arm), home))} 2>&1`].join(' && ');
+    `IAI_CALLGRIND_LOG=debug IAI_CALLGRIND_COLOR=never ${b.exe} --home `
+      + `${toHost(join(armDir(arm), home))} 2>&1`,
+  ].join(' && ');
   const startedAt = now();
   const r = wslOk(script, `bench ${target} run ${run}`, { timeout: 3_600_000 });
   const ir = parseIr(r.out, cellNames);
@@ -593,33 +821,11 @@ function measuredPids(homeDir, cellNames, exe) {
 }
 function binarySha(exe) { return wslOk(`sha256sum ${exe}`, 'sha256sum binary').out.split(/\s+/)[0]; }
 
-function measureToInput(runs, producerRuns) {
-  const hashes = C3.FROZEN_FILES.map(path=>({path,sha256:shaFile(join(REPO,path))}));
-  const environmentSha256=ctx.builds.environmentSha256;
-  const identities={};
-  for(const arm of ['A','B'])identities[arm]={label:arm,measurementCommit:ctx.manifest.arches[arm].head,source:sourceOf(ctx.manifest.arches[arm]),environmentSha256,binaries:Object.fromEntries(Object.entries(ctx.builds.arms[arm]).map(([k,v])=>[k,v.binarySha256])),buildStartedAt:ctx.builds.buildStartedAt,buildReceipt:'builds.json',features:C3.FEATURES,primaryCfg:[],oracleCfg:[ORACLE_CFG],toolchain:{rustc:'environment.log',target:'environment.log',profile:'release',flags:'role cfg only'}};
-  identities.C0={source:identities.A.source,binarySha256:ctx.builds.arms.C.iai.binarySha256,controlsBinarySha256:ctx.builds.arms.C.controls.binarySha256,c3BinarySha256:ctx.builds.arms.C.c3.binarySha256,trimBinarySha256:ctx.builds.arms.C.trim.binarySha256,c3ControlBinarySha256:ctx.builds.arms.C.c3Control.binarySha256,controlBinarySha256:ctx.builds.arms.C.control.binarySha256,buildStartedAt:ctx.builds.buildStartedAt,buildReceipt:'builds.json'};
-  for(const [key,value] of Object.entries({iai:ctx.builds.arms.C.iai.binarySha256,controls:ctx.builds.arms.C.controls.binarySha256,c3:ctx.builds.arms.C.c3.binarySha256,trim:ctx.builds.arms.C.trim.binarySha256,c3Control:ctx.builds.arms.C.c3Control.binarySha256,control:ctx.builds.arms.C.control.binarySha256}))identities.C0[`${key}BinarySha256`]=value;
-  identities.C0.source=sourceOf(ctx.manifest.arches.A);
-  const runnerVersionMatch=/(\d+[.]\d+[.]\d+)/.exec(fs.readFileSync(local('environment.log'),'utf8').split('\n').find(l=>l.includes('iai-callgrind-runner'))??'');assert.ok(runnerVersionMatch,'runner version absent from environment');const runnerVersion=runnerVersionMatch[1];
-  const input={version:1,hashes,environmentSha256,inventoryReceipt:'manifest.json',identityReviewReceipt:'manifest.json; per-stage identity revalidation',environmentReceipt:'environment.log',oracleReceipt:'oracle.json',entry:'SeferAlloc::GlobalAlloc->HeapCore routed',nativeDeferred:{deferred:true,method:'fixed-batch native paired A/B on a quiet bare-metal host; per-process batch times divided by batch size (deferred; not launched)'},inventory:[...C3.INVENTORY],identities,iai:[],sizeOf:{A:null,B:null,receipt:'oracle.json'},ancestry:{result:'A ancestor B',chain:[ctx.manifest.arches.A.head,ctx.manifest.arches.B.head],receipt:'manifest.json'}};
-  let runId=0;
-  for(const run of runs){const src=sourceOf(ctx.manifest.arches[run.arm]);
-    for(const batch of run.cells)for(const name of batch.cells){
-      const oracleRec=ctx.oracle.records[run.label]?.[name];
-      const raw=oracleRec?.row?.oracle??Object.fromEntries(C3.ALL_COUNTERS.map(k=>[k,null]));
-      const binarySha256=ctx.builds.arms[run.arm][batch.key].binarySha256;
-      const config=oracleRec?.row?.config??{requested:null,resolved:null,configConflictsDelta:null,processBoundary:'isolated-process',runId:`${run.label}-${name}-${runId}`,pid:batch.pids[name],notApplicableReason:'control cell has no SeferAlloc config oracle'};
-      input.iai.push({name,arm:run.label,Ir:batch.ir[name],environmentSha256,binarySha256,source:src,startedAt:batch.startedAt,features:C3.FEATURES,receipt:batch.log.path,config:{...config,pid:batch.pids[name],runId:`${run.label}-${name}-${++runId}`},oracle:{...raw,unobservedReasons:Object.fromEntries(Object.keys(raw).filter(k=>raw[k]===null).map(k=>[k,`not observed for ${run.label}/${name}`])),linkage:oracleRec?{binarySha256:oracleRec.binarySha256,primaryBinarySha256:binarySha256,source:oracleRec.source,features:C3.FEATURES,cfg:[ORACLE_CFG],environmentSha256,receipt:`oracle/${run.label}-${name}.json`,featureExactReceipt:'oracle.json',startedAt:oracleRec.row.startedAt,config:oracleRec.row.config}:null}});
-    }
-  }
-  for(const p of producerRuns){const spec=PRODUCER_SPECS[p.name],row=input.iai.find(r=>r.name===p.name&&r.arm===p.label);assert.ok(row);const primary=p.primary,control=p.control;assert.equal(primary.totalIr,row.Ir,`producer rerun Ir mismatch @${p.label}`);const workload=primary.childIr-control.childIr;assert.ok(workload>0,`empty producer workload @${p.label}`);
-    row.producerIrReceipt={binarySha256:row.binarySha256,source:row.source,environmentSha256,features:C3.FEATURES,cfg:[],receipt:primary.log.path,symbolReceipt:`boundary/${p.label}-${p.name}-primary-nm.log`,profileReceipt:`profiles/${p.label}-${p.name}-primary-inventory.json`,symbol:spec.symbol,runnerVersion,valgrindVersion:'environment.log',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,toggleCollect:spec.symbol,generatedArguments:primary.generatedArguments,aggregation:'sum of all thread profile Ir',childFreeCount:spec.freeCount,childIr:primary.childIr,boundaryOverheadIr:control.childIr,workloadIr:workload,boundaryExecutions:1,totalIr:row.Ir,startedAt:primary.startedAt,absoluteTolerance:p.name===C3.LARGE_REMOTE_FREE?'T_s':null,control:{receipt:control.log.path,workload:'child remote frees removed',source:row.source,binarySha256:control.binarySha256,environmentSha256,childIr:control.childIr,workloadIr:0,childFreeCount:0,boundaryExecutions:1,symbolReceipt:`boundary/${p.label}-${p.name}-control-nm.log`,profileReceipt:`profiles/${p.label}-${p.name}-control-inventory.json`,symbol:spec.symbol,toggleCollect:spec.symbol,cfg:[spec.cfg],features:C3.FEATURES,generatedArguments:control.generatedArguments,runnerVersion,valgrindVersion:'environment.log',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,aggregation:'sum of all thread profile Ir',totalIr:control.totalIr,deltaIr:primary.totalIr-control.totalIr,parentSetupUnchanged:true,collectionUnchanged:true}};
-  }
-  const observedSize=arm=>{const rec=ctx.oracle.records[arm]?.[C3.V2_BENEFIT[0]]?.row;const value=rec?.oracle?.sizeof_small_sidecar??rec?.sizeof_small_sidecar;assert.ok(Number.isSafeInteger(value)&&value>0,`oracle must observe positive sidecar size for ${arm}`);return value;};
-  input.sizeOf={A:observedSize('A1'),B:observedSize('B1'),receipt:'oracle.json'};
-  const receipts={};const scan=v=>{if(typeof v==='string'&&/^(?:environment[.]log|manifest[.]json|builds[.]json|oracle[.]json|(?:logs|boundary|profiles|oracle)\/)/.test(v)&&!(v in receipts))receipts[v]=shaFile(local(v));else if(Array.isArray(v))v.forEach(scan);else if(v&&typeof v==='object')Object.values(v).forEach(scan);};scan(input);input.receiptHashes=receipts;
-  putJson('input.json',input);putText('summary.csv',['target,arm,name,ir,binarySha256',...input.iai.map(r=>`${C3.targetFor(r.name)},${r.arm},${r.name},${r.Ir},${r.binarySha256}`)].join('\n')+'\n');return input;
+function measureToInputOriginal(runs, producerRuns) {
+  return buildMeasureInput(runs, producerRuns, {
+    ctx, C3, shaFile, REPO, sourceOf, ORACLE_CFG, PRODUCER_SPECS, local, putJson, putText,
+    assert, fs, join,
+  });
 }
 function cmdMeasure() {
   loadManifest();
@@ -630,14 +836,35 @@ function cmdMeasure() {
   assert.equal(ctx.builds.manifestSha256,shaFile(local('manifest.json')),'build stage binding mismatch');
   assert.equal(ctx.oracle.manifestSha256,shaFile(local('manifest.json')),'oracle manifest binding mismatch');
   assert.equal(ctx.oracle.buildsSha256,shaFile(local('builds.json')),'oracle build binding mismatch');
-  const indices=Object.fromEntries(Object.keys(PRODUCER_SPECS).map(name=>{const group=name===PRODUCER?'perf_gate':name===C3.DISTINCT_WORD_PRODUCER||name===C3.LARGE_REMOTE_FREE?'r20_prf01_c3_cells':'r20_prf01_trim';const file=group==='perf_gate'?'perf_gate_iai.rs':group==='r20_prf01_c3_cells'?'r20_prf01_c3_cells_iai.rs':'r20_prf01_trim_iai.rs';return[name,perfGateIndex(fs.readFileSync(join(armDir('A'),'benches',file)),group,name)];}));
+  const indices = Object.fromEntries(Object.keys(PRODUCER_SPECS).map(name => {
+    const group = name === PRODUCER
+      ? 'perf_gate'
+      : name === C3.DISTINCT_WORD_PRODUCER || name === C3.LARGE_REMOTE_FREE
+        ? 'r20_prf01_c3_cells'
+        : 'r20_prf01_trim';
+    const file = group === 'perf_gate'
+      ? 'perf_gate_iai.rs'
+      : group === 'r20_prf01_c3_cells'
+        ? 'r20_prf01_c3_cells_iai.rs'
+        : 'r20_prf01_trim_iai.rs';
+    const sourcePath = join(armDir('A'), 'benches', file);
+    return [name, perfGateIndex(fs.readFileSync(sourcePath), group, name)];
+  }));
   const rows=[];
   for(const label of C3.ARMS){
     const logical=label==='C0'?'C':label[0],arm=logical;
     const cells=[];
-    for(const [target,names,key] of [[IAI_TARGET,IAI_CELLS,'iai'],[CONTROLS_TARGET,CONTROLS_CELLS,'controls'],['r20_prf01_c3_cells_iai',C3_CELLS,'c3'],[TRIM_TARGET,TRIM_CELLS,'trim']]) {
-      const batch=benchRun(label,arm,target,new Set(names),key);
-      batch.key=key; batch.cells=names; cells.push(batch);
+    const batches = [
+      [IAI_TARGET, IAI_CELLS, 'iai'],
+      [CONTROLS_TARGET, CONTROLS_CELLS, 'controls'],
+      ['r20_prf01_c3_cells_iai', C3_CELLS, 'c3'],
+      [TRIM_TARGET, TRIM_CELLS, 'trim'],
+    ];
+    for (const [target, names, key] of batches) {
+      const batch = benchRun(label, arm, target, new Set(names), key);
+      batch.key = key;
+      batch.cells = names;
+      cells.push(batch);
     }
     rows.push({label,arm:logical,cells});
   }
@@ -651,228 +878,103 @@ function cmdMeasure() {
         control:producerPass(label,arm,'control',idx,name,name===PRODUCER?'control':'c3Control')});
     }
   }
-  for(const arm of ['A','B','C'])for(const key of ['iai','controls','c3','trim','oracle','control','c3Control'])assert.equal(binarySha(ctx.builds.arms[arm][key].exe),ctx.builds.arms[arm][key].binarySha256,`binary drift ${arm}/${key}`);
-  const input=measureToInput(rows,producerRuns);
-  const judge=spawnSync(process.execPath,[join(REPO,JUDGE),'--input',local('input.json')],{encoding:'utf8',maxBuffer:1<<24});
-  putText('verdict.txt',`exit=${judge.status}\n${judge.stdout}${judge.stderr}`);process.stdout.write(judge.stdout);if(judge.stderr)process.stderr.write(judge.stderr);process.exitCode=judge.status===0?0:1;
+  for (const arm of ['A', 'B', 'C']) {
+    const roles = ['iai', 'controls', 'c3', 'trim', 'oracle', 'control', 'c3Control'];
+    for (const key of roles) {
+      const build = ctx.builds.arms[arm][key];
+      assert.equal(binarySha(build.exe), build.binarySha256, `binary drift ${arm}/${key}`);
+    }
+  }
+  const input = measureToInput(rows, producerRuns);
+  const judge = spawnSync(process.execPath, [join(REPO, JUDGE), '--input', local('input.json')], {
+    encoding: 'utf8',
+    maxBuffer: 1 << 24,
+  });
+  const judgeOutput = `${judge.stdout ?? ''}${judge.stderr ?? ''}`;
+  const resultText = ctx.rehearsal
+    ? renderRehearsalVerdict(`judge-exit=${judge.status}`, judgeOutput)
+    : `exit=${judge.status}\n${judgeOutput}`;
+  putText('verdict.txt', resultText);
+  process.stdout.write(ctx.rehearsal ? `${resultText}\n` : judge.stdout ?? '');
+  if (!ctx.rehearsal) {
+    if (judge.stderr) process.stderr.write(judge.stderr);
+    process.exitCode = judge.status === 0 ? 0 : 1;
+  } else process.exitCode = rehearsalExitCode();
 }
 
 // --- main --------------------------------------------------------------------
 
 function stagePaths() {
-  const m = ctx.manifest;
-  const producerCellIndex = perfGateIndex(fs.readFileSync(join(armDir('A'),'benches/perf_gate_iai.rs')),'perf_gate',PRODUCER);
-  const c3ProducerIndexes = Object.fromEntries(C3_CELLS.map(name=>[name,perfGateIndex(fs.readFileSync(join(armDir('A'),'benches/r20_prf01_c3_cells_iai.rs')),'r20_prf01_c3_cells',name)]));
-  const trimCellIndexes = Object.fromEntries(TRIM_CELLS.map(name=>[name,perfGateIndex(fs.readFileSync(join(armDir('A'),'benches/r20_prf01_trim_iai.rs')),'r20_prf01_trim',name)]));
-  const runs = RUNS.map(label => { const arm=RUN_ARM[label], base=arm==='C'?'A':arm;
-    const cells=[];
-    for (const [target,names,key] of [[IAI_TARGET,IAI_CELLS,'iai'],[CONTROLS_TARGET,CONTROLS_CELLS,'controls'],['r20_prf01_c3_cells_iai',C3_CELLS,'c3'],[TRIM_TARGET,TRIM_CELLS,'trim']]) {
-      const result=benchRun(label,arm,target,new Set(names),key);
-      cells.push(result);
-    }
-    return {label,arm,cells};
-  });
-  const producerRuns=[];
-  for(const label of C3.ARMS){const logical=label==='C0'?'C':label[0],arm=logical;
-    for(const name of Object.keys(PRODUCER_SPECS)){const spec=PRODUCER_SPECS[name],index=indexes[name],key=name===PRODUCER?'iai':'c3';
-      producerRuns.push({label,arm,name,primary:producerPass(label,arm,'primary',index,name,key),control:producerPass(label,arm,'control',index,name,name===PRODUCER?'control':'c3Control')});
-    }
-  }
-  for (const arm of ['A', 'B', 'C']) {
-    assert.equal(binarySha(ctx.builds.arms[arm].iai.exe), ctx.builds.arms[arm].iai.binarySha256, `binary drift @${arm}`);
-    assert.equal(binarySha(ctx.builds.arms[arm].control.exe), ctx.builds.arms[arm].control.binarySha256, `binary drift @${arm}/control`);
-    assert.equal(binarySha(ctx.builds.arms[arm].controls.exe), ctx.builds.arms[arm].controls.binarySha256, `binary drift @${arm}/controls`);
-  }
-  const hashes = frozenHashes();
-  const environmentSha256 = ctx.builds.environmentSha256;
-  const srcOf = arm => sourceOf(m.arches[arm]);
-  const pinBinaries = arm => ({
-    iai: ctx.builds.arms[arm].iai.binarySha256, controls: ctx.builds.arms[arm].controls.binarySha256,
-    oracle: ctx.builds.arms[arm === 'C' ? 'A' : arm].oracle.binarySha256, control: ctx.builds.arms[arm].control.binarySha256 });
-  // Record the OBSERVED tool version, not a literal (re-freeze 9); the CI workflow pins ^0.14.
-  const runnerVersionMatch = /(\d+[.]\d+[.]\d+)/.exec(fs.readFileSync(local('environment.log'),'utf8').split('\n').find(l=>l.includes('iai-callgrind-runner')) ?? '');
-  assert.ok(runnerVersionMatch,'runner version absent from captured environment');
-  const runnerVersion=runnerVersionMatch[1];
-  let runIdSeq = 0;
-  const startedOf = (r, kind) => r[kind].startedAt;
-  const logOf = (r, kind) => r[kind].log.path;
-  const probeGlobal = label => ctx.oracle.records[label]['probe-global'].row;
-  const hotConfig = (name, label) => {
-    const arm = label.startsWith('B') ? 'B' : 'A';
-    const [work, block, alignment] = HOT_DECL[name];
-    const probe = probeGlobal(label);
-    const requested = { maintenance: probe.config.requested.maintenance, workCount: work, segmentCount: null, blockBytes: block, cachePolicy: probe.config.requested.cachePolicy };
-    return { requested, resolved: { ...requested, maintenance: probe.config.resolved.maintenance, cachePolicy: probe.config.resolved.cachePolicy }, configConflictsDelta: probe.config.configConflictsDelta, processBoundary: 'isolated-process',
-      unobservedReasons: { segmentCount: 'measured body has no paired geometry observer; probe census is not workload geometry' },
-      declaredProvenance: { receipt: 'manifest.json', cell: name, fields: ['workCount', 'blockBytes', 'alignment'], alignment },
-      resolvedProvenance: { runId: probe.config.runId, pid: probe.config.pid, arm, binarySha256: ctx.builds.arms[arm].oracle.binarySha256,
-        receipt: `oracle/${label}-probe-global.json`, claimPath: 'global',
-        copiedFields: ['cachePolicy', 'configConflictsDelta', 'maintenance'] } };
-  };
-  const COUNTERS8 = ['pending_words_visited','pending_words_exchanged','nonempty_cuts','discovery_records_reclaimed','routed_scans','summary_words_visited','summary_rmw','summary_load'];
-  const oracleRow = (label, mode, primaryBinary) => {
-    const rec = ctx.oracle.records[label][mode];
-    return { ...Object.fromEntries(COUNTERS8.map(k => [k, rec.row.oracle[k]])),
-      strict_trim_remaining: rec.row.oracle.strict_trim_remaining,
-      unobservedReasons: rec.row.oracle.unobservedReasons,
-      linkage: { binarySha256: rec.binarySha256, primaryBinarySha256: primaryBinary, source: rec.source,
-        features: FEATURES.split(' '), cfg: [ORACLE_CFG], environmentSha256,
-        receipt: `oracle/${label}-${mode}.json`, featureExactReceipt: 'oracle.json',
-        startedAt: new Date(rec.row.startedAtUnixMs).toISOString(),
-        config: { ...rec.row.config } } };
-  };
-  const input = { version: 1, hashes, environmentSha256, ...(ctx.rehearsal ? { rehearsal: true } : {}),
-    inventoryReceipt: 'manifest.json',
-    identityReviewReceipt: 'per-stage identity binding (see the preregistration limitations section)',
-    environmentReceipt: 'environment.log',
-    oracleReceipt: 'oracle.json',
-    entry: 'SeferAlloc::GlobalAlloc->HeapCore routed',
-    nativeDeferred: { deferred: true, method: 'batch-timer native paired A/B on a quiet bare-metal host; the R19 per-sample timer is replaced by fixed-batch timing (deferred; not launched in v2)' },
-    inventory: [...BENEFIT, ...HOT_CELLS, CONSTRUCTION, ...MI, 'r19_prf01_publication', PRODUCER],
-    identities: {
-      A: { label: 'A', measurementCommit: srcOf('A').baseHead, source: srcOf('A'), environmentSha256,
-        binaries: pinBinaries('A'), buildStartedAt: ctx.builds.buildStartedAt, buildReceipt: 'builds.json',
-        features: FEATURES.split(' '), primaryCfg: [], oracleCfg: [ORACLE_CFG],
-        toolchain: { rustc: 'environment.log', target: 'environment.log', profile: 'release', flags: 'role cfg only' } },
-      B: { label: 'B', measurementCommit: srcOf('B').baseHead, source: srcOf('B'), environmentSha256,
-        ...(ctx.rehearsal ? { oracleSource: sourceOf(m.arches.oracleB) } : {}),
-        binaries: pinBinaries('B'), buildStartedAt: ctx.builds.buildStartedAt, buildReceipt: 'builds.json',
-        features: FEATURES.split(' '), primaryCfg: [], oracleCfg: [ORACLE_CFG],
-        toolchain: { rustc: 'environment.log', target: 'environment.log', profile: 'release', flags: 'role cfg only' } },
-      C0: { source: srcOf('A'), binarySha256: pinBinaries('C').iai, controlsBinarySha256: pinBinaries('C').controls, buildStartedAt: ctx.builds.buildStartedAt, buildReceipt: 'builds.json' },
-    },
-    sizeOf: { A: ctx.oracle.records.A1[BENEFIT[0]].row.smallSidecarSizeBytes,
-      B: ctx.oracle.records.B1[BENEFIT[0]].row.smallSidecarSizeBytes, receipt: 'oracle.json' },
-    ancestry: { result: 'A ancestor B', chain: [srcOf('A').baseHead, srcOf('B').baseHead], receipt: 'manifest.json' },
-    iai: [] };
-  for (const r of runs) {
-    const arm = r.arm;
-    for (const name of IAI_CELLS) {
-      const needed = [...BENEFIT, 'r19_prf01_publication', PRODUCER].includes(name);
-      const mode = name === 'r19_prf01_publication' ? 'publication' : name === PRODUCER ? 'producer' : name;
-      const oracle = needed
-        ? oracleRow(r.label, mode, ctx.builds.arms[arm].iai.binarySha256)
-        : { ...Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, null])),
-            unobservedReasons: Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, 'no paired oracle for this control'])),
-            linkage: null };
-      let config;
-      if (MI.includes(name)) {
-        config = { requested: null, resolved: null, configConflictsDelta: null,
-          notApplicableReason: 'mimalloc does not resolve SeferAlloc configuration', processBoundary: 'isolated-process' };
-      } else {
-        const rec = ctx.oracle.records[r.label][mode].row;
-        config = { ...rec.config, requested: { ...rec.config.requested }, resolved: { ...rec.config.resolved } };
-      }
-      const extra = needed ? {} : {};
-      const row = { name, arm: r.label, Ir: r.iai.ir[name], environmentSha256,
-        binarySha256: pinBinaries(arm).iai, source: srcOf(arm), startedAt: startedOf(r, 'iai'),
-        features: FEATURES.split(' '), receipt: logOf(r, 'iai'),
-        config: { ...config, pid: r.iai.pids[name], runId: `${r.label}-${name}-${++runIdSeq}` }, oracle, ...extra };
-      if (name === PRODUCER) {
-        const control = controls[r.label];
-        const primary = producerProfiles[r.label];
-        const boundaryOverheadIr = control.childIr;
-        assert.equal(primary.totalIr, row.Ir, `producer rerun Ir mismatch @${r.label}`);
-        assert.ok(boundaryOverheadIr >= 1 && boundaryOverheadIr <= 16, `boundary overhead ${boundaryOverheadIr} outside 1..16 @${r.label}`);
-        row.scenario = 'joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window';
-        row.producerIrReceipt = { binarySha256: pinBinaries(arm).iai, source: srcOf(arm), environmentSha256,
-          features: FEATURES.split(' '), cfg: [], receipt: logOf(r, 'iai'),
-          symbolReceipt: `boundary/${r.label}-iai-nm.log`, profileReceipt: `profiles/${r.label}-iai-inventory.json`,
-          symbol: PRODUCER_SYMBOL, runnerVersion, valgrindVersion: 'environment.log',
-          collectAtStart: false, defaultToggle: false, entryPoint: 'Custom', separateThreads: true,
-          toggleCollect: PRODUCER_SYMBOL, generatedArguments: primary.generatedArguments,
-          aggregation: 'sum of all thread profile Ir', childFreeCount: 4096, childIr: primary.childIr,
-          boundaryOverheadIr, workloadIr: primary.childIr - boundaryOverheadIr, boundaryExecutions: 1,
-          totalIr: row.Ir, startedAt: primary.startedAt,
-          control: { receipt: `logs/${r.label}-control.log`, workload: 'child remote frees removed',
-            source: srcOf(arm), binarySha256: pinBinaries(arm).control, environmentSha256,
-            childIr: control.childIr, workloadIr: 0, childFreeCount: 0, boundaryExecutions: 1,
-            symbolReceipt: `boundary/${r.label}-control-nm.log`, profileReceipt: `profiles/${r.label}-control-inventory.json`,
-            symbol: PRODUCER_SYMBOL, toggleCollect: PRODUCER_SYMBOL, cfg: [CONTROL_CFG],
-            features: FEATURES.split(' '), generatedArguments: control.generatedArguments,
-            runnerVersion, valgrindVersion: 'environment.log', collectAtStart: false,
-            defaultToggle: false, entryPoint: 'Custom', separateThreads: true,
-            aggregation: 'sum of all thread profile Ir', totalIr: control.totalIr,
-            deltaIr: row.Ir - control.totalIr, parentSetupUnchanged: true, collectionUnchanged: true } };
-        assert.notEqual(row.producerIrReceipt.control.totalIr, row.Ir, 'non-distinguishing control');
-        assert.ok(row.producerIrReceipt.control.deltaIr > 0, 'non-distinguishing control (deltaIr)');
-        assert.ok(row.producerIrReceipt.workloadIr > 0, 'empty primary workload remainder');
-      }
-      input.iai.push(row);
-    }
-    for (const name of CONTROLS_CELLS) {
-      let ir = r.controls.ir[name];
-      const slopped = ctx.slop && r.label === 'B1' && name === 'r20_prf01_small_churn_16b_2n';
-      if (slopped) { ir += 11; console.log(`[measure] COUNTERFACTUAL: ${name}/B1 Ir inflated to ${ir}`); }
-      input.iai.push({ name, arm: r.label, Ir: ir, environmentSha256,
-        binarySha256: pinBinaries(arm).controls, source: srcOf(arm), startedAt: startedOf(r, 'controls'),
-        features: FEATURES.split(' '), receipt: logOf(r, 'controls'),
-        config: { ...hotConfig(name, r.label), pid: r.controls.pids[name], runId: `${r.label}-${name}-${++runIdSeq}` },
-        oracle: { ...Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, null])),
-          unobservedReasons: Object.fromEntries([...COUNTERS8, 'strict_trim_remaining'].map(k => [k, 'no paired oracle for this control'])), linkage: null } });
-    }
-  }
-  // Counterfactual durability (re-freeze 9): --slop data is marked in the input AND the judge
-  // returns INVALID for any counterfactual marker outside rehearsal.
-  if (ctx.slop) input.counterfactual = { slop: true, arm: 'B1', cell: 'r20_prf01_small_churn_16b_2n', deltaIr: 11,
-    note: 'negative control injected by --slop (rehearsal only); not gate data' };
-  // Receipt-hash anchoring: sha256 of every out-dir file referenced by any receipt field, plus the
-  // retained construction inventories. The judge treats the field as optional schema and never uses
-  // it in the verdict; scripts/r20_prf01_verify_artifacts.mjs is the acceptance consumer.
-  const receiptHashes = {};
-  // Receipt strings may repeat (e.g. identities.*.toolchain.rustc = 'environment.log'): anchor idempotently.
-  const addReceipt = p => { if (!(p in receiptHashes)) receiptHashes[p] = shaFile(local(p)); };
-  const scanReceipts = v => {
-    if (typeof v === 'string') { if (/^(?:environment[.]log|manifest[.]json|builds[.]json|oracle[.]json|(?:logs|boundary|profiles|oracle)\/)/.test(v)) addReceipt(v); }
-    else if (Array.isArray(v)) v.forEach(scanReceipts);
-    else if (v && typeof v === 'object') Object.values(v).forEach(scanReceipts);
-  };
-  scanReceipts(input);
-  for (const run of C3.ARMS) addReceipt(`profiles/${run}-construction-inventory.json`);
-  input.receiptHashes = receiptHashes;
-  putJson('input.json', input);
-  const csv = [...(ctx.slop ? ['# counterfactual: --slop inflated B1/r20_prf01_small_churn_16b_2n by +11 Ir; not gate data (see counterfactual in input.json)'] : []),
-    'target,arm,name,ir,binarySha256',
-    ...input.iai.map(r => `${CONTROLS_CELLS.includes(r.name) ? 'controls' : 'iai'},${r.arm},${r.name},${r.Ir},${r.binarySha256}`)].join('\n') + '\n';
-  putText('summary.csv', csv);
-  const judge = spawnSync(process.execPath, [join(REPO, JUDGE), '--input', local('input.json')], { encoding: 'utf8', maxBuffer: 1 << 24 });
-  putText('verdict.txt', `exit=${judge.status}\n${judge.stdout}${judge.stderr}`);
-  process.stdout.write(judge.stdout);
-  if (judge.stderr) process.stderr.write(judge.stderr);
-  console.log(`[measure] input.json + summary.csv + verdict.txt written to ${ctx.outDir}`);
-  process.exitCode = judge.status === 0 ? 0 : 1;
+  const out = parseArg('--out-dir');
+  return resolve(REPO, out ?? 'docs/perf/R20_PRF01_C3_RUN01');
 }
-function main() {
-  const modes=process.argv.filter(a=>['--prepare','--build','--oracle','--measure','--selftest'].includes(a));
-  assert.equal(modes.length,1,'select exactly one runner stage');
-  const mode=modes[0];
+
+function rehearsalExitCode() { return 0; }
+function rehearsalVerdict(status, output = '') {
+  const body = String(output).replace(/^REHEARSAL:\s*/i, '').trim();
+  return `REHEARSAL: ${status}${body ? `\n${body}` : ''}`;
+}
+function renderRehearsalVerdict(status, stdout = '', stderr = '') {
+  return rehearsalVerdict(status, `${stdout}${stderr}`);
+}
+function rehearsal() {
+  ctx.rehearsal = true;
+  ctx.outDir = stagePaths();
   try {
-    if(mode==='--selftest')return runnerSelftest();
-    ctx.outDir=stagePaths();
-    if(mode==='--prepare')return cmdPrepare();
-    if(mode==='--build')return cmdBuild();
-    if(mode==='--oracle')return cmdOracle();
+    cmdPrepare();
+    cmdBuild();
+    cmdOracle();
+    cmdMeasure();
+  } catch (error) {
+    const message = `REHEARSAL: INCOMPLETE — ${error.message}`;
+    putText('REHEARSAL.txt', renderRehearsalVerdict('INCOMPLETE', message));
+    console.error(message);
+  } finally {
+    process.exitCode = rehearsalExitCode();
+  }
+}
+function cmdCleanup() {
+  assert.ok(RUN_ROOT === resolve(REPO, 'worktrees/r20p1-c3'), 'cleanup refuses custom --arm-root');
+  const manifestPath = resolve(stagePaths(), 'manifest.json');
+  assert.ok(fs.existsSync(manifestPath), `cleanup requires ownership manifest: ${manifestPath}`);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.deepEqual(manifest.ownedWorktrees, ['A','B','C'], 'cleanup refuses missing or invalid ownership record');
+  assert.equal(manifest.wtDir, '<repo>/worktrees/r20p1-c3', 'cleanup refuses unowned worktree root');
+  const expected = ['A','B','C'].map(armDir);
+  assert.deepEqual(
+    manifest.ownedWorktrees,
+    expected.map((_, index) => ['A', 'B', 'C'][index]),
+    'cleanup ownership record mismatch',
+  );
+  for (const wt of expected) {
+    if (fs.existsSync(wt)) git(REPO, ['worktree', 'remove', '--force', wt]);
+  }
+  try { fs.rmdirSync(RUN_ROOT); } catch { /* non-empty or absent */ }
+  console.log('[cleanup] owned A/B/C worktrees removed');
+}
+
+function main() {
+  const modes = process.argv.filter(argument => [
+    '--prepare', '--build', '--oracle', '--measure', '--rehearsal', '--cleanup', '--selftest',
+  ].includes(argument));
+  assert.equal(modes.length, 1, 'select exactly one runner stage');
+  const mode = modes[0];
+  if (mode === '--selftest') return runnerSelftest();
+  if (mode === '--cleanup') { ctx.outDir = stagePaths(); return cmdCleanup(); }
+  if (mode === '--rehearsal') return rehearsal();
+  ctx.outDir = stagePaths();
+  try {
+    if (mode === '--prepare') return cmdPrepare();
+    if (mode === '--build') return cmdBuild();
+    if (mode === '--oracle') return cmdOracle();
     return cmdMeasure();
-  } catch(e) { console.error(`[${mode}] ${e.message}`);process.exitCode=1; }
+  } catch (error) { console.error(`[${mode}] ${error.message}`); process.exitCode = 1; }
 }
 function runnerSelftest() {
-  const sourceA=sourceIdentity('a'.repeat(40),'b'.repeat(40),[]);
-  assert.deepEqual(sourceIdentity('a'.repeat(40),'b'.repeat(40),[]),sourceA,'same-source identity must be label independent');
-  assert.notEqual(sourceIdentity('a'.repeat(40),'b'.repeat(40),[{path:C3.FROZEN_FILES[0],sha256:sha('x')}]).identitySha256,sourceA.identitySha256,'overlay mutant must drift');
-  const frozenExpected=[{path:'sample',sha256:sha('x')}];
-  assert.throws(()=>assert.deepEqual([{path:'sample',sha256:sha('y')}],frozenExpected),'frozen snapshot mutant must reject');
-  const log='==123== Command: /tmp/bench --iai-run r20_prf01_c3_cells 2 0';
-  const debug='callgrind: Arguments: --callgrind-out-file=producer/x --toggle-collect=exact::same_word '+PRODUCER_SETTINGS.join(' ');
-  const fixture='pid: 123\npart: 1\nthread: 1\ncmd: /tmp/bench --iai-run r20_prf01_c3_cells 2 0\nevents: Ir\ntotals: 10\nfn=std::thread::closure\n1 5\ncfn=exact::same_word\ncalls=1 1\n1 5\nfn=exact::same_word\n1 5\n';
-  const childFixture='pid: 123\npart: 1\nthread: 2\ncmd: /tmp/bench --iai-run r20_prf01_c3_cells 2 0\nevents: Ir\ntotals: 5\nfn=std::thread::closure\n1 0\ncfn=exact::same_word\ncalls=1 1\n1 5\nfn=exact::same_word\n1 5\n';
-  const proof=parseProfiles([fixture,childFixture],log,{cellIndex:2,producerSymbol:'exact::same_word',groupName:'r20_prf01_c3_cells',debug,expectedExecutable:'/tmp/bench'});
-  assert.equal(proof.childIr,5); assert.equal(proof.boundaryExecutions,1);
-  assert.throws(()=>parseProfiles([fixture.replace('exact::same_word','exact::distinct_word')],log,{cellIndex:2,producerSymbol:'exact::same_word',groupName:'r20_prf01_c3_cells',debug,expectedExecutable:'/tmp/bench'}));
-  assert.equal(C3.INVENTORY.length,37); assert.equal(new Set(C3.INVENTORY).size,37);
-  assert.throws(()=>assert.ok(/^[0-9a-f]{40}$/.test('TBD')));
-  assert.equal(C3.targetFor(C3.LARGE_REMOTE_FREE),'c3');
-  assert.equal(C3.targetFor(C3.TRIM_CELLS[0]),'trim');
-  for(const name of Object.keys(C3.PRODUCERS))assert.ok(C3.PRODUCERS[name].symbol&&C3.PRODUCERS[name].freeCount>0);
-  console.log('C3 runner selftest PASS: synthetic parser boundary exact-symbol proof, distinct-symbol rejection; inventory 37');
+  return C3.runRunnerSelftest({
+    sourceIdentity, sha, parseProfiles, producerSettings: PRODUCER_SETTINGS, worktreeAddArgs,
+    cleanupOwnership, rehearsalRustflags, rehearsalExitCode, rehearsalVerdict,
+    distinguishRustflags: DISTINGUISH_RUSTFLAGS,
+  });
 }
 main();

@@ -4,10 +4,30 @@
 // docs/perf/R20_CONTROL_GEOMETRY_RULE.md, direct construction cell with
 // budget_K = 0, layout-noise ceiling, native axis DEFERRED).
 import assert from 'node:assert/strict';
+import { fixture } from './r20_prf01_c3_fixture.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { ARMS as arms, FEATURES as primary, V2_BENEFIT as benefit, HOT_FAMILIES as hotFamilies, HOT_CELLS as hotCells, CONSTRUCTION as construction, MIMALLOC as mi, PUBLICATION as publication, SAME_WORD_PRODUCER as producer, DISTINCT_WORD_PRODUCER, LARGE_REMOTE_FREE, TRIM_CELLS, PRODUCERS, targetFor, ALL_COUNTERS, SUMMARY_ONLY_COUNTERS, summaryCounterAllowed, INVENTORY as ALL_INVENTORY, FROZEN_FILES as files } from './r20_prf01_c3_support.mjs';
+import {
+  ARMS as arms,
+  FEATURES as primary,
+  V2_BENEFIT as benefit,
+  HOT_FAMILIES as hotFamilies,
+  HOT_CELLS as hotCells,
+  CONSTRUCTION as construction,
+  MIMALLOC as mi,
+  PUBLICATION as publication,
+  SAME_WORD_PRODUCER as producer,
+  DISTINCT_WORD_PRODUCER,
+  LARGE_REMOTE_FREE,
+  TRIM_CELLS,
+  PRODUCERS,
+  targetFor,
+  ALL_COUNTERS,
+  SUMMARY_ONLY_COUNTERS,
+  summaryCounterAllowed,
+  INVENTORY as ALL_INVENTORY,
+  FROZEN_FILES as files,
+} from './r20_prf01_c3_support.mjs';
 const root = new URL('../', import.meta.url);
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hashes = () => files.map(path => ({path, sha256:sha(readFileSync(new URL(path, root)))}));
@@ -20,7 +40,9 @@ const OPS = {n:64,'2n':128,'4n':256};
 const hotDecl = {r20_prf01_start_one_alloc_free_16b:[1,16,8],
   ...Object.fromEntries(hotFamilies.flatMap(f => Object.entries(OPS).map(([s,ops]) =>
     [`r20_prf01_${f}_${s}`, [ops, f === 'small_churn_16b' ? 16 : f === 'aligned_churn_640b_a128' ? 640 : 256, f === 'aligned_churn_640b_a128' ? 128 : 8]])))};
-const SUMMARY_LOAD_SEMANTICS = "B summary_hint_loads == 0 is source-derived (C'' performs no producer summary preload); the == 0 check is format consistency, not a dynamic absence proof";
+const SUMMARY_LOAD_SEMANTICS =
+  "B summary_hint_loads == 0 is source-derived (C'' performs no producer summary preload); " +
+  'the == 0 check is format consistency, not a dynamic absence proof';
 const counters = ALL_COUNTERS;
 const text = x => assert.ok(typeof x === 'string' && x.trim().length > 0);
 const hex = x => { text(x); assert.match(x,/^[0-9a-f]{64}$/); };
@@ -67,7 +89,7 @@ function config(c, mode = 'normal', ctx = null) {
   assert.equal(c.configConflictsDelta,0); assert.equal(c.processBoundary,'isolated-process'); text(c.runId); nat(c.pid); assert.ok(c.pid>0);
 }
 const verdictFor = (verdict,rehearsal) => rehearsal && !['INVALID','INCOMPLETE','UNJUDGEABLE'].includes(verdict) ? `REHEARSAL: ${verdict}` : verdict;
-const exitFor = verdict => verdict==='GO (deterministic; native deferred)'||verdict==='REHEARSAL: GO (deterministic; native deferred)' ? 0 : 1;
+const exitFor = verdict => verdict.startsWith('REHEARSAL: ')||verdict==='GO (deterministic; native deferred)' ? 0 : 1;
 function derive(d,frozen) {
   const tables={iai:[],slope:[],hot:[],construction:[],oracle:[],native:[],size:[]};
   try {
@@ -86,7 +108,9 @@ function derive(d,frozen) {
     // Native axis (owner requirement, mode 2 (ii)) is DEFERRED to a quiet bare-metal
     // host; it is NOT launched in v2 and the judge refuses a missing deferral marker.
     assert.ok(d.nativeDeferred && typeof d.nativeDeferred==='object');
-    assert.equal(d.nativeDeferred.deferred,true); text(d.nativeDeferred.method); assert.match(d.nativeDeferred.method,/deferred|bare-metal|quiet/i);
+    assert.equal(d.nativeDeferred.deferred,true);
+    text(d.nativeDeferred.method);
+    assert.match(d.nativeDeferred.method,/deferred|bare-metal|quiet/i);
     const pins=d.identities;
     for(const role of ['c3','trim']){hex(pins.A.binaries[role]);hex(pins.B.binaries[role]);}
     hex(pins.C0.c3BinarySha256);hex(pins.C0.trimBinarySha256);
@@ -133,18 +157,39 @@ function derive(d,frozen) {
         for(const k of [...counters,'unique_pending_words'])if(o[k]===null)text(o.unobservedReasons[k]);
         return;
       }
-      const observedOracleReasons=[...counters.filter(k=>o[k]===null),...(o.unique_pending_words===null?['unique_pending_words']:[])].sort();
+      const observedOracleReasons=[
+        ...counters.filter(k=>o[k]===null),
+        ...(o.unique_pending_words===null?['unique_pending_words']:[]),
+      ].sort();
       const unobservedOracleKeys=Object.keys(o.unobservedReasons).sort();
       exact(unobservedOracleKeys,observedOracleReasons);
-      for(const k of counters)if(k!=='unique_pending_words'){
-        if(SUMMARY_ONLY_COUNTERS.includes(k)&&(r.arm.startsWith('A')||r.arm==='C0')){assert.equal(o[k],0);assert.equal(o.unobservedReasons[k],undefined);}
-        else if(k==='strict_trim_remaining'&&!strictTrimObserved(r.name)){assert.equal(o[k],null);text(o.unobservedReasons[k]);}
-        else {nat(o[k],`${r.name}/${r.arm}/${k}`);assert.equal(o.unobservedReasons[k],undefined);}
+      for(const k of counters)if(k!=='unique_pending_words') {
+        if(SUMMARY_ONLY_COUNTERS.includes(k)&&(r.arm.startsWith('A')||r.arm==='C0')) {
+          assert.equal(o[k],0);
+          assert.equal(o.unobservedReasons[k],undefined);
+        } else if(k==='strict_trim_remaining'&&!strictTrimObserved(r.name)) {
+          assert.equal(o[k],null);
+          text(o.unobservedReasons[k]);
+        } else {
+          nat(o[k],`${r.name}/${r.arm}/${k}`);
+          assert.equal(o.unobservedReasons[k],undefined);
+        }
       }
-      if(Object.hasOwn(PRODUCERS,r.name)&&r.arm.startsWith('B')){nat(o.quiescent_summary_missing_bits);nat(o.sizeof_small_sidecar);assert.equal(o.sizeof_small_sidecar,41984);}
-      assert.ok(o.nonempty_cuts<=o.pending_words_exchanged && o.pending_words_exchanged<=o.pending_words_visited);
-      const l=o.linkage,p=pins[r.arm.startsWith('B')?'B':'A'];
-      assert.equal(l.binarySha256,p.binaries.oracle); exact(l.source,rehearsal && r.arm.startsWith('B')?pins.B.oracleSource:r.source); features(l.features,primary); exact(l.cfg,['r19_sidecar_summary_oracle']);
+      if(Object.hasOwn(PRODUCERS,r.name)&&r.arm.startsWith('B')) {
+        nat(o.quiescent_summary_missing_bits);
+        nat(o.sizeof_small_sidecar);
+        assert.equal(o.sizeof_small_sidecar,41984);
+      }
+      if(needed) {
+        assert.ok(o.nonempty_cuts<=o.pending_words_exchanged);
+        assert.ok(o.pending_words_exchanged<=o.pending_words_visited);
+      }
+      const l=o.linkage;
+      const p=pins[r.arm.startsWith('B')?'B':'A'];
+      assert.equal(l.binarySha256,p.binaries.oracle);
+      exact(l.source,rehearsal && r.arm.startsWith('B')?pins.B.oracleSource:r.source);
+      features(l.features,primary);
+      exact(l.cfg,['r19_sidecar_summary_oracle']);
       assert.equal(l.environmentSha256,d.environmentSha256); text(l.receipt); text(l.featureExactReceipt);
       assert.ok(time(l.startedAt)>time(p.buildStartedAt));
       assert.equal(l.primaryBinarySha256,r.binarySha256);
@@ -169,62 +214,132 @@ function derive(d,frozen) {
         const a=r.arm.startsWith('B')?'B':'A';
         const target=targetFor(r.name),role=target==='c3'?'c3':target==='trim'?'trim':null;
       const binary=role??(hotDecl[r.name]?'controls':'iai');
-      const expectedBinary=r.arm==='C0'?(role?c0Role(role):hotDecl[r.name]?pins.C0.controlsBinarySha256:pins.C0.binarySha256):pins[a].binaries[binary];
+      const expectedBinary=r.arm==='C0'
+        ? (role?c0Role(role):hotDecl[r.name]?pins.C0.controlsBinarySha256:pins.C0.binarySha256)
+        : pins[a].binaries[binary];
       provenance(r,a,expectedBinary);
         if(r.arm==='C0')assert.ok(time(r.startedAt)>time(pins.C0.buildStartedAt));
         nat(r.Ir); assert.ok(r.Ir>0); exact(r.config.requested,rs[0].config.requested); oracle(r,needed);
         if(benefit.includes(name)) {
-          assert.ok(r.oracle.routed_scans>0); assert.equal(r.oracle.routed_scans,rs[0].oracle.routed_scans);
-          assert.equal(r.oracle.nonempty_cuts,0); assert.equal(r.oracle.discovery_records_reclaimed,0);
-          if(a==='B') { assert.equal(r.oracle.pending_words_visited,0); assert.ok(r.oracle.summary_words_visited>0); }
-          else { assert.ok(r.oracle.pending_words_visited>0); assert.equal(r.oracle.pending_words_exchanged,r.oracle.pending_words_visited);
-            const expected=name===benefit[0]?319063:name===benefit[1]?1004503:null;
-            if(expected!==null)assert.ok(Math.abs(r.oracle.pending_words_visited-expected)<=Math.floor(expected*.01),'frozen 1% pending count tolerance');
+          assert.ok(r.oracle.routed_scans>0);
+          assert.equal(r.oracle.routed_scans,rs[0].oracle.routed_scans);
+          assert.equal(r.oracle.nonempty_cuts,0);
+          assert.equal(r.oracle.discovery_records_reclaimed,0);
+          if(a==='B') {
+            assert.equal(r.oracle.pending_words_visited,0);
+            assert.ok(r.oracle.summary_words_visited>0);
+          } else {
+            assert.ok(r.oracle.pending_words_visited>0);
+            assert.equal(r.oracle.pending_words_exchanged,r.oracle.pending_words_visited);
           }
-          if(name.startsWith('growth16_')) { assert.equal(r.config.requested.workCount,[32768,65536,131072][benefit.indexOf(name)-2]); assert.equal(r.config.requested.blockBytes,16); }
+          if(a==='A') {
+            const expected=name===benefit[0]?319063:name===benefit[1]?1004503:null;
+            if(expected!==null) {
+              assert.ok(
+                Math.abs(r.oracle.pending_words_visited-expected)<=Math.floor(expected*.01),
+                'frozen 1% pending count tolerance',
+              );
+            }
+          }
+        }
+        if(name.startsWith('growth16_')) {
+          assert.equal(r.config.requested.workCount,[32768,65536,131072][benefit.indexOf(name)-2]);
+          assert.equal(r.config.requested.blockBytes,16);
         }
         if(Object.hasOwn(PRODUCERS,name)) {
           if(r.arm.startsWith('B')) {
-            nat(r.oracle.quiescent_summary_missing_bits); nat(r.oracle.sizeof_small_sidecar);
+            nat(r.oracle.quiescent_summary_missing_bits);
+            nat(r.oracle.sizeof_small_sidecar);
             assert.equal(r.oracle.quiescent_summary_missing_bits,0,'producer must be quiescent before discovery');
             assert.equal(r.oracle.sizeof_small_sidecar,41984);
-            if(name===LARGE_REMOTE_FREE) { assert.equal(r.oracle.summary_hint_rmw,0); assert.equal(r.oracle.summary_hint_loads,0); assert.equal(r.oracle.unique_pending_words,0); }
-            else {
+            if(name===LARGE_REMOTE_FREE) {
+              assert.equal(r.oracle.summary_hint_rmw,0);
+              assert.equal(r.oracle.summary_hint_loads,0);
+              assert.equal(r.oracle.unique_pending_words,0);
+            } else {
               assert.equal(r.oracle.summary_hint_loads,4096);
               const observedRmw=Number(r.oracle.unique_pending_words); nat(observedRmw,'unique pending-word count');
               assert.equal(r.oracle.summary_hint_rmw,observedRmw);
               if(name===producer)assert.ok(observedRmw>0&&observedRmw<r.oracle.summary_hint_loads);
               else assert.equal(observedRmw,4096);
             }
-          } else { assert.equal(r.oracle.summary_hint_rmw,0); assert.equal(r.oracle.summary_hint_loads,0); assert.equal(r.oracle.unique_pending_words,0); }
+          } else {
+            assert.equal(r.oracle.summary_hint_rmw,0);
+            assert.equal(r.oracle.summary_hint_loads,0);
+            assert.equal(r.oracle.unique_pending_words,0);
+          }
           const p=r.producerIrReceipt; assert.ok(p && typeof p==='object');
           assert.equal(p.binarySha256,r.binarySha256); exact(p.source,r.source); assert.equal(p.environmentSha256,r.environmentSha256);
           const spec=PRODUCERS[name],c=p.control;
-          assert.equal(p.toggleCollect,p.symbol);assert.equal(c.symbol,p.symbol);assert.equal(c.toggleCollect,p.symbol);exact(c.cfg,[spec.cfg]);
-          text(p.receipt);text(p.symbolReceipt);text(p.profileReceipt);text(c.receipt);text(c.symbolReceipt);text(c.profileReceipt);
+          features(p.features,primary); exact(p.cfg,[]); assert.equal(p.symbol,spec.symbol);
+          assert.equal(p.toggleCollect,p.symbol);
+          assert.equal(c.symbol,p.symbol);
+          assert.equal(c.toggleCollect,p.symbol);
+          exact(c.cfg,[spec.cfg]);
+          text(p.receipt);
+          text(p.symbolReceipt);
+          text(p.profileReceipt);
+          text(c.receipt);
+          text(c.symbolReceipt);
+          text(c.profileReceipt);
           assert.match(p.runnerVersion,/^0[.]14[.]/);text(p.valgrindVersion);
-          assert.equal(p.collectAtStart,false);assert.equal(p.defaultToggle,false);assert.equal(p.entryPoint,'Custom');assert.equal(p.separateThreads,true);
+          assert.equal(p.collectAtStart,false);
+          assert.equal(p.defaultToggle,false);
+          assert.equal(p.entryPoint,'Custom');
+          assert.equal(p.separateThreads,true);
           text(p.generatedArguments);assert.equal(p.aggregation,'sum of all thread profile Ir');
           nat(p.childIr);assert.ok(p.childIr>0);assert.ok(time(p.startedAt)>time(r.source.capturedAt));
-          assert.equal(c.environmentSha256,r.environmentSha256);source(c.source);hex(c.binarySha256);assert.notEqual(c.binarySha256,r.binarySha256);
-          nat(c.childIr);nat(c.totalIr);nat(p.totalIr);assert.equal(p.totalIr,r.Ir);          assert.equal(p.childIr,c.childIr+p.workloadIr);assert.notEqual(c.totalIr,p.totalIr);assert.equal(c.deltaIr,p.totalIr-c.totalIr);assert.equal(c.totalIr,p.totalIr-c.deltaIr);assert.ok(c.deltaIr>0);
+          assert.equal(c.environmentSha256,r.environmentSha256);
+          source(c.source);
+          hex(c.binarySha256);
+          assert.notEqual(c.binarySha256,r.binarySha256);
+          assert.equal(c.workload,'child remote frees removed');
+          nat(c.childIr);
+          nat(c.totalIr);
+          nat(p.totalIr);
+          assert.equal(p.totalIr,r.Ir);
+          assert.equal(p.childIr,c.childIr+p.workloadIr);
+          assert.notEqual(c.totalIr,p.totalIr);
+          assert.equal(c.deltaIr,p.totalIr-c.totalIr);
+          assert.equal(c.totalIr,p.totalIr-c.deltaIr);
+          assert.ok(c.deltaIr>0);
+          assert.ok(p.childIr<=p.totalIr);
+          assert.ok(c.childIr<=c.totalIr);
+          assert.equal(p.childFreeCount,spec.freeCount);
+          assert.equal(c.childFreeCount,0);
+          assert.equal(p.boundaryExecutions,1);
+          assert.equal(c.boundaryExecutions,1);
+          assert.equal(c.workloadIr,0);
           if(spec.blockBytes!==null)assert.equal(r.config.requested.blockBytes,spec.blockBytes);
           assert.equal(r.config.requested.workCount,spec.freeCount);
-          assert.ok(p.boundaryOverheadIr>=1&&p.boundaryOverheadIr<=16);assert.equal(c.childIr,p.boundaryOverheadIr);nat(p.workloadIr);assert.equal(p.workloadIr,p.childIr-p.boundaryOverheadIr);assert.ok(p.workloadIr>0);
+          assert.ok(p.boundaryOverheadIr>=1&&p.boundaryOverheadIr<=16);
+          assert.equal(c.childIr,p.boundaryOverheadIr);
+          nat(p.workloadIr);
+          assert.equal(p.workloadIr,p.childIr-p.boundaryOverheadIr);
+          assert.ok(p.workloadIr>0);
           exact(c.cfg,[spec.cfg]); features(c.features,primary); exact(c.source,r.source);
 text(c.generatedArguments);
           assert.match(c.runnerVersion,/^0[.]14[.]/); text(c.valgrindVersion); assert.equal(c.collectAtStart,false); assert.equal(c.defaultToggle,false);
           assert.equal(c.entryPoint,'Custom'); assert.equal(c.separateThreads,true); assert.equal(c.aggregation,'sum of all thread profile Ir');
           assert.equal(p.control.parentSetupUnchanged,true); assert.equal(p.control.collectionUnchanged,true);
-          if(name===producer){assert.equal(r.config.requested.segmentCount,1);assert.equal(r.scenario,'joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window');}
+          if(name===producer) {
+            assert.equal(r.config.requested.segmentCount,1);
+            assert.equal(
+              r.scenario,
+              'joined remote Small frees; repeated frees in same pending word; ' +
+              'no owner discovery during producer window',
+            );
+          }
         }
         if(name===publication||TRIM_CELLS.includes(name)) {
           assert.ok(r.oracle.routed_scans>0);
           if(name===publication)assert.ok(r.oracle.discovery_records_reclaimed>0);
-          const armIndex=arms.indexOf(r.arm); if(armIndex>0)for(const k of ['discovery_records_reclaimed','strict_trim_remaining'])if(r.oracle[k]!==null)assert.equal(r.oracle[k],rs[0].oracle[k]);
+          const armIndex=arms.indexOf(r.arm);
+          if(armIndex>0)for(const k of ['discovery_records_reclaimed','strict_trim_remaining']) {
+            if(r.oracle[k]!==null)assert.equal(r.oracle[k],rs[0].oracle[k]);
+          }
         }
       }
-      for(const r of rs)        if(benefit.includes(name)) { assert.ok(r.oracle.routed_scans>0); assert.equal(r.oracle.routed_scans,rs[0].oracle.routed_scans); assert.equal(r.oracle.nonempty_cuts,0);assert.equal(r.oracle.discovery_records_reclaimed,0);if(r.arm.startsWith('B')){assert.equal(r.oracle.pending_words_visited,0);assert.ok(r.oracle.summary_words_visited>0);}else{assert.ok(r.oracle.pending_words_visited>0);assert.equal(r.oracle.pending_words_exchanged,r.oracle.pending_words_visited);}}
       // Benefit / producer / mimalloc cross pairs (carried over from R19, exact BigInt arithmetic).
       for(const a of rs)for(const b of rs)if(a.arm[0]==='A'&&b.arm[0]==='B') {
         const delta=BigInt(b.Ir)-BigInt(a.Ir); let percent=null,pass=true,mode='descriptive';
@@ -239,12 +354,19 @@ text(c.generatedArguments);
           if(name===LARGE_REMOTE_FREE)pass=ABS(irDelta)<=10n;
           if(name!==LARGE_REMOTE_FREE)percent=pct(workDelta,BigInt(PRODUCERS[name].freeCount));
         }
-        if(TRIM_CELLS.includes(name)){mode='mode2';const t=MAXB(10n,ABS(BigInt(rs[0].Ir)-BigInt(rs[1].Ir)),ABS(BigInt(rs[4].Ir)-BigInt(rs[0].Ir)));pass=ABS(delta)<=t;}
+        if(TRIM_CELLS.includes(name)) {
+          mode='mode2';
+          const t=MAXB(
+            10n,
+            ABS(BigInt(rs[0].Ir)-BigInt(rs[1].Ir)),
+            ABS(BigInt(rs[4].Ir)-BigInt(rs[0].Ir)),
+          );
+          pass=ABS(delta)<=t;
+        }
         if(mode==='mode1')mode1Fail ||= !pass;
         if(mode==='mode2')mode2Fail ||= !pass;
         tables.iai.push({name,A:a.arm,B:b.arm,delta:Number(delta),mode,...(percent?{percent}:{pass:delta===0n}),pass});
       }
-      if(needed)tables.oracle.push({name,summaryLoadSemantics:SUMMARY_LOAD_SEMANTICS,arms:rs.map(r=>({arm:r.arm,...r.oracle}))});
       }
     }
     // growth16 slope of B, unchanged owner threshold <= 2.5 (exact BigInt).
@@ -334,7 +456,13 @@ text(c.generatedArguments);
       tables.construction.push(row);
     }
     const countersOk=Object.hasOwn(d,'sizeOf');
-    nat(d.sizeOf.A); nat(d.sizeOf.B); assert.ok(d.sizeOf.A>0); assert.ok(d.sizeOf.B>0);assert.equal(d.sizeOf.A,41984);assert.equal(d.sizeOf.B,41984);text(d.sizeOf.receipt);
+    nat(d.sizeOf.A);
+    nat(d.sizeOf.B);
+    assert.ok(d.sizeOf.A>0);
+    assert.ok(d.sizeOf.B>0);
+    assert.equal(d.sizeOf.A,41984);
+    assert.equal(d.sizeOf.B,41984);
+    text(d.sizeOf.receipt);
     const sizePass=d.sizeOf.A===41984&&d.sizeOf.B===41984; mode1Fail ||= !sizePass;
     tables.size.push({A:d.sizeOf.A,B:d.sizeOf.B,numerator:d.sizeOf.B-d.sizeOf.A,expected:0,pass:sizePass});
     // Native axis: DEFERRED (never launched in v2). Any deterministic failure still => NO-GO.
@@ -352,87 +480,63 @@ text(c.generatedArguments);
     return {version:1,rehearsal,verdict:verdictFor(verdict,rehearsal),modes,unjudgeable,tables};
   } catch(e) { return {version:1,...(d&&d.rehearsal===true?{rehearsal:true}:{}),verdict:'INCOMPLETE',modes:{mode1:'INCOMPLETE',mode2Iai:'INCOMPLETE',mode2Native:'DEFERRED'},reason:e.message,tables}; }
 }
-function fixture(frozen) {
-  const h=c=>c.repeat(64),src=c=>({baseHead:c.repeat(40),patchSha256:h(c),untrackedSha256:h(c),identitySha256:h(c),capturedAt:'2026-10-11T00:00:00Z'});
-  const p=(c,bs)=>({label:c==='a'?'A':'B',source:src(c),measurementCommit:c.repeat(40),environmentSha256:h('e'),binaries:{iai:h(bs[0]),controls:h(bs[3]),oracle:h(bs[1]),control:h(bs[2]),c3:h(bs[0]),trim:h(bs[3])},buildStartedAt:'2026-10-11T01:00:00Z',features:primary,primaryCfg:[],oracleCfg:['r19_sidecar_summary_oracle'],buildReceipt:'synthetic/build',toolchain:{rustc:'synthetic',target:'synthetic',profile:'bench',flags:'none'}});
-  let id=0;
-  const cfg=(workCount=1,blockBytes=16)=>{const requested={maintenance:false,workCount,segmentCount:1,blockBytes,cachePolicy:'default'};return {requested,resolved:{...requested},configConflictsDelta:0,processBoundary:'isolated-process',runId:`synthetic-${++id}`,pid:id};};
-  const hotCfg=(name,a)=>{const [w,b,al]=hotDecl[name];const requested={maintenance:false,workCount:w,segmentCount:null,blockBytes:b,cachePolicy:'default'};return {requested,resolved:{...requested},configConflictsDelta:0,processBoundary:'isolated-process',runId:`synthetic-${++id}`,pid:id,unobservedReasons:{segmentCount:'measured body has no paired geometry observer'},declaredProvenance:{receipt:'synthetic/inventory',cell:name,fields:['workCount','blockBytes','alignment'],alignment:al},resolvedProvenance:{runId:'probe-'+id,pid:999,arm:a,binarySha256:a==='B'?h('6'):h('2'),receipt:'synthetic/probe',claimPath:'global',copiedFields:['cachePolicy','configConflictsDelta','maintenance']}};};
-  const d={version:1,hashes:frozen,entry:'SeferAlloc::GlobalAlloc->HeapCore routed',environmentSha256:h('e'),inventoryReceipt:'synthetic/inventory',identityReviewReceipt:'synthetic/review',environmentReceipt:'synthetic/env',oracleReceipt:'synthetic/oracle',nativeDeferred:{deferred:true,method:'batch-timer native paired A/B on a quiet bare-metal host (deferred; not launched in v2)'},identities:{A:p('a','1234'),B:p('b','5678'),C0:{source:src('a'),binarySha256:h('7'),controlsBinarySha256:h('9'),c3BinarySha256:h('a'),trimBinarySha256:h('b'),buildStartedAt:'2026-10-11T01:00:00Z',buildReceipt:'synthetic/c0'}},ancestry:{result:'A ancestor B',chain:['a'.repeat(40),'b'.repeat(40)],receipt:'synthetic/ancestry'},sizeOf:{A:41984,B:41984,receipt:'synthetic/size'},inventory,iai:[]};
-  function row(arm,binary,name,configuration){return {name,arm,environmentSha256:d.environmentSha256,binarySha256:binary,source:d.identities[arm.startsWith('B')?'B':'A'].source,startedAt:'2026-10-11T02:00:00Z',features:primary,receipt:'synthetic/log',config:configuration};}
-  const linkage=(r,pin)=>({binarySha256:pin.binaries.oracle,primaryBinarySha256:r.binarySha256,source:r.source,features:primary,cfg:['r19_sidecar_summary_oracle'],environmentSha256:d.environmentSha256,receipt:'synthetic/oracle-log',featureExactReceipt:'synthetic/review',startedAt:r.startedAt,config:{...r.config,runId:`link-${++id}`}});
-  for(const name of inventory)for(const arm of arms) {
-    const a=arm.startsWith('B')?'B':'A',isB=a==='B',pin=d.identities[a];
-    const isHot=hotDecl[name]!==undefined,work=isHot?hotDecl[name][0]:name===producer?4096:name.startsWith('growth16_')?[32768,65536,131072][benefit.indexOf(name)-2]:1;
-    const role=targetFor(name),binary=role==='c3'?pin.binaries.c3:role==='trim'?pin.binaries.trim:isHot?pin.binaries.controls:pin.binaries.iai;
-    const r={...row(arm,arm==='C0'?(role==='c3'?d.identities.C0.c3BinarySha256:role==='trim'?d.identities.C0.trimBinarySha256:isHot?d.identities.C0.controlsBinarySha256:d.identities.C0.binarySha256):binary,name,isHot?hotCfg(name,a):cfg(work,name.startsWith('growth16_')||name===DISTINCT_WORD_PRODUCER||name===LARGE_REMOTE_FREE?16:258752))};
-    r.Ir=100000;
-    if(mi.includes(name))r.config={requested:null,resolved:null,configConflictsDelta:null,notApplicableReason:'mimalloc does not resolve SeferAlloc configuration',processBoundary:'isolated-process',runId:r.config.runId,pid:r.config.pid};
-      const needed=benefit.includes(name)||name===publication||Object.hasOwn(PRODUCERS,name)||TRIM_CELLS.includes(name);
-    r.oracle=Object.fromEntries([...counters,'unique_pending_words'].map(k=>[k,needed?0:null])); r.oracle.unobservedReasons=needed?Object.fromEntries([...counters,'unique_pending_words'].map(k=>[k,'unobserved in synthetic fixture'])):Object.fromEntries([...counters,'unique_pending_words'].map(k=>[k,'compiled out in primary; no paired observer for this control'])); r.oracle.linkage=null;
-    if(needed&&arm.startsWith('A'))for(const k of [...SUMMARY_ONLY_COUNTERS,'unique_pending_words']){r.oracle[k]=0;delete r.oracle.unobservedReasons[k];}
-if(!needed){r.oracle.unique_pending_words=null;r.oracle.unobservedReasons.unique_pending_words='no producer counter observed in this control';}
-    if(needed) {
-      r.oracle.linkage=linkage(r,pin);
-              if(benefit.includes(name)) { r.oracle.routed_scans=99; if(isB)r.oracle.summary_words_visited=64; else {const v=name===benefit[0]?319063:name===benefit[1]?1004503:100; r.oracle.pending_words_visited=v; r.oracle.pending_words_exchanged=v;} }
-      if(name===publication||TRIM_CELLS.includes(name)){r.oracle.routed_scans=1;r.oracle.discovery_records_reclaimed=name===publication?34:1;r.oracle.strict_trim_remaining=name===TRIM_CELLS[0]||name===publication?0:null;if(r.name===publication||TRIM_CELLS.includes(name)){r.oracle.quiescent_summary_missing_bits=0;r.oracle.sizeof_small_sidecar=41984;}if(r.oracle.strict_trim_remaining===null)r.oracle.unobservedReasons.strict_trim_remaining='strict trim counter unavailable for this cell';else delete r.oracle.unobservedReasons.strict_trim_remaining;}
-      if(Object.hasOwn(PRODUCERS,name)||TRIM_CELLS.includes(name)) {r.oracle.sizeof_small_sidecar=41984;r.oracle.quiescent_summary_missing_bits=0;}
-      if(Object.hasOwn(PRODUCERS,name)) {r.oracle.sizeof_small_sidecar=41984;r.oracle.quiescent_summary_missing_bits=0;r.oracle.summary_hint_rmw=isB?(name===LARGE_REMOTE_FREE?0:name===DISTINCT_WORD_PRODUCER?4096:64):0;r.oracle.summary_hint_loads=isB?(name===LARGE_REMOTE_FREE?0:4096):0;r.oracle.unique_pending_words=isB?(name===LARGE_REMOTE_FREE?0:name===DISTINCT_WORD_PRODUCER?4096:64):0;if(isB)for(const k of ['unique_pending_words','summary_hint_rmw','summary_hint_loads','quiescent_summary_missing_bits','sizeof_small_sidecar'])delete r.oracle.unobservedReasons[k];}
-      if(name===producer)r.scenario='joined remote Small frees; repeated frees in same pending word; no owner discovery during producer window';
-      if(!strictTrimObserved(name))r.oracle.strict_trim_remaining=null;
-      for(const k of counters)if(k==='strict_trim_remaining') {if(r.oracle[k]===null)r.oracle.unobservedReasons[k]='strict trim counter unavailable for this cell';else delete r.oracle.unobservedReasons[k];}
-      // Reasons only for keys this fixture leaves unobserved (null).
-      for(const k of Object.keys(r.oracle.unobservedReasons))if(r.oracle[k]!==null)delete r.oracle.unobservedReasons[k];
-    }
-    if(Object.hasOwn(PRODUCERS,name)) {
-      const spec=PRODUCERS[name],large=name===LARGE_REMOTE_FREE,free=spec.freeCount,block=spec.blockBytes??1024;
-      const symbol=spec.symbol;
-      const primaryIr=100000, controlIr=99990, overhead=8;
-      const childIr=overhead+10;
-      const control={receipt:'synthetic/c',workload:'producer work removed',source:r.source,binarySha256:h('8'),environmentSha256:r.environmentSha256,childIr:overhead,workloadIr:0,childFreeCount:0,boundaryExecutions:1,symbolReceipt:'synthetic/cnm',profileReceipt:'synthetic/cprof',symbol,toggleCollect:symbol,cfg:[spec.cfg],features:primary,generatedArguments:'synthetic',runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,aggregation:'sum of all thread profile Ir',totalIr:controlIr,deltaIr:primaryIr-controlIr,parentSetupUnchanged:true,collectionUnchanged:true,minimumWorkPath:'synthetic/minimum-work.txt',minimumWorkSha256:h('c'),minimumWorkRemovedPassObserved:true};
-      r.Ir=primaryIr;
-      r.producerIrReceipt={binarySha256:r.binarySha256,source:r.source,environmentSha256:r.environmentSha256,features:primary,cfg:[],receipt:'synthetic/p',symbolReceipt:'synthetic/nm',profileReceipt:'synthetic/prof',symbol,runnerVersion:'0.14.2',valgrindVersion:'synthetic',collectAtStart:false,defaultToggle:false,entryPoint:'Custom',separateThreads:true,toggleCollect:symbol,generatedArguments:'synthetic',aggregation:'sum of all thread profile Ir',childFreeCount:free,childIr:18,boundaryOverheadIr:8,workloadIr:10,boundaryExecutions:1,totalIr:primaryIr,startedAt:r.startedAt,minimumWorkPath:'synthetic/minimum-work.txt',minimumWorkSha256:h('d'),minimumWorkRemovedPassObserved:true,control};
-      r.producerIrReceipt.control.totalIr=controlIr; r.producerIrReceipt.control.deltaIr=primaryIr-controlIr;
-r.oracle.summary_hint_rmw=isB?(large?0:name===DISTINCT_WORD_PRODUCER?4096:64):0;r.oracle.summary_hint_loads=isB?(large?0:4096):0;r.oracle.unique_pending_words=isB?(large?0:name===DISTINCT_WORD_PRODUCER?4096:64):0;r.oracle.quiescent_summary_missing_bits=0;r.oracle.sizeof_small_sidecar=41984;
-      if(large){r.Ir=100000;r.producerIrReceipt.workloadIr=10;r.producerIrReceipt.childIr=18;r.producerIrReceipt.totalIr=r.Ir;}
-      r.config.requested.workCount=free;r.config.resolved.workCount=free;r.config.requested.blockBytes=block;r.config.resolved.blockBytes=block;
-    }
-    if(name===construction&&arm.startsWith('B'))r.constructionGainReceipt={path:'docs/perf/r20_prf01_construction_gain_decomposition.txt',sha256:h('9'),removedPassObserved:true,decomposition:'retained Callgrind A/B functional decomposition: the 4096-word pending pass is gone'};
-    d.iai.push(r);
-  }
-  // Ir values: benefits satisfy their thresholds; hot families are affine with a
-  // per-op slope of 100 (s = 6400 over 64 ops); construction A1=A2=B1=B2=C0 equal.
-  const setIr=(name,arm,ir)=>{d.iai.find(r=>r.name===name&&r.arm===arm).Ir=ir;};
-  for(const arm of arms) {
-    setIr(benefit[0],arm,arm.startsWith('B')?1000000:4000000);
-    setIr(benefit[1],arm,arm.startsWith('B')?1000000:12000000);
-    for(const name of benefit.slice(2))setIr(name,arm,100000+benefit.indexOf(name)*1000);
-    for(const f of hotFamilies)for(const [i,s] of ['n','2n','4n'].entries())setIr(`r20_prf01_${f}_${s}`,arm,100000+6400*(1<<i));
-    setIr(construction,arm,100000);
-    for(const name of mi)setIr(name,arm,50000);
-    setIr(publication,arm,arm.startsWith('B')?1000:100000);
-    setIr(producer,arm,arm.startsWith('B')?100000:100000);
-  }
-    for(const r of d.iai.filter(r=>r.name===producer)){r.producerIrReceipt.totalIr=r.Ir;r.producerIrReceipt.control.totalIr=r.Ir-10;r.producerIrReceipt.control.deltaIr=10;}
-  return d;
-}
 function selftest() {
-  const frozen=[{path:'synthetic',sha256:'a'.repeat(64)}],d=fixture(frozen); let checks=0;
+  const frozen = [{ path: 'synthetic', sha256: 'a'.repeat(64) }];
+  const d = fixture(frozen, {
+    inventory, counters, hotDecl, primary, benefit, producer, mi, PRODUCERS,
+    targetFor, arms, DISTINCT_WORD_PRODUCER, LARGE_REMOTE_FREE, TRIM_CELLS,
+    SUMMARY_ONLY_COUNTERS, publication, strictTrimObserved, hotFamilies, construction,
+  });
+  let checks = 0;
   const set=(x,name,arm,ir)=>{x.iai.find(r=>r.name===name&&r.arm===arm).Ir=ir;};
   const check=(f,expected='INCOMPLETE')=>{
     const x=structuredClone(d);
-    const producerRows=x.iai.filter(r=>Object.hasOwn(PRODUCERS,r.name)&&r.producerIrReceipt).map(r=>({name:r.name,arm:r.arm,Ir:r.Ir,child:r.producerIrReceipt.childIr,ctrl:r.producerIrReceipt.control.childIr,overhead:r.producerIrReceipt.boundaryOverheadIr,work:r.producerIrReceipt.workloadIr}));
+    const producerRows=x.iai
+      .filter(r=>Object.hasOwn(PRODUCERS,r.name)&&r.producerIrReceipt)
+      .map(r=>({
+        name:r.name,
+        arm:r.arm,
+        Ir:r.Ir,
+        child:r.producerIrReceipt.childIr,
+        ctrl:r.producerIrReceipt.control.childIr,
+        overhead:r.producerIrReceipt.boundaryOverheadIr,
+        work:r.producerIrReceipt.workloadIr,
+      }));
     f(x);
     for(const r of x.iai??[]) if(r.producerIrReceipt) {
       const before=producerRows.find(q=>q.name===r.name&&q.arm===r.arm);
       if(!before)continue;
       const p=r.producerIrReceipt;
-      if(p.workloadIr!==before.work) { p.childIr=p.boundaryOverheadIr+p.workloadIr; r.Ir=p.childIr; p.totalIr=r.Ir; p.control.totalIr=r.Ir-10; p.control.deltaIr=10; }
-      else if(r.Ir!==before.Ir) { p.totalIr=r.Ir; p.childIr=before.child+(r.Ir-before.Ir); p.boundaryOverheadIr=before.overhead; p.workloadIr=p.childIr-p.boundaryOverheadIr; p.control.totalIr=before.Ir-10+(r.Ir-before.Ir); p.control.deltaIr=r.Ir-p.control.totalIr; }
-      else if(p.control&&p.control.childIr===before.ctrl)p.control.childIr=p.boundaryOverheadIr;
+      if(p.workloadIr!==before.work) {
+        p.childIr=p.boundaryOverheadIr+p.workloadIr;
+        r.Ir=Math.max(before.Ir,p.childIr+p.control.childIr+10);
+        p.totalIr=r.Ir;
+        p.control.totalIr=Math.max(r.Ir-10,p.control.childIr);
+        p.control.deltaIr=r.Ir-p.control.totalIr;
+      } else if(p.boundaryOverheadIr!==before.overhead) {
+        p.childIr=p.boundaryOverheadIr+p.workloadIr;
+        r.Ir=Math.max(before.Ir,p.childIr+p.control.childIr+10);
+        p.totalIr=r.Ir;
+        p.control.totalIr=Math.max(r.Ir-10,p.control.childIr);
+        p.control.deltaIr=r.Ir-p.control.totalIr;
+      } else if(r.Ir!==before.Ir) {
+        p.totalIr=r.Ir;
+        p.childIr=before.child+(r.Ir-before.Ir);
+        p.boundaryOverheadIr=before.overhead;
+        p.workloadIr=p.childIr-p.boundaryOverheadIr;
+        p.control.totalIr=Math.max(r.Ir-10,p.control.childIr);
+        p.control.deltaIr=r.Ir-p.control.totalIr;
+      } else if(p.control&&p.control.childIr===before.ctrl) {
+        p.control.childIr=p.boundaryOverheadIr;
+      }
     }
     const result=derive(x,frozen);
-    assert.equal(result.verdict,expected,`check ${checks+1}: ${result.reason??''} :: ${String(f).slice(0,140)}`); checks++;
+    assert.equal(
+      result.verdict,
+      expected,
+      `check ${checks+1}: ${result.reason??''} :: ${String(f).slice(0,140)}`,
+    );
+    checks++;
   };
   const GO='GO (deterministic; native deferred)';
   // Baseline + global verdict: deterministic axes pass, native deferred (GO is unreachable in v2).
@@ -461,7 +565,9 @@ function selftest() {
   check(x=>x.iai.find(r=>r.name===benefit[2]&&r.arm==='A2').oracle.routed_scans=98);
   check(x=>x.iai.find(r=>r.name===benefit[2]&&r.arm==='A1').oracle.summary_hint_rmw=1);
   check(x=>x.iai.find(r=>r.name===publication&&r.arm==='B2').oracle.discovery_records_reclaimed=0);
-  for(const k of ['summary_hint_rmw','summary_hint_loads'])check(x=>x.iai.find(r=>r.name===producer&&r.arm==='A1').oracle[k]=1);
+  for(const k of ['summary_hint_rmw','summary_hint_loads']) {
+    check(x=>x.iai.find(r=>r.name===producer&&r.arm==='A1').oracle[k]=1);
+  }
   check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_hint_rmw=0);
   check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_hint_rmw=4096);
   check(x=>x.iai.find(r=>r.name===producer&&r.arm==='B2').oracle.summary_hint_loads=1);
@@ -523,17 +629,87 @@ function selftest() {
   // Producer Amendment B coverage boundaries.
   const pr=x=>x.iai.find(r=>r.name===producer&&r.arm==='B1').producerIrReceipt;
   check(x=>pr(x).boundaryOverheadIr=0); check(x=>pr(x).boundaryOverheadIr=17);
-  check(x=>{const p=pr(x),r=x.iai.find(q=>q.name===producer&&q.arm==='B1');p.boundaryOverheadIr=16;p.control.childIr=16;p.workloadIr=2;p.childIr=18;r.Ir=100000;p.totalIr=100000;p.control.totalIr=99990;p.control.deltaIr=10;r.oracle.summary_hint_rmw=64;r.oracle.quiescent_summary_missing_bits=0;r.oracle.sizeof_small_sidecar=41984;},GO);
-  check(x=>{const r=x.iai.find(q=>q.name===producer&&q.arm==='B1');r.Ir+=24576;const p=r.producerIrReceipt;p.totalIr=r.Ir;p.childIr+=24576;p.workloadIr=p.childIr-p.boundaryOverheadIr;p.control.totalIr=r.Ir-10;p.control.deltaIr=10;},GO);
-  check(x=>{const r=x.iai.find(q=>q.name===producer&&q.arm==='B1');r.Ir+=24577;const p=r.producerIrReceipt;p.totalIr=r.Ir;p.childIr+=24577;p.workloadIr=p.childIr-p.boundaryOverheadIr;p.control.totalIr=r.Ir-10;p.control.deltaIr=10;},'NO-GO');
-  check(x=>pr(x).childIr=pr(x).boundaryOverheadIr);
+  check(x=>{
+    const p=pr(x);
+    const r=x.iai.find(q=>q.name===producer&&q.arm==='B1');
+    p.boundaryOverheadIr=16;
+    p.control.childIr=16;
+    p.control.totalIr=100000;
+    p.workloadIr=2;
+    p.childIr=18;
+    r.Ir=100000;
+    p.totalIr=100000;
+    p.control.totalIr=99990;
+    p.control.deltaIr=10;
+    r.oracle.summary_hint_rmw=64;
+    r.oracle.quiescent_summary_missing_bits=0;
+    r.oracle.sizeof_small_sidecar=41984;
+  },GO);
+  check(x=>{
+    const r=x.iai.find(q=>q.name===producer&&q.arm==='B1');
+    r.Ir+=24576;
+    const p=r.producerIrReceipt;
+    p.totalIr=r.Ir;
+    p.childIr+=24576;
+    p.workloadIr=p.childIr-p.boundaryOverheadIr;
+    p.control.totalIr=r.Ir-10;
+    p.control.deltaIr=10;
+  },GO);
+  check(x=>{
+    const r=x.iai.find(q=>q.name===producer&&q.arm==='B1');
+    r.Ir+=24577;
+    const p=r.producerIrReceipt;
+    p.totalIr=r.Ir;
+    p.childIr+=24577;
+    p.workloadIr=p.childIr-p.boundaryOverheadIr;
+    p.control.totalIr=r.Ir-10;
+    p.control.deltaIr=10;
+  },'NO-GO');
+  for(const name of Object.keys(PRODUCERS)) {
+    const receipt=x=>x.iai.find(r=>r.name===name&&r.arm==='B1').producerIrReceipt;
+    check(x=>{receipt(x).boundaryExecutions=2;},'INCOMPLETE');
+    check(x=>{receipt(x).control.boundaryExecutions=2;},'INCOMPLETE');
+    check(x=>{receipt(x).control.workloadIr=1;},'INCOMPLETE');
+  }
   check(x=>pr(x).symbol='broad'); check(x=>pr(x).entryPoint='Default');
   check(x=>pr(x).control.childIr=1); check(x=>delete pr(x).control);
   check(x=>delete x.iai.find(r=>r.name===producer&&r.arm==='B1').producerIrReceipt);
   // Producer threshold boundary: (IrB-IrA)/4096 <= 6 exact.
-  check(x=>{for(const name of [DISTINCT_WORD_PRODUCER,LARGE_REMOTE_FREE])for(const arm of ['B1','B2']){const r=x.iai.find(q=>q.name===name&&q.arm===arm);r.Ir=100000;r.producerIrReceipt.totalIr=r.Ir;r.producerIrReceipt.control.totalIr=r.Ir-10;r.producerIrReceipt.control.deltaIr=10;}},GO);
-  check(x=>{for(const arm of ['B1','B2']){const r=x.iai.find(q=>q.name===DISTINCT_WORD_PRODUCER&&q.arm===arm);const p=r.producerIrReceipt;p.workloadIr=40960;p.childIr=p.boundaryOverheadIr+40960;r.Ir=p.childIr;p.totalIr=r.Ir;p.control.totalIr=r.Ir-10;p.control.deltaIr=10;}},GO);
-  check(x=>{for(const arm of ['B1','B2']){const r=x.iai.find(q=>q.name===DISTINCT_WORD_PRODUCER&&q.arm===arm);const p=r.producerIrReceipt;p.workloadIr=40960;p.childIr=p.boundaryOverheadIr+40960;r.Ir=p.childIr;p.totalIr=r.Ir;p.control.totalIr=r.Ir-10;p.control.deltaIr=10;}},GO);
+  check(x=>{
+    for(const name of [DISTINCT_WORD_PRODUCER,LARGE_REMOTE_FREE]) {
+      for(const arm of ['B1','B2']) {
+        const r=x.iai.find(q=>q.name===name&&q.arm===arm);
+        r.Ir=100000;
+        r.producerIrReceipt.totalIr=r.Ir;
+        r.producerIrReceipt.control.totalIr=r.Ir-10;
+        r.producerIrReceipt.control.deltaIr=10;
+      }
+    }
+  },GO);
+  check(x=>{
+    for(const arm of ['B1','B2']) {
+      const r=x.iai.find(q=>q.name===DISTINCT_WORD_PRODUCER&&q.arm===arm);
+      const p=r.producerIrReceipt;
+      p.workloadIr=40960;
+      p.childIr=p.boundaryOverheadIr+40960;
+      r.Ir=p.childIr;
+      p.totalIr=r.Ir;
+      p.control.totalIr=r.Ir-10;
+      p.control.deltaIr=10;
+    }
+  },GO);
+  check(x=>{
+    for(const arm of ['B1','B2']) {
+      const r=x.iai.find(q=>q.name===DISTINCT_WORD_PRODUCER&&q.arm===arm);
+      const p=r.producerIrReceipt;
+      p.workloadIr=40960;
+      p.childIr=p.boundaryOverheadIr+40960;
+      r.Ir=p.childIr;
+      p.totalIr=r.Ir;
+      p.control.totalIr=r.Ir-10;
+      p.control.deltaIr=10;
+    }
+  },GO);
   check(x=>{const r=x.iai.find(q=>q.name===fam0+'_n'&&q.arm==='A1');r.config.requested.segmentCount=1;r.config.resolved.segmentCount=1;});
   check(x=>{const r=x.iai.find(q=>q.name===fam0+'_n'&&q.arm==='A1');r.config.declaredProvenance.alignment=16;});
   check(x=>{const r=x.iai.find(q=>q.name===fam0+'_n'&&q.arm==='A1');r.config.resolvedProvenance.copiedFields.push('segmentCount');});
@@ -574,19 +750,36 @@ function selftest() {
   // Rehearsal result self-identification (re-freeze 9): marker + prefixed mode verdicts, also on INCOMPLETE.
   {
     const mark=x=>{rehearse(x);return x;};
-    const res=derive(mark(structuredClone(d)),frozen); console.log(res.verdict,res.reason);
+    const res=derive(mark(structuredClone(d)),frozen);
     assert.equal(res.rehearsal,true); assert.match(res.modes.mode1,/^REHEARSAL: /); assert.match(res.modes.mode2Iai,/^REHEARSAL: /); checks++;
     const y=mark(structuredClone(d)); y.nativeDeferred=null;
     const res2=derive(y,frozen); assert.equal(res2.verdict,'INCOMPLETE'); assert.equal(res2.rehearsal,true); checks++;
+    assert.equal(exitFor('REHEARSAL: INVALID'),0); checks++;
+    assert.equal(exitFor('REHEARSAL: INCOMPLETE'),0); checks++;
+    assert.equal(exitFor('REHEARSAL: arbitrary'),0); checks++;
+    assert.equal(exitFor('NO-GO'),1); checks++;
+    assert.equal(exitFor('INCONCLUSIVE'),1); checks++;
+    assert.equal(exitFor('INVALID'),1); checks++;
+    assert.equal(exitFor('INCOMPLETE'),1); checks++;
   }
   check(x=>{rehearse(x);set(x,fam0+'_4n','A1',128000+11);},'INVALID');
   check(x=>{rehearse(x);delete x.nativeDeferred;},'INCOMPLETE');
   check(x=>{rehearse(x);x.iai=x.iai.filter(r=>r.name!==construction);},'UNJUDGEABLE');
-  for(const [verdict,wrapped,code] of [['GO (deterministic; native deferred)','REHEARSAL: GO (deterministic; native deferred)',0],['NO-GO','REHEARSAL: NO-GO',1],
-    [GO,'REHEARSAL: '+GO,0],['INCONCLUSIVE','REHEARSAL: INCONCLUSIVE',1],
-    ['INVALID','INVALID',1],['INCOMPLETE','INCOMPLETE',1],['UNJUDGEABLE','UNJUDGEABLE',1]]) {
+    for(const [verdict,wrapped,code] of [
+      ['GO (deterministic; native deferred)','REHEARSAL: GO (deterministic; native deferred)',0],
+      ['NO-GO','REHEARSAL: NO-GO',0],
+      [GO,'REHEARSAL: '+GO,0],
+      ['INCONCLUSIVE','REHEARSAL: INCONCLUSIVE',0],
+      ['INVALID','INVALID',1],
+      ['INCOMPLETE','INCOMPLETE',1],
+      ['UNJUDGEABLE','UNJUDGEABLE',1],
+    ]) {
     assert.equal(verdictFor(verdict,true),wrapped); assert.equal(exitFor(wrapped),code); checks++;
-    assert.equal(verdictFor(verdict,false),verdict); assert.equal(exitFor(verdict),verdict==='GO (deterministic; native deferred)'?0:1); checks++;
+    assert.equal(
+      exitFor(verdict),
+      verdict==='GO (deterministic; native deferred)'?0:1,
+    );
+    checks++;
   }
   assert.equal(exitFor('DEFERRED'),1); checks++;
   assert.equal(derive({},frozen).verdict,'INCOMPLETE');checks++;
@@ -596,8 +789,26 @@ const args=process.argv.slice(2);
 try {
   if(args.length===1&&args[0]==='--hashes')process.stdout.write(hashText());
   else if(args.length===1&&args[0]==='--selftest')selftest();
+  else if(args.length===1&&args[0]==='--check-hashes'){
+    try { assert.equal(readFileSync(new URL('docs/perf/R20_PRF01_C3_DEFAULT_PREREG.sha256',root),'utf8'),hashText()); }
+    catch(e) {
+      if(e.code==='ENOENT') {
+        throw new Error('not frozen yet: docs/perf/R20_PRF01_C3_DEFAULT_PREREG.sha256');
+      }
+      throw e;
+    }
+    console.log(JSON.stringify({version:1,status:'PASS',check:'raw document/script hashes; no self-hash'}));
+  }
   else {
-    if(args.length===2&&args[0]==='--check-hashes'){const manifest=JSON.parse(readFileSync(resolve(args[1]),'utf8'));assert.deepEqual(hashes(),manifest);console.log(JSON.stringify({version:1,status:'PASS',check:'frozen source hashes'}));}
-    else {assert.ok(args.length===2&&args[0]==='--input','expected --check-hashes MANIFEST or --input FILE');const result=derive(JSON.parse(readFileSync(resolve(args[1]),'utf8')),hashes());console.log(JSON.stringify(result,null,2));process.exitCode=exitFor(result.verdict);}
+    assert.ok(
+      args.length===2&&args[0]==='--input',
+      'expected --check-hashes or --input FILE',
+    );
+    const result=derive(
+      JSON.parse(readFileSync(resolve(args[1]),'utf8')),
+      hashes(),
+    );
+    console.log(JSON.stringify(result,null,2));
+    process.exitCode=exitFor(result.verdict);
   }
 } catch(e) {console.log(JSON.stringify({version:1,verdict:'INCOMPLETE',reason:e.message}));process.exitCode=1;}
