@@ -189,7 +189,7 @@ impl SmallSidecar {
         self.bitmap().publish_hinted(offset)
     }
 
-    #[cfg(any(test, feature = "bench-internals"))]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
     pub(super) fn publish_paused_for_test(&self, offset: u32, after_p2: impl FnOnce()) -> bool {
         self.bitmap()
             .publish_hinted_with_pause_for_test(offset, after_p2)

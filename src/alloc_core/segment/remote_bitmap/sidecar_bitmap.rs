@@ -112,7 +112,9 @@ impl<'a> SidecarBitmap<'a> {
     }
 
     /// Test-only split-point witness; closure executes after P2 while caller retains RoutePin.
-    #[cfg(any(test, feature = "bench-internals"))]
+    #[cfg(any(test, all(feature = "bench-internals", feature = "internals")))]
+    // Lib unit tests do not call it; the source-including Loom test does.
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn publish_hinted_with_pause_for_test(
         &self,
         offset: u32,
