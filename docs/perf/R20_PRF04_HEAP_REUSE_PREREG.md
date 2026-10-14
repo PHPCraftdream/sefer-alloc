@@ -105,3 +105,7 @@ fixed budget is NO-GO. Complete deterministic pass with native axis deferred is 
 `CANDIDATE='TBD'` is runner-local, not a support-module export. The ordered `FROZEN_FILES` list has ten files, including
 this companion preregistration. Its `.sha256` companion is excluded from its own inventory. Freeze it with the companion
 hash manifest before measurement.
+
+## 6. Re-freeze log
+
+- **2026-10-15 — pre-measurement re-freeze 1 (P4-3 dispatch binding).** B candidate = `942360b96bda0f159e49bb9dd05c7728bd5b10a8` (PR #28 head: the P4-2 ReuseFirst hint-spill candidate merged with `main`). A = `merge-base(B, origin/main)` = `3cc870a9b09353a96cf8c5250d9f479936f5e954` (`main` with this harness, PR #30). The runner binds B through its frozen `CANDIDATE` constant (no dispatch argument), and `docs/perf/R20_PRF04_HEAP_REUSE_PREREG.md.sha256` freezes the ten `FROZEN_FILES` at this commit. No candidate build or measurement precedes this entry; the earlier rehearsal was A-only harness validation.
