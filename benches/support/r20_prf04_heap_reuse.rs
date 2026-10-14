@@ -1,4 +1,6 @@
 //! PRF-04 L1 deterministic claim/release bodies. No oracle reads in these cells.
+// Shared by the L1/L2 benches and oracles; each includer uses only its own subset.
+#![allow(dead_code)]
 use sefer_alloc::{registry::HeapRegistry, SeferAlloc};
 use std::alloc::{GlobalAlloc, Layout};
 use std::cell::Cell;

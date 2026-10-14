@@ -1,5 +1,6 @@
 // Canonical R20 PRF-04 contract shared by the runner, judge and verifier.
 // Rust cell names are checked against this inventory; do not duplicate it.
+import assert from 'node:assert/strict';
 export const RELEASE_LAYER = 'L2';
 export const N = 16;
 export const ORACLE_COUNTERS = Object.freeze([
@@ -396,4 +397,86 @@ export async function runRunnerSelfTest({
     ctx.adapter = null; ctx.manifest = null; ctx.builds = null; ctx.oracle = null; ctx.outDir = null;
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+// Callgrind profile parser (moved from the runner; pure).
+export function naturalBig(token) {
+  assert.match(token, /^(?:\d+|0x[0-9a-fA-F]+)$/);
+  return BigInt(token);
+}
+export function safeNumber(value) {
+  assert.ok(value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER));
+  return Number(value);
+}
+export function positionToken(token, previous) {
+  if (token === '*') { assert.notEqual(previous, null); return previous; }
+  if (/^[+-]/.test(token)) {
+    assert.notEqual(previous, null);
+    const value = previous + (token[0] === '-' ? -1n : 1n) * naturalBig(token.slice(1));
+    assert.ok(value >= 0n); return value;
+  }
+  return naturalBig(token);
+}
+export function profileFunctions(text) {
+  const events = /^events: (.+)$/m.exec(text)?.[1].trim().split(/\s+/);
+  assert.ok(events, 'Callgrind events absent');
+  const irIndex = events.indexOf('Ir');
+  assert.ok(irIndex >= 0, 'Callgrind Ir event absent');
+  const positions = /^positions: (.+)$/m.exec(text)?.[1].trim().split(/\s+/) ?? ['line'];
+  const ids = new Map(), functions = new Map();
+  let current = null, callee = null, pending = false, previous = Array(positions.length).fill(null);
+  const symbol = value => {
+    const m = /^(?:\((\d+)\)\s*)?(.*)$/.exec(value);
+    if (m[2]) return m[2];
+    assert.ok(ids.has(m[1]), 'unknown compressed function ID'); return ids.get(m[1]);
+  };
+  const fn = name => {
+    if (!functions.has(name)) functions.set(name, { selfIr: 0n, edges: new Map(), edgeCalls: new Map() });
+    return functions.get(name);
+  };
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^(?:c?fn)=\((\d+)\)\s+(.+)$/.exec(line);
+    if (m) ids.set(m[1], m[2]);
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith('fn=')) {
+      current = symbol(line.slice(3)); fn(current); callee = null;
+      previous = Array(positions.length).fill(null);
+    } else if (line.startsWith('cfn=')) { callee = symbol(line.slice(4)); fn(callee); }
+    else if (line.startsWith('calls=')) {
+      assert.ok(current && callee && !pending, 'invalid Callgrind calls record');
+      const fields = line.slice(6).trim().split(/\s+/);
+      positions.forEach((_, i) => positionToken(fields[i + 1], previous[i]));
+      const f = fn(current); f.edgeCalls.set(callee, (f.edgeCalls.get(callee) ?? 0n) + naturalBig(fields[0]));
+      pending = true;
+    } else if (/^[*+\-\d]/.test(line)) {
+      assert.ok(current, 'Callgrind cost without function');
+      const fields = line.trim().split(/\s+/);
+      previous = positions.map((_, i) => positionToken(fields[i], previous[i]));
+      const costs = fields.slice(positions.length).map(naturalBig), cost = costs[irIndex] ?? 0n;
+      const f = fn(current);
+      if (pending) { f.edges.set(callee, (f.edges.get(callee) ?? 0n) + cost); pending = false; }
+      else f.selfIr += cost;
+    } else if (line && !/^(?:#|[A-Za-z][A-Za-z_]*(?:=|:))/.test(line)) {
+      throw Error('malformed Callgrind record');
+    }
+  }
+  assert.ok(!pending, 'missing final Callgrind call cost');
+  return functions;
+}
+export function argvTokens(value) {
+  const result = []; let token = '', quote = null, active = false;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === '\\' && quote === '"' && ['"', '\\'].includes(value[i + 1])) token += value[++i];
+      else token += c;
+      active = true;
+    } else if (c === '"' || c === "'") { quote = c; active = true; }
+    else if (/\s/.test(c)) { if (active) { result.push(token); token = ''; active = false; } }
+    else { token += c; active = true; }
+  }
+  assert.equal(quote, null, 'unclosed argv quote'); if (active) result.push(token);
+  return result;
 }
