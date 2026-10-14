@@ -1,0 +1,8 @@
+{
+  "runner": "scripts/r20_prf01_c3_run.mjs",
+  "stages": "prepare,build,oracle,measure",
+  "rehearsal": false,
+  "slop": false,
+  "outDir": "docs/perf/R20_PRF01_C3_RUN01",
+  "note": "P1-6: official C3 default-path gate; B=1c99c815 (PR #29), A=02806ba7"
+}
