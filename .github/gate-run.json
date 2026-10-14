@@ -4,5 +4,5 @@
   "rehearsal": false,
   "slop": false,
   "outDir": "docs/perf/R20_PRF01_C3_RUN01",
-  "note": "P1-6: official C3 default-path gate; B=1c99c815 (PR #29), A=02806ba7"
+  "note": "P1-6: official C3 default-path gate; B=157d6c66 (PR #29), A=02806ba7 (re-freeze 2)"
 }

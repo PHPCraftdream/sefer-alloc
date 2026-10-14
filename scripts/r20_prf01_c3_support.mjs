@@ -13,7 +13,7 @@ export const CONSTRUCTION = 'r20_prf01_start_one_alloc_free_16b';
 export const MIMALLOC = Object.freeze(['mimalloc_small_churn_16b', 'mimalloc_small_churn_16b_2n', 'mimalloc_churn_256b', 'mimalloc_cold_alloc_free_256x16b', 'mimalloc_cold_alloc_free_256x16b_2n', 'mimalloc_cold_alloc_free_256x16b_4n', 'mimalloc_cold_alloc_only_256x16b', 'mimalloc_cold_alloc_only_256x16b_2n', 'mimalloc_cold_alloc_only_256x16b_4n', 'mimalloc_cold_alloc_free_256x64b', 'mimalloc_recycle_alloc_free_256x16b', 'mimalloc_recycle_alloc_free_256x64b', 'mimalloc_bootstrap_proxy']);
 export const PUBLICATION = 'r19_prf01_publication';
 // Immutable B candidate, bound by the pre-measurement re-freeze (prereg Re-freeze log).
-export const CANDIDATE = '1c99c81501d614cf6e5576947d339e0b2f9e195d';
+export const CANDIDATE = '157d6c668c4c01f07c61efc5a68563d5f131cc0d';
 export const SAME_WORD_PRODUCER = 'r19_prf01_joined_producer_same_word';
 export const DISTINCT_WORD_PRODUCER = 'r20_prf01_c3_producer_distinct_words';
 export const LARGE_REMOTE_FREE = 'r20_prf01_c3_remote_large_free';
