@@ -9,24 +9,32 @@ mod gate {
         library_benchmark, library_benchmark_group, main, EntryPoint, LibraryBenchmarkConfig,
     };
     fn cold_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default().entry_point(EntryPoint::Custom(
+        let mut config = LibraryBenchmarkConfig::default();
+        config.entry_point(EntryPoint::Custom(
             "r20_prf04_heap_reuse_iai::hr::cold".into(),
-        ))
+        ));
+        config
     }
     fn recycled_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default().entry_point(EntryPoint::Custom(
+        let mut config = LibraryBenchmarkConfig::default();
+        config.entry_point(EntryPoint::Custom(
             "r20_prf04_heap_reuse_iai::hr::recycled".into(),
-        ))
+        ));
+        config
     }
     fn wave_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default().entry_point(EntryPoint::Custom(
+        let mut config = LibraryBenchmarkConfig::default();
+        config.entry_point(EntryPoint::Custom(
             "r20_prf04_heap_reuse_iai::hr::wave_claim".into(),
-        ))
+        ));
+        config
     }
     fn release_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default().entry_point(EntryPoint::Custom(
+        let mut config = LibraryBenchmarkConfig::default();
+        config.entry_point(EntryPoint::Custom(
             "r20_prf04_heap_reuse_iai::hr::wave_release_measured".into(),
-        ))
+        ));
+        config
     }
     #[library_benchmark(config = cold_toggle())]
     fn r20_prf04hr_start() {

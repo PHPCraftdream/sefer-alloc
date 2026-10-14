@@ -10,25 +10,31 @@ mod gate {
     };
 
     fn alloc_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default()
+        let mut config = LibraryBenchmarkConfig::default();
+        config
             .entry_point(EntryPoint::Custom(
                 "r20_prf04_heap_reuse_l2_iai::hr::child_first_alloc".into(),
             ))
-            .raw_callgrind_args(["--separate-threads=yes"])
+            .raw_callgrind_args(["--separate-threads=yes"]);
+        config
     }
     fn wave_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default()
+        let mut config = LibraryBenchmarkConfig::default();
+        config
             .entry_point(EntryPoint::Custom(
                 "r20_prf04_heap_reuse_l2_iai::hr::child_first_alloc".into(),
             ))
-            .raw_callgrind_args(["--separate-threads=yes"])
+            .raw_callgrind_args(["--separate-threads=yes"]);
+        config
     }
     fn release_toggle() -> LibraryBenchmarkConfig {
-        LibraryBenchmarkConfig::default()
+        let mut config = LibraryBenchmarkConfig::default();
+        config
             .entry_point(EntryPoint::Custom(
                 "<sefer_alloc::global::tls_heap::AbandonGuard as core::ops::Drop>::drop".into(),
             ))
-            .raw_callgrind_args(["--separate-threads=yes"])
+            .raw_callgrind_args(["--separate-threads=yes"]);
+        config
     }
 
     #[library_benchmark(config = alloc_toggle())]
