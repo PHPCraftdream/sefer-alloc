@@ -31,7 +31,7 @@ mod gate {
         let mut config = LibraryBenchmarkConfig::default();
         config
             .entry_point(EntryPoint::Custom(
-                "<sefer_alloc::global::tls_heap::AbandonGuard as core::ops::Drop>::drop".into(),
+                "<sefer_alloc::global::tls_heap::AbandonGuard as core::ops::drop::Drop>::drop".into(),
             ))
             .raw_callgrind_args(["--separate-threads=yes"]);
         config
