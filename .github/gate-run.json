@@ -1,0 +1,8 @@
+{
+  "runner": "scripts/r20_prf04_heap_reuse_run.mjs",
+  "stages": "prepare,build,oracle,measure",
+  "rehearsal": false,
+  "slop": false,
+  "outDir": "docs/perf/R20_PRF04_HEAP_REUSE_RUN01",
+  "note": "P4-3: official PRF-04 heap-reuse default-path gate; B=942360b9 (PR #28), A=3cc870a9"
+}
