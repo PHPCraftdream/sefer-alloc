@@ -1801,6 +1801,27 @@ harness = false
 test = false
 required-features = ["production", "internals"]
 
+# R20 PRF-04 standalone L1/L2 iai groups.
+[[bench]]
+name = "r20_prf04_heap_reuse_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
+[[bench]]
+name = "r20_prf04_heap_reuse_l2_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
+[[example]]
+name = "r20_prf04_heap_reuse_oracle"
+required-features = ["production", "internals", "bench-internals"]
+
+[[example]]
+name = "r20_prf04_heap_reuse_l2_oracle"
+required-features = ["production", "internals", "bench-internals"]
+
 # Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
 [[bench]]
 name = "r18_sidecar_scan_iai"
