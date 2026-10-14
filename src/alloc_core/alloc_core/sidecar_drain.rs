@@ -228,11 +228,15 @@ impl AllocCore {
                         };
                         while let Some(mut cut) = scan.next_cut() {
                             #[cfg(feature = "bench-internals")]
-                            strict_actual += 1;
+                            {
+                                strict_actual += 1;
+                            }
                             while let Some(record) = cut.pop() {
                                 if Self::reclaim_sidecar_record(base, record.offset, record.class) {
                                     #[cfg(feature = "bench-internals")]
-                                    strict_records += 1;
+                                    {
+                                        strict_records += 1;
+                                    }
                                     changed_classes |= 1u64 << record.class;
                                     reclaimed += 1;
                                     #[cfg(all(
