@@ -1,8 +1,0 @@
-{
-  "runner": "scripts/r20_evidence_reverify_run.mjs",
-  "stages": "prepare,build,oracle,measure",
-  "rehearsal": false,
-  "slop": false,
-  "outDir": "target/r20-evidence-reverify",
-  "note": "E0: re-verify R5b-12/13/14 (pin test edited) with R5b-13 retargeted to the runtime publish_hinted P2"
-}
