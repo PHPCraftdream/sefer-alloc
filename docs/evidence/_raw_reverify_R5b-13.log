@@ -1,5 +1,5 @@
-E0_METADATA {"id":"R5b-13","head":"e91a386c584483026ff1ffa9a5cdec9659465261","tree":"93fea45b3b6a05c5d3f151ed246ff9ac105d3969","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (822182db4 2026-10-13)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-14 for version 1.101.0-nightly (822182db4 2026-10-13)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R5b-13","head":"e91a386c584483026ff1ffa9a5cdec9659465261","tree":"93fea45b3b6a05c5d3f151ed246ff9ac105d3969","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-13.json","recipe_sha256":"b1355ff5f80741736f6f006f9a290c19d9c53e2e605d30e4d527030ee75f62c7","registry_activation_hash":"e517e4d17cca3eee88ddc364b83c74707f75e0d6b37fad3160821fa75479b053"}
+E0_METADATA {"id":"R5b-13","head":"9053e10861c3f07d70111cc28fe795bb09e75810","tree":"97570afb40710a5686b0547c86ff1427a484b5a9","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (822182db4 2026-10-13)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-14 for version 1.101.0-nightly (822182db4 2026-10-13)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R5b-13","head":"9053e10861c3f07d70111cc28fe795bb09e75810","tree":"97570afb40710a5686b0547c86ff1427a484b5a9","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-13.json","recipe_sha256":"b1355ff5f80741736f6f006f9a290c19d9c53e2e605d30e4d527030ee75f62c7","registry_activation_hash":"e517e4d17cca3eee88ddc364b83c74707f75e0d6b37fad3160821fa75479b053"}
 
 E0_STEP {"id":"R5b-13","kind":"baseline","name":"source pin baseline","argv":["cargo","test","--locked","--test","r11_ph5b_c5_sidecar_ordering_pinned","--features","production"],"env":{},"expect":{"exit":0,"stdoutRegex":["6 passed; 0 failed","test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -12,8 +12,8 @@ E0_STEP {"id":"R5b-13","kind":"baseline","name":"source pin baseline","argv":["c
 running 6 tests
 test owner_cut_is_acqrel_swap ... ok
 test mixed_leaf_published_after_its_initialization ... ok
-test class_leaves_ordering_inventory_is_exact ... ok
 test owner_issue_class_store_is_release ... ok
+test class_leaves_ordering_inventory_is_exact ... ok
 test producer_publish_is_acqrel_fetch_or ... ok
 test production_small_sidecar_uses_class_leaves ... ok
 
@@ -26,16 +26,16 @@ E0_STEP {"id":"R5b-13","kind":"mutant","name":"producer pin mutant","argv":["car
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.95s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.02s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph5b_c5_sidecar_ordering_pinned.rs (target/debug/deps/r11_ph5b_c5_sidecar_ordering_pinned-c7be83a0dbcbb55b)
 
 running 6 tests
 test owner_cut_is_acqrel_swap ... ok
+test owner_issue_class_store_is_release ... ok
 test mixed_leaf_published_after_its_initialization ... ok
 test class_leaves_ordering_inventory_is_exact ... ok
-test owner_issue_class_store_is_release ... ok
 test producer_publish_is_acqrel_fetch_or ... FAILED
 test production_small_sidecar_uses_class_leaves ... ok
 
@@ -43,7 +43,7 @@ failures:
 
 ---- producer_publish_is_acqrel_fetch_or stdout ----
 
-thread 'producer_publish_is_acqrel_fetch_or' (9051) panicked at tests/r11_ph5b_c5_sidecar_ordering_pinned.rs:184:5:
+thread 'producer_publish_is_acqrel_fetch_or' (9145) panicked at tests/r11_ph5b_c5_sidecar_ordering_pinned.rs:184:5:
 producer publication must be an AcqRel fetch_or on the pending word:
 fn publish(&self, offset: u32) -> bool {
         let Some(granule) = Self::granule(offset) else {
@@ -65,13 +65,13 @@ test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 [1m[91merror[0m: test failed, to rerun pass `--test r11_ph5b_c5_sidecar_ordering_pinned`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R5b-13","kind":"restored","sha256":"f3a63ae982cb35b6ea47bb8bbe38313919ed416240808a345d79a366e827ddec"}
+E0_METADATA {"id":"R5b-13","kind":"restored","sha256":"a920280ab714f0a2b0ec39b86af182627e64ea782536e8d1b86c1da66f504171"}
 
 E0_STEP {"id":"R5b-13","kind":"restored-baseline","name":"source pin baseline","argv":["cargo","test","--locked","--test","r11_ph5b_c5_sidecar_ordering_pinned","--features","production"],"env":{},"expect":{"exit":0,"stdoutRegex":["6 passed; 0 failed","test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.02s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph5b_c5_sidecar_ordering_pinned.rs (target/debug/deps/r11_ph5b_c5_sidecar_ordering_pinned-c7be83a0dbcbb55b)
@@ -79,8 +79,8 @@ E0_STEP {"id":"R5b-13","kind":"restored-baseline","name":"source pin baseline","
 running 6 tests
 test owner_cut_is_acqrel_swap ... ok
 test mixed_leaf_published_after_its_initialization ... ok
-test owner_issue_class_store_is_release ... ok
 test class_leaves_ordering_inventory_is_exact ... ok
+test owner_issue_class_store_is_release ... ok
 test producer_publish_is_acqrel_fetch_or ... ok
 test production_small_sidecar_uses_class_leaves ... ok
 
