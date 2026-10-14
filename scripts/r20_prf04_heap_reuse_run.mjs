@@ -654,6 +654,11 @@ export function parseProfiles(profiles, log, options) {
     if (!target) continue;
     const fn = functions.get(target), inclusive = fn.selfIr + [...fn.edges.values()].reduce((a, b) => a + b, 0n);
     if (!inclusive) continue;
+    // The parent's own guard is destroyed at process exit (exit -> __call_tls_dtors), outside
+    // every measured window; only that exact teardown path may hit the target on thread 1.
+    if (options.cell.layer === 'L2' && tid === '1' && options.cell.family.includes('release')
+      && functions.get('__call_tls_dtors')?.edgeCalls.get(target) === 1n
+      && functions.get('exit')?.edges.has('__run_exit_handlers')) continue;
     assert.ok(inclusive > 0n, 'target inclusive Ir absent');
     const release = options.cell.family.includes('release');
     const claim = ['cold', 'start', 'recycled', 'recycled_alloc', 'wave'].includes(options.cell.family);
