@@ -1,5 +1,7 @@
 //! Source-included C‴ summary protocol tests using production bitmap geometry.
 #![cfg(feature = "alloc-core")]
+// Included production files carry items this test does not exercise.
+#![allow(dead_code)]
 
 // Geometry and atomics are the only fixture substitutions; algorithms below
 // are the actual production files, as in tests/r6_sidecar_bitmap.rs.
