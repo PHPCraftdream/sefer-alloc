@@ -55,6 +55,8 @@ import {
   RELEASE_LAYER,
   FROZEN_FILES as CANONICAL_FROZEN_FILES,
   validateActivation,
+  isL2AllocCaller,
+  hasL2FirstBindPath,
   syntheticCallgrindProfile,
   fakeBenchProgram,
   fakeOracleProgram,
@@ -646,8 +648,10 @@ export function parseProfiles(profiles, log, options) {
     assert.ok(inclusive > 0n, 'target inclusive Ir absent');
     const release = options.cell.family.includes('release');
     const claim = ['cold', 'start', 'recycled', 'recycled_alloc', 'wave'].includes(options.cell.family);
-    const callerPattern = options.cell.layer === 'L1' ? /r20_prf04_heap_reuse_iai|heap_reuse/
-      : release ? /__call_tls_dtors|drop_slow|drop_in_place|Drop/ : /std::thread.*(?:closure|spawn)|closure/;
+    const callerMatches = name => options.cell.layer === 'L1'
+      ? /r20_prf04_heap_reuse_iai|heap_reuse/.test(name)
+      : release ? /__call_tls_dtors|drop_slow|drop_in_place|Drop/.test(name)
+        : isL2AllocCaller(name);
     const dynamicPaths = new Set();
     const visit = (name, seen = new Set()) => {
       if (seen.has(name)) return;
@@ -662,19 +666,33 @@ export function parseProfiles(profiles, log, options) {
     const hasDynamicPath = [...dynamicPaths].some(name => claim
       ? /alloc|claim|HeapRegistry|HeapCore|TLSHeap|registry/i.test(name)
       : /HeapLease|AbandonGuard|drop|release|tls_heap/i.test(name));
+    const bindsTls = [...dynamicPaths].some(name =>
+      /tls_heap::bind_slow_tagged(?:_with_config)?/.test(name));
+    const claimsRegistry = [...dynamicPaths].some(name =>
+      /(?:registry::)?(?:claim|claim_impl|HeapRegistry)/i.test(name));
+    if (options.cell.layer === 'L2' && claim) {
+      assert.ok(bindsTls && claimsRegistry,
+        'L2 first-global-allocation dynamic path must demonstrate TLS bind and registry claim');
+    }
+    if (options.cell.layer === 'L2' && claim && !hasDynamicPath) {
+      throw new Error('L2 first-global-allocation dynamic path lacks TLS bind and registry claim');
+    }
     assert.ok(hasDynamicPath, claim
       ? 'allocation/claim dynamic path absent' : 'lease release/drop dynamic path absent');
     let incoming = 0n, callers = 0;
     for (const [caller, record] of functions) {
       const count = record.edgeCalls.get(target) ?? 0n, cost = record.edges.get(target) ?? 0n;
       if (count <= 0n || cost <= 0n) continue;
-      assert.match(caller, callerPattern, 'target incoming caller context mismatch');
+      if (!callerMatches(caller)) throw new Error('target incoming caller context mismatch: ' + caller);
       if (options.cell.layer === 'L2') assert.notEqual(tid, '1', 'L2 target must be child thread');
       const paths = [...record.edges].filter(([, edgeCost]) => edgeCost > 0n).map(([name]) => name);
       assert.ok(paths.includes(target), 'incoming caller edge must target the measured function');
       incoming += count; callers++; callerContext = caller;
     }
     assert.equal(incoming, 1n);
+    if (options.cell.layer === 'L2' && claim && !isL2AllocCaller(callerContext)) {
+      throw new Error('L2 first-global-allocation caller is not the strict FirstAlloc forwarding wrapper');
+    }
     assert.equal(callers, 1, 'positive target profile must have one incoming caller');
     assert.equal(inclusive, irTotal, 'positive target profile inclusive Ir must equal profile total Ir');
     executions += incoming; inclusiveIr += inclusive;
@@ -776,9 +794,10 @@ function measureCell(run, arm, role, cells) {
     const members = groupMembers(groupFile, cell.group);
     assert.equal(members[cell.index], cell.name, 'dispatcher index drift');
     const symbolEvidence = boundaryEvidence(binary, tag + '-' + cell.name, [...new Set(cell.expectedSymbols)]);
-    const boundary = parseProfiles(profileTexts, callgrindLog, { cell, debug,
-      homeName: '/' + homeName.split('/').slice(-1)[0] + '/' + cell.name + '/', expectedExecutable: dispatchExe(exe) });
-    if (parsed[cell.name] !== undefined) assert.ok(parsed[cell.name] >= 0);
+    const parsed = parseProfiles(profileTexts, callgrindLog, { cell, debug,
+      homeName: '/' + homeName.split('/').slice(-1)[0] + '/' + cell.name + '/',
+      expectedExecutable: dispatchExe(exe) });
+    const boundary = parsed;
     const source = sourceOf(ctx.manifest.arches[arm === 'C' ? 'A' : arm]);
     rows.push({ name: cell.name, arm: run, Ir: boundary.inclusiveIr, binarySha256: before, source,
       environmentSha256: ctx.builds.environmentSha256, features: FEATURES.split(' '), startedAt,

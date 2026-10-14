@@ -6,6 +6,13 @@ export const ORACLE_COUNTERS = Object.freeze([
   'heap_reuse_spill_bits_delta',
   'heap_reuse_take_hits',
 ]);
+const L2_ALLOC_CALLER_PATTERN =
+  /^r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<[^>]+>::alloc_inner$/;
+export const isL2AllocCaller = name => L2_ALLOC_CALLER_PATTERN.test(name);
+export function hasL2FirstBindPath(names) {
+  return names.some(name => /tls_heap::bind_slow_tagged/.test(name)) &&
+    names.some(name => /(?:registry::)?(?:claim|claim_impl|HeapRegistry)/i.test(name));
+}
 const sizes = [['n', N], ['2n', 2 * N], ['4n', 4 * N]];
 const rows = [];
 function add(layer, family, suffix, n, group, name) {
@@ -14,14 +21,14 @@ function add(layer, family, suffix, n, group, name) {
     : 'r20_prf04_heap_reuse_iai';
   const functionName = layer === 'L2'
     ? family === 'wave' || family === 'cold' || family === 'recycled_alloc'
-      ? 'child_first_alloc'
+      ? 'first_global_alloc'
       : null
     : family === 'recycled' ? 'recycled'
       : family === 'wave' ? 'wave_claim'
         : family === 'wave_release' ? 'wave_release_measured'
           : 'cold';
   const expectedSymbols = functionName
-    ? [`${target}::hr::${functionName}`]
+    ? [layer === 'L2' ? `${target}::hr::first_global_alloc` : `${target}::hr::${functionName}`]
     : ['<sefer_alloc::global::tls_heap::AbandonGuard as core::ops::Drop>::drop'];
   rows.push(Object.freeze({
     name,
@@ -108,6 +115,9 @@ export function syntheticIdentity(head, tree, sha256) { return { head, tree, sha
 export function syntheticReceipt(path, sha256) { return { path, sha256 }; }
 export function fakeBenchProgram({ cells, arm, role }) {
   const encodedCells = JSON.stringify(cells, null, 2);
+  if (cells.some(cell => cell.layer === 'L2' && cell.expectedSymbols[0].endsWith('child_first_alloc'))) {
+    throw new Error('legacy child_first_alloc target is forbidden');
+  }
   return `import fs from 'node:fs';
 import path from 'node:path';
 const cells = ${encodedCells};
@@ -135,7 +145,7 @@ for (const cell of cells) {
   const caller = cell.layer === 'L1'
     ? 'r20_prf04_heap_reuse_iai::gate::' + cell.name
     : cell.family.includes('release') ? '__call_tls_dtors::drop'
-      : 'std::thread::Builder::spawn_unchecked_::closure';
+      : 'r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<_>::alloc_inner';
   const command = executableText + ' --iai-run ' + cell.group + ' ' + cell.index + ' 0';
   const count = cell.layer === 'L1' ? 1 : cell.n;
   const perWork = arm === 'B' && cell.family === 'wave' ? 900 : 1000;
@@ -145,12 +155,19 @@ for (const cell of cells) {
     const target = cell.layer === 'L1' || tid !== 1;
     const targetIr = target ? cost : 0;
     const support = cell.family.includes('release')
-      ? 'sefer_alloc::HeapLease::release' : 'sefer_alloc::HeapRegistry::claim_impl';
+      ? 'sefer_alloc::HeapLease::release' : 'sefer_alloc::global::tls_heap::bind_slow_tagged';
+    const callCost = cell.layer === 'L2' && !cell.family.includes('release') ? 2 : 1;
+    const bindSelf = cell.layer === 'L2' && !cell.family.includes('release') ? 1 : 0;
     const records = target
       ? ['fn=' + caller, '1 0', 'cfn=' + symbol, 'calls=1 0', '1 ' + targetIr,
-        'fn=' + symbol, '1 ' + (targetIr - 1), 'cfn=' + support,
-        'calls=1 0', '1 1', 'fn=' + support, '1 1']
-      : ['fn=synthetic::main_thread_setup', '1 0'];
+        'fn=' + symbol, '1 ' + (targetIr - callCost), 'cfn=' + support,
+      'calls=1 0', '1 ' + callCost, 'fn=' + support, '1 1',
+      ...(cell.layer === 'L2' && !cell.family.includes('release')
+        ? ['cfn=sefer_alloc::global::tls_heap::bind_slow_tagged', 'calls=1 0', '1 1',
+          'fn=sefer_alloc::global::tls_heap::bind_slow_tagged', '1 ' + bindSelf,
+          'cfn=sefer_alloc::global::tls_heap::HeapRegistry::claim_impl', 'calls=1 0', '1 1',
+          'fn=sefer_alloc::global::tls_heap::HeapRegistry::claim_impl', '1 0'] : [])]
+    : ['fn=synthetic::main_thread_setup', '1 0'];
     const profile = ['version: 1', 'creator: synthetic-node-bench',
       'pid: 200', 'part: 1', 'thread: ' + tid,
       'cmd: ' + command, 'events: Ir', 'positions: line', ...records,
@@ -220,6 +237,14 @@ export async function runRunnerSelfTest({
   CANONICAL_FROZEN_FILES,
   JUDGE,
 }) {
+  assert.equal(CELLS.find(cell => cell.layer === 'L2' && cell.family === 'cold').expectedSymbols[0],
+    'r20_prf04_heap_reuse_l2_iai::hr::first_global_alloc', 'legacy target helper must not return');
+  assert.ok(!isL2AllocCaller('r20_prf04_heap_reuse_l2_iai::hr::first_global_alloc'),
+    'target cannot be its own caller');
+  assert.ok(!hasL2FirstBindPath(['HeapRegistry::claim_impl', 'alloc::warm']),
+    'warm-only dynamic descendants are not first-bind evidence');
+  assert.ok(hasL2FirstBindPath(['tls_heap::bind_slow_tagged', 'HeapRegistry::claim_impl']),
+    'actual bind and claim descendants qualify');
   const outDir = 'target/r20p4-selftest-' + process.pid + '-' + Date.now() + '-' +
     Math.random().toString(16).slice(2);
   const root = resolve(REPO, outDir);

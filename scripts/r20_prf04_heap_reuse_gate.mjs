@@ -11,6 +11,7 @@ import {
   BUDGETS,
   FROZEN_FILES,
   validateActivation,
+  isL2AllocCaller,
 } from './r20_prf04_heap_reuse_support.mjs';
 
 const root = new URL('../', import.meta.url);
@@ -175,6 +176,10 @@ function validateRows(d) {
     assert.equal(boundary.dispatcherGroup, cell.group);
     assert.equal(boundary.dispatcherIndex, cell.index);
     text(boundary.callerContext);
+    if (cell.layer === 'L2' && ['cold', 'recycled_alloc', 'wave'].includes(cell.family)) {
+      assert.ok(isL2AllocCaller(boundary.callerContext),
+        'L2 incoming caller must be the strict FirstAlloc forwarding wrapper');
+    }
     validateSettings(boundary.settings, boundary.symbol[0]);
     for (const key of ['symbolReceipt', 'disassemblyReceipt', 'profileReceipt', 'logReceipt']) text(boundary[key]);
     assert.equal(boundary.binarySha256, binary);
@@ -435,7 +440,8 @@ export function syntheticFixture(frozen = hashes()) {
           inclusiveIr: ir, executions: calls, expectedExecutions: calls, symbol: cell.expectedSymbols,
           entryPoint: 'Custom', collectAtStart: false, defaultToggle: false, separateThreads: true,
           toggleCollect: cell.expectedSymbols[0], dispatcherGroup: cell.group, dispatcherIndex: cell.index,
-          callerContext: 'synthetic target caller',
+          callerContext: cell.layer === 'L2' && ['cold', 'recycled_alloc', 'wave'].includes(cell.family)
+            ? 'r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<_>::alloc_inner' : 'synthetic target caller',
           settings: ['--collect-atstart=no', '--toggle-collect', cell.expectedSymbols[0],
             '--callgrind-out-file=profile.out', '--separate-threads=yes'],
           symbolReceipt: 'nm.txt', disassemblyReceipt: 'disassembly.txt',
@@ -507,6 +513,10 @@ function selftest() {
   check(sample => {
     const row = sample.iai.find(item => item.arm === 'B1' && item.name.includes('recycled_n'));
     row.oracle.heap_reuse_take_hits = 1;
+  }, 'INCOMPLETE');
+  check(sample => {
+    const row = sample.iai.find(item => item.arm === 'A1' && item.name.includes('_l2_cold_n'));
+    row.boundary.callerContext = 'std::thread::spawn::closure';
   }, 'INCOMPLETE');
   check(sample => {
     const row = sample.iai.find(item => item.arm === 'A1' && item.name.includes('_l2_cold_n'));

@@ -3,7 +3,13 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CELLS, RELEASE_LAYER, FROZEN_FILES } from './r20_prf04_heap_reuse_support.mjs';
+import {
+  CELLS,
+  RELEASE_LAYER,
+  FROZEN_FILES,
+  isL2AllocCaller,
+  hasL2FirstBindPath,
+} from './r20_prf04_heap_reuse_support.mjs';
 import { syntheticFixture } from './r20_prf04_heap_reuse_gate.mjs';
 
 const sha = data => createHash('sha256').update(data).digest('hex');
@@ -178,6 +184,8 @@ export async function verifyArtifacts(outDir) {
         check(`row:${id}:parsed-boundary`, parsed.inclusiveIr === row.Ir &&
           parsed.inclusiveIr === boundary.inclusiveIr && parsed.executions === boundary.executions,
           'parsed inclusive Ir/executions mismatch');
+        check(`row:${id}:caller-context`, boundary.callerContext === parsed.callerContext,
+          'recorded incoming caller differs from parsed profile caller');
       } catch (error) { check(`row:${id}:callgraph`, false, error.message); }
       try {
         machineBoundary(readText(boundary.symbolReceipt, 'nm-receipt'),
@@ -282,9 +290,9 @@ async function selfTest() {
       ? `r20_prf04_heap_reuse_iai::heap_reuse::${cell.name}`
       : cell.family.includes('release')
         ? 'std::sys::thread_local::destructors::__call_tls_dtors'
-        : 'std::thread::spawn::closure';
+        : 'r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<_>::alloc_inner';
     const claim = ['cold', 'start', 'recycled', 'recycled_alloc', 'wave'].includes(cell.family);
-    const support = claim ? 'HeapRegistry::claim_impl' : 'HeapLeaseDrop::drop';
+    const support = claim ? 'tls_heap::bind_slow_tagged' : 'HeapLeaseDrop::drop';
     const cmd = `${executable} --iai-run ${cell.group} ${cell.index} 0`;
     const callgrindArgs = [...canonicalSettings, '--collect-atstart=no',
       `--toggle-collect=${symbol}`, `--callgrind-out-file=/home/${cell.name}/callgrind.out`].join(' ');
@@ -292,18 +300,30 @@ async function selfTest() {
     const log = `==123== Command: ${cmd}\n`;
     const profiles = [];
     const threads = cell.layer === 'L1' ? [1] : [1, ...Array.from({ length: executions }, (_, i) => i + 2)];
-    const descents = cell.family === 'recycled' || cell.family === 'recycled_alloc' ||
-      cell.family === 'recycled_release' ? ['HeapRegistry::claim', 'HeapLease::drop'] : [support];
+    const descents = cell.layer === 'L2' && claim
+      ? [`tls_heap::bind_slow_tagged`, `HeapRegistry::claim_impl`]
+        : cell.family === 'recycled' || cell.family === 'recycled_alloc' ||
+          cell.family === 'recycled_release' ? ['HeapRegistry::claim', 'HeapLease::drop']
+          : claim ? ['HeapRegistry::claim_impl'] : [support];
+    if (cell.layer === 'L2' && claim && !hasL2FirstBindPath(descents)) {
+      throw new Error('synthetic L2 profile lacks actual TLS bind and registry-claim descendants');
+    }
     for (const thread of threads) {
       const child = cell.layer === 'L2' && thread !== 1;
       const target = cell.layer === 'L1' || child;
       const calls = cell.layer === 'L1' ? 1 : child ? 1 : 0;
       const targetCost = target ? perCallIr : 0;
+      const l2Claim = cell.layer === 'L2' && claim;
       const body = target
         ? [`fn=(1) ${caller}`, '1 0', `cfn=(2) ${symbol}`, `calls=${calls} 0`,
-          `1 ${targetCost}`, `fn=(2) ${symbol}`, `1 ${targetCost - descents.length}`,
-          ...descents.flatMap((name, index) => [`cfn=(${index + 3}) ${name}`, 'calls=1 0', '1 1']),
-          ...descents.flatMap((name, index) => [`fn=(${index + 3}) ${name}`, '1 1'])].join('\n')
+          `1 ${targetCost}`, `fn=(2) ${symbol}`, `1 ${targetCost - (l2Claim ? 1 : descents.length)}`,
+          ...(l2Claim
+            ? ['cfn=(3) tls_heap::bind_slow_tagged', 'calls=1 0', '1 1',
+              'fn=(3) tls_heap::bind_slow_tagged', '1 0',
+              'cfn=(4) HeapRegistry::claim_impl', 'calls=1 0', '1 1',
+              'fn=(4) HeapRegistry::claim_impl', '1 1']
+            : [...descents.flatMap((name, index) => [`cfn=(${index + 3}) ${name}`, 'calls=1 0', '1 1']),
+              ...descents.flatMap((name, index) => [`fn=(${index + 3}) ${name}`, '1 1'])])].join('\n')
         : 'fn=(1) main\n1 0';
       const profileTotal = target ? targetCost : 0;
       const profile = [
@@ -317,9 +337,15 @@ async function selfTest() {
     const profileReceipt = put(`profiles/${index}-inventory.json`, json(profiles));
     const logReceipt = put(`logs/${index}.log`, log);
     const debugReceipt = put(`raw/${index}-debug.log`, debug);
-    const nm = cell.expectedSymbols.map(name => `00000000 T ${name}`).join('\n') + '\n';
+    const nm = [...new Set(cell.expectedSymbols)].map(name => `00000000 T ${name}`).join('\n') + '\n';
+    const validCaller = cell.layer === 'L1' ? /r20_prf04_heap_reuse_iai|heap_reuse/.test(caller)
+      : cell.family.includes('release')
+        ? /__call_tls_dtors|drop_slow|drop_in_place|Drop/.test(caller)
+        : isL2AllocCaller(caller);
     const callerAsm = `00000000 <${caller}>:\n   0: call 10 <${symbol}>\n   5: ret\n`;
-    const targetAsm = cell.expectedSymbols.map(name => `00000010 <${name}>:\n  10: ret`).join('\n') + '\n';
+    if (!validCaller) throw new Error('synthetic caller fixture mismatch');
+    const targetAsm = [...new Set(cell.expectedSymbols)]
+      .map(name => `00000010 <${name}>:\n  10: ret`).join('\n') + '\n';
     const symbolReceipt = put(`boundary/${index}-nm.log`, nm);
     const disassemblyReceipt = put(`boundary/${index}-disassembly.log`, callerAsm + targetAsm);
     const oracleArm = base.arm.startsWith('B') ? 'B' : 'A';

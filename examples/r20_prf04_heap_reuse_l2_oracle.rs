@@ -1,14 +1,11 @@
-//! L2 activation oracle: real installed GlobalAlloc with child-local claim observation.
-use sefer_alloc::{
-    registry::{config_conflicts_total, heaps_claimed_high_water, HeapRegistry},
-    SeferAlloc,
-};
+//! L2 activation oracle: actual installed GlobalAlloc first-allocation observation.
+use sefer_alloc::registry::{config_conflicts_total, heaps_claimed_high_water, HeapRegistry};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-#[global_allocator]
-static GLOBAL: SeferAlloc = SeferAlloc::new();
 #[path = "../benches/support/r20_prf04_heap_reuse.rs"]
 mod hr;
+#[global_allocator]
+static GLOBAL: hr::FirstAlloc<true> = hr::FirstAlloc;
 
 #[cfg(prf04_heap_reuse_oracle)]
 fn candidate_observers() -> (Option<u64>, Option<u64>) {
@@ -25,35 +22,21 @@ fn candidate_observers() -> (Option<u64>, Option<u64>) {
 struct State {
     ready: bool,
     release: bool,
-    claim_delta: u64,
-    actual_calls: u64,
+    calls: u64,
 }
 struct Child {
-    handle: JoinHandle<(u64, u64)>,
+    handle: JoinHandle<u64>,
     gate: Arc<(Mutex<State>, Condvar)>,
+    claim_delta: u64,
 }
-#[inline(never)]
-fn observed_first_alloc() -> (u64, u64) {
-    let before = HeapRegistry::dbg_registry_claim_sources();
-    let take_before = candidate_observers().1;
-    hr::child_first_alloc();
-    let after = HeapRegistry::dbg_registry_claim_sources();
-    let take_after = candidate_observers().1;
-    let claim_delta = after
-        .iter()
-        .zip(before.iter())
-        .map(|(a, b)| a - b)
-        .sum::<u64>();
-    let take_delta = match (take_before, take_after) {
-        (Some(a), Some(b)) => b.checked_sub(a).expect("free-set claims are monotonic"),
-        _ => 0,
-    };
-    let claim_delta = claim_delta + take_delta;
-    assert_eq!(
-        claim_delta, 1,
-        "each observed target must claim exactly once"
-    );
-    (claim_delta, 1)
+fn observed_target() -> u64 {
+    let layout = std::alloc::Layout::from_size_align(8, 8).expect("valid target layout");
+    // Through the installed wrapper: the latch fires here unless std's thread start
+    // already took this thread's first allocation; either way target_calls() is 1.
+    // SAFETY: non-zero valid layout; the allocation is retained to process exit.
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    assert!(!ptr.is_null(), "observed target allocation failed");
+    hr::target_calls()
 }
 impl Child {
     fn spawn() -> Self {
@@ -61,44 +44,93 @@ impl Child {
             Mutex::new(State {
                 ready: false,
                 release: false,
-                claim_delta: 0,
-                actual_calls: 0,
+                calls: 0,
             }),
             Condvar::new(),
         ));
         let child_gate = Arc::clone(&gate);
+        let before = HeapRegistry::dbg_registry_claim_sources();
+        let free_before = candidate_observers().1;
         let handle = std::thread::spawn(move || {
-            let (claim_delta, actual_calls) = observed_first_alloc();
+            let calls = observed_target();
             let (lock, cv) = &*child_gate;
             let mut state = lock.lock().expect("child gate");
-            state.claim_delta = claim_delta;
-            state.actual_calls = actual_calls;
+            state.calls = calls;
             state.ready = true;
             cv.notify_all();
             while !state.release {
                 state = cv.wait(state).expect("child gate");
             }
-            (state.claim_delta, state.actual_calls)
+            calls
         });
-        let child = Self { handle, gate };
+        let mut child = Self {
+            handle,
+            gate,
+            claim_delta: 0,
+        };
         let (lock, cv) = &*child.gate;
         let mut state = lock.lock().expect("ready gate");
         while !state.ready {
             state = cv.wait(state).expect("ready gate");
         }
         drop(state);
+        let after = HeapRegistry::dbg_registry_claim_sources();
+        let free_after = candidate_observers().1;
+        let source_delta = after
+            .iter()
+            .zip(before)
+            .map(|(a, b)| a.checked_sub(b).expect("source counter monotonic"))
+            .sum::<u64>();
+        let free_delta = match (free_before, free_after) {
+            (Some(a), Some(b)) => b.checked_sub(a).expect("free counter monotonic"),
+            _ => 0,
+        };
+        let claim_delta = source_delta + free_delta;
+        let actual_calls = child.observe();
+        if claim_delta != 1 || actual_calls != 1 {
+            child.unblock_and_join();
+            panic!(
+                "first-allocation witness invalid: claims={claim_delta}, target calls={actual_calls}"
+            );
+        }
+        child.claim_delta = claim_delta;
         child
     }
-    fn observe(&self) -> (u64, u64) {
-        let (lock, _) = &*self.gate;
-        let state = lock.lock().expect("observe gate");
-        (state.claim_delta, state.actual_calls)
+    fn observe(&self) -> u64 {
+        self.gate.0.lock().expect("observe gate").calls
     }
-    fn release(self) -> (u64, u64) {
+    fn unblock_and_join(self) {
+        let (lock, cv) = &*self.gate;
+        lock.lock().expect("failure release gate").release = true;
+        cv.notify_one();
+        let _ = self.handle.join().expect("child panic while unblocking");
+    }
+    fn release(self) -> u64 {
+        assert_eq!(self.claim_delta, 1, "stored first-allocation claim witness");
+        let before_sources = HeapRegistry::dbg_registry_claim_sources();
+        let before_free = candidate_observers().1;
         let (lock, cv) = &*self.gate;
         lock.lock().expect("release gate").release = true;
         cv.notify_one();
-        self.handle.join().expect("child panic")
+        let calls = self.handle.join().expect("child panic");
+        assert_eq!(calls, 1, "child witness mismatch");
+        let after_sources = HeapRegistry::dbg_registry_claim_sources();
+        let after_free = candidate_observers().1;
+        let source_delta = after_sources
+            .iter()
+            .zip(before_sources)
+            .map(|(a, b)| a.checked_sub(b).expect("source counter monotonic"))
+            .sum::<u64>();
+        let free_delta = match (before_free, after_free) {
+            (Some(a), Some(b)) => b.checked_sub(a).expect("free counter monotonic"),
+            _ => 0,
+        };
+        assert_eq!(
+            source_delta + free_delta,
+            0,
+            "release window must not add claims"
+        );
+        calls
     }
 }
 #[derive(Clone, Copy)]
@@ -127,101 +159,67 @@ fn main() {
     let n = args[1].parse::<usize>().expect("N");
     let arm = args[2].as_str();
     assert!(n > 0 && ["A", "B"].contains(&arm));
-
+    hr::warm_parent_and_arm();
     match family {
         "cold" => {
             let before = snapshot();
             let children: Vec<_> = (0..n).map(|_| Child::spawn()).collect();
-            let observed: Vec<_> = children.iter().map(Child::observe).collect();
+            let calls: Vec<_> = children.iter().map(Child::observe).collect();
             let after = snapshot();
-            assert_eq!(observed.iter().map(|v| v.0).sum::<u64>(), n as u64);
+            assert_eq!(calls.iter().sum::<u64>(), n as u64);
             std::mem::forget(children);
-            emit(
-                family,
-                n,
-                arm,
-                before,
-                after,
-                observed.iter().map(|v| v.1).sum(),
-            );
+            emit(family, n, arm, before, after, calls.iter().sum());
         }
-        "recycled_alloc" => {
+        "recycled_alloc" | "recycled_release" => {
             drop(HeapRegistry::dbg_claim_lease().expect("recycled setup"));
             let before = snapshot();
-            let observed: Vec<_> = (0..n)
-                .map(|_| {
-                    let child = Child::spawn();
-                    let result = child.observe();
-                    let joined = child.release();
-                    assert_eq!(joined, result);
-                    result
-                })
-                .collect();
+            let mut calls = Vec::with_capacity(n);
+            for _ in 0..n {
+                let c = Child::spawn();
+                let observed = c.observe();
+                let joined = c.release();
+                assert_eq!(joined, observed);
+                calls.push(observed);
+            }
             let after = snapshot();
-            assert_eq!(observed.iter().map(|v| v.0).sum::<u64>(), n as u64);
-            emit(
-                family,
-                n,
-                arm,
-                before,
-                after,
-                observed.iter().map(|v| v.1).sum(),
-            );
-        }
-        "recycled_release" => {
-            drop(HeapRegistry::dbg_claim_lease().expect("recycled setup"));
-            let before = snapshot();
-            let observed: Vec<_> = (0..n)
-                .map(|_| {
-                    let child = Child::spawn();
-                    let result = child.observe();
-                    let joined = child.release();
-                    assert_eq!(joined, result);
-                    result
-                })
-                .collect();
-            let after = snapshot();
-            assert_eq!(observed.iter().map(|v| v.0).sum::<u64>(), n as u64);
-            emit(
-                family,
-                n,
-                arm,
-                before,
-                after,
-                observed.iter().map(|v| v.1).sum(),
-            );
+            assert_eq!(calls.iter().sum::<u64>(), n as u64);
+            emit(family, n, arm, before, after, calls.iter().sum());
         }
         "wave" => {
             hr::l2_wave_setup();
             let before = snapshot();
             let children: Vec<_> = (0..n).map(|_| Child::spawn()).collect();
-            let observed: Vec<_> = children.iter().map(Child::observe).collect();
+            let calls: Vec<_> = children.iter().map(Child::observe).collect();
             let after = snapshot();
-            assert_eq!(observed.iter().map(|v| v.0).sum::<u64>(), n as u64);
+            assert_eq!(calls.iter().sum::<u64>(), n as u64);
             std::mem::forget(children);
-            emit(
-                family,
-                n,
-                arm,
-                before,
-                after,
-                observed.iter().map(|v| v.1).sum(),
-            );
+            emit(family, n, arm, before, after, calls.iter().sum());
         }
         "wave_release" => {
             let mut children: Vec<_> = (0..hr::WAVE_SLOTS).map(|_| Child::spawn()).collect();
             assert!(n <= children.len());
             let before = snapshot();
-            let observed: Vec<_> = children.iter().map(Child::observe).collect();
-            for child in children.drain(..n) {
-                let result = child.release();
-                assert_eq!(result.0, 1);
+            let calls: Vec<_> = children.iter().map(Child::observe).collect();
+            for c in children.drain(..n) {
+                assert_eq!(c.release(), 1);
             }
-            let joins = observed.iter().take(n).map(|v| v.1).sum();
+            let joins = calls.iter().take(n).sum();
             let after = snapshot();
+            assert_eq!(calls.iter().sum::<u64>(), hr::WAVE_SLOTS as u64);
+            let source_delta = after
+                .sources
+                .iter()
+                .zip(before.sources)
+                .map(|(a, b)| a.checked_sub(b).expect("source counter monotonic"))
+                .sum::<u64>();
+            let free_delta = match (before.candidate.1, after.candidate.1) {
+                (Some(a), Some(b)) => b.checked_sub(a).expect("free-set counter monotonic"),
+                _ => 0,
+            };
             assert_eq!(
-                observed.iter().map(|v| v.0).sum::<u64>(),
-                hr::WAVE_SLOTS as u64
+                source_delta + free_delta,
+                0,
+                "release window must not add claims"
             );
             std::mem::forget(children);
             emit(family, n, arm, before, after, joins);
@@ -241,8 +239,8 @@ fn emit(family: &str, n: usize, arm: &str, before: Snapshot, after: Snapshot, ac
                     - i64::try_from(a).expect("popcount fits i64"),
             ),
             (Some(a), Some(b)) => Some(
-                i64::try_from(b.checked_sub(a).expect("take counter is monotonic"))
-                    .expect("take delta fits output integer"),
+                i64::try_from(b.checked_sub(a).expect("take monotonic"))
+                    .expect("take delta fits i64"),
             ),
             _ => None,
         };

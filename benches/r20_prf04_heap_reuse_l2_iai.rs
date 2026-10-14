@@ -13,7 +13,7 @@ mod gate {
         let mut config = LibraryBenchmarkConfig::default();
         config
             .entry_point(EntryPoint::Custom(
-                "r20_prf04_heap_reuse_l2_iai::hr::child_first_alloc".into(),
+                "r20_prf04_heap_reuse_l2_iai::hr::first_global_alloc".into(),
             ))
             .raw_callgrind_args(["--separate-threads=yes"]);
         config
@@ -22,7 +22,7 @@ mod gate {
         let mut config = LibraryBenchmarkConfig::default();
         config
             .entry_point(EntryPoint::Custom(
-                "r20_prf04_heap_reuse_l2_iai::hr::child_first_alloc".into(),
+                "r20_prf04_heap_reuse_l2_iai::hr::first_global_alloc".into(),
             ))
             .raw_callgrind_args(["--separate-threads=yes"]);
         config
@@ -117,5 +117,6 @@ fn main() {
 }
 #[cfg(not(target_os = "linux"))]
 fn main() {}
+#[cfg(target_os = "linux")]
 #[global_allocator]
-static GLOBAL: sefer_alloc::SeferAlloc = sefer_alloc::SeferAlloc::new();
+static GLOBAL: hr::FirstAlloc<false> = hr::FirstAlloc;
