@@ -190,7 +190,11 @@ function baseHead() {
   return git(REPO, ['rev-parse', 'HEAD']).out;
 }
 function harnessOverlay(dir) {
-  const status = git(dir, ['status', '--porcelain', '-z']).out;
+  // Untrimmed: git() trims stdout, which would eat the first entry's leading status space.
+  const raw = spawnSync('git', ['--no-optional-locks', 'status', '--porcelain', '-z'],
+    { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } });
+  assert.equal(raw.status, 0, `git status failed: ${raw.stderr}`);
+  const status = raw.stdout;
   const changes = [];
   for (const entry of status.split('\0').filter(Boolean)) {
     const path = entry.slice(3);
