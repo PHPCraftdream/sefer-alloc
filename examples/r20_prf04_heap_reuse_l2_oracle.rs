@@ -236,7 +236,10 @@ fn emit(family: &str, n: usize, arm: &str, before: Snapshot, after: Snapshot, ac
     let delta = |i: usize| after.sources[i] - before.sources[i];
     let candidate_delta =
         |index: usize| match (before.candidate_at(index), after.candidate_at(index)) {
-            (Some(a), Some(b)) if index == 0 => Some(i64::from(b) - i64::from(a)),
+            (Some(a), Some(b)) if index == 0 => Some(
+                i64::try_from(b).expect("popcount fits i64")
+                    - i64::try_from(a).expect("popcount fits i64"),
+            ),
             (Some(a), Some(b)) => Some(
                 i64::try_from(b.checked_sub(a).expect("take counter is monotonic"))
                     .expect("take delta fits output integer"),

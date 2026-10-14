@@ -111,7 +111,7 @@ loom = "0.7"
 # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
 # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
 # `numa-aware-mock` feature by the mock-gated integration tests).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(prf04_heap_reuse_oracle)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
