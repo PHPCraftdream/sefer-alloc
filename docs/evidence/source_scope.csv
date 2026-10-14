@@ -8,3 +8,7 @@ R4c-08,src/alloc_core/small/alloc_core_small_pool/decommit.rs,,src/alloc_core/sm
 R5b-12,src/alloc_core/segment/remote_bitmap,,,Source pin of the C5 sidecar atomic edges and ClassLeaves orderings
 R5b-13,src/alloc_core/segment/remote_bitmap,,"src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs::.fetch_or(1 << (granule % 64), Ordering::AcqRel)",Producer publish AcqRel fetch_or; the mutant weakens it to Relaxed
 R5b-14,src/alloc_core/segment/remote_bitmap,,"src/alloc_core/segment/remote_bitmap/bitmap_scan.rs::(pending.swap(0, Ordering::AcqRel), false, true)",Owner cut AcqRel swap(0); the mutant weakens it to Relaxed
+R4c-10,src/registry/heap_registry,,src/registry/heap_registry/claim.rs::impl Drop for HeapLease,Mutant of the reuse-hint publication (swap + spill) in the HeapLease drop; registry claim/recycle sources
+R4c-11,src/registry/heap_registry,,,Mutant of the slot generation bump on recycle-then-claim; registry claim/recycle sources
+R4c-13,src/registry/heap_registry,,,Mutant of the initialised publication in the uninit-OOM claim path; registry claim sources
+R4c-18,src/registry/heap_registry,,,Mutant of push_back_after_oom phase in the uninit-OOM claim path; registry claim sources
