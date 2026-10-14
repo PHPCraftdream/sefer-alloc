@@ -756,12 +756,14 @@ function producerPass(label, arm, role, cellIndex, name, bKey) {
     },
   );
   assert.equal(binarySha(b.exe), b.binarySha256, `binary drift @${label}/${role}`);
-  profiles.forEach((p, i) => putText(`profiles/${label}-${role}-${i}.out`, fs.readFileSync(p, 'utf8')));
-  putJson(`profiles/${label}-${role}-inventory.json`, profiles.map((p, i) =>
-    ({ receipt: `profiles/${label}-${role}-${i}.out`, sha256: sha(publicText(fs.readFileSync(p, 'utf8'))) })));
-  putText(`raw/${role}-${label}.log`, r.out);
+  // Receipts are keyed per producer cell: one label runs several producers.
+  const tag = `${label}-${name}-${role}`;
+  profiles.forEach((p, i) => putText(`profiles/${tag}-${i}.out`, fs.readFileSync(p, 'utf8')));
+  putJson(`profiles/${tag}-inventory.json`, profiles.map((p, i) =>
+    ({ receipt: `profiles/${tag}-${i}.out`, sha256: sha(publicText(fs.readFileSync(p, 'utf8'))) })));
+  putText(`raw/${tag}.log`, r.out);
   fs.rmSync(homeDir, { recursive: true, force: true });
-  return { ...parsed, startedAt, log: putText(`logs/${label}-${role}.log`, r.out) };
+  return { ...parsed, startedAt, log: putText(`logs/${tag}.log`, r.out) };
 }
 
 // --- measure -----------------------------------------------------------------
