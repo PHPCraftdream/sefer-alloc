@@ -92,7 +92,8 @@ function validateIdentity(d) {
     text(pin.buildReceipt);
     features(pin.features);
     same(pin.primaryCfg, []);
-    const expectedOracleCfg = arm === 'A'
+    // An A-only rehearsal builds B from main, which has no candidate observer hooks.
+    const expectedOracleCfg = arm === 'A' || d.rehearsal === true
       ? ['prf04_heap_reuse_activation']
       : ['prf04_heap_reuse_activation', 'prf04_heap_reuse_oracle'];
     same(pin.oracleCfg, expectedOracleCfg);

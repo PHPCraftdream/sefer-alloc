@@ -116,7 +116,9 @@ export async function verifyArtifacts(outDir) {
   }
   for (const [key, role] of [['binarySha256', 'iai'], ['controlsBinarySha256', 'controls']])
     check(`binary:C:${role}`, identities.C0?.[key] === builds.arms?.C?.[role]?.binarySha256, 'C binary pin mismatch');
-  const expected = new Set(CELLS.flatMap(cell => ['A1', 'A2', 'B1', 'B2', 'C0'].map(arm => `${cell.name}/${arm}`)));
+  // An A-only rehearsal measures A1 only (the judge's rowArms agree).
+  const rowArms = rehearsal ? ['A1'] : ['A1', 'A2', 'B1', 'B2', 'C0'];
+  const expected = new Set(CELLS.flatMap(cell => rowArms.map(arm => `${cell.name}/${arm}`)));
   const rows = input.iai;
   check('rows:array', Array.isArray(rows), 'input.iai must be an array');
   if (Array.isArray(rows)) {
