@@ -3,14 +3,24 @@
 use std::sync::mpsc;
 use std::thread;
 
-use sefer_alloc::registry::segment_route::{
-    RouteDirectory, RouteError, RouteKind, RouteRecord, RouteRegistration,
+use sefer_alloc::{
+    registry::segment_route::{
+        RouteDirectory, RouteError, RouteKind, RouteRecord, RouteRegistration,
+    },
+    SegmentLayout,
 };
 
-const SEGMENT: usize = 4 * 1024 * 1024;
+const PAYLOAD_START: usize =
+    SegmentLayout::PRIMORDIAL_PAYLOAD_START_WORD * 64 * SegmentLayout::MIN_BLOCK;
+const START_WORD: usize = SegmentLayout::PRIMORDIAL_PAYLOAD_START_WORD;
+const SEGMENT: usize = SegmentLayout::SEGMENT;
 
 fn cut_one(route: &RouteRegistration<'_>) -> RouteRecord {
-    let mut scan = route.small_sidecar().unwrap().scan(16).unwrap();
+    let mut scan = route
+        .small_sidecar()
+        .unwrap()
+        .scan_from(PAYLOAD_START + 16, START_WORD)
+        .unwrap();
     let mut cut = scan.next_cut().unwrap();
     let record = cut.pop().unwrap();
     assert!(cut.pop().is_none());
@@ -62,7 +72,7 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
     let route = directory
         .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
-    assert!(route.issue_small(0, 0));
+    assert!(route.issue_small(PAYLOAD_START as u32, 0));
     let old_pin = directory.lookup(root).unwrap();
     let old_sidecar_addr = core::ptr::from_ref(route.small_sidecar().unwrap()).addr();
     let old_incarnation = route.incarnation();
@@ -75,8 +85,8 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
             let pin = directory_ref
                 .lookup(core::ptr::without_provenance_mut(addr))
                 .unwrap();
-            // SAFETY: the model issued offset zero once and transfers it here.
-            assert!(unsafe { pin.publish_small(0) });
+            // SAFETY: the model issued the payload offset once and transfers it here.
+            assert!(unsafe { pin.publish_small(PAYLOAD_START as u32) });
             published_tx.send(()).unwrap();
             resume_rx.recv().unwrap();
         });
@@ -84,7 +94,7 @@ fn paused_published_pin_survives_removal_and_same_address_registration() {
         assert_eq!(
             cut_one(&route),
             RouteRecord {
-                offset: 0,
+                offset: PAYLOAD_START as u32,
                 class: 0
             }
         );
@@ -113,14 +123,14 @@ fn published_pin_cleanup_survives_reservation_unmap() {
     let route = directory
         .register(root, SEGMENT, root, 2, RouteKind::Small)
         .unwrap();
-    assert!(route.issue_small(0, 0));
+    assert!(route.issue_small(PAYLOAD_START as u32, 0));
     let pin = directory.lookup(root).unwrap();
-    // SAFETY: the owned model block at offset zero is issued and transferred once.
-    assert!(unsafe { pin.publish_small(0) });
+    // SAFETY: the owned model block at the payload offset is issued and transferred once.
+    assert!(unsafe { pin.publish_small(PAYLOAD_START as u32) });
     assert_eq!(
         cut_one(&route),
         RouteRecord {
-            offset: 0,
+            offset: PAYLOAD_START as u32,
             class: 0
         }
     );

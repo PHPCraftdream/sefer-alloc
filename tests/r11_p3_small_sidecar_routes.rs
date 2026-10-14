@@ -4,13 +4,23 @@
     feature = "bench-internals"
 ))]
 
-use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidecar};
+use sefer_alloc::{
+    registry::segment_route::{RouteDirectory, RouteKind, SmallSidecar},
+    SegmentLayout,
+};
 use std::sync::Mutex;
 
 const SEGMENT: usize = 4 * 1024 * 1024;
 #[cfg(not(miri))]
 const LEAVES: usize = 1024;
 const LEAF: usize = 4096;
+#[cfg(not(miri))]
+const PRIMORDIAL_PAYLOAD_START: usize =
+    SegmentLayout::PRIMORDIAL_PAYLOAD_START_WORD * 64 * SegmentLayout::MIN_BLOCK;
+const SMALL_PAYLOAD_START: usize =
+    SegmentLayout::SMALL_PAYLOAD_START_WORD * 64 * SegmentLayout::MIN_BLOCK;
+#[cfg(not(miri))]
+const PRIMORDIAL_PAYLOAD_LEAF: usize = PRIMORDIAL_PAYLOAD_START / LEAF;
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
@@ -32,34 +42,57 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     assert_eq!(base.3 - before.3, 1);
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
 
-    for (offset, class) in [(0, 0), (16, 0), (LEAF as u32, 0)] {
+    for (offset, class) in [
+        (SMALL_PAYLOAD_START as u32, 0),
+        ((SMALL_PAYLOAD_START + 16) as u32, 0),
+        ((SMALL_PAYLOAD_START + LEAF) as u32, 0),
+    ] {
         assert!(route.prepare_small(offset, class));
         assert!(route.issue_small(offset, class));
     }
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
-    assert!(route.prepare_small(32, 1));
-    assert!(route.issue_small(32, 1));
-    assert_eq!(sidecar.class_at_for_test(0), Some(0));
-    assert_eq!(sidecar.class_at_for_test(32), Some(1));
+    let mixed_offset = (SMALL_PAYLOAD_START + 32) as u32;
+    assert!(route.prepare_small(mixed_offset, 1));
+    assert!(route.issue_small(mixed_offset, 1));
+    assert_eq!(
+        sidecar.class_at_for_test(SMALL_PAYLOAD_START as u32),
+        Some(0)
+    );
+    assert_eq!(sidecar.class_at_for_test(mixed_offset), Some(1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 1);
 
+    let next_leaf_offset = (SMALL_PAYLOAD_START + LEAF + 16) as u32;
     SmallSidecar::fail_spill_after_for_test(1);
-    assert!(!route.prepare_small(LEAF as u32 + 16, 1));
+    assert!(!route.prepare_small(next_leaf_offset, 1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 1);
-    assert_eq!(sidecar.class_at_for_test(LEAF as u32), Some(0));
-    assert!(route.prepare_small(LEAF as u32 + 16, 1));
-    assert!(route.issue_small(LEAF as u32 + 16, 1));
+    assert_eq!(
+        sidecar.class_at_for_test((SMALL_PAYLOAD_START + LEAF) as u32),
+        Some(0)
+    );
+    assert!(route.prepare_small(next_leaf_offset, 1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 2);
+    assert!(route.issue_small(next_leaf_offset, 1));
 
     let pinned_after_terminal = directory.lookup(root).unwrap();
-    for offset in [0, 16, 32, LEAF as u32, LEAF as u32 + 16] {
+    for offset in [
+        SMALL_PAYLOAD_START as u32,
+        (SMALL_PAYLOAD_START + 16) as u32,
+        mixed_offset,
+        (SMALL_PAYLOAD_START + LEAF) as u32,
+        next_leaf_offset,
+    ] {
         let pin = directory
             .lookup(root.with_addr(root.addr() + offset as usize))
             .unwrap();
         // SAFETY: each offset was issued once above and is transferred once.
         assert!(unsafe { pin.publish_small(offset) });
     }
-    let mut scan = sidecar.scan(LEAF + 32).unwrap();
+    let mut scan = sidecar
+        .scan_from(
+            SMALL_PAYLOAD_START + LEAF + 32,
+            SMALL_PAYLOAD_START / (64 * SegmentLayout::MIN_BLOCK),
+        )
+        .unwrap();
     let mut records = Vec::new();
     while let Some(mut cut) = scan.next_cut() {
         while let Some(record) = cut.pop() {
@@ -69,11 +102,11 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     assert_eq!(
         records,
         [
-            (0, 0),
-            (16, 0),
-            (32, 1),
-            (LEAF as u32, 0),
-            (LEAF as u32 + 16, 1)
+            (SMALL_PAYLOAD_START as u32, 0),
+            ((SMALL_PAYLOAD_START + 16) as u32, 0),
+            (mixed_offset, 1),
+            ((SMALL_PAYLOAD_START + LEAF) as u32, 0),
+            (next_leaf_offset, 1),
         ]
     );
     drop(scan);
@@ -92,7 +125,10 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
         0
     );
     assert_eq!(
-        replacement.small_sidecar().unwrap().class_at_for_test(0),
+        replacement
+            .small_sidecar()
+            .unwrap()
+            .class_at_for_test(SMALL_PAYLOAD_START as u32),
         None
     );
     assert_eq!(directory.live_route_census_for_test(), (1, 0, 0));
@@ -116,8 +152,9 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
         .register(root, SEGMENT, root, 10, RouteKind::Primordial)
         .unwrap();
     let sidecar = route.small_sidecar().unwrap();
+    const PAYLOAD_LEAVES: usize = LEAVES - PRIMORDIAL_PAYLOAD_LEAF;
     assert_eq!(directory.live_route_census_for_test(), (0, 1, 0));
-    for leaf in 0..LEAVES {
+    for leaf in PRIMORDIAL_PAYLOAD_LEAF..LEAVES {
         let offset = (leaf * LEAF) as u32;
         assert!(route.prepare_small(offset, 0));
         assert!(route.issue_small(offset, 0));
@@ -130,20 +167,21 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
             assert!(unsafe { pin.publish_small(published) });
         }
     }
-    let mut scan = sidecar.scan(SEGMENT).unwrap();
+    let payload_start_word = PRIMORDIAL_PAYLOAD_START / (64 * SegmentLayout::MIN_BLOCK);
+    let mut scan = sidecar.scan_from(SEGMENT, payload_start_word).unwrap();
     let mut counts = [0usize; 2];
     while let Some(mut cut) = scan.next_cut() {
         while let Some(record) = cut.pop() {
             counts[record.class as usize] += 1;
         }
     }
-    assert_eq!(counts, [LEAVES, LEAVES]);
+    assert_eq!(counts, [PAYLOAD_LEAVES, PAYLOAD_LEAVES]);
     drop(scan);
-    assert_eq!(sidecar.mixed_leaves_for_test(), LEAVES);
+    assert_eq!(sidecar.mixed_leaves_for_test(), PAYLOAD_LEAVES);
     let live = SmallSidecar::system_totals_for_test();
-    assert_eq!(live.0 - before.0, 41_984 + LEAVES * 256);
+    assert_eq!(live.0 - before.0, 41_984 + PAYLOAD_LEAVES * 256);
     assert_eq!(live.1 - before.1, 41_984);
-    assert_eq!(live.3 - before.3, 1 + LEAVES);
+    assert_eq!(live.3 - before.3, 1 + PAYLOAD_LEAVES);
     drop(route);
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));
     drop(reservation);

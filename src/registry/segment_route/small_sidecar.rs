@@ -202,7 +202,14 @@ impl SmallSidecar {
             .map(|inner| RouteScan { inner })
     }
 
-    pub(crate) fn scan_from(&self, high_water: usize, word: usize) -> Option<RouteScan<'_>> {
+    /// Owner-only bounded scan beginning at the supplied bitmap word.
+    ///
+    /// `high_water` is an exclusive byte bound on issued payload, and `word`
+    /// is the payload-start word derived from `SegmentLayout`; it skips the
+    /// summary-metadata prefix. This delegates to the existing fixed scanner
+    /// and exposes no producer-side mutation.
+    #[doc(hidden)]
+    pub fn scan_from(&self, high_water: usize, word: usize) -> Option<RouteScan<'_>> {
         self.bitmap()
             .scan_from(high_water, word)
             .map(|inner| RouteScan { inner })

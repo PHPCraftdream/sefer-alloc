@@ -12,7 +12,9 @@ mod alloc_core {
         pub const SMALL_CLASS_COUNT: usize = sefer_alloc::SegmentLayout::SIZE_CLASS_TABLE.len();
     }
 }
-pub(crate) use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+#[allow(unused_imports)]
+pub(crate) use core::sync::atomic::AtomicU8;
+pub(crate) use core::sync::atomic::{AtomicU64, Ordering};
 // The fixture replaces only instrumentation callbacks; protocol atomics/scans are real.
 #[cfg(feature = "bench-internals")]
 pub(crate) struct Prf01SidecarOracle;
@@ -37,12 +39,20 @@ mod remote_bitmap {
     pub(crate) use super::bitmap_record::BitmapRecord;
     #[allow(unused_imports)]
     pub(crate) use super::bitmap_scan::BitmapScan;
+    #[allow(unused_imports)]
     pub(crate) use super::sidecar_bitmap::{SidecarBitmap, SummaryScan};
     #[allow(unused_imports)]
-    pub(crate) use super::{AtomicU64, AtomicU8, Ordering};
+    pub(crate) use super::AtomicU64;
+    #[allow(unused_imports)]
+    pub(crate) use super::AtomicU8;
+    #[allow(unused_imports)]
+    pub(crate) use super::Ordering;
 }
 
-use remote_bitmap::{AtomicU64, AtomicU8, Ordering, SidecarBitmap, SummaryScan};
+#[allow(unused_imports)]
+use remote_bitmap::{BitmapCut, BitmapRecord, BitmapScan};
+#[allow(unused_imports)]
+use remote_bitmap::{SidecarBitmap, SummaryScan};
 use std::thread;
 
 struct Backing {
