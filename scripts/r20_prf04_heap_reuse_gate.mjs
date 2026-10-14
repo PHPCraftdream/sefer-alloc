@@ -576,8 +576,14 @@ function selftest() {
   const rehearsal = structuredClone(fixture);
   rehearsal.rehearsal = true;
   rehearsal.iai = rehearsal.iai.filter(row => row.arm === 'A1');
+  rehearsal.identities.B.oracleCfg = ['prf04_heap_reuse_activation'];
   const rehearsalResult = derive(rehearsal, frozen);
   assert.match(rehearsalResult.verdict, /^REHEARSAL:/);
+  checks++;
+  // A real (non-rehearsal) input must still carry B's candidate observer cfg.
+  const missingObserver = structuredClone(fixture);
+  missingObserver.identities.B.oracleCfg = ['prf04_heap_reuse_activation'];
+  assert.equal(derive(missingObserver, frozen).verdict, 'INCOMPLETE');
   checks++;
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'synthetic only', checks, measurements: 0 }));
 }
