@@ -729,8 +729,8 @@ export function machineBoundary(nm, assembly, symbols) {
     const exact = blocks.filter(match => match[2] === symbol);
     assert.equal(exact.length, 1, 'exact disassembly missing/ambiguous ' + symbol);
     const callers = blocks.filter(match => match[3].split('\n').some(line =>
-      // A boundary call in tail position compiles to jmp.
-      /(?:callq?|jmpq?)\s+[^\n]*<[^>]+>/.test(line) && line.includes('<' + symbol + '>')));
+      // A tail call compiles to jmp; a TLS destructor is registered by address (lea).
+      /(?:callq?|jmpq?|lea[lq]?)\s+[^\n]*<[^>]+>/.test(line) && line.includes('<' + symbol + '>')));
     assert.ok(callers.length, 'direct call to target absent ' + symbol);
     evidence[symbol] = { definition: defs[0], body: exact[0][3],
       callers: callers.map(match => ({ name: match[2], body: match[3] })) };

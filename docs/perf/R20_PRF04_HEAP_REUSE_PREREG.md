@@ -62,7 +62,9 @@ user-closure entry; it replaces the old child-first-allocation toggle. Canonical
 caller is `r20_prf04_heap_reuse_l2_iai::hr::FirstAlloc<_>::alloc_inner`, never the target itself or an arbitrary
 closure. Run/gate/verifier and fixtures enforce this boundary. L1 callgrind toggles actual workload symbols (`hr::cold`,
 `hr::recycled`, `hr::wave_claim`, `hr::wave_release_measured`), not a broad default toggle. Release profiles toggle
-exact `AbandonGuard::drop`; no literal `GUARD` toggle.
+the exact TLS destructor `std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::AbandonGuard>`:
+`AbandonGuard::drop` is inlined into it and its out-of-line copy is never called (rehearsal disassembly), while
+the destructor itself is registered by address (`lea`) and run by `__call_tls_dtors`. No literal `GUARD` toggle.
 
 Scenario bodies are in the single canonical Rust support module. Bench bodies contain no instrumentation reads. Oracle
 executables are separate and capture activation immediately around target allocation/claim; snapshots must not allocate.
