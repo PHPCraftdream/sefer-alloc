@@ -52,6 +52,8 @@ import { fileURLToPath } from 'node:url';
 
 const RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(RUNNER_DIR, '..');
+const REPO_ROOT = resolve(spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+  { cwd: REPO, encoding: 'utf8' }).stdout.trim(), '..');
 const parseArg = name => { const i=process.argv.indexOf(name); return i<0?null:process.argv[i+1]; };
 const RAW_LOG_LIMIT = 2 * 1024 * 1024;
 const PRODUCER_SETTINGS = ['--tool=callgrind', '--error-exitcode=0', '--trace-children=yes', '--fair-sched=try',
