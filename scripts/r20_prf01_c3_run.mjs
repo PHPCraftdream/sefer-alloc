@@ -763,7 +763,7 @@ function producerPass(label, arm, role, cellIndex, name, bKey) {
     ({ receipt: `profiles/${tag}-${i}.out`, sha256: sha(publicText(fs.readFileSync(p, 'utf8'))) })));
   putText(`raw/${tag}.log`, r.out);
   fs.rmSync(homeDir, { recursive: true, force: true });
-  return { ...parsed, startedAt, log: putText(`logs/${tag}.log`, r.out) };
+  return { ...parsed, startedAt, binarySha256: b.binarySha256, log: putText(`logs/${tag}.log`, r.out) };
 }
 
 // --- measure -----------------------------------------------------------------

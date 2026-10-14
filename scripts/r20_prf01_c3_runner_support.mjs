@@ -425,6 +425,10 @@ export function measureToInput(runs, producerRuns, {
     assert.equal(primary.totalIr, row.Ir, `producer rerun Ir mismatch @${producer.label}`);
     const workload = primary.childIr - control.childIr;
     assert.ok(workload > 0, `empty producer workload @${producer.label}`);
+    if (producer.name === C3.SAME_WORD_PRODUCER) {
+      row.scenario = 'joined remote Small frees; repeated frees in same pending word; '
+        + 'no owner discovery during producer window';
+    }
     row.producerIrReceipt = {
       binarySha256: row.binarySha256,
       source: row.source,
