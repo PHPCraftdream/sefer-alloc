@@ -1,0 +1,56 @@
+{
+  "id": "R4c-06",
+  "registryActivationHash": "53f53751b32ca5f9936efc00a3edb053bce145a980ec7be0b119ade4f042f964",
+  "steps": [
+    {
+      "name": "strict provenance expected scaffold red",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit internals bench-internals",
+        "--test",
+        "regression_xthread_small_ring_miri"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdoutRegex": [
+          "unsupported operation: integer-to-pointer casts",
+          "ptr::with_exposed_provenance",
+          "tests[/\\\\]regression_xthread_small_ring_miri\\.rs:\\d+:\\d+"
+        ]
+      }
+    },
+    {
+      "name": "plain provenance control",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit internals bench-internals",
+        "--test",
+        "regression_xthread_small_ring_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test xthread_small_ring_two_producers_push_owner_drains \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
