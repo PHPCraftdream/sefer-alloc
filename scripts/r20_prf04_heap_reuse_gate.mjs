@@ -126,7 +126,9 @@ function validateSettings(settings, symbol) {
     }
     return [value];
   }).filter((value, index, values) => value !== '--toggle-collect' || values[index + 1] !== '--toggle-collect');
-  assert.ok(normalized.includes('--collect-atstart=no'));
+  // --toggle-collect implies collection off at start; any explicit value must be "no".
+  assert.ok(normalized.filter(value => value.startsWith('--collect-atstart'))
+    .every(value => value === '--collect-atstart=no'));
   assert.ok(normalized.includes('--toggle-collect=' + symbol));
   assert.ok(normalized.includes('--callgrind-out-file'));
   assert.ok(normalized.includes('--separate-threads=yes'));

@@ -579,10 +579,15 @@ export function generatedArguments(debug, log, cell, homeName, executable) {
   assert.deepEqual(dispatch.slice(at + 1, at + 4), [cell.group, String(cell.index), '0']);
   if (dispatch.length === 6) assert.match(dispatch[5], /^(?:--bench|--module|[A-Za-z0-9_:-]+)$/);
   const records = [...debug.matchAll(/callgrind: Arguments: (.+)$/gm)].map(m => m[1]);
-  const normalizedHome = String(homeName).split(String.fromCharCode(92)).join('/');
+  // The out-file nests package/target/group dirs between the home and the cell dir,
+  // so each homeName segment must appear as its own path segment, not contiguously.
+  const segments = String(homeName).split(String.fromCharCode(92)).join('/').split('/').filter(Boolean);
   const matches = records.filter(line => line.includes('--callgrind-out-file=') &&
-    line.split(/\s+(?=--[A-Za-z])/).some(token =>
-      token.replaceAll(String.fromCharCode(92), '/').includes(normalizedHome)));
+    line.split(/\s+(?=--[A-Za-z])/).some(token => {
+      const path = token.replaceAll(String.fromCharCode(92), '/').replace(/^"/, '');
+      return path.startsWith('--callgrind-out-file=')
+        && segments.every(segment => path.includes('/' + segment + '/'));
+    }));
   assert.ok(matches.length, 'actual runner arguments absent');
   const custom = cell.expectedSymbols[0];
   const candidates = matches.filter(line => line.includes('--toggle-collect=' + custom));
@@ -596,11 +601,15 @@ export function generatedArguments(debug, log, cell, homeName, executable) {
     0, 'implicit runner target toggle forbidden');
   assert.ok(!candidates[0].includes('*::__iai_callgrind_wrapper_mod::*'), 'default toggle forbidden');
   assert.ok(toolVector.includes('--separate-threads=yes'), 'separate threads missing');
-  assert.ok(toolVector.includes('--collect-atstart=no'), 'collection must start disabled');
+  // iai 0.14 omits --collect-atstart when a toggle is set (--toggle-collect implies
+  // collection off at start); an explicit value must still be "no" (R19 precedent).
+  const atStart = toolVector.filter(token => token.split('=')[0] === '--collect-atstart');
+  assert.ok(atStart.every(token => token === '--collect-atstart=no') && toggleFlags.length > 0,
+    'collection must start disabled');
   const settings = ['--tool=callgrind', '--error-exitcode=0', '--trace-children=yes', '--fair-sched=try',
     '--I1=32768,8,64', '--D1=32768,8,64', '--LL=8388608,16,64', '--cache-sim=yes',
     '--compress-strings=no', '--compress-pos=no', '--dump-line=yes', '--dump-instr=no',
-    '--combine-dumps=no', '--collect-atstart=no', '--separate-threads=yes'];
+    '--combine-dumps=no', '--separate-threads=yes'];
   const expectedFlags = argvTokens(candidates[0]);
   for (const setting of settings) {
     const key = setting.split('=')[0];

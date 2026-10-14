@@ -134,7 +134,7 @@ const settings = cell => [
   '--tool=callgrind', '--error-exitcode=0', '--trace-children=yes', '--fair-sched=try',
   '--I1=32768,8,64', '--D1=32768,8,64', '--LL=8388608,16,64', '--cache-sim=yes',
   '--compress-strings=no', '--compress-pos=no', '--dump-line=yes', '--dump-instr=no',
-  '--combine-dumps=no', '--collect-atstart=no', '--separate-threads=yes',
+  '--combine-dumps=no', '--separate-threads=yes',
   '--toggle-collect=' + cell.expectedSymbols[0],
   '--callgrind-out-file=' + home + '/' + cell.name + '/callgrind.out.%p.%t',
 ].join(' ');
