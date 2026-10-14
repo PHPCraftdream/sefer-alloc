@@ -698,7 +698,10 @@ export function parseProfiles(profiles, log, options) {
       assert.ok(paths.includes(target), 'incoming caller edge must target the measured function');
       incoming += count; callers++; callerContext = caller;
     }
-    assert.equal(incoming, 1n);
+    // Valgrind reuses a joined thread's tid, so sequential children (recycled) share one
+    // per-thread profile; the per-cell total below still pins executions to n.
+    assert.ok(incoming >= 1n, 'positive target profile must execute the target');
+    if (options.cell.layer === 'L1') assert.equal(incoming, 1n);
     if (options.cell.layer === 'L2' && claim && !isL2AllocCaller(callerContext)) {
       throw new Error('L2 first-global-allocation caller is not the strict FirstAlloc forwarding wrapper');
     }
