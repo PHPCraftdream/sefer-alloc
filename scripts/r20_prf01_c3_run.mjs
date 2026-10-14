@@ -49,7 +49,7 @@ import fs from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import * as C3 from './r20_prf01_c3_support.mjs';
 import { fileURLToPath } from 'node:url';
-import { applyHarnessOverlay, validateC3OracleCounters, selfTestC3OracleCounters, selfTestMergeHarnessCargo, mergeHarnessCargo, measureToInput as buildMeasureInput } from './r20_prf01_c3_runner_support.mjs';
+import { applyHarnessOverlay, validateC3OracleCounters, selfTestC3OracleCounters, selfTestMergeHarnessCargo, mergeHarnessCargo, measureToInput as buildMeasureInput, parseIr } from './r20_prf01_c3_runner_support.mjs';
 
 const RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(RUNNER_DIR, '..');
@@ -768,22 +768,6 @@ function producerPass(label, arm, role, cellIndex, name, bKey) {
 
 // --- measure -----------------------------------------------------------------
 
-function parseIr(out, cellNames) {
-  const ir = {}; let current = null;
-  for (const raw of out.split(/\r?\n/)) {
-    const line = raw.replace(/\x1b\[[0-9;]*m/g, ''); // colour never reaches the cell regexes
-    // Header lines are bare `crate::group::cell`; IAI_CALLGRIND_LOG=debug lines look like
-    // `iai_callgrind_runner::runner::tool: Debug: ...` and must not overwrite the current cell.
-    const h = /^(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)(?:\s.*)?$/.exec(line);
-    if (h) { current = h[1]; }
-    else {
-      const m = /^\s*Instructions:\s*([\d,]+)/.exec(line);
-      if (m && current && cellNames.has(current) && ir[current] === undefined)
-        ir[current] = Number(m[1].replace(/,/g, ''));
-    }
-  }
-  return ir;
-}
 // A parse miss must leave the raw output behind: the stage dir is uploaded as a CI artifact.
 function checkCells(ir, cellNames, out, what) {
   const got = Object.keys(ir).sort(), want = [...cellNames].sort();

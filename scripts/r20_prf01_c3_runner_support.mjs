@@ -520,3 +520,21 @@ export function measureToInput(runs, producerRuns, {
   ].join('\n') + '\n');
   return input;
 }
+
+// iai stdout: per-cell Instructions keyed by the bare cell header.
+export function parseIr(out, cellNames) {
+  const ir = {}; let current = null;
+  for (const raw of out.split(/\r?\n/)) {
+    const line = raw.replace(/\x1b\[[0-9;]*m/g, ''); // colour never reaches the cell regexes
+    // Header lines are bare `crate::group::cell`; IAI_CALLGRIND_LOG=debug lines look like
+    // `iai_callgrind_runner::runner::tool: Debug: ...` and must not overwrite the current cell.
+    const h = /^(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)(?:\s.*)?$/.exec(line);
+    if (h) { current = h[1]; }
+    else {
+      const m = /^\s*Instructions:\s*([\d,]+)/.exec(line);
+      if (m && current && cellNames.has(current) && ir[current] === undefined)
+        ir[current] = Number(m[1].replace(/,/g, ''));
+    }
+  }
+  return ir;
+}
