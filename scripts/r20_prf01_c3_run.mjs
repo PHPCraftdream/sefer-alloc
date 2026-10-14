@@ -667,7 +667,7 @@ function machineBoundary(nm, assembly, control, producerSymbol, callerPattern) {
   assert.equal(exact.length, 1, 'exact disassembly definition absent');
   const callers = blocks.filter(block => callerPattern.test(block.name)
     && block.body.split('\n').some(line =>
-      /\bcallq?\s/.test(line) && line.includes('<' + producerSymbol + '>')));
+      /\b(?:callq?|jmpq?)\s/.test(line) && line.includes('<' + producerSymbol + '>')));
   assert.ok(callers.length > 0, 'child closure disassembly caller absent');
   const decoded = exact[0].body.split('\n').map(l => /^\s*[0-9a-f]+:\s+([a-z][a-z0-9]*)\b(.*)/.exec(l)).filter(Boolean);
   assert.ok(decoded.length);
@@ -686,6 +686,8 @@ function machineBoundary(nm, assembly, control, producerSymbol, callerPattern) {
 function boundaryEvidence(b, tag, producerSymbol, callerPattern) {
   const nm = wslOk(`nm -C --defined-only ${b.exe}`, `nm @${b.arm}/${tag}`, { timeout: 120_000 });
   const disasm = wslOk(`objdump -Cd --no-show-raw-insn ${b.exe}`, `objdump @${b.arm}/${tag}`, { timeout: 120_000 });
+  const nmReceipt = putText(`boundary/${tag}-nm.log`, nm.out);
+  const disassemblyReceipt = putText(`boundary/${tag}-disassembly.log`, disasm.out);
   const verification = machineBoundary(
     nm.out, disasm.out, b.role === 'control', producerSymbol, callerPattern,
   );
@@ -694,8 +696,8 @@ function boundaryEvidence(b, tag, producerSymbol, callerPattern) {
     role: b.role,
     tag,
     verification,
-    nm: putText(`boundary/${tag}-nm.log`, nm.out),
-    disassembly: putText(`boundary/${tag}-disassembly.log`, disasm.out),
+    nm: nmReceipt,
+    disassembly: disassemblyReceipt,
   };
 }
 function producerPass(label, arm, role, cellIndex, name, bKey) {
