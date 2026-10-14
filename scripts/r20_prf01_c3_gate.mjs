@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { fixture } from './r20_prf01_c3_fixture.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   ARMS as arms,
   FEATURES as primary,
