@@ -1,0 +1,1780 @@
+exit=1
+{
+  "version": 1,
+  "rehearsal": false,
+  "verdict": "NO-GO",
+  "modes": {
+    "mode1": "NO-GO",
+    "mode2Iai": "NO-GO",
+    "mode2Native": "DEFERRED"
+  },
+  "unjudgeable": [],
+  "tables": {
+    "iai": [
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A1",
+        "B": "B1",
+        "delta": -3706665,
+        "mode": "mode1",
+        "percent": "+3145/10000 (numerator 1265512, denominator 4023043)",
+        "pass": true
+      },
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A1",
+        "B": "B2",
+        "delta": -3706665,
+        "mode": "mode1",
+        "percent": "+3145/10000 (numerator 1265512, denominator 4023043)",
+        "pass": true
+      },
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A2",
+        "B": "B1",
+        "delta": -3706665,
+        "mode": "mode1",
+        "percent": "+3145/10000 (numerator 1265512, denominator 4023043)",
+        "pass": true
+      },
+      {
+        "name": "multiseg_cold_256k",
+        "A": "A2",
+        "B": "B2",
+        "delta": -3706665,
+        "mode": "mode1",
+        "percent": "+3145/10000 (numerator 1265512, denominator 4023043)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A1",
+        "B": "B1",
+        "delta": -11671785,
+        "mode": "mode1",
+        "percent": "+2240/10000 (numerator 2769904, denominator 12364261)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A1",
+        "B": "B2",
+        "delta": -11671785,
+        "mode": "mode1",
+        "percent": "+2240/10000 (numerator 2769904, denominator 12364261)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A2",
+        "B": "B1",
+        "delta": -11671785,
+        "mode": "mode1",
+        "percent": "+2240/10000 (numerator 2769904, denominator 12364261)",
+        "pass": true
+      },
+      {
+        "name": "seg_cycle_decommit_256k",
+        "A": "A2",
+        "B": "B2",
+        "delta": -11671785,
+        "mode": "mode1",
+        "percent": "+2240/10000 (numerator 2769904, denominator 12364261)",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": -5949522,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": -5949522,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": -5949522,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": -5949522,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": -24105098,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": -24105098,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": -24105098,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": -24105098,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": -97034490,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": -97034490,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": -97034490,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "growth16_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": -97034490,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_small_churn_16b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_256b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_churn_write_256b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_aligned_churn_640b_a128_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_start_one_alloc_free_16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 42,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_small_churn_16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_churn_256b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x16b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_2n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_only_256x16b_4n",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_cold_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x16b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_recycle_alloc_free_256x64b",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A1",
+        "B": "B2",
+        "delta": 480,
+        "mode": "mode1",
+        "pass": false
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode1",
+        "pass": true
+      },
+      {
+        "name": "mimalloc_bootstrap_proxy",
+        "A": "A2",
+        "B": "B2",
+        "delta": 480,
+        "mode": "mode1",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A1",
+        "B": "B1",
+        "delta": -4130792,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A1",
+        "B": "B2",
+        "delta": -4130792,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A2",
+        "B": "B1",
+        "delta": -4130792,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_publication",
+        "A": "A2",
+        "B": "B2",
+        "delta": -4130792,
+        "mode": "descriptive",
+        "pass": true
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A1",
+        "B": "B1",
+        "delta": 33280,
+        "mode": "mode2",
+        "percent": "+81250/10000 (numerator 33280, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A1",
+        "B": "B2",
+        "delta": 33280,
+        "mode": "mode2",
+        "percent": "+81250/10000 (numerator 33280, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A2",
+        "B": "B1",
+        "delta": 33280,
+        "mode": "mode2",
+        "percent": "+81250/10000 (numerator 33280, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r19_prf01_joined_producer_same_word",
+        "A": "A2",
+        "B": "B2",
+        "delta": 33280,
+        "mode": "mode2",
+        "percent": "+81250/10000 (numerator 33280, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_c3_producer_distinct_words",
+        "A": "A1",
+        "B": "B1",
+        "delta": 65536,
+        "mode": "mode2",
+        "percent": "+160000/10000 (numerator 65536, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_c3_producer_distinct_words",
+        "A": "A1",
+        "B": "B2",
+        "delta": 65536,
+        "mode": "mode2",
+        "percent": "+160000/10000 (numerator 65536, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_c3_producer_distinct_words",
+        "A": "A2",
+        "B": "B1",
+        "delta": 65536,
+        "mode": "mode2",
+        "percent": "+160000/10000 (numerator 65536, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_c3_producer_distinct_words",
+        "A": "A2",
+        "B": "B2",
+        "delta": 65536,
+        "mode": "mode2",
+        "percent": "+160000/10000 (numerator 65536, denominator 4096)",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_c3_remote_large_free",
+        "A": "A1",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode2",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_c3_remote_large_free",
+        "A": "A1",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode2",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_c3_remote_large_free",
+        "A": "A2",
+        "B": "B1",
+        "delta": 0,
+        "mode": "mode2",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_c3_remote_large_free",
+        "A": "A2",
+        "B": "B2",
+        "delta": 0,
+        "mode": "mode2",
+        "pass": true
+      },
+      {
+        "name": "r20_prf01_strict_trim_payload",
+        "A": "A1",
+        "B": "B1",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_strict_trim_payload",
+        "A": "A1",
+        "B": "B2",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_strict_trim_payload",
+        "A": "A2",
+        "B": "B1",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_strict_trim_payload",
+        "A": "A2",
+        "B": "B2",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_bounded_maintenance",
+        "A": "A1",
+        "B": "B1",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_bounded_maintenance",
+        "A": "A1",
+        "B": "B2",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_bounded_maintenance",
+        "A": "A2",
+        "B": "B1",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      },
+      {
+        "name": "r20_prf01_bounded_maintenance",
+        "A": "A2",
+        "B": "B2",
+        "delta": 99,
+        "mode": "mode2",
+        "pass": false
+      }
+    ],
+    "slope": [
+      {
+        "arm": "B1",
+        "numerator": "33016978",
+        "denominator": "15943242",
+        "limit": "<= 2.5 (owner)",
+        "pass": true
+      },
+      {
+        "arm": "B2",
+        "numerator": "33016978",
+        "denominator": "15943242",
+        "limit": "<= 2.5 (owner)",
+        "pass": true
+      }
+    ],
+    "hot": [
+      {
+        "family": "small_churn_16b",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54264,
+            "2n": 59384,
+            "4n": 69624
+          },
+          "A2": {
+            "n": 54264,
+            "2n": 59384,
+            "4n": 69624
+          },
+          "B1": {
+            "n": 54306,
+            "2n": 59426,
+            "4n": 69666
+          },
+          "B2": {
+            "n": 54306,
+            "2n": 59426,
+            "4n": 69666
+          },
+          "C0": {
+            "n": 54264,
+            "2n": 59384,
+            "4n": 69624
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 271 (numerator |A1-A2| or |C0-A1|, denominator A1=54264)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 25 (numerator |A1-A2| or |C0-A1|, denominator A1=5120)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 51 (numerator |A1-A2| or |C0-A1|, denominator A1=10240)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      },
+      {
+        "family": "churn_256b",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54264,
+            "2n": 59384,
+            "4n": 69624
+          },
+          "A2": {
+            "n": 54264,
+            "2n": 59384,
+            "4n": 69624
+          },
+          "B1": {
+            "n": 54306,
+            "2n": 59426,
+            "4n": 69666
+          },
+          "B2": {
+            "n": 54306,
+            "2n": 59426,
+            "4n": 69666
+          },
+          "C0": {
+            "n": 54264,
+            "2n": 59384,
+            "4n": 69624
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 271 (numerator |A1-A2| or |C0-A1|, denominator A1=54264)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 25 (numerator |A1-A2| or |C0-A1|, denominator A1=5120)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 51 (numerator |A1-A2| or |C0-A1|, denominator A1=10240)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      },
+      {
+        "family": "churn_write_256b",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54456,
+            "2n": 59768,
+            "4n": 70392
+          },
+          "A2": {
+            "n": 54456,
+            "2n": 59768,
+            "4n": 70392
+          },
+          "B1": {
+            "n": 54498,
+            "2n": 59810,
+            "4n": 70434
+          },
+          "B2": {
+            "n": 54498,
+            "2n": 59810,
+            "4n": 70434
+          },
+          "C0": {
+            "n": 54456,
+            "2n": 59768,
+            "4n": 70392
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 272 (numerator |A1-A2| or |C0-A1|, denominator A1=54456)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 26 (numerator |A1-A2| or |C0-A1|, denominator A1=5312)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 53 (numerator |A1-A2| or |C0-A1|, denominator A1=10624)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      },
+      {
+        "family": "aligned_churn_640b_a128",
+        "status": "judged",
+        "arms": {
+          "A1": {
+            "n": 54258,
+            "2n": 59378,
+            "4n": 69618
+          },
+          "A2": {
+            "n": 54258,
+            "2n": 59378,
+            "4n": 69618
+          },
+          "B1": {
+            "n": 54300,
+            "2n": 59420,
+            "4n": 69660
+          },
+          "B2": {
+            "n": 54300,
+            "2n": 59420,
+            "4n": 69660
+          },
+          "C0": {
+            "n": 54258,
+            "2n": 59378,
+            "4n": 69618
+          }
+        },
+        "checks": {
+          "slope": [
+            {
+              "pair": "B1 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A1",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B1 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            },
+            {
+              "pair": "B2 vs A2",
+              "slopeDelta": "0",
+              "T_s": "10",
+              "check": "two-sided |slope_B - slope_A| <= T_s",
+              "pass": true
+            }
+          ],
+          "linearity": [
+            {
+              "arm": "A1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "A2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B1",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "B2",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            },
+            {
+              "arm": "C0",
+              "deviation": "0",
+              "bound": "10",
+              "pass": true
+            }
+          ],
+          "noise": [
+            {
+              "quantity": "n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 271 (numerator |A1-A2| or |C0-A1|, denominator A1=54258)",
+              "pass": true
+            },
+            {
+              "quantity": "n->2n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 25 (numerator |A1-A2| or |C0-A1|, denominator A1=5120)",
+              "pass": true
+            },
+            {
+              "quantity": "2n->4n",
+              "aa": "0",
+              "c0": "0",
+              "ceiling": "max(10, floor(A1/200)) = 51 (numerator |A1-A2| or |C0-A1|, denominator A1=10240)",
+              "pass": true
+            }
+          ]
+        },
+        "T_s": 10
+      }
+    ],
+    "construction": [
+      {
+        "cell": "r20_prf01_start_one_alloc_free_16b",
+        "status": "judged",
+        "arms": {
+          "A1": 49214,
+          "A2": 49214,
+          "B1": 49256,
+          "B2": 49256,
+          "C0": 49214
+        },
+        "checks": {
+          "noise": {
+            "aa": "0",
+            "c0": "0",
+            "ceiling": "max(10, floor(A1/200)) = 246",
+            "pass": true
+          },
+          "R_construct": [
+            {
+              "pair": "B1 vs A1",
+              "delta": "42",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            },
+            {
+              "pair": "B2 vs A1",
+              "delta": "42",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            },
+            {
+              "pair": "B1 vs A2",
+              "delta": "42",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            },
+            {
+              "pair": "B2 vs A2",
+              "delta": "42",
+              "budget_K": "0 + 10 (T_s)",
+              "pass": false,
+              "gain": null
+            }
+          ]
+        },
+        "T_s": 10,
+        "budget_K": "0 Ir of net work (owner, 2026-10-12) + T_s"
+      }
+    ],
+    "oracle": [],
+    "native": [
+      {
+        "axis": "mode2 (ii) native paired A/B",
+        "status": "DEFERRED",
+        "reason": "fixed-batch native paired A/B on a quiet bare-metal host; per-process batch times divided by batch size (deferred; not launched)"
+      }
+    ],
+    "size": [
+      {
+        "A": 41984,
+        "B": 41984,
+        "numerator": 0,
+        "expected": 0,
+        "pass": true
+      }
+    ]
+  }
+}
