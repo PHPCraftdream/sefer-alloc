@@ -11,7 +11,8 @@ use std::thread;
 
 #[test]
 fn strict_trim_reclaims_and_visits_exact_payload_word_sum() {
-    let layout = Layout::from_size_align(16, 8).unwrap();
+    // 32-byte requests classify Small; <=16-byte exact-object-proto bypasses HeapCore.
+    let layout = Layout::from_size_align(32, 8).unwrap();
     let (addresses_tx, addresses_rx) = mpsc::channel::<Vec<usize>>();
     let (trim_tx, trim_rx) = mpsc::channel::<(u64, u64, u64, u64)>();
     let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -46,6 +47,7 @@ fn strict_trim_reclaims_and_visits_exact_payload_word_sum() {
     producer.join().unwrap();
     release_tx.send(()).unwrap();
     let (actual, end, start, records) = trim_rx.recv().unwrap();
+    // Scanning from word 0 makes actual == end, so this fails when start > 0.
     assert_eq!(actual, end - start);
     assert!(
         start > 0 && end > start,

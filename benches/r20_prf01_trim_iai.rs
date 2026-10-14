@@ -7,7 +7,8 @@ mod gate {
     use std::thread;
     fn workload(maintenance: bool) {
         let owner = SeferAlloc::new();
-        let layout = Layout::from_size_align(16, 8).unwrap();
+        // 32-byte requests classify Small; <=16-byte exact-object-proto bypasses HeapCore.
+        let layout = Layout::from_size_align(32, 8).unwrap();
         let mut addresses = Vec::with_capacity(20);
         for _ in 0..20 {
             // SAFETY: valid non-zero allocation layout.
