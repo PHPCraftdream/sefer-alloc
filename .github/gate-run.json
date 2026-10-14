@@ -1,7 +1,0 @@
-{
-  "runner": "scripts/r20_prf04_heap_reuse_run.mjs",
-  "stages": "rehearsal",
-  "rehearsal": true,
-  "slop": false,
-  "note": "P4-1: A-only L2 harness rehearsal, harness validation only, never gate data"
-}
