@@ -1,0 +1,1 @@
+{"runner": "scripts/r20_evidence_reverify_run.mjs", "stages": "prepare,build,oracle,measure", "rehearsal": false, "slop": false, "outDir": "target/r20-evidence-reverify", "note": "E0 first CI run: re-verify 7 rows staled by the sidecar atomic seam"}
