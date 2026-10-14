@@ -184,6 +184,9 @@ impl AllocCore {
     }
 
     /// Fixes the table high-water at entry and visits each live slot once.
+    /// Strict trim cuts payload words only: producer rejects class-0 metadata
+    /// (`sidecar_bitmap.rs:116-121`); metadata is >=64KiB/page-aligned
+    /// (`segment_header_layout.rs:44-72,126-127`).
     /// The owner lease excludes issue/reuse throughout this pass. Each Small
     /// word is visited exactly once; post-cut publishers wait for a later
     /// pass and keep their outstanding credits. No dirty hint or producer
@@ -209,14 +212,31 @@ impl AllocCore {
                 SegmentKind::Small | SegmentKind::Primordial => {
                     let high_water = SegmentMeta::new(base).bump_of();
                     let mut changed_classes = 0u64;
+                    #[cfg(feature = "bench-internals")]
+                    let mut strict_actual = 0u64;
+                    #[cfg(feature = "bench-internals")]
+                    let mut strict_records = 0u64;
                     {
-                        let Some(mut scan) = self.table.scan_small_route(index, base, high_water)
+                        // Producer rejects class-0 metadata (sidecar_bitmap.rs:116-121); metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
+                        let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+                        let start = Self::sidecar_payload_start_word(base).min(end_word);
+                        let Some(mut scan) = self
+                            .table
+                            .scan_small_route_from(index, base, high_water, start)
                         else {
                             std::process::abort();
                         };
                         while let Some(mut cut) = scan.next_cut() {
+                            #[cfg(feature = "bench-internals")]
+                            {
+                                strict_actual += 1;
+                            }
                             while let Some(record) = cut.pop() {
                                 if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+                                    #[cfg(feature = "bench-internals")]
+                                    {
+                                        strict_records += 1;
+                                    }
                                     changed_classes |= 1u64 << record.class;
                                     reclaimed += 1;
                                     #[cfg(all(
@@ -230,6 +250,11 @@ impl AllocCore {
                             }
                         }
                     }
+                    #[cfg(feature = "bench-internals")]
+                    crate::alloc_core::remote_bitmap::Prf01SidecarOracle::strict_visited(
+                        strict_actual,
+                        strict_records,
+                    );
                     // Every cut and the route borrow are gone before table
                     // removal or payload decommit. A detached or unpublished
                     // valid instance still owns a credit, so only a fully

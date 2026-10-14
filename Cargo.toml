@@ -1770,6 +1770,12 @@ harness = false
 test = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
+[[bench]]
+name = "r20_prf01_trim_iai"
+harness = false
+test = false
+required-features = ["production", "bench-internals", "internals"]
+
 [[example]]
 name = "r19_prf03_native_mt"
 required-features = ["production"]
@@ -1791,6 +1797,11 @@ required-features = ["production", "bench-internals", "internals"]
 name = "r19_prf02_production_iai"
 harness = false
 required-features = ["production", "internals"]
+
+# PRF-01 strict trim uses the production routed heap, counter oracle and internals.
+[[test]]
+name = "r20_strict_trim_payload_start"
+required-features = ["production", "bench-internals", "internals"]
 
 # R20 PRF-04 claim-path Ir cells (own iai target so `perf_gate_iai` does not
 # grow). Measured without `bench-internals`: the claim counters exist only

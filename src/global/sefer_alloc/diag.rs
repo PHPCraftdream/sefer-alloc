@@ -266,6 +266,38 @@ impl SeferAlloc {
         }
     }
 
+    /// Read-only strict-trim counter plus this owned heap's independent word geometry.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    pub fn dbg_prf01_strict_words_visited(&self) -> (u64, u64, u64, u64) {
+        if let Some(heap) = current_for_trim() {
+            // SAFETY: current_for_trim yields only this thread's live owned HeapCore.
+            #[allow(unsafe_code)]
+            let counts = unsafe { (*heap).dbg_prf01_strict_words_visited() };
+            counts
+        } else {
+            (0, 0, 0, 0)
+        }
+    }
+
+    /// Bench-only bounded ingress step on this thread's live owner HeapCore.
+    /// Same production maintenance implementation as the worker, without
+    /// acquiring a FREE-slot lease or changing owner lifecycle.
+    #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
+    pub fn dbg_background_maintenance_current_thread(&self, budget: usize) -> (usize, usize) {
+        if let Some(heap) = current_for_trim() {
+            // SAFETY: current_for_trim returns only this thread's live owned core;
+            // the bounded step is the same exclusive owner mutation as alloc/dealloc.
+            #[allow(unsafe_code)]
+            unsafe {
+                (*heap).background_maintenance_step(budget)
+            }
+        } else {
+            (0, 0)
+        }
+    }
+
     /// TEST/BENCH-ONLY alias for
     /// [`trim_current_thread`](Self::trim_current_thread).
     ///
