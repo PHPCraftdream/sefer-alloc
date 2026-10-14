@@ -1,0 +1,5 @@
+ok: receiptHashes: 234/234 anchored files verified
+ok: receipt fields: 523 checked against the map
+ok: ancestry.chain agrees with manifest.json
+ok: binary pins checked against builds.json
+verify_artifacts: PASS — <artifact>/docs/perf/R20_PRF01_C3_RUN01 is internally consistent (523 receipt fields, 234 anchored files)

@@ -1,5 +1,7 @@
 # R20 PRF-01: remote-free discovery as a user opt-in flag — design (ox, read-only)
 
+**Disposition (2026-10-14):** not built. The C‴ default-path gate returned NO-GO (`docs/perf/R20_PRF01_C3_RUN01_REPORT.md`), and the owner rejected both the C‴ default and this flag fallback ("удаляем и флаг и функционал"). The design below is kept as a record only.
+
 Owner decision (2026-10-13): make candidate C'' optional behind a flag the user sets when configuring the
 allocator, default = the safest scenario; ask @ox for the best possible design. This file records the answer
 of the `ox` agent (claude-opus-5-5, xhigh), run read-only in an isolated worktree at `origin/main`

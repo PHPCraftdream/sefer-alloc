@@ -498,7 +498,9 @@ live. **No Miri-clean or UB-free claim may be read into this document**
 or into the current protocol it describes; native/loom evidence does
 not discharge this residual.
 
-## 10. C‴ summary-hint protocol — invariant chain I1–I7 (PROPOSED, GATED — not shipped behaviour)
+## 10. C‴ summary-hint protocol — invariant chain I1–I7 (REJECTED — NO-GO 2026-10-14, never shipped)
+
+**Outcome (2026-10-14):** the C‴ default-path gate returned NO-GO (run 38607822194; producer +8.125 / +16 Ir per remote free against budgets +6 / +10, construction +42 Ir), see `docs/perf/R20_PRF01_C3_RUN01_REPORT.md`. The owner rejected both C‴ and the flag fallback. Nothing below is in effect; the shipped protocol is §9. The text stays as the record of what was gated.
 
 Status note: this describes the C‴ redesign from
 `docs/reviews/2026-10-13-r20-prf01-remote-free-discovery-flag-design.md`

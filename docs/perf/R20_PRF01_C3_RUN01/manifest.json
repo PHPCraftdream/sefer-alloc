@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "rehearsal": false,
+  "candidate": "157d6c668c4c01f07c61efc5a68563d5f131cc0d",
+  "capturedAt": "2026-10-14T17:36:31.487Z",
+  "baseHead": "02806ba73e0716d0989844c41ea7a3300c51570d",
+  "frozen": [
+    {
+      "sha256": "06e0a81097d36ef194e3529d1124614d06ae5db7a204ca1ac3ca82f9ca903251",
+      "path": "docs/perf/R20_PRF01_C3_DEFAULT_PREREG.md"
+    },
+    {
+      "sha256": "2aa56812488dc08fb9ee0cafe33479cfe93ab689dcf509e142fabd7bdc0601a3",
+      "path": "docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md"
+    },
+    {
+      "sha256": "d8a3fd4003504e919dfc34d3763f663fe9a6ce6a09b7e86c176597f30707c311",
+      "path": "docs/reviews/2026-10-13-r20-prf01-remote-free-discovery-flag-design.md"
+    },
+    {
+      "sha256": "c3a498cb268178b19b94d407a6280d7b1d0251ff54db75d24955b192c360acef",
+      "path": "docs/perf/R20_CONTROL_GEOMETRY_RULE.md"
+    },
+    {
+      "sha256": "7277f51dc1cc1e12e4b975108fc01dea2be69e80c2dde77783d36485c3da198f",
+      "path": "docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_PREREG.md"
+    },
+    {
+      "sha256": "f888f163057e1aabfd8f64720becb61b091ab6f0a0e8f012c1d3c4487429a860",
+      "path": "Cargo.toml"
+    },
+    {
+      "sha256": "fbc7f4f1faabab5296437fbb7d81e672c256063310162946e846ab7789bff5df",
+      "path": "benches/r20_prf01_c3_cells_iai.rs"
+    },
+    {
+      "sha256": "c635cf637eb3f93a4ad734be36d755f50871a748be97d7e0303adf9600ca8648",
+      "path": "benches/r20_prf01_controls_iai.rs"
+    },
+    {
+      "sha256": "5f0754d2d53732067edc87b17a5d055b000650b0967ac9eac154bd0390e7e43a",
+      "path": "benches/r20_prf01_trim_iai.rs"
+    },
+    {
+      "sha256": "1095aa348f3006da280b05a0c2bfa667001fccfba6961cf85ac9ca0bd7b34066",
+      "path": "benches/support/r20_prf01_controls.rs"
+    },
+    {
+      "sha256": "842cae010bbd1374def178e91c9947dd6685d9f2bd6c7fa187fed90cf4d6a4a7",
+      "path": "benches/support/r19_prf01.rs"
+    },
+    {
+      "sha256": "9f81800e5dbbf120f8537ed937d5af4989aefd6c74710bb8868ade4ba0309837",
+      "path": "benches/perf_gate_iai.rs"
+    },
+    {
+      "sha256": "e6349725b4954a32d3db4f6e1f82f4837508313534721f52a465d22e4a727c5d",
+      "path": "scripts/r20_prf01_c3_gate.mjs"
+    },
+    {
+      "sha256": "f882a79abc38e0f2ad66af0bcae5f3c0c01a56a6a94ccdb7a149d4aae766c590",
+      "path": "scripts/r20_prf01_c3_run.mjs"
+    },
+    {
+      "sha256": "b9d317e4974ab5d42b455e990d453e7d295c1b99ebad11bfa41bb71301c2d500",
+      "path": "scripts/r20_prf01_c3_verify_artifacts.mjs"
+    },
+    {
+      "sha256": "d1ffb8d975aaecb6cc3e74cfdb02ab12ea355ff64adfa8cdb8a03fd75e5a579a",
+      "path": "scripts/r20_prf01_sidecar_summary_gate.mjs"
+    },
+    {
+      "sha256": "10b2d02e68ddad025df442fb04e29ff609af09c1991a8dced116602c6cdd1bc1",
+      "path": "scripts/r20_prf01_sidecar_summary_run.mjs"
+    },
+    {
+      "sha256": "7983dbf5e08065394ee4bdb5ccb80fdcc248c99f467b011368073fe18cb99598",
+      "path": "scripts/r20_prf01_verify_artifacts.mjs"
+    },
+    {
+      "sha256": "afd0be4f5bd5b97d0d663ac4bc5f46234e05b840b060a1473dac296e471e83d8",
+      "path": "scripts/r20_prf01_c3_support.mjs"
+    },
+    {
+      "sha256": "19b858ff676f586f463191d50bdeaa79cb9329085ee01142de3d404e52168952",
+      "path": "scripts/r20_prf01_c3_fixture.mjs"
+    },
+    {
+      "sha256": "efe90b5e6b21e306df69652e94c697b046369658ef4299244b0de5c03739e61f",
+      "path": "scripts/r20_prf01_c3_runner_support.mjs"
+    },
+    {
+      "sha256": "cf3c6cf76dc675efa87aec8a030c720c6c02d45c7ac248fba9802464fcf8453c",
+      "path": "tests/r19_prf01_sidecar_oracle.rs"
+    },
+    {
+      "sha256": "14cf7163687e0d3d35bbf1ddc431bf4ea68dd09fb0f644225020b56c4c1d9448",
+      "path": "examples/r19_prf01_oracle.rs"
+    },
+    {
+      "sha256": "5c81e7af8fde8cac4ef827b61748f8bf04af377751e9b218e687bb98cc06f2b5",
+      "path": "examples/r20_prf01_c3_oracle.rs"
+    },
+    {
+      "sha256": "8df6363f84b8ab784db43af14e97299f0c82133b3f15f4398967a8341b66a813",
+      "path": "tests/r9_bounded_background_maintenance.rs"
+    }
+  ],
+  "arches": {
+    "A": {
+      "label": "A",
+      "wt": "<repo>/worktrees/r20p1-c3/A",
+      "head": "02806ba73e0716d0989844c41ea7a3300c51570d",
+      "tree": "a78a38eaf9f6f3600271e9dfe15c76ee13bd9fd3",
+      "baseHead": "02806ba73e0716d0989844c41ea7a3300c51570d",
+      "patchSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "untrackedSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "identitySha256": "54fb2a53f3033ea0a9405a06bd87c275e5159e692eb46d427bd71a24c156eb5d",
+      "overlay": [],
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-14T17:36:31.487Z"
+    },
+    "B": {
+      "label": "B",
+      "wt": "<repo>/worktrees/r20p1-c3/B",
+      "head": "157d6c668c4c01f07c61efc5a68563d5f131cc0d",
+      "tree": "eff3328d68f0236a530b844ddf5e60d9402fb3d1",
+      "baseHead": "157d6c668c4c01f07c61efc5a68563d5f131cc0d",
+      "patchSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "untrackedSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "identitySha256": "8d24f82ca803818b5fdb6cf323e8944f62f58808d625e23e8ee02ad2aeead469",
+      "overlay": [],
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-14T17:36:31.487Z"
+    },
+    "C": {
+      "label": "C",
+      "wt": "<repo>/worktrees/r20p1-c3/C",
+      "head": "02806ba73e0716d0989844c41ea7a3300c51570d",
+      "tree": "a78a38eaf9f6f3600271e9dfe15c76ee13bd9fd3",
+      "baseHead": "02806ba73e0716d0989844c41ea7a3300c51570d",
+      "patchSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "untrackedSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "identitySha256": "54fb2a53f3033ea0a9405a06bd87c275e5159e692eb46d427bd71a24c156eb5d",
+      "overlay": [],
+      "cargoLockSha256": "3c6da70dc4e48e820238ebf87ef65ee40763316662e0ddc79cb094c24e6a3179",
+      "capturedAt": "2026-10-14T17:36:31.487Z"
+    }
+  },
+  "wtDir": "<repo>/worktrees/r20p1-c3",
+  "ownedWorktrees": [
+    "A",
+    "B",
+    "C"
+  ],
+  "root": "<repo>/worktrees/r20p1-c3",
+  "pathLengths": [
+    62,
+    62,
+    62
+  ]
+}
