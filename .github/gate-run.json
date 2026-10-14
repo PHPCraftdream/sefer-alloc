@@ -1,0 +1,1 @@
+{"runner": "scripts/r20_evidence_reverify_run.mjs", "stages": "prepare,build,oracle,measure", "rehearsal": false, "slop": false, "outDir": "target/r20-evidence-reverify", "note": "E0: re-verify 7 rows staled by P1-3 remote_bitmap edits"}

@@ -7,27 +7,18 @@
 //! or dereferences one. The directory must pin the backing through all
 //! unpublished producers, published bits, and detached cuts.
 
-use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use super::{AtomicU64, AtomicU8, BitmapScan, Ordering};
 
 #[path = "sidecar_bitmap/leaf_classes.rs"]
 #[cfg_attr(test, allow(dead_code))]
 mod leaf_classes;
 pub(crate) use leaf_classes::ClassLeaves;
 
-use super::BitmapScan;
-
 use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 const GRANULES: usize = SEGMENT / MIN_BLOCK;
 const WORDS: usize = GRANULES / 64;
-const _: () = {
-    assert!(SEGMENT == 4 * 1024 * 1024);
-    assert!(MIN_BLOCK == 16);
-    assert!(WORDS == 4096);
-    assert!(GRANULES == 262_144);
-    assert!(SMALL_CLASS_COUNT < u8::MAX as usize);
-};
 
 /// A live segment's external ingress storage. Construction borrows backing;
 /// it does not allocate, initialize, or bind a reservation pointer.

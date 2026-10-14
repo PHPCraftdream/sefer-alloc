@@ -1,0 +1,32 @@
+{
+  "id": "R5b-12",
+  "registryActivationHash": "529de092d76bc2c59360f16d22d27155d64db5b7301b4cc4efc657d0dd4c7fbd",
+  "steps": [
+    {
+      "name": "production source-pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "r11_ph5b_c5_sidecar_ordering_pinned",
+        "--features",
+        "production"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "6 passed; 0 failed",
+          "test mixed_leaf_published_after_its_initialization \\.\\.\\. ok",
+          "test owner_cut_is_acqrel_swap \\.\\.\\. ok",
+          "test class_leaves_ordering_inventory_is_exact \\.\\.\\. ok",
+          "test owner_issue_class_store_is_release \\.\\.\\. ok",
+          "test producer_publish_is_acqrel_fetch_or \\.\\.\\. ok",
+          "test production_small_sidecar_uses_class_leaves \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

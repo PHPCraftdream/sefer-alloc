@@ -3326,10 +3326,16 @@ jobs:
       - run: |
           cargo test --release --features "alloc-core alloc-xthread tagged-index-stack/loom" \
             --test loom_sidecar_bitmap \
+            --test loom_sidecar_bitmap_actual \
             --test loom_sidecar_summary \
             --test loom_terminal_owner_drain \
             --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_publish_racing_strict_trim_union_is_complete ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_cut_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_masked_cut_drops_pending_bits - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_two_words_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_summary_conditional_same_word_no_loss ... ok" "$RUNNER_TEMP/loom-xthread.log"
