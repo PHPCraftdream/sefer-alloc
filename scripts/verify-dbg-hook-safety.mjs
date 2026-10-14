@@ -20,6 +20,10 @@ import { REPO_ROOT } from './lib.mjs';
 const PURE_OBSERVERS = [
   // PRF01: oracle-only relaxed totals, constant-zero A summary; no pointer/reset/policy.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_sidecar_oracle",
+  // Strict-trim process-wide relaxed totals and this core's independent segment geometry only.
+  "src/registry/heap_core/diag/queries.rs::dbg_prf01_strict_words_visited",
+  // Strict-trim read-only relaxed counter totals plus owned segment geometry; no reset or policy.
+  "src/global/sefer_alloc/diag.rs::dbg_prf01_strict_words_visited",
   // PRF01: actual type layout only, no allocator instance or pointer access.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
@@ -145,6 +149,9 @@ const PURE_OBSERVERS = [
 // Safe mutators: each retained reviewed invariant justification is authoritative.
 const SAFE_MUTATORS = [
   [
+    "src/global/sefer_alloc/diag.rs::dbg_background_maintenance_current_thread",
+    "delegates only to the production bounded background_maintenance_step for current_for_trim's current-thread exclusive live HeapCore; no FREE-slot lease or lifecycle mutation; bench-internals + internals gated"
+  ],  [
     "src/registry/segment_route/directory.rs::dbg_with_shard_of_locked_for_test",
     "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
   ],
