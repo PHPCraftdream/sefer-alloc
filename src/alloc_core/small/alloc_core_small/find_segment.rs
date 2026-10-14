@@ -137,6 +137,20 @@ impl AllocCore {
         self.drain_segment_sidecar_impl(base, false)
     }
 
+    /// Only an OOM rescue scan forces the fixed payload-start drain.
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[inline(always)]
+    fn rescue_drain(#[cfg(feature = "alloc-segment-directory")] rescue: bool) -> bool {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            rescue
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            false
+        }
+    }
+
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline(never)]
     fn drain_segment_sidecar_forced(&mut self, base: *mut u8) -> SidecarDrainOutcome {
@@ -170,6 +184,8 @@ impl AllocCore {
             else {
                 std::process::abort();
             };
+            #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+            crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
             while let Some(mut cut) = scan.next_cut() {
                 #[cfg(all(
                     feature = "bench-internals",
@@ -199,6 +215,8 @@ impl AllocCore {
             else {
                 std::process::abort();
             };
+            #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+            crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
             while let Some(mut cut) = scan.next_cut() {
                 #[cfg(all(
                     feature = "bench-internals",
@@ -532,6 +550,11 @@ impl AllocCore {
         #[cfg(all(feature = "numa-aware", feature = "alloc-stats"))]
         let mut fallback_was_nonempty = false;
 
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        let forced_drain = Self::rescue_drain(
+            #[cfg(feature = "alloc-segment-directory")]
+            rescue,
+        );
         let mut from = 0;
         while let Some(i) = self.table.next_active(SegmentKind::Small, from) {
             if i >= n {
@@ -557,22 +580,27 @@ impl AllocCore {
             let was_nonempty = routed_miss_scan
                 && SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
             // Consume only this canonical candidate before inspecting its bins.
-            if forced {
-                match self.drain_segment_sidecar_forced(base) {
-                    #[cfg(feature = "alloc-decommit")]
-                    SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                    #[cfg(feature = "alloc-decommit")]
-                    SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                    SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
-                }
+            // OOM rescue keeps the fixed payload-start scan (contract §13);
+            // every other miss scan discovers through the summary prefix.
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            match if forced_drain {
+                self.drain_segment_sidecar_forced(base)
             } else {
-                match self.drain_segment_sidecar_forced(base) {
-                    #[cfg(feature = "alloc-decommit")]
-                    SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                    #[cfg(feature = "alloc-decommit")]
-                    SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                    SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
-                }
+                self.drain_segment_sidecar(base)
+            } {
+                // Decommitted+released: `base` is unmapped — skip the
+                // BinTable check for it in THIS scan. Decommitted+pooled:
+                // `base` is still live/registered/committed (R1-03, src
+                // review round 1) — fall through to the SAME BinTable check
+                // every other live segment gets below, so a segment that just
+                // emptied (and therefore has every one of its blocks free)
+                // can be reused as a hit in this very scan, not only on a
+                // later call (see `SidecarDrainOutcome::Decommitted`'s doc).
+                #[cfg(feature = "alloc-decommit")]
+                SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                #[cfg(feature = "alloc-decommit")]
+                SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
@@ -779,7 +807,15 @@ impl AllocCore {
             return None;
         }
 
-        match self.drain_segment_sidecar_forced(base) {
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        match if Self::rescue_drain(
+            #[cfg(feature = "alloc-segment-directory")]
+            rescue,
+        ) {
+            self.drain_segment_sidecar_forced(base)
+        } else {
+            self.drain_segment_sidecar(base)
+        } {
             // P1-b: decommit/pool hysteresis — a RELEASED segment must be
             // skipped (try the next candidate); a POOLED segment (R1-03, src
             // review round 1) is still live/registered/committed, so fall

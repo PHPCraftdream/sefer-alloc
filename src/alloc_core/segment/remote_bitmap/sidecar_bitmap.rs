@@ -147,15 +147,6 @@ impl<'a> SidecarBitmap<'a> {
         true
     }
 
-    #[cfg(feature = "bench-internals")]
-    pub(crate) fn publish_hinted_paused_for_test(
-        &self,
-        offset: u32,
-        after_p2: impl FnOnce(),
-    ) -> bool {
-        self.publish_hinted_with_pause_for_test(offset, after_p2)
-    }
-
     #[cold]
     #[inline(never)]
     fn set_summary_hint(summary: &AtomicU64, bit: u64) {

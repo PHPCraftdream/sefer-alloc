@@ -192,7 +192,7 @@ impl SmallSidecar {
     #[cfg(any(test, feature = "bench-internals"))]
     pub(super) fn publish_paused_for_test(&self, offset: u32, after_p2: impl FnOnce()) -> bool {
         self.bitmap()
-            .publish_hinted_paused_for_test(offset, after_p2)
+            .publish_hinted_with_pause_for_test(offset, after_p2)
     }
 
     /// Owner-only bounded per-word cut through the existing bitmap scanner.
