@@ -141,6 +141,8 @@ pub fn pick_with_saturation(
 
 /// Like `pick_with_saturation`, but consults the spill set only when its
 /// Acquire summary snapshot is nonzero; candidates remain advisory until CAS.
+// Each selector stage is a separate closure so the summary test stays inline.
+#[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
 pub fn pick_with_hint_spill(
     hint: &AtomicU32,
