@@ -15,6 +15,5 @@ pub(crate) use bitmap_cut::BitmapCut;
 pub(crate) use bitmap_record::BitmapRecord;
 pub(crate) use bitmap_scan::BitmapScan;
 pub(crate) use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-pub(crate) use sidecar_bitmap::SummaryScan;
 #[cfg_attr(not(feature = "alloc-global"), allow(unused_imports))]
 pub(crate) use sidecar_bitmap::*;

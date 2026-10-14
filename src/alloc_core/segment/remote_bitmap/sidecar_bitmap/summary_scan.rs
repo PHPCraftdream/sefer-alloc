@@ -22,7 +22,7 @@ pub(crate) struct SummaryScan<'a> {
 impl<'a> SummaryScan<'a> {
     pub(crate) const SUMMARY_WORDS: usize = SUMMARY_WORDS;
 
-    pub(crate) fn new(
+    pub(super) fn new(
         pending: &'a [AtomicU64],
         classes: ClassMap<'a>,
         high_water: usize,
@@ -52,7 +52,7 @@ impl<'a> SummaryScan<'a> {
             });
         }
         let first_mask = u64::MAX << (start_word % 64);
-        let last_mask = if end_word % 64 == 0 {
+        let last_mask = if end_word.is_multiple_of(64) {
             u64::MAX
         } else {
             (1u64 << (end_word % 64)) - 1

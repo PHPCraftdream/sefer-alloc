@@ -159,11 +159,7 @@ impl AllocCore {
 
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     #[inline(never)]
-    pub(crate) fn drain_segment_sidecar_impl(
-        &mut self,
-        base: *mut u8,
-        forced: bool,
-    ) -> SidecarDrainOutcome {
+    fn drain_segment_sidecar_impl(&mut self, base: *mut u8, forced: bool) -> SidecarDrainOutcome {
         if !self.table.is_routed() {
             return SidecarDrainOutcome::Skipped;
         }
