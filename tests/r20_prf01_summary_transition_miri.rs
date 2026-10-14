@@ -2,6 +2,7 @@
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
+    feature = "alloc-decommit",
     feature = "internals",
     feature = "bench-internals"
 ))]
