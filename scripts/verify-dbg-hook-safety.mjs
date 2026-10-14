@@ -23,7 +23,11 @@ const PURE_OBSERVERS = [
   // PRF01: actual type layout only, no allocator instance or pointer access.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
+  "src/registry/bootstrap/free_slot_hint.rs::dbg_popcount",
   "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
+  "src/registry/heap_registry/claim.rs::dbg_registry_free_set_claims",
+  // Read-only Acquire popcount of the advisory FREE-slot bitmap.
+  "src/registry/heap_registry/claim.rs::dbg_free_slot_hint_popcount",
   // C1: numeric results of resolved-default comparison under the claiming lease.
   "src/registry/heap_registry/claim.rs::dbg_registry_default_config_results",
   // CI-2b: relaxed cumulative System totals and actual slot layout only;
@@ -151,6 +155,10 @@ const SAFE_MUTATORS = [
   ["src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
   ["src/registry/bootstrap/registry.rs::dbg_slot_generation", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic generation, without borrowing the core"],
   ["src/registry/heap_registry/counters.rs::dbg_slot_initialised", "Registry::slot may materialize a chunk and abort on OOM; then reads initialization state, without borrowing the core"],
+  [
+    "src/registry/heap_registry/claim.rs::dbg_forget_free_slot_hint",
+    "clears one bit in the non-authoritative FREE hint bitmap only; slot-state CAS remains the ownership authority, so a missed hint affects selection rather than correctness"
+  ],
   [
     "src/registry/heap_registry/claim.rs::dbg_claim_lease",
     "test-only forwarder to real claim CAS; may increment generation and materialize/bind HeapCore on first claim; " +

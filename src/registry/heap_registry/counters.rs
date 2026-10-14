@@ -10,6 +10,9 @@ use crate::registry::bootstrap::{ensure, MAX_HEAPS};
 use crate::registry::heap_slot::HeapSlot;
 use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 
+#[cfg(feature = "bench-internals")]
+pub(super) static FREE_SET_CLAIMS: AtomicU64 = AtomicU64::new(0);
+
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
 /// — times `claim_lease_with_config` found an already-materialised slot whose live
 /// (resolved) cache/pool policy differs from the requested config. Each such

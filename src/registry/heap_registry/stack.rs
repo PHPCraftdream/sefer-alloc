@@ -138,3 +138,44 @@ pub fn pick_with_saturation(
     }
     None
 }
+
+/// Like `pick_with_saturation`, but consults the spill set only when its
+/// Acquire summary snapshot is nonzero; candidates remain advisory until CAS.
+#[doc(hidden)]
+pub fn pick_with_hint_spill(
+    hint: &AtomicU32,
+    count: &AtomicU32,
+    saturation: &SaturationHint,
+    max: usize,
+    summary_nonempty: impl FnOnce() -> bool,
+    take_nonempty: impl FnOnce() -> Option<usize>,
+    scan: impl FnOnce() -> Option<usize>,
+    bump: impl FnOnce() -> Option<usize>,
+) -> Option<usize> {
+    let candidate = hint.swap(max as u32, Ordering::AcqRel) as usize;
+    let before = (count.load(Ordering::Acquire) as usize).min(max);
+    if candidate < before {
+        return Some(candidate);
+    }
+    if summary_nonempty() {
+        if let Some(index) = take_nonempty() {
+            if index < (count.load(Ordering::Acquire) as usize).min(max) {
+                return Some(index);
+            }
+        }
+    }
+    if before == max && saturation.is_saturated() {
+        return None;
+    }
+    if let Some(index) = bump() {
+        return Some(index);
+    }
+    let version = saturation.snapshot();
+    if let Some(index) = scan() {
+        return Some(index);
+    }
+    if before == max && count.load(Ordering::Acquire) as usize == max {
+        saturation.try_mark_saturated(version);
+    }
+    None
+}

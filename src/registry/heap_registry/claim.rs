@@ -12,15 +12,16 @@
 // carries a `// SAFETY:` proof.
 #![allow(unsafe_code)]
 
+use core::cell::Cell;
 use core::marker::PhantomData;
 use core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
 use super::stack::{
-    pick_with_saturation, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
+    pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
 };
-use crate::registry::bootstrap::{ensure, Registry, MAX_HEAPS};
+use crate::registry::bootstrap::{ensure, Registry, FREE_SLOTS, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
 use crate::registry::heap_slot::{
     HeapSlot, STATE_EMPTY, STATE_FREE, STATE_INITIALIZING, STATE_LIVE, STATE_MAINTENANCE,
@@ -34,6 +35,23 @@ use crate::registry::heap_slot::{
 pub struct HeapRegistry;
 
 impl HeapRegistry {
+    /// Test hook to clear one advisory FREE bitmap bit and force fallback selection.
+    /// This does not mutate slot state; the slot-state CAS remains authoritative.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_forget_free_slot_hint(idx: usize) {
+        if idx < MAX_HEAPS {
+            FREE_SLOTS.forget(idx);
+        }
+    }
+
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_free_slot_hint_popcount() -> u32 {
+        FREE_SLOTS.dbg_popcount()
+    }
+
     /// Successful returned leases by selector source: hint, bump, cap scan, recovery.
     /// Relaxed numeric loads only; failed CAS and constructor OOM are excluded.
     #[doc(hidden)]
@@ -42,6 +60,13 @@ impl HeapRegistry {
         super::counters::CLAIM_SOURCES
             .each_ref()
             .map(|c| c.load(Ordering::Relaxed))
+    }
+
+    /// Successful leases selected from the separate FREE-set bitmap.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_registry_free_set_claims() -> u64 {
+        super::counters::FREE_SET_CLAIMS.load(Ordering::Relaxed)
     }
 
     /// Successful leases whose actual resolved policy matches / differs from default.
@@ -210,7 +235,7 @@ impl HeapRegistry {
     /// per returned pointer regardless of which hook ran.
     ///
     /// Ph4a: returns a [`HeapLease`] instead of a raw pointer. Operation
-    /// order is unchanged (hint → bump → scan; `trim_for_recycle` on
+    /// order is unchanged (hint → bitmap → bump → scan; `trim_for_recycle` on
     /// re-claim; NUMA invalidation; config-conflict hook). The lease is
     /// formed only AFTER the core is readable: first claim — after the
     /// `initialised` Release publish and the INITIALIZING→LIVE CAS; re-claim
@@ -225,8 +250,10 @@ impl HeapRegistry {
             let reg = ensure();
             #[cfg(feature = "bench-internals")]
             let source = core::cell::Cell::new(0usize);
+            let scan_selected = Cell::new(false);
             let candidate = match failed_chunk {
                 Some(failed) => {
+                    scan_selected.set(true);
                     #[cfg(feature = "bench-internals")]
                     source.set(3);
                     scan_claim_recovery_free(reg, failed)
@@ -234,13 +261,17 @@ impl HeapRegistry {
                 None => Self::pick_slot(
                     #[cfg(feature = "bench-internals")]
                     &source,
+                    &scan_selected,
                 ),
             };
             let idx = candidate?;
             // A minted index is still below `count` after chunk OOM. Keep it
             // retryable, but first try an already-materialised FREE heap.
             let Some(slot) = reg.slot_or_none(idx) else {
-                reg.reuse_hint.store(idx as u32, Ordering::Relaxed);
+                let prev = reg.reuse_hint.swap(idx as u32, Ordering::Relaxed);
+                if (prev as usize) < MAX_HEAPS {
+                    FREE_SLOTS.publish(prev as usize);
+                }
                 reg.saturation.publish_claimable();
                 failed_chunk = Some(idx);
                 continue;
@@ -270,6 +301,9 @@ impl HeapRegistry {
                         .is_err()
                     {
                         continue;
+                    }
+                    if scan_selected.get() {
+                        FREE_SLOTS.forget(idx);
                     }
                     if slot.initialised.load(Ordering::Acquire) {
                         false
@@ -366,7 +400,13 @@ impl HeapRegistry {
             // branch above), we are the sole writer. `generation` is a purely
             // numeric observer — no gate on the hot path.
             #[cfg(feature = "bench-internals")]
-            super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
+            {
+                if source.get() < 4 {
+                    super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
+                } else {
+                    super::counters::FREE_SET_CLAIMS.fetch_add(1, Ordering::Relaxed);
+                }
+            }
             #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
             {
                 // SAFETY: successful claim owns this LIVE, initialized core.
@@ -386,18 +426,28 @@ impl HeapRegistry {
         }
     }
 
-    /// Pick from the hint, then capped high-water bump, then full scan at cap.
-    /// An unmaterialised index below `count` remains cold-recoverable.
+    /// Pick from the hint, then the spill bitmap, then saturation, bump and cap scan.
     pub(super) fn pick_slot(
         #[cfg(feature = "bench-internals")] source: &core::cell::Cell<usize>,
+        scan_selected: &Cell<bool>,
     ) -> Option<usize> {
         let reg = ensure();
-        pick_with_saturation(
+        pick_with_hint_spill(
             &reg.reuse_hint,
             &reg.count,
             &reg.saturation,
             MAX_HEAPS,
+            || FREE_SLOTS.summary_nonempty(),
             || {
+                let picked = FREE_SLOTS.take_nonempty();
+                #[cfg(feature = "bench-internals")]
+                if picked.is_some() {
+                    source.set(4);
+                }
+                picked
+            },
+            || {
+                scan_selected.set(true);
                 #[cfg(feature = "bench-internals")]
                 source.set(2);
                 scan_claimable_slot(reg)
@@ -486,7 +536,10 @@ impl Drop for MaintenanceLease {
             std::process::abort();
         }
         let reg = ensure();
-        reg.reuse_hint.store(self.index as u32, Ordering::Relaxed);
+        let prev = reg.reuse_hint.swap(self.index as u32, Ordering::Relaxed);
+        if (prev as usize) < MAX_HEAPS {
+            FREE_SLOTS.publish(prev as usize);
+        }
         reg.saturation.publish_claimable();
     }
 }
@@ -590,7 +643,10 @@ impl Drop for HeapLease {
         // Same post-publication as any LIVE → FREE recycle: advisory hint +
         // claimability.
         let reg = ensure();
-        reg.reuse_hint.store(self.index, Ordering::Relaxed);
+        let prev = reg.reuse_hint.swap(self.index, Ordering::Relaxed);
+        if (prev as usize) < MAX_HEAPS {
+            FREE_SLOTS.publish(prev as usize);
+        }
         reg.saturation.publish_claimable();
     }
 }
@@ -650,6 +706,9 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     {
         std::process::abort();
     }
-    reg.reuse_hint.store(idx, Ordering::Relaxed);
+    let prev = reg.reuse_hint.swap(idx, Ordering::Relaxed);
+    if (prev as usize) < MAX_HEAPS {
+        FREE_SLOTS.publish(prev as usize);
+    }
     reg.saturation.publish_claimable();
 }

@@ -1,6 +1,9 @@
 //! Real registry chunk failure with a usable, older FREE heap.
-#![cfg(all(feature = "alloc-global", feature = "internals"))]
-
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 use sefer_alloc::registry::bootstrap;
 use sefer_alloc::registry::heap_registry::HeapRegistry;
 use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE};
@@ -34,6 +37,8 @@ fn failed_new_chunk_recovers_older_free_then_retries_minted_index() {
     assert_eq!(latest.slot_index(), old1);
     assert_eq!(reg.dbg_slot_state(0), STATE_FREE);
     assert_eq!(reg.dbg_slot_state(1), STATE_LIVE);
+    // Slot 0 is still FREE; clear only its advisory bit to force recovery scan.
+    HeapRegistry::dbg_forget_free_slot_hint(old0 as usize);
 
     let _reset = OomReset;
     bootstrap::dbg_set_inject_chunk_oom(true);

@@ -24,6 +24,12 @@ mod stack;
 pub use super::bootstrap::saturation::SaturationHint;
 #[cfg(feature = "internals")]
 #[doc(hidden)]
+pub use super::bootstrap::FreeSlotHint;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use stack::pick_with_hint_spill;
+#[cfg(feature = "internals")]
+#[doc(hidden)]
 pub use stack::pick_with_saturation;
 
 pub use claim::{HeapRegistry, MaintenanceLease};

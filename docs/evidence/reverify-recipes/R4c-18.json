@@ -1,0 +1,67 @@
+{
+  "id": "R4c-18",
+  "registryActivationHash": "ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7",
+  "steps": [
+    {
+      "name": "failed constructor OOM retry baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals",
+        "--test",
+        "r11_p3_registry_claim_uninit_oom",
+        "chunk_oom_retries_materialised_uninitialised_free",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test chunk_oom_retries_materialised_uninitialised_free .* ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/registry/heap_registry/claim.rs",
+    "find": "pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {\n    if slot\n        .cas_state(\n            STATE_INITIALIZING,\n            STATE_FREE,",
+    "replace": "pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {\n    if slot\n        .cas_state(\n            STATE_INITIALIZING,\n            STATE_LIVE,",
+    "steps": [
+      {
+        "name": "OOM push-back publishes LIVE mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals",
+          "--test",
+          "r11_p3_registry_claim_uninit_oom",
+          "chunk_oom_retries_materialised_uninitialised_free",
+          "--",
+          "--exact",
+          "--nocapture"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test chunk_oom_retries_materialised_uninitialised_free .* FAILED",
+            "test result: FAILED\\. 0 passed; 1 failed"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test chunk_oom_retries_materialised_uninitialised_free .* FAILED"
+      ]
+    }
+  }
+}

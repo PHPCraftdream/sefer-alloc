@@ -165,6 +165,7 @@
 //   no current source caller; root stack models use the member crate directly.
 mod chunk;
 mod ensure;
+mod free_slot_hint;
 #[cfg(loom)]
 pub(crate) mod loom_shim;
 mod registry;
@@ -181,6 +182,9 @@ pub use ensure::dbg_set_inject_chunk_oom;
 #[cfg(feature = "internals")]
 pub use ensure::dbg_slot_or_none;
 pub use ensure::ensure;
+#[cfg(feature = "internals")]
+pub use free_slot_hint::FreeSlotHint;
+pub(crate) use free_slot_hint::FREE_SLOTS;
 /// Re-exported so a consumer of [`dbg_rollback_chunk_sentinel_reenterable`]
 /// can match on its result without depending on `once-ptr-cell` directly
 /// (it is an OPTIONAL dependency of this crate). The probe's result type is

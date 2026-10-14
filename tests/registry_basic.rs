@@ -4,7 +4,7 @@
 //! - `claim` hands out distinct slots.
 //! - `recycle` → `claim` reuses a slot and BUMPS its generation.
 //! - bootstrap is idempotent (a second `ensure` does NOT re-initialise).
-//! - The latest reuse hint precedes fresh claims; older FREE slots are deferred.
+//! - The latest reuse hint and older FREE slots precede fresh claims.
 //!
 //! NON-VACUOUS: every assertion is built so that flipping the implementation
 //! (e.g. claim not bumping generation, recycle not pushing, pop returning the
@@ -206,13 +206,15 @@ fn recycle_then_claim_reuses_slot_and_bumps_generation() {
     );
 }
 
-/// The latest hint wins once, then fresh capacity precedes an older FREE heap.
+/// The latest hint wins once, then the lowest preserved FREE bitmap entry
+/// precedes fresh capacity. The fixture drains pre-existing FREE slots first,
+/// so A is the bitmap's deterministic lowest entry.
 #[test]
-fn latest_hint_then_fresh_defers_older_free() {
+fn latest_hint_then_older_free_precedes_fresh() {
     serial!();
     let _base = count_at_entry();
-    let a = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
-    let b = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
+    let a = claim_fresh_lease();
+    let b = claim_fresh_lease();
     let id_a = a.slot_index() as usize;
     let id_b = b.slot_index() as usize;
     assert_ne!(id_a, id_b);
@@ -220,9 +222,10 @@ fn latest_hint_then_fresh_defers_older_free() {
     let generation_b = b.generation();
     let next_fresh = count_at_entry();
 
-    // B overwrites A's advisory hint; A's slot state remains authoritative.
-    // Dropping the leases recycles both slots (A first, then B — B's hint is
-    // the latest).
+    // B overwrites A's advisory hint; release preserves A in the bitmap.
+    // The displaced advisory hint is preserved by the bitmap; the CAS remains
+    // the ownership authority. The following check pins both availability and
+    // ordering: LIFO hint B, then the bitmap's lowest FREE index A.
     drop(a);
     drop(b);
     assert_eq!(slot_state(id_a), STATE_FREE);
@@ -236,16 +239,16 @@ fn latest_hint_then_fresh_defers_older_free() {
     let d = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
     assert_eq!(
         d.slot_index() as usize,
-        next_fresh as usize,
-        "fresh capacity precedes older FREE"
+        id_a,
+        "older FREE precedes fresh capacity"
     );
-    assert_eq!(count_at_entry(), next_fresh + 1);
+    assert_eq!(count_at_entry(), next_fresh);
     assert_eq!(slot_state(id_b), STATE_LIVE);
-    assert_eq!(slot_state(next_fresh as usize), STATE_LIVE);
-    assert_eq!(slot_state(id_a), STATE_FREE, "older A remains claimable");
-    assert_eq!(slot_generation(id_a), generation_a, "A was not reclaimed");
+    assert_eq!(slot_state(id_a), STATE_LIVE);
+    assert_eq!(d.generation(), generation_a + 1, "A was reclaimed");
+    drop(d);
 
-    // Older FREE A remains discoverable via maintenance. Earlier tests'
+    // Recycled FREE A remains discoverable via maintenance. Earlier tests'
     // recycled slots may also be claimable (and scan order may surface them
     // first), so drain maintenance leases until A itself surfaces; the
     // intermediates are leaked LIVE (same shape as `claim_fresh_lease`), so
@@ -260,9 +263,9 @@ fn latest_hint_then_fresh_defers_older_free() {
     let recovered = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
     assert_eq!(recovered.slot_index() as usize, id_a);
     assert_eq!(slot_state(id_a), STATE_LIVE);
-    assert_eq!(slot_generation(id_a), generation_a + 1);
-    assert_eq!(count_at_entry(), next_fresh + 1);
-    // The LIVE leases (c, d, recovered) are held to the end of the test — the
+    assert_eq!(slot_generation(id_a), generation_a + 2);
+    assert_eq!(count_at_entry(), next_fresh);
+    // The LIVE leases (c, recovered) are held to the end of the test — the
     // state assertions above observe them — and their Drop recycles the
     // slots.
 }
