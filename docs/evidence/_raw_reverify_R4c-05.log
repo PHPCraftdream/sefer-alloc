@@ -1,0 +1,347 @@
+E0_METADATA {"id":"R4c-05","head":"18f6fd78fca21b15531211c1f768d279f2c528e7","tree":"97e33f3f4a56802300aea83d3034c0cd59760526","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (822182db4 2026-10-13)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-14 for version 1.101.0-nightly (822182db4 2026-10-13)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-05","head":"18f6fd78fca21b15531211c1f768d279f2c528e7","tree":"97e33f3f4a56802300aea83d3034c0cd59760526","os":"linux x64","toolchain":"rustc 1.101.0-nightly (822182db4 2026-10-13)\nbinary: rustc\ncommit-hash: 822182db4c4a1827256881d8c7aa685f0bcf2b11\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.3","profile":"Miri SB strict-provenance","recipe":"docs/evidence/reverify-recipes/R4c-05.json","recipe_sha256":"6c51cad4d1260ffb183054439e198e3989df9898e324439f7977ddd4c606a390","registry_activation_hash":"f78bf173618ce7cac4a835554d803e4ba3353c81134e6f68ede0e23a5ae74a81"}
+
+E0_STEP {"id":"R4c-05","kind":"baseline","name":"strict provenance expected scaffold red","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","regression_r2_06_header_race_miri"],"env":{"MIRIFLAGS":"-Zmiri-strict-provenance -Zmiri-disable-isolation"},"expect":{"exit":1,"stdoutRegex":["unsupported operation: integer-to-pointer casts","ptr::with_exposed_provenance","tests[/\\\\]regression_r2_06_header_race_miri\\.rs:\\d+:\\d+"]}}
+Running `"rustup" "component" "add" "rust-src"` to install the `rust-src` component for the selected toolchain.
+info: downloading component rust-src
+Preparing a sysroot for Miri (target: x86_64-unknown-linux-gnu)... done
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/globalalloc-model/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+[1m[94m75[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `globalalloc-model` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: `package.homepage` is redundant with `package.repository`[0m
+  [1m[94m--> [0mCargo.toml:13:12
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m repository = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m              [1m[94m----------------------------------------------[0m
+[1m[94m13[0m [1m[94m|[0m homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
+[1m[96mhelp[0m: consider removing `package.homepage`
+[1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/malloc-bench-rs/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+[1m[94m22[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `malloc-bench-rs` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/proc-memstat/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+[1m[94m26[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m quote v1.0.46
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m libc v0.2.186
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m zerocopy v0.8.52
+[1m[92m   Compiling[0m zmij v1.0.21
+[1m[92m   Compiling[0m serde_core v1.0.228
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m syn v2.0.118
+[1m[92m   Compiling[0m serde_json v1.0.150
+[1m[92m   Compiling[0m serde v1.0.228
+[1m[92m   Compiling[0m libm v0.2.16
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m crossbeam-utils v0.8.21
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.20
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m rand_core v0.9.5
+[1m[92m   Compiling[0m errno v0.3.14
+[1m[92m   Compiling[0m bitflags v2.13.0
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m find-msvc-tools v0.1.9
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m slotmap v1.1.1
+[1m[92m   Compiling[0m cc v1.2.65
+[1m[92m   Compiling[0m fastrand v2.4.1
+[1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m either v1.16.0
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m libmimalloc-sys v0.1.49
+[1m[92m   Compiling[0m crossbeam-deque v0.8.6
+[1m[92m   Compiling[0m wait-timeout v0.2.1
+[1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m quick-error v1.2.3
+[1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
+[1m[92m   Compiling[0m memchr v2.8.2
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m zerocopy-derive v0.8.52
+[1m[92m   Compiling[0m serde_derive v1.0.228
+[1m[92m   Compiling[0m derive_more-impl v2.1.1
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m plotters-backend v0.3.7
+[1m[92m   Compiling[0m ciborium-io v0.2.2
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m clap_builder v4.6.0
+[1m[92m   Compiling[0m derive_more v2.1.1
+[1m[92m   Compiling[0m plotters-svg v0.3.7
+[1m[92m   Compiling[0m bit-set v0.8.0
+[1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+[1m[92m   Compiling[0m itertools v0.10.5
+[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m half v2.7.1
+[1m[92m   Compiling[0m rand_xorshift v0.4.0
+[1m[92m   Compiling[0m rand v0.9.4
+[1m[92m   Compiling[0m rand_chacha v0.9.0
+[1m[92m   Compiling[0m ciborium-ll v0.2.2
+[1m[92m   Compiling[0m same-file v1.0.6
+[1m[92m   Compiling[0m unarray v0.1.4
+[1m[92m   Compiling[0m iai-callgrind v0.14.2
+[1m[92m   Compiling[0m cast v0.3.0
+[1m[92m   Compiling[0m ciborium v0.2.2
+[1m[92m   Compiling[0m criterion-plot v0.5.0
+[1m[92m   Compiling[0m regex v1.12.4
+[1m[92m   Compiling[0m proptest v1.11.0
+[1m[92m   Compiling[0m walkdir v2.5.0
+[1m[92m   Compiling[0m rayon v1.12.0
+[1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
+[1m[92m   Compiling[0m sefer-region v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/sefer-region)
+[1m[92m   Compiling[0m bincode v1.3.3
+[1m[92m   Compiling[0m tinytemplate v1.2.1
+[1m[92m   Compiling[0m clap v4.6.1
+[1m[92m   Compiling[0m plotters v0.3.7
+[1m[92m   Compiling[0m tokio-macros v2.7.0
+[1m[92m   Compiling[0m is-terminal v0.4.17
+[1m[92m   Compiling[0m anes v0.1.6
+[1m[92m   Compiling[0m proc-memstat v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-memstat)
+[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
+[1m[92m   Compiling[0m oorandom v11.1.5
+[1m[92m   Compiling[0m size-classes v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/size-classes)
+[1m[92m   Compiling[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m once-ptr-cell v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/once-ptr-cell)
+[1m[92m   Compiling[0m tokio v1.52.3
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m   Compiling[0m criterion v0.5.1
+[1m[33mwarning[0m[1m: unused import: `alloc_core::OwnedBlock`[0m
+   [1m[94m--> [0msrc/alloc_core/mod.rs:148:16
+    [1m[94m|[0m
+[1m[94m148[0m [1m[94m|[0m pub(crate) use alloc_core::OwnedBlock;
+    [1m[94m|[0m                [1m[33m^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[92m   Compiling[0m globalalloc-model v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/globalalloc-model)
+[1m[92m   Compiling[0m proc-probe v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-probe)
+[1m[92m   Compiling[0m mimalloc v0.1.52
+[1m[92m   Compiling[0m malloc-bench-rs v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/malloc-bench-rs)
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 15.78s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/regression_r2_06_header_race_miri.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/56c0e6f947704a90/out/regression_r2_06_header_race_miri-56c0e6f947704a90)
+
+running 1 test
+test owner_reconciliation_overlaps_remote_large_and_small_free ... error: unsupported operation: integer-to-pointer casts and `ptr::with_exposed_provenance` are not supported with `-Zmiri-strict-provenance`
+   --> tests/regression_r2_06_header_race_miri.rs:132:23
+    |
+132 |             let ptr = address as *mut u8;
+    |                       ^^^^^^^^^^^^^^^^^^ unsupported operation occurred here
+    |
+    = help: use Strict Provenance APIs (https://doc.rust-lang.org/nightly/std/ptr/index.html#strict-provenance, https://crates.io/crates/sptr) instead
+    = note: this is on thread `unnamed-2`
+note: the current function got called indirectly due to this code
+   --> tests/regression_r2_06_header_race_miri.rs:127:18
+    |
+127 |       let remote = thread::spawn(move || {
+    |  __________________^
+128 | |         let mut producer = HeapRegistry::dbg_claim_lease().expect("producer lease");
+129 | |         remote_start.wait();
+130 | |         let count = transfers.len();
+...   |
+140 | |         count
+141 | |     });
+    | |______^
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+[1m[91merror[0m: test failed, to rerun pass `--test regression_r2_06_header_race_miri`
+
+Caused by:
+  process didn't exit successfully: `/home/runner/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/runner/work/sefer-alloc/sefer-alloc/target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/56c0e6f947704a90/out/regression_r2_06_header_race_miri-56c0e6f947704a90` (exit status: 1)
+[1m[92mnote[0m: test exited abnormally; to see the full output pass --no-capture to the harness.
+
+E0_STEP_END {"code":1,"signal":null,"error":null}
+
+E0_STEP {"id":"R4c-05","kind":"baseline","name":"plain provenance control","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","regression_r2_06_header_race_miri"],"env":{"MIRIFLAGS":"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"},"expect":{"exit":0,"stdoutRegex":["test owner_reconciliation_overlaps_remote_large_and_small_free \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/proc-probe/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+[1m[94m29[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m27[0m [92m~ [0mproc-memstat = { path = "../proc-memstat", version = "0.1", optional = true }
+[1m[94m28[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-probe` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/globalalloc-model/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+[1m[94m75[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m73[0m [92m~ [0mproptest = { version = "1" }
+[1m[94m74[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `globalalloc-model` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: `package.homepage` is redundant with `package.repository`[0m
+  [1m[94m--> [0mCargo.toml:13:12
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m repository = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m              [1m[94m----------------------------------------------[0m
+[1m[94m13[0m [1m[94m|[0m homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::redundant_homepage` is set to `warn` by default
+[1m[96mhelp[0m: consider removing `package.homepage`
+[1m[33mwarning[0m: `sefer-alloc` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/malloc-bench-rs/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+[1m[94m22[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m20[0m [92m~ [0mmimalloc = "0.1"
+[1m[94m21[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `malloc-bench-rs` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: missing `[lints]` to inherit `[workspace.lints]`[0m
+  [1m[94m--> [0mcrates/proc-memstat/Cargo.toml
+   [1m[94m= [0m[1mnote[0m: `cargo::missing_lints_inheritance` is set to `warn` by default
+[1m[96mhelp[0m: to inherit `workspace.lints, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+[1m[94m26[0m [92m+ workspace = true[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: to clarify your intent to not inherit, add:
+   [1m[94m|[0m
+[1m[94m24[0m [92m~ [0mharness = false
+[1m[94m25[0m [92m+ [lints][0m
+   [1m[94m|[0m
+[1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: unused import: `alloc_core::OwnedBlock`[0m
+   [1m[94m--> [0msrc/alloc_core/mod.rs:148:16
+    [1m[94m|[0m
+[1m[94m148[0m [1m[94m|[0m pub(crate) use alloc_core::OwnedBlock;
+    [1m[94m|[0m                [1m[33m^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/regression_r2_06_header_race_miri.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/56c0e6f947704a90/out/regression_r2_06_header_race_miri-56c0e6f947704a90)
+
+running 1 test
+test owner_reconciliation_overlaps_remote_large_and_small_free ... warning: integer-to-pointer cast
+   --> tests/regression_r2_06_header_race_miri.rs:132:23
+    |
+132 |             let ptr = address as *mut u8;
+    |                       ^^^^^^^^^^^^^^^^^^ integer-to-pointer cast
+    |
+    = help: this program is using integer-to-pointer casts or (equivalently) `ptr::with_exposed_provenance`, which means that Miri might miss pointer bugs in this program
+    = help: see https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html for more details on that operation
+    = help: to ensure that Miri does not miss bugs in your program, use Strict Provenance APIs (https://doc.rust-lang.org/nightly/std/ptr/index.html#strict-provenance, https://crates.io/crates/sptr) instead
+    = help: you can then set `MIRIFLAGS=-Zmiri-strict-provenance` to ensure you are not relying on `with_exposed_provenance` semantics
+    = help: alternatively, `MIRIFLAGS=-Zmiri-permissive-provenance` disables this warning
+    = note: this is on thread `unnamed-2`
+note: the current function got called indirectly due to this code
+   --> tests/regression_r2_06_header_race_miri.rs:127:18
+    |
+127 |       let remote = thread::spawn(move || {
+    |  __________________^
+128 | |         let mut producer = HeapRegistry::dbg_claim_lease().expect("producer lease");
+129 | |         remote_start.wait();
+130 | |         let count = transfers.len();
+...   |
+140 | |         count
+141 | |     });
+    | |______^
+
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.19s
+
+warning: 1 warning emitted
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
