@@ -111,7 +111,7 @@ loom = "0.7"
 # same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
 # `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
 # `numa-aware-mock` feature by the mock-gated integration tests).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(r20_prf01_c3_producer_control)', 'cfg(r20_prf01_c3_oracle)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)', 'cfg(r19_prf01_producer_control)', 'cfg(r20_prf01_c3_producer_control)', 'cfg(r20_prf01_c3_oracle)', 'cfg(prf04_heap_reuse_oracle)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -1818,6 +1818,27 @@ name = "r20_prf04_claim_iai"
 harness = false
 test = false
 required-features = ["production", "internals"]
+
+# R20 PRF-04 standalone L1/L2 iai groups.
+[[bench]]
+name = "r20_prf04_heap_reuse_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
+[[bench]]
+name = "r20_prf04_heap_reuse_l2_iai"
+harness = false
+test = false
+required-features = ["production", "internals"]
+
+[[example]]
+name = "r20_prf04_heap_reuse_oracle"
+required-features = ["production", "internals", "bench-internals"]
+
+[[example]]
+name = "r20_prf04_heap_reuse_l2_oracle"
+required-features = ["production", "internals", "bench-internals"]
 
 # Dedicated same-binary R18 scan measurement, separate from the ordinary gate.
 [[bench]]
