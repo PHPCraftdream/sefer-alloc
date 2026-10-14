@@ -15,7 +15,7 @@ mod gate {
             .entry_point(EntryPoint::Custom(
                 "r20_prf04_heap_reuse_l2_iai::hr::first_global_alloc".into(),
             ))
-            .raw_callgrind_args(["--separate-threads=yes"]);
+            .callgrind_args(["--separate-threads=yes"]);
         config
     }
     fn wave_toggle() -> LibraryBenchmarkConfig {
@@ -24,7 +24,7 @@ mod gate {
             .entry_point(EntryPoint::Custom(
                 "r20_prf04_heap_reuse_l2_iai::hr::first_global_alloc".into(),
             ))
-            .raw_callgrind_args(["--separate-threads=yes"]);
+            .callgrind_args(["--separate-threads=yes"]);
         config
     }
     fn release_toggle() -> LibraryBenchmarkConfig {
@@ -33,7 +33,7 @@ mod gate {
             .entry_point(EntryPoint::Custom(
                 "std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::AbandonGuard>".into(),
             ))
-            .raw_callgrind_args(["--separate-threads=yes"]);
+            .callgrind_args(["--separate-threads=yes"]);
         config
     }
 
