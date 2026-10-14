@@ -51,8 +51,7 @@
         "expect": {
           "exit": 101,
           "stdoutRegex": [
-            "test recycle_then_claim_reuses_slot_and_bumps_generation .* FAILED",
-            "test result: FAILED\\. 0 passed; 1 failed"
+            "thread 'recycle_then_claim_reuses_slot_and_bumps_generation' .*panicked at tests/registry_basic.rs"
           ]
         }
       }
@@ -60,7 +59,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test recycle_then_claim_reuses_slot_and_bumps_generation .* FAILED"
+        "thread 'recycle_then_claim_reuses_slot_and_bumps_generation' .*panicked at tests/registry_basic.rs"
       ]
     }
   }

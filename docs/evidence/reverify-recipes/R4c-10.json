@@ -51,8 +51,7 @@
         "expect": {
           "exit": 101,
           "stdoutRegex": [
-            "test latest_hint_then_older_free_precedes_fresh .* FAILED",
-            "test result: FAILED\\. 0 passed; 1 failed"
+            "thread 'latest_hint_then_older_free_precedes_fresh' .*panicked at tests/registry_basic.rs"
           ]
         }
       }
@@ -60,7 +59,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test latest_hint_then_older_free_precedes_fresh .* FAILED"
+        "thread 'latest_hint_then_older_free_precedes_fresh' .*panicked at tests/registry_basic.rs"
       ]
     }
   }

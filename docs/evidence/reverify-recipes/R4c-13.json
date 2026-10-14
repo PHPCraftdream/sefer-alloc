@@ -51,8 +51,7 @@
         "expect": {
           "exit": 101,
           "stdoutRegex": [
-            "test chunk_oom_retries_materialised_uninitialised_free .* FAILED",
-            "test result: FAILED\\. 0 passed; 1 failed"
+            "thread 'chunk_oom_retries_materialised_uninitialised_free' .*panicked at tests/r11_p3_registry_claim_uninit_oom.rs"
           ]
         }
       }
@@ -60,7 +59,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "test chunk_oom_retries_materialised_uninitialised_free .* FAILED"
+        "thread 'chunk_oom_retries_materialised_uninitialised_free' .*panicked at tests/r11_p3_registry_claim_uninit_oom.rs"
       ]
     }
   }
