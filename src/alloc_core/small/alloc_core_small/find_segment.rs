@@ -807,15 +807,10 @@ impl AllocCore {
             return None;
         }
 
+        // Summary discovery here; a rescue call still drains every segment with the
+        // fixed payload-start scan in its linear pass below (contract §13).
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-        match if Self::rescue_drain(
-            #[cfg(feature = "alloc-segment-directory")]
-            rescue,
-        ) {
-            self.drain_segment_sidecar_forced(base)
-        } else {
-            self.drain_segment_sidecar(base)
-        } {
+        match self.drain_segment_sidecar(base) {
             // P1-b: decommit/pool hysteresis — a RELEASED segment must be
             // skipped (try the next candidate); a POOLED segment (R1-03, src
             // review round 1) is still live/registered/committed, so fall
