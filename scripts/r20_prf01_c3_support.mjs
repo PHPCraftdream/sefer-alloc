@@ -91,14 +91,20 @@ export function runRunnerSelftest({
     'frozen snapshot mutant must reject',
   );
   const log = '==123== Command: /tmp/bench --iai-run r20_prf01_c3_cells 2 0';
-  const debug = 'callgrind: Arguments: --callgrind-out-file=producer/x --toggle-collect=exact::same_word '
-    + producerSettings.join(' ');
+  // Two cells of one bench binary share the toggle symbol; only the cell's own path segment selects it.
+  const record = cell => 'callgrind: Arguments: --callgrind-out-file=home-r20_prf01_c3_producer_distinct_words/'
+    + `r20_prf01_c3_cells_iai/${cell}/x --toggle-collect=exact::same_word ` + producerSettings.join(' ');
+  const debug = [
+    record('r20_prf01_c3_producer_distinct_words'),
+    record('r20_prf01_c3_remote_large_free'),
+  ].join('\n');
   const fixture = 'pid: 123\npart: 1\nthread: 1\ncmd: /tmp/bench --iai-run r20_prf01_c3_cells 2 0\nevents: Ir\ntotals: 10\nfn=std::thread::closure\n1 5\ncfn=exact::same_word\ncalls=1 1\n1 5\nfn=exact::same_word\n1 5\n';
   const childFixture = 'pid: 123\npart: 1\nthread: 2\ncmd: /tmp/bench --iai-run r20_prf01_c3_cells 2 0\nevents: Ir\ntotals: 5\nfn=std::thread::closure\n1 0\ncfn=exact::same_word\ncalls=1 1\n1 5\nfn=exact::same_word\n1 5\n';
   const profileOptions = {
     cellIndex: 2,
     producerSymbol: 'exact::same_word',
     groupName: 'r20_prf01_c3_cells',
+    cellName: 'r20_prf01_c3_producer_distinct_words',
     debug,
     expectedExecutable: '/tmp/bench',
   };

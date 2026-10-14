@@ -574,7 +574,8 @@ function generatedArguments(debug, log, homeDirName, cellIndex, producerSymbol, 
   const records = [...debug.matchAll(/callgrind: Arguments: (.+)$/gm)].map(m => m[1]);
   const candidates = records.filter(argument =>
     argument.includes('--callgrind-out-file=')
-    && argument.includes(homeDirName)
+    // v2 shape: the cell's own iai path segment; the observation home name also contains it.
+    && argument.includes('/' + homeDirName + '/')
     && argument.includes('--toggle-collect=' + producerSymbol));
   assert.equal(candidates.length, 1, 'one actual runner argument record required for the producer cell');
   const tool = candidates[0];
@@ -601,10 +602,10 @@ function generatedArguments(debug, log, homeDirName, cellIndex, producerSymbol, 
     toolVector,
   };
 }
-function parseProfiles(profiles, log, { cellIndex, producerSymbol, groupName, debug = '', expectedExecutable } = {}) {
+function parseProfiles(profiles, log, { cellIndex, producerSymbol, groupName, cellName, debug = '', expectedExecutable } = {}) {
   const pids = [...new Set([...log.matchAll(/^==(\d+)==/gm)].map(m => Number(m[1])))];
   assert.equal(pids.length, 1, 'actual valgrind PID missing/ambiguous'); assert.ok(pids[0] > 0);
-  const args = generatedArguments(debug, log, 'producer', cellIndex, producerSymbol, groupName);
+  const args = generatedArguments(debug, log, cellName, cellIndex, producerSymbol, groupName);
   const measured = argvTokens(args.measuredArguments);
   if (expectedExecutable) assert.equal(measured[0], expectedExecutable, 'measured binary mismatch');
   let totalIr = 0n, childIr = 0n, boundaryExecutions = 0n; const threads = new Set();
@@ -750,7 +751,7 @@ function producerPass(label, arm, role, cellIndex, name, bKey) {
     profiles.map(path => publicText(fs.readFileSync(path, 'utf8'))),
     publicText(logs.map(path => fs.readFileSync(path, 'utf8')).join('\n')),
     {
-      cellIndex, producerSymbol: spec.symbol, groupName,
+      cellIndex, producerSymbol: spec.symbol, groupName, cellName: name,
       debug: publicText(r.out), expectedExecutable: publicText(b.exe),
     },
   );
