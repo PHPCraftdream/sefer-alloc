@@ -1,16 +1,21 @@
 name: r20-gates
 
-# R20 pre-registered Ir gates (PRF-01/PRF-03/...): dispatch-only driver for the
+# R20 pre-registered Ir gates (PRF-01/PRF-03/...): driver for the
 # scripts/r20_*_run.mjs stage runners. The owner moved ALL heavy runs (cargo,
 # valgrind) off the local machine to GitHub CI (2026-10); the automatic perf
-# triggers were already disabled on 2026-08-18 (see perf-gate.yml), so
-# workflow_dispatch is the ONLY trigger here — nothing runs on push/PR/schedule.
+# triggers were already disabled on 2026-08-18 (see perf-gate.yml).
 #
-# SECURITY: the `runner` input is a path, never a command. It is validated in
-# two steps before use — a strict regex (`^scripts/r20_[a-z0-9_]+_run\.mjs$`)
-# AND an on-disk existence check — and is then invoked as
-# `node "$RUNNER" --<stage>`, quoted, with no shell evaluation of the input.
-# The `stages` input is likewise restricted to a fixed whitelist.
+# Two run modes:
+# - workflow_dispatch (owner-only, manual inputs as before), and
+# - pull_request, gated on the `gate-run` label + a `.github/gate-run.json`
+#   config committed on the PR branch (parsed by scripts/r20-gate-config.mjs).
+#
+# SECURITY: the `runner` input is a path, never a command. It is validated by
+# scripts/r20-gate-config.mjs — a strict regex
+# (`^scripts/r20_[a-z0-9_]+_run\.mjs$`) AND an on-disk existence check — and is
+# then invoked as `node "$RUNNER" --<stage>`, quoted, with no shell evaluation
+# of the input. The `stages` input is likewise restricted to a fixed whitelist.
+# The config script's --selftest mode runs in CI before anything else.
 #
 # SEC-4 (least-privilege, mirrors ci.yml): contents: read is sufficient — the
 # job never pushes, never comments; actions/upload-artifact uses its own
@@ -20,6 +25,8 @@ permissions:
   contents: read
 
 on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
       runner:
@@ -44,10 +51,10 @@ on:
         default: ''
 
 concurrency:
-  group: r20-gates-${{ github.ref }}
-  # Two dispatches on the same ref must queue, not trample each other's
-  # measurements (the gates are instruction-count deterministic, but the
-  # runner stages share the checkout and target/).
+  # Per-PR (or per-run for dispatch): concurrent gate runs must queue, not
+  # trample each other's measurements (the gates are instruction-count
+  # deterministic, but the runner stages share the checkout and target/).
+  group: r20-gates-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -55,22 +62,54 @@ jobs:
     name: r20 gate runner
     # ubuntu-24.04 pins valgrind 3.22 — the same version the local WSL
     # environment ran the pre-registered PRF measurements on.
+    # Only dispatch runs and PR runs explicitly labeled `gate-run`.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'gate-run')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       RUNNER_INPUT: ${{ inputs.runner }}
       STAGES_INPUT: ${{ inputs.stages }}
       SLOP_INPUT: ${{ inputs.slop }}
+      # Fallback for dispatch; the PR-mode step below overwrites it via
+      # GITHUB_ENV when a config file is present.
+      NOTE_INPUT: ${{ inputs.note }}
     steps:
       # fetch-depth: 0 — the stage runners must see the full git history to
       # cherry-pick the candidate commit; persist-credentials: false so the
       # checkout token never reaches the runner's environment (SEC-4 shape).
       # No `git clean`/re-checkout is performed anywhere below: the runners
       # require a pristine working tree.
+      # PR mode checks out the PR branch head (not the merge commit) so the
+      # runner sees the candidate's own history; on dispatch `ref:` is empty
+      # and the default (triggered ref) is used, as before.
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      # Early failure: validate the validator itself, then resolve the gate
+      # config (PR file or dispatch inputs) through the same code path.
+      - name: Validate gate config (selftest + config)
+        run: |
+          set -euo pipefail
+          node scripts/r20-gate-config.mjs --selftest
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            config_env="$(node scripts/r20-gate-config.mjs .github/gate-run.json)"
+          else
+            # Dispatch: re-validate the raw dispatch job env and overwrite inputs.
+            config_env="$(node scripts/r20-gate-config.mjs --from-env)"
+          fi
+          printf '%s\n' "$config_env" >> "$GITHUB_ENV"
+
+      - name: Snapshot existing verdicts
+        run: |
+          set -euo pipefail
+          snapshot="$RUNNER_TEMP/r20-verdict-before.sha256"
+          : > "$snapshot"
+          for v in docs/perf/R20_*/verdict.txt target/r20*/verdict.txt; do
+            if [ -f "$v" ]; then sha256sum "$v" >> "$snapshot"; fi
+          done
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -89,11 +128,13 @@ jobs:
         run: cargo install iai-callgrind-runner --version "^0.14" --locked
 
       - name: Validate inputs
+        # scripts/r20-gate-config.mjs already enforced the regex, the file
+        # existence and the stage whitelist; keep only a cheap belt-and-braces
+        # check (non-empty runner + file exists) and derive RUNNER/STAGES.
         run: |
           set -euo pipefail
-          # A shell glob's `*` would match `/`, `;` and `..`; use a real regex.
-          if ! [[ "$RUNNER_INPUT" =~ ^scripts/r20_[a-z0-9_]+_run\.mjs$ ]]; then
-            echo "::error::runner input must match ^scripts/r20_[a-z0-9_]+_run\.mjs$, got: $RUNNER_INPUT"
+          if [ -z "$RUNNER_INPUT" ]; then
+            echo "::error::RUNNER_INPUT is empty"
             exit 1
           fi
           if [ ! -f "$RUNNER_INPUT" ]; then
@@ -101,30 +142,14 @@ jobs:
             exit 1
           fi
           echo "RUNNER=$RUNNER_INPUT" >> "$GITHUB_ENV"
-          # Rebuild the stage list from the whitelist so only allowed names
-          # can ever reach the invocation loop, preserving input ORDER.
-          stages=""
-          IFS=',' read -ra raw_stages <<< "$STAGES_INPUT"
-          for s in "${raw_stages[@]}"; do
-            s="$(printf '%s' "$s" | tr -d '[:space:]')"
-            case "$s" in
-              '') : ;;
-              prepare|build|oracle|measure|rehearsal|cleanup) stages="$stages $s" ;;
-              *) echo "::error::invalid stage: $s (allowed: prepare, build, oracle, measure, rehearsal, cleanup)"; exit 1 ;;
-            esac
-          done
-          stages="${stages# }"
-          if [ -z "$stages" ]; then
-            echo "::error::no valid stages in: $STAGES_INPUT"
-            exit 1
-          fi
+          stages="$(printf '%s' "$STAGES_INPUT" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
           echo "STAGES=$stages" >> "$GITHUB_ENV"
           echo "Validated runner: $RUNNER_INPUT"
           echo "Validated stages (in order): $stages"
 
       - name: Environment
         env:
-          NOTE: ${{ inputs.note }}
+          NOTE: ${{ env.NOTE_INPUT }}
         run: |
           {
             echo '## r20-gates environment'
@@ -155,6 +180,9 @@ jobs:
                 if [ "$SLOP_INPUT" = "true" ]; then args+=(--slop); fi
                 ;;
             esac
+            # The config script guarantees outDir and rehearsal are mutually
+            # exclusive, so a single guarded flag is safe for every stage.
+            if [ -n "${OUT_DIR_INPUT:-}" ]; then args+=(--out-dir "$OUT_DIR_INPUT"); fi
             echo "::group::node $RUNNER ${args[*]}"
             node "$RUNNER" "${args[@]}"
             echo "::endgroup::"
@@ -172,31 +200,70 @@ jobs:
             echo "- HEAD: \`$(git rev-parse HEAD)\`"
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
-          # The runners deposit their judge's verdict under
-          # docs/perf/R20_*_RUN01/ (measured gates) or target/r20*-rehearsal/
-          # (rehearsals). Echo verdict.txt when one was produced; a missing
-          # verdict on a green run is a rehearsal, not an error.
+          # produced by THIS run: OUT_DIR_INPUT selects exactly that directory;
+          # otherwise compare each candidate with the pre-toolchain SHA-256 snapshot.
           found=0
-          for v in docs/perf/R20_*_RUN01/verdict.txt target/r20*-rehearsal/verdict.txt; do
+          verdicts=()
+          collect() {
+            local v="$1"
             if [ -f "$v" ]; then
-              found=1
-              echo "### $v" >> "$GITHUB_STEP_SUMMARY"
-              echo '```' >> "$GITHUB_STEP_SUMMARY"
-              cat "$v" >> "$GITHUB_STEP_SUMMARY"
-              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              current_hash="$(sha256sum "$v")"
+              if [ -n "${OUT_DIR_INPUT:-}" ] || ! grep -Fqx "$current_hash" "$RUNNER_TEMP/r20-verdict-before.sha256"; then
+                found=1
+                verdicts+=("$v")
+                echo "### $v" >> "$GITHUB_STEP_SUMMARY"
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+                head -n 60 "$v" >> "$GITHUB_STEP_SUMMARY"
+                if [ "$(wc -l < "$v")" -gt 60 ]; then
+                  echo '… truncated, full file in the artifact' >> "$GITHUB_STEP_SUMMARY"
+                fi
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+              fi
             fi
-          done
+          }
+          if [ -n "${OUT_DIR_INPUT:-}" ]; then
+            collect "$OUT_DIR_INPUT/verdict.txt"
+          else
+            for v in docs/perf/R20_*_RUN01/verdict.txt target/r20*-rehearsal/verdict.txt; do
+              if [ -e "$v" ]; then collect "$v"; fi
+            done
+          fi
           if [ "$found" = 0 ]; then
-            echo '(no verdict.txt found — rehearsal-style run or earlier-stage failure)' >> "$GITHUB_STEP_SUMMARY"
+            echo '(no verdict.txt from this run — rehearsal-style run or earlier-stage failure)' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Acceptance (prf01 sidecar runner only): verify the artifacts of
+          # every fresh out-dir that produced a verdict AND still carries its
+          # input.json (pre-committed dirs would fail acceptance on stale
+          # state). Never fails the job; the PASS/FAIL line is informational.
+          if [ "$RUNNER" = "scripts/r20_prf01_sidecar_summary_run.mjs" ] && [ "${#verdicts[@]}" -gt 0 ]; then
+            echo '## r20 acceptance' >> "$GITHUB_STEP_SUMMARY"
+            for v in "${verdicts[@]}"; do
+              if [ ! -f "$(dirname "$v")/input.json" ]; then
+                echo "### acceptance: $(dirname "$v") — skipped (no input.json next to verdict)" >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+              dir="$(dirname "$v")"
+              echo "### acceptance: $dir" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              rc=0
+              node scripts/r20_prf01_verify_artifacts.mjs "$dir" >> "$GITHUB_STEP_SUMMARY" 2>&1 || rc=$?
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              if [ "$rc" -eq 0 ]; then
+                echo "acceptance: PASS (see artifact)" >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "acceptance: FAIL (see artifact)" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            done
           fi
 
       - name: Upload run artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
         with:
-          name: r20-gates-${{ github.run_id }}
+          name: r20-gates-${{ github.event.pull_request.number || github.run_id }}
           path: |
             docs/perf/R20_*_RUN01/
             target/r20*-rehearsal/
+            ${{ env.OUT_DIR_INPUT }}
           if-no-files-found: warn
           retention-days: 30

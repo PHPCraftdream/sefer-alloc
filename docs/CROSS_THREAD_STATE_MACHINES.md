@@ -497,3 +497,71 @@ a freed Small block while the freeing by-value `Box` frame is still
 live. **No Miri-clean or UB-free claim may be read into this document**
 or into the current protocol it describes; native/loom evidence does
 not discharge this residual.
+
+## 10. C‴ summary-hint protocol — invariant chain I1–I7 (PROPOSED, GATED — not shipped behaviour)
+
+Status note: this describes the C‴ redesign from
+`docs/reviews/2026-10-13-r20-prf01-remote-free-discovery-flag-design.md`
+§4.1–4.2. It takes effect only after its cost gate returns GO; until then
+the current protocol of §9 (and the C′ form in
+`docs/REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md` §3) governs. Under
+C‴ the summary words live in the dead metadata prefix `pending[0..64)`
+of the same pinned sidecar; the producer keeps the terminal
+`pending[w].fetch_or(AcqRel)` (result unused, `lock or`) as the
+linearization point and then applies the C′ form: `pending[s].load(Relaxed)`,
+then a `#[cold]` `pending[s].fetch_or(bit, Release)` only if the bit is
+clean (P3); the owner's discovery does `pending[s].swap(0, AcqRel) &
+range_mask(s)` per summary word, then `pending[w].swap(0, AcqRel)` per set
+bit.
+
+- **I1. No lost publication / eventual discovery.** If the producer's
+  terminal RMW (P2) lands after a discovery cut of `w`, the cut's release
+  synchronizes with P2's acquire, so the discovery's earlier summary swap
+  happens-before the producer's P3 summary load; by coherence that load sees
+  either the cleared value or a bit set after the swap, so the bit is set
+  (by this producer, or already by another producer after the swap) and
+  survives to the next discovery. An RMW that lands before the cut is
+  consumed by it. Full-scan cuts do not clear summary words, so a bit seen
+  after such a cut really is set. The `Release` on the summary RMW is
+  required so an owner whose swap reads the hint also observes the pending
+  bit in its cut. Sources: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`
+  (P1/P2/P3), `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs` (cuts).
+- **I2. Exactly-once consumption.** Both the pending and the summary
+  acquisition are `swap(0, AcqRel)`; the cut semantics of §9.3 are unchanged
+  (`src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`).
+- **I3. No premature finalization.** A stranded (not yet discovered)
+  publication keeps its ledger credit; unchanged from §9.5/§9.3.
+- **I4. Lifetime.** The producer's P3 access touches only the sidecar
+  pinned by its `RoutePin` (`src/registry/segment_route/pin.rs`); the
+  sidecar is freed at the last pin
+  (`src/registry/segment_route/directory.rs`).
+- **I5. Summary words are never read as pending bits.** Owner metadata is
+  ≥ 64 KiB (two 32 KiB per-granule bitmaps), so
+  `payload_start_word ≥ SUMMARY_WORDS = 64`; metadata granules encode
+  class 0 and are rejected by the producer's class gate; every scanner
+  starts at or after the payload start (prerequisite Patch S: strict trim
+  starts at the payload start; Gate S). Enforcement (future work per design
+  §4.2, NOT yet in the tree): a `const` assert in
+  `src/registry/segment_route/small_sidecar.rs` that both metadata-end values
+  divided by 1 KiB are ≥ `SUMMARY_WORDS`, and a release-mode
+  `start_word ≥ SUMMARY_WORDS` check in the future summary scanner. Geometry
+  sources: `src/alloc_core/segment/segment_header/segment_header_layout.rs`,
+  `src/alloc_core/segment/bitmap/segment_bitmap.rs` (owner metadata ≥ 64 KiB),
+  `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`
+  (4 KiB class leaves).
+- **I6. Isolation.** Segments that never adopt the hint protocol never
+  execute P3 or a summary scan; a single default path means no per-segment
+  mode tag is needed in the main design (the route-tag mechanism of design
+  §1–2 belongs to the fallback flag path only;
+  `src/registry/segment_route/kind.rs`,
+  `src/registry/segment_route/directory.rs`).
+- **I7. Dropped out-of-range bits are harmless.** Words below the scan
+  start never carry content; words at or above the high-water mark cannot
+  (bump only grows while credit is outstanding).
+
+Defence in depth: the OOM rescue uses a fixed scan even in hint mode, so a
+hint liveness bug cannot cause a spurious OOM.
+
+Proof plan: actual-source Loom refinement + negative controls (contract
+§12; design §4.3 p.1), Miri pause-after-P2 scenario, quiescent invariant
+oracle.

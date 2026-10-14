@@ -1,0 +1,56 @@
+{
+  "id": "R4c-05",
+  "registryActivationHash": "f78bf173618ce7cac4a835554d803e4ba3353c81134e6f68ede0e23a5ae74a81",
+  "steps": [
+    {
+      "name": "strict provenance expected scaffold red",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit internals bench-internals",
+        "--test",
+        "regression_r2_06_header_race_miri"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdoutRegex": [
+          "unsupported operation: integer-to-pointer casts",
+          "ptr::with_exposed_provenance",
+          "tests[/\\\\]regression_r2_06_header_race_miri\\.rs:\\d+:\\d+"
+        ]
+      }
+    },
+    {
+      "name": "plain provenance control",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit internals bench-internals",
+        "--test",
+        "regression_r2_06_header_race_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test owner_reconciliation_overlaps_remote_large_and_small_free \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

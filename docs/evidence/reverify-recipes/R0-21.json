@@ -1,0 +1,75 @@
+{
+  "id": "R0-21",
+  "registryActivationHash": "1d55dacd5cf06b9cd89ce397f6f6b099c4f1c97fa010257c1c114d3c7399530a",
+  "steps": [
+    {
+      "name": "loom_sidecar_bitmap target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-core,alloc-xthread,tagged-index-stack/loom",
+        "--test",
+        "loom_sidecar_bitmap"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "3 passed; 0 failed",
+          "test loom_sidecar_class_publication_and_two_producers \\.\\.\\. ok",
+          "test loom_sidecar_negative_class_after_terminal_bit - should panic \\.\\.\\. ok"
+        ]
+      }
+    },
+    {
+      "name": "loom_terminal_large target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-core,alloc-xthread,tagged-index-stack/loom",
+        "--test",
+        "loom_terminal_large"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "2 passed; 0 failed",
+          "test producer_owner_cut_and_duplicate_admission \\.\\.\\. ok"
+        ]
+      }
+    },
+    {
+      "name": "loom_terminal_owner_drain target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-core,alloc-xthread,tagged-index-stack/loom",
+        "--test",
+        "loom_terminal_owner_drain"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "2 passed; 0 failed",
+          "test unpublished_and_detached_instances_hold_the_reservation_credit \\.\\.\\. ok",
+          "test negative_producer_retirement_allows_premature_release - should panic \\.\\.\\. ok"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
