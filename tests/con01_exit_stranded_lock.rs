@@ -249,7 +249,7 @@ fn prepare(mode: &str) -> Scenario {
             }
             // SAFETY: the block is a live ALLOC-issued 64-byte allocation
             // owned solely by this test until the exit-path realloc.
-            unsafe { (*p).write([0xa5u8; 64]) };
+            unsafe { p.cast::<[u8; 64]>().write([0xa5u8; 64]) };
             let address = p.addr();
             std::thread::spawn(move || {
                 RouteDirectory::global()
