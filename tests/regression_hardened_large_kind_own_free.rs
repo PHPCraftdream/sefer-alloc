@@ -36,8 +36,9 @@
 //! Every test below that drives one of these two no-op branches now ALSO
 //! asserts that `HeapCore::dbg_hardened_large_noop_count()` advances by
 //! exactly 1 across the hazardous free — in addition to (not replacing) the
-//! existing `dbg_owner_id_for` liveness check. `dbg_owner_id_for` proves
-//! "the segment was not actually freed"; it does NOT prove the defensive
+//! existing `dbg_segment_registered_for` membership check.
+//! `dbg_segment_registered_for(x)` == true proves "the segment was not
+//! actually freed"; it does NOT prove the defensive
 //! no-op branch is what caused that (a segment could stay registered for an
 //! unrelated reason if the guard code were deleted entirely and some OTHER
 //! path happened not to touch it). The counter proves the no-op branch
@@ -132,7 +133,8 @@ fn large_ptr_small_layout_free_is_noop() {
     // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1 —
     // proof the defensive no-op branch itself actually ran, not just that the
     // segment happens to still be registered (see this file's module doc for
-    // why this is a strictly stronger oracle than `dbg_owner_id_for` alone).
+    // why this is a strictly stronger oracle than the
+    // `dbg_segment_registered_for` membership probe alone).
     #[cfg(feature = "alloc-stats")]
     assert_eq!(
         HeapCore::dbg_hardened_large_noop_count(),
@@ -154,11 +156,11 @@ fn large_ptr_small_layout_free_is_noop() {
     // R19-1 (task #337): the payload-byte read above is a non-conclusive
     // UAF-read (freed memory typically still shows stale bytes immediately
     // after release). The REAL "was this segment actually freed" signal is
-    // `dbg_owner_id_for`: it returns `None` iff the segment is no longer
-    // registered in this heap's `SegmentTable`. A defensive no-op MUST leave
-    // it `Some(_)`.
+    // `dbg_segment_registered_for`: it is true iff the segment is still
+    // registered in this heap's `SegmentTable`. A defensive no-op MUST
+    // leave it registered.
     assert!(
-        heap.dbg_owner_id_for(large).is_some(),
+        heap.dbg_segment_registered_for(large),
         "F7 GUARD BROKEN: the mismatched small-layout free actually \
          unregistered/freed the Large segment — it must be a detected no-op"
     );
@@ -194,7 +196,7 @@ fn large_ptr_small_layout_free_is_noop() {
     // R19-1 (task #337): re-confirm liveness AFTER the cold-storm too — a
     // deferred/lazy free triggered by the storm must not have reclaimed it.
     assert!(
-        heap.dbg_owner_id_for(large).is_some(),
+        heap.dbg_segment_registered_for(large),
         "F7 GUARD BROKEN: the Large segment was unregistered/freed sometime \
          during the cold-storm — the mismatched free must be a permanent no-op"
     );
@@ -285,7 +287,7 @@ fn promoted_large_matching_free_actually_frees() {
 
     // BEFORE the free: the promoted segment is live and registered.
     assert!(
-        heap.dbg_owner_id_for(promoted).is_some(),
+        heap.dbg_segment_registered_for(promoted),
         "promoted Large segment must be registered before the free"
     );
 
@@ -301,7 +303,7 @@ fn promoted_large_matching_free_actually_frees() {
     // "was it freed" signal (not a payload-byte read). A no-op here would be a
     // correctness BUG (the promoted block would leak its segment).
     assert!(
-        heap.dbg_owner_id_for(promoted).is_none(),
+        !heap.dbg_segment_registered_for(promoted),
         "promoted Large segment was NOT freed by the matching-layout free — \
          the consistency gate must NOT turn a legitimate free into a no-op"
     );
@@ -345,7 +347,7 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
 
     // Confirm live before the hazardous free.
     assert!(
-        heap.dbg_owner_id_for(large).is_some(),
+        heap.dbg_segment_registered_for(large),
         "Large segment must be registered before the free"
     );
 
@@ -374,10 +376,10 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     );
 
     // The REAL oracle (R19-1): the segment must STILL be registered. Before
-    // the fix this returned `None` — branch (A) had actually freed it via
+    // the fix it was unregistered — branch (A) had actually freed it via
     // `self.core.dealloc` (the Large arm unconditionally `unregister`s).
     assert!(
-        heap.dbg_owner_id_for(large).is_some(),
+        heap.dbg_segment_registered_for(large),
         "BRANCH (A) BUG: the mismatched small-layout free actually \
          unregistered/freed the Large segment — under `hardened` it must be \
          a detected no-op (task #337)"
@@ -408,7 +410,7 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     );
     // Re-confirm liveness after the storm.
     assert!(
-        heap.dbg_owner_id_for(large).is_some(),
+        heap.dbg_segment_registered_for(large),
         "Large segment was unregistered/freed during the cold-storm — the \
          mismatched free must be a permanent no-op"
     );
@@ -417,7 +419,7 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
     // SAFETY: `large` is live and owned by this heap; layout matches.
     unsafe { heap.dealloc(large, large_layout) };
     assert!(
-        heap.dbg_owner_id_for(large).is_none(),
+        !heap.dbg_segment_registered_for(large),
         "Large segment must be unregistered after the legitimate matching free"
     );
     // SAFETY: each `p` is a live small allocation of this heap.
@@ -446,8 +448,9 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
 /// Counterfactual: before this task, `large_layout_consistent` compared only
 /// `layout.size().max(MIN_BLOCK)` against `large_size_at(base)` — the align
 /// mismatch below would NOT have been detected, `self.core.dealloc` would
-/// have run, and `dbg_owner_id_for` would read `None` (segment actually
-/// freed) instead of the `Some(_)` this test asserts.
+/// have run, and `dbg_segment_registered_for` would read false (segment
+/// actually freed) instead of the still-registered membership this test
+/// asserts.
 #[test]
 fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     if !HeapCore::dbg_promotion_compiled() {
@@ -490,7 +493,7 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     let wrong_align_layout = Layout::from_size_align(NEW_SIZE, 64).unwrap();
 
     assert!(
-        heap.dbg_owner_id_for(promoted).is_some(),
+        heap.dbg_segment_registered_for(promoted),
         "promoted Large segment must be registered before the free"
     );
 
@@ -518,7 +521,7 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     // The REAL oracle: the segment must STILL be registered — a same-size-
     // wrong-align free must be a detected no-op, not a real free.
     assert!(
-        heap.dbg_owner_id_for(promoted).is_some(),
+        heap.dbg_segment_registered_for(promoted),
         "R22-5 ALIGN CHECK BROKEN: a same-size-but-wrong-align free of a \
          promoted Large segment actually unregistered/freed it — \
          `large_layout_consistent` must reject on align mismatch too"
@@ -530,7 +533,7 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
     // SAFETY: `promoted` is still live and owned by this heap; layout matches.
     unsafe { heap.dealloc(promoted, real_layout) };
     assert!(
-        heap.dbg_owner_id_for(promoted).is_none(),
+        !heap.dbg_segment_registered_for(promoted),
         "promoted Large segment must be unregistered after the legitimate \
          matching-layout free"
     );

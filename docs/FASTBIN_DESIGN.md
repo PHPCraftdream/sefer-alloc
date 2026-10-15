@@ -367,8 +367,10 @@ reclamation of dead slots, that is a separate scavenger concern, not this
 design.)
 
 ### 6.5 Stamp hoist (folds IDEA 3 in for free)
-Today `HeapCore::alloc` calls `stamp_segment_owner(ptr)` after every alloc
+At the time of this design, `HeapCore::alloc` called `stamp_segment_owner(ptr)` after every alloc
 (OPT-C: a Relaxed load + unpack + compare even on the hit path, ~3.2%).
+(Update 2026-10-15, R6-T01: the owner stamp and `last_stamped_segment` cache were removed entirely —
+`owner_state` had no production reader; the header word is now inert.)
 
 With the magazine, the per-alloc stamp is unnecessary: a magazine block came
 from a segment that `refill_class` pulled from, and any segment with carved
@@ -744,6 +746,8 @@ fast path into the refill that fills the magazine). Magazine-hit
 alloc no longer calls `stamp_segment_owner` at all — the source
 segment was stamped once during the refill that pulled the block.
 Large allocations still stamp per-alloc (large bypasses the magazine).
+(Update 2026-10-15, R6-T01: superseded — the stamp itself was removed;
+neither magazine-hit, refill, nor Large alloc writes `owner_state` any more.)
 
 |        | larson T=1 | larson T=2 | larson T=4 | mstress T=1 | mstress T=2 | churn 256B |
 |--------|------------|------------|------------|-------------|-------------|------------|

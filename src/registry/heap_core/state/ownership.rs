@@ -1,89 +1,9 @@
-//! Canonical owner stamping and exclusive cold trim for [`HeapCore`].
-
-#[cfg(feature = "alloc-global")]
-use ::core::sync::atomic::Ordering;
-
-#[cfg(feature = "alloc-global")]
-use crate::alloc_core::segment_header::pack_owner;
-#[cfg(feature = "alloc-global")]
-use crate::alloc_core::segment_header::SegmentMeta;
+//! Exclusive cold trim for [`HeapCore`].
 
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
     pub(crate) const BACKGROUND_INGRESS_BUDGET: usize = 64;
-
-    /// Stamp this heap's canonical reservation root with its owner id.
-    /// Foreign frees route exclusively through terminal descriptors, never
-    /// through an owner-header pointer.
-    ///
-    /// Called on the alloc path after a successful allocation. The segment is
-    /// exclusively ours (single-writer invariant from the claim CAS), so the
-    /// `owner_state` store is race-free.
-    ///
-    /// ## OPT-C fast path (task #66)
-    ///
-    /// `last_stamped_segment` caches the base of the most recently stamped
-    /// segment. On a cache hit the function performs only a **Relaxed** load
-    /// of `owner_state` and compares it with `self.id`. If they match, we
-    /// know the segment is already stamped and return without a Release store.
-    /// A miss or ownership mismatch takes the Acquire-load/conditional-store
-    /// slow path; this makes no instruction-stream or fence-cost claim.
-    ///
-    /// The Relaxed load is safe because:
-    /// - This is the **owning thread** — the single writer of `owner_state`
-    ///   on this segment. A Relaxed load cannot race with our own prior
-    ///   store under the exclusive-owner discipline.
-    /// - A cache miss (base changed or Relaxed-load mismatch) falls through
-    ///   to the slow path which restores the Acquire/Release protocol.
-    #[inline(always)]
-    pub(crate) fn stamp_segment_owner(&mut self, ptr: *mut u8) {
-        use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
-        let Some((base, _)) = self.core.canonical_block_of(ptr) else {
-            std::process::abort();
-        };
-
-        // -----------------------------------------------------------------------
-        // OPT-C fast path: cache-hit check.
-        //
-        // If the cached segment base matches the current allocation's segment
-        // base, load `owner_state` with Relaxed ordering to confirm ownership.
-        // If confirmed, return without a Release store. Otherwise (e.g., after
-        // recycle/reset to OWNER_ID_NONE), take the slow path below.
-        // -----------------------------------------------------------------------
-        if base == self.last_stamped_segment && !self.last_stamped_segment.is_null() {
-            // Cache hit: re-check ownership with a Relaxed load.
-            // Owner-only read (we are the sole writer of owner_state on OUR
-            // segments), so Relaxed ordering is race-free here.
-            let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
-            let cur = owner_atomic.load(Ordering::Relaxed);
-            if unpack_owner_id(cur) == self.id {
-                // Still our segment, already stamped. Skip the Release-store.
-                return;
-            }
-            // Ownership mismatch (e.g., recycled segment): clear the cache
-            // and run the slow path.
-            self.last_stamped_segment = ::core::ptr::null_mut();
-        }
-
-        // -----------------------------------------------------------------------
-        // Slow path: full Acquire-load + conditional Release-store.
-        // -----------------------------------------------------------------------
-        let meta = SegmentMeta::new(base);
-        // 1. Stamp owner_state (ownership resolution).
-        let owner_atomic = meta.owner_state_atomic();
-        let cur = owner_atomic.load(Ordering::Acquire);
-        if unpack_owner_id(cur) != self.id {
-            let me = pack_owner(OWNER_STATE_LIVE, self.id, 0);
-            // Store the owner stamp with Release ordering. Foreign-free routing
-            // reads the independent descriptor, not this field.
-            owner_atomic.store(me, Ordering::Release);
-        }
-
-        // Slow path succeeded: cache the segment base so the next alloc from
-        // the same segment takes the fast path.
-        self.last_stamped_segment = base;
-    }
 
     /// Production teardown trim (task #95 / N1): flush every tcache class,
     /// drain the small-segment pool, and evict the entire large cache.

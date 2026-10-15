@@ -2187,3 +2187,19 @@ Reopen trigger. Either a design that removes summary work from the producer path
 Hooks. The candidate adds the bench-internals observers `dbg_forget_free_slot_hint`, `dbg_free_slot_hint_popcount` and `dbg_registry_free_set_claims`, used by the shipped gate harness and tests. They stay, inventoried by `scripts/verify-dbg-hook-safety.mjs`.
 
 Reopen trigger. A native A/B on a quiet bare-metal host (R-live, wave p99, idle commit) that contradicts the deterministic result.
+
+## 72 — `finish_magazine_refill` double walk / owner-stamp removal (closure narrative, 2026-10-15)
+
+72. **[D] fxx R2 §4.1 — `finish_magazine_refill` walked the refilled blocks twice.** (Filed 2026-09-28, fxx round-2 src review; closed 2026-10-15 as R6-T01, round 6.)
+
+    - **Status:** CLOSED — code removed (R6-T01, round 6 2026-10-15); the stamp-dedupe pass and the owner stamp are gone, leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`).
+    - **Current-number-or-verdict:** as filed, `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computed `segment_base_of_ptr(p)` in one loop (the stamp-dedupe check feeding `stamp_segment_owner`) and again in a second loop for `mark_magazine`; merging the passes saves `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expected a sub-percent effect.
+    - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1; `docs/agent_reviews_round6/performance_review.md` R6-PF-1.
+
+**Why the double walk existed.** The first pass existed only to service the stamp dedupe (the OPT-C pattern): `stamp_segment_owner` skipped its conditional `owner_state` write when `segment_base_of_ptr(p)` matched the `last_stamped_segment` cache, so the refill pre-computed each block's segment base to feed that check before `mark_magazine` ran in a second pass over the same `n <= 16` blocks.
+
+**Why the stamp had no production reader.** R6-PF-1 (`docs/agent_reviews_round6/performance_review.md`) could not find a production consumer of the `owner_state` owner id anywhere in `src/`: foreign frees resolve the owning heap through terminal descriptors and the route directory (`Entry.owner`, `canonical_root_for` — `src/registry/heap_core_xthread/routing.rs`), never by unpacking the header stamp. The only reader of the stamped value was the test-only diagnostic `dbg_owner_id_for` (`src/registry/heap_core/diag/queries.rs`). A value written on every refill miss but read by no production path is dead work; its maintenance cost (the extra `segment_base_of_ptr` pass) was the item's subject.
+
+**What was removed (R6-T01).** `stamp_segment_owner` itself, the `last_stamped_segment` field backing the OPT-C dedupe, and the Large cache-hit `owner_state` reset (`src/alloc_core/large/alloc_core_large.rs`). The stamp-dedupe pass in `finish_magazine_refill` disappeared with them, leaving a single `mark_magazine` pass. The `owner_state` header word itself is kept INERT — initialized once by the header constructors, then never updated or read by any production path — to preserve the pinned 144-byte `SegmentHeader` layout; foreign-free routing is unaffected (route directory `Entry.owner` / `canonical_root_for`). The stamp-observer tests (`tests/heap_core_tcache_stamp.rs`, `tests/stamp_cache.rs`) were deleted in the same change; ownership assertions move to a non-panicking canonical-table membership probe (a `dbg_segment_registered_for`-style observer), not to a raw-root readback.
+
+**Gate status.** The iai `HeapCore`/`SeferAlloc` A/B gate PASSed on the R6-T01 PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`): `cold_alloc_only_256x16b` −3652 of 113034 Ir, `recycle_alloc_only_256x16b` −7012 of 210316 Ir, `large_cache_hit_only_4mib` −298 of 57904 Ir; no cell of 106 regressed. Wall-clock is not claimed either way.

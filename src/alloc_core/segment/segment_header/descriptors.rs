@@ -301,38 +301,4 @@ impl SegmentMeta {
             Layout::magazine_bitmap_off(),
         ))
     }
-
-    // -------------------------------------------------------------------
-    // Atomic view over the owner identity field.
-    // return `&AtomicU64` at the field's fixed offset so a cross-thread
-    // read/store is a genuine atomic operation (NOT a non-atomic struct
-    // field read, which would be a data race under concurrency). The single
-    // `unsafe` dereference lives in the [`node`](crate::alloc_core::node) seam
-    // (`Node::atomic_u64_at`); the field offset is computed by the safe
-    // `core::mem::offset_of!` macro on the `#[repr(C)]` header, so this file
-    // stays unsafe-free, as it has been since Phase 8.
-    // -------------------------------------------------------------------
-
-    /// A `&AtomicU64` view over this segment's `owner_state` field.
-    /// The owner-stamp path (`stamp_segment_owner`) writes it with a
-    /// Release store; the owner's stamp fast path and diagnostic probes
-    /// read it. Foreign free routing resolves the owning heap from the
-    /// route descriptor, not from this field. The view aliases the
-    /// header byte range; access is atomic so there is no data race with a
-    /// concurrent header read.
-    ///
-    /// # Caller's contract
-    ///
-    /// `self.base` must name a live Small/Primordial segment with a valid
-    /// header at offset 0. Owner stamping and diagnostic callers must
-    /// establish this before obtaining the atomic view.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    #[inline(always)]
-    pub(crate) fn owner_state_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
-        // `offset_of!` is a safe macro (address arithmetic on a
-        // `#[repr(C)]` type); the atomic-view dereference is delegated to
-        // the `node` seam.
-        let off = core::mem::offset_of!(SegmentHeader, owner_state);
-        Node::atomic_u64_at(self.base, off)
-    }
 }

@@ -23,6 +23,12 @@ pub(crate) const SEGMENT_MAGIC: u32 = 0x5E_F5_E0_01;
 // ---------------------------------------------------------------------------
 // Segment ownership state (the `owner_state: u64` field).
 //
+// INERT: the field is written once by the header constructors
+// (`SegmentHeader::small`/`large`/`primordial`); no production path updates
+// or reads it afterward (routing goes through the route directory). It is
+// kept only for the pinned segment-header layout. Test hooks and pack/unpack
+// round-trip pins still exist.
+//
 // Each small/primordial segment carries an `owner_state: u64` field packing:
 //
 //   bits [0]      : state    — 0 = LIVE (owned by a heap). Always LIVE today:
@@ -72,11 +78,11 @@ pub const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
 /// fallback is NOT a registry slot, so it cannot carry a slot index, and its
 /// historical sentinel `u32::MAX` was NOT representable in the 31-bit id
 /// field: `pack_owner`'s shift leaked bit 32 into the generation field and
-/// `unpack_owner_id` returned `OWNER_ID_NONE`, so `stamp_segment_owner`'s
-/// OPT-C fast-path compare (`unpack_owner_id(cur) == self.id`) could never
+/// `unpack_owner_id` returned `OWNER_ID_NONE`, so the historical owner-stamp
+/// compare (`unpack_owner_id(cur) == self.id`) could never
 /// hit on the fallback heap. Chosen constraints (each pinned by the const
 /// asserts below): < 2^31 so `pack_owner`/`unpack_owner_id` round-trip it
-/// exactly (the property the OPT-C compare needs); `!= OWNER_ID_NONE`; and
+/// exactly; `!= OWNER_ID_NONE`; and
 /// >= 4096 (`MAX_HEAPS`, src/registry/bootstrap/registry.rs) so every
 /// owner-id -> slot resolution (`>= MAX_HEAPS` bounds check, e.g.
 /// `heap_core_xthread::ring::owner_slot_is_live`) keeps treating
@@ -276,12 +282,14 @@ pub(crate) struct SegmentHeader {
     /// structurally always `LIVE` (the abandoned-segments / adoption
     /// substrate that wrote the `ABANDONED` value was removed — task #97 /
     /// R4-5; the bit is retained only for layout stability), and
-    /// `generation` is always `0` for the same reason. The LIVE value this
-    /// word carries is the owning heap's slot index (`owner_heap_id`),
-    /// stamped by the owner after allocation and read by owner-stamp checks
-    /// and diagnostic probes. Stored as a plain `u64` for header snapshots;
-    /// the dedicated [`owner_state_atomic`](SegmentMeta::owner_state_atomic)
-    /// view accesses the same byte range atomically. Foreign-free routing
+    /// `generation` is always `0` for the same reason. INERT: the field is
+    /// written once by the header constructors (`SegmentHeader::small`/
+    /// `large`/`primordial`) and never updated or read by any production
+    /// path afterward (foreign-free routing resolves through the route
+    /// directory's terminal descriptors); it is kept solely to pin the
+    /// 144-byte segment-header layout. Test hooks
+    /// and the `pack_owner`/`unpack_owner_id` round-trip pins still touch
+    /// it. Stored as a plain `u64` for header snapshots. Foreign-free routing
     /// reads the independent route descriptor, not this field.
     pub owner_state: u64,
     /// Sanity magic — every segment starts with this. A computed segment base
