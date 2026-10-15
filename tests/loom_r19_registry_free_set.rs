@@ -371,9 +371,10 @@ fn ctor_oom_bitmap_slot_does_not_starve_initialised_recovery() {
     bounded(|| {
         // slot 0: FREE, never initialised, discoverable only via the bitmap
         // (R6-T03 `push_back_after_oom`); slot 1: LIVE, initialised.
-        let r = Arc::new(Registry::new());
+        let mut reg = Registry::new();
+        reg.init[0] = false;
+        let r = Arc::new(reg);
         r.state[0].store(FREE, Ordering::Relaxed);
-        r.init[0] = false;
         r.publish_word(0);
         r.hint.store(NO_HINT, Ordering::Relaxed);
         let saw = Arc::new(AtomicUsize::new(0));

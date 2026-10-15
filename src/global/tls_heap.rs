@@ -140,14 +140,6 @@ struct SaturationGate {
     skips: u32,
 }
 
-thread_local! {
-    /// R6-T07: per-thread negative-verdict cache for [`bind_slow_tagged`].
-    /// Written only on the cold bind path (`LOCAL` is null); never touched by
-    /// the hot `Own` resolver arm.
-    static SATURATION_GATE: Cell<SaturationGate> =
-        const { Cell::new(SaturationGate { saturated: false, version: 0, skips: 0 }) };
-}
-
 /// Pure decision behind [`saturation_retry_allowed`]: a cached saturated
 /// verdict blocks the retry only until the saturation version moves or
 /// `SATURATION_RETRY_INTERVAL` attempts have been skipped.
@@ -248,6 +240,12 @@ thread_local! {
     /// are unchanged: `GUARD` was already a `thread_local!` with a
     /// destructor.
     static GUARD: AbandonGuard = const { AbandonGuard::new() };
+
+    /// R6-T07: per-thread negative-verdict cache for [`bind_slow_tagged`].
+    /// Written only on the cold bind path (`LOCAL` is null); never touched by
+    /// the hot `Own` resolver arm.
+    static SATURATION_GATE: Cell<SaturationGate> =
+        const { Cell::new(SaturationGate { saturated: false, version: 0, skips: 0 }) };
 }
 
 /// The per-thread abandon guard. See the module docs for the TLS destructor

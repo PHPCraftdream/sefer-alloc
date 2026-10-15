@@ -22,10 +22,10 @@ fn claimant_hit_by_maintenance_reuses_slot_without_growing_count() {
 
     // The claimant (another thread) hits MAINTENANCE on the hint, republishes
     // the candidate into the FREE bitmap, and retries until the lease drops.
+    // `HeapLease` is `!Send`: it is dropped on the claimant thread.
     let handle = std::thread::spawn(|| {
-        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim succeeds");
-        assert_eq!(lease.slot_index(), 0, "reused the maintenance slot");
-        lease
+        let lease = HeapRegistry::dbg_claim_lease().expect("claim succeeds");
+        lease.slot_index()
     });
 
     // The retry loop's republish is the fix's signature: wait for the bitmap
@@ -41,8 +41,8 @@ fn claimant_hit_by_maintenance_reuses_slot_without_growing_count() {
     }
     drop(maint);
 
-    let lease = handle.join().expect("claimant thread");
-    drop(lease);
+    let slot = handle.join().expect("claimant thread");
+    assert_eq!(slot, 0, "reused the maintenance slot");
     assert_eq!(
         bootstrap::count_for_test(),
         1,
