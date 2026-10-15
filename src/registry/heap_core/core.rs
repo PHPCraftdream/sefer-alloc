@@ -101,10 +101,9 @@ pub struct HeapCore {
     /// process-global fallback heap instead uses `OWNER_ID_FALLBACK`
     /// (0x7FFF_FFFE, `alloc_core::segment_header`).
     ///
-    /// Invariant: any id that will be stamped into a segment's `owner_state`
+    /// Invariant: any id stored in a segment header's `owner_state` word
     /// must stay < 2^31 so `pack_owner`/`unpack_owner_id` round-trip it
-    /// exactly (the OPT-C stamp-cache compare unpacks the stored word and
-    /// compares against this id). Do not reintroduce a >= 2^31 sentinel here:
+    /// exactly. Do not reintroduce a >= 2^31 sentinel here:
     /// the `u32::MAX` "unbound" value is safe only because it never reaches
     /// `pack_owner` — it is overwritten by the lease before any alloc.
     pub(crate) id: u32,
@@ -176,37 +175,6 @@ pub struct HeapCore {
     /// observed on an alloc path).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) tcache_hits: Option<&'static TcacheHitCounter>,
-
-    /// OPT-C (task #66): lazy stamp cache.
-    ///
-    /// The base address of the last segment for which this heap successfully
-    /// ran `stamp_segment_owner`. On the next alloc from the SAME segment the
-    /// cache-hit fast path performs only a Relaxed load of `owner_state` (to
-    /// confirm ownership is still ours) instead of a full Acquire-load +
-    /// conditional Release-store. This eliminates the costly Release-store on
-    /// the 99 % of allocations that stay in the hot segment.
-    ///
-    /// **Null** means "no segment cached yet" (initial state).
-    ///
-    /// **Cache invalidation safety:**
-    /// - *Segment migration* — when the active segment changes (new small
-    ///   segment carved, large-segment alloc) `base != last_stamped_segment`
-    ///   → cache miss → slow path stamps and updates the cache.
-    /// - *Segment recycle / decommit* — a recycled segment may reuse the same
-    ///   base address. The Relaxed-load in the fast path re-reads `owner_state`
-    ///   and compares against `self.id`; if the segment was recycled and its
-    ///   `owner_state` reset to `OWNER_ID_NONE`, the comparison fails → slow
-    ///   path re-stamps.
-    /// - *Inter-heap segment transfer* — if a future phase introduces
-    ///   transferring segments between heaps, the code doing the transfer MUST
-    ///   null this cache field (`last_stamped_segment = null`) so the stale
-    ///   entry is cleared before the next alloc. Currently no such path exists
-    ///   (the shard model: each segment stays with its original heap forever).
-    ///
-    /// Only present under `alloc-global` (the feature that enables
-    /// `stamp_segment_owner`).
-    #[cfg(feature = "alloc-global")]
-    pub(crate) last_stamped_segment: *mut u8,
 }
 
 // R34-18 (task #537, F-6 [low]) — compile-time stack-pressure budget pin.
@@ -317,8 +285,6 @@ impl HeapCore {
             // any alloc path — alloc runs only after claim_lease planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
-            #[cfg(feature = "alloc-global")]
-            last_stamped_segment: ::core::ptr::null_mut(),
         })
     }
 
@@ -354,8 +320,6 @@ impl HeapCore {
             // any alloc path — alloc runs only after claim_lease planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache_hits: None,
-            #[cfg(feature = "alloc-global")]
-            last_stamped_segment: ::core::ptr::null_mut(),
         })
     }
 

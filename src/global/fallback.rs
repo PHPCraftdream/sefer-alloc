@@ -215,8 +215,7 @@ fn heap_ptr_impl(
             // We are the sole initialiser. Construct the HeapCore in place.
             // The fallback is NOT a registry slot, so it cannot carry a slot
             // index: it carries the dedicated `OWNER_ID_FALLBACK` sentinel —
-            // round-trip-stable through `pack_owner`/`unpack_owner_id` (so
-            // `stamp_segment_owner`'s OPT-C stamp-cache compare can hit) and
+            // round-trip-stable through `pack_owner`/`unpack_owner_id` and
             // out-of-range for every owner-id→slot resolution. `u32::MAX`
             // remains reserved for "not yet bound to a slot" on freshly-init'd
             // registry slots.
@@ -458,6 +457,11 @@ struct LockGuard;
 /// path.
 const LOCK_TIGHT_SPINS: u32 = 64;
 
+/// The exit probe (`process_exit_in_progress`, an FFI call on Windows) runs
+/// only once per `EXIT_PROBE_YIELD_ROUNDS` yield rounds, never on every wait
+/// iteration; refusal is delayed by at most that many scheduler yields.
+const EXIT_PROBE_YIELD_ROUNDS: u32 = 64;
+
 #[inline(always)]
 fn lock_tight_spin(spins: &mut u32) -> bool {
     if *spins < LOCK_TIGHT_SPINS {
@@ -501,27 +505,46 @@ impl LockGuard {
     /// the lock. `#[cfg(not(feature = "std"))]` keeps this fn buildable
     /// without `std` (this module's rest is already `std`-free); without
     /// `std` there is no better primitive than the tight spin, so it
-    /// continues unconditionally in that configuration.
+    /// continues unconditionally in that configuration. TTAS + bounded
+    /// exponential backoff keep failed attempts off the RMW line; the exit
+    /// probe is thinned to once per `EXIT_PROBE_YIELD_ROUNDS` yields.
     fn acquire() -> Option<Self> {
         let mut spins: u32 = 0;
-        while LOCK
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            if lock_tight_spin(&mut spins) {
-                core::hint::spin_loop();
-            } else {
-                if super::process_exit_in_progress() {
-                    record_exit_lock_giveup();
-                    return None;
+        let mut yield_rounds: u32 = 0;
+        let mut backoff: u32 = 0;
+        loop {
+            // Fast path and retry: a single CAS; no read precedes the first
+            // attempt, so the uncontended path is unchanged.
+            if LOCK
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                return Some(Self::acquired());
+            }
+            // TTAS: read-only spin while the lock looks held — the cache line
+            // stays shared instead of ping-ponging RMW between waiters.
+            while LOCK.load(Ordering::Relaxed) {
+                if lock_tight_spin(&mut spins) {
+                    // Exponential pause, doubling to a small ceiling.
+                    for _ in 0..(1u32 << backoff.min(6)) {
+                        core::hint::spin_loop();
+                    }
+                    backoff = backoff.saturating_add(1);
+                } else {
+                    yield_rounds = yield_rounds.wrapping_add(1);
+                    if yield_rounds & (EXIT_PROBE_YIELD_ROUNDS - 1) == 0
+                        && super::process_exit_in_progress()
+                    {
+                        record_exit_lock_giveup();
+                        return None;
+                    }
+                    #[cfg(feature = "std")]
+                    std::thread::yield_now();
+                    #[cfg(not(feature = "std"))]
+                    core::hint::spin_loop();
                 }
-                #[cfg(feature = "std")]
-                std::thread::yield_now();
-                #[cfg(not(feature = "std"))]
-                core::hint::spin_loop();
             }
         }
-        Some(Self::acquired())
     }
 }
 

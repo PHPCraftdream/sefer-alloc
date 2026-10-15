@@ -3,7 +3,7 @@
 //! `heap_core_diag.rs`).
 //!
 //! This file holds the first half of the `impl HeapCore { .. }` block: the
-//! inspection test hooks (`dbg_owner_id_for`, `dbg_tcache_count`, etc.).
+//! inspection test hooks (`dbg_live_count_for`, `dbg_tcache_count`, etc.).
 //! The promotion /
 //! hardened-defensive-noop counters, the `contains_base` family, the `unsafe`
 //! delegation wrappers, and the `dbg_decomp_*` family live in the sibling
@@ -14,7 +14,6 @@
 use core::alloc::Layout;
 
 use crate::alloc_core::os;
-use core::sync::atomic::Ordering;
 
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
@@ -79,37 +78,10 @@ impl HeapCore {
         crate::alloc_core::remote_bitmap::BitmapScan::measure_scans(enable, baseline)
     }
 
-    /// TEST-ONLY (P4): read the `owner_id` stamped in the segment header of
-    /// the segment that contains `ptr`. Returns `None` if `ptr` is not in a
-    /// segment owned by this heap's substrate. Used by
-    /// `tests/heap_core_tcache_stamp.rs` to verify the stamp-hoist wrote
-    /// the correct ownership.
-    ///
-    /// Numeric membership resolves the canonical allocator-origin root, including
-    /// overaligned Large reservations. This observer never mutates owner caches.
-    #[doc(hidden)]
-    #[cfg(feature = "alloc-global")]
-    pub fn dbg_owner_id_for(&self, ptr: *mut u8) -> Option<u32> {
-        use crate::alloc_core::segment_header::{unpack_owner_id, SegmentMeta};
-        let base = self.core.canonical_root_for(ptr)?;
-        let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
-        let word = owner_atomic.load(Ordering::Relaxed);
-        Some(unpack_owner_id(word))
-    }
-
-    /// TEST-ONLY (P4): the cached `last_stamped_segment` base, or null if
-    /// no segment has been stamped yet. Allows tests to observe whether the
-    /// stamp-cache was updated without re-stamping.
-    #[doc(hidden)]
-    #[cfg(feature = "alloc-global")]
-    pub fn dbg_last_stamped_segment(&self) -> *mut u8 {
-        self.last_stamped_segment
-    }
-
     /// TEST-ONLY (R12-6): the decoded `SegmentKind` of `ptr`'s segment, as a
     /// small tag (`0` = Primordial, `1` = Small, `2` = Large, `3` = Unknown)
     /// — thin delegation to [`AllocCore::dbg_kind_at_tag`]. Exposed at the
-    /// `HeapCore` level (mirroring `dbg_owner_id_for`/`dbg_live_count_for`'s
+    /// `HeapCore` level (mirroring `dbg_live_count_for`'s
     /// existing delegation pattern in this file) so a `tests/` integration
     /// test can distinguish the PRIMORDIAL segment from an ordinary `Small`
     /// segment without reaching into crate-internal modules — needed because
@@ -129,9 +101,24 @@ impl HeapCore {
         self.core.dbg_kind_at_tag(ptr)
     }
 
+    /// TEST-ONLY, non-panicking membership probe: `true` iff `ptr`'s segment
+    /// (by canonical table lookup, `canonical_root_for`) is still registered
+    /// in this heap's SegmentTable. Unlike [`Self::dbg_kind_at_tag`] it does
+    /// NOT panic on an unregistered segment, so it is the right oracle for
+    /// "the segment must be GONE after a free" assertions. Read-only; no
+    /// mutation. Exposed behind exactly the same `alloc-global` + `internals`
+    /// gate as `dbg_kind_at_tag`, so any test that could call one can call
+    /// the other.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
+    #[must_use]
+    pub fn dbg_segment_registered_for(&self, ptr: *mut u8) -> bool {
+        self.core.canonical_root_for(ptr).is_some()
+    }
+
     /// R32-9 (task #500) MEASUREMENT-ONLY: thin delegation to
     /// [`AllocCore::dbg_table_count`] — exposed at the `HeapCore` level
-    /// (mirroring `dbg_kind_at_tag`'s/`dbg_owner_id_for`'s existing
+    /// (mirroring `dbg_kind_at_tag`'s existing
     /// delegation pattern in this file) so the new `≥64-live-segment`
     /// macro-bench harness (`benches/macro_multiseg_steady_state.rs`,
     /// `examples/r32_9_macro_multiseg_steady_state_ab_gate.rs`) can read
@@ -307,7 +294,7 @@ impl HeapCore {
         // segment_id_at dereferences the segment header (`Node::read_u32`), so
         // a null/foreign/arbitrary `ptr` whose segment-aligned base is unmapped
         // would read unmapped memory (crash) or arbitrary mapped memory
-        // (garbage sid). Mirrors the `dbg_owner_id_for` guard shape in this
+        // (garbage sid). Mirrors the `dbg_live_count_for` guard shape in this
         // file (return `None` on a foreign base) rather than the assert-panic
         // shape of `dbg_segment_id_of` in `alloc_core_core_diag.rs`: this fn
         // already returns `Option<bool>` and documents "ptr is foreign → None",

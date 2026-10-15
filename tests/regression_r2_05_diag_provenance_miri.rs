@@ -33,7 +33,8 @@
 //! short-scenario miri policy, matching every other entry in
 //! `scripts/miri.mjs`'s `MATRIX`. The remaining accessors (`dbg_node_id_for`,
 //! `dbg_page_map_class_for`, `dbg_payload_virgin_for`,
-//! `dbg_committed_payload_end_for`, `dbg_owner_id_for`,
+//! `dbg_committed_payload_end_for`, `dbg_kind_at_tag` (the R6-T01
+//! replacement for the removed owner-stamp probe),
 //! `dbg_directory_bit_for_ptr`) share the IDENTICAL fix
 //! (`SegmentTable::canonical_base_of` / the `.find`-not-`.any` pattern) and
 //! are covered functionally (not under miri) by

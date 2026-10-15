@@ -136,7 +136,6 @@ const PURE_OBSERVERS = [
   "src/global/fallback.rs::dbg_init_state",
   "src/registry/bootstrap/registry.rs::dbg_chunk_is_materialised",
   "src/registry/heap_core/core.rs::dbg_cached_numa_node",
-  "src/registry/heap_core/diag/queries.rs::dbg_owner_id_for",
   "src/registry/heap_core/diag/queries.rs::dbg_class_for",
   "src/registry/heap_core/diag/queries.rs::dbg_refill_n_for_class",
   "src/registry/heap_core/diag/queries.rs::dbg_directory_bit_for_ptr",
@@ -148,8 +147,9 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
-  "src/registry/heap_core/diag/queries.rs::dbg_last_stamped_segment",
   "src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
+  // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
+  "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
   "src/registry/bootstrap/ensure.rs::dbg_slot_or_none"
 ];

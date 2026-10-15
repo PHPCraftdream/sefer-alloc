@@ -1,0 +1,19 @@
+{
+  "createdAt": "2026-10-15T18:29:57.179Z",
+  "binaries": {
+    "A": {
+      "mode": "production",
+      "features": "production internals",
+      "exe": "/home/runner/work/sefer-alloc/sefer-alloc/target/release/examples/r6_t08_large_commit_probe",
+      "copiedTo": "arm_A_probe.bin",
+      "sha256": "8cf404b0a53f72c91e0513f485b5a4633aed1db4c67311b0b025c7e4288895d7"
+    },
+    "B": {
+      "mode": "production+exact-span-large",
+      "features": "production internals,exact-span-large",
+      "exe": "/home/runner/work/sefer-alloc/sefer-alloc/target/release/examples/r6_t08_large_commit_probe",
+      "copiedTo": "arm_B_probe.bin",
+      "sha256": "c49ef1c37556dbba0238d12093eb3b14c7cf7cc34c3c395f5d0446af0decbc97"
+    }
+  }
+}
