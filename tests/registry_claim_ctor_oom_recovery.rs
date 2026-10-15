@@ -6,13 +6,13 @@
     feature = "bench-internals"
 ))]
 
-use sefer_alloc::registry::bootstrap::{self, MAX_HEAPS};
+use sefer_alloc::registry::bootstrap::MAX_HEAPS;
 use sefer_alloc::registry::heap_registry::HeapRegistry;
 
 #[test]
 fn ctor_oom_releases_slot_to_bitmap_not_hint_and_recovers() {
     // Fresh process: the first claim mints slot 0 and holds it LIVE.
-    let mut lease0 = HeapRegistry::dbg_claim_lease().expect("first claim");
+    let lease0 = HeapRegistry::dbg_claim_lease().expect("first claim");
     assert_eq!(lease0.slot_index(), 0);
 
     // Second claim: hint/bitmap are quiet, so it bumps slot 1 — whose
@@ -31,7 +31,7 @@ fn ctor_oom_releases_slot_to_bitmap_not_hint_and_recovers() {
     // The claim loop's recovery scan excludes the failed slot, finds nothing
     // initialised (slot 0 is LIVE), and gives up; the NEXT claim retries the
     // published slot and its constructor now succeeds.
-    let mut lease1 = HeapRegistry::dbg_claim_lease().expect("retry after ctor OOM");
+    let lease1 = HeapRegistry::dbg_claim_lease().expect("retry after ctor OOM");
     assert_eq!(lease1.slot_index(), 1);
     assert!(sefer_alloc::registry::heap_registry::dbg_slot_initialised(
         1
