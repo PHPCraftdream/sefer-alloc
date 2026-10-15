@@ -151,6 +151,12 @@ pub(crate) const FREE_LIST_FOOTPRINT: usize = FREE_LIST_CAPACITY * size_of::<u32
 /// `OWN_CACHE_SIZE - 1`.
 pub(crate) const OWN_CACHE_SIZE: usize = 16;
 
+/// R6-T11 — sentinel key for an EMPTY own_cache slot. `usize::MAX` is not
+/// SEGMENT-aligned, so it can never equal a real lookup key (real keys are
+/// SEGMENT-aligned addresses); a hit is therefore a single key comparison,
+/// with no separate `!is_null()` root check.
+const OWN_CACHE_EMPTY_KEY: usize = usize::MAX;
+
 const _: () = assert!(
     OWN_CACHE_SIZE.is_power_of_two(),
     "OWN_CACHE_SIZE must be a power of two -- SegmentTable::cache_index masks with OWN_CACHE_SIZE - 1"
@@ -184,24 +190,24 @@ pub(crate) struct SegmentTable {
     pub(super) active_kind: *mut ActiveKindIndex,
     /// PERF-P2 (Э3) — a tiny fixed-size direct-mapped cache of segment bases
     /// returned by a won `hash_find` probe. It is an
-    /// inline struct field (NOT primordial-resident memory), zero-initialised
-    /// (all `null_mut()`) in `from_primordial`.
+    /// inline struct field (NOT primordial-resident memory), initialised to
+    /// all-EMPTY entries in `from_primordial`.
     ///
     /// ## Invariant (the correctness keystone — a stale hit is UB / M2 breach)
     ///
-    /// `own_cache[i]` is either `null_mut()` (empty) or an allocator-origin
-    /// pointer CURRENTLY registered and live in the hash table. Its numeric
-    /// lookup key lives separately in `own_cache_keys[i]`: a biased Large
-    /// payload key need not equal its reservation root. A matching nonempty
-    /// pair carries the same live-membership guarantee as `hash_find(key)`.
+    /// Each `own_cache[i]` entry is a `(key, root)` pair: an EMPTY slot is
+    /// `(OWN_CACHE_EMPTY_KEY, null_mut())`; a filled slot is a biased Large
+    /// payload key (which need not equal its reservation root) paired with
+    /// an allocator-origin pointer CURRENTLY registered and live in the hash
+    /// table. A matching entry carries the same live-membership guarantee as
+    /// `hash_find(key)`.
     /// This invariant is preserved
     /// STRUCTURALLY: the ONLY places that fill the cache are won probes, and
     /// the ONLY places that can remove a base from the hash (`unregister`,
     /// `recycle`) clear the matching cache slot in the SAME function,
     /// immediately after `hash_remove`. You cannot drop a base from the table
     /// without passing through code that also evicts it from the cache.
-    own_cache: [*mut u8; OWN_CACHE_SIZE],
-    own_cache_keys: [usize; OWN_CACHE_SIZE],
+    own_cache: [(usize, *mut u8); OWN_CACHE_SIZE],
     /// High-water mark: the number of slots that have EVER been written
     /// (including currently-NULL recyclable slots). Segments 0 (the
     /// primordial) is always at index 0 and is never recycled.
@@ -254,9 +260,9 @@ impl SegmentTable {
             slots,
             active_kind,
             // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
-            // slots null). It only ever fills from a won `hash_contains` probe.
-            own_cache: [core::ptr::null_mut(); OWN_CACHE_SIZE],
-            own_cache_keys: [0; OWN_CACHE_SIZE],
+            // keys `OWN_CACHE_EMPTY_KEY`). It only ever fills from a won
+            // `hash_contains` probe.
+            own_cache: [(OWN_CACHE_EMPTY_KEY, core::ptr::null_mut()); OWN_CACHE_SIZE],
             count,
             hash_slots,
             free_list,
@@ -732,18 +738,18 @@ impl SegmentTable {
     #[inline(always)]
     pub(crate) fn canonical_base_of_mut(&mut self, key: *mut u8) -> Option<*mut u8> {
         let index = Self::cache_index(key);
-        if self.own_cache_keys[index] == key.addr() && !self.own_cache[index].is_null() {
+        let (cached_key, cached_root) = self.own_cache[index];
+        if cached_key == key.addr() {
             #[cfg(feature = "bench-internals")]
             crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_HITS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            return Some(self.own_cache[index]);
+            return Some(cached_root);
         }
         #[cfg(feature = "bench-internals")]
         crate::alloc_core::alloc_core::CONTAINS_BASE_TIER1_MISSES
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let root = self.hash_find(key)?;
-        self.own_cache[index] = root;
-        self.own_cache_keys[index] = key.addr();
+        self.own_cache[index] = (key.addr(), root);
         Some(root)
     }
     /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
@@ -790,9 +796,9 @@ impl SegmentTable {
     #[inline(always)]
     pub(crate) fn canonical_base_of(&self, base: *mut u8) -> Option<*mut u8> {
         let idx = Self::cache_index(base);
-        let cached = self.own_cache[idx];
-        if self.own_cache_keys[idx] == base.addr() && !cached.is_null() {
-            return Some(cached);
+        let (cached_key, cached_root) = self.own_cache[idx];
+        if cached_key == base.addr() {
+            return Some(cached_root);
         }
         self.hash_find(base)
     }
@@ -855,9 +861,8 @@ impl SegmentTable {
     #[inline]
     pub(super) fn own_cache_clear(&mut self, base: *mut u8) {
         for i in 0..OWN_CACHE_SIZE {
-            if self.own_cache[i] == base {
-                self.own_cache[i] = core::ptr::null_mut();
-                self.own_cache_keys[i] = 0;
+            if self.own_cache[i].1 == base {
+                self.own_cache[i] = (OWN_CACHE_EMPTY_KEY, core::ptr::null_mut());
             }
         }
     }
