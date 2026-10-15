@@ -539,6 +539,9 @@ fn full_context(fixture: &Path, candidate: &Path, output: &std::process::Output)
 fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<PathBuf> {
     let mut compatible = Vec::new();
     let mut foreign = 0usize;
+    // E0514 candidates come from another rustc (e.g. a CI target cache restored
+    // from an older toolchain): neither compatible nor foreign.
+    let mut rustc_incompatible = 0usize;
     for (index, candidate) in candidates.iter().enumerate() {
         let out_dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("r14_probe_{}_{tag}_{index}", std::process::id()));
@@ -576,6 +579,7 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
                 )
             })
         {
+            rustc_incompatible += 1;
             eprintln!(
                 "R14 {tag}: skip rustc-incompatible candidate={}",
                 candidate.display()
@@ -613,24 +617,21 @@ fn compatible_variants(tag: &str, probe: &Path, candidates: &[PathBuf]) -> Vec<P
             );
         }
     }
-    if compatible.is_empty() && !candidates.is_empty() && foreign == candidates.len() {
+    // Only candidates built by this rustc decide the all-foreign skip.
+    let current = candidates.len() - rustc_incompatible;
+    if compatible.is_empty() && foreign > 0 && foreign == current {
         let host_cfg = rustc_host_cfg();
         let host_matches_target = rustc_host_matches_test_target(&host_cfg);
         assert!(
-            all_foreign_skip_allowed(
-                candidates.len(),
-                foreign,
-                compatible.len(),
-                host_matches_target
-            ),
+            all_foreign_skip_allowed(current, foreign, compatible.len(), host_matches_target),
             "R14 {tag}: refusing the all-foreign skip: candidate target does not match \
              rustc, but the test target is the same as rustc's default or cannot \
              be identified safely. host cfg:\n{host_cfg}"
         );
         eprintln!(
-            "R14 {tag}: skip, all {} candidate rlibs are foreign to this cross target; \
-             native-target runs cannot take this skip",
-            candidates.len()
+            "R14 {tag}: skip, all {current} current-rustc candidate rlibs are foreign \
+             to this cross target ({rustc_incompatible} from another rustc ignored); \
+             native-target runs cannot take this skip"
         );
         return compatible;
     }
