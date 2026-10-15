@@ -141,3 +141,4 @@ Changes made before the v2 measurement:
 - The candidate's bench-only claim-source counter is branch-free: `CLAIM_SOURCES` gained a fifth slot for FREE-set claims.
 
 Disclosure: running the v2 judge offline on the run01 input gives GO. That is a consistency check, not gate evidence. Only an official v2 run, re-frozen with the new candidate SHA, decides.
+- **2026-10-15 — pre-measurement re-freeze 2 (v2 dispatch binding).** B candidate = `50c902217d551f0c8df6e3cb1390756f37cdebdd` (PR #28: ReuseFirst plus the branch-free bench counter, harness tail-drain and the v2 judge of §7). A = `merge-base(B, origin/main)` = `3cc870a9b09353a96cf8c5250d9f479936f5e954`. The runner binds B through `CANDIDATE`, and the `.sha256` companion re-freezes the ten `FROZEN_FILES` at this commit. No v2 measurement precedes this entry.
