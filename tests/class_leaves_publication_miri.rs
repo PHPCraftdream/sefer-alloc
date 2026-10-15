@@ -68,9 +68,12 @@ fn mixed_leaf_initialization_is_visible_to_reader() {
     // supplies no happens-before edge, so the reader observing class+1 is
     // ordered only by that publication — the same invariant as before.
     let prepared = leaves.prepare(LEAF1_GRANULE, 4);
+    // Spill alone stores zeros; the start-granule code appears only on issue.
+    let issued = leaves.issue(LEAF1_GRANULE, 4);
     // Deliberately not Release: only mixed's publication may synchronize the read.
     spilled.store(true, Ordering::Relaxed);
     reader.join().expect("ClassLeaves reader completed");
     assert!(prepared);
+    assert!(issued);
     assert!(leaves.prepared(LEAF1_GRANULE, 4));
 }
