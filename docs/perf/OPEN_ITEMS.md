@@ -3047,7 +3047,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 72. **[D] fxx R2 §4.1 — `finish_magazine_refill` walks the refilled blocks twice.**
 
-    - **Status:** CLOSED — code removed (R6-T01, round 6 2026-10-15); the stamp-dedupe pass and the owner stamp are gone, leaving a single `mark_magazine` pass; the iai A/B gate runs on the PR.
+    - **Status:** CLOSED — code removed (R6-T01, round 6 2026-10-15); the stamp-dedupe pass and the owner stamp are gone, leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`).
     - **Current-number-or-verdict:** `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computed `segment_base_of_ptr(p)` for the stamp dedupe in one loop, then again for `mark_magazine` in a second loop. One pass saves `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expected a sub-percent effect.
     - **Next trigger:** none — closed by R6-T01; full closure narrative in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 72.
     - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1.
@@ -3153,7 +3153,7 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
-- **fxx R2 §4.1 / item 72 — `finish_magazine_refill` walked the refilled blocks twice (stamp-dedupe pass + `mark_magazine` pass).** Closed 2026-10-15, R6-T01: `stamp_segment_owner` and `last_stamped_segment` removed — the `owner_state` header word has no production reader — leaving a single `mark_magazine` pass; the iai A/B gate runs on the PR, no merged measurement yet. Full closure: the `72` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
+- **fxx R2 §4.1 / item 72 — `finish_magazine_refill` walked the refilled blocks twice (stamp-dedupe pass + `mark_magazine` pass).** Closed 2026-10-15, R6-T01: `stamp_segment_owner` and `last_stamped_segment` removed — the `owner_state` header word has no production reader — leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`). Full closure: the `72` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **R17-PRF-04 / item 87 — fresh-first registry claim materialised extra heaps under barrier-wave thread churn.** Closed 2026-10-15, GO (deterministic; native deferred) and shipped as `perf(runtime)`: ReuseFirst spills the displaced reuse hint into a FREE-slot bitmap. The official v2 gate (run 38682260617, B `50c90221` over A `3cc870a9`) shows waves at 12962/558283 = 0.0232 of A (L1) and 82133/740979 = 0.1108 (L2), with L2 price +112/789560 per cold window, +112/113072 per recycled window and +192/28870 per release window, all under 1%. Run01 (38652419070) is recorded as INVALID under v1. Report `docs/perf/R20_PRF04_HEAP_REUSE_RUN02_REPORT.md`; native axes deferred to a quiet bare-metal host; see `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `87`.
 
