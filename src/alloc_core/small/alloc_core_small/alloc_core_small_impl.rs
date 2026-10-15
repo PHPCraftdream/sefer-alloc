@@ -557,7 +557,7 @@ impl AllocCore {
             }
             // Prepare every spill on the still-owned chain. On OOM the head,
             // bitmap, live count and output remain unchanged; promoted leaves
-            // are valid uniform copies and may be reused by a later retry.
+            // are valid zero-filled copies and may be reused by a later retry.
             let mut probe = head_off;
             #[cfg(feature = "hardened")]
             let mut slow = head_off;

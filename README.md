@@ -1417,7 +1417,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **404 integration test files**,
+needs its acceptance run. The present tree contains **405 integration test files**,
 **96 example binaries**, **32 benches**, and **17 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1427,7 +1427,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (404 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (405 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (96 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (32 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1675,6 +1675,15 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   hanging the caller forever.
   Forking an activated multithreaded process or unloading allocator code
   while the worker exists is unsupported.
+
+- **Cross-thread frees of interior pointers are dropped, not honored.** The
+  terminal sidecar records a block's size class only in the block's start
+  granule, so a foreign `dealloc` of a 16-aligned interior offset into a live
+  block is dropped at the producer and counted in `foreign_or_unroutable_frees`
+  instead of corrupting the owner's free list or live credit. Residual: a
+  granule-aligned foreign free whose offset equals a live block's start is
+  indistinguishable from a valid remote free of that block and is honored
+  (block starts carry no owner-thread identity).
 
 - **Single-thread small-class hot path is ~1.2–2× behind `mimalloc`.** The
   flamegraph at [`docs/PROFILE_FLAMEGRAPHS.md §1`](docs/PROFILE_FLAMEGRAPHS.md)

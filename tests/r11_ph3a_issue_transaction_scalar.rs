@@ -105,35 +105,39 @@ fn scalar_pop_prepare_refusal_is_a_full_rollback_and_retry_serves_the_same_block
 
 fn scalar_carve_spill_refusal_is_a_full_rollback_and_retry_carves_the_block() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
-    let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
-    // Class 1 has never been carved: its sidecar leaf still needs a promotion,
-    // which is exactly what `fail_spill_after` refuses.
-    let before = capture(&core, 1, 0);
+    // The FIRST carve of a fresh routed core is what promotes its sidecar
+    // leaf; `fail_spill_after` refuses exactly that promotion.
+    let before = capture(&core, 0, 0);
 
     SmallSidecar::fail_spill_after_for_test(1);
     assert!(
-        core.dbg_r11_scalar_carve_for_test(1).is_none(),
+        core.dbg_r11_scalar_carve_for_test(0).is_none(),
         "an uncommitted leaf spill must refuse the carve",
     );
-    assert_unchanged(&core, &before, 1, 0);
+    assert_unchanged(&core, &before, 0, 0);
+
+    let anchor = core
+        .dbg_r11_scalar_carve_for_test(0)
+        .expect("retry after the one-shot failure must carve");
     assert_eq!(
         RouteRegistration::class_at_global_address_for_test(anchor.addr()),
         Some(0),
-        "the anchor keeps its committed class-0 encoding",
+        "the retry commits the class-0 encoding",
     );
-
+    // Leaf 0 is promoted now: a class-1 carve in the same leaf needs no
+    // further spill and must succeed.
     let second = core
         .dbg_r11_scalar_carve_for_test(1)
-        .expect("retry after the one-shot failure must carve");
+        .expect("the promoted leaf must serve the class-1 carve");
     assert_eq!(
         second.addr() % SegmentLayout::SEGMENT,
-        (before.issue.0 + 31) & !31,
+        ((anchor as usize % SegmentLayout::SEGMENT) + CLASS0 + 31) & !31,
         "the retry carves at the alignment-up bump the rollback preserved",
     );
     assert_eq!(
         core.dbg_live_count_for(anchor),
-        Some(before.issue.1 + 1),
-        "exactly one live credit for the retried carve",
+        Some(before.issue.1 + 2),
+        "one live credit per issued block",
     );
     assert_eq!(
         RouteRegistration::class_at_global_address_for_test(second.addr()),
