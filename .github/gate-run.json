@@ -1,0 +1,1 @@
+{"runner":"scripts/r20_r6_t08_large_commit_run.mjs","stages":"prepare,build,measure","outDir":"target/r20_r6_t08_large_commit"}
