@@ -23,10 +23,10 @@
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "Running tests/r11_ph3a_issue_transaction_scalar.rs",
-          "Running tests/r11_ph3a_issue_transaction_batch.rs",
-          "Running tests/r11_ph3a_magazine_refill_partial.rs",
-          "Running tests/r11_ph3a_reserve_promotion_fault.rs",
+          "tests/r11_ph3a_issue_transaction_scalar.rs",
+          "tests/r11_ph3a_issue_transaction_batch.rs",
+          "tests/r11_ph3a_magazine_refill_partial.rs",
+          "tests/r11_ph3a_reserve_promotion_fault.rs",
           "test result: ok. [0-9]+ passed; 0 failed"
         ]
       }
