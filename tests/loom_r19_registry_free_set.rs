@@ -4,7 +4,7 @@
 //! State CAS alone grants ownership; hints/bitmap are discovery only.
 #![cfg(all(loom, feature = "alloc-global", feature = "internals"))]
 
-use loom::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use loom::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
@@ -20,6 +20,7 @@ struct Registry {
     word: AtomicU64,
     summary: AtomicU64,
     owners: [AtomicU8; 3],
+    init: [bool; 3],
 }
 
 impl Registry {
@@ -34,6 +35,8 @@ impl Registry {
             word: AtomicU64::new(0),
             summary: AtomicU64::new(0),
             owners: [AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)],
+            // Slots start LIVE and initialised; the ctor-OOM model overrides.
+            init: [true, true, true],
         }
     }
 
@@ -304,4 +307,125 @@ fn take_checks_previous_bit_once() {
 #[should_panic(expected = "one bit has one candidate consumer")]
 fn negative_take_ignores_old_bit_duplicate_candidate_not_ownership() {
     consumption_model(true);
+}
+
+impl Registry {
+    /// R6-T03 model: a ctor-OOM slot released into the bitmap must not
+    /// monopolise discovery — the recovery scan still reaches any
+    /// initialised FREE slot.
+    fn ctor_oom_claim(&self, saw: &AtomicUsize) {
+        let hinted = self.hint.swap(NO_HINT, Ordering::AcqRel) as usize;
+        let candidate = if hinted < 3 {
+            Some(hinted)
+        } else {
+            self.take_nonempty(true)
+        };
+        if let Some(slot) = candidate {
+            if self.state[slot]
+                .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                assert_eq!(
+                    self.owners[slot].fetch_add(1, Ordering::Relaxed),
+                    0,
+                    "exclusive state-CAS ownership"
+                );
+                if self.init[slot] {
+                    return; // initialised heap won
+                }
+                // Constructor OOM: give the slot back, publish into the
+                // BITMAP only — never the hint.
+                assert!(self.state[slot]
+                    .compare_exchange(LIVE, FREE, Ordering::Release, Ordering::Relaxed)
+                    .is_ok());
+                assert_eq!(
+                    self.owners[slot].fetch_sub(1, Ordering::Relaxed),
+                    1,
+                    "OOM path drops ownership"
+                );
+                self.publish_word(slot);
+                // Recovery scan prefers initialised FREE slots.
+                if let Some(i) = (0..3)
+                    .filter(|&i| i != slot)
+                    .find(|&i| self.init[i] && self.state[i].load(Ordering::Acquire) == FREE)
+                {
+                    saw.store(1, Ordering::Relaxed);
+                    if self.state[i]
+                        .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                    {
+                        assert_eq!(
+                            self.owners[i].fetch_add(1, Ordering::Relaxed),
+                            0,
+                            "exclusive state-CAS ownership"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ctor_oom_bitmap_slot_does_not_starve_initialised_recovery() {
+    bounded(|| {
+        // slot 0: FREE, never initialised, discoverable only via the bitmap
+        // (R6-T03 `push_back_after_oom`); slot 1: LIVE, initialised.
+        let r = Arc::new(Registry::new());
+        r.state[0].store(FREE, Ordering::Relaxed);
+        r.init[0] = false;
+        r.publish_word(0);
+        r.hint.store(NO_HINT, Ordering::Relaxed);
+        let saw = Arc::new(AtomicUsize::new(0));
+
+        let rel = Arc::clone(&r);
+        let releaser = thread::spawn(move || {
+            // release(1) with the production swap shape: hint := 1, spill displaced.
+            rel.release(1, LIVE, false);
+        });
+
+        let cl = Arc::clone(&r);
+        let saw2 = Arc::clone(&saw);
+        let claimer = thread::spawn(move || {
+            cl.ctor_oom_claim(&saw2);
+        });
+
+        releaser.join().unwrap();
+        claimer.join().unwrap();
+
+        // Exclusive ownership everywhere.
+        for slot in 0..3 {
+            assert!(r.owners[slot].load(Ordering::Relaxed) <= 1);
+        }
+        // The claimer never ends up owning the UNINITIALISED heap.
+        assert_eq!(
+            r.owners[0].load(Ordering::Relaxed),
+            0,
+            "uninitialised slot is never handed out"
+        );
+        // If the recovery scan observed slot 1 FREE, the claimer must own it:
+        // the initialised FREE heap is reachable (the pre-R6-T03 shape — OOM
+        // slot re-takes the hint and the claim gives up — fails this).
+        if saw.load(Ordering::Acquire) == 1 {
+            assert_eq!(
+                r.owners[1].load(Ordering::Relaxed),
+                1,
+                "initialised FREE heap reachable"
+            );
+        }
+        // Quiescent invariant: an initialised FREE slot is discoverable via
+        // hint or bitmap; the OOM slot never sits in the hint.
+        let hint = r.hint.load(Ordering::Relaxed);
+        let word = r.word.load(Ordering::Acquire) & MASK;
+        assert!(
+            hint != 0,
+            "uninitialised OOM slot never monopolises the hint"
+        );
+        if r.state[1].load(Ordering::Acquire) == FREE {
+            assert!(
+                hint == 1 || word & (1 << 1) != 0,
+                "initialised FREE slot discoverable"
+            );
+        }
+    });
 }

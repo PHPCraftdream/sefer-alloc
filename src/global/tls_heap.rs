@@ -93,12 +93,12 @@
 //! So the alloc face never returns null for a serviceable request (M10).
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
-// `src/lib.rs`); this is the documented raw-pointer TLS seam (Phase 12.3).
-// Since Ph4b (#2092), core access is safe through `HeapLease::core`; the
-// sole unsafe operation in this module is the `bench-internals`-gated
-// `dbg_restore_local_for_test` hook below. Its caller must provide a valid
-// live `HeapCore` binding for this thread.
-#![allow(unsafe_code)]
+// `src/lib.rs`). Since Ph4b (#2092) core access is safe through
+// `HeapLease::core`, and since R6-T37 this module is fully safe: its sole
+// remaining `unsafe` is the `bench-internals`-gated `dbg_restore_local_for_test`
+// hook below, confined by an item-level `#[allow(unsafe_code)]` (tier 2,
+// same pattern as `registry::heap_core::diag::diag_probes`). Its caller must
+// provide a valid live `HeapCore` binding for this thread.
 
 use core::cell::Cell;
 
@@ -123,6 +123,99 @@ use crate::registry::{HeapCore, HeapRegistry};
 /// `&mut HeapCore` into a slot some other thread may have already
 /// re-claimed — a second writer, i.e. a data race / UAF.
 const TORN: *mut HeapCore = usize::MAX as *mut HeapCore;
+
+/// R6-T07: how many bind attempts a cached "registry saturated" verdict may
+/// block before the claim is retried unconditionally (the version check
+/// below normally invalidates it far sooner).
+const SATURATION_RETRY_INTERVAL: u32 = 64;
+
+/// R6-T07: cached negative bind verdict. `saturated` is set when a
+/// `claim_lease` returned `None`; `version` is the `SaturationHint` snapshot
+/// observed at that failure. Any later `publish_claimable` (a slot was
+/// released or made claimable) bumps the version and invalidates the cache.
+#[derive(Clone, Copy)]
+struct SaturationGate {
+    saturated: bool,
+    version: u64,
+    skips: u32,
+}
+
+thread_local! {
+    /// R6-T07: per-thread negative-verdict cache for [`bind_slow_tagged`].
+    /// Written only on the cold bind path (`LOCAL` is null); never touched by
+    /// the hot `Own` resolver arm.
+    static SATURATION_GATE: Cell<SaturationGate> =
+        const { Cell::new(SaturationGate { saturated: false, version: 0, skips: 0 }) };
+}
+
+/// Pure decision behind [`saturation_retry_allowed`]: a cached saturated
+/// verdict blocks the retry only until the saturation version moves or
+/// `SATURATION_RETRY_INTERVAL` attempts have been skipped.
+fn saturation_retry_decision(
+    saturated: bool,
+    cached_version: u64,
+    skips: u32,
+    current_version: u64,
+) -> bool {
+    !saturated || cached_version != current_version || skips >= SATURATION_RETRY_INTERVAL
+}
+
+/// Test-observable wrapper of [`saturation_retry_decision`] (R6-T07). A
+/// 4097-thread saturation scenario is not tractable in a unit test, so the
+/// decision policy itself is the reviewed surface.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_saturation_retry_decision(
+    saturated: bool,
+    cached_version: u64,
+    skips: u32,
+    current_version: u64,
+) -> bool {
+    saturation_retry_decision(saturated, cached_version, skips, current_version)
+}
+
+/// R6-T07: gate for the cold bind path. Returns `true` when a
+/// `claim_lease` attempt should be made; a `false` answer routes straight to
+/// the fallback without re-running the full selector on a saturated registry.
+fn saturation_retry_allowed() -> bool {
+    let current = crate::registry::bootstrap::ensure().saturation.snapshot();
+    SATURATION_GATE
+        .try_with(|g| {
+            let gate = g.get();
+            let retry =
+                saturation_retry_decision(gate.saturated, gate.version, gate.skips, current);
+            if retry {
+                g.set(SaturationGate {
+                    saturated: false,
+                    version: current,
+                    skips: 0,
+                });
+            } else {
+                g.set(SaturationGate {
+                    saturated: true,
+                    version: gate.version,
+                    skips: gate.skips + 1,
+                });
+            }
+            retry
+        })
+        // Unavailable TLS: attempt the claim; `finish_bind` handles failure.
+        .unwrap_or(true)
+}
+
+/// R6-T07: record a failed (registry-exhausted) bind so subsequent
+/// allocations on this thread skip the selector until the version changes.
+fn record_saturation_verdict() {
+    let current = crate::registry::bootstrap::ensure().saturation.snapshot();
+    let _ = SATURATION_GATE.try_with(|g| {
+        g.set(SaturationGate {
+            saturated: true,
+            version: current,
+            skips: 0,
+        })
+    });
+}
 
 thread_local! {
     /// The cached raw pointer to this thread's heap (a slot in the global
@@ -418,6 +511,9 @@ fn bind_slow_tagged() -> CurrentHeap {
     if super::process_exit_in_progress() {
         return CurrentHeap::Fallback;
     }
+    if !saturation_retry_allowed() {
+        return CurrentHeap::Fallback;
+    }
     finish_bind(HeapRegistry::claim_lease())
 }
 
@@ -430,6 +526,9 @@ fn bind_slow_tagged() -> CurrentHeap {
 #[cold]
 fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
     if super::process_exit_in_progress() {
+        return CurrentHeap::Fallback;
+    }
+    if !saturation_retry_allowed() {
         return CurrentHeap::Fallback;
     }
     finish_bind(HeapRegistry::claim_lease_with_config(config))
@@ -485,6 +584,8 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 #[cold]
 fn finish_bind(lease: Option<HeapLease>) -> CurrentHeap {
     let Some(mut lease) = lease else {
+        // R6-T07: cache the negative verdict (see `saturation_retry_allowed`).
+        record_saturation_verdict();
         // Registry exhausted or primordial OOM: fall back, never null.
         return CurrentHeap::Fallback;
     };
@@ -641,13 +742,10 @@ pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
 // installs a caller-supplied raw pointer as THIS thread's live `LOCAL`
 // binding with zero validation — a direct instance of the R25-1 (task #395)
 // safe-`pub fn`-that-touches-allocator-state hole this crate's benchmark-hook
-// rule targets. It is covered by this file's existing tier-1
-// `#![allow(unsafe_code)]` (NO item-level `#[allow(unsafe_code)]` is added, so
-// no new tier-2 site is created): `tls_heap.rs` keeps its module-level
-// allowance solely for this unsafe test hook; it installs an unchecked raw
-// pointer as the current thread's live binding. The item-scoped (tier-2)
-// hooks in `heap_core_diag.rs` are the positive pattern when a file is
-// otherwise safe.
+// rule targets. R6-T37: confined by an item-scoped `#[allow(unsafe_code)]`
+// on the hook itself (tier 2, per the `heap_core_diag` pattern) — the file
+// is otherwise safe, so the module-level tier-1 allowance was removed.
+#[allow(unsafe_code)] // R6-T37: tier-2 `unsafe fn` boundary; sole unsafe in this file.
 #[doc(hidden)]
 #[cfg(feature = "bench-internals")]
 pub unsafe fn dbg_restore_local_for_test(saved: *mut HeapCore) {

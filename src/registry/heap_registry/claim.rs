@@ -27,6 +27,20 @@ use crate::registry::heap_slot::{
     HeapSlot, STATE_EMPTY, STATE_FREE, STATE_INITIALIZING, STATE_LIVE, STATE_MAINTENANCE,
 };
 
+/// R6-T03 test-only injection: when set, the next `claim_impl` constructor
+/// call (`HeapCore::new` / `new_with_config`) returns `None` without touching
+/// the OS, so a test can deterministically drive the constructor-OOM path.
+/// A plain `AtomicBool` read — no allocator metadata through a raw pointer —
+/// `internals`-gated like `bootstrap::dbg_set_inject_chunk_oom`.
+#[cfg(feature = "internals")]
+static DBG_INJECT_CTOR_OOM: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// R6-T24: how many times a claimant re-offers a candidate that read
+/// STATE_MAINTENANCE before falling through to bump/scan. Maintenance passes
+/// are short and bounded; the budget only bounds the wait.
+const MAINTENANCE_RECLAIM_BUDGET: u32 = 8192;
+
 /// The global heap slot table. All methods operate on the process-global
 /// [`Registry`] returned by [`ensure`]; the type itself carries no state (it
 /// is a name-space for the API, mirroring how `Node` / `Layout` are organised
@@ -50,6 +64,15 @@ impl HeapRegistry {
     #[must_use]
     pub fn dbg_free_slot_hint_popcount() -> u32 {
         FREE_SLOTS.dbg_popcount()
+    }
+
+    /// Current advisory reuse-hint word (`MAX_HEAPS` = no hint). Relaxed load;
+    /// purely observational, the hint never grants ownership.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_reuse_hint() -> u32 {
+        ensure().reuse_hint.load(Ordering::Relaxed)
     }
 
     /// Successful returned leases by selector source: hint, bump, cap scan, recovery.
@@ -84,6 +107,17 @@ impl HeapRegistry {
     #[must_use]
     pub fn dbg_claim_lease() -> Option<HeapLease> {
         Self::claim_impl(HeapCore::new, |_| {})
+    }
+
+    /// R6-T03 test-only injection: make `claim_impl`'s constructor call
+    /// return `None` while the flag is set, so a test can deterministically
+    /// drive the constructor-OOM path (see [`bootstrap`]'s
+    /// `dbg_set_inject_chunk_oom` for the chunk-level analogue). The released
+    /// slot is fully rolled back by the production `push_back_after_oom`.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_ctor_oom(on: bool) {
+        DBG_INJECT_CTOR_OOM.store(on, core::sync::atomic::Ordering::SeqCst);
     }
 
     /// Safe test/diagnostic (`internals` + `alloc-decommit`) variant of
@@ -130,6 +164,11 @@ impl HeapRegistry {
         }
         let slot = reg.slot_if_materialised(index)?;
         if !slot.initialised.load(Ordering::Acquire) {
+            return None;
+        }
+        // PF-9: a Relaxed pre-read skips the RMW entirely for the common
+        // not-FREE case; the CAS below stays authoritative.
+        if slot.state.load(Ordering::Relaxed) != STATE_FREE {
             return None;
         }
         if slot
@@ -216,6 +255,11 @@ impl HeapRegistry {
     /// retryable and cold-scans materialised FREE alternatives, preferring
     /// initialized heaps over constructor retries.
     ///
+    /// A CONSTRUCTOR OOM no longer returns immediately: like a chunk OOM it
+    /// publishes the slot into the FREE bitmap (never the hint, R6-T03) and
+    /// continues once through `scan_claim_recovery_free`, preferring
+    /// initialised heaps.
+    ///
     /// `on_already_initialised(heap_ptr)` is called exactly once, only on a
     /// RE-claim of an already-materialised slot (the `else` of the same
     /// branch) — [`claim_lease`](Self::claim_lease) passes a no-op (a plain
@@ -240,10 +284,15 @@ impl HeapRegistry {
     /// — the slot was already LIVE + initialised when the FREE→LIVE CAS won.
     fn claim_impl<M, R>(materialise: M, on_already_initialised: R) -> Option<HeapLease>
     where
-        M: FnOnce(u32) -> Option<HeapCore>,
+        M: FnMut(u32) -> Option<HeapCore>,
         R: FnOnce(*mut HeapCore),
     {
         let mut failed_chunk = None;
+        // R6-T03: bounds the post-constructor-OOM recovery to one attempt.
+        let mut ctor_oom_retries = 0u32;
+        // R6-T24: bounded MAINTENANCE reclaim attempts before the claimant
+        // gives the candidate up to a fresh bump.
+        let mut maintenance_retries = 0u32;
         loop {
             let reg = ensure();
             #[cfg(feature = "bench-internals")]
@@ -322,19 +371,53 @@ impl HeapRegistry {
                         true
                     }
                 }
-                _ => continue,
+                _ => {
+                    // R6-T24 (R6-CC-4): a candidate consumed from the
+                    // hint/bitmap that turned out to be mid-maintenance is
+                    // retained for a bounded retry instead of being lost to a
+                    // fresh 4 MiB bump. The FREE bitmap stays advisory: the
+                    // FREE→LIVE CAS below remains the ownership authority.
+                    if observed == STATE_MAINTENANCE
+                        && maintenance_retries < MAINTENANCE_RECLAIM_BUDGET
+                    {
+                        maintenance_retries += 1;
+                        if reg.slot_if_materialised(idx).is_some() {
+                            FREE_SLOTS.publish(idx);
+                        }
+                        std::thread::yield_now();
+                    }
+                    continue;
+                }
             };
             let generation = slot.generation.fetch_add(1, Ordering::Release) + 1;
             if first_claim {
                 let heap_ptr = slot.heap.get();
-                match materialise(idx as u32) {
+                #[cfg(feature = "internals")]
+                let made = if DBG_INJECT_CTOR_OOM.load(Ordering::Relaxed) {
+                    None
+                } else {
+                    materialise(idx as u32)
+                };
+                #[cfg(not(feature = "internals"))]
+                let made = materialise(idx as u32);
+                match made {
                     // SAFETY: sole writer, uninitialised slot, first claim.
                     Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
                     None => {
-                        // OOM on materialisation: release the slot to FREE
-                        // so it is not leaked (M-5) — same shape as `recycle`.
+                        // R6-T03: construction OOM releases the slot to FREE
+                        // (M-5, same shape as `recycle`) WITHOUT taking the
+                        // hint, then keeps the loop going through the
+                        // recovery scan — symmetric with the chunk-OOM path
+                        // above. One recovery attempt max: a constructor that
+                        // keeps failing must not spin between uninitialised
+                        // slots.
                         push_back_after_oom(reg, slot, idx as u32);
-                        return None;
+                        if ctor_oom_retries >= 1 {
+                            return None;
+                        }
+                        ctor_oom_retries += 1;
+                        failed_chunk = Some(idx);
+                        continue;
                     }
                 }
                 // W3: plant this heap's stable handles to its slot-resident
@@ -685,7 +768,8 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
 }
 
 /// Construction failure: release INITIALIZING to FREE. The next claimant
-/// checks `initialised` before choosing FREE -> INITIALIZING or LIVE.
+/// checks `initialised` before choosing FREE -> INITIALIZING or LIVE. The
+/// slot is published into the FREE bitmap, never into `reuse_hint` (R6-T03).
 pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     if slot
         .cas_state(
@@ -698,9 +782,10 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     {
         std::process::abort();
     }
-    let prev = reg.reuse_hint.swap(idx, Ordering::Relaxed);
-    if (prev as usize) < MAX_HEAPS {
-        FREE_SLOTS.publish(prev as usize);
-    }
+    // R6-T03 (R6-CC-1): an uninitialised FREE slot must NOT take the hint —
+    // a claimant that retries it only OOMs again, evicting ready FREE heaps
+    // from the hint on every attempt. Publish into the advisory FREE bitmap
+    // instead; `scan_claim_recovery_free` still prefers initialised slots.
+    FREE_SLOTS.publish(idx as usize);
     reg.saturation.publish_claimable();
 }

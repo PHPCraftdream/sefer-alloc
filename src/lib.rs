@@ -222,8 +222,9 @@
 //                             requests, original pointer and layout.
 //                             (`exact-object-proto` prototype only, not `production`)
 //      * `global::process_exit` — FFI query of Windows loader shutdown state.
-//      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
-//                             (under `alloc-global`)
+//      * (R6-T37: `global::tls_heap` is no longer a tier-1 seam — the module
+//        is fully safe; its single `bench-internals`-gated test hook
+//        `dbg_restore_local_for_test` is a tier-2 item-scoped allow.)
 //      * `global::fallback`     — primordial fallback heap seam —
 //                             `static mut MaybeUninit<HeapCore>` + atomic-init
 //                             state-machine + spinlock-guarded `&mut` handout.
