@@ -1,4 +1,14 @@
-//! R6-02: fallback owner stamps route frees without depending on TLS state.
+//! R6-02: fallback-heap frees are routed without depending on TLS state.
+//!
+//! R6-T01 note: the former per-segment owner-stamp oracle (the deleted
+//! owner-id probe returning `Some(OWNER_ID_FALLBACK)`) is gone — the header
+//! `owner_state` word is now permanently inert (`OWNER_ID_NONE`) and routing
+//! resolves the owner through the route directory instead. Routing-based
+//! equivalents below: the free is consumed by the fallback heap (`lock
+//! acquisitions == 1`, `dbg_is_free_for` / live-count deltas) and the block
+//! immediately reissues at the SAME address on the next same-layout alloc —
+//! a free that failed to resolve the fallback heap as its owner could never
+//! satisfy either.
 
 #![cfg(all(
     feature = "alloc-global",
@@ -15,7 +25,6 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use sefer_alloc::alloc_core::segment_header::OWNER_ID_FALLBACK;
 use sefer_alloc::global::dbg_fallback_lock_acquisitions;
 use sefer_alloc::registry::HeapCore;
 use sefer_alloc::SeferAlloc;
@@ -164,7 +173,10 @@ fn real_teardown_case() {
     );
 
     let free = HeapCore::dbg_with_fallback_for_test(|heap| {
-        assert_eq!(heap.dbg_owner_id_for(ptr), Some(OWNER_ID_FALLBACK));
+        // Owner-stamp oracle removed (R6-T01): membership is proven by the
+        // free-list bit below plus the same-pointer reuse at the end of this
+        // case — a block that was not routed to this heap could satisfy
+        // neither.
         heap.dbg_is_free_for(ptr)
     })
     .expect("fallback remains initialized");
@@ -233,7 +245,6 @@ fn busy_lock_case() {
     let ptr = HeapCore::dbg_with_fallback_for_test(|heap| {
         let ptr = heap.alloc(layout());
         assert!(!ptr.is_null());
-        assert_eq!(heap.dbg_owner_id_for(ptr), Some(OWNER_ID_FALLBACK));
         ptr
     })
     .expect("fallback init");

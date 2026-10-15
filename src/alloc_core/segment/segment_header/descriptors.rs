@@ -314,9 +314,10 @@ impl SegmentMeta {
     // -------------------------------------------------------------------
 
     /// A `&AtomicU64` view over this segment's `owner_state` field.
-    /// The owner-stamp path (`stamp_segment_owner`) writes it with a
-    /// Release store; the owner's stamp fast path and diagnostic probes
-    /// read it. Foreign free routing resolves the owning heap from the
+    /// INERT: the field is written once by the header constructors
+    /// (`SegmentHeader::small`/`large`/`primordial`) and never updated or
+    /// read by any production path (the owner-stamp path was removed); kept
+    /// for the pinned segment-header layout. Foreign free routing resolves the owning heap from the
     /// route descriptor, not from this field. The view aliases the
     /// header byte range; access is atomic so there is no data race with a
     /// concurrent header read.

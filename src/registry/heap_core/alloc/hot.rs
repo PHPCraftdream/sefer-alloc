@@ -21,7 +21,8 @@ use crate::registry::heap_core::HeapCore;
 impl HeapCore {
     // -----------------------------------------------------------------------
     // Allocation entry points (12.3). Delegate to the substrate; under
-    // `alloc-xthread` also drain the TFS and stamp segment ownership.
+    // `alloc-xthread` also drain the TFS. (Foreign-free routing goes through
+    // terminal descriptors, not per-alloc owner stamping.)
     // -----------------------------------------------------------------------
 
     /// Task #2000 (registry review P3-1): the shared "clear this block's
@@ -51,8 +52,7 @@ impl HeapCore {
     /// virgin-mask-tracking) and (the virgin sibling only) do extra
     /// virgin-mask bookkeeping before this point, but from here on the two
     /// were byte-for-byte identical: given `n` freshly-refilled blocks now
-    /// resident in `tcache.classes[c].slots[0..n]`, stamp each distinct
-    /// source segment (P4 hoist + Э11 stamp-dedupe), mark the first `n-1` as
+    /// resident in `tcache.classes[c].slots[0..n]`, mark the first `n-1` as
     /// magazine-resident (RAD-5), pop the last (`slots[n-1]`) for the caller.
     ///
     /// # Preconditions
@@ -69,22 +69,8 @@ impl HeapCore {
             n >= 1,
             "finish_magazine_refill requires n >= 1 (OOM is the caller's job)"
         );
-        // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
-        // pulled block's source segment, but call `stamp_segment_owner`
-        // only when the block's segment base CHANGES from the previous
-        // block's. Idempotent per segment; one stamp per distinct source.
-        let mut prev_base = usize::MAX;
-        for i in 0..n {
-            let p = self.tcache.classes[c].slots[i];
-            if !p.is_null() {
-                let base = os::segment_base_of_ptr(p) as usize;
-                if base != prev_base {
-                    self.stamp_segment_owner(p);
-                    prev_base = base;
-                }
-            }
-        }
-        // Pop the top, leave n-1 in the magazine.
+        // Pop the top, leave n-1 in the magazine. (Task #2002: the refill
+        // tail is mark_magazine / count bookkeeping only — no stamp pass.)
         let new_cnt = n - 1;
         self.tcache.classes[c].count = new_cnt as u8;
         // RAD-5: mark the n-1 blocks REMAINING in the magazine as
@@ -204,11 +190,10 @@ impl HeapCore {
 
         // ── Magazine fast path (P2+P4, fastbin) ─────────────────────────
         // Small-class allocations are served from the per-thread magazine.
-        // On a hit: array pop, return — NO per-alloc stamp (P4 hoist).
-        // On a miss: batch-refill via `refill_class_stamped` (stamps each
-        // distinct source segment exactly once inside the refill), then pop
-        // one. The large path still stamps per-alloc (it does not go
-        // through the magazine/refill).
+        // On a hit: array pop, return — no per-alloc owner bookkeeping.
+        // On a miss: batch-refill via the bump-direct refill, then pop one.
+        // Routing never consults the header `owner_state`, so no alloc-side
+        // stamping is needed on either path.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             // Э9 (P7.1): `size`, `align`, `class` come from the single
@@ -237,10 +222,8 @@ impl HeapCore {
                     let cnt = self.tcache.classes[c].count as usize;
                     if cnt > 0 {
                         // Magazine hit: pop from the top of the stack.
-                        // P4: NO stamp here — the block's source segment was
-                        // already stamped during the refill that originally
-                        // pulled it. The OPT-C cache guarantees the segment
-                        // header still carries our ownership.
+                        // No owner bookkeeping: routing goes through terminal
+                        // descriptors, not the header `owner_state`.
                         let new_cnt = cnt - 1;
                         self.tcache.classes[c].count = new_cnt as u8;
                         // Э5 (task #145): load+store instead of `fetch_add` — no
@@ -312,9 +295,9 @@ impl HeapCore {
                         return issued;
                     }
 
-                    // Magazine miss: batch-refill + stamp hoist (P4).
-                    // We inline the refill+stamp here instead of calling
-                    // `refill_class_stamped` because borrowing `self.core`
+                    // Magazine miss: batch-refill (P4).
+                    // We inline the refill here instead of calling a shared
+                    // helper because borrowing `self.core`
                     // and `self.tcache.classes[c].slots` separately avoids a
                     // double-mutable-borrow conflict on `self`.
                     //
@@ -370,9 +353,6 @@ impl HeapCore {
         let ptr = self.core.alloc(layout);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
         let ptr = self.core.alloc_with_class(layout, class);
-        if !ptr.is_null() {
-            self.stamp_segment_owner(ptr);
-        }
         ptr
     }
 
@@ -424,31 +404,18 @@ impl HeapCore {
             let is_virgin = (self.tcache.classes[c].virgin_mask & bit) != 0;
             self.tcache.classes[c].virgin_mask &= !bit;
             self.clear_magazine_on_issue(issued);
-            // F7 (task #495): NO stamp here — same P4 reasoning as `alloc`'s
-            // own magazine-hit arm above. Every block that can ever sit in
-            // the magazine was placed there by one of exactly three
-            // producers: `refill_magazine_slow`, `refill_magazine_slow_virgin`
-            // (both stamp each distinct source segment via their
-            // stamp-dedupe loop before any block lands in `tcache.classes`),
-            // or the free path's own push
+            // F7 (task #495): NO stamp here — magazine-resident blocks were
+            // placed there by the magazine refill paths
+            // (`refill_magazine_slow`, `refill_magazine_slow_virgin`) or the
+            // free path's own push
             // (`dealloc_own_thread` in `free/dealloc.rs` /
-            // `dealloc_own_thread_with_base` in `free/dealloc_own_base.rs`,
-            // itself reachable only via
-            // `self.core.contains_base(base)` — i.e. only for a block whose
-            // segment is already registered in THIS heap's own `AllocCore`,
-            // which can only be true if this heap already stamped it on a
-            // prior alloc). No path can pop a magazine-resident block whose
-            // segment was never stamped with `self.id`, so this call was
-            // pure redundant overhead (an extra `segment_base_of_ptr`
-            // recompute — `clear_magazine` above already computed the same
-            // base — plus a `last_stamped_segment` compare and a Relaxed
-            // load of the owner-state word) under the arm's own P4
-            // guarantee. See `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`'s
-            // dated addendum for the corrected A/B framing.
+            // `dealloc_own_thread_with_base` in `free/dealloc_own_base.rs`).
+            // Routing no longer depends on a per-alloc owner stamp, so no
+            // owner bookkeeping is needed on this pop.
             return (issued, is_virgin);
         }
         // Magazine miss: the virgin-tracking sibling of `refill_magazine_slow`
-        // (same UBFIX-10/RAD-4b drains, same refill/stamp/issue shape) that
+        // (same UBFIX-10/RAD-4b drains, same refill/issue shape) that
         // additionally threads the per-slot virgin mask through the refill
         // and reports the ISSUED block's own bit back to the caller.
         self.refill_magazine_slow_virgin(c)
@@ -457,7 +424,7 @@ impl HeapCore {
     /// R13-3 (task #273): virgin-tracking sibling of
     /// [`refill_magazine_slow`](Self::refill_magazine_slow), consumed ONLY by
     /// [`alloc_small_zeroed_via_magazine`](Self::alloc_small_zeroed_via_magazine).
-    /// Identical drain/refill/stamp/issue shape (see that function's doc for
+    /// Identical drain/refill/issue shape (see that function's doc for
     /// the bounded Large-only probe) plus: calls
     /// [`AllocCore::refill_class_bump_virgin_internal`] instead of the ordinary refill,
     /// stores the resulting per-slot virgin mask into
@@ -522,7 +489,7 @@ impl HeapCore {
         self.tcache.classes[c].virgin_mask = virgin_mask & retained_bits_mask;
         let issued_bit = 1u16 << new_cnt;
         let is_virgin = (virgin_mask & issued_bit) != 0;
-        // Task #2002: stamp-dedupe / mark_magazine / count tail,
+        // Task #2002: mark_magazine / count tail,
         // shared verbatim with `refill_magazine_slow` — see
         // `finish_magazine_refill`'s own doc for the full rationale.
         let issued = self.finish_magazine_refill(c, n);
@@ -600,7 +567,6 @@ impl HeapCore {
         if let Some(class_idx) = class {
             let (ptr, is_virgin) = self.core.alloc_small_with_virgin(class_idx);
             if !ptr.is_null() {
-                self.stamp_segment_owner(ptr);
                 if !is_virgin {
                     #[cfg(feature = "alloc-stats")]
                     crate::alloc_core::SMALL_ZERO_PASS_CALLS
@@ -643,7 +609,6 @@ impl HeapCore {
 
         let (ptr, is_fresh) = self.core.alloc_large(size, align);
         if !ptr.is_null() {
-            self.stamp_segment_owner(ptr);
             if !is_fresh {
                 // Reused (cache-hit) segment — or ANY allocation under miri
                 // (R9-1: miri's System.alloc fallback does not zero, so
@@ -691,7 +656,7 @@ impl HeapCore {
         if n == 0 {
             return ::core::ptr::null_mut();
         }
-        // Task #2002: stamp-dedupe / mark_magazine / count tail,
+        // Task #2002: mark_magazine / count tail,
         // shared verbatim with `refill_magazine_slow_virgin`
         // — see `finish_magazine_refill`'s own doc for the full rationale.
         self.finish_magazine_refill(c, n)

@@ -8,9 +8,6 @@ use ::core::alloc::Layout;
 #[cfg(all(feature = "alloc-stats", feature = "fastbin", feature = "batch-api"))]
 use ::core::sync::atomic::Ordering;
 
-#[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "batch-api"))]
-use crate::alloc_core::os;
-
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
@@ -149,17 +146,6 @@ impl HeapCore {
             let n = self.refill_with_large_rescue(|heap| {
                 heap.core.refill_class_bump_internal(c, &mut out[filled..])
             });
-            // Stamp each distinct refilled source segment.
-            let mut prev_base = usize::MAX;
-            for &p in &out[filled..(filled + n)] {
-                if !p.is_null() {
-                    let base = os::segment_base_of_ptr(p) as usize;
-                    if base != prev_base {
-                        self.stamp_segment_owner(p);
-                        prev_base = base;
-                    }
-                }
-            }
             filled += n;
         }
 
@@ -231,7 +217,6 @@ impl HeapCore {
             if p.is_null() {
                 break;
             }
-            self.stamp_segment_owner(p);
             *slot = p;
             filled += 1;
         }
@@ -267,7 +252,6 @@ impl HeapCore {
             if p.is_null() {
                 break;
             }
-            self.stamp_segment_owner(p);
             *slot = p;
             filled += 1;
         }

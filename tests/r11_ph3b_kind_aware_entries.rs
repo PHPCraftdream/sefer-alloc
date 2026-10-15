@@ -30,9 +30,9 @@
 //! - `HeapCore::dbg_active_kind_census()` — `(small, large, exact)`: the live
 //!   per-kind segment counts of THIS heap's `SegmentTable`, plus whether the
 //!   `ActiveKindIndex` agrees with the headers bit-for-bit.
-//! - `dbg_table_count` / `dbg_owner_id_for` (is the segment still
-//!   registered?), `dbg_tcache_count` / `dbg_tcache_contains` (magazine
-//!   residency), `dbg_is_free_for` (free-list bit), `dbg_live_count_for`
+//! - `dbg_table_count` / `dbg_segment_registered_for(ptr)` (still registered? — the non-panicking membership oracle for post-free "segment must be GONE" assertions; `dbg_kind_at_tag` stays only for concrete-kind asserts),
+//!   `dbg_tcache_count` / `dbg_tcache_contains` (magazine residency),
+//!   `dbg_is_free_for` (free-list bit), `dbg_live_count_for`
 //!   (authoritative live-block count), `dbg_class_for` /
 //!   `dbg_refill_n_for_class` (the class and the magazine depth a free may
 //!   park to — read back instead of re-deriving the private `FREE_PARK_CAP`
@@ -329,7 +329,7 @@ fn alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size() {
         unsafe { heap.dealloc(p, layout) };
         if expected == TAG_LARGE {
             assert!(
-                heap.dbg_owner_id_for(p).is_none(),
+                !heap.dbg_segment_registered_for(p),
                 "own dealloc({size}, align {align}): the Large segment must be \
                  unregistered — BlockKind must route the free to the substrate"
             );
@@ -651,7 +651,7 @@ fn matching_layout_free_keeps_the_small_route_across_a_same_class_realloc() {
     // SAFETY: `big` is live with `large`, freed exactly once here.
     unsafe { heap.dealloc(big, large) };
     assert!(
-        heap.dbg_owner_id_for(big).is_none(),
+        !heap.dbg_segment_registered_for(big),
         "a Large-kind block freed with its exact Large layout must route to the \
          substrate and unregister its segment"
     );
@@ -1050,7 +1050,7 @@ fn promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout() {
     // SAFETY: `grown_ptr` is live with `grown`, freed exactly once here.
     unsafe { heap.dealloc(grown_ptr, grown) };
     assert!(
-        heap.dbg_owner_id_for(grown_ptr).is_none(),
+        !heap.dbg_segment_registered_for(grown_ptr),
         "PH3B PRE-ROUTE BROKEN: the promoted-and-grown Large block freed with a \
          small-classifying layout must reach the substrate Large free and \
          unregister its segment (a magazine push here would read and write the \
@@ -1080,7 +1080,7 @@ fn promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout() {
         // `grown`, freed exactly once in one well-formed batched call.
         unsafe { heap.dealloc_batch(grown, &[grown2]) };
         assert!(
-            heap.dbg_owner_id_for(grown2).is_none(),
+            !heap.dbg_segment_registered_for(grown2),
             "PH3B FIX B1 BROKEN: `dealloc_batch` must route a physically-Large \
              block to the substrate Large free even when its layout classifies \
              small — the scalar and batched entries must not drift apart"

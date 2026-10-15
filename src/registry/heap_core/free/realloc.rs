@@ -55,8 +55,8 @@ impl HeapCore {
     ///
     /// ## Own-segment pointers (task C2 + #164)
     ///
-    /// If `ptr` lives in one of THIS heap's segments (`contains_base` — the
-    /// same O(1) ownership test `dbg_owner_id_for` uses), the resize takes the
+    /// If `ptr` lives in one of THIS heap's segments (`contains_base`), the
+    /// resize takes the
     /// magazine-aware fast path:
     ///
     ///   1. **A1 terminal large-sidecar ingress drain** (`alloc-xthread` only): BEFORE the
@@ -73,19 +73,18 @@ impl HeapCore {
     ///      block's header in place, never moving it) — we return immediately.
     ///   3. **Move leg**: on in-place failure, build the new `Layout`, call
     ///      `HeapCore::alloc` (magazine-aware — drains via the checked
-    ///      predicate and stamps per #169), copy `min(old, new)` bytes, then
+    ///      predicate), copy `min(old, new)` bytes, then
     ///      `HeapCore::dealloc` the old pointer.
     ///
     /// The move leg routes through `HeapCore::alloc`/`HeapCore::dealloc`
     /// (NOT `AllocCore::realloc`'s internal alloc+copy+dealloc) so that the
-    /// two ownership hooks `HeapCore::alloc` applies — segment-ownership
-    /// stamping (`stamp_segment_owner`, which writes the segment's
-    /// `owner_state` ownership record) and the checked drain — fire on the
-    /// freshly allocated block. Without them a Vec grown via realloc on
-    /// thread A would live in an UNSTAMPED Large segment; when A hands it
-    /// to thread B and B drops it, the failure mode was silent: Historically
-    /// (A1/#114), `dealloc_routing` resolved the segment as not-ours and
-    /// silently no-op'd → the whole segment
+    /// checked drain `HeapCore::alloc` applies fires on the freshly
+    /// allocated block. Foreign frees no longer consult the header
+    /// `owner_state` at all — routing resolves exclusively through the
+    /// route-directory terminal descriptors / `Entry.owner` — so no
+    /// per-alloc ownership stamp is needed. The historical failure mode is
+    /// gone by construction: Historically (A1/#114), `dealloc_routing`
+    /// resolved the segment as not-ours and silently no-op'd → the whole segment
     /// (4+ MiB) and its `SegmentTable` slot leaked forever (the resurrected
     /// A1/#114 leak-to-abort).
     ///
@@ -160,14 +159,11 @@ impl HeapCore {
                 //
                 // MUST-1 (0.3.0, C2 regression fix): the in-place attempt and
                 // any move-leg alloc may carve a FRESH segment. That substrate
-                // alloc does NOT run the two ownership hooks `HeapCore::alloc`
-                // applies — segment-ownership stamping (`stamp_segment_owner`,
-                // which writes the segment's `owner_state` ownership record)
-                // and the A1 terminal large-sidecar ingress drain
-                // (`drain_large_sidecar_ingress`). Without them, a Vec grown via
-                // realloc on thread A lives in an UNSTAMPED (unowned) Large
-                // segment; when A hands it
-                // to thread B and B drops it, the failure mode was silent:
+                // alloc does NOT run the A1 terminal large-sidecar ingress
+                // drain (`drain_large_sidecar_ingress`) that
+                // `HeapCore::alloc` applies. No ownership stamp is needed:
+                // foreign frees route through the terminal descriptors, never
+                // the header `owner_state`. The historical hazard was silent:
                 // Historically (A1/#114), `dealloc_routing` resolved the
                 // segment as not-ours and silently no-op'd → the whole
                 // segment (4+ MiB) and its `SegmentTable` slot leak forever
@@ -604,16 +600,13 @@ impl HeapCore {
         // promoting to Large. The promotion must FORCE Large classification
         // regardless of where `new_size` falls in the medium range — so this
         // calls `AllocCore::alloc_large` directly (bypassing `class_for`
-        // entirely, exactly as the design doc's §4.1 sketch specifies), then
-        // replicates the SAME ownership-hook bookkeeping `HeapCore::alloc`'s
-        // Large branch performs, mirroring `HeapCore::alloc_zeroed`'s
-        // (`heap_core/alloc/hot.rs`) own Large branch line for line: the A1
-        // terminal large-sidecar ingress drain (`drain_large_sidecar_ingress`,
-        // `alloc-xthread`) BEFORE the call, then
-        // `stamp_segment_owner` on the result — WITHOUT this, a Vec grown via
-        // promotion on thread A would live in an UNSTAMPED Large segment and
-        // leak forever when thread B frees it (the A1/#114 leak-to-abort
-        // hazard this file's `realloc` doc comment warns about at length).
+        // entirely, exactly as the design doc's §4.1 sketch specifies). The
+        // A1 terminal large-sidecar ingress drain (`drain_large_sidecar_ingress`,
+        // `alloc-xthread`) runs BEFORE the call. No ownership stamp is
+        // needed on the result: routing no longer depends on the owner
+        // stamp — foreign frees resolve through the route-directory terminal
+        // descriptors / `Entry.owner`, never the header `owner_state` — so
+        // a Vec grown via promotion cannot leak through a missing stamp.
         #[cfg(feature = "alloc-xthread")]
         {
             self.drain_large_sidecar_ingress();
@@ -622,7 +615,6 @@ impl HeapCore {
         if new_ptr.is_null() {
             return None;
         }
-        self.stamp_segment_owner(new_ptr);
         // Copy the FULL old buffer — same `old_layout.size()` span the
         // existing move leg copies on a grow (`copy = min(old, new)`, which
         // for a grow is always `old`).
@@ -657,7 +649,7 @@ impl HeapCore {
         // dealloc above.
         //
         // Correctness (is `base` still ours & live here, AFTER
-        // `self.core.alloc_large(..)` + `self.stamp_segment_owner(..)` ran,
+        // `self.core.alloc_large(..)` ran,
         // and — under `alloc-xthread` — the drains that ran BEFORE
         // `alloc_large`)? YES, by the SAME live-block argument as `realloc`'s
         // move leg (see that call site's comment for the full enumeration):

@@ -148,8 +148,13 @@ fn heap_cases() {
         let ptr = heap.alloc(old);
         assert!(!ptr.is_null());
         let root = heap.dbg_segment_base_of_ptr(ptr);
-        let owner = heap.dbg_owner_id_for(ptr);
-        assert!(owner.is_some());
+        // Membership oracle: dbg_segment_registered_for (canonical table
+        // lookup) ⟺ ptr's segment is still registered in this heap's table
+        // (the former owner-stamp `Some(_)` baseline).
+        assert!(
+            heap.dbg_segment_registered_for(ptr),
+            "fresh Large alloc must resolve in the heap's table"
+        );
         // SAFETY: live allocation owns the entire requested writable extent.
         unsafe { fill(ptr, old.size()) };
         for address in [ptr.addr() - 64, ptr.addr() + 64] {
@@ -159,7 +164,7 @@ fn heap_cases() {
             for free_layout in [old, layout(64, 16)] {
                 let hardened_layout_reject = cfg!(all(feature = "fastbin", feature = "hardened"))
                     && free_layout != old
-                    && heap.dbg_owner_id_for(interior).is_some();
+                    && heap.dbg_segment_registered_for(interior);
                 let before = AllocCore::dbg_foreign_or_unroutable_frees();
                 let hardened_before =
                     sefer_alloc::registry::HeapCore::dbg_hardened_large_noop_count();
@@ -183,7 +188,7 @@ fn heap_cases() {
                         + u64::from(hardened_layout_reject && cfg!(feature = "alloc-stats"))
                 );
                 #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
-                if free_layout != old && heap.dbg_owner_id_for(interior).is_some() {
+                if free_layout != old && heap.dbg_segment_registered_for(interior) {
                     // M5 oracle (PRF-02): the own free resolves the owned block
                     // exactly once; the former second canonical re-resolution
                     // is gone, as on the batch path below.
@@ -193,7 +198,10 @@ fn heap_cases() {
                         lookups_before + 1
                     );
                 }
-                assert_eq!(heap.dbg_owner_id_for(ptr), owner);
+                assert!(
+                    heap.dbg_segment_registered_for(ptr),
+                    "still registered after the rejected interior probe"
+                );
                 assert_eq!(heap.dbg_segment_base_of_ptr(ptr), root);
                 assert_eq!(heap.dbg_table_count(), table_count);
                 assert_eq!(AllocCore::dbg_segments_released_total(), released);
@@ -220,7 +228,7 @@ fn heap_cases() {
                             + u64::from(hardened_layout_reject && cfg!(feature = "alloc-stats"))
                     );
                     #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
-                    if free_layout != old && heap.dbg_owner_id_for(interior).is_some() {
+                    if free_layout != old && heap.dbg_segment_registered_for(interior) {
                         // M5 batch oracle: one owner lookup, no substrate hop.
                         assert_eq!(
                             sefer_alloc::registry::HeapCore::dbg_contains_base_tier1_hits()
@@ -228,7 +236,10 @@ fn heap_cases() {
                             lookups_before + 1
                         );
                     }
-                    assert_eq!(heap.dbg_owner_id_for(ptr), owner);
+                    assert!(
+                        heap.dbg_segment_registered_for(ptr),
+                        "still registered after the rejected batch interior probe"
+                    );
                     assert_eq!(heap.dbg_table_count(), table_count);
                     assert_eq!(AllocCore::dbg_segments_released_total(), released);
                 }
@@ -241,7 +252,10 @@ fn heap_cases() {
                 // original live allocation must not be read or consumed.
                 let result = unsafe { heap.realloc(interior, old, new_size) };
                 assert!(result.is_null());
-                assert_eq!(heap.dbg_owner_id_for(ptr), owner);
+                assert!(
+                    heap.dbg_segment_registered_for(ptr),
+                    "still registered after the rejected interior realloc probe"
+                );
                 assert_eq!(heap.dbg_segment_base_of_ptr(ptr), root);
                 assert_eq!(heap.dbg_table_count(), table_count);
                 assert_eq!(AllocCore::dbg_segments_reserved_total(), reserved);
@@ -255,7 +269,10 @@ fn heap_cases() {
         let count = AllocCore::dbg_foreign_or_unroutable_frees();
         // SAFETY: exact original start/layout, freed once after no-op probes.
         unsafe { heap.dealloc(ptr, old) };
-        assert!(heap.dbg_owner_id_for(ptr).is_none());
+        assert!(
+            !heap.dbg_segment_registered_for(ptr),
+            "freed Large segment must leave this heap's table"
+        );
         assert_eq!(heap.dbg_table_count(), table_count);
         assert!(RouteDirectory::global().lookup(ptr).is_none());
         assert_eq!(AllocCore::dbg_foreign_or_unroutable_frees(), count);
@@ -280,6 +297,9 @@ fn heap_cases() {
             assert_bytes(shrunk, old.size() / 2);
             heap.dealloc(shrunk, layout(old.size() / 2, align));
         }
-        assert!(heap.dbg_owner_id_for(shrunk).is_none());
+        assert!(
+            !heap.dbg_segment_registered_for(shrunk),
+            "freed Large segment must leave this heap's table"
+        );
     }
 }
