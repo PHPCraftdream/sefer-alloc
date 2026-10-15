@@ -235,10 +235,23 @@ impl AllocCore {
             return None;
         }
         let base = canonical;
+        // R6-MS-1 (T22): bound the caller-derived offset BEFORE `Node::deref`'s
+        // `add` — a foreign address sharing the 4 MiB key window (exact-span-
+        // large / biased Large) must reject without forming an out-of-bounds
+        // witness pointer.
+        let off = ptr.addr().wrapping_sub(base.addr());
+        let kind = SegmentHeader::kind_at(base);
+        let span = if kind == SegmentKind::Large {
+            SegmentHeader::span_usable_at(base)
+        } else {
+            os::SEGMENT
+        };
+        if off >= span {
+            return None;
+        }
         // `ptr` is an address key, possibly a narrow reborrow. Return the
         // allocator-derived block pointer even for an in-place resize.
-        let ptr = crate::alloc_core::node::Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
-        let kind = SegmentHeader::kind_at(base);
+        let ptr = crate::alloc_core::node::Node::deref(base, off);
         // OPT-G: Large→Large in-place grow.
         //
         // R6-CR-3 (Large SHRINK): a shrink (`new_eff < old_eff`) is still

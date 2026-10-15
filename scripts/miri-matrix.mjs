@@ -33,6 +33,7 @@ export const MIRI_TARGETS = [
   ...['regression_large_align_no_segment_exhaustion', 'regression_page_aligned_no_segment_exhaustion',
     'regression_realloc_cross_class_shrink', 'stress_boundary_sweep']
     .map((test) => green('miri-alloc-core', test, 'alloc-core')),
+  green('miri-alloc-core', 'regression_r6_t22_foreign_window_key_miri', 'exact-span-large internals'),
   ...['regression_magazine_oracles', 'regression_bump_direct_refill']
     .map((test) => green('miri-fastbin', test, 'alloc-global alloc-xthread alloc-decommit fastbin internals')),
   ...['regression_xthread_large_free_no_leak', 'regression_xthread_thread_free_alias_miri',
