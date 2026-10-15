@@ -857,6 +857,15 @@ seam. No lock, no atomic on the common case. Slow path: refill `REFILL_BATCH
 = 31` blocks from the current segment (the constant is **measured** — see
 commit `81fec54`, bigger refills hurt locality).
 
+A thread binds its heap once, on first use, by claiming a registry slot. The
+default selector reuses a released heap first: it takes the one-slot reuse
+hint, then a slot from the FREE-slot bitmap that a displaced hint spilled
+into, and only then mints fresh capacity or scans a full registry. Reuse takes an
+already-materialised heap instead of initialising a new slot. Every path
+ends in the same lock-free slot-state CAS, which alone grants ownership
+(R20 PRF-04, [`docs/perf/R20_PRF04_HEAP_REUSE_RUN02_REPORT.md`](docs/perf/R20_PRF04_HEAP_REUSE_RUN02_REPORT.md):
+deterministic Ir GO; native latency not measured).
+
 Cross-thread free (`alloc-xthread`, implied by `alloc-global`) uses an address
 only for numeric directory lookup. The pinned route supplies its owner-issued
 Small/Primordial class and bitmap, or the Large instance state; the foreign
@@ -1613,6 +1622,11 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/PROFILE_FLAMEGRAPHS.md`](docs/PROFILE_FLAMEGRAPHS.md) | Flamegraph profiling report (4 scenarios, 6 optimisation candidates) |
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
+| [`docs/FEATURE_PROMOTION_STATUS.md`](docs/FEATURE_PROMOTION_STATUS.md) | Per-feature promotion status: which opt-in features have a gate verdict and why each is or is not in `production` |
+| [`docs/CI_TIERS.md`](docs/CI_TIERS.md) | Which CI job groups run for which change class, and when the full set runs |
+| [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md), [`docs/CORRECTNESS_OPEN_ITEMS.md`](docs/CORRECTNESS_OPEN_ITEMS.md) | Current-state open-item indexes (perf / correctness) read at every round start |
+| [`docs/evidence/REGISTRY.md`](docs/evidence/REGISTRY.md) | Generated evidence registry: each claim, its source commit and its re-verification status |
+| [`docs/perf/round-manifests/`](docs/perf/round-manifests/) | Per-round manifests: commits by category, net `production` impact, verdicts |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I7, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
 | [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Historical design and measured caller-driven `trim_current_thread()` result. The old no-background-thread premise predates today's explicitly started maintenance worker. |
 | [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no statistically distinguishable effect at this scale — the mechanism fires identically in both arms (`decommit_calls_total=40` in both), so this workload does not separate them; the null is underpowered (MDE ≈19% of the mean), not a confirmed absence of effect (§0.1/§0.2, corrected 2026-07-30) |
@@ -1621,7 +1635,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 
 ## Honest limitations
 
-- **Terminal-sidecar acceptance is pending.** This dirty snapshot contains
+- **Terminal-sidecar acceptance is pending.** The current `main` contains
   production foreign-sidecar ingress, finite strict trim and optional
   fallible autonomous maintenance, but it has not earned a release GO or
   fresh latency/RSS verdict. `start_maintenance()` must be called outside

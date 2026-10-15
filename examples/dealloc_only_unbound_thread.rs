@@ -4,13 +4,20 @@
 //!
 //! ## Why this harness exists
 //!
-//! `SeferAlloc::dealloc` (`src/global/sefer_alloc.rs`) calls
-//! `self.current_heap()` unconditionally — even for a thread that has NEVER
-//! allocated anything of its own. `current_heap()` binds a FULL per-thread
-//! heap (`HeapRegistry::claim` -> `AllocCore::new` -> reserve/commit a 4 MiB
-//! primordial segment) on the FIRST call, whether that call is an `alloc` or
+//! **Current state:** `SeferAlloc::dealloc`
+//! (`src/global/sefer_alloc/global_alloc.rs`) resolves through
+//! `current_for_dealloc()`; an unbound thread takes the
+//! `CurrentHeapForDealloc::ForeignNoBind` arm and publishes the free to the
+//! owner's sidecar without claiming a heap. The rationale below describes the
+//! state this judge was written against and is kept as its record.
+//!
+//! When this harness was written, `SeferAlloc::dealloc` called
+//! `self.current_heap()` unconditionally — even for a thread that had NEVER
+//! allocated anything of its own. `current_heap()` bound a FULL per-thread
+//! heap (registry slot claim -> `AllocCore::new` -> reserve/commit a 4 MiB
+//! primordial segment) on the FIRST call, whether that call was an `alloc` or
 //! a `dealloc`. So a thread whose entire lifetime is "receive a pointer from
-//! elsewhere, free it, exit" pays the FULL heap-binding cost just to free ONE
+//! elsewhere, free it, exit" paid the FULL heap-binding cost just to free ONE
 //! foreign pointer — a common shape (a worker pool that only ever frees
 //! results a producer thread built).
 //!
