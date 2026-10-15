@@ -83,7 +83,7 @@ fn unlink_without_release_negative_control() {
     let address = root.addr();
     let token = reservation.reservation_ptr().addr();
     let route = RouteDirectory::global()
-        .register(root, reservation.len(), root, usize::MAX, RouteKind::Large)
+        .register_for_test(root, reservation.len(), root, usize::MAX, RouteKind::Large)
         .expect("synthetic route registration");
     assert_eq!(route_at(address), Some(RouteKind::Large));
     assert_eq!(mapping_at(token), Mapping::Mapped);

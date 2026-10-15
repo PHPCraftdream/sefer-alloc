@@ -69,8 +69,13 @@ fn chunked_shard_matches_set_model_under_random_churn() {
             let key = keys[(next() % KEYS as u64) as usize];
             let insert = (next() % 100) < if grow { 80 } else { 20 };
             if insert {
-                let res =
-                    directory.register(ptr_of(key), SEGMENT, ptr_of(key), 1, RouteKind::Large);
+                let res = directory.register_for_test(
+                    ptr_of(key),
+                    SEGMENT,
+                    ptr_of(key),
+                    1,
+                    RouteKind::Large,
+                );
                 match (live.contains_key(&key), res) {
                     (false, Ok(route)) => {
                         live.insert(key, route);
@@ -100,7 +105,7 @@ fn old_pin_survives_unlink_and_final_free_after_block_merge() {
         .iter()
         .map(|&k| {
             directory
-                .register(ptr_of(k), SEGMENT, ptr_of(k), 7, RouteKind::Large)
+                .register_for_test(ptr_of(k), SEGMENT, ptr_of(k), 7, RouteKind::Large)
                 .unwrap()
         })
         .collect();

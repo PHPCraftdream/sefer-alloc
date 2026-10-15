@@ -343,7 +343,7 @@ fn arm(scenario: Scenario, mode: &str) {
         assert!(!root.is_null());
         let directory = RouteDirectory::global();
         let registration = directory
-            .register(root, size, root, 0, RouteKind::Large)
+            .register_for_test(root, size, root, 0, RouteKind::Large)
             .expect("test route");
         let pin = directory.lookup(root).expect("retained pin");
         REMOVE.with(|cell| *cell.borrow_mut() = Some((registration, pin)));

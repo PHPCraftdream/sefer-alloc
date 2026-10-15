@@ -36,8 +36,12 @@
 //! to `AllocCore::segment_bases`/`SegmentTable::bases`/
 //! `HeapCore::segment_bases`, the fixture's exact body compiled cleanly
 //! (confirmed manually during that task) — a real use-after-free reachable
-//! from safe code. This test pins the POST-fix state: the fixture must fail
-//! with specifically **E0597** ("`core` does not live long enough"), not
+//! from safe code. Since R6-T38, `AllocCore::segment_bases` is `pub(crate)`, so
+//! the fixture's bait surface is `AllocCore::dbg_segment_bases` — the
+//! internals-gated crate-public forwarder, carrying the identical `+ '_` bind.
+//! This test pins the POST-fix
+//! state: the fixture must fail with specifically **E0597 ("does not live long
+//! enough" — naming `core`, the local owner of the returned iterator), not
 //! succeed and not fail for some unrelated reason.
 
 use std::path::PathBuf;
@@ -82,7 +86,7 @@ fn segment_bases_iterator_outliving_owner_must_not_compile() {
 
     assert!(
         !output.status.success(),
-        "the R2-01 fixture COMPILED — AllocCore::segment_bases' returned \
+        "the R2-01 fixture COMPILED — AllocCore::dbg_segment_bases' returned \
          iterator no longer captures &self's lifetime (the R2-01/task #2003 \
          UAF fix regressed). stderr:\n{stderr}"
     );

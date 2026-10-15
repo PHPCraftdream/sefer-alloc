@@ -18,7 +18,7 @@ fn system_backed_route_metadata_does_not_reenter_global_allocator() {
     assert!(!root.is_null());
     let directory = RouteDirectory::global();
     let route = directory
-        .register(root, SEGMENT, root, 23, RouteKind::Small)
+        .register_for_test(root, SEGMENT, root, 23, RouteKind::Small)
         .unwrap();
     assert!(route.issue_small(0, 0));
     let pin = directory.lookup(root).unwrap();

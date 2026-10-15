@@ -1,0 +1,21 @@
+# Compile-fail fixture — compiled ONLY by root
+# tests/regression_r6_t38_public_tail_private.rs (never by the workspace:
+# the detached [workspace] table below opts it out, and cargo does not
+# auto-discover nested test dirs, mirroring the established
+# tests/compile_fail/r2_01_segment_bases_outlives_owner/Cargo.toml pattern).
+# Deliberately dependency-free apart from the path dep, so
+# `cargo build --offline` needs no network.
+#
+# `alloc-global` so the private `AllocCore::segment_bases` EXISTS and the
+# failure is E0624 (privacy), not E0599 (no-method); `internals` so
+# `RouteDirectory`/`RouteKind` are nameable at all.
+[workspace]
+
+[package]
+name = "r6_t38_public_tail_private_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sefer-alloc = { path = "../../..", features = ["alloc-global", "internals"] }

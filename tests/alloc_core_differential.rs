@@ -41,7 +41,7 @@ use sefer_alloc::AllocCore;
 #[cfg(feature = "internals")]
 fn live_segments(core: &AllocCore) -> String {
     #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
-    return core.segment_bases().count().to_string();
+    return core.dbg_segment_bases().count().to_string();
     #[cfg(not(any(feature = "alloc-global", feature = "alloc-xthread")))]
     return "n/a".to_string();
 }
