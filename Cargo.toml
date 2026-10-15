@@ -1597,7 +1597,7 @@ required-features = ["alloc-global", "alloc-xthread"]
 # Tune via env: SEFER_RSS_PRODUCERS, SEFER_RSS_SECONDS, SEFER_RSS_LARGE_FRACTION.
 [[example]]
 name = "rss_probe"
-required-features = ["alloc-global", "alloc-xthread", "internals"]
+required-features = ["alloc-global", "alloc-xthread"]
 
 # R5-R5 (round5 performance review §6.2, §8.2 item 2, §10 Stage C): measures
 # `SegmentTable`'s backward-shift deletion (R4-8/N3) cost as a function of
