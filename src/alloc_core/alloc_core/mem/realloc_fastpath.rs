@@ -240,6 +240,13 @@ impl AllocCore {
         let ptr = crate::alloc_core::node::Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
         let kind = SegmentHeader::kind_at(base);
         // OPT-G: Large→Large in-place grow.
+        //
+        // R6-CR-3 (Large SHRINK): a shrink (`new_eff < old_eff`) is still
+        // declined here (perf item 83 NO-GO — in-place shrink is not on the
+        // hot path) and falls to the move leg in `HeapCore::realloc`. But if
+        // that move leg's allocation fails, `HeapCore::realloc` now keeps the
+        // block in place and records `large_size = new_eff` instead of
+        // returning null, so a Large shrink no longer reports OOM.
         if kind == SegmentKind::Large {
             let old_eff = old_layout
                 .size()

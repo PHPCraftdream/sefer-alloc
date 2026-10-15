@@ -19,6 +19,8 @@ use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};
 use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::alloc_core::LARGE_CACHE_SIZE_FACTOR;
+#[cfg(feature = "internals")]
+use core::sync::atomic::{AtomicBool, Ordering};
 // R1-08: `CachedLarge` is constructed only inside `reclaim_large_segment`,
 // which is itself `#[cfg(feature = "alloc-xthread")]` — narrower than the
 // `alloc-decommit` gate `LARGE_CACHE_SIZE_FACTOR` above needs, so it must
@@ -97,6 +99,15 @@ const LARGE_RESERVED_CAP_BYTES: usize = 16 * SEGMENT;
 #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
 const LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 4;
 
+// R6-CR-3 test hook: forces `alloc_large` to fail (null) without touching
+// allocator metadata, so a test can drive the realloc move-leg OOM path.
+#[cfg(feature = "internals")]
+static DBG_INJECT_LARGE_ALLOC_OOM: AtomicBool = AtomicBool::new(false);
+// R6-CR-9 test hook: forces the FIRST non-NUMA biased Large reserve attempt
+// to fail; the post-drain retry stays real.
+#[cfg(feature = "internals")]
+static DBG_INJECT_BIASED_RESERVE_FAIL: AtomicBool = AtomicBool::new(false);
+
 impl AllocCore {
     /// Pure address equality shared by owner metadata and foreign descriptors.
     /// No pointer is dereferenced; overflowing geometry cannot match.
@@ -168,6 +179,12 @@ impl AllocCore {
     /// per-block bitmap and no interaction with any decommit/MADV_FREE reuse
     /// path.
     pub(crate) fn alloc_large(&mut self, size: usize, align: usize) -> (*mut u8, bool) {
+        // R6-CR-3: injected OOM — concede null without touching metadata so a
+        // test can drive the realloc move-leg failure path.
+        #[cfg(feature = "internals")]
+        if DBG_INJECT_LARGE_ALLOC_OOM.load(Ordering::Relaxed) {
+            return (core::ptr::null_mut(), true);
+        }
         // Phase 2: lazy decay tick on every large allocation.
         #[cfg(feature = "alloc-decommit")]
         self.maybe_decay_large_cache();
@@ -190,6 +207,11 @@ impl AllocCore {
         // today, but this no longer RELIES on the caller's `Layout` being
         // well-formed (parity with the realloc path, which already uses
         // `checked_add`). A wrap → null (a legal alloc-failure signal).
+        //
+        // R6-CR-4: the rounding steps DOWNSTREAM of this `checked_add` (the
+        // SEGMENT rounding in the feature-OFF arm and the page rounding in
+        // the `exact-span-large` arm below) are checked too — an overflow at
+        // ANY step returns null rather than wrapping.
         let needed = match hdr_aligned.checked_add(size) {
             Some(n) => n,
             None => return (core::ptr::null_mut(), true),
@@ -226,7 +248,13 @@ impl AllocCore {
         #[cfg(not(feature = "exact-span-large"))]
         let usable = {
             let n_segments = needed.div_ceil(SEGMENT);
-            n_segments * SEGMENT
+            // R6-CR-4: checked — a malformed Layout (usize::MAX-scale size from a
+            // GlobalAlloc::realloc caller) overflows the SEGMENT rounding; return
+            // null instead of wrapping (debug would panic).
+            match n_segments.checked_mul(SEGMENT) {
+                Some(u) => u,
+                None => return (core::ptr::null_mut(), true),
+            }
         };
         // Task #1074: round to the RUNTIME OS page size, not the compile-time
         // `PAGE` — under `large-reserved-capacity` this value flows into
@@ -238,7 +266,14 @@ impl AllocCore {
         // (the feature-OFF arm above) is already a page-size multiple for
         // every page size this crate supports (≤ 64 KiB ≪ 4 MiB).
         #[cfg(feature = "exact-span-large")]
-        let usable = align_up(needed, aligned_vmem::page_size());
+        let usable = {
+            // R6-CR-4: checked page rounding (align_up can overflow `q * page`).
+            let page = aligned_vmem::page_size();
+            match needed.div_ceil(page).checked_mul(page) {
+                Some(u) => u,
+                None => return (core::ptr::null_mut(), true),
+            }
+        };
 
         // OPT-E: try the large-segment cache first.
         // Scan all slots for a compatible entry: usable_size >= usable (the
@@ -662,12 +697,41 @@ impl AllocCore {
                 }
             }
             if align >= SEGMENT {
-                let Some((b, r, rl)) = os::Segment::reserve_biased(
+                #[cfg(feature = "internals")]
+                #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_mut))]
+                let mut reserved = if DBG_INJECT_BIASED_RESERVE_FAIL.load(Ordering::Relaxed) {
+                    None
+                } else {
+                    os::Segment::reserve_biased(
+                        reserved_capacity_target,
+                        usable,
+                        align,
+                        hdr_aligned,
+                    )
+                };
+                #[cfg(not(feature = "internals"))]
+                #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_mut))]
+                let mut reserved = os::Segment::reserve_biased(
                     reserved_capacity_target,
                     usable,
                     align,
                     hdr_aligned,
-                ) else {
+                );
+                // Mechanism 2 (task #51 / R6-CR-9): the biased path must drain the
+                // pooled small segments and retry ONCE too, like the NUMA branch and
+                // the aligned path above — the pool is a reclaimable soft reserve.
+                #[cfg(feature = "alloc-decommit")]
+                if reserved.is_none() && self.pooled_count > 0 {
+                    self.drain_small_pool();
+                    // Real retry: the injection hook deliberately gates only the FIRST attempt.
+                    reserved = os::Segment::reserve_biased(
+                        reserved_capacity_target,
+                        usable,
+                        align,
+                        hdr_aligned,
+                    );
+                }
+                let Some((b, r, rl)) = reserved else {
                     return (core::ptr::null_mut(), true);
                 };
                 (b, r, rl, reserved_capacity_target)
@@ -731,6 +795,31 @@ impl AllocCore {
         // withheld there (the caller then zeroes explicitly, restoring the
         // alloc_zeroed contract under miri).
         (Node::deref(base, hdr_aligned), cfg!(not(miri)))
+    }
+
+    /// `#[doc(hidden)]` test hook (R6-CR-3) — not public API. Forces
+    /// `alloc_large` to return null while set. A test MUST clear it (Drop guard).
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_large_alloc_oom(on: bool) {
+        DBG_INJECT_LARGE_ALLOC_OOM.store(on, Ordering::Relaxed);
+    }
+
+    /// `#[doc(hidden)]` test hook (R6-CR-9) — not public API. Forces the first
+    /// non-NUMA biased Large reserve attempt to return None while set.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_set_inject_biased_reserve_fail(on: bool) {
+        DBG_INJECT_BIASED_RESERVE_FAIL.store(on, Ordering::Relaxed);
+    }
+
+    /// `#[doc(hidden)]` test forwarder (R6-CR-4) — not public API. Reaches
+    /// `alloc_large` directly with a raw size a `Layout` cannot express
+    /// (`from_size_align` rejects sizes above `isize::MAX`).
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn dbg_alloc_large_for_test(&mut self, size: usize, align: usize) -> *mut u8 {
+        self.alloc_large(size, align).0
     }
 
     /// Reclaim a Large/huge segment that was freed by a REMOTE thread (0.3.0,

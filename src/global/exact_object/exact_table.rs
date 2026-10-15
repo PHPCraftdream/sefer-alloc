@@ -23,7 +23,7 @@ impl ExactTable {
         let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
         match Self::shard(addr).insert(addr, size, align, generation) {
             InsertOutcome::Inserted => Some(generation),
-            InsertOutcome::Oom => None,
+            InsertOutcome::Oom | InsertOutcome::Exiting => None,
             InsertOutcome::Duplicate => {
                 fatal(b"exact-object: duplicate live descriptor for address\n")
             }
@@ -36,5 +36,10 @@ impl ExactTable {
 
     pub(super) fn take(addr: usize) -> Option<(usize, usize, u64)> {
         Self::shard(addr).take(addr)
+    }
+
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn dbg_with_shard_locked_for_test(addr: usize, f: impl FnOnce()) {
+        Self::shard(addr).dbg_with_locked_for_test(f);
     }
 }

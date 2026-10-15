@@ -310,6 +310,18 @@ const SAFE_MUTATORS = [
   [
     "src/global/fallback.rs::dbg_panic_in_fallback_init_rolls_back",
     "drives a real panic through the production heap_ptr/InitStateGuard RAII path then re-calls heap_ptr to prove the state rolled back; exercises, does not bypass, existing safe machinery (R34-17/task #536)"
+  ],
+  [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_set_inject_large_alloc_oom",
+    "sets a plain AtomicBool test-injection flag only; alloc_large then returns null before touching metadata, the already-handled production OOM result (R6-T29)"
+  ],
+  [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_set_inject_biased_reserve_fail",
+    "sets a plain AtomicBool test-injection flag only; the first non-NUMA biased reserve reports None, the already-handled production reserve-failure result; the retry stays real (R6-T34)"
+  ],
+  [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_alloc_large_for_test",
+    "delegates to the real production AllocCore::alloc_large with a caller size and alignment; takes no pointer, returns a fresh allocation or null; overflow guards are the code under test (R6-T30)"
   ]
 ];
 
