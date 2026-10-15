@@ -8,11 +8,11 @@
 use core::ptr;
 #[cfg(feature = "internals")]
 use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 use std::cell::Cell;
 
+use super::{AtomicPtr, AtomicU8, Ordering};
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 const LEAF_GRANULES: usize = 256;
