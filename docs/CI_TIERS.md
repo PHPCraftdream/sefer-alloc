@@ -161,3 +161,35 @@ Security note: `pull_request` events can also fire from forks. The workflow
 carries no secrets and checks out with `persist-credentials: false`, so a
 forked PR cannot exfiltrate tokens through it; the runner path and stages are
 still validated against the same allowlists before any invocation.
+
+### A/B iai runs on a PR
+
+`scripts/r20_r6_ab_iai_run.mjs` is a generic Ir A/B runner for the round-6
+perf units: arm A is `git merge-base HEAD origin/main` (or an explicit
+`baseSha` in the config), arm B is the PR HEAD. Both arms are built and
+measured in their own worktrees (`target/r6ab/{A,B}`) and target directories,
+using one iai bench target (default `perf_gate_iai`) with the default feature
+set `production bench-internals internals` (the same set `scripts/iai.mjs` uses).
+
+Example `.github/gate-run.json`:
+
+```json
+{"runner": "scripts/r20_r6_ab_iai_run.mjs", "stages": "prepare,build,oracle,measure", "outDir": "target/r20r6ab", "benchTarget": "perf_gate_iai", "features": "production bench-internals internals", "cells": "small_churn_16b,cold_alloc_only_256x16b", "thresholds": {"small_churn_16b": 1.0}}
+```
+
+Config fields (all optional except `runner`, validated by
+`scripts/r20-gate-config.mjs`): `benchTarget`, `features`, `cells` (explicit
+cell list; without it every cell both arms print is compared and the sets
+must match), `baseSha` (explicit arm A), `thresholds` (map cell -> max
+tolerated regression in %; without it the verdict table is informational
+only). Outputs in `outDir`: `manifest.json` (immutable source identity:
+SHAs, features, rustc, OS — written before any measurement), raw iai logs
+under `logs/`, `summary.csv` (cell, A_Ir, B_Ir, delta, delta_pct, SHA A/B,
+features, rustc, OS) and `verdict.txt` (script-generated table; the verdict
+is a pure threshold check). The `--oracle` stage is an extension point: a
+path-activation oracle over the `bench-internals` counters is not wired yet
+and the stage is a documented no-op. The runner is GitHub-CI-only (Linux);
+`node scripts/r20_r6_ab_iai_run.mjs --selftest` (runs in the
+`docs-consistency` job) covers the pure parts — iai output parsing, the
+ratio math (asserts: non-positive A counts and implausible percentages are
+hard errors), CSV/table generation and the threshold verdict.
