@@ -1,8 +1,0 @@
-{
-  "runner": "scripts/r20_evidence_reverify_run.mjs",
-  "stages": "prepare,build,oracle,measure",
-  "rehearsal": false,
-  "slop": false,
-  "outDir": "target/r20-evidence-reverify",
-  "note": "E0: re-pin R4b-11, R4c-10/11/13/18 to a main-line commit (PR #28 was squash-merged, so its branch SHA is not an ancestor)"
-}
