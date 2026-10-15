@@ -169,6 +169,26 @@ never triggers a decay tick) lives in
 this section states the headline facts and the practical remedy; that
 report is where the full raw numbers and methodology live.
 
+> **Every Large request (allocation above ~253 KiB `SMALL_MAX`) is
+> rounded up to a whole number of 4 MiB `SEGMENT`s before the OS
+> reserve+commit — so a 260 KiB request reserves and commits 4 MiB
+> (~16× commit amplification).** On Windows the span is committed eagerly
+> (reserve then `MEM_COMMIT` — the commit happens at reservation time, not
+> on first touch; for Large this is the two-call path —
+> `VirtualAlloc(MEM_RESERVE)` of the aligned address space, then
+> `VirtualAlloc(MEM_COMMIT)` over the span — via `Segment::reserve`'s
+> 4 MiB-aligned `vmem::reserve_aligned`), so
+> this is real commit charge, not just reserved address space. Combined
+> with the 4095-live-Large cap (see the Honest limitations bullet), a
+> single-threaded async server holding one 260 KiB buffer per connection
+> hits the cap after 4095 connections with up to ~16 GiB committed for
+> ~1 GiB requested; the next request returns null →
+> `handle_alloc_error` (abort) in a `GlobalAlloc` consumer. The opt-in,
+> experimental `exact-span-large` feature sizes the reservation to the
+> page-exact request instead (260 KiB → ~264 KiB); see item 28
+> (CONDITIONAL-GO, not promoted; known realloc-growth regression) in
+> [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md).
+
 ### Named profiles (`Profile`, `alloc-decommit`)
 
 R30-7 (task #456) shipped a single flat `Profile` enum bundling a
@@ -1699,6 +1719,27 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   for the follow-on design (an expandable/chained table, evaluated jointly
   against the cold-carve gap) if a workload still needs more than 4095
   simultaneously-live Large objects.
+- **Large commit amplification: every Large request is rounded up to
+  whole 4 MiB `SEGMENT`s before reserve+commit.** Any allocation above
+  ~253 KiB (`SMALL_MAX`) is a Large request, and `Segment::reserve`
+  rounds it up to a whole number of 4 MiB `SEGMENT`s
+  (`src/alloc_core/platform/os.rs`) — a 260 KiB request therefore
+  reserves and commits 4 MiB (~16× amplification), and on Windows the
+  span is committed eagerly (reserve then `MEM_COMMIT` — the commit
+  happens at reservation time, not on first touch; for Large this is
+  the two-call path — `VirtualAlloc(MEM_RESERVE)` of the aligned
+  address space, then `VirtualAlloc(MEM_COMMIT)` over the span — via
+  `Segment::reserve`'s 4 MiB-aligned `vmem::reserve_aligned`), so the
+  rounded size is real commit
+  charge, not merely address space. Together with the 4095-live-Large
+  cap above, a single-threaded async server holding one 260 KiB buffer
+  per connection hits the cap after 4095 connections with up to
+  ~16 GiB committed for ~1 GiB requested — and the next request returns
+  null → `handle_alloc_error` (abort) in a `GlobalAlloc` consumer. The
+  experimental, opt-in `exact-span-large` feature sizes the reservation
+  to the page-exact request instead (260 KiB → ~264 KiB); it is
+  CONDITIONAL-GO, not promoted, with a known realloc-growth regression —
+  see item 28 in [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md).
 
 ---
 
