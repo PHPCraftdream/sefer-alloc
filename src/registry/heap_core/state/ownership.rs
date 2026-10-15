@@ -35,6 +35,22 @@ impl HeapCore {
     /// A worker visit cuts only a bounded ingress prefix, retaining the
     /// independent cold cache/pool policy of the strict trim.
     pub(crate) fn background_maintenance_step(&mut self, budget: usize) -> (usize, usize) {
+        let result = self.background_ingress_step(budget);
+        self.trim_cold_retention();
+        result
+    }
+
+    /// Ingress-only worker step for the shared fallback heap (R6-T27 /
+    /// R6-CC-7): the fallback heap is shared and can be actively serving
+    /// allocations while the worker runs, so the cold-retention trim
+    /// (tcache flush, pool drain, evict, munmap) is decided by the caller's
+    /// idle policy in `global::maintenance_service` instead of running on
+    /// every visit.
+    pub(crate) fn background_fallback_step(&mut self, budget: usize) -> (usize, usize) {
+        self.background_ingress_step(budget)
+    }
+
+    fn background_ingress_step(&mut self, budget: usize) -> (usize, usize) {
         #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
         let result = self
             .core
@@ -51,7 +67,6 @@ impl HeapCore {
         ))]
         crate::alloc_core::BACKGROUND_INGRESS_STEP_CALLS
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        self.trim_cold_retention();
         result
     }
 
