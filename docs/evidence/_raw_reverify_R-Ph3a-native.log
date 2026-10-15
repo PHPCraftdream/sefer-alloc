@@ -1,0 +1,206 @@
+E0_METADATA {"id":"R-Ph3a-native","head":"f71a4ee2019e15458fddb5f2b71f8debf2c168a7","tree":"6004b258125f5c0cf89d3fb94132bc0eab8fa614","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (7df81381d 2026-10-14)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-15 for version 1.101.0-nightly (7df81381d 2026-10-14)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R-Ph3a-native","head":"f71a4ee2019e15458fddb5f2b71f8debf2c168a7","tree":"6004b258125f5c0cf89d3fb94132bc0eab8fa614","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3a-native.json","recipe_sha256":"3aa4a0afed638fa5be21de917112ea213339096fbf4f7c6b9a82a1ed62443ee9","registry_activation_hash":"47b3a1c460cf7d4d47f6460d115c1477555da7709f2bfb49c230b1e8097a789a"}
+
+E0_STEP {"id":"R-Ph3a-native","kind":"baseline","name":"issue transaction witnesses baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph3a_issue_transaction_scalar","--test","r11_ph3a_issue_transaction_batch","--test","r11_ph3a_magazine_refill_partial","--test","r11_ph3a_reserve_promotion_fault"],"env":{},"expect":{"exit":0,"stdoutRegex":["tests/r11_ph3a_issue_transaction_scalar.rs","tests/r11_ph3a_issue_transaction_batch.rs","tests/r11_ph3a_magazine_refill_partial.rs","tests/r11_ph3a_reserve_promotion_fault.rs","test result: ok. [0-9]+ passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.46
+[1m[92m   Compiling[0m libc v0.2.186
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m zerocopy v0.8.52
+[1m[92m   Compiling[0m serde_core v1.0.228
+[1m[92m   Compiling[0m serde v1.0.228
+[1m[92m   Compiling[0m zmij v1.0.21
+[1m[92m   Compiling[0m syn v2.0.118
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m crossbeam-utils v0.8.21
+[1m[92m   Compiling[0m serde_json v1.0.150
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m libm v0.2.16
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m memchr v2.8.2
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.20
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m rand_core v0.9.5
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m bitflags v2.13.0
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.9
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m cc v1.2.65
+[1m[92m   Compiling[0m slotmap v1.1.1
+[1m[92m   Compiling[0m zerocopy-derive v0.8.52
+[1m[92m   Compiling[0m serde_derive v1.0.228
+[1m[92m   Compiling[0m derive_more-impl v2.1.1
+[1m[92m   Compiling[0m either v1.16.0
+[1m[92m   Compiling[0m fastrand v2.4.1
+[1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m crossbeam-deque v0.8.6
+[1m[92m   Compiling[0m libmimalloc-sys v0.1.49
+[1m[92m   Compiling[0m wait-timeout v0.2.1
+[1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
+[1m[92m   Compiling[0m plotters-backend v0.3.7
+[1m[92m   Compiling[0m ciborium-io v0.2.2
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m quick-error v1.2.3
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m clap_builder v4.6.0
+[1m[92m   Compiling[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m plotters-svg v0.3.7
+[1m[92m   Compiling[0m bit-set v0.8.0
+[1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m half v2.7.1
+[1m[92m   Compiling[0m ciborium-ll v0.2.2
+[1m[92m   Compiling[0m rand_chacha v0.9.0
+[1m[92m   Compiling[0m itertools v0.10.5
+[1m[92m   Compiling[0m derive_more v2.1.1
+[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m rand v0.9.4
+[1m[92m   Compiling[0m rand_xorshift v0.4.0
+[1m[92m   Compiling[0m unarray v0.1.4
+[1m[92m   Compiling[0m cast v0.3.0
+[1m[92m   Compiling[0m iai-callgrind v0.14.2
+[1m[92m   Compiling[0m same-file v1.0.6
+[1m[92m   Compiling[0m walkdir v2.5.0
+[1m[92m   Compiling[0m criterion-plot v0.5.0
+[1m[92m   Compiling[0m regex v1.12.4
+[1m[92m   Compiling[0m proptest v1.11.0
+[1m[92m   Compiling[0m tinytemplate v1.2.1
+[1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
+[1m[92m   Compiling[0m ciborium v0.2.2
+[1m[92m   Compiling[0m rayon v1.12.0
+[1m[92m   Compiling[0m clap v4.6.1
+[1m[92m   Compiling[0m sefer-region v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/sefer-region)
+[1m[92m   Compiling[0m plotters v0.3.7
+[1m[92m   Compiling[0m bincode v1.3.3
+[1m[92m   Compiling[0m tokio-macros v2.7.0
+[1m[92m   Compiling[0m is-terminal v0.4.17
+[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
+[1m[92m   Compiling[0m oorandom v11.1.5
+[1m[92m   Compiling[0m size-classes v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/size-classes)
+[1m[92m   Compiling[0m anes v0.1.6
+[1m[92m   Compiling[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m proc-memstat v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-memstat)
+[1m[92m   Compiling[0m once-ptr-cell v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/once-ptr-cell)
+[1m[92m   Compiling[0m tokio v1.52.3
+[1m[92m   Compiling[0m proc-probe v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-probe)
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m   Compiling[0m criterion v0.5.1
+[1m[92m   Compiling[0m globalalloc-model v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/globalalloc-model)
+[1m[92m   Compiling[0m mimalloc v0.1.52
+[1m[92m   Compiling[0m malloc-bench-rs v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/malloc-bench-rs)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 12.91s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph3a_issue_transaction_batch.rs (target/debug/deps/r11_ph3a_issue_transaction_batch-fe6d46995aa5f80d)
+
+running 1 test
+test batch_issue_transactions_commit_only_the_prepared_run ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[92m     Running[0m tests/r11_ph3a_issue_transaction_scalar.rs (target/debug/deps/r11_ph3a_issue_transaction_scalar-b31d4fba19733db0)
+
+running 1 test
+test scalar_issue_transactions_roll_back_before_commit_and_retry_after ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/r11_ph3a_magazine_refill_partial.rs (target/debug/deps/r11_ph3a_magazine_refill_partial-35e2bff8e27356d1)
+
+running 1 test
+test magazine_refill_prepare_refusal_commits_only_the_drained_blocks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/r11_ph3a_reserve_promotion_fault.rs (target/debug/deps/r11_ph3a_reserve_promotion_fault-411db47ce30791ae)
+
+running 1 test
+test promotion_faults_roll_back_the_exhausted_segment_and_retry_promotes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+
+E0_STEP {"id":"R-Ph3a-native","kind":"mutant","name":"batch carve over-counts live mutant","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph3a_issue_transaction_batch"],"env":{},"expect":{"exit":101,"stdoutRegex":["panicked at tests/r11_ph3a_issue_transaction_batch.rs"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.80s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph3a_issue_transaction_batch.rs (target/debug/deps/r11_ph3a_issue_transaction_batch-fe6d46995aa5f80d)
+
+running 1 test
+test batch_issue_transactions_commit_only_the_prepared_run ... FAILED
+
+failures:
+
+---- batch_issue_transactions_commit_only_the_prepared_run stdout ----
+
+thread 'batch_issue_transactions_commit_only_the_prepared_run' (7348) panicked at tests/r11_ph3a_issue_transaction_batch.rs:155:5:
+assertion `left == right` failed: live credits grow by exactly n
+  left: Some(125537)
+ right: Some(125536)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    batch_issue_transactions_commit_only_the_prepared_run
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[91merror[0m: test failed, to rerun pass `--test r11_ph3a_issue_transaction_batch`
+
+E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_METADATA {"id":"R-Ph3a-native","kind":"restored","sha256":"32e6f28dfb176f2177211b5bda0d828b5d31e10fd976d30fcbdcfa94f3b37195"}
+
+E0_STEP {"id":"R-Ph3a-native","kind":"restored-baseline","name":"issue transaction witnesses baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_ph3a_issue_transaction_scalar","--test","r11_ph3a_issue_transaction_batch","--test","r11_ph3a_magazine_refill_partial","--test","r11_ph3a_reserve_promotion_fault"],"env":{},"expect":{"exit":0,"stdoutRegex":["tests/r11_ph3a_issue_transaction_scalar.rs","tests/r11_ph3a_issue_transaction_batch.rs","tests/r11_ph3a_magazine_refill_partial.rs","tests/r11_ph3a_reserve_promotion_fault.rs","test result: ok. [0-9]+ passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph3a_issue_transaction_batch.rs (target/debug/deps/r11_ph3a_issue_transaction_batch-fe6d46995aa5f80d)
+
+running 1 test
+test batch_issue_transactions_commit_only_the_prepared_run ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[92m     Running[0m tests/r11_ph3a_issue_transaction_scalar.rs (target/debug/deps/r11_ph3a_issue_transaction_scalar-b31d4fba19733db0)
+
+running 1 test
+test scalar_issue_transactions_roll_back_before_commit_and_retry_after ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/r11_ph3a_magazine_refill_partial.rs (target/debug/deps/r11_ph3a_magazine_refill_partial-35e2bff8e27356d1)
+
+running 1 test
+test magazine_refill_prepare_refusal_commits_only_the_drained_blocks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/r11_ph3a_reserve_promotion_fault.rs (target/debug/deps/r11_ph3a_reserve_promotion_fault-411db47ce30791ae)
+
+running 1 test
+test promotion_faults_roll_back_the_exhausted_segment_and_retry_promotes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}

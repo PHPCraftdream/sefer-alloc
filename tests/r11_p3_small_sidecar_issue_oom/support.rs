@@ -108,9 +108,39 @@ fn release(heap: &mut HeapCore, anchor: *mut u8, issued: *mut u8) {
     }
 }
 
+const LEAF: usize = 4096;
+
+/// Walk 16-byte carves until one lands on the LAST granule of its leaf, so
+/// the next carve starts a fresh (virgin) leaf whose first issue promotes
+/// it. All walkers stay live, so every allocation stays bump-carved.
+fn walk_to_last_granule(heap: &mut HeapCore) -> Vec<*mut u8> {
+    let layout = Layout::from_size_align(16, 16).unwrap();
+    let mut held = Vec::new();
+    loop {
+        let ptr = heap.alloc(layout);
+        assert!(!ptr.is_null(), "the bump walk must not OOM");
+        let addr = ptr as usize;
+        held.push(ptr);
+        if addr % LEAF == LEAF - 16 {
+            return held;
+        }
+    }
+}
+
+fn drop_walked(heap: &mut HeapCore, walked: &[*mut u8]) {
+    for &ptr in walked {
+        // SAFETY: each walker is a live 16-byte block of this heap.
+        unsafe { heap.dealloc(ptr, Layout::from_size_align(16, 16).unwrap()) };
+    }
+}
+
 fn persistent(heap: &mut HeapCore, zeroed: bool) {
     let anchor = heap.alloc(Layout::from_size_align(16, 16).unwrap());
     assert!(!anchor.is_null());
+    // The anchor promoted its leaf; walk the bump to a leaf end so the next
+    // allocation is the FIRST issue in a fresh leaf — the only point where
+    // a spill is required and injectable.
+    let walked = walk_to_last_granule(heap);
     let before = Before::capture(heap, anchor);
     let attempts = if cfg!(feature = "fastbin") { 2 } else { 1 };
     SmallSidecar::fail_next_spills_for_test(attempts);
@@ -123,11 +153,13 @@ fn persistent(heap: &mut HeapCore, zeroed: bool) {
     let issued = allocate(heap, zeroed);
     before.assert_success(heap, anchor, issued, zeroed);
     release(heap, anchor, issued);
+    drop_walked(heap, &walked);
 }
 
 fn transient(heap: &mut HeapCore, zeroed: bool) {
     let anchor = heap.alloc(Layout::from_size_align(16, 16).unwrap());
     assert!(!anchor.is_null());
+    let walked = walk_to_last_granule(heap);
     let before = Before::capture(heap, anchor);
     SmallSidecar::fail_next_spills_for_test(1);
     let first_attempt = allocate(heap, zeroed);
@@ -148,10 +180,11 @@ fn transient(heap: &mut HeapCore, zeroed: bool) {
     };
     before.assert_success(heap, anchor, issued, zeroed);
     release(heap, anchor, issued);
+    drop_walked(heap, &walked);
 }
 
 pub(super) fn verify(zeroed: bool) {
-    // Keep both leases live so the transient fixture has a fresh uniform leaf.
+    // Keep both leases live so each fixture's bump walk starts from a fresh leaf.
     let mut persistent_lease = HeapRegistry::dbg_claim_lease().expect("claim");
     let mut transient_lease = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_ne!(persistent_lease.slot_index(), transient_lease.slot_index());

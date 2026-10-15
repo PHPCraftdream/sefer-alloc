@@ -100,20 +100,23 @@ fn batch_drain() {
 
 fn scalar_carve() {
     let mut core = AllocCore::dbg_new_routed_for_test().unwrap();
-    let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
-    let state = core.dbg_r11_issue_state_for_test(1).unwrap();
+    // The FIRST carve of a fresh routed core promotes its (virgin) leaf; that
+    // promotion is exactly what `fail_spill_after` refuses.
+    let state = core.dbg_r11_issue_state_for_test(0).unwrap();
     let system = SmallSidecar::system_totals_for_test();
     SmallSidecar::fail_spill_after_for_test(1);
-    assert!(core.dbg_r11_scalar_carve_for_test(1).is_none());
-    assert_eq!(core.dbg_r11_issue_state_for_test(1), Some(state));
+    assert!(core.dbg_r11_scalar_carve_for_test(0).is_none());
+    assert_eq!(core.dbg_r11_issue_state_for_test(0), Some(state));
     assert_eq!(SmallSidecar::system_totals_for_test(), system);
-    assert_eq!(
-        RouteRegistration::class_at_global_address_for_test(anchor.addr()),
-        Some(0)
-    );
+    let anchor = core.dbg_r11_scalar_carve_for_test(0).unwrap();
+    // Leaf 0 is promoted now: the next carve in the same leaf needs no spill.
     let second = core.dbg_r11_scalar_carve_for_test(1).unwrap();
-    assert_eq!(second.addr() % (4 * 1024 * 1024), (state.0 + 31) & !31);
-    assert_eq!(core.dbg_live_count_for(anchor), Some(state.1 + 1));
+    let base_rel = anchor as usize % (4 * 1024 * 1024);
+    assert_eq!(
+        second.addr() % (4 * 1024 * 1024),
+        (base_rel + 16 + 31) & !31,
+    );
+    assert_eq!(core.dbg_live_count_for(anchor), Some(state.1 + 2));
     assert_eq!(
         RouteRegistration::class_at_global_address_for_test(second.addr()),
         Some(1)
@@ -141,9 +144,12 @@ fn batch_carve_crosses_leaf() {
     assert_eq!(core.dbg_carve_batch(1, &mut out), 0);
     assert_eq!(out, [anchor; 4]);
     assert_eq!(core.dbg_r11_issue_state_for_test(1), Some(state));
+    // The refusal lands on the second prepare call; the first block's leaf
+    // was already promoted by the fill carves, so the failed batch retains
+    // no spill storage.
     let promoted = SmallSidecar::system_totals_for_test();
-    assert_eq!(promoted.0 - system.0, 256);
-    assert_eq!(promoted.3 - system.3, 1);
+    assert_eq!(promoted.0 - system.0, 0);
+    assert_eq!(promoted.3 - system.3, 0);
     assert_eq!(
         RouteRegistration::class_at_global_address_for_test(anchor.addr()),
         Some(0)
