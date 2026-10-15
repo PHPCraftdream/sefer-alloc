@@ -1393,7 +1393,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **402 integration test files**,
+needs its acceptance run. The present tree contains **404 integration test files**,
 **95 example binaries**, **32 benches**, and **17 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1403,7 +1403,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (402 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (404 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (95 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (32 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1643,6 +1643,12 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   allocator callbacks and handled as a `Result`; it starts a process-lifetime
   worker with no shutdown, no reclamation deadline, and no guarantee of
   physical OS return while live allocations or retention policy prevent it.
+  `start_maintenance()` is a process-global side effect with no opt-out:
+  any dependency in the binary can activate the process-lifetime worker.
+  Never call it under an OS loader lock (Windows `DllMain`, DLL static
+  constructors): startup confirms the worker within a fixed internal bound
+  and aborts the process if the worker cannot be scheduled, rather than
+  hanging the caller forever.
   Forking an activated multithreaded process or unloading allocator code
   while the worker exists is unsupported.
 
