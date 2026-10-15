@@ -1052,6 +1052,15 @@ harness = false
 test = false
 required-features = ["exact-object-proto", "internals", "bench-internals"]
 
+# R6-T09: `alloc_batch`/`dealloc_batch` must route narrow layouts through
+# ExactNarrow exactly like the scalar GlobalAlloc methods. Harness-free
+# witness, one process, sequential checks in `main`.
+[[test]]
+name = "r6_t09_batch_exact_narrow"
+harness = false
+test = false
+required-features = ["exact-object-proto", "batch-api", "internals", "bench-internals"]
+
 [[test]]
 name = "r11_box_cap_gate_w1"
 harness = false
