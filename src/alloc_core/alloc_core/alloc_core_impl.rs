@@ -575,7 +575,10 @@ pub struct AllocCore {
     /// interval elapses, so a burst-then-quiet small workload does not pin the
     /// pooled segments indefinitely (the hard bound is still the `pool_cap` /
     /// byte-cap; the decay is the "eventual drain to zero when truly idle" that
-    /// makes retention TEMPORARY, not merely bounded).
+    /// makes retention TEMPORARY, not merely bounded). TEMPORARY caveat
+    /// (R6-T31): ticks fire on the small-reserve cold edge AND on the
+    /// large-path cold edges, so a thread that performs NO operations at all
+    /// keeps its (pool_cap-bounded) retention.
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) last_pool_decay_tick: Option<std::time::Instant>,
 

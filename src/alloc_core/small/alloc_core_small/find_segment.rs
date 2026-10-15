@@ -449,6 +449,14 @@ impl AllocCore {
         // as well as no-directory mode. Enumerate numeric active-Small slots;
         // each canonical root is read fresh before a possible recycle. No
         // iterator, root snapshot, or table borrow survives a drain.
+        // R6-T32: a cold trim releases the directory sidecar; without this, a
+        // non-growing heap would stay on the linear scan forever (the only
+        // rebuild trigger was reserve_small_segment). Rebuild lazily here —
+        // this fallback scan is already the cold path, and
+        // `maybe_materialize_directory` is a no-op when already materialised
+        // or below DIRECTORY_MATERIALIZE_THRESHOLD.
+        #[cfg(feature = "alloc-segment-directory")]
+        self.maybe_materialize_directory();
         let n = self.table.count() as usize;
 
         // Phase C (numa-aware): on the first pass we prefer segments whose
