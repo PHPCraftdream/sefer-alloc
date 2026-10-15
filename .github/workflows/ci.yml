@@ -3189,6 +3189,13 @@ jobs:
           --test regression_page_aligned_no_segment_exhaustion
           --test regression_realloc_cross_class_shrink
           --test stress_boundary_sweep
+      # R6-T22 (R6-MS-1): foreign address sharing the 4 MiB key window under
+      # `exact-span-large` must reject before `Node::deref`'s `add`. Separate
+      # step/feature string (`internals` is needed for the span probe) so it
+      # does not force a rebuild of the alloc-core group above.
+      - run: >-
+          cargo miri test --features "exact-span-large internals"
+          --test regression_r6_t22_foreign_window_key_miri
 
   miri-fastbin:
     needs: changes
