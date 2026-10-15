@@ -37,10 +37,12 @@
   - `perf(runtime)` — изменение пути, который уходит в `production`;
   - `fix(perf)` — исправление без заявленного ускорения;
   - `fix` / `test` — корректность;
-  - `docs:` — коммит, который НЕ трогает `src/` и `Cargo.toml`, иначе CI красный;
-  - `build:` — правки `Cargo.toml`.
+  - `refactor:` — перенос или выделение кода без изменения поведения (вне области линта, 46 коммитов в истории);
+  - `docs:` — вне `docs/`, `examples/`, `benches/`, `tests/`, `scripts/` допускаются только строки-комментарии (`//`, `///`, `//!`, `#`-комментарии TOML). Любая другая изменённая строка в `src/` или `Cargo.toml` — ERROR direction-2, CI красный. Проверка построчная: правка хвостового `// …` на строке с кодом считается кодом;
+  - `build:` — правки `Cargo.toml` с не-комментарными строками (direction-2 для `build:` — только WARNING).
 - **Perf-изменение требует** преррегистрации или гейта, path-activation oracle, указания слоя (`AllocCore` / `HeapCore` / `#[global_allocator]`) и одного режима для цены и выгоды. Таблицы отчёта генерируются скриптом.
-- **Флаги не добавлять**, если изменение может быть эффективным дефолтом (решение владельца).
+- **Флаги не добавлять**, если изменение может быть эффективным дефолтом (решение владельца). Порядок для каждой задачи: (1) вариант без флага в `production`, если его цена по iai в пределах допуска; (2) если цена неприемлема — документация ограничения; (3) новая фича или расширение `hardened` — только с явного согласия владельца. Существующий `hardened` — не «бесплатный» вариант: новая проверка под ним тоже требует согласия.
+- **Публичный API (semver)** — изменения `AllocStats`, сигнатур `SeferAlloc`, новых типов ошибок согласовать с владельцем. Версии не поднимать.
 - **Каждое исправление — с тестом**, который падает без исправления (counterfactual). Протоколы — с loom-моделью.
 - **Новые открытые пункты** вносить в `docs/perf/OPEN_ITEMS.md` или `docs/CORRECTNESS_OPEN_ITEMS.md` в том же коммите (задача R6-T21).
 - **Отвергнутое повторно не предлагать:** C′/C''/C‴ (сводка у producer), `TCACHE_CAP`↑, `FLUSH_N`, DualBitmap, hint-ы `find_segment_with_free` и другие. Полный список — `performance_review.md` §6.
@@ -193,21 +195,20 @@
 - **Источник:** `api_security_review.md` R6-SEC-1.
 - **Где:** `src/registry/heap_core/free/dealloc_own_base.rs:278-312` (`small_free_guard`), `:366` (`class_for(size, align)` из `Layout`).
 - **Механизм:** без `hardened` guard проверяет только `off >= payload_start`, отсутствие в magazine, `off < bump` и `!is_free(off)`. Interior-гранула живого блока проходит `Accept` и попадает в magazine класса из чужого `Layout`. Под `hardened` ловится только interior (`off % block_size`), идентичность класса не проверяется ни в одной сборке. Сценарий: `alloc(64)` → `dealloc(p+16, Layout(48))` → следующий `alloc(48) == p+16` внутри живого блока.
-- **Что сделать:**
-  - под `hardened` сверять класс из `Layout` с классом гранулы в owner class map маршрута (одна Acquire-загрузка; для выданных блоков это заменяет и модульную проверку);
-  - в `production` минимум задокументировать асимметрию own/cross-thread в README «Honest limitations» и в описании `hardened`;
-  - вариант без флага — проверка класса через reciprocal вместо `%` с iai-гейтом цены.
-- **Проверка:** тест под `hardened`: mismatched-class free → no-op или abort, а не повторная выдача; counterfactual.
+- **Что сделать (по правилу «без флагов»):**
+  1. **Без флага, в `production`:** сверять класс из `Layout` с классом гранулы в owner class map маршрута (одна Acquire-загрузка; для выданных блоков это заменяет и модульную проверку), либо проверка начала блока через reciprocal вместо `%`. Взять, если iai-цена на `dealloc_free_only_16b{,_n8,_n16}` и `small_churn_16b` в пределах допуска.
+  2. **Если цена неприемлема:** задокументировать асимметрию own/cross-thread в README «Honest limitations» и в описании `hardened`.
+  3. **Проверка только под `hardened`** — только с согласия владельца.
+- **Проверка:** тест mismatched-class free → no-op или abort, а не повторная выдача, в той сборке, где проверка включена; counterfactual. Цена — iai-гейт на слое `HeapCore`/`SeferAlloc`.
 
 ### R6-T06 — Сырые free-list-ссылки вне `hardened`
 - **Источник:** `api_security_review.md` R6-SEC-3.
 - **Где:** `src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:425-448` (`pop_free`), `:603-610`, `:639` (`try_drain_freelist_batch`). Валидация `hardened` — `:372-423`.
 - **Механизм:** `next` читается из первого слова свободного блока, head = `(next − segment) as u32` без проверки диапазона и кратности. UAF-запись 8 байт → выдача адреса атакующего в пределах `segment + 4 GiB`. Первое слово свежевыданного блока содержит старый `next` — утечка адреса кучи. В debug `next < segment` даёт панику вычитания внутри `GlobalAlloc` (см. R6-T14).
-- **Что сделать:**
-  - хранить смещение, а не указатель, и маскировать его XOR-ом с per-segment секретом (аналог glibc safe-linking);
-  - при pop проверять `offset < bump` и кратность классу;
-  - мерить цену на hot refill-пути iai;
-  - минимум — пункт в «Honest limitations».
+- **Что сделать (по правилу «без флагов»):**
+  1. **Без флага, в `production`:** хранить смещение, а не указатель, и маскировать его XOR-ом с per-segment секретом (аналог glibc safe-linking); при pop проверять `offset < bump` и кратность классу. Брать, если iai-цена на hot refill-пути в пределах допуска. Минимальная часть без секрета — `checked_sub` + проверка диапазона — нужна в любом случае (см. R6-T14).
+  2. **Если цена неприемлема:** пункт в «Honest limitations».
+  3. **Только под `hardened`** — только с согласия владельца.
 - **Проверка:** тест «poisoned next → abort, а не выдача»; iai-гейт цены (`small_churn_16b`, `cold_alloc_only_256x16b`).
 
 ### R6-T07 — Больше `MAX_HEAPS = 4096` живых потоков
@@ -240,7 +241,7 @@
 - **Источник:** `correctness_review.md` R6-CR-1, `api_security_review.md` R6-SEC-11 (часть а).
 - **Где:** `src/global/sefer_alloc/batch.rs:66-76` (`alloc_batch`), `:115-136` (`dealloc_batch`). Скалярный эталон — `src/global/sefer_alloc/global_alloc.rs:64-69`. Также `src/global/exact_object/narrow.rs:38-57`, `:63-91`.
 - **Механизм:** под `exact-object-proto` узкий `Layout` (≤ 16 B, align ≤ 8) обслуживается `System` и регистрируется в `ExactTable`. `dealloc_batch` сразу идёт в `HeapCore::dealloc_batch`/`publish_foreign`, маршрута не находит. Объект утекает, дескриптор живёт вечно, `foreign_or_unroutable_frees` растёт на корректной программе.
-- **Что сделать:** под `cfg(feature = "exact-object-proto")` в `dealloc_batch` сначала вызывать `ExactNarrow::try_dealloc(p, layout)` для каждого ненулевого блока. Аналогично направить `alloc_batch` через narrow-развилку. Либо `compile_error!` на комбинацию фич.
+- **Что сделать:** под `cfg(feature = "exact-object-proto")` в `dealloc_batch` сначала вызывать `ExactNarrow::try_dealloc(p, layout)` для каждого ненулевого блока. Аналогично направить `alloc_batch` через narrow-развилку. Это основной путь; `compile_error!` на комбинацию фич — запасной, только если маршрутизация окажется дороже, и с согласия владельца (запрещает сочетание фич).
 - **Проверка:** подпроцессный тест с `exact-object-proto batch-api`: `alloc` узкого → `dealloc_batch` → `ExactNarrow::dbg_counts().1` вырос, `foreign_or_unroutable_frees` не изменился.
 
 ### R6-T10 — Large-sweep на каждом Large alloc
@@ -359,7 +360,7 @@
   - ссылаться на элементы по пути (`SidecarBitmap::publish`), а не `file.rs:NNN`;
   - в `tests/no_stale_doc_references.rs` добавить запрещённые токены: `TFS`, `ring push`, `ring entry`, `HeapOverflow` вне исторического контекста, `drain_heap_overflow`, `owner_slot_is_live`, `entry_class_idx`, `dealloc_foreign_routing`, `large_layout_consistent`, и шаблон `\.rs:\d+` в комментариях `src/`.
 - **Проверка:** расширенный `tests/no_stale_doc_references.rs` красный до прохода и зелёный после.
-- **Префикс:** `docs:` недопустим, потому что меняется `src/`. Правки только в комментариях проходят direction-2 как comment-only, но надёжнее `fix(docs)` по taxonomy — уточнить по `scripts/verify-commit-prefixes.mjs`.
+- **Префикс:** коммиты делить. (1) Только строки-комментарии в `src/` + `tests/no_stale_doc_references.rs` → `docs:` (direction-2 не срабатывает: `tests/` вне проверки, `src/` comment-only). (2) Если меняется хоть одна строка кода, включая хвостовой `// …` на строке с кодом, — отдельный коммит `fix:` (вне области линта). Перед пушем — `node scripts/verify-commit-prefixes.mjs`.
 
 ### R6-T18 — Три копии цикла слива Small sidecar
 - **Источник:** `code_quality_review.md` R6-CQ-5.
@@ -367,7 +368,7 @@
 - **Механизм:** каждая копия заново считает `start_word`/`end_word`, делает `scan_small_route_from` с abort, `cut.pop` + `reclaim_sidecar_record`, `sync_directory_for_segment_classes`, `dec_live_and_maybe_decommit`/`release_or_pool_empty_segment`. Копии уже расходятся: разный клампинг `start_word`, bench-счётчики только в двух. Это граница времени жизни резервации: «все cut и заимствования route до release».
 - **Что сделать:** выделить `consume_small_cuts(&mut self, base, index, scan) -> (u64, usize)`, `finish_small_drain(...) -> DrainEnd { Live, Pooled, Released }`, `retire_large_route(..) -> bool`. Bench-наблюдатели — параметром ZST или замыканием.
 - **Проверка:** рефакторинг без изменения поведения. Все sidecar/loom-тесты, iai Ir-нейтрально (±T).
-- **Префикс:** `fix(perf)` или refactor-эквивалент по taxonomy.
+- **Префикс:** `refactor:` (поведение не меняется; `fix(perf)` — для восстановления инварианта, здесь не подходит).
 
 ### R6-T19 — Длинные функции
 - **Источник:** `code_quality_review.md` R6-CQ-7.
@@ -511,8 +512,8 @@
 - **Где:** `src/global/sefer_alloc/maintenance.rs:36-38`; `src/global/maintenance_service.rs:30`, `:64-69`, `:71-108` (ожидание `RUNNING` без таймаута на `:101-105`), `:129-169`.
 - **Что сделать:**
   - документировать глобальный побочный эффект и запрет вызова под loader lock (DllMain, static-конструкторы DLL);
-  - ожидание с таймаутом и отдельной ошибкой `MaintenanceStartError`;
-  - opt-out для владельца бинарника — только по решению владельца (флаг).
+  - ожидание с таймаутом; новая ошибка `MaintenanceStartError` меняет публичный API — согласовать с владельцем (semver);
+  - без флага: воркер и так стартует только явным вызовом. Opt-out для владельца бинарника (фича или `--cfg`) — не предлагать без явного запроса владельца.
 - **Проверка:** тест таймаута через `START_PAUSE` (уже есть инъекция).
 
 ### R6-T36 — `SECURITY.md` и doc `hardened`
@@ -523,7 +524,7 @@
   - panic или unwind из `GlobalAlloc` — в scope;
   - статус `internals`/`bench-internals`/`experimental`/`batch-api`/`exact-object-proto` указать явно;
   - doc `hardened` привести к sidecar-протоколу (cross-thread interior даёт abort у владельца, см. R6-T28) и сослаться на существующий раздел README.
-- **Префиксы:** `SECURITY.md` — `docs:`; `Cargo.toml` — отдельный коммит `build:`, потому что `docs:` с `Cargo.toml` красный в CI.
+- **Префикс:** `docs:` для всего. Doc фичи `hardened` в `Cargo.toml` — это `#`-комментарии, comment-only проходит direction-2. Если меняется хоть одна не-комментарная строка `Cargo.toml` — её отдельным коммитом `build:`.
 
 ### R6-T37 — Tier-1 allow в `tls_heap.rs`
 - **Источник:** `api_security_review.md` R6-SEC-9, `code_quality_review.md` R6-CQ-25, `memory_safety_review.md` R6-MS-6.
@@ -673,7 +674,7 @@
 
 ### R6-T56 — Аддитивные фичи и FFI-тип
 - **Источник:** `api_security_review.md` R6-SEC-13, R6-SEC-16.
-- **SEC-13:** любая зависимость может включить `exact-object-proto`, `virgin-zero-skip`, `hardened`, `bench-internals` и молча поменять глобальный аллокатор. Описать в README/`SECURITY.md`; для прототипов рассмотреть `--cfg`, как уже сделано для mock (`Cargo.toml:699-723`).
+- **SEC-13:** любая зависимость может включить `exact-object-proto`, `virgin-zero-skip`, `hardened`, `bench-internals` и молча поменять глобальный аллокатор. Описать в README/`SECURITY.md`. Перевод прототипов на `--cfg` (как уже сделано для mock, `Cargo.toml:699-723`) меняет набор фич — только с согласия владельца.
 - **SEC-16:** `process_exit.rs:11-15` объявляет `fn() -> isize`, а `:66-71` вызывает как `fn() -> u8` через двойной `transmute`. Объявить точный тип.
 
 ### R6-T57 — Файлы у лимита, плотность комментариев, ID
