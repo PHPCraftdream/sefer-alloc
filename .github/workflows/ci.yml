@@ -1880,6 +1880,11 @@ jobs:
           SEFER_R8_MAINTENANCE_CHILD=startup cargo test --features "production internals bench-internals" --test r8_autonomous_maintenance -- --exact autonomous_maintenance_global_alloc --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r8-maintenance-startup.log"
           grep -F "STARTUP_FAILURE_RACE_AND_RETRY" "$RUNNER_TEMP/r8-maintenance-startup.log"
         shell: bash
+      - name: fallback worker ingress-only while active (R6-T27)
+        run: |
+          cargo test --features "production internals bench-internals" --test r6_t27_fallback_worker_ingress_only -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/r6-t27-fallback-ingress.log"
+          grep -F "test fallback_worker_ingress_only_while_active ... ok" "$RUNNER_TEMP/r6-t27-fallback-ingress.log"
+        shell: bash
       - name: exact OS release (minimal global and decommit, Linux)
         if: ${{ !cancelled() }}
         run: |

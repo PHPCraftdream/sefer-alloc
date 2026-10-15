@@ -98,8 +98,11 @@ impl AllocCore {
 
     /// Drop only the owner-private directory on a cold trim. The stable
     /// cross-thread dirty sidecar and its publication state are independent.
-    /// A later small-segment registration lazily rebuilds the directory from
-    /// the still-live table, including its bitmap and NUMA bucket counters.
+    /// The directory is rebuilt lazily by the NEXT FALLBACK SCAN in
+    /// `find_segment_with_free_impl` (or by the next small-segment
+    /// registration) from the still-live table, including its bitmap and NUMA
+    /// bucket counters — so even a non-growing heap recovers directory routing
+    /// without new reservations.
     pub(crate) fn release_directory_for_cold_trim(&mut self) {
         self.directory_sidecar = core::ptr::null_mut();
         self.directory_miss_streak.fill(0);
