@@ -169,6 +169,30 @@ never triggers a decay tick) lives in
 this section states the headline facts and the practical remedy; that
 report is where the full raw numbers and methodology live.
 
+> **Every Large request (allocation above ~253 KiB `SMALL_MAX`) is
+> rounded up to a whole number of 4 MiB `SEGMENT`s before the OS
+> reserve+commit — so a 260 KiB request reserves and commits 4 MiB
+> (~16× commit amplification).** On Windows the span is committed eagerly
+> (reserve then `MEM_COMMIT` — the commit happens at reservation time, not
+> on first touch; for Large this is the two-call path —
+> `VirtualAlloc(MEM_RESERVE)` of the aligned address space, then
+> `VirtualAlloc(MEM_COMMIT)` over the span — via `Segment::reserve`'s
+> 4 MiB-aligned `vmem::reserve_aligned`), so
+> this is real commit charge, not just reserved address space. Combined
+> with the 4095-live-Large cap (see the Honest limitations bullet), a
+> single-threaded async server holding one 260 KiB buffer per connection
+> hits the cap after 4095 connections with up to ~16 GiB committed for
+> ~1 GiB requested; the next request returns null →
+> `handle_alloc_error` (abort) in a `GlobalAlloc` consumer. The opt-in,
+> experimental `exact-span-large` feature sizes the reservation to the
+> page-exact request instead (260 KiB → ~264 KiB); see item 28
+> (CONDITIONAL-GO, not promoted; known realloc-growth regression) in
+> [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md). Measured on Linux
+> (N × 260 KiB live), the address space reserved per object is 8 MiB by
+> default and 4.3 MiB with `exact-span-large`: the aligned reservation, not
+> the span rounding, dominates there
+> ([`docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md`](docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md) §7).
+
 ### Named profiles (`Profile`, `alloc-decommit`)
 
 R30-7 (task #456) shipped a single flat `Profile` enum bundling a
@@ -1392,8 +1416,8 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **401 integration test files**,
-**95 example binaries**, **32 benches**, and **17 root Loom models**
+needs its acceptance run. The present tree contains **402 integration test files**,
+**96 example binaries**, **32 benches**, and **17 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
@@ -1402,8 +1426,8 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (401 files) |
-| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (95 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (402 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (96 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (32 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Bounded protocol interleavings; see `scripts/loom.mjs` for selected configurations | **Root (17 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
@@ -1642,6 +1666,12 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   allocator callbacks and handled as a `Result`; it starts a process-lifetime
   worker with no shutdown, no reclamation deadline, and no guarantee of
   physical OS return while live allocations or retention policy prevent it.
+  `start_maintenance()` is a process-global side effect with no opt-out:
+  any dependency in the binary can activate the process-lifetime worker.
+  Never call it under an OS loader lock (Windows `DllMain`, DLL static
+  constructors): startup confirms the worker within a fixed internal bound
+  and aborts the process if the worker cannot be scheduled, rather than
+  hanging the caller forever.
   Forking an activated multithreaded process or unloading allocator code
   while the worker exists is unsupported.
 
@@ -1699,6 +1729,27 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   for the follow-on design (an expandable/chained table, evaluated jointly
   against the cold-carve gap) if a workload still needs more than 4095
   simultaneously-live Large objects.
+- **Large commit amplification: every Large request is rounded up to
+  whole 4 MiB `SEGMENT`s before reserve+commit.** Any allocation above
+  ~253 KiB (`SMALL_MAX`) is a Large request, and `Segment::reserve`
+  rounds it up to a whole number of 4 MiB `SEGMENT`s
+  (`src/alloc_core/platform/os.rs`) — a 260 KiB request therefore
+  reserves and commits 4 MiB (~16× amplification), and on Windows the
+  span is committed eagerly (reserve then `MEM_COMMIT` — the commit
+  happens at reservation time, not on first touch; for Large this is
+  the two-call path — `VirtualAlloc(MEM_RESERVE)` of the aligned
+  address space, then `VirtualAlloc(MEM_COMMIT)` over the span — via
+  `Segment::reserve`'s 4 MiB-aligned `vmem::reserve_aligned`), so the
+  rounded size is real commit
+  charge, not merely address space. Together with the 4095-live-Large
+  cap above, a single-threaded async server holding one 260 KiB buffer
+  per connection hits the cap after 4095 connections with up to
+  ~16 GiB committed for ~1 GiB requested — and the next request returns
+  null → `handle_alloc_error` (abort) in a `GlobalAlloc` consumer. The
+  experimental, opt-in `exact-span-large` feature sizes the reservation
+  to the page-exact request instead (260 KiB → ~264 KiB); it is
+  CONDITIONAL-GO, not promoted, with a known realloc-growth regression —
+  see item 28 in [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md).
 
 ---
 
