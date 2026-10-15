@@ -1,91 +1,91 @@
-E0_METADATA {"id":"R4b-11","head":"b8351188040546f2036c90cf521bfb160355195a","tree":"3321e58776e708bccf580e2f54ba33568726de41","setup":""}
-E0_METADATA {"id":"R4b-11","head":"b8351188040546f2036c90cf521bfb160355195a","tree":"3321e58776e708bccf580e2f54ba33568726de41","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-11.json","recipe_sha256":"0ab50eddc2057fa100b839149955fdfd7246a5359d5cceb3690512c5ef6d9f9c","registry_activation_hash":"9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd"}
+E0_METADATA {"id":"R4b-11","head":"ab745a44b18467f328b88400ad1d466ab2de428f","tree":"b64b7d1dd46ba177f29f420f3fd92fd2ca167ff2","setup":""}
+E0_METADATA {"id":"R4b-11","head":"ab745a44b18467f328b88400ad1d466ab2de428f","tree":"b64b7d1dd46ba177f29f420f3fd92fd2ca167ff2","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-11.json","recipe_sha256":"0ab50eddc2057fa100b839149955fdfd7246a5359d5cceb3690512c5ef6d9f9c","registry_activation_hash":"9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd"}
 
 E0_STEP {"id":"R4b-11","kind":"baseline","name":"teardown source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_teardown_ordering_pinned","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test teardown_stamps_torn_then_trims_then_releases_the_slot .* ok","test lease_release_cas_is_release_ordered .* ok","test result: ok. "]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m    Updating[0m crates.io index
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m mimalloc v0.1.52
-[1m[92m  Downloaded[0m cast v0.3.0
-[1m[92m  Downloaded[0m walkdir v2.5.0
-[1m[92m  Downloaded[0m cfg-if v1.0.4
-[1m[92m  Downloaded[0m bit-set v0.8.0
-[1m[92m  Downloaded[0m ciborium-ll v0.2.2
-[1m[92m  Downloaded[0m bit-vec v0.8.0
-[1m[92m  Downloaded[0m fastrand v2.4.1
-[1m[92m  Downloaded[0m errno v0.3.14
 [1m[92m  Downloaded[0m anes v0.1.6
-[1m[92m  Downloaded[0m either v1.16.0
-[1m[92m  Downloaded[0m criterion-plot v0.5.0
-[1m[92m  Downloaded[0m ciborium v0.2.2
-[1m[92m  Downloaded[0m ciborium-io v0.2.2
-[1m[92m  Downloaded[0m crossbeam-deque v0.8.6
-[1m[92m  Downloaded[0m same-file v1.0.6
-[1m[92m  Downloaded[0m aho-corasick v1.1.4
-[1m[92m  Downloaded[0m clap_lex v1.1.0
-[1m[92m  Downloaded[0m plotters-svg v0.3.7
+[1m[92m  Downloaded[0m bit-set v0.8.0
+[1m[92m  Downloaded[0m autocfg v1.5.1
 [1m[92m  Downloaded[0m anstyle v1.0.14
-[1m[92m  Downloaded[0m tokio-macros v2.7.0
 [1m[92m  Downloaded[0m fnv v1.0.7
-[1m[92m  Downloaded[0m itoa v1.0.18
+[1m[92m  Downloaded[0m bit-vec v0.8.0
+[1m[92m  Downloaded[0m find-msvc-tools v0.1.9
+[1m[92m  Downloaded[0m quote v1.0.46
 [1m[92m  Downloaded[0m is-terminal v0.4.17
-[1m[92m  Downloaded[0m rand_xorshift v0.4.0
+[1m[92m  Downloaded[0m proc-macro-error-attr2 v2.0.0
+[1m[92m  Downloaded[0m getrandom v0.3.4
+[1m[92m  Downloaded[0m half v2.7.1
+[1m[92m  Downloaded[0m plotters-backend v0.3.7
+[1m[92m  Downloaded[0m quick-error v1.2.3
+[1m[92m  Downloaded[0m bitflags v2.13.0
+[1m[92m  Downloaded[0m getrandom v0.4.3
 [1m[92m  Downloaded[0m rustc_version v0.4.1
 [1m[92m  Downloaded[0m unarray v0.1.4
-[1m[92m  Downloaded[0m plotters-backend v0.3.7
+[1m[92m  Downloaded[0m ciborium-io v0.2.2
+[1m[92m  Downloaded[0m clap_lex v1.1.0
+[1m[92m  Downloaded[0m mimalloc v0.1.52
+[1m[92m  Downloaded[0m same-file v1.0.6
+[1m[92m  Downloaded[0m tokio-macros v2.7.0
+[1m[92m  Downloaded[0m plotters-svg v0.3.7
+[1m[92m  Downloaded[0m cast v0.3.0
+[1m[92m  Downloaded[0m errno v0.3.14
 [1m[92m  Downloaded[0m wait-timeout v0.2.1
-[1m[92m  Downloaded[0m quick-error v1.2.3
-[1m[92m  Downloaded[0m autocfg v1.5.1
-[1m[92m  Downloaded[0m crossbeam-epoch v0.9.20
-[1m[92m  Downloaded[0m proc-macro-error-attr2 v2.0.0
-[1m[92m  Downloaded[0m zmij v1.0.21
-[1m[92m  Downloaded[0m clap v4.6.1
+[1m[92m  Downloaded[0m ciborium-ll v0.2.2
+[1m[92m  Downloaded[0m itoa v1.0.18
 [1m[92m  Downloaded[0m pin-project-lite v0.2.17
-[1m[92m  Downloaded[0m quote v1.0.46
-[1m[92m  Downloaded[0m bitflags v2.13.0
+[1m[92m  Downloaded[0m rand_core v0.9.5
+[1m[92m  Downloaded[0m serde_core v1.0.228
+[1m[92m  Downloaded[0m crossbeam-deque v0.8.6
+[1m[92m  Downloaded[0m oorandom v11.1.5
+[1m[92m  Downloaded[0m criterion-plot v0.5.0
+[1m[92m  Downloaded[0m proc-macro-error2 v2.0.1
+[1m[92m  Downloaded[0m rand_xorshift v0.4.0
+[1m[92m  Downloaded[0m zmij v1.0.21
+[1m[92m  Downloaded[0m either v1.16.0
+[1m[92m  Downloaded[0m rusty-fork v0.3.1
+[1m[92m  Downloaded[0m shlex v2.0.1
+[1m[92m  Downloaded[0m fastrand v2.4.1
+[1m[92m  Downloaded[0m iai-callgrind-macros v0.5.1
 [1m[92m  Downloaded[0m ppv-lite86 v0.2.21
+[1m[92m  Downloaded[0m cfg-if v1.0.4
+[1m[92m  Downloaded[0m walkdir v2.5.0
+[1m[92m  Downloaded[0m semver v1.0.28
+[1m[92m  Downloaded[0m once_cell v1.21.4
 [1m[92m  Downloaded[0m rand_chacha v0.9.0
 [1m[92m  Downloaded[0m tinytemplate v1.2.1
-[1m[92m  Downloaded[0m iai-callgrind-macros v0.5.1
-[1m[92m  Downloaded[0m proc-macro-error2 v2.0.1
-[1m[92m  Downloaded[0m rand_core v0.9.5
-[1m[92m  Downloaded[0m rusty-fork v0.3.1
-[1m[92m  Downloaded[0m find-msvc-tools v0.1.9
-[1m[92m  Downloaded[0m semver v1.0.28
-[1m[92m  Downloaded[0m shlex v2.0.1
+[1m[92m  Downloaded[0m ciborium v0.2.2
 [1m[92m  Downloaded[0m tempfile v3.27.0
-[1m[92m  Downloaded[0m once_cell v1.21.4
-[1m[92m  Downloaded[0m proc-macro2 v1.0.106
-[1m[92m  Downloaded[0m num-traits v0.2.19
-[1m[92m  Downloaded[0m oorandom v11.1.5
-[1m[92m  Downloaded[0m serde_derive v1.0.228
-[1m[92m  Downloaded[0m slotmap v1.1.1
-[1m[92m  Downloaded[0m cc v1.2.65
-[1m[92m  Downloaded[0m derive_more-impl v2.1.1
-[1m[92m  Downloaded[0m getrandom v0.3.4
-[1m[92m  Downloaded[0m getrandom v0.4.3
-[1m[92m  Downloaded[0m rayon-core v1.13.0
-[1m[92m  Downloaded[0m serde_core v1.0.228
 [1m[92m  Downloaded[0m unicode-ident v1.0.24
-[1m[92m  Downloaded[0m zerocopy-derive v0.8.52
-[1m[92m  Downloaded[0m derive_more v2.1.1
-[1m[92m  Downloaded[0m half v2.7.1
-[1m[92m  Downloaded[0m serde v1.0.228
-[1m[92m  Downloaded[0m memchr v2.8.2
-[1m[92m  Downloaded[0m iai-callgrind v0.14.2
-[1m[92m  Downloaded[0m rand v0.9.4
+[1m[92m  Downloaded[0m clap v4.6.1
+[1m[92m  Downloaded[0m serde_derive v1.0.228
+[1m[92m  Downloaded[0m crossbeam-epoch v0.9.20
+[1m[92m  Downloaded[0m num-traits v0.2.19
 [1m[92m  Downloaded[0m criterion v0.5.1
+[1m[92m  Downloaded[0m iai-callgrind v0.14.2
+[1m[92m  Downloaded[0m proc-macro2 v1.0.106
+[1m[92m  Downloaded[0m derive_more v2.1.1
+[1m[92m  Downloaded[0m cc v1.2.65
+[1m[92m  Downloaded[0m slotmap v1.1.1
+[1m[92m  Downloaded[0m zerocopy-derive v0.8.52
+[1m[92m  Downloaded[0m serde v1.0.228
+[1m[92m  Downloaded[0m rayon-core v1.13.0
+[1m[92m  Downloaded[0m memchr v2.8.2
+[1m[92m  Downloaded[0m derive_more-impl v2.1.1
+[1m[92m  Downloaded[0m rand v0.9.4
+[1m[92m  Downloaded[0m aho-corasick v1.1.4
 [1m[92m  Downloaded[0m itertools v0.10.5
-[1m[92m  Downloaded[0m clap_builder v4.6.0
 [1m[92m  Downloaded[0m plotters v0.3.7
 [1m[92m  Downloaded[0m libm v0.2.16
-[1m[92m  Downloaded[0m rayon v1.12.0
 [1m[92m  Downloaded[0m regex v1.12.4
 [1m[92m  Downloaded[0m serde_json v1.0.150
+[1m[92m  Downloaded[0m rayon v1.12.0
+[1m[92m  Downloaded[0m clap_builder v4.6.0
 [1m[92m  Downloaded[0m proptest v1.11.0
-[1m[92m  Downloaded[0m zerocopy v0.8.52
 [1m[92m  Downloaded[0m syn v2.0.118
+[1m[92m  Downloaded[0m zerocopy v0.8.52
 [1m[92m  Downloaded[0m regex-syntax v0.8.11
 [1m[92m  Downloaded[0m rustix v1.1.4
 [1m[92m  Downloaded[0m libmimalloc-sys v0.1.49
@@ -94,109 +94,109 @@ E0_STEP {"id":"R4b-11","kind":"baseline","name":"teardown source-pin baseline","
 [1m[92m  Downloaded[0m tokio v1.52.3
 [1m[92m  Downloaded[0m linux-raw-sys v0.12.1
 [1m[92m   Compiling[0m proc-macro2 v1.0.106
-[1m[92m   Compiling[0m quote v1.0.46
 [1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.46
 [1m[92m   Compiling[0m libc v0.2.186
 [1m[92m   Compiling[0m cfg-if v1.0.4
-[1m[92m   Compiling[0m serde_core v1.0.228
 [1m[92m   Compiling[0m zerocopy v0.8.52
-[1m[92m   Compiling[0m serde v1.0.228
+[1m[92m   Compiling[0m serde_core v1.0.228
 [1m[92m   Compiling[0m zmij v1.0.21
 [1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m serde v1.0.228
 [1m[92m   Compiling[0m syn v2.0.118
+[1m[92m   Compiling[0m libm v0.2.16
 [1m[92m   Compiling[0m serde_json v1.0.150
 [1m[92m   Compiling[0m autocfg v1.5.1
 [1m[92m   Compiling[0m crossbeam-utils v0.8.21
-[1m[92m   Compiling[0m libm v0.2.16
 [1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m rustix v1.1.4
 [1m[92m   Compiling[0m getrandom v0.4.3
 [1m[92m   Compiling[0m memchr v2.8.2
 [1m[92m   Compiling[0m itoa v1.0.18
 [1m[92m   Compiling[0m crossbeam-epoch v0.9.20
-[1m[92m   Compiling[0m rustix v1.1.4
 [1m[92m   Compiling[0m rand_core v0.9.5
+[1m[92m   Compiling[0m find-msvc-tools v0.1.9
+[1m[92m   Compiling[0m regex-syntax v0.8.11
 [1m[92m   Compiling[0m linux-raw-sys v0.12.1
 [1m[92m   Compiling[0m version_check v0.9.5
 [1m[92m   Compiling[0m bitflags v2.13.0
 [1m[92m   Compiling[0m once_cell v1.21.4
 [1m[92m   Compiling[0m shlex v2.0.1
-[1m[92m   Compiling[0m find-msvc-tools v0.1.9
-[1m[92m   Compiling[0m regex-syntax v0.8.11
 [1m[92m   Compiling[0m cc v1.2.65
 [1m[92m   Compiling[0m slotmap v1.1.1
 [1m[92m   Compiling[0m serde_derive v1.0.228
 [1m[92m   Compiling[0m zerocopy-derive v0.8.52
 [1m[92m   Compiling[0m derive_more-impl v2.1.1
 [1m[92m   Compiling[0m either v1.16.0
-[1m[92m   Compiling[0m fastrand v2.4.1
 [1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m fastrand v2.4.1
 [1m[92m   Compiling[0m tempfile v3.27.0
 [1m[92m   Compiling[0m crossbeam-deque v0.8.6
 [1m[92m   Compiling[0m libmimalloc-sys v0.1.49
 [1m[92m   Compiling[0m wait-timeout v0.2.1
 [1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
-[1m[92m   Compiling[0m bit-vec v0.8.0
-[1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
-[1m[92m   Compiling[0m plotters-backend v0.3.7
-[1m[92m   Compiling[0m clap_lex v1.1.0
-[1m[92m   Compiling[0m ciborium-io v0.2.2
-[1m[92m   Compiling[0m anstyle v1.0.14
 [1m[92m   Compiling[0m quick-error v1.2.3
 [1m[92m   Compiling[0m fnv v1.0.7
-[1m[92m   Compiling[0m clap_builder v4.6.0
-[1m[92m   Compiling[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
+[1m[92m   Compiling[0m ciborium-io v0.2.2
+[1m[92m   Compiling[0m plotters-backend v0.3.7
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m anstyle v1.0.14
 [1m[92m   Compiling[0m plotters-svg v0.3.7
+[1m[92m   Compiling[0m clap_builder v4.6.0
 [1m[92m   Compiling[0m bit-set v0.8.0
 [1m[92m   Compiling[0m proc-macro-error2 v2.0.1
-[1m[92m   Compiling[0m derive_more v2.1.1
-[1m[92m   Compiling[0m itertools v0.10.5
-[1m[92m   Compiling[0m half v2.7.1
+[1m[92m   Compiling[0m rusty-fork v0.3.1
 [1m[92m   Compiling[0m ppv-lite86 v0.2.21
-[1m[92m   Compiling[0m ciborium-ll v0.2.2
-[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m half v2.7.1
 [1m[92m   Compiling[0m rand_chacha v0.9.0
+[1m[92m   Compiling[0m ciborium-ll v0.2.2
+[1m[92m   Compiling[0m itertools v0.10.5
+[1m[92m   Compiling[0m derive_more v2.1.1
+[1m[92m   Compiling[0m regex-automata v0.4.14
 [1m[92m   Compiling[0m rand v0.9.4
 [1m[92m   Compiling[0m rand_xorshift v0.4.0
 [1m[92m   Compiling[0m unarray v0.1.4
+[1m[92m   Compiling[0m cast v0.3.0
 [1m[92m   Compiling[0m iai-callgrind v0.14.2
 [1m[92m   Compiling[0m same-file v1.0.6
-[1m[92m   Compiling[0m cast v0.3.0
 [1m[92m   Compiling[0m criterion-plot v0.5.0
-[1m[92m   Compiling[0m regex v1.12.4
-[1m[92m   Compiling[0m tinytemplate v1.2.1
 [1m[92m   Compiling[0m walkdir v2.5.0
+[1m[92m   Compiling[0m tinytemplate v1.2.1
+[1m[92m   Compiling[0m regex v1.12.4
 [1m[92m   Compiling[0m proptest v1.11.0
 [1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
+[1m[92m   Compiling[0m rayon v1.12.0
 [1m[92m   Compiling[0m ciborium v0.2.2
 [1m[92m   Compiling[0m clap v4.6.1
-[1m[92m   Compiling[0m rayon v1.12.0
 [1m[92m   Compiling[0m sefer-region v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/sefer-region)
 [1m[92m   Compiling[0m plotters v0.3.7
 [1m[92m   Compiling[0m bincode v1.3.3
 [1m[92m   Compiling[0m tokio-macros v2.7.0
 [1m[92m   Compiling[0m is-terminal v0.4.17
-[1m[92m   Compiling[0m anes v0.1.6
-[1m[92m   Compiling[0m pin-project-lite v0.2.17
-[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
-[1m[92m   Compiling[0m oorandom v11.1.5
-[1m[92m   Compiling[0m size-classes v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/size-classes)
 [1m[92m   Compiling[0m proc-memstat v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-memstat)
 [1m[92m   Compiling[0m once-ptr-cell v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/once-ptr-cell)
-[1m[92m   Compiling[0m proc-probe v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-probe)
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m   Compiling[0m globalalloc-model v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/globalalloc-model)
-[1m[92m   Compiling[0m criterion v0.5.1
+[1m[92m   Compiling[0m aligned-vmem v0.2.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/aligned-vmem)
+[1m[92m   Compiling[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m oorandom v11.1.5
+[1m[92m   Compiling[0m anes v0.1.6
+[1m[92m   Compiling[0m size-classes v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/size-classes)
 [1m[92m   Compiling[0m tokio v1.52.3
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m   Compiling[0m criterion v0.5.1
+[1m[92m   Compiling[0m proc-probe v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/proc-probe)
+[1m[92m   Compiling[0m globalalloc-model v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/globalalloc-model)
 [1m[92m   Compiling[0m mimalloc v0.1.52
 [1m[92m   Compiling[0m malloc-bench-rs v0.1.0 (/home/runner/work/sefer-alloc/sefer-alloc/crates/malloc-bench-rs)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 16.93s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 15.63s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph4b_teardown_ordering_pinned.rs (target/debug/deps/r11_ph4b_teardown_ordering_pinned-b8978bb45f275ed6)
 
 running 2 tests
-test lease_release_cas_is_release_ordered ... ok
 test teardown_stamps_torn_then_trims_then_releases_the_slot ... ok
+test lease_release_cas_is_release_ordered ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -207,14 +207,14 @@ E0_STEP {"id":"R4b-11","kind":"mutant","name":"TORN stamp omitted mutant","argv"
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.87s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.81s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph4b_teardown_ordering_pinned.rs (target/debug/deps/r11_ph4b_teardown_ordering_pinned-b8978bb45f275ed6)
 
 running 2 tests
 
-thread 'teardown_stamps_torn_then_trims_then_releases_the_slot' (5835) panicked at tests/r11_ph4b_teardown_ordering_pinned.rs:58:10:
+thread 'teardown_stamps_torn_then_trims_then_releases_the_slot' (5815) panicked at tests/r11_ph4b_teardown_ordering_pinned.rs:58:10:
 teardown poisons LOCAL via the shared mark_local_torn choke point
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test lease_release_cas_is_release_ordered ... ok
@@ -230,7 +230,7 @@ test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 [1m[91merror[0m: test failed, to rerun pass `--test r11_ph4b_teardown_ordering_pinned`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4b-11","kind":"restored","sha256":"6fae721a30ff6fd11250b606c6b3d5c41b3c537ee2fb697ed69440fe9884899b"}
+E0_METADATA {"id":"R4b-11","kind":"restored","sha256":"106434f32983eb3c8aa1809ad12f61c6e9d1d1c7eed735fc5a51aaf2ebf63561"}
 
 E0_STEP {"id":"R4b-11","kind":"restored-baseline","name":"teardown source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_teardown_ordering_pinned","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test teardown_stamps_torn_then_trims_then_releases_the_slot .* ok","test lease_release_cas_is_release_ordered .* ok","test result: ok. "]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
