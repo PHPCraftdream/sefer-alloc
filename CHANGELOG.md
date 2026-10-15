@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Round 20: PRF-01 C'' and C‴ gates, PRF-04 ReuseFirst, gate runs as PR checks (2026-10-12 to 2026-10-15)
+
+Runtime changes this round: 2, inside the unchanged `production` composition
+and without flags. Deterministic Ir only; no wall-clock or RSS claim.
+Dependency versions and `Cargo.lock` are unchanged. Manifest:
+`docs/perf/round-manifests/R20_MANIFEST.md`.
+
+- [performance] PRF-04 ReuseFirst: releasing a heap spills the reuse hint it
+  displaces into a FREE-slot bitmap. A thread claim then reuses a FREE heap
+  instead of materialising a new one. Official gate v2 (run 38682260617):
+  - barrier-wave windows cost 12962/558283 (L1) and 82133/740979 (L2) of main;
+  - price at the shipping layer (L2) is +7 Ir per cold claim, +7 per recycled
+    pair and +12 per release, each under 1% of its window;
+  - GO (deterministic; native deferred).
+  Run01 under the v1 rules stands as INVALID. The v2 protocol was written after
+  run01, says so, and gates price at the real thread lifecycle and linearity on
+  the candidate's added cost. Report `docs/perf/R20_PRF04_HEAP_REUSE_RUN02_REPORT.md`.
+- [performance] Strict trim and bounded maintenance cut sidecar words from the
+  payload start instead of word 0 (P1-3). Ir before/after not measured.
+- [measurement] PRF-01 C'' (summary bit on a 0 → non-0 word) is NO-GO:
+  producer +13.03 Ir per remote free against +6, construction +641 Ir.
+  `docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_RUN01_REPORT.md`.
+- [measurement] PRF-01 C‴ (summary in the dead sidecar prefix) is NO-GO:
+  producer +8.125 / +16 Ir per remote free against +6 / +10, construction +42 Ir.
+  The owner rejected both C‴ and its flag fallback, and perf item 82 is closed.
+  `docs/perf/R20_PRF01_C3_RUN01_REPORT.md`.
+- [measurement] PRF-03 is closed: the repository benches issue 0 Large
+  requests, so a retained-route redesign has no shown value.
+  `docs/perf/R20_PRF03_LARGE_HIT_ACTIVATION.md`.
+- [CI] Gate runs are pull-request checks: the `gate-run` label plus
+  `.github/gate-run.json` run a frozen runner in `r20-gates.yml`. CI runs
+  tiered job groups chosen by changed paths (`docs/CI_TIERS.md`). Evidence
+  registry rows are re-verified by executable recipes in a PR check.
+- [CI] The weekly powerset and fuzz jobs run again; three root test targets
+  are gated on the features they need (correctness card 95). The proc-probe
+  `peak_rss` monotonicity flake is fixed.
+- [docs] Open perf item 89: `mimalloc_bootstrap_proxy` measured +480 Ir on
+  one repeat of the same binary; its cause is not established.
+
 ### Code structure limits (2026-10-12)
 
 Runtime improvements: 0. A process change only.
