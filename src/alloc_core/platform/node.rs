@@ -148,7 +148,11 @@ impl Node {
         // pointer must stay in bounds of the same allocation; `wrapping_add`
         // is the variant that would need no such precondition). The resulting
         // pointer is dereferenced later only by the user, who owns the block
-        // by then.
+        // by then. The offset bound is the CALLER's obligation: it MUST be
+        // checked against the segment's actual usable length before this call
+        // (R6-MS-1: the address-key window can be wider than the reservation —
+        // `exact-span-large`/biased Large — so build witness addresses with
+        // `wrapping_add`/`with_addr` until the bound is proven).
         unsafe { segment_base.add(offset) }
     }
 
