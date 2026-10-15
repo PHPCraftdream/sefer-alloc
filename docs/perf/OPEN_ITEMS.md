@@ -3147,6 +3147,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** task R6-T32.
    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-6; task R6-T32.
 
+100. **[L] R6-T27 follow-up — fallback-heap RSS under sustained fallback load is not measured.** (Filed 2026-10-15, R6-T27.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked.
+   > - **Current number/verdict:** none measured. Since R6-T27 the maintenance worker trims the shared fallback heap only after 100 consecutive quiet visits (~1 s); before, it trimmed every 10 ms pass. Retention while fallback stays busy is therefore bounded by the idle window, not by the pass period. No existing probe combines forced fallback load with an RSS reading: `examples/rss_probe.rs` runs on registry heaps, `examples/task1995_bind_less_cold_arm_census.rs` forces fallback but records latency and lock deltas only.
+   > - **Next trigger:** a fallback-profile RSS report, or a change to the fallback idle policy (`FALLBACK_IDLE_VISITS` in `src/global/maintenance_service.rs`).
+   > - **Evidence:** `tests/r6_t27_fallback_worker_ingress_only.rs`; task R6-T27.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
