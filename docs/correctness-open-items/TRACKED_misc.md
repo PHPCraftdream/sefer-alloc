@@ -65,6 +65,7 @@ split the same day.)
     - **R16 evidence update (2026-10-08):** further current examples, not a closure: hidden `dbg_stamp_*` docs still cite the removed `dbg_push_to_ring` as an `unsafe fn` "in this file" (`src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs:138`, `table_diag.rs:260`; strict rustdoc skips `#[doc(hidden)]` items); `registry/mod.rs:53` keeps `#[allow(dead_code)]` on the live production `segment_route` module; `SeferAlloc::trim_current_thread`'s doc still contrasts itself with a "legacy foreign `dealloc` ring/overflow/stack" (`src/global/sefer_alloc/diag.rs:252–254`); `dec_live_and_maybe_decommit` no longer decrements. Status and trigger unchanged. Evidence: `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4.
 
     - **R16 follow-up update (2026-10-08):** commit `c8b9344a` fixes the specific examples listed above and in the R15 update: the sharded binding docs, the `registry/mod.rs` module note, `SeferAlloc::trim_current_thread`, the batch/refill comments, the sidecar/directory notes and the two hidden `dbg_stamp_*` docs that cited the removed `dbg_push_to_ring` now describe the live terminal-sidecar protocol, and the blanket `#[allow(dead_code)]` on `registry::segment_route` is removed (it hid no warning in 6 clippy rows, 7 narrow `--lib` sets, `--all-features` and strict rustdoc with `--document-private-items`). The structural prose debt (task history outweighing code across `src/`) is untouched, so the status stays OPEN with the same trigger. Separate residual noted: the parent `allow(dead_code, unused_imports)` around `src/lib.rs:482` still masks dead code in builds without `internals`.
+    - **Round 6 (2026-10-15):** R6-CR-12 adds new examples of the same stale-documentation class: "Cross-thread frees go to the per-segment ring" (`tcache.rs:23`), the inline-TFS description (`alloc_core_small_impl.rs:157`), "route cross-thread via the TFS" (`dealloc.rs:186`), the nonexistent `large_layout_consistent` (`dealloc_own_base.rs:126`), the stale #138 rationale (`realloc_fastpath.rs:156`), "Read by `recycle`" (`core.rs:362`), and contradictory headroom semantics in `large_cache_config.rs`. Tracked as task R6-T17; Evidence: `docs/agent_reviews_round6/correctness_review.md` R6-CR-12.
 
 158. **[T] xa XA-18: under `numa-aware`, a node promoted from the unknown bucket to a dedicated bucket leaves its old directory bits in the unknown bucket.** (Filed 2026-09-28. Found by `docs/reviews/2026-09-21-200601-src-review-xa.md` XA-18 (P3), which no index recorded; re-flagged by `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §3.)
 
@@ -109,3 +110,67 @@ split the same day.)
     - **Current-number-or-verdict:** the public constants forward to the private size-class scheme, whose cfg-selected `EXTRAS` changes table geometry: 49 entries without `medium-classes`, 55 with `medium-classes` alone (ceiling 1 MiB), 58 with `medium-classes-wide` (ceiling 1.75 MiB). `SMALL_MAX` is the final table entry; `SIZE2CLASS` content/length derives from that scheme and `SMALL_MAX`/`MIN_BLOCK`. Public associated-item docs explain classification and slice/semver shape but omit that consumers must use the enabled build's geometry rather than assume feature-independent values/lengths. The wide feature implies `medium-classes`. Item 154 owns broad structural task-history prose migration, not this exact contract; CLOSED item 156 owns strict-rustdoc links/wiring, which does not close this semantic omission. The curated README feature table and production-only docs.rs policy are not defects; no total census, all-features render, or `doc(cfg)` annotation is mandated.
     - **Next trigger:** the next SegmentLayout/size-class public-contract documentation edit or a dedicated feature-geometry docs pass: explicitly document both feature effects on these three constants and the requirement to derive geometry from the enabled build; review against the cfg branches and derivation. Keep any later render checks separate from runtime correctness claims and do not broaden the curated-table/docs.rs policy scope.
     - **Evidence:** `src/alloc_core/segment/segment_layout.rs:62–92` (public docs and forwarders); `src/alloc_core/platform/size_classes.rs:32–43,108–162,203–225,278` (scheme docs, cfg extras, table/ceiling/LUT derivation); `Cargo.toml:37–38,419,627,659` (docs.rs policy, production and feature implication); `README.md:1424–1442` (selected feature table); `docs/reviews/2026-10-08-src-review-xxs-round-17-P4.md` R18 API-05 crosswalk/residual.
+
+238. **[T] Module conventions: three stable types in one file, `pub` instead of `pub(crate)` in doc-hidden modules, extra `#[path]`/glob re-exports/aliases (R6-CQ-1/2/3).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T41 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** several modules keep more than one stable exported type in a single file, use `pub` where `pub(crate)` would do inside doc-hidden modules, and add `#[path]` indirections, glob re-exports and type aliases with no stabilizing rationale — an API-hygiene debt that hardens into semver surface at first publish.
+    > - **Next trigger:** R6-T41 in the round-6 queue; close via that task's convention pass.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-1/2/3; task R6-T41.
+
+239. **[T] Files within 3–16 lines of the 1000-line cap (997/984); 57% comment density, 2159 task tags in public rustdoc (R6-CQ-4/18).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T57 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** two source files sit at 997 and 984 lines against the repo's ~1000-line threshold, overall comment density measures 57%, and public rustdoc carries 2159 task-history tags — the same prose-outweighs-code class as item 154, here quantified at round-6 snapshot `132ab85b`.
+    > - **Next trigger:** R6-T57 in the round-6 queue; close via that task's census-driven trim/split decisions.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-4/18; task R6-T57.
+
+240. **[T] Duplication (three copies of the Small-sidecar drain loop, exit-escape fragments, `exact_fatal`) and 180–424-line functions with dense cfg grids (R6-CQ-5/6/7).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 tasks R6-T18, R6-T42 and R6-T19 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the Small-sidecar drain loop exists in three already-diverging copies (`find_segment.rs`, `sidecar_drain.rs` ×2), the process-exit escape and TLS classification fragments are duplicated, `exact_fatal` duplicates `fatal`, and eleven functions run 180–424 lines with up to 69 `#[cfg]` arms — a maintenance-risk cluster, not a behaviour bug.
+    > - **Next trigger:** R6-T18/R6-T42/R6-T19 in the round-6 queue; close via those tasks' refactors (iai-neutral or better).
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-5/6/7; tasks R6-T18/T42/T19.
+
+241. **[T] Blanket `#[allow(dead_code, unused_imports)]` silences lint across the whole `production` build without `internals`, plus stale point allows (R6-CQ-8/9).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T16 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `src/lib.rs:457-493` blankets `dead_code`/`unused_imports` over the `alloc_core`/`global`/`registry` modules whenever `internals` is off, so a plain `production` build runs clippy effectively lint-blind, and nine point allows on now-live items remain.
+    > - **Next trigger:** R6-T16 in the round-6 queue; close when `npm run check` is green with the blanket removed.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-8/9; task R6-T16.
+
+242. **[T] Dead tagged-stack mirror in `loom_shim`; unreachable `cfg(not(std))` branches (R6-CQ-10/11).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T43 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `loom_shim` still carries a tagged-stack mirror no model reads, and several `cfg(not(std))` branches cannot be reached by any supported target configuration — dead code that future edits will keep in sync for nothing.
+    > - **Next trigger:** R6-T43 in the round-6 queue; close by deleting the mirror and the unreachable branches with a cfg-matrix check.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-10/11; task R6-T43.
+
+243. **[T] Mass-stale comments (ring/TFS/HeapOverflow in present tense, nonexistent bootstrap protocol, stale SAFETY on `unsafe impl GlobalAlloc`, ~135 references to nonexistent files) (R6-CQ-12/13/14/16/17).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T17 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** at snapshot `132ab85b` many comments describe removed mechanisms in the present tense (ring/TFS/HeapOverflow, the old bootstrap protocol), the `unsafe impl GlobalAlloc` SAFETY block no longer matches the dispatch it annotates, and roughly 135 comments reference `src/` files that do not exist (see also item 154's examples).
+    > - **Next trigger:** R6-T17 in the round-6 queue; close via that task's single docs pass and the extended `tests/no_stale_doc_references.rs` token list.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-12/13/14/16/17; task R6-T17.
+
+244. **[T] Magic numbers, `STATE_*` collisions between modules, module-name duplication (R6-CQ-19/20/21).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T45 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** hot-path constants appear as bare literals, `STATE_*` constant names collide across modules (same name, different meanings), and two modules share a name in different parents — small correctness-adjacent hygiene debt that invites wrong-constant edits.
+    > - **Next trigger:** R6-T45 in the round-6 queue; close via that task's naming/constant pass.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-19/20/21; task R6-T45.
+
+245. **[T] `medium_promotion_reachable` predicate hand-copied 18 times across 9 files; cfg-parameterized signatures and cfg ladders; experimental R18/R19 cfg in the hot path (R6-CQ-22/23/24).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 tasks R6-T20 and R6-T46 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the `medium_promotion_reachable` cfg predicate is manually rewritten at 18 sites in 9 files (one stale copy silently disables code), several function signatures are parameterized by feature cfg behind dense ladders, and the experimental R18/R19 cfgs sit in the hot path.
+    > - **Next trigger:** R6-T20/R6-T46 in the round-6 queue; close via the single-constant unification and the cfg-ladder cleanup with a powerset check.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-22/23/24; tasks R6-T20/T46.

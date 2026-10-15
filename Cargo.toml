@@ -251,7 +251,7 @@ batch-api = ["experimental", "alloc-core"]
 # `realloc`/cross-thread-reclaim path derives a block's size class from
 # `PageMap` — the class is always carried authoritatively by the caller's
 # `Layout` (own-thread free, `AllocCore::dealloc_small`) or the
-# `RemoteFreeRing` entry (cross-thread free, `reclaim_offset`). The ONLY
+# cross-thread route-sidecar record (`reclaim_sidecar_record`). The ONLY
 # thing that ever calls `PageMap::class_of` is the doc-hidden test seam
 # `AllocCore::dbg_page_map_class_for`.
 #
@@ -679,12 +679,14 @@ alloc-segment-directory = ["alloc-core"]
 # oracles, turning a free of a pointer that is not the block start (offset not a
 # whole number of block_sizes) into a detected no-op instead of a mis-indexed
 # bitmap read → double-issue / free-list corruption. (The cross-thread leg is
-# already covered UNCONDITIONALLY by `reclaim_offset`'s identical check.)
+# NOT unconditionally covered: the owner-side sidecar reclaim aborts on a
+# class/geometry mismatch, and a cross-thread interior free that matches a
+# stale-but-consistent class map can still corrupt — round-6 review R6-SEC-2.)
 # The check is a modulo by a non-power-of-two block_size (a real division, ~tens
 # of cycles) on EVERY small free, so it is honestly a paid check — hence gated
 # here, not on the production hot path. Additive over `fastbin` (the build that
 # has the magazine free path this guards); enabling it without the magazine is a
-# no-op. See README "Hardened vs production".
+# no-op. See the `hardened` row in the README Features matrix.
 hardened = ["fastbin"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread

@@ -137,6 +137,8 @@ not run and no scheduled run on main has exercised the fixed job yet (last
 scheduled run `38260710015` predates the fixes and was red in exactly that
 job). Lookup rows updated; card counts in the tier files re-typed.
 
+**Src review round 6 wave (2026-10-15).** Six reports (MS/CC/CR/PF/CQ/SEC) reviewed `src/` at `132ab85b`; all static reading, nothing executed, no Critical and no safe-code UB in `production` found. Findings filed as items 206–246 (mapping to tasks R6-Txx in `docs/agent_reviews_round6/SUMMARY.md`); the perf-side findings are in `docs/perf/OPEN_ITEMS.md` items 90–99 plus Round-6 notes on perf items 4/28/66/72/83; existing cards 154, 166 and 186 gained Round-6 evidence notes, and the round-5 U-R5-5 residual was filed as new item 246. Evidence: `docs/agent_reviews_round6/` (six reports + SUMMARY).
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -566,6 +568,47 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 203 | `TRACKED_platform_contracts.md` |
 | 204 | `TRACKED_ci_gate_coverage.md` |
 | 205 | `TRACKED_verification_coverage.md` |
+| 206 | `ACTIVE.md` |
+| 207 | `ACTIVE.md` |
+| 208 | `ACTIVE.md` |
+| 209 | `ACTIVE.md` |
+| 210 | `ACTIVE.md` |
+| 211 | `TRACKED_correctness_residuals.md` |
+| 212 | `TRACKED_correctness_residuals.md` |
+| 213 | `TRACKED_correctness_residuals.md` |
+| 214 | `TRACKED_correctness_residuals.md` |
+| 215 | `TRACKED_correctness_residuals.md` |
+| 216 | `TRACKED_correctness_residuals.md` |
+| 217 | `TRACKED_correctness_residuals.md` |
+| 218 | `TRACKED_correctness_residuals.md` |
+| 219 | `TRACKED_correctness_residuals.md` |
+| 220 | `TRACKED_correctness_residuals.md` |
+| 221 | `TRACKED_verification_coverage.md` |
+| 222 | `TRACKED_verification_coverage.md` |
+| 223 | `TRACKED_hook_safety.md` |
+| 224 | `TRACKED_hook_safety.md` |
+| 225 | `TRACKED_hook_safety.md` |
+| 226 | `TRACKED_hook_safety.md` |
+| 227 | `TRACKED_hook_safety.md` |
+| 228 | `TRACKED_platform_contracts.md` |
+| 229 | `TRACKED_platform_contracts.md` |
+| 230 | `TRACKED_platform_contracts.md` |
+| 231 | `TRACKED_platform_contracts.md` |
+| 232 | `TRACKED_publish_readiness.md` |
+| 233 | `TRACKED_publish_readiness.md` |
+| 234 | `TRACKED_publish_readiness.md` |
+| 235 | `TRACKED_publish_readiness.md` |
+| 236 | `TRACKED_publish_readiness.md` |
+| 237 | `TRACKED_process_record.md` |
+| 238 | `TRACKED_misc.md` |
+| 239 | `TRACKED_misc.md` |
+| 240 | `TRACKED_misc.md` |
+| 241 | `TRACKED_misc.md` |
+| 242 | `TRACKED_misc.md` |
+| 243 | `TRACKED_misc.md` |
+| 244 | `TRACKED_misc.md` |
+| 245 | `TRACKED_misc.md` |
+| 246 | `TRACKED_correctness_residuals.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
