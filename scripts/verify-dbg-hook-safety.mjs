@@ -32,8 +32,12 @@ const PURE_OBSERVERS = [
   "src/registry/heap_registry/claim.rs::dbg_registry_free_set_claims",
   // Read-only Acquire popcount of the advisory FREE-slot bitmap.
   "src/registry/heap_registry/claim.rs::dbg_free_slot_hint_popcount",
+  // Read-only Relaxed load of the advisory reuse-hint word; no pointer or reset.
+  "src/registry/heap_registry/claim.rs::dbg_reuse_hint",
   // C1: numeric results of resolved-default comparison under the claiming lease.
   "src/registry/heap_registry/claim.rs::dbg_registry_default_config_results",
+  // R6-T07: pure decision over four scalar arguments; no allocator state.
+  "src/global/tls_heap.rs::dbg_saturation_retry_decision",
   // CI-2b: relaxed cumulative System totals and actual slot layout only;
   // no pointer input, metadata access, allocation, mutation, or counter reset.
   "src/registry/segment_route/small_sidecar.rs::dbg_route_slots_system_totals",
@@ -312,6 +316,10 @@ const SAFE_MUTATORS = [
   [
     "src/global/fallback.rs::dbg_panic_in_fallback_init_rolls_back",
     "drives a real panic through the production heap_ptr/InitStateGuard RAII path then re-calls heap_ptr to prove the state rolled back; exercises, does not bypass, existing safe machinery (R34-17/task #536)"
+  ],
+  [
+    "src/registry/heap_registry/claim.rs::dbg_set_inject_ctor_oom",
+    "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes claim_impl's materialise call return None early, simulating an already-handled production OOM path (R6-T03)"
   ],
   [
     "src/alloc_core/large/alloc_core_large.rs::dbg_set_inject_large_alloc_oom",

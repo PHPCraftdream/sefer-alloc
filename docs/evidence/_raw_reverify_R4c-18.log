@@ -1,10 +1,10 @@
-E0_METADATA {"id":"R4c-18","head":"b8351188040546f2036c90cf521bfb160355195a","tree":"3321e58776e708bccf580e2f54ba33568726de41","setup":""}
-E0_METADATA {"id":"R4c-18","head":"b8351188040546f2036c90cf521bfb160355195a","tree":"3321e58776e708bccf580e2f54ba33568726de41","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-18.json","recipe_sha256":"5f3b59108112bb677d8d15498e3d46315ee6cac69542094f7ee3b99d97690225","registry_activation_hash":"ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7"}
+E0_METADATA {"id":"R4c-18","head":"ab745a44b18467f328b88400ad1d466ab2de428f","tree":"b64b7d1dd46ba177f29f420f3fd92fd2ca167ff2","setup":""}
+E0_METADATA {"id":"R4c-18","head":"ab745a44b18467f328b88400ad1d466ab2de428f","tree":"b64b7d1dd46ba177f29f420f3fd92fd2ca167ff2","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-18.json","recipe_sha256":"5f3b59108112bb677d8d15498e3d46315ee6cac69542094f7ee3b99d97690225","registry_activation_hash":"ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7"}
 
 E0_STEP {"id":"R4c-18","kind":"baseline","name":"failed constructor OOM retry baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_p3_registry_claim_uninit_oom","chunk_oom_retries_materialised_uninitialised_free","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test chunk_oom_retries_materialised_uninitialised_free .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.04s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_p3_registry_claim_uninit_oom.rs (target/debug/deps/r11_p3_registry_claim_uninit_oom-114206c10bba2fe0)
@@ -12,7 +12,7 @@ E0_STEP {"id":"R4c-18","kind":"baseline","name":"failed constructor OOM retry ba
 running 1 test
 test chunk_oom_retries_materialised_uninitialised_free ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
@@ -21,14 +21,14 @@ E0_STEP {"id":"R4c-18","kind":"mutant","name":"OOM push-back publishes LIVE muta
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.91s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.85s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_p3_registry_claim_uninit_oom.rs (target/debug/deps/r11_p3_registry_claim_uninit_oom-114206c10bba2fe0)
 
 running 1 test
 
-thread 'chunk_oom_retries_materialised_uninitialised_free' (6309) panicked at tests/r11_p3_registry_claim_uninit_oom.rs:27:5:
+thread 'chunk_oom_retries_materialised_uninitialised_free' (6289) panicked at tests/r11_p3_registry_claim_uninit_oom.rs:27:5:
 assertion `left == right` failed
   left: 1
  right: 3
@@ -45,13 +45,13 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 [1m[91merror[0m: test failed, to rerun pass `--test r11_p3_registry_claim_uninit_oom`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4c-18","kind":"restored","sha256":"b70586b48d73e13d7f53f7a4f0097198902c0d733ddc6884767368b4545adde8"}
+E0_METADATA {"id":"R4c-18","kind":"restored","sha256":"45df0e7780161faf04d06af76211e4fed09d3fe1cda41d4631eba1cad07df3aa"}
 
 E0_STEP {"id":"R4c-18","kind":"restored-baseline","name":"failed constructor OOM retry baseline","argv":["cargo","test","--locked","--features","production internals bench-internals","--test","r11_p3_registry_claim_uninit_oom","chunk_oom_retries_materialised_uninitialised_free","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test chunk_oom_retries_materialised_uninitialised_free .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.92s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.87s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_p3_registry_claim_uninit_oom.rs (target/debug/deps/r11_p3_registry_claim_uninit_oom-114206c10bba2fe0)
@@ -59,7 +59,7 @@ E0_STEP {"id":"R4c-18","kind":"restored-baseline","name":"failed constructor OOM
 running 1 test
 test chunk_oom_retries_materialised_uninitialised_free ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}

@@ -90,11 +90,12 @@ impl<'a> SidecarBitmap<'a> {
     /// Producer terminal AcqRel RMW. No header or reservation access; the
     /// class map is read (Acquire) once BEFORE the RMW, only to drop a granule
     /// that was never issued (segment metadata, uncarved tail) instead of
-    /// publishing a record the owner's `BitmapCut::pop` would abort on. A
-    /// uniform leaf reports its class for every granule it covers, so an
-    /// interior pointer into an issued block is NOT rejected here; the producer
-    /// cannot read block geometry without touching a segment that a malformed
-    /// free may not keep alive. This pending RMW is the linearization point and
+    /// publishing a record the owner's `BitmapCut::pop` would abort on. The
+    /// leaf class map carries a class code only in an issued block's start
+    /// granule, so this check also drops 16-aligned interior pointers into
+    /// larger issued blocks; a re-registered route gets a freshly zeroed
+    /// sidecar, so no stale class code survives a segment reset. This pending
+    /// RMW is the linearization point and
     /// last producer access to the reclaimable reservation and ledger. Afterwards
     /// only a discovery-summary bit in the SAME sidecar may be set, using an
     /// address obtained before this RMW while RoutePin is held, then the pin

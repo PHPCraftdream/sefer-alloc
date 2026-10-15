@@ -1,0 +1,63 @@
+{
+  "id": "R4a-08",
+  "registryActivationHash": "e0a5bc2137a2af034967a2fbb24b94d99c142c43793a22da49ac6099cad4103c",
+  "steps": [
+    {
+      "name": "initialised claim gate baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals",
+        "--test",
+        "regression_claim_oom_initialised_gate",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok. 3 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/registry/heap_registry/claim.rs",
+    "find": "if slot.initialised.load(Ordering::Acquire) {",
+    "replace": "if true {",
+    "steps": [
+      {
+        "name": "claim treats every FREE slot as initialised mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals",
+          "--test",
+          "regression_claim_oom_initialised_gate",
+          "--",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "process didn't exit successfully: .*regression_claim_oom_initialised_gate"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "process didn't exit successfully: .*regression_claim_oom_initialised_gate"
+      ]
+    }
+  }
+}

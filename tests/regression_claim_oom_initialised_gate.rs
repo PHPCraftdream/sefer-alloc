@@ -197,6 +197,9 @@ fn simulated_oom_leaves_initialised_false() {
 #[test]
 fn simulated_oom_does_not_leak_the_slot() {
     let _serial = SerialGuard::acquire();
+    // R6-T03: the OOM'd slot goes to the FREE bitmap, never the hint, so a
+    // ready recycled heap is preferred; drain those first.
+    drain_free_slots_by_claiming();
 
     let freed_idx = dbg_claim_then_simulate_oom()
         .expect("registry must not be exhausted in a fresh test process");
@@ -209,15 +212,15 @@ fn simulated_oom_does_not_leak_the_slot() {
     let lease =
         HeapRegistry::dbg_claim_lease().expect("claim after simulated OOM must not return None");
     let reclaimed_idx = lease.slot_index();
+    // Drop of the lease recycles the slot (LIVE -> FREE, Release) before the
+    // assertion, so a failure unwinds without a live lease.
+    drop(lease);
     assert_eq!(
         reclaimed_idx, freed_idx,
         "claim() after a simulated OOM must reuse the SAME slot index via \
-         free_slots (LIFO) -- if the slot were leaked (not pushed back), \
+         the FREE bitmap -- if the slot were leaked (not pushed back), \
          this claim would mint an unrelated fresh index instead"
     );
-
-    // Drop of the lease recycles the slot (LIVE -> FREE, Release).
-    drop(lease);
 }
 
 /// (a)+(b) combined, end to end: after a simulated OOM, the following real

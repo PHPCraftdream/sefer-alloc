@@ -5,7 +5,7 @@
     feature = "bench-internals"
 ))]
 
-use sefer_alloc::registry::bootstrap;
+use sefer_alloc::registry::bootstrap::{self, MAX_HEAPS};
 use sefer_alloc::registry::heap_registry::{
     dbg_claim_then_simulate_oom, dbg_slot_initialised, HeapRegistry,
 };
@@ -32,14 +32,24 @@ fn chunk_oom_retries_materialised_uninitialised_free() {
     assert!(!dbg_slot_initialised(old));
     assert!(!dbg_slot_initialised(latest));
 
+    // R6-T03: the constructor-OOM slots are published into the advisory FREE
+    // bitmap, and `reuse_hint` stays at the no-hint sentinel — an OOM slot
+    // must not evict ready FREE heaps from the hint.
+    assert_eq!(HeapRegistry::dbg_free_slot_hint_popcount(), 2);
+    assert_eq!(HeapRegistry::dbg_reuse_hint(), MAX_HEAPS as u32);
+
+    // Keep only `latest` discoverable so the claim below still takes it;
+    // `old` stays FREE + uninitialised for the recovery scan at the end.
+    HeapRegistry::dbg_forget_free_slot_hint(old as usize);
+
     let mut held = Vec::with_capacity(64);
     let mut latest_lease = HeapRegistry::dbg_claim_lease().expect("claim latest slot");
     assert_eq!(latest_lease.core().id(), latest);
     assert_eq!(latest_lease.generation(), 2);
     held.push(latest_lease);
-    // The bitmap normally finds old first; remove only its advisory bit to
-    // force the documented chunk-OOM recovery scan (slot state stays FREE).
-    HeapRegistry::dbg_forget_free_slot_hint(old as usize);
+    // The bitmap finds old first; `old`'s advisory bit was already dropped
+    // above to force the documented chunk-OOM recovery scan (slot state stays
+    // FREE).
 
     for expected in 2..64 {
         let mut lease = HeapRegistry::dbg_claim_lease().expect("claim fresh slot");

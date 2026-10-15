@@ -87,30 +87,15 @@ fn atomic_inventory(body: &str) -> Vec<(&str, Vec<&str>)> {
 fn class_leaves_ordering_inventory_is_exact() {
     let text = leaves_src();
     for (name, expected) in [
+        ("prepared", vec![("load", vec!["Acquire"])]),
+        ("prepare", vec![("store", vec!["Release"])]),
         (
-            "prepared",
-            vec![("load", vec!["Acquire"]), ("load", vec!["Acquire"])],
-        ),
-        (
-            "prepare",
+            "issue",
             vec![("load", vec!["Acquire"]), ("store", vec!["Release"])],
         ),
         (
-            "issue",
-            vec![
-                ("load", vec!["Acquire"]),
-                ("store", vec!["Release"]),
-                ("load", vec!["Acquire"]),
-                ("store", vec!["Release"]),
-            ],
-        ),
-        (
             "encoded",
-            vec![
-                ("load", vec!["Acquire"]),
-                ("load", vec!["Acquire"]),
-                ("load", vec!["Acquire"]),
-            ],
+            vec![("load", vec!["Acquire"]), ("load", vec!["Acquire"])],
         ),
     ] {
         let body = fn_body(&text, name);
@@ -125,7 +110,7 @@ fn class_leaves_ordering_inventory_is_exact() {
 #[test]
 fn mixed_leaf_published_after_its_initialization() {
     let body = fn_body(&leaves_src(), "prepare");
-    let initialization = "for i in 0..LEAF_GRANULES {\n            unsafe { fresh.add(i).write(AtomicU8::new(old)) };\n        }";
+    let initialization = "for i in 0..LEAF_GRANULES {\n            unsafe { fresh.add(i).write(AtomicU8::new(0)) };\n        }";
     let publication = "self.mixed[leaf].store(fresh, Ordering::Release)";
     assert_eq!(
         body.matches(initialization).count(),
