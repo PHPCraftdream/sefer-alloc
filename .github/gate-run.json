@@ -1,1 +1,0 @@
-{"runner": "scripts/r20_r6_ab_iai_run.mjs", "stages": "prepare,build,oracle,measure", "outDir": "docs/perf/R20_R6_AB_SMOKE_RUN01", "cells": "small_churn_16b,cold_alloc_only_256x16b,dealloc_free_only_16b", "note": "A/A smoke of the new runner: B differs from A only in scripts/docs"}
