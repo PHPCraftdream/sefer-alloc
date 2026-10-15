@@ -1,29 +1,21 @@
 //! RSS-probe harness for `SeferAlloc` — measures resident-set-size over time
-//! under a sustained, **asymmetric** cross-thread free pattern designed to
-//! stress the [`RemoteFreeRing`](sefer_alloc::alloc_core::remote_free_ring).
+//! under a sustained, **asymmetric** cross-thread free pattern: producers ONLY
+//! allocate and one consumer ONLY frees, so every free is a foreign free
+//! routed through the pinned-route sidecar to the owning heap.
 //!
 //! ## Purpose (task #53)
 //!
 //! `examples/malloc_macro.rs` measures throughput but explicitly marks RSS as
 //! `N/A`.  This harness fills that gap: it tracks RSS (bytes resident in RAM)
-//! across a producer/consumer split where producers ONLY allocate and one
-//! consumer ONLY frees, maximising the cross-thread-free pressure on the ring.
-//! It also demonstrates the `alloc-decommit` recovery ratio when `alloc-decommit`
-//! is enabled.
+//! across the producer/consumer split. It also demonstrates the
+//! `alloc-decommit` recovery ratio when `alloc-decommit` is enabled.
 //!
 //! ## What is measured — and what is NOT
 //!
 //! - **Measured directly:** RSS (platform-specific, see `mod rss` below),
 //!   cumulative allocs/frees, in-flight estimate (`allocs - frees`).
-//! - **Overflow (now measurable directly):** the process-wide ring-overflow
-//!   counter EXISTS — `RemoteFreeRing::overflow_count()` (per-ring) and the
-//!   process-wide `DBG_RING_OVERFLOW` static (task D2), surfaced on the public
-//!   face as `SeferAlloc::stats().ring_overflows`. The earlier note here ("the
-//!   `overflow` field is `pub(crate)`; a `pub fn overflow_count()` would need
-//!   adding — left for user approval") is STALE: that counter and accessor
-//!   already landed. This harness still also reports the in-flight estimate
-//!   (`allocs - frees`) as an independent cross-check, but the direct overflow
-//!   count is available via `stats().ring_overflows` for callers that want it.
+//! - **Not measured:** per-heap pending sidecar work. The in-flight estimate
+//!   is the leak cross-check: it should fall to ~0 after the drain.
 //!
 //! ## Run
 //!
@@ -420,7 +412,7 @@ fn main() {
         "Asymmetric scenario: {n_producers} producer thread(s) allocate ONLY; \
          1 consumer thread frees ONLY."
     );
-    println!("All cross-thread frees route through RemoteFreeRing (one ring per segment).");
+    println!("All cross-thread frees route through the pinned-route sidecar to the owner heap.");
     println!();
 
     // Check RSS availability before starting threads
@@ -531,15 +523,14 @@ fn main() {
                  peak/final/ratio not reported."
             );
             println!(
-                "  Indirect overflow proxy: in-flight estimate above \
+                "  Leak cross-check: in-flight estimate above \
                  (should drop to ~0 after drain)."
             );
         }
     }
 
     println!();
-    println!("NOTE: in-flight estimates are allocations minus observed frees;");
-    println!("  retired ring-overflow diagnostics are not available.");
+    println!("NOTE: in-flight estimates are allocations minus observed frees.");
     println!();
     println!("NOTE: Run with --features alloc-decommit to compare recovery ratio.");
 }

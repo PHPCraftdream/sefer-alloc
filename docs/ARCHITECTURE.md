@@ -280,8 +280,9 @@ the current terminal-sidecar ingress.
 
 `SeferAlloc::alloc` calls `current_for_alloc()`, which loads a thread-local
 raw pointer to the current `HeapCore`. On first call per thread the pointer is
-null, triggering a one-time `HeapRegistry::claim()` (a `Mutex`-protected slot
-claim). After init the TLS pointer is stable for the thread's lifetime;
+null, triggering a one-time `HeapRegistry::claim_lease()`: the selector above
+picks a candidate slot and a lock-free `FREE → OWNED` CAS on the slot state
+grants it. After init the TLS pointer is stable for the thread's lifetime;
 subsequent calls pay only a TLS load and a null check.
 
 ---
@@ -546,8 +547,8 @@ Flamegraph hot paths (small-class, single-thread):
 | mstress mimalloc    | ~33 M ops/s | ~43 M | ~65 M |
 
 At T=4 (larson) `SeferAlloc` passes mimalloc. The per-thread heap means the
-fast path takes no shared lock; cross-thread frees route through the per-segment
-ring without contending the producer. mimalloc shows a dip at T=2 (larson) on
+fast path takes no shared lock; cross-thread frees (at the time of these numbers)
+went through the per-segment ring, since replaced by the pinned-route sidecar. mimalloc shows a dip at T=2 (larson) on
 this host that `SeferAlloc` does not exhibit.
 
 ### Large alloc / free (after OPT-E large-segment cache)
