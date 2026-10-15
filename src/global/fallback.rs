@@ -680,6 +680,14 @@ pub fn dbg_fallback_lock_acquisitions() -> u64 {
     LOCK_ACQUISITIONS.load(Ordering::Relaxed)
 }
 
+/// Process-internal read of [`LOCK_ACQUISITIONS`] for the maintenance
+/// worker's fallback idle detection (R6-T27). Not a test hook and not
+/// public API: LOCK_ACQUISITIONS is always compiled in, so this works in
+/// production builds too.
+pub(crate) fn lock_acquisitions() -> u64 {
+    LOCK_ACQUISITIONS.load(Ordering::Relaxed)
+}
+
 // ===========================================================================
 // F-8 (R34-17/task #536) — test-only panic-injection + introspection for the
 // fallback init-state unwind guard (`InitStateGuard` above). These let a test
