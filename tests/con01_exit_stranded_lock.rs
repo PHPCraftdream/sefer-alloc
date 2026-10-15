@@ -77,25 +77,35 @@ impl Drop for Late {
                 // for exactly this exit-path realloc; the result leaks.
                 let grown = unsafe { ALLOC.realloc(address as *mut u8, old, 128) };
                 if grown.is_null() {
-                    fail("exit realloc of an unrouteable block returned null");
+                    // Platforms without the exit detector legitimately return
+                    // null (route unavailable, no escape gate): control
+                    // outcome, not a failure. Never `fail()` from a TLS dtor
+                    // during exit (re-entrant exit aborts); the parent
+                    // counters enforce the strict escape branch.
+                    eprintln!("CON01_SHARD_REALLOC_NULL_NO_DETECTOR");
+                } else {
+                    // SAFETY: 128 bytes were just issued by realloc above.
+                    let copied = unsafe { std::slice::from_raw_parts(grown, 64) };
+                    assert!(copied.iter().all(|&b| b == 0xa5));
+                    eprintln!("CON01_SHARD_REALLOC_OK");
                 }
-                // SAFETY: 128 bytes were just issued by realloc above.
-                let copied = unsafe { std::slice::from_raw_parts(grown, 64) };
-                assert!(copied.iter().all(|&b| b == 0xa5));
-                eprintln!("CON01_SHARD_REALLOC_OK");
             }
             Scenario::OwnOom => {
                 // Force the cold null path: the next route registration fails
-                // as OOM, the exit gate must escape the allocation to System
-                // instead of returning null (which would abort here).
+                // as OOM. Where the exit detector is live (Windows) the gate
+                // must escape the allocation to System; elsewhere null is the
+                // expected control outcome. Never `fail()` from a TLS dtor
+                // during exit (re-entrant exit aborts); the parent counters
+                // require the escape marker, so a Windows null still fails.
                 RouteDirectory::fail_next_registration_for_test();
                 let layout = Layout::from_size_align(1024 * 1024, 4096).expect("oom layout");
                 // SAFETY: valid nonzero layout; the escaped block leaks.
                 let p = unsafe { ALLOC.alloc(layout) };
                 if p.is_null() {
-                    fail("exit alloc escaped null instead of System");
+                    eprintln!("CON01_OWN_OOM_NULL_NO_DETECTOR");
+                } else {
+                    eprintln!("CON01_OWN_OOM_ESCAPE_OK");
                 }
-                eprintln!("CON01_OWN_OOM_ESCAPE_OK");
             }
             Scenario::ExactShard(address) => {
                 // A dead-holder shard lock must refuse during exit: the free
