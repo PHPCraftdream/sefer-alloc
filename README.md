@@ -1642,6 +1642,12 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   allocator callbacks and handled as a `Result`; it starts a process-lifetime
   worker with no shutdown, no reclamation deadline, and no guarantee of
   physical OS return while live allocations or retention policy prevent it.
+  `start_maintenance()` is a process-global side effect with no opt-out:
+  any dependency in the binary can activate the process-lifetime worker.
+  Never call it under an OS loader lock (Windows `DllMain`, DLL static
+  constructors): startup confirms the worker within a fixed internal bound
+  and aborts the process if the worker cannot be scheduled, rather than
+  hanging the caller forever.
   Forking an activated multithreaded process or unloading allocator code
   while the worker exists is unsupported.
 
