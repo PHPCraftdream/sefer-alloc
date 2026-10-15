@@ -12,4 +12,5 @@ R4c-10,src/registry/heap_registry,,src/registry/heap_registry/claim.rs::impl Dro
 R4c-11,src/registry/heap_registry,,,Mutant of the slot generation bump on recycle-then-claim; registry claim/recycle sources
 R4c-13,src/registry/heap_registry,,,Mutant of the initialised publication in the uninit-OOM claim path; registry claim sources
 R4c-18,src/registry/heap_registry,,,Mutant of push_back_after_oom phase in the uninit-OOM claim path; registry claim sources
+R-Ph3a-native,src/alloc_core/small/alloc_core_small;src/alloc_core/segment/remote_bitmap,,,"Native issue-transaction witnesses (scalar, batch, partial refill, reserve-promotion fault); Small issue path and the sidecar it publishes into"
 R-Ph3b,src/registry/heap_core/free;src/registry/heap_core/alloc;src/alloc_core/segment/segment_header,,,"Kind-aware alloc/free entries keyed on kind_at (BlockKind decoder); heap_core alloc/free paths and the segment header kind word"

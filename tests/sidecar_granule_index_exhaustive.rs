@@ -69,9 +69,7 @@ fn sidecar_granule_index_exhaustive() {
             } else {
                 mixed_class(offset)
             };
-            if pass == 1 {
-                assert!(leaves.prepare(granule, class), "mixed prepare {offset}");
-            }
+            assert!(leaves.prepare(granule, class), "prepare {offset}");
             assert!(
                 map.issue(u32::try_from(offset).unwrap(), class),
                 "issue {offset}"

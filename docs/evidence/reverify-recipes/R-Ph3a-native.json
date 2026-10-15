@@ -1,0 +1,67 @@
+{
+  "id": "R-Ph3a-native",
+  "registryActivationHash": "47b3a1c460cf7d4d47f6460d115c1477555da7709f2bfb49c230b1e8097a789a",
+  "steps": [
+    {
+      "name": "issue transaction witnesses baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals",
+        "--test",
+        "r11_ph3a_issue_transaction_scalar",
+        "--test",
+        "r11_ph3a_issue_transaction_batch",
+        "--test",
+        "r11_ph3a_magazine_refill_partial",
+        "--test",
+        "r11_ph3a_reserve_promotion_fault"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "tests/r11_ph3a_issue_transaction_scalar.rs",
+          "tests/r11_ph3a_issue_transaction_batch.rs",
+          "tests/r11_ph3a_magazine_refill_partial.rs",
+          "tests/r11_ph3a_reserve_promotion_fault.rs",
+          "test result: ok. [0-9]+ passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs",
+    "find": "meta.add_live(n as u32);",
+    "replace": "meta.add_live(n as u32 + 1);",
+    "steps": [
+      {
+        "name": "batch carve over-counts live mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals",
+          "--test",
+          "r11_ph3a_issue_transaction_batch"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "panicked at tests/r11_ph3a_issue_transaction_batch.rs"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "panicked at tests/r11_ph3a_issue_transaction_batch.rs"
+      ]
+    }
+  }
+}
