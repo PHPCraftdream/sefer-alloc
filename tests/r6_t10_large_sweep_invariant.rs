@@ -90,7 +90,7 @@ fn large_alloc_probes_boundedly_and_never_loses_remote_publication() {
     assert!(!warm.is_null());
     // SAFETY: the block returned immediately above; freed once here.
     unsafe { heap.dealloc(warm, size_a) };
-    const WARM_HITS: usize = 5; // warm iterations 2..=6 (6 total with the miss)
+    const WARM_HITS: u64 = 5; // warm iterations 2..=6 (6 total with the miss)
     let before = HeapCore::dbg_large_sidecar_slot_inspections();
     for _ in 0..WARM_HITS {
         let p = heap.alloc(size_a);
