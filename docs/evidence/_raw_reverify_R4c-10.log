@@ -1,5 +1,5 @@
-E0_METADATA {"id":"R4c-10","head":"c4119715512b715bf172276f0616c50ca7dc83fd","tree":"3cb4ecfdee3265f2ff322617e84058d06f708daf","setup":""}
-E0_METADATA {"id":"R4c-10","head":"c4119715512b715bf172276f0616c50ca7dc83fd","tree":"3cb4ecfdee3265f2ff322617e84058d06f708daf","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-10.json","recipe_sha256":"e7912b3f22ae441ba63f50a9db3f37b029c7a9dfe841150cb8966ab68284ab04","registry_activation_hash":"4eb7eb006207aaf2752a2fd1ea3e02800049170f87c17f044bde75d9a734eb2a"}
+E0_METADATA {"id":"R4c-10","head":"8e570e4af2ba1d81bb56f5af3d8b6d785d69aa77","tree":"e021001ca4478c9fb9d3a5f1cea6c7e8a482f9ca","setup":""}
+E0_METADATA {"id":"R4c-10","head":"8e570e4af2ba1d81bb56f5af3d8b6d785d69aa77","tree":"e021001ca4478c9fb9d3a5f1cea6c7e8a482f9ca","os":"linux x64","toolchain":"rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-10.json","recipe_sha256":"e7912b3f22ae441ba63f50a9db3f37b029c7a9dfe841150cb8966ab68284ab04","registry_activation_hash":"4eb7eb006207aaf2752a2fd1ea3e02800049170f87c17f044bde75d9a734eb2a"}
 
 E0_STEP {"id":"R4c-10","kind":"baseline","name":"hint-spill selection test baseline","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","latest_hint_then_older_free_precedes_fresh","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test latest_hint_then_older_free_precedes_fresh .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -14,7 +14,7 @@ E0_STEP {"id":"R4c-10","kind":"baseline","name":"hint-spill selection test basel
     [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.95s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-a6688252066bccae)
@@ -40,14 +40,14 @@ E0_STEP {"id":"R4c-10","kind":"mutant","name":"release hint publication removed 
     [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.95s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-a6688252066bccae)
 
 running 1 test
 
-thread 'latest_hint_then_older_free_precedes_fresh' (6016) panicked at tests/registry_basic.rs:235:5:
+thread 'latest_hint_then_older_free_precedes_fresh' (6152) panicked at tests/registry_basic.rs:235:5:
 assertion `left == right` failed: latest hint must reuse B
   left: 2
  right: 1
@@ -58,7 +58,7 @@ Caused by:
   process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/registry_basic-a6688252066bccae latest_hint_then_older_free_precedes_fresh --exact --nocapture` (signal: 6, SIGABRT: process abort signal)
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4c-10","kind":"restored","sha256":"31daa5dbb937406f9b83b5653d588f0c5adcf1bad89e7cece043c3282e605090"}
+E0_METADATA {"id":"R4c-10","kind":"restored","sha256":"b70586b48d73e13d7f53f7a4f0097198902c0d733ddc6884767368b4545adde8"}
 
 E0_STEP {"id":"R4c-10","kind":"restored-baseline","name":"hint-spill selection test baseline","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","latest_hint_then_older_free_precedes_fresh","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test latest_hint_then_older_free_precedes_fresh .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -73,7 +73,7 @@ E0_STEP {"id":"R4c-10","kind":"restored-baseline","name":"hint-spill selection t
     [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.98s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-a6688252066bccae)
