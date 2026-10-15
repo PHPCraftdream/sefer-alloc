@@ -140,7 +140,10 @@ pub fn wave_release_setup() -> Vec<sefer_alloc::registry::HeapLease> {
 #[inline(never)]
 pub fn wave_release_measured(held: &mut Vec<sefer_alloc::registry::HeapLease>, n: usize) {
     assert!(n <= held.len());
-    for lease in held.drain(..n) {
+    // Drain the tail: a front drain memmoves the remaining leases, which made
+    // the window cost nonlinear in n (PRF-04 run01 linearity).
+    let start = held.len() - n;
+    for lease in held.drain(start..) {
         black_box(&lease);
         drop(lease);
     }
@@ -244,7 +247,8 @@ pub fn l2_wave_release_setup() -> Vec<Child> {
 #[inline(never)]
 pub fn l2_wave_release_measured(children: &mut Vec<Child>, n: usize) {
     assert!(n <= children.len());
-    for child in children.drain(..n) {
+    let start = children.len() - n;
+    for child in children.drain(start..) {
         child.release();
     }
 }

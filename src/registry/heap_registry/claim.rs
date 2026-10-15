@@ -57,16 +57,14 @@ impl HeapRegistry {
     #[doc(hidden)]
     #[cfg(feature = "bench-internals")]
     pub fn dbg_registry_claim_sources() -> [u64; 4] {
-        super::counters::CLAIM_SOURCES
-            .each_ref()
-            .map(|c| c.load(Ordering::Relaxed))
+        core::array::from_fn(|i| super::counters::CLAIM_SOURCES[i].load(Ordering::Relaxed))
     }
 
     /// Successful leases selected from the separate FREE-set bitmap.
     #[doc(hidden)]
     #[cfg(feature = "bench-internals")]
     pub fn dbg_registry_free_set_claims() -> u64 {
-        super::counters::FREE_SET_CLAIMS.load(Ordering::Relaxed)
+        super::counters::CLAIM_SOURCES[4].load(Ordering::Relaxed)
     }
 
     /// Successful leases whose actual resolved policy matches / differs from default.
@@ -400,13 +398,7 @@ impl HeapRegistry {
             // branch above), we are the sole writer. `generation` is a purely
             // numeric observer — no gate on the hot path.
             #[cfg(feature = "bench-internals")]
-            {
-                if source.get() < 4 {
-                    super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
-                } else {
-                    super::counters::FREE_SET_CLAIMS.fetch_add(1, Ordering::Relaxed);
-                }
-            }
+            super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
             #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
             {
                 // SAFETY: successful claim owns this LIVE, initialized core.

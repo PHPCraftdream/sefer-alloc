@@ -10,9 +10,6 @@ use crate::registry::bootstrap::{ensure, MAX_HEAPS};
 use crate::registry::heap_slot::HeapSlot;
 use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 
-#[cfg(feature = "bench-internals")]
-pub(super) static FREE_SET_CLAIMS: AtomicU64 = AtomicU64::new(0);
-
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
 /// — times `claim_lease_with_config` found an already-materialised slot whose live
 /// (resolved) cache/pool policy differs from the requested config. Each such
@@ -462,8 +459,9 @@ pub fn dbg_bump_count_without_materialising() -> Option<u32> {
     super::stack::bump_count(reg).map(|idx| idx as u32)
 }
 
-// Measurement-only successful claim totals; never read by policy.
+// Measurement-only successful claim totals by source (hint, bump, cap scan,
+// recovery, FREE-set bitmap); never read by policy.
 #[cfg(feature = "bench-internals")]
-pub(super) static CLAIM_SOURCES: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+pub(super) static CLAIM_SOURCES: [AtomicU64; 5] = [const { AtomicU64::new(0) }; 5];
 #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
 pub(super) static DEFAULT_CONFIG_RESULTS: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];
