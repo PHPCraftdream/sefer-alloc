@@ -28,6 +28,13 @@ const STARTING: u8 = 1;
 const RUNNING: u8 = 2;
 const SLOT_BUDGET: usize = 32;
 const PERIOD: Duration = Duration::from_millis(10);
+// R6-T27 (R6-CC-7): the fallback heap is shared and may be actively serving
+// allocations while the worker runs. A full cold trim under the global
+// fallback lock every PERIOD would flush live magazines and hold the lock
+// across munmap. The worker therefore runs the ingress-only fallback step
+// and resumes the full cold trim only after the heap has shown no external
+// fallback-lock activity for this many consecutive visits (~1 s at PERIOD).
+const FALLBACK_IDLE_VISITS: u64 = 100;
 // Startup confirmation bound. The worker only needs one scheduling quantum
 // to publish RUNNING; if the bound expires the activated guarantee cannot
 // be honored (unschedulable starter, e.g. loader lock), so the starter
@@ -156,6 +163,18 @@ impl MaintenanceService {
             CHANGED.notify_all();
         }
         let mut cursor = 0;
+        // Fallback idle tracking (R6-T27): pre-visit samples of the fallback
+        // lock counter. Between two samples the counter grows by external
+        // acquisitions plus exactly one if the worker's own PREVIOUS visit
+        // acquired the lock (`fallback_self_acquired`; a busy try-lock
+        // acquires nothing). `delta > expected_self` therefore proves
+        // external activity, and a failed visit (`None` — lock busy or heap
+        // not READY) is itself external activity: it resets the streak. The
+        // full cold trim runs only after FALLBACK_IDLE_VISITS consecutive
+        // successful visits with no external activity.
+        let mut fallback_prev_locks: Option<u64> = None;
+        let mut fallback_idle: u64 = 0;
+        let mut fallback_self_acquired = false;
         loop {
             #[cfg(all(feature = "internals", feature = "bench-internals"))]
             match FAIL_WORKER.load(Ordering::Acquire) {
@@ -166,10 +185,32 @@ impl MaintenanceService {
             let _ = HeapRegistry::maintenance_pass(&mut cursor, SLOT_BUDGET);
             // Uninitialized or paused fallback: skip, never wait or materialize
             // it. A later periodic pass retries independently of notifications.
+            let locks = fallback::lock_acquisitions();
+            let externally_active = match fallback_prev_locks.replace(locks) {
+                Some(prev) => {
+                    let expected_self = u64::from(fallback_self_acquired);
+                    locks.saturating_sub(prev) > expected_self
+                }
+                None => false,
+            };
+            fallback_idle = if externally_active {
+                0
+            } else {
+                fallback_idle.saturating_add(1)
+            };
+            let fallback_trim = fallback_idle >= FALLBACK_IDLE_VISITS;
             let fallback_visited = fallback::try_with_heap(|core| {
-                core.background_maintenance_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
+                if fallback_trim {
+                    core.background_maintenance_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
+                } else {
+                    core.background_fallback_step(HeapCore::BACKGROUND_INGRESS_BUDGET)
+                }
             })
             .is_some();
+            if !fallback_visited {
+                fallback_idle = 0;
+            }
+            fallback_self_acquired = fallback_visited;
             #[cfg(feature = "internals")]
             {
                 // Test acknowledgements occur only AFTER all leases/locks have
