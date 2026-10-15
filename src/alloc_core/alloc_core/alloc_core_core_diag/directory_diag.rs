@@ -363,6 +363,23 @@ impl AllocCore {
         }
     }
 
+    /// R6-T32 TEST-ONLY: drop the owner-private directory sidecar exactly as
+    /// `release_directory_for_cold_trim` does (null pointer, cleared miss
+    /// streak, VM token dropped). The only production caller of that fn is
+    /// `HeapCore::trim_cold_retention` (`src/registry/heap_core/state/
+    /// ownership.rs`), which is unreachable in an `alloc-core`-only test
+    /// build, so this forwarder lets `tests/r6_t32_directory_rebuild_after_trim.rs`
+    /// exercise the post-trim lazy rebuild at the `AllocCore` level. Pure
+    /// delegation — no new behaviour.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn dbg_release_directory_for_cold_trim(&mut self) {
+        #[cfg(feature = "alloc-segment-directory")]
+        self.release_directory_for_cold_trim();
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        let _ = &mut *self;
+    }
+
     /// R7-A1 TEST-ONLY: re-run the full rebuild of the directory sidecar
     /// from the current `SegmentTable` state. Returns `true` if the
     /// directory was materialised (and thus rebuilt), `false` if it has not

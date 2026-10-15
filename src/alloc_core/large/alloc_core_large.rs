@@ -187,7 +187,11 @@ impl AllocCore {
         }
         // Phase 2: lazy decay tick on every large allocation.
         #[cfg(feature = "alloc-decommit")]
-        self.maybe_decay_large_cache();
+        {
+            self.maybe_decay_large_cache();
+            // R6-T31: pool decay tick on the same cold cadence as the large cache.
+            self.maybe_decay_small_pool();
+        }
 
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
@@ -901,6 +905,8 @@ impl AllocCore {
         #[cfg(feature = "alloc-decommit")]
         {
             self.maybe_decay_large_cache();
+            // R6-T31: pool decay tick on the same cold cadence as the large cache.
+            self.maybe_decay_small_pool();
             // See the own-thread `dealloc` Large branch above (bug #134): the
             // physical usable span is read from the header's stable
             // `span_usable` field, not recomputed from `large_size`/

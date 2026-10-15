@@ -430,14 +430,16 @@ impl AllocCore {
     /// the pool to zero when the workload goes quiet, so pooled retention is
     /// TEMPORARY, not merely bounded.
     ///
-    /// Called from [`reserve_small_segment`](crate::alloc_core::alloc_core::AllocCore::reserve_small_segment)'s cold path AFTER a pool miss — the
-    /// natural "small churn is happening but the pool did not help this time"
-    /// clock edge — and NOT on any hot alloc/free path. The trigger is chosen
-    /// there rather than at the large-cache sites because a SMALL-segment
-    /// workload may never call `alloc_large`, so hooking the large-path decay
-    /// tick would never fire for it; `reserve_small_segment` is the cheapest
-    /// small-path edge that is already cold (only reached on segment
-    /// exhaustion) and is the exact place a stale pool should be trimmed.
+    /// Called from [`reserve_small_segment`](crate::alloc_core::alloc_core::AllocCore::reserve_small_segment)'s
+    /// cold path AFTER a pool miss, AND from the large alloc/free/reclaim cold
+    /// edges (the same sites as
+    /// [`maybe_decay_large_cache`](Self::maybe_decay_large_cache)). That way an
+    /// idle-but-live owner — one whose later activity is large-only, or which
+    /// still performs operations after its small churn stops — drains the pool
+    /// over time. The pool-empty fast exit keeps the cost on those paths to a
+    /// single branch when `pooled_count == 0`; a fully quiescent thread that
+    /// performs NO operations at all still does not drain (retention bounded by
+    /// `pool_cap`).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     pub(in crate::alloc_core) fn maybe_decay_small_pool(&mut self) {
