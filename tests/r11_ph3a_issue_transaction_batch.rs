@@ -169,10 +169,13 @@ fn batch_carve_short_room_commits_exactly_the_room() {
         table_before,
         "a carve needs no new segment",
     );
+    // The start leaf is already material; each further leaf the batch's block
+    // starts enter spills one 256-byte class leaf (256 one-byte codes).
+    let fresh_leaves = (aligned + (n - 1) * CLASS1) / LEAF - aligned / LEAF;
     assert_eq!(
         SmallSidecar::system_totals_for_test().0 - system.0,
-        0,
-        "the promoted leaf is already material, so no new sidecar storage",
+        fresh_leaves * 256,
+        "only leaves first entered by the batch spill sidecar storage",
     );
 
     for ptr in &out[..n] {

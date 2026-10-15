@@ -58,15 +58,19 @@ fn mixed_leaf_initialization_is_visible_to_reader() {
         while !reader_spilled.load(Ordering::Relaxed) {
             std::thread::yield_now();
         }
+        // The Relaxed flag orders neither the spill nor the issue: the reader
+        // may see the null leaf or the published zero fill (0), or the issued
+        // code (5). Miri's race detector checks the fill's publication.
         for _ in 0..64 {
-            assert_eq!(reader_leaves.encoded(LEAF1_GRANULE), 5);
+            let code = reader_leaves.encoded(LEAF1_GRANULE);
+            assert!(code == 0 || code == 5, "unexpected class code {code}");
             std::thread::yield_now();
         }
     });
     // Leaf 1 is still virgin: the prepare below is a real spill whose Release
     // publication of `mixed` must order the zero fill. The Relaxed flag
-    // supplies no happens-before edge, so the reader observing class+1 is
-    // ordered only by that publication — the same invariant as before.
+    // supplies no happens-before edge, so the reader's access to the fresh
+    // leaf is ordered only by that publication.
     let prepared = leaves.prepare(LEAF1_GRANULE, 4);
     // Spill alone stores zeros; the start-granule code appears only on issue.
     let issued = leaves.issue(LEAF1_GRANULE, 4);
@@ -76,4 +80,5 @@ fn mixed_leaf_initialization_is_visible_to_reader() {
     assert!(prepared);
     assert!(issued);
     assert!(leaves.prepared(LEAF1_GRANULE, 4));
+    assert_eq!(leaves.encoded(LEAF1_GRANULE), 5);
 }
