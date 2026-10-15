@@ -6,4 +6,7 @@ pub(super) enum InsertOutcome {
     Oom,
     /// A live descriptor already exists at this exact address.
     Duplicate,
+    /// Shard lock refused during process exit (dead holder); nothing was
+    /// inserted.
+    Exiting,
 }
