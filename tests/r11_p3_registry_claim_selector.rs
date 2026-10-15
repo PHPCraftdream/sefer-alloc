@@ -3,7 +3,9 @@
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
-use sefer_alloc::registry::heap_registry::{pick_with_saturation, SaturationHint};
+use sefer_alloc::registry::heap_registry::{
+    pick_with_hint_spill, pick_with_saturation, SaturationHint,
+};
 
 const LIVE: u8 = 1;
 const FREE: u8 = 2;
@@ -69,33 +71,33 @@ fn live_first_touch_is_linear_in_selector_probes() {
 }
 
 #[test]
-fn overwritten_free_hint_is_deferred_until_cap_not_lost() {
-    let states = [
-        AtomicU8::new(FREE),
-        AtomicU8::new(FREE),
-        AtomicU8::new(LIVE),
-        AtomicU8::new(0),
-    ];
+fn overwritten_free_hint_is_reused_before_fresh() {
     let hint = AtomicU32::new(1);
     let count = AtomicU32::new(3);
     let saturation = SaturationHint::new();
-    let probes = AtomicU32::new(0);
-    assert_eq!(
-        select(&hint, &count, &saturation, &states, &probes),
-        Some(1)
-    );
-    states[1].store(LIVE, Ordering::Release);
-    assert_eq!(
-        select(&hint, &count, &saturation, &states, &probes),
-        Some(3)
-    );
-    states[3].store(LIVE, Ordering::Release);
-    assert_eq!(probes.load(Ordering::Relaxed), 0);
-    assert_eq!(
-        select(&hint, &count, &saturation, &states, &probes),
-        Some(0)
-    );
-    assert_eq!(probes.load(Ordering::Relaxed), 1);
+    let bitmap = AtomicU32::new(1);
+    let pick = || {
+        pick_with_hint_spill(
+            &hint,
+            &count,
+            &saturation,
+            4,
+            || bitmap.load(Ordering::Acquire) != 0,
+            || {
+                let old = bitmap.fetch_and(!1, Ordering::AcqRel);
+                (old & 1 != 0).then_some(0)
+            },
+            || None,
+            || Some(3),
+        )
+    };
+    // Previously fresh 3 followed hint 1; now old 0 is recovered before bump
+    // because release swap spills the overwritten free hint into the bitmap.
+    assert_eq!(pick(), Some(1));
+    assert_eq!(bitmap.load(Ordering::Acquire), 1);
+    assert_eq!(pick(), Some(0));
+    assert_eq!(bitmap.load(Ordering::Acquire), 0);
+    assert_eq!(count.load(Ordering::Acquire), 3);
 }
 
 #[test]

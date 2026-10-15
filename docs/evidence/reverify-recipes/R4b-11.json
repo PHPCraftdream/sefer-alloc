@@ -1,0 +1,64 @@
+{
+  "id": "R4b-11",
+  "registryActivationHash": "9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd",
+  "steps": [
+    {
+      "name": "teardown source-pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals",
+        "--test",
+        "r11_ph4b_teardown_ordering_pinned",
+        "--",
+        "--nocapture"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test teardown_stamps_torn_then_trims_then_releases_the_slot .* ok",
+          "test lease_release_cas_is_release_ordered .* ok",
+          "test result: ok. "
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/global/tls_heap.rs",
+    "find": "        mark_local_torn();\n        if super::process_exit_in_progress() {",
+    "replace": "        let _ = self;\n        if super::process_exit_in_progress() {",
+    "steps": [
+      {
+        "name": "TORN stamp omitted mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals",
+          "--test",
+          "r11_ph4b_teardown_ordering_pinned",
+          "--",
+          "--nocapture"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test teardown_stamps_torn_then_trims_then_releases_the_slot .* FAILED",
+            "test result: FAILED. "
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test teardown_stamps_torn_then_trims_then_releases_the_slot .* FAILED"
+      ]
+    }
+  }
+}

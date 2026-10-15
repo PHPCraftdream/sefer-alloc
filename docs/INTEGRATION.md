@@ -250,6 +250,14 @@ work unchanged.
 
 ## 7. Common pitfalls
 
+### Heap reuse and NUMA
+
+The registry's default selection is hint → nonempty spill bitmap → bump →
+scan at capacity. A release swaps the hint and spills a displaced valid slot
+into a separate, summary-indexed bitmap; claims consult it only when the hint
+is empty. With `numa-aware`, reuse may return pages first-touched on another
+node; the allocator does not migrate those pages.
+
 - **Forgetting `#[global_allocator]`.** The dependency builds and the
   type compiles, but every allocation still goes through the system
   allocator. The declaration must be on a `static` at the crate root,

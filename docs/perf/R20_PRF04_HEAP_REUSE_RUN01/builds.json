@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "buildStartedAt": "2026-10-14T23:20:47.996Z",
+  "capturedAt": "2026-10-14T23:26:12.516Z",
+  "manifestSha256": "998217a011866477a41b27e9762f798f3c97ed51621703a0f73f23c52d2cb141",
+  "environmentSha256": "ad1a868007ef85742241ed9c09eafe545fc71e231874572a167b8ca8d21efe28",
+  "arms": {
+    "A": {
+      "iai": {
+        "role": "iai",
+        "target": "r20_prf04_heap_reuse_iai",
+        "kind": "bench",
+        "exe": "<repo>/target/r20p4-builds/A-iai/release/deps/r20_prf04_heap_reuse_iai-b9152df209965f62",
+        "binarySha256": "7bd428c15be485fffc51d29fe4a9922636c5f2614092dab7b20838c049a325e5",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "",
+        "targetDir": "<repo>/target/r20p4-builds/A-iai"
+      },
+      "controls": {
+        "role": "controls",
+        "target": "r20_prf04_heap_reuse_l2_iai",
+        "kind": "bench",
+        "exe": "<repo>/target/r20p4-builds/A-controls/release/deps/r20_prf04_heap_reuse_l2_iai-a05d0a7200475bf9",
+        "binarySha256": "b31a543e4e4f84a3cc1c6710cf069aca54c7d3f129416dd7aa4556c826826eaf",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "",
+        "targetDir": "<repo>/target/r20p4-builds/A-controls"
+      },
+      "oracle": {
+        "role": "oracle",
+        "target": "r20_prf04_heap_reuse_oracle",
+        "kind": "build",
+        "exe": "<repo>/target/r20p4-builds/A-oracle/debug/examples/r20_prf04_heap_reuse_oracle",
+        "binarySha256": "a4a20ced773efb8697526f1f6d85a9e1489c022834116831cd64e4b3fcbd62af",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "--cfg prf04_heap_reuse_activation",
+        "targetDir": "<repo>/target/r20p4-builds/A-oracle"
+      },
+      "control": {
+        "role": "control",
+        "target": "r20_prf04_heap_reuse_l2_oracle",
+        "kind": "build",
+        "exe": "<repo>/target/r20p4-builds/A-control/debug/examples/r20_prf04_heap_reuse_l2_oracle",
+        "binarySha256": "e2df0db6c5266e8fb606b35a2f61620b1cbf4fd27680a7a440dc114eb2c46dbf",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "--cfg prf04_heap_reuse_activation",
+        "targetDir": "<repo>/target/r20p4-builds/A-control"
+      }
+    },
+    "B": {
+      "iai": {
+        "role": "iai",
+        "target": "r20_prf04_heap_reuse_iai",
+        "kind": "bench",
+        "exe": "<repo>/target/r20p4-builds/B-iai/release/deps/r20_prf04_heap_reuse_iai-b9152df209965f62",
+        "binarySha256": "396421b5f8dc30afb2527beeae417f7b17247c405750cd5d5581deb46afee411",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "",
+        "targetDir": "<repo>/target/r20p4-builds/B-iai"
+      },
+      "controls": {
+        "role": "controls",
+        "target": "r20_prf04_heap_reuse_l2_iai",
+        "kind": "bench",
+        "exe": "<repo>/target/r20p4-builds/B-controls/release/deps/r20_prf04_heap_reuse_l2_iai-a05d0a7200475bf9",
+        "binarySha256": "fa92db4177f287f96884ca731913f505a3908b9722c8f01764999f7e3ce19454",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "",
+        "targetDir": "<repo>/target/r20p4-builds/B-controls"
+      },
+      "oracle": {
+        "role": "oracle",
+        "target": "r20_prf04_heap_reuse_oracle",
+        "kind": "build",
+        "exe": "<repo>/target/r20p4-builds/B-oracle/debug/examples/r20_prf04_heap_reuse_oracle",
+        "binarySha256": "edb50ee91228cdfda5a6d444aa0ae044e032fb945992e2483a873e5bfe385dc4",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "--cfg prf04_heap_reuse_activation --cfg prf04_heap_reuse_oracle",
+        "targetDir": "<repo>/target/r20p4-builds/B-oracle"
+      },
+      "control": {
+        "role": "control",
+        "target": "r20_prf04_heap_reuse_l2_oracle",
+        "kind": "build",
+        "exe": "<repo>/target/r20p4-builds/B-control/debug/examples/r20_prf04_heap_reuse_l2_oracle",
+        "binarySha256": "e4ed70c400d0eaa4d5f969265643a199d226afbb8e2db8678c2f0558ed99abe2",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "--cfg prf04_heap_reuse_activation --cfg prf04_heap_reuse_oracle",
+        "targetDir": "<repo>/target/r20p4-builds/B-control"
+      }
+    },
+    "C": {
+      "iai": {
+        "role": "iai",
+        "target": "r20_prf04_heap_reuse_iai",
+        "kind": "bench",
+        "exe": "<repo>/target/r20p4-builds/C-iai/release/deps/r20_prf04_heap_reuse_iai-840c9ec7542e324f",
+        "binarySha256": "3c51e09e7298f5a3f745c79a879e13f1e0dc068bf51bb4b352d833c9913c7ca3",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "-C debuginfo=line-tables-only",
+        "targetDir": "<repo>/target/r20p4-builds/C-iai"
+      },
+      "controls": {
+        "role": "controls",
+        "target": "r20_prf04_heap_reuse_l2_iai",
+        "kind": "bench",
+        "exe": "<repo>/target/r20p4-builds/C-controls/release/deps/r20_prf04_heap_reuse_l2_iai-217f16c1ec880bf7",
+        "binarySha256": "7555b55fcdb69a2b138064de5d0508904211c388ba6376f5ade46a72e3fdf60a",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "-C debuginfo=line-tables-only",
+        "targetDir": "<repo>/target/r20p4-builds/C-controls"
+      },
+      "control": {
+        "role": "control",
+        "target": "r20_prf04_heap_reuse_l2_oracle",
+        "kind": "build",
+        "exe": "<repo>/target/r20p4-builds/C-control/debug/examples/r20_prf04_heap_reuse_l2_oracle",
+        "binarySha256": "a6381665accf1187c7c87f805acca786f1de9b5b4eb1c7898120a9461ff13bf8",
+        "features": [
+          "production",
+          "bench-internals",
+          "internals"
+        ],
+        "rustflags": "--cfg prf04_heap_reuse_activation",
+        "targetDir": "<repo>/target/r20p4-builds/C-control"
+      }
+    }
+  }
+}

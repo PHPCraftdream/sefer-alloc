@@ -70,14 +70,11 @@ pub struct Registry {
     /// registry's chunk cells; flat-bootstrap visibility is otherwise
     /// unchanged.
     pub(super) chunks: [OncePtrCell<RegistryChunk>; NUM_CHUNKS],
-    /// High-water mark of allocated slots (the next unused slot index). A
-    /// Claim mints indices with a capped CAS after trying one reuse hint;
-    /// a full reusable-slot scan runs at capacity or on cold OOM recovery.
+    /// High-water mark of minted indices; FREE-slot selection consults the bitmap.
     pub(crate) count: AtomicU32,
     /// Rotating start of materialised-slot scans; a hint, never ownership.
     pub(crate) scan_cursor: AtomicU32,
-    /// Latest recycled/failed-init/chunk-OOM/maintenance-released index. Older FREE
-    /// entries may wait until a capacity or cold-recovery scan.
+    /// Current advisory candidate; displaced FREE slots spill into the bitmap.
     pub(crate) reuse_hint: AtomicU32,
     /// Versioned negative-scan hint; never substitutes for a slot CAS.
     pub(crate) saturation: SaturationHint,

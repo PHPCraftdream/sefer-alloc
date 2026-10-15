@@ -301,6 +301,9 @@ function judgeWindows(byCell, layer, family, allowancePerWork, flags, tables, pa
   const ir = Object.fromEntries(ARMS.map(arm => [arm, irAt(arm)]));
   const familyIsSlope = slopeOnly || family === 'recycled';
   const first = familyIsSlope ? 2 : 1;
+  // v2: only L2 (the real thread lifecycle) gates the price, as a share of the
+  // same A window; L1 per-work allowances are recorded as diagnostics.
+  const gating = layer === 'L2';
   for (let window = first; window <= 3; window++) {
     const work = BigInt(window === 3 ? 32 : 16);
     const waves = Object.fromEntries(ARMS.map(arm => [arm, ir[arm][window] - ir[arm][window - 1]]));
@@ -310,23 +313,37 @@ function judgeWindows(byCell, layer, family, allowancePerWork, flags, tables, pa
       if (base <= 0n) { flags.invalid = true; continue; }
       const delta = waves[b] - base;
       const allowance = allowancePerWork + (layer === 'L2' ? BUDGETS.l2Extra : 0);
-      const pass = delta <= BigInt(allowance) * work + ts && 20n * delta <= base;
-      flags.noGo ||= !pass;
+      const pass = gating
+        ? 100n * (delta - ts) <= BigInt(BUDGETS.lifecyclePercent) * base
+        : delta <= BigInt(allowance) * work + ts && 20n * delta <= base;
+      if (gating) flags.noGo ||= !pass;
       tables.windows.push({ layer, family, window, pair: `${b}/${a}`, delta: delta.toString(),
-        base: base.toString(), allowance, work: work.toString(), ts: ts.toString(), pass });
+        base: base.toString(),
+        rule: gating ? `delta - T_s <= ${BUDGETS.lifecyclePercent}% of base` : 'diagnostic per-work allowance',
+        allowance, work: work.toString(), ts: ts.toString(), gating, pass });
     }
   }
   if (familyIsSlope) {
+    const slopes = arm => [ir[arm][2] - ir[arm][1], ir[arm][3] - ir[arm][2]];
+    const qualifiedTs = recordNoise(`${layer}/${family}/linearity`,
+      [ir.A1[3] - ir.A1[2], ir.A2[3] - ir.A2[2], ir.C0[3] - ir.C0[2]], flags, tables);
+    // Absolute arm slopes carry allocator-state effects shared by every arm
+    // (run01: flush/trim per heap falls with N); they are diagnostics only.
     for (const arm of ARMS) {
-      const slopeN = ir[arm][2] - ir[arm][1];
-      const slope2N = ir[arm][3] - ir[arm][2];
+      const [slopeN, slope2N] = slopes(arm);
       const deviation = abs(slope2N - 2n * slopeN);
-      const qualifiedTs = recordNoise(`${layer}/${family}/linearity`,
-        [ir.A1[3] - ir.A1[2], ir.A2[3] - ir.A2[2], ir.C0[3] - ir.C0[2]], flags, tables);
+      tables.linearity.push({ layer, family, arm, kind: 'arm', deviation: deviation.toString(),
+        bound: qualifiedTs.toString(), gating: false, pass: deviation <= qualifiedTs });
+    }
+    // Gating: the candidate's added cost must itself scale linearly.
+    for (const a of ['A1', 'A2']) for (const b of ['B1', 'B2']) {
+      const [aN, a2N] = slopes(a);
+      const [bN, b2N] = slopes(b);
+      const deviation = abs((b2N - a2N) - 2n * (bN - aN));
       const pass = deviation <= qualifiedTs;
       if (!pass) flags.invalid = true;
-      tables.linearity.push({ layer, family, arm, deviation: deviation.toString(),
-        bound: qualifiedTs.toString(), pass });
+      tables.linearity.push({ layer, family, pair: `${b}/${a}`, kind: 'delta',
+        deviation: deviation.toString(), bound: qualifiedTs.toString(), gating: true, pass });
     }
   }
 }
@@ -537,10 +554,31 @@ function selftest() {
     row.Ir += 400;
     row.boundary.inclusiveIr = row.Ir;
   }, 'NO-GO');
-  check(sample => {
-    const row = sample.iai.find(item => item.arm === 'B1' && item.name.includes('_cold_n'));
+  // v2: an L1 window over its per-work allowance is a recorded diagnostic, not a verdict.
+  {
+    const sample = structuredClone(fixture);
+    const row = sample.iai.find(item => item.arm === 'B1' && item.name === 'r20_prf04hr_cold_n');
     row.Ir -= 100;
     row.boundary.inclusiveIr = row.Ir;
+    const result = derive(sample, frozen);
+    assert.equal(result.verdict, 'GO (deterministic; native deferred)');
+    assert.ok(result.tables.windows.some(w => w.layer === 'L1' && !w.gating && !w.pass));
+    checks++;
+  }
+  // v2: the same nonlinearity in every arm is allocator state, not a candidate defect.
+  check(sample => {
+    for (const row of sample.iai.filter(item => item.name === 'r20_prf04hr_recycled_4n')) {
+      row.Ir += 50;
+      row.boundary.inclusiveIr = row.Ir;
+    }
+  }, 'GO (deterministic; native deferred)');
+  // v2: an L2 window over 1% of its A window is NO-GO.
+  check(sample => {
+    for (const row of sample.iai.filter(item => item.arm.startsWith('B') && item.name.includes('_l2_wave_release_'))) {
+      const n = row.name.endsWith('_4n') ? 64 : row.name.endsWith('_2n') ? 32 : 16;
+      row.Ir += n * 20;
+      row.boundary.inclusiveIr = row.Ir;
+    }
   }, 'NO-GO');
   check(sample => {
     const row = sample.iai.find(item => item.arm === 'B1' && item.name.includes('wave_2n'));

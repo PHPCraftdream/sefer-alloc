@@ -89,6 +89,8 @@ old profile window excluded startup; the exact std startup allocator frame was n
 
 ## 4. Budgets, paths and verdict
 
+**Version 2 (2026-10-15, before any v2 measurement) supersedes the gating rules of this section; see §7.**
+
 Canonical values are exported as `BUDGETS`: cold/pair +4, spill-release +14, start `T_s+4`, L2 +3, relative ceiling 5%,
 absolute noise 10. `T_s` is qualified A/C0 noise and never widens a budget. If an absolute noise difference exceeds 10,
 that window is INCONCLUSIVE. Fixed work budgets are one-sided; the relative bound is exact integer and negative deltas
@@ -105,3 +107,38 @@ fixed budget is NO-GO. Complete deterministic pass with native axis deferred is 
 `CANDIDATE='TBD'` is runner-local, not a support-module export. The ordered `FROZEN_FILES` list has ten files, including
 this companion preregistration. Its `.sha256` companion is excluded from its own inventory. Freeze it with the companion
 hash manifest before measurement.
+
+## 6. Re-freeze log
+
+- **2026-10-15 — pre-measurement re-freeze 1 (P4-3 dispatch binding).** B candidate = `942360b96bda0f159e49bb9dd05c7728bd5b10a8` (PR #28 head: the P4-2 ReuseFirst hint-spill candidate merged with `main`). A = `merge-base(B, origin/main)` = `3cc870a9b09353a96cf8c5250d9f479936f5e954` (`main` with this harness, PR #30). The runner binds B through its frozen `CANDIDATE` constant (no dispatch argument), and `docs/perf/R20_PRF04_HEAP_REUSE_PREREG.md.sha256` freezes the ten `FROZEN_FILES` at this commit. No candidate build or measurement precedes this entry; the earlier rehearsal was A-only harness validation.
+- **2026-10-15 — official dispatch record, run01 (outcome).** Run 38652419070 (PR #28 head `3cd84197`, B = `942360b9`, A = `3cc870a9`) wrote official input. It returned **INVALID**, with flags invalid and noGo both set.
+  - INVALID came from the absolute-arm linearity rule, which failed identically in every arm, A and C0 included: L1 wave_release 43, L2 recycled 487, L2 wave_release 2384, against T_s 10.
+  - NO-GO came from the per-work allowances:
+    - L1 cold +160 / 16 claims;
+    - L1 recycled +112 / 16;
+    - L1 wave_release +208 / 16, which breaks the relative 5% bound of its 460-Ir window;
+    - L2 cold and L2 recycled +144 / 16.
+  - The wave benefit passed strictly: L1 wave 558283 → 13026 Ir, L2 wave 740979 → 82165 Ir.
+  - The result stands as the v1 record. Data: Actions artifact `r20-gates-28` of that run.
+
+## 7. Version 2 (2026-10-15)
+
+On 2026-10-15 the owner decided to improve the protocol rather than keep rules that measure something other than the decision. v2 is a new protocol version. It was written after run01, and this section says so openly. Its rules follow from two principles that do not depend on the candidate's numbers.
+
+1. **Price is judged at the shipping layer.**
+   - The candidate ships as the claim/release step of the real `#[global_allocator]` thread lifecycle: TLS bind, registry claim, thread exit. The L2 cells measure exactly that step.
+   - L1 calls `HeapRegistry::dbg_claim_lease` directly, below that layer. L1 windows are therefore kept as diagnostics with their v1 per-work allowances and never set the verdict (the CLAUDE.md entry-point rule).
+   - The gating L2 rule is `100 * (delta - T_s) <= BUDGETS.lifecyclePercent * base`, with `lifecyclePercent = 1`: an added fixed cost may not exceed 1% of the A lifecycle window it is paid in.
+2. **Linearity is a property of the candidate's added cost, not of the allocator.**
+   - The run01 profiles show that the absolute-arm nonlinearity is shared allocator state: per-heap `flush_class_internal`, `drain_sidecar_ingress` and `trim_cold_retention` work falls as N grows, identically in A, B and C0.
+   - The L1 wave_release harness also front-drained its lease vector, and that memmove shrinks as n grows.
+   - v2 gates `|(B_2N - A_2N) - 2 * (B_N - A_N)| <= T_s` for each B/A pair. Absolute-arm linearity is kept as a diagnostic.
+
+Unchanged: identity, receipts, the activation oracle, the start check, the strict wave benefit and the priority INCOMPLETE > INVALID > NO-GO > INCONCLUSIVE > UNJUDGEABLE > GO.
+
+Changes made before the v2 measurement:
+- `wave_release_measured` and `l2_wave_release_measured` now drain the tail of their vectors, so no memmove happens inside the window.
+- The candidate's bench-only claim-source counter is branch-free: `CLAIM_SOURCES` gained a fifth slot for FREE-set claims.
+
+Disclosure: running the v2 judge offline on the run01 input gives GO. That is a consistency check, not gate evidence. Only an official v2 run, re-frozen with the new candidate SHA, decides.
+- **2026-10-15 — pre-measurement re-freeze 2 (v2 dispatch binding).** B candidate = `50c902217d551f0c8df6e3cb1390756f37cdebdd` (PR #28: ReuseFirst plus the branch-free bench counter, harness tail-drain and the v2 judge of §7). A = `merge-base(B, origin/main)` = `3cc870a9b09353a96cf8c5250d9f479936f5e954`. The runner binds B through `CANDIDATE`, and the `.sha256` companion re-freezes the ten `FROZEN_FILES` at this commit. No v2 measurement precedes this entry.

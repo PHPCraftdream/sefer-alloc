@@ -234,6 +234,11 @@ mode), bound via raw-pointer TLS with a reentrancy fallback (introduced in
 Phase 11.5 hardening). On `SeferAlloc`, `current_for_alloc()` performs a
 registry hop to find or create the per-thread `HeapCore`.
 
+The default registry selector claims the reusable hint, checks a nonempty
+spill bitmap, bumps fresh capacity, then scans at capacity. Releasing a slot
+swaps the hint and publishes a displaced valid hint to the separate bitmap;
+reuse does not change the slot-state CAS ownership authority.
+
 ### Hot path
 
 ```
@@ -487,10 +492,10 @@ do not certify the terminal-sidecar snapshot.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (388 files) |
+| Unit / integration tests | Construction, edge cases, invariants; snapshot acceptance pending | `tests/*.rs` (394 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri | Selected provenance/aliasing checks; snapshot execution pending | manifest `scripts/miri-matrix.mjs` (GREEN / EXPECTED-RED / WAIVED) run by `scripts/miri.mjs` and checked against CI by `scripts/verify-miri-target-wiring.mjs`, including `r8_global_box_provenance` and tagged-index-stack `narrow_domain_unchecked_storage`; not a whole-project proof |
-| loom | Bounded interleavings; snapshot execution pending | **Root (15 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
+| loom | Bounded interleavings; snapshot execution pending | **Root (17 files):** `tests/loom_active_kind_index.rs`, `tests/loom_epoch.rs`, `tests/loom_r8_maintenance_lease.rs`, `tests/loom_r11_epoch_false_full.rs`, `tests/loom_r11_ph4a_heap_lease.rs`, `tests/loom_r11_registry_claim.rs`, `tests/loom_r11_small_sidecar.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_r19_registry_free_set.rs`, `tests/loom_r20_heap_reuse_spill.rs`, `tests/loom_r11_ph4b_publish_recycle_drain.rs`, `tests/loom_sharded.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/loom_sidecar_bitmap.rs`, `tests/loom_sidecar_summary.rs`, `tests/loom_terminal_large.rs`, `tests/loom_terminal_owner_drain.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |

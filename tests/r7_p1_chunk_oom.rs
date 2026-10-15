@@ -124,9 +124,24 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
         assert!(!dbg_slot_initialised(idx));
     }
 
+    // Reuse-first (PRF-04 hint-spill): if the second OOM claimer displaced a
+    // valid hint, that minted index sits in the FREE-slot bitmap and is
+    // claimed before a bump; `minted` then stays a numeric-only index.
     let mut fresh = HeapRegistry::dbg_claim_lease().expect("claim");
     // SAFETY: fresh is a distinct LIVE claim retained through the cold scan.
-    assert_eq!(fresh.core().id(), minted);
+    let fresh_id = fresh.core().id();
+    if let Some(position) = pending.iter().position(|&idx| idx == fresh_id) {
+        pending.remove(position);
+        assert_eq!(
+            bootstrap::count_for_test(),
+            minted,
+            "spilled index precedes bump"
+        );
+        assert_eq!(dbg_bump_count_without_materialising(), Some(minted));
+        pending.push(minted);
+    } else {
+        assert_eq!(fresh_id, minted);
+    }
     assert_eq!(bootstrap::count_for_test(), minted + 1);
     for &idx in &pending {
         assert_eq!(reg.dbg_slot_state(idx as usize), STATE_EMPTY);

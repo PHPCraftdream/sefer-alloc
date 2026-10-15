@@ -82,6 +82,8 @@ export const BUDGETS = Object.freeze({
   startExtra: 4,
   l2Extra: 3,
   relativePercent: 5,
+  // v2: gating L2 price ceiling, percent of the same A window (thread lifecycle).
+  lifecyclePercent: 1,
   noiseAbsolute: 10,
 });
 export const FROZEN_FILES = Object.freeze([

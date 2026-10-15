@@ -64,7 +64,7 @@ import {
 import { runRunnerSelfTest } from './r20_prf04_heap_reuse_support.mjs';
 import { naturalBig, safeNumber, profileFunctions, argvTokens } from './r20_prf04_heap_reuse_support.mjs';
 export { profileFunctions, argvTokens };
-const CANDIDATE = 'TBD';
+const CANDIDATE = '50c902217d551f0c8df6e3cb1390756f37cdebdd';
 
 const RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(RUNNER_DIR, '..');

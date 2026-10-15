@@ -3400,6 +3400,8 @@ jobs:
             --test loom_r8_maintenance_lease \
             --test loom_active_kind_index \
             --test loom_r11_registry_claim \
+            --test loom_r19_registry_free_set \
+            --test loom_r20_heap_reuse_spill \
             --test loom_r11_ph4a_heap_lease \
             --test loom_r11_ph4b_publish_recycle_drain \
             --test loom_r11_small_sidecar 2>&1 | tee "$RUNNER_TEMP/loom-registry.log"
@@ -3410,6 +3412,16 @@ jobs:
           grep -F "test owner_only_membership_survives_late_terminal_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test clean_bit_clear_mutant_is_rejected ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test completed_free_publication_cannot_leave_false_full_or_two_owners ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test two_releasers_spill_hint_claim_and_maintenance_preserve_availability ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test release_swap_spills_displaced_hint_into_bitmap ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_release_store_loses_displaced_hint - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test free_cas_precedes_bitmap_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_bitmap_publication_before_free_cas_loses_availability - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test take_checks_previous_bit_once ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test negative_take_ignores_old_bit_duplicate_candidate_not_ownership - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test three_slot_two_release_claim_maintenance_preserve_availability_and_unique_ownership ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test quiet_summary_uses_bounded_state_scan ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test summary_clear_recheck_preserves_concurrent_bit_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test pointer_publication_and_last_pin_retention ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_relaxed_pointer_publication - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_early_leaf_release - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"

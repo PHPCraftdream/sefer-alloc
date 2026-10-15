@@ -1,0 +1,1538 @@
+exit=0
+{
+  "version": 1,
+  "verdict": "GO (deterministic; native deferred)",
+  "flags": {
+    "incomplete": false,
+    "invalid": false,
+    "noGo": false,
+    "noisy": false,
+    "unjudgeable": false
+  },
+  "tables": {
+    "checks": [
+      {
+        "cell": "r20_prf04hr_start",
+        "pair": "B1/A1",
+        "delta": "6",
+        "pass": true
+      },
+      {
+        "cell": "r20_prf04hr_start",
+        "pair": "B2/A1",
+        "delta": "6",
+        "pass": true
+      },
+      {
+        "cell": "r20_prf04hr_start",
+        "pair": "B1/A2",
+        "delta": "6",
+        "pass": true
+      },
+      {
+        "cell": "r20_prf04hr_start",
+        "pair": "B2/A2",
+        "delta": "6",
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w1",
+        "pair": "B1/A1",
+        "delta": "-545321",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w1",
+        "pair": "B2/A1",
+        "delta": "-545321",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w1",
+        "pair": "B1/A2",
+        "delta": "-545321",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w1",
+        "pair": "B2/A2",
+        "delta": "-545321",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w2",
+        "pair": "B1/A1",
+        "delta": "-554756",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w2",
+        "pair": "B2/A1",
+        "delta": "-554756",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w2",
+        "pair": "B1/A2",
+        "delta": "-554756",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w2",
+        "pair": "B2/A2",
+        "delta": "-554756",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w3",
+        "pair": "B1/A1",
+        "delta": "-1108940",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w3",
+        "pair": "B2/A1",
+        "delta": "-1108940",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w3",
+        "pair": "B1/A2",
+        "delta": "-1108940",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L1/wave/w3",
+        "pair": "B2/A2",
+        "delta": "-1108940",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w1",
+        "pair": "B1/A1",
+        "delta": "-658846",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w1",
+        "pair": "B2/A1",
+        "delta": "-658846",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w1",
+        "pair": "B1/A2",
+        "delta": "-658846",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w1",
+        "pair": "B2/A2",
+        "delta": "-658846",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w2",
+        "pair": "B1/A1",
+        "delta": "-704838",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w2",
+        "pair": "B2/A1",
+        "delta": "-704838",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w2",
+        "pair": "B1/A2",
+        "delta": "-704838",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w2",
+        "pair": "B2/A2",
+        "delta": "-704838",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w3",
+        "pair": "B1/A1",
+        "delta": "-1378799",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w3",
+        "pair": "B2/A1",
+        "delta": "-1378799",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w3",
+        "pair": "B1/A2",
+        "delta": "-1378799",
+        "strictBenefit": true,
+        "pass": true
+      },
+      {
+        "cell": "L2/wave/w3",
+        "pair": "B2/A2",
+        "delta": "-1378799",
+        "strictBenefit": true,
+        "pass": true
+      }
+    ],
+    "windows": [
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 1,
+        "pair": "B1/A1",
+        "delta": "96",
+        "base": "566407",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 1,
+        "pair": "B2/A1",
+        "delta": "96",
+        "base": "566407",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 1,
+        "pair": "B1/A2",
+        "delta": "96",
+        "base": "566407",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 1,
+        "pair": "B2/A2",
+        "delta": "96",
+        "base": "566407",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 2,
+        "pair": "B1/A1",
+        "delta": "96",
+        "base": "565316",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 2,
+        "pair": "B2/A1",
+        "delta": "96",
+        "base": "565316",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 2,
+        "pair": "B1/A2",
+        "delta": "96",
+        "base": "565316",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 2,
+        "pair": "B2/A2",
+        "delta": "96",
+        "base": "565316",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 3,
+        "pair": "B1/A1",
+        "delta": "192",
+        "base": "1131396",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 3,
+        "pair": "B2/A1",
+        "delta": "192",
+        "base": "1131396",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 3,
+        "pair": "B1/A2",
+        "delta": "192",
+        "base": "1131396",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "cold",
+        "window": 3,
+        "pair": "B2/A2",
+        "delta": "192",
+        "base": "1131396",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B1/A1",
+        "delta": "48",
+        "base": "12608",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B2/A1",
+        "delta": "48",
+        "base": "12608",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B1/A2",
+        "delta": "48",
+        "base": "12608",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B2/A2",
+        "delta": "48",
+        "base": "12608",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B1/A1",
+        "delta": "96",
+        "base": "25216",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B2/A1",
+        "delta": "96",
+        "base": "25216",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B1/A2",
+        "delta": "96",
+        "base": "25216",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B2/A2",
+        "delta": "96",
+        "base": "25216",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 4,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B1/A1",
+        "delta": "208",
+        "base": "496",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B2/A1",
+        "delta": "208",
+        "base": "496",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B1/A2",
+        "delta": "208",
+        "base": "496",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B2/A2",
+        "delta": "208",
+        "base": "496",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "16",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B1/A1",
+        "delta": "416",
+        "base": "992",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B2/A1",
+        "delta": "416",
+        "base": "992",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B1/A2",
+        "delta": "416",
+        "base": "992",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B2/A2",
+        "delta": "416",
+        "base": "992",
+        "rule": "diagnostic per-work allowance",
+        "allowance": 14,
+        "work": "32",
+        "ts": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 1,
+        "pair": "B1/A1",
+        "delta": "112",
+        "base": "789560",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 1,
+        "pair": "B2/A1",
+        "delta": "112",
+        "base": "789560",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 1,
+        "pair": "B1/A2",
+        "delta": "112",
+        "base": "789560",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 1,
+        "pair": "B2/A2",
+        "delta": "112",
+        "base": "789560",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 2,
+        "pair": "B1/A1",
+        "delta": "112",
+        "base": "785798",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 2,
+        "pair": "B2/A1",
+        "delta": "112",
+        "base": "785798",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 2,
+        "pair": "B1/A2",
+        "delta": "112",
+        "base": "785798",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 2,
+        "pair": "B2/A2",
+        "delta": "112",
+        "base": "785798",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 3,
+        "pair": "B1/A1",
+        "delta": "224",
+        "base": "1546079",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 3,
+        "pair": "B2/A1",
+        "delta": "224",
+        "base": "1546079",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 3,
+        "pair": "B1/A2",
+        "delta": "224",
+        "base": "1546079",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "cold",
+        "window": 3,
+        "pair": "B2/A2",
+        "delta": "224",
+        "base": "1546079",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B1/A1",
+        "delta": "112",
+        "base": "113072",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B2/A1",
+        "delta": "112",
+        "base": "113072",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B1/A2",
+        "delta": "112",
+        "base": "113072",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 2,
+        "pair": "B2/A2",
+        "delta": "112",
+        "base": "113072",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B1/A1",
+        "delta": "224",
+        "base": "226631",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B2/A1",
+        "delta": "224",
+        "base": "226631",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B1/A2",
+        "delta": "224",
+        "base": "226631",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "window": 3,
+        "pair": "B2/A2",
+        "delta": "224",
+        "base": "226631",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 7,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B1/A1",
+        "delta": "192",
+        "base": "28870",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B2/A1",
+        "delta": "192",
+        "base": "28870",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B1/A2",
+        "delta": "192",
+        "base": "28870",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 2,
+        "pair": "B2/A2",
+        "delta": "192",
+        "base": "28870",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "16",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B1/A1",
+        "delta": "384",
+        "base": "59906",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B2/A1",
+        "delta": "384",
+        "base": "59906",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B1/A2",
+        "delta": "384",
+        "base": "59906",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "window": 3,
+        "pair": "B2/A2",
+        "delta": "384",
+        "base": "59906",
+        "rule": "delta - T_s <= 1% of base",
+        "allowance": 17,
+        "work": "32",
+        "ts": "10",
+        "gating": true,
+        "pass": true
+      }
+    ],
+    "linearity": [
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "arm": "A1",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "arm": "A2",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "arm": "B1",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "arm": "B2",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "arm": "C0",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "pair": "B1/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "pair": "B2/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "pair": "B1/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "recycled",
+        "pair": "B2/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "arm": "A1",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "arm": "A2",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "arm": "B1",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "arm": "B2",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "arm": "C0",
+        "kind": "arm",
+        "deviation": "0",
+        "bound": "10",
+        "gating": false,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "pair": "B1/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "pair": "B2/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "pair": "B1/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L1",
+        "family": "wave_release",
+        "pair": "B2/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "arm": "A1",
+        "kind": "arm",
+        "deviation": "487",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "arm": "A2",
+        "kind": "arm",
+        "deviation": "487",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "arm": "B1",
+        "kind": "arm",
+        "deviation": "487",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "arm": "B2",
+        "kind": "arm",
+        "deviation": "487",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "arm": "C0",
+        "kind": "arm",
+        "deviation": "487",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "pair": "B1/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "pair": "B2/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "pair": "B1/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "recycled",
+        "pair": "B2/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "arm": "A1",
+        "kind": "arm",
+        "deviation": "2166",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "arm": "A2",
+        "kind": "arm",
+        "deviation": "2166",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "arm": "B1",
+        "kind": "arm",
+        "deviation": "2166",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "arm": "B2",
+        "kind": "arm",
+        "deviation": "2166",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "arm": "C0",
+        "kind": "arm",
+        "deviation": "2166",
+        "bound": "10",
+        "gating": false,
+        "pass": false
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "pair": "B1/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "pair": "B2/A1",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "pair": "B1/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      },
+      {
+        "layer": "L2",
+        "family": "wave_release",
+        "pair": "B2/A2",
+        "kind": "delta",
+        "deviation": "0",
+        "bound": "10",
+        "gating": true,
+        "pass": true
+      }
+    ],
+    "noise": [
+      {
+        "quantity": "start",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/wave/w1",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/wave/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/wave/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/wave/w1",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/wave/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/wave/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/cold/w1",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/cold/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/cold/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/recycled/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/recycled/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/recycled/linearity",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/wave_release/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/wave_release/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L1/wave_release/linearity",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/cold/w1",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/cold/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/cold/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/recycled/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/recycled/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/recycled/linearity",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/wave_release/w2",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/wave_release/w3",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      },
+      {
+        "quantity": "L2/wave_release/linearity",
+        "aa": "0",
+        "c0": "0",
+        "ceiling": 10,
+        "pass": true
+      }
+    ]
+  },
+  "native": {
+    "status": "DEFERRED",
+    "reason": "native paired A/B fixed-batch latency and RSS deferred; deterministic Callgrind only"
+  }
+}
+

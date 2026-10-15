@@ -1,10 +1,15 @@
-//! Chunk OOM may recover a materialised FREE slot whose constructor failed.
-#![cfg(all(feature = "alloc-global", feature = "internals"))]
+//! Constructor OOM leaves materialised slots available for later claims.
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "internals",
+    feature = "bench-internals"
+))]
 
 use sefer_alloc::registry::bootstrap;
 use sefer_alloc::registry::heap_registry::{
     dbg_claim_then_simulate_oom, dbg_slot_initialised, HeapRegistry,
 };
+use sefer_alloc::registry::heap_slot::STATE_FREE;
 
 struct OomReset;
 
@@ -19,14 +24,25 @@ fn chunk_oom_retries_materialised_uninitialised_free() {
     let old = dbg_claim_then_simulate_oom().expect("first failed constructor");
     let latest = dbg_claim_then_simulate_oom().expect("second failed constructor");
     assert_eq!((old, latest), (0, 1));
+    assert_eq!(bootstrap::ensure().dbg_slot_state(old as usize), STATE_FREE);
+    assert_eq!(
+        bootstrap::ensure().dbg_slot_state(latest as usize),
+        STATE_FREE
+    );
     assert!(!dbg_slot_initialised(old));
+    assert!(!dbg_slot_initialised(latest));
+
     let mut held = Vec::with_capacity(64);
-    let mut latest_lease = HeapRegistry::dbg_claim_lease().expect("claim");
-    // SAFETY-free core access: the lease exclusively owns the slot.
+    let mut latest_lease = HeapRegistry::dbg_claim_lease().expect("claim latest slot");
     assert_eq!(latest_lease.core().id(), latest);
+    assert_eq!(latest_lease.generation(), 2);
     held.push(latest_lease);
+    // The bitmap normally finds old first; remove only its advisory bit to
+    // force the documented chunk-OOM recovery scan (slot state stays FREE).
+    HeapRegistry::dbg_forget_free_slot_hint(old as usize);
+
     for expected in 2..64 {
-        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim");
+        let mut lease = HeapRegistry::dbg_claim_lease().expect("claim fresh slot");
         assert_eq!(lease.core().id(), expected);
         held.push(lease);
     }
@@ -35,24 +51,18 @@ fn chunk_oom_retries_materialised_uninitialised_free() {
 
     let _reset = OomReset;
     bootstrap::dbg_set_inject_chunk_oom(true);
-    let mut recovered = HeapRegistry::dbg_claim_lease().expect("claim");
-    assert!(
-        dbg_slot_initialised(recovered.slot_index()),
-        "constructor retry must avoid false OOM"
-    );
+    let mut recovered = HeapRegistry::dbg_claim_lease().expect("recover old constructor slot");
     assert_eq!(recovered.core().id(), old);
+    assert_eq!(recovered.generation(), 2);
     assert!(dbg_slot_initialised(old));
-    assert!(!bootstrap::ensure().dbg_chunk_is_materialised(1));
-    bootstrap::dbg_set_inject_chunk_oom(false);
-
-    let mut minted_retry = HeapRegistry::dbg_claim_lease().expect("claim");
-    assert_eq!(minted_retry.core().id(), 64);
     assert_eq!(bootstrap::count_for_test(), 65);
-    // All these leases are still distinct LIVE claims.
-    drop(minted_retry);
+    assert!(!bootstrap::ensure().dbg_chunk_is_materialised(1));
+
+    bootstrap::dbg_set_inject_chunk_oom(false);
+    let mut retried = HeapRegistry::dbg_claim_lease().expect("retry minted chunk index");
+    assert_eq!(retried.core().id(), 64);
+    assert_eq!(bootstrap::count_for_test(), 65);
+    drop(retried);
     drop(recovered);
-    for lease in held {
-        // This lease has not yet been dropped.
-        drop(lease);
-    }
+    drop(held);
 }
