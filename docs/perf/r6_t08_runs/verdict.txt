@@ -1,0 +1,4 @@
+VERDICT: NO-GO (document-only outcome)
+(a) FAIL at N=16: amplif B=16.77 not <= A/8=3.9388
+(a) FAIL at N=64: amplif B=16.77 not <= A/8=3.9388
+(a) FAIL at N=256: amplif B=16.77 not <= A/8=3.9388

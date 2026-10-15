@@ -1,0 +1,6 @@
+# oracle: mode=production n=16 span_usable=4194304 segment_base=0x7f978cc00000
+# post-drop drift: mode=production n=16 commit_or_virtual_bytes=8388608
+# oracle: mode=production n=64 span_usable=4194304 segment_base=0x7f978cc00000
+# post-drop drift: mode=production n=64 commit_or_virtual_bytes=8388608
+# oracle: mode=production n=256 span_usable=4194304 segment_base=0x7f978cc00000
+# post-drop drift: mode=production n=256 commit_or_virtual_bytes=8388608

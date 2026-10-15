@@ -187,7 +187,11 @@ report is where the full raw numbers and methodology live.
 > experimental `exact-span-large` feature sizes the reservation to the
 > page-exact request instead (260 KiB → ~264 KiB); see item 28
 > (CONDITIONAL-GO, not promoted; known realloc-growth regression) in
-> [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md).
+> [`docs/perf/OPEN_ITEMS.md`](docs/perf/OPEN_ITEMS.md). Measured on Linux
+> (N × 260 KiB live), the address space reserved per object is 8 MiB by
+> default and 4.3 MiB with `exact-span-large`: the aligned reservation, not
+> the span rounding, dominates there
+> ([`docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md`](docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md) §7).
 
 ### Named profiles (`Profile`, `alloc-decommit`)
 
