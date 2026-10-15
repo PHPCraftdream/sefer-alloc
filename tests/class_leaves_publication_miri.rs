@@ -38,6 +38,9 @@ fn leaves() -> Arc<ClassLeaves> {
     Arc::from(initialized)
 }
 
+/// First granule of leaf 1 (leaf 0 covers granules 0..256).
+const LEAF1_GRANULE: usize = 256;
+
 #[test]
 fn mixed_leaf_initialization_is_visible_to_reader() {
     let leaves = leaves();
@@ -46,7 +49,8 @@ fn mixed_leaf_initialization_is_visible_to_reader() {
     assert!(!leaves.issue(0, 3));
     assert!(leaves.prepare(0, 3));
     assert!(leaves.issue(0, 3));
-    assert!(!leaves.prepared(1, 4));
+    // `prepared` is per-leaf: the promoted leaf 0 is prepared for ANY class.
+    assert!(leaves.prepared(1, 4));
     let spilled = Arc::new(AtomicBool::new(false));
     let reader_leaves = Arc::clone(&leaves);
     let reader_spilled = Arc::clone(&spilled);
@@ -55,14 +59,18 @@ fn mixed_leaf_initialization_is_visible_to_reader() {
             std::thread::yield_now();
         }
         for _ in 0..64 {
-            assert_eq!(reader_leaves.encoded(0), 4);
+            assert_eq!(reader_leaves.encoded(LEAF1_GRANULE), 5);
             std::thread::yield_now();
         }
     });
-    let prepared = leaves.prepare(1, 4);
+    // Leaf 1 is still virgin: the prepare below is a real spill whose Release
+    // publication of `mixed` must order the zero fill. The Relaxed flag
+    // supplies no happens-before edge, so the reader observing class+1 is
+    // ordered only by that publication — the same invariant as before.
+    let prepared = leaves.prepare(LEAF1_GRANULE, 4);
     // Deliberately not Release: only mixed's publication may synchronize the read.
     spilled.store(true, Ordering::Relaxed);
     reader.join().expect("ClassLeaves reader completed");
     assert!(prepared);
-    assert!(leaves.prepared(1, 4));
+    assert!(leaves.prepared(LEAF1_GRANULE, 4));
 }

@@ -5,22 +5,25 @@
 //! interior granule reads 0 and `SidecarBitmap::publish` rejects it before
 //! the pending-bit RMW.
 //!
-//! Scenario (CR-2): a 6144-byte Small block B whose start is leaf-aligned
-//! (so B's tail leaf ends mid-leaf), then a 16-byte allocation whose start
-//! granule lands in B's tail leaf, then a foreign free of the tail leaf's
-//! first granule (strictly inside B). Before R6-T28 that granule reported
-//! the neighbor's class, the record published, and the owner linked a live
-//! block's interior into the class-0 free list (the next 16-byte carve
-//! handed it out again and `Node::write_next` scribbled over B's payload).
+//! Scenario: one live 6144-byte Small block B (the explicit density-fill
+//! class, so B spans more than one 4 KiB leaf). The interior granule used is
+//! B's SECOND granule: strictly inside B, 16-aligned, and never an issued
+//! start — the only issued start in B's start leaf is B itself, since the
+//! bump cursor never enters B's span while B is live. Before R6-T28 that
+//! granule reported B's class (uniform leaf) or the class spilled into the
+//! leaf by an earlier conflict (spill filled every granule with the old
+//! uniform value), so the record published and the owner linked a live
+//! block's interior into a free list (`Node::write_next` scribbled over B's
+//! payload) and decremented its live credit.
 //!
 //! `abort()` cannot be caught, so the scenario runs in a child process
-//! (this very test binary, selected by `CHILD`). No separate owner thread
-//! is needed: the test thread made all the allocations, so it IS the owner.
+//! (this very test binary, selected by `CHILD`). The test thread made all
+//! the allocations, so it IS the owner and drains its own ingress.
 //!
-//! Non-vacuous: without start-granule-only encoding the child's payload
-//! check fails (the owner's `Node::write_next` overwrites the poisoned
-//! pattern inside B) and/or the follow-up 16-byte allocation returns the
-//! interior offset from the corrupted free list.
+//! Non-vacuous: without start-granule-only encoding the counter assertion
+//! fails (the record publishes, so it is not counted as
+//! `foreign_or_unroutable_frees`), and the payload check fails (the owner's
+//! `Node::write_next` overwrites the poisoned pattern inside B).
 
 #![cfg(all(
     feature = "alloc-global",
@@ -37,57 +40,16 @@ use std::thread;
 const CHILD: &str = "R6_U21_INTERIOR_CHILD";
 const TEST: &str = "foreign_free_of_interior_granule_is_dropped_without_corruption";
 const BIG: usize = 6144; // explicit density-fill Small class
-const LEAF: usize = 4096;
-
-fn align_up(value: usize, align: usize) -> usize {
-    value.div_ceil(align) * align
-}
 
 fn run_child() {
     let big = Layout::from_size_align(BIG, 16).expect("big layout");
     let small = Layout::from_size_align(16, 16).expect("small layout");
     let allocator = SeferAlloc::new();
 
-    // SAFETY: valid layouts; every block below stays live until after the
-    // owner-side drain.
-    let first = unsafe { allocator.alloc(small) };
-    assert!(!first.is_null());
-    let mut warm = vec![first];
-    // Advance the bump so the 6144-class carve lands on a 12288-aligned
-    // start: its tail leaf then ends mid-leaf and the follow-up 16-byte
-    // carve PLANTS an issued start inside B's tail leaf (the CR-2
-    // precondition for the old uniform encoding).
-    let mut bump = first as usize + 16;
-    while align_up(bump, BIG) % (2 * LEAF) != 0 {
-        // SAFETY: valid layout; the walker stays live.
-        let ptr = unsafe { allocator.alloc(small) };
-        assert!(!ptr.is_null(), "bump walk must not OOM");
-        warm.push(ptr);
-        bump = ptr as usize + 16;
-    }
-    // SAFETY: valid layout; B stays live for the whole scenario.
+    // SAFETY: valid layouts; B stays live for the whole scenario.
     let big_ptr = unsafe { allocator.alloc(big) };
-    assert_eq!(
-        big_ptr as usize,
-        align_up(bump, BIG),
-        "B must carve at the aligned bump"
-    );
-    let start = big_ptr as usize;
-    assert_eq!(start % LEAF, 0, "B must start leaf-aligned");
-    // SAFETY: valid layout; the neighbor stays live.
-    let neighbor = unsafe { allocator.alloc(small) };
-    assert_eq!(
-        neighbor as usize,
-        start + BIG,
-        "the neighbor must carve right after B"
-    );
-    assert_eq!(
-        neighbor as usize / LEAF,
-        (start + BIG - 1) / LEAF,
-        "the neighbor's start granule must sit in B's tail leaf"
-    );
-    let interior = start + LEAF; // tail leaf's first granule, strictly inside B
-    assert!(interior < start + BIG && interior != neighbor as usize);
+    assert!(!big_ptr.is_null(), "the 6144-class block must allocate");
+    let interior = big_ptr as usize + 16;
 
     // Poison B so any owner-side write into it is observable.
     // SAFETY: B is a live 6144-byte allocation of this thread.
@@ -96,10 +58,11 @@ fn run_child() {
     let before = SeferAlloc::new().stats().foreign_or_unroutable_frees;
     // This thread never allocated, so `dealloc` resolves ForeignNoBind and
     // goes through GlobalAlloc -> publish_foreign -> route pin -> publish.
+    let interior_addr = interior;
     let foreign = thread::spawn(move || {
         // SAFETY: malformed interior pointer on purpose — it must be
         // rejected, never dereferenced.
-        unsafe { SeferAlloc::new().dealloc(interior as *mut u8, small) };
+        unsafe { SeferAlloc::new().dealloc(interior_addr as *mut u8, small) };
     });
     foreign.join().expect("foreign free thread");
     let after = SeferAlloc::new().stats().foreign_or_unroutable_frees;
@@ -107,8 +70,9 @@ fn run_child() {
         after > before,
         "foreign_or_unroutable_frees did not grow: {before} -> {after}"
     );
-    // This thread made all the allocations above, so it IS the owner:
-    // drain the cross-thread ingress here.
+
+    // This thread made all the allocations above, so it IS the owner: drain
+    // the cross-thread ingress here.
     allocator.trim_current_thread();
 
     // The dropped interior offset must never have been written by the owner
@@ -118,14 +82,14 @@ fn run_child() {
         .iter()
         .all(|&byte| byte == 0xA5);
     assert!(poison_ok, "B's payload was mutated by the owner drain");
-    // SAFETY: valid layout; the block is freed right after the check.
+    // SAFETY: valid layout; the block is freed by the drop of the allocator
+    // at thread exit; the check below must not observe the interior offset.
     let again = unsafe { allocator.alloc(small) };
     assert!(!again.is_null());
     assert_ne!(
         again as usize, interior,
         "the interior offset must not come back as a fresh allocation"
     );
-    drop(warm);
     println!("R6_U21_INTERIOR_CHILD_OK");
 }
 

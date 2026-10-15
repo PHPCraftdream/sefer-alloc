@@ -123,6 +123,19 @@ fn batch_carve_short_room_commits_exactly_the_room() {
         }
         assert!(core.dbg_carve_batch(1, &mut fill) > 0);
     }
+    // The batch under test must start inside an already-promoted leaf: a
+    // fresh-leaf first issue legitimately spills sidecar storage, and this
+    // test bounds the batch by the segment's room, not by sidecar promotion.
+    // Probes stay live so the batch remains a pure bump carve.
+    let mut probes: Vec<*mut u8> = Vec::new();
+    while core
+        .dbg_r11_issue_state_for_test(1)
+        .unwrap()
+        .0
+        .is_multiple_of(LEAF)
+    {
+        probes.push(core.dbg_r11_scalar_carve_for_test(1).unwrap());
+    }
     let state = core.dbg_r11_issue_state_for_test(1).unwrap();
     let aligned = (state.0 + CLASS1 - 1) & !(CLASS1 - 1);
     let room = (SegmentLayout::SEGMENT - aligned) / CLASS1;
@@ -164,6 +177,9 @@ fn batch_carve_short_room_commits_exactly_the_room() {
 
     for ptr in &out[..n] {
         release(&mut core, *ptr, CLASS1);
+    }
+    for &ptr in probes.iter() {
+        release(&mut core, ptr, CLASS1);
     }
     release(&mut core, anchor, CLASS0);
 }
