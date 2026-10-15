@@ -215,8 +215,7 @@ fn heap_ptr_impl(
             // We are the sole initialiser. Construct the HeapCore in place.
             // The fallback is NOT a registry slot, so it cannot carry a slot
             // index: it carries the dedicated `OWNER_ID_FALLBACK` sentinel —
-            // round-trip-stable through `pack_owner`/`unpack_owner_id` (so
-            // `stamp_segment_owner`'s OPT-C stamp-cache compare can hit) and
+            // round-trip-stable through `pack_owner`/`unpack_owner_id` and
             // out-of-range for every owner-id→slot resolution. `u32::MAX`
             // remains reserved for "not yet bound to a slot" on freshly-init'd
             // registry slots.

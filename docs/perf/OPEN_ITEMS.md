@@ -3048,11 +3048,11 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
 72. **[D] fxx R2 §4.1 — `finish_magazine_refill` walks the refilled blocks twice.**
 
-    - **Status:** OPEN — design only; not measured.
-    - **Current-number-or-verdict:** `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computes `segment_base_of_ptr(p)` for the stamp dedupe in one loop, then again for `mark_magazine` in a second loop. One pass would save `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expects a sub-percent effect.
-    - **Next trigger:** the next magazine refill / miss-path round. Gate: `npm run iai` churn benches A/B; merge only on a measured `Ir` drop. Do not extend this to the overflow-flush base recomputation (R24-3/R24-4 NO-GO).
+    - **Status:** CLOSED — code removed (R6-T01, round 6 2026-10-15); the stamp-dedupe pass and the owner stamp are gone, leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`).
+    - **Current-number-or-verdict:** `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computed `segment_base_of_ptr(p)` for the stamp dedupe in one loop, then again for `mark_magazine` in a second loop. One pass saves `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expected a sub-percent effect.
+    - **Next trigger:** none — closed by R6-T01; full closure narrative in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 72.
     - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1.
-   > - **Round 6 (2026-10-15):** R6-PF-1 absorbs this item — the `owner_state` stamp written in production has no production reader (the only reader is the test-only `dbg_owner_id_for`); after removing the stamp a single pass (`mark_magazine`) remains and the item closes itself. Task R6-T01. Evidence: `docs/agent_reviews_round6/performance_review.md` R6-PF-1.
+   > - **Round 6 (2026-10-15):** R6-PF-1 absorbed and closed this item — the `owner_state` stamp written in production had no production reader (the only reader is the test-only `dbg_owner_id_for`); with the stamp removed (R6-T01) a single pass (`mark_magazine`) remains. Evidence: `docs/agent_reviews_round6/performance_review.md` R6-PF-1; closure narrative `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 72.
 
 73. **[L] xs R3 "optimization ideas" — region write-path copies and `ShardedRegion` length query.**
 
@@ -3153,6 +3153,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
+
+- **fxx R2 §4.1 / item 72 — `finish_magazine_refill` walked the refilled blocks twice (stamp-dedupe pass + `mark_magazine` pass).** Closed 2026-10-15, R6-T01: `stamp_segment_owner` and `last_stamped_segment` removed — the `owner_state` header word has no production reader — leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`). Full closure: the `72` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **R17-PRF-04 / item 87 — fresh-first registry claim materialised extra heaps under barrier-wave thread churn.** Closed 2026-10-15, GO (deterministic; native deferred) and shipped as `perf(runtime)`: ReuseFirst spills the displaced reuse hint into a FREE-slot bitmap. The official v2 gate (run 38682260617, B `50c90221` over A `3cc870a9`) shows waves at 12962/558283 = 0.0232 of A (L1) and 82133/740979 = 0.1108 (L2), with L2 price +112/789560 per cold window, +112/113072 per recycled window and +192/28870 per release window, all under 1%. Run01 (38652419070) is recorded as INVALID under v1. Report `docs/perf/R20_PRF04_HEAP_REUSE_RUN02_REPORT.md`; native axes deferred to a quiet bare-metal host; see `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `87`.
 

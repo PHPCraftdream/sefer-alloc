@@ -103,15 +103,16 @@ fn dbg_committed_payload_end_for_sound_under_provenance_less_input() {
 
 #[cfg(all(feature = "alloc-global", feature = "internals"))]
 #[test]
-fn dbg_owner_id_for_sound_under_provenance_less_input() {
+fn dbg_kind_probe_sound_under_provenance_less_input() {
     use core::alloc::Layout;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
     // Serialise against other tests in this binary that also claim the
-    // process-global registry (mirrors `tests/heap_core_tcache_stamp.rs`'s
-    // established `SerialGuard` pattern for the same reason).
+    // process-global registry (mirrors
+    // `tests/regression_hardened_large_kind_own_free.rs`'s established
+    // `SerialGuard` pattern for the same reason).
     static SERIAL: AtomicBool = AtomicBool::new(false);
     while SERIAL
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -136,10 +137,14 @@ fn dbg_owner_id_for_sound_under_provenance_less_input() {
     assert!(!real_ptr.is_null());
     let stale = core::ptr::without_provenance_mut::<u8>(real_ptr.expose_provenance());
 
-    let via_real = heap.dbg_owner_id_for(real_ptr);
-    let via_stale = heap.dbg_owner_id_for(stale);
+    let via_real = heap.dbg_kind_at_tag(real_ptr);
+    let via_stale = heap.dbg_kind_at_tag(stale);
     assert_eq!(via_real, via_stale);
-    assert!(via_real.is_some(), "a freshly-allocated block must resolve");
+    assert_ne!(
+        via_real, 3,
+        "a freshly-allocated block must resolve to a registered segment \
+         (not the TAG_UNKNOWN sentinel)"
+    );
 }
 
 #[cfg(all(

@@ -372,7 +372,7 @@ impl AllocCore {
                 // code path can reach this not-yet-returned-to-its-caller
                 // segment's `segment_id` between `register()` and the patch (it
                 // is not yet handed to the allocation caller, so `unregister`/
-                // `recycle` cannot race it here). This mirrors
+                // `recycle` cannot race it here). The patch mirrors
                 // `SegmentMeta::owner_state_atomic`'s general shape (write the
                 // register-derived field last, as its own single-word store)
                 // while requiring no changes to `segment_header.rs`/`node.rs`;
@@ -469,24 +469,13 @@ impl AllocCore {
                     ) as *mut usize,
                     hdr_aligned,
                 );
-                {
-                    let meta = crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
-                    meta.owner_state_atomic().store(
-                        crate::alloc_core::segment_header::pack_owner(
-                            crate::alloc_core::segment_header::OWNER_STATE_LIVE,
-                            crate::alloc_core::segment_header::OWNER_ID_NONE,
-                            0,
-                        ),
-                        core::sync::atomic::Ordering::Relaxed,
-                    );
-                }
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
                 // `register()` will reuse — so this should not fail. If it does
                 // (table is genuinely full) we cannot reuse this slot; release
                 // it and fall through to the slow OS path. The header fields
-                // are already written above (F12's targeted writes + R34-14's
-                // owner/deferred resets), but the slot never becomes visible
+                // are already written above (F12's targeted writes), but the
+                // slot never becomes visible
                 // in that failure branch, so there is nothing to unwind.
                 let id = match self.table.register_payload(
                     slot.base,

@@ -289,7 +289,7 @@ unsafe impl Sync for HeapSlot {}
 // `Sync` impl above already provide (a `&T` is `Send` iff `T: Sync`). What
 // `Send` on `HeapSlot` itself actually authorises is moving a `HeapSlot`
 // *by value* to another thread — carrying a possibly-LIVE `HeapCore`
-// (`AllocCore`'s raw segment pointers, `last_stamped_segment: *mut u8`) with
+// (`AllocCore`'s raw segment pointers) with
 // it. Nobody wrote (or needs) a proof for that: a by-value move bypasses the
 // entire `claim` CAS single-writer discipline every neighbouring SAFETY proof
 // depends on, and no code path in the crate ever moves a `HeapSlot` by value

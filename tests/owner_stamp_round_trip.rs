@@ -9,9 +9,10 @@
 //!
 //! The process-global fallback heap was constructed with the id `u32::MAX`
 //! (src/global/fallback.rs). Since that id is outside the representable
-//! 31-bit id domain, `stamp_segment_owner`'s OPT-C fast path
-//! (src/registry/heap_core/state/ownership.rs) — `unpack_owner_id(cur) ==
-//! self.id` — could NEVER hit for fallback-stamped segments: its stamp cache
+//! 31-bit id domain, the OPT-C stamp-cache fast path of the (R6-T01-removed)
+//! segment stamping (src/registry/heap_core/state/ownership.rs) —
+//! `unpack_owner_id(cur) == self.id` — could NEVER hit for fallback-stamped
+//! segments: its stamp cache
 //! was permanently cold. Worse, the leaked bit 32 silently wrote into the
 //! (currently unread) generation field — a latent trap for any future reader
 //! of that field.

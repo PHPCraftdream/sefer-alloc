@@ -22,12 +22,13 @@
 //!
 //! ## Counterfactual note
 //!
-//! If the magazine path were missing the `stamp_segment_owner` call, the
-//! cross-thread routing tests (existing `race_repro` / `soak_xthread`) would
-//! detect the missing stamp: a remote thread's `dealloc_routing` reads
-//! `owner_thread_free_at(base)` and routes to the per-segment ring only if
-//! the stamp is present. Without the stamp the remote free silently drops
-//! (safe no-op) -- but the T7/soak conservation checks would catch the leak.
+//! Historical note (R6-T01): the magazine path used to stamp each segment's
+//! `owner_state` word here, and the cross-thread routing tests (existing
+//! `race_repro` / `soak_xthread`) relied on that stamp: a remote thread's
+//! `dealloc_routing` read `owner_thread_free_at(base)` and routed to the
+//! per-segment ring only if the stamp was present. Routing now resolves the
+//! owner through the route directory (the header word is inert), so the
+//! stamp is gone — but the T7/soak conservation checks still catch any leak.
 
 #![cfg(all(
     all(feature = "alloc-global", feature = "fastbin"),
