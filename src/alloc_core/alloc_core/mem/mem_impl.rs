@@ -312,7 +312,11 @@ impl AllocCore {
                 // Phase 2: run a lazy decay tick on large free (same cheap
                 // Instant check as on the alloc path).
                 #[cfg(feature = "alloc-decommit")]
-                self.maybe_decay_large_cache();
+                {
+                    self.maybe_decay_large_cache();
+                    // R6-T31: pool decay tick on the same cold cadence as the large cache.
+                    self.maybe_decay_small_pool();
+                }
 
                 let stale = SegmentHeader::read_at(base);
 
