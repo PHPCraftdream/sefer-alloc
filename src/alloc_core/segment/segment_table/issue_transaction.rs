@@ -4,7 +4,7 @@
 //! `prepare -> commit` protocol every Small issuance path already follows:
 //! a witness exists only after every fallible sidecar preparation for
 //! `(segment_index, base, offset, class)` succeeded (retained promotions are
-//! uniform copies a later retry may reuse), and only
+//! zero-filled copies a later retry may reuse), and only
 //! [`commit`](IssueTransaction::commit) publishes the block. Between the two
 //! the caller mutates freelist head, alloc bitmap, bump cursor, live credit,
 //! directory bits and its output buffer — the ordering the sidecar audit

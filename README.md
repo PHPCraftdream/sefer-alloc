@@ -1645,6 +1645,15 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   Forking an activated multithreaded process or unloading allocator code
   while the worker exists is unsupported.
 
+- **Cross-thread frees of interior pointers are dropped, not honored.** The
+  terminal sidecar records a block's size class only in the block's start
+  granule, so a foreign `dealloc` of a 16-aligned interior offset into a live
+  block is dropped at the producer and counted in `foreign_or_unroutable_frees`
+  instead of corrupting the owner's free list or live credit. Residual: a
+  granule-aligned foreign free whose offset equals a live block's start is
+  indistinguishable from a valid remote free of that block and is honored
+  (block starts carry no owner-thread identity).
+
 - **Single-thread small-class hot path is ~1.2–2× behind `mimalloc`.** The
   flamegraph at [`docs/PROFILE_FLAMEGRAPHS.md §1`](docs/PROFILE_FLAMEGRAPHS.md)
   shows where; OPT-C lazy stamp recovers ~1 %, the structural gap remains.

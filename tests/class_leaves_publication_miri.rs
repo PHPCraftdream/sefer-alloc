@@ -41,6 +41,10 @@ fn leaves() -> Arc<ClassLeaves> {
 #[test]
 fn mixed_leaf_initialization_is_visible_to_reader() {
     let leaves = leaves();
+    // A never-promoted leaf is not prepared and refuses the direct issue.
+    assert!(!leaves.prepared(0, 3));
+    assert!(!leaves.issue(0, 3));
+    assert!(leaves.prepare(0, 3));
     assert!(leaves.issue(0, 3));
     assert!(!leaves.prepared(1, 4));
     let spilled = Arc::new(AtomicBool::new(false));

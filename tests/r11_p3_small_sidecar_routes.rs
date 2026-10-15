@@ -36,30 +36,30 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
         assert!(route.prepare_small(offset, class));
         assert!(route.issue_small(offset, class));
     }
-    assert_eq!(sidecar.mixed_leaves_for_test(), 0);
+    assert_eq!(sidecar.mixed_leaves_for_test(), 2);
     assert!(route.prepare_small(32, 1));
     assert!(route.issue_small(32, 1));
     assert_eq!(sidecar.class_at_for_test(0), Some(0));
     assert_eq!(sidecar.class_at_for_test(32), Some(1));
-    assert_eq!(sidecar.mixed_leaves_for_test(), 1);
-
-    SmallSidecar::fail_spill_after_for_test(1);
-    assert!(!route.prepare_small(LEAF as u32 + 16, 1));
-    assert_eq!(sidecar.mixed_leaves_for_test(), 1);
-    assert_eq!(sidecar.class_at_for_test(LEAF as u32), Some(0));
-    assert!(route.prepare_small(LEAF as u32 + 16, 1));
-    assert!(route.issue_small(LEAF as u32 + 16, 1));
     assert_eq!(sidecar.mixed_leaves_for_test(), 2);
 
+    SmallSidecar::fail_spill_after_for_test(1);
+    assert!(!route.prepare_small(2 * LEAF as u32 + 16, 1));
+    assert_eq!(sidecar.mixed_leaves_for_test(), 2);
+    assert_eq!(sidecar.class_at_for_test(2 * LEAF as u32), None);
+    assert!(route.prepare_small(2 * LEAF as u32 + 16, 1));
+    assert!(route.issue_small(2 * LEAF as u32 + 16, 1));
+    assert_eq!(sidecar.mixed_leaves_for_test(), 3);
+
     let pinned_after_terminal = directory.lookup(root).unwrap();
-    for offset in [0, 16, 32, LEAF as u32, LEAF as u32 + 16] {
+    for offset in [0, 16, 32, LEAF as u32, 2 * LEAF as u32 + 16] {
         let pin = directory
             .lookup(root.with_addr(root.addr() + offset as usize))
             .unwrap();
         // SAFETY: each offset was issued once above and is transferred once.
         assert!(unsafe { pin.publish_small(offset) });
     }
-    let mut scan = sidecar.scan(LEAF + 32).unwrap();
+    let mut scan = sidecar.scan(2 * LEAF + 32).unwrap();
     let mut records = Vec::new();
     while let Some(mut cut) = scan.next_cut() {
         while let Some(record) = cut.pop() {
@@ -73,7 +73,7 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
             (16, 0),
             (32, 1),
             (LEAF as u32, 0),
-            (LEAF as u32 + 16, 1)
+            (2 * LEAF as u32 + 16, 1)
         ]
     );
     drop(scan);
@@ -81,7 +81,7 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     assert!(directory.lookup(root).is_none());
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));
     let held = SmallSidecar::system_totals_for_test();
-    assert_eq!(held.0 - before.0, 41_984 + 2 * 256);
+    assert_eq!(held.0 - before.0, 41_984 + 3 * 256);
     assert_eq!(held.2 - before.2, 0);
     let replacement = directory
         .register(root, SEGMENT, root, 11, RouteKind::Small)
