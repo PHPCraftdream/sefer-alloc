@@ -1393,7 +1393,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **401 integration test files**,
+needs its acceptance run. The present tree contains **402 integration test files**,
 **95 example binaries**, **32 benches**, and **17 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1403,7 +1403,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (401 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (402 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (95 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (32 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1722,11 +1722,18 @@ is served by `System` and deliberately leaked until the process ends. A later fr
 is a counted no-op. Stop and join allocator-using threads before exiting where you can; this is a
 bounded-exit measure, not a complete shutdown-safety guarantee.
 
-**Residual limits.** A route registration that fails on an already-bound thread's own path while the
-process is exiting can still surface as a null allocation and end in `handle_alloc_error` (an abort).
+**Residual limits.** Allocator paths that still return null while the process is exiting now escape
+to `System` instead of aborting: `alloc`/`alloc_zeroed`/`realloc` in both the own-heap and fallback
+branches (the fallback's own lock give-up and the `Some(null)` inner-route failure are covered), a
+`realloc` whose route lookup fails is served by a fresh `System` block with `min(old, new)` bytes
+copied (the old block leaks), and an exact-object registration that cannot reach its descriptor
+table returns the `System` block unregistered (a later free is a counted unroutable no-op). A route
+`remove` that gives up during exit still leaves the entry linked and the caller frees the VA; a
+duplicate registration of the same key then reports `Duplicate` rather than a silent recycle.
 `OncePtrCell` initialization waits outside the avoided binding path are not covered. If the
-shutdown query is unavailable (no `ntdll` export), the previous waiting behavior remains. Non-Windows
-targets are unchanged. Evidence: `tests/con01_exit_stranded_lock.rs`, `tests/con01_exit_main_return.rs`,
+shutdown query is unavailable (no `ntdll` export), the previous waiting behavior remains.
+Non-Windows targets are unchanged. Evidence: `tests/con01_exit_stranded_lock.rs`
+(scenarios `shard_realloc`, `own_oom`, `exact_shard`), `tests/con01_exit_main_return.rs`,
 `tests/con01_exit_detector_probe.rs`; tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 185.
 
 ---
