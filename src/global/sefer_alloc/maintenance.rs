@@ -29,6 +29,18 @@ impl SeferAlloc {
     /// equivalent. A worker unwind or unexpected return is terminal process
     /// abort, never silent degradation or automatic restart.
     ///
+    /// This is a process-global side effect with no opt-out: any dependency
+    /// in the binary can activate the process-lifetime worker by calling
+    /// this associated function, even if `SeferAlloc` is not the installed
+    /// `#[global_allocator]`. Binary owners must treat unexpected
+    /// activation as an integration contract, not a per-crate detail.
+    ///
+    /// Never call under an OS loader lock: Windows `DllMain` or a DLL
+    /// static constructor may make the new worker thread permanently
+    /// unschedulable. Startup confirms RUNNING within a fixed internal
+    /// bound; if the confirmation never arrives, the process aborts rather
+    /// than hanging the starter forever.
+    ///
     /// The detached worker and its process-static state live until process
     /// exit. There is deliberately no shutdown API; process exit is not a drain
     /// barrier. Forking an activated multithreaded process or unloading this

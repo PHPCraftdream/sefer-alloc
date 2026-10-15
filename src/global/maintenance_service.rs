@@ -28,6 +28,12 @@ const STARTING: u8 = 1;
 const RUNNING: u8 = 2;
 const SLOT_BUDGET: usize = 32;
 const PERIOD: Duration = Duration::from_millis(10);
+// Startup confirmation bound. The worker only needs one scheduling quantum
+// to publish RUNNING; if the bound expires the activated guarantee cannot
+// be honored (unschedulable starter, e.g. loader lock), so the starter
+// aborts instead of hanging forever. Scheduling bound, not a worker
+// progress SLA; also bounds the bench-internals injected startup pause.
+const STARTUP_CONFIRM_BOUND: Duration = Duration::from_secs(30);
 static STATE: AtomicU8 = AtomicU8::new(IDLE);
 static CONTROL: Mutex<()> = Mutex::new(());
 static CHANGED: Condvar = Condvar::new();
@@ -78,13 +84,21 @@ impl MaintenanceService {
         #[cfg(all(feature = "internals", feature = "bench-internals"))]
         {
             if START_PAUSE.load(Ordering::Acquire) {
-                let mut guard = Self::control();
+                let guard = Self::control();
                 START_PAUSED.store(true, Ordering::Release);
                 CHANGED.notify_all();
-                while START_PAUSE.load(Ordering::Acquire) {
-                    guard = CHANGED
-                        .wait(guard)
-                        .unwrap_or_else(|_| std::process::abort());
+                let timed_out = CHANGED
+                    .wait_timeout_while(guard, STARTUP_CONFIRM_BOUND, |_| {
+                        START_PAUSE.load(Ordering::Acquire)
+                    })
+                    .unwrap_or_else(|_| std::process::abort())
+                    .1
+                    .timed_out();
+                if timed_out {
+                    // Same confirmation bound as the RUNNING wait: a wedged
+                    // starter aborts, whether it is wedged before or after
+                    // the worker spawn.
+                    std::process::abort();
                 }
                 START_PAUSED.store(false, Ordering::Release);
             }
@@ -97,11 +111,19 @@ impl MaintenanceService {
         // fire-and-forget: detached by design, guarded by terminal abort on
         // every unexpected worker exit. All state/code must live until exit.
         drop(handle);
-        let mut guard = Self::control();
-        while STATE.load(Ordering::Acquire) != RUNNING {
-            guard = CHANGED
-                .wait(guard)
-                .unwrap_or_else(|_| std::process::abort());
+        let guard = Self::control();
+        let timed_out = CHANGED
+            .wait_timeout_while(guard, STARTUP_CONFIRM_BOUND, |_| {
+                STATE.load(Ordering::Acquire) != RUNNING
+            })
+            .unwrap_or_else(|_| std::process::abort())
+            .1
+            .timed_out();
+        if timed_out {
+            // The detached worker cannot be cancelled or rolled back: it may
+            // still activate later. Aborting never hangs the starter and
+            // never reports a guarantee that is not RUNNING yet.
+            std::process::abort();
         }
         Ok(())
     }
