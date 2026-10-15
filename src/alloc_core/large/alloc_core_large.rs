@@ -281,269 +281,300 @@ impl AllocCore {
         // LARGE_CACHE_SIZE_FACTOR (not so big we waste RSS). The size-ratio
         // bound prevents a 64 MiB cached segment from permanently absorbing
         // every 4 MiB request.
+        // R6-T10(b): `swept` records whether the miss sweep already ran on
+        // THIS call, so the funneled slow path below does not sweep twice.
+        // Declared ungated so every `alloc_large_slow(...)` call site can pass
+        // it; it is mutated only where the miss sweep below is compiled in.
+        let mut swept = false;
+        #[cfg(not(all(
+            feature = "alloc-xthread",
+            feature = "fastbin",
+            feature = "alloc-decommit"
+        )))]
+        let _ = &mut swept; // no miss sweep in this build
         #[cfg(feature = "alloc-decommit")]
         if align < SEGMENT {
-            // G11 (task #51) — BEST-FIT: consider every cached entry and pick the compatible
-            // entry with the SMALLEST `usable_size`, instead of taking the first
-            // fit. A cached entry is compatible when it is big enough
-            // (`usable_size >= usable`) yet not wastefully large
-            // (`usable_size <= usable * LARGE_CACHE_SIZE_FACTOR`). Best-fit keeps
-            // the tightest span for this request and leaves the larger cached
-            // spans available for larger future requests — reducing internal
-            // fragmentation / RSS waste versus first-fit, at cost that now
-            // iterates only OCCUPIED slots via the R32-12 occupancy bitmask
-            // (P1-3, #1985) — O(popcount), not O(large_cache_scan_bound()).
-            let mut hit_idx: Option<usize> = None;
-            let mut best_usable: usize = usize::MAX;
-            // P1-3 (#1985): iterate only OCCUPIED slots via the R32-12
-            // occupancy bitmask (same "bit i set ⟺ slot i is Some"
-            // invariant `large_cache_find_free_slot` already relies on)
-            // instead of paying one `Option` discriminant load per slot
-            // across `large_cache_scan_bound()`.
-            let mut occupied = self.large_cache_occupied_within_bound();
-            while occupied != 0 {
-                let i = occupied.trailing_zeros() as usize;
-                occupied &= occupied - 1; // clear the lowest set bit
-                if let Some(slot) = self.large_cache_slot_get(i) {
-                    if slot.usable_size >= usable
-                        && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
-                        && slot.usable_size < best_usable
-                    {
-                        best_usable = slot.usable_size;
-                        hit_idx = Some(i);
-                    }
-                }
-            }
-            if let Some(idx) = hit_idx {
-                let slot = self.large_cache_slot_take(idx);
-                let terminal_meta = crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
-                let generation = match terminal_meta.begin_large_reuse() {
-                    Some(generation) => generation,
-                    None => {
-                        self.large_cache_used_bytes =
-                            self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                        let state = LargeReservationState::new(terminal_meta.large_state_atomic());
-                        let word = terminal_meta.terminal_snapshot().large_state;
-                        if !state.release_cached(
-                            crate::alloc_core::segment_header::large_generation(word),
-                        ) {
-                            std::process::abort();
-                        }
-                        os::release_segment(slot.reservation, slot.reservation_len);
-                        return self.alloc_large_slow(size, align, usable, hdr_aligned);
-                    }
-                };
-                // Update the byte-budget counter: this slot is leaving the cache.
-                self.large_cache_used_bytes =
-                    self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                // Pages are kept committed in the cache (no decommit on deposit,
-                // no recommit needed on hit — they are already mapped and
-                // accessible). Write a fresh header over the old one. The
-                // allocation lives at `hdr_aligned` (same computation as the
-                // slow path).
-                //
-                // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
-                // this used to call `self.table.register(slot.base)` FIRST (to
-                // obtain `id` for the header) and only THEN
-                // `Node::write_struct(slot.base, hdr)` — but `register` already
-                // makes `slot.base` visible to `contains_base`/remote routing
-                // lookups, so the plain full-struct write that followed could
-                // race a concurrent remote defensive read
-                // (the `magic_at`/`kind_at`/`large_size_at`/
-                // `span_usable_at` reads that existed when UBFIX-6 landed;
-                // `magic_at` has since been removed) on a stale/duplicate remote free — the same
-                // data-race class as the two `dealloc`/`reclaim_large_segment`
-                // "zero magic" sites, just in the opposite (publish) direction.
-                //
-                // Fix: reorder so the FULL header write happens while `slot.base`
-                // is still UNREGISTERED (not yet in `contains_base`'s table, so
-                // no remote reader can address it at all — the race is closed
-                // by construction, not by per-field atomics). `segment_id` is
-                // the only field that genuinely needs the registry-assigned
-                // `id`, which is only available AFTER `register()` runs; it is
-                // NOT one of the four remote-readable fields this finding
-                // targets (`magic`/`kind`/`large_size`/`span_usable` — see
-                // `SegmentHeader::segment_id_at`'s own doc: written once at
-                // registration and otherwise only read by same-thread-ish
-                // unregister/recycle bookkeeping), so it is written with a
-                // placeholder here and patched with a single-word
-                // `Node::write_u32` at its `offset_of!` offset, immediately
-                // after `register()` returns the real slot index — no OTHER
-                // code path can reach this not-yet-returned-to-its-caller
-                // segment's `segment_id` between `register()` and the patch (it
-                // is not yet handed to the allocation caller, so `unregister`/
-                // `recycle` cannot race it here). The patch mirrors
-                // `SegmentMeta::owner_state_atomic`'s general shape (write the
-                // register-derived field last, as its own single-word store)
-                // while requiring no changes to `segment_header.rs`/`node.rs`;
-                // `SegmentHeader::set_segment_id_at` is intentionally NOT reused
-                // here — it is documented TEST-ONLY (`dbg_stamp_segment_id`,
-                // "never called on any production path"), so this production
-                // patch performs the identical single `Node::write_u32` inline
-                // instead of repurposing that test seam.
-                let bump = hdr_aligned + size;
-                // `span_usable` is carried forward from the CACHED slot's own
-                // `usable_size` — the true physical span of the segment being
-                // reused — NOT recomputed from the new (possibly smaller)
-                // `size`/`align`. Bug #134. R12-4: `reserved_capacity` is
-                // carried forward the same way, from `slot.reserved_capacity`
-                // (the segment's true reserved VA span) — same rationale,
-                // never recomputed.
-                //
-                // F12 (task #498, docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md,
-                // docs/perf/R32_7_LARGE_CACHE_HIT_TARGETED_HEADER_WRITE_GATE.md):
-                // this used to build a full fresh `SegmentHeader` via
-                // `SegmentHeader::large(..)` and overwrite the WHOLE 144-byte
-                // header with `Node::write_struct`. But 4 of that
-                // constructor's 8 arguments (`span_usable`/`reserved_capacity`/
-                // `reservation`/`reservation_len`) are, by the comment above,
-                // carried forward BYTE-IDENTICAL from `slot.*` — i.e. the
-                // exact same values already sitting in the header at
-                // `slot.base`, untouched since this segment's header was last
-                // constructed. Only `magic` (re-established after the
-                // large-cache deposit path atomically zeroed it —
-                // `set_magic_at`'s doc), `large_size`, `large_align`, and
-                // `bump` genuinely change; `segment_id` is handled by its own
-                // pre-existing separate 1-word patch below, unaffected by
-                // this change.
-                //
-                // Falsification pin (F12's own recipe, kept as a PERMANENT
-                // correctness assert rather than a one-shot check — cheap
-                // relative to the segment-registration work around it, and it
-                // guards an invariant a future field addition to `slot`/
-                // `CachedLarge` could silently break): read the header that
-                // is about to be partially overwritten and confirm its
-                // carried-forward fields already equal what we would have
-                // written via the old full-struct path. If this ever fires,
-                // the "carried forward unchanged" premise is FALSE and the
-                // targeted-write optimization below is unsound.
-                #[cfg(debug_assertions)]
-                {
-                    let pre = SegmentHeader::read_at(slot.base);
-                    debug_assert_eq!(
-                        pre.span_usable, slot.usable_size,
-                        "F12: large-cache slot's in-memory span_usable diverged from slot.usable_size"
-                    );
-                    debug_assert_eq!(
-                        pre.reserved_capacity, slot.reserved_capacity,
-                        "F12: large-cache slot's in-memory reserved_capacity diverged from slot.reserved_capacity"
-                    );
-                    debug_assert_eq!(
-                        pre.reservation, slot.reservation,
-                        "F12: large-cache slot's in-memory reservation diverged from slot.reservation"
-                    );
-                    debug_assert_eq!(
-                        pre.reservation_len, slot.reservation_len,
-                        "F12: large-cache slot's in-memory reservation_len diverged from slot.reservation_len"
-                    );
-                }
-                // UBFIX-6 restated for the targeted-write shape: all 4 writes
-                // below run strictly BEFORE `self.table.register(slot.base)`
-                // (a few lines down), i.e. while `slot.base` is still absent
-                // from `SegmentTable`'s `contains_base` hash table — no
-                // cross-thread reader (the removed `magic_at` or the
-                // remaining `kind_at`/`large_size_at`/
-                // `span_usable_at`) can address this segment at all yet, so
-                // there is no reader to observe a torn/partial write between
-                // these 4 stores, and their relative ORDER among each other is
-                // immaterial for the same reason (the same argument the
-                // original full-struct `write_struct` already relied on —
-                // see the UBFIX-6 comment above). `kind`/`segment_id` are
-                // untouched here: `kind` was already `Large` from this
-                // segment's PRIOR header construction (a large-cache slot is,
-                // by construction, always a former Large segment — the cache
-                // never holds Small/Primordial spans) and does not need
-                // rewriting; `segment_id` keeps its own pre-existing
-                // post-`register()` 1-word patch below.
-                SegmentHeader::set_magic_at(
-                    slot.base,
-                    crate::alloc_core::segment_header::SEGMENT_MAGIC,
-                );
-                SegmentHeader::set_large_size_at(slot.base, size);
-                SegmentHeader::set_large_align_at(slot.base, align);
-                SegmentHeader::set_bump_at(slot.base, bump);
-                Node::write_usize(
-                    Node::offset(
-                        slot.base,
-                        core::mem::offset_of!(SegmentHeader, payload_offset),
-                    ) as *mut usize,
-                    hdr_aligned,
-                );
-                // NOW publish `slot.base` to `contains_base`/remote routing.
-                // Under alloc-decommit, `recycle()` left a NULL slot that
-                // `register()` will reuse — so this should not fail. If it does
-                // (table is genuinely full) we cannot reuse this slot; release
-                // it and fall through to the slow OS path. The header fields
-                // are already written above (F12's targeted writes), but the
-                // slot never becomes visible
-                // in that failure branch, so there is nothing to unwind.
-                let id = match self.table.register_payload(
-                    slot.base,
-                    slot.reserved_capacity,
-                    SegmentKind::Large,
-                    Node::offset(slot.base, hdr_aligned),
-                ) {
-                    Some(id) => id,
-                    None => {
-                        if !LargeReservationState::new(terminal_meta.large_state_atomic())
-                            .release_initializing(generation)
+            // R6-T10(b): at most two passes. Pass 1: a cache hit must cost no
+            // sweep. On a miss, absorb pending remote Large frees with ONE full
+            // sidecar sweep, then retry the cache once before paying a fresh OS
+            // reservation (a sweep reclaim deposits freed segments into this
+            // cache -- see `reclaim_large_segment`).
+            loop {
+                // G11 (task #51) — BEST-FIT: consider every cached entry and pick the compatible
+                // entry with the SMALLEST `usable_size`, instead of taking the first
+                // fit. A cached entry is compatible when it is big enough
+                // (`usable_size >= usable`) yet not wastefully large
+                // (`usable_size <= usable * LARGE_CACHE_SIZE_FACTOR`). Best-fit keeps
+                // the tightest span for this request and leaves the larger cached
+                // spans available for larger future requests — reducing internal
+                // fragmentation / RSS waste versus first-fit, at cost that now
+                // iterates only OCCUPIED slots via the R32-12 occupancy bitmask
+                // (P1-3, #1985) — O(popcount), not O(large_cache_scan_bound()).
+                let mut hit_idx: Option<usize> = None;
+                let mut best_usable: usize = usize::MAX;
+                // P1-3 (#1985): iterate only OCCUPIED slots via the R32-12
+                // occupancy bitmask (same "bit i set ⟺ slot i is Some"
+                // invariant `large_cache_find_free_slot` already relies on)
+                // instead of paying one `Option` discriminant load per slot
+                // across `large_cache_scan_bound()`.
+                let mut occupied = self.large_cache_occupied_within_bound();
+                while occupied != 0 {
+                    let i = occupied.trailing_zeros() as usize;
+                    occupied &= occupied - 1; // clear the lowest set bit
+                    if let Some(slot) = self.large_cache_slot_get(i) {
+                        if slot.usable_size >= usable
+                            && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
+                            && slot.usable_size < best_usable
                         {
-                            std::process::abort();
+                            best_usable = slot.usable_size;
+                            hit_idx = Some(i);
                         }
-                        os::release_segment(slot.reservation, slot.reservation_len);
-                        return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
-                };
-                // Patch the real registry slot index in now that the segment is
-                // visible — a single-word field write (disjoint from
-                // `bump`/`owner_state`, same discipline as `large_size_at`'s
-                // sibling setter `set_large_size_at`).
-                let segment_id_off = core::mem::offset_of!(SegmentHeader, segment_id);
-                Node::write_u32(Node::offset(slot.base, segment_id_off) as *mut u32, id);
-                // Phase C (numa-aware): re-stamp with the CURRENT thread's NUMA
-                // node. The thread may have migrated since the segment was cached;
-                // updating the tag reflects the current physical binding. R11-5:
-                // reads the cached value (re-queried at most once per slot claim).
-                #[cfg(feature = "numa-aware")]
-                {
-                    let my_node = self.current_node_cached();
-                    SegmentMeta::new(slot.base).set_node_id(my_node);
                 }
-                terminal_meta.finish_large_reuse(generation);
-                // Diagnostic (task D1): count this as a cache hit.
-                // Э5 (task #145): load+store instead of `fetch_add` — no
-                // `lock xadd`. SOUND for the same single-writer reason as
-                // `HeapCore::tcache_hits`: the counter is per-heap and
-                // `alloc_large` (its only incrementer) runs solely on the
-                // owning thread (the slot's claim-CAS winner). No other thread
-                // writes it, so splitting the atomic RMW into Relaxed load +
-                // Relaxed store cannot drop a count. The cross-thread
-                // `large_cache_hits_total` reader still does a Relaxed atomic
-                // load — identical visibility to the old `fetch_add(Relaxed)`.
-                //
-                // W3: increment the SLOT's counter when this heap is bound
-                // (`large_cache_hits_sink`), else the owned fallback (standalone
-                // `AllocCore`). Same 2 mem-ops either way. Safe references
-                // throughout (forbid-unsafe).
-                //
-                // W3 Part B: gated behind `alloc-stats` (default OFF, NOT in
-                // `production`) — when off it compiles OUT of the large-cache
-                // hit path and `stats().large_cache_hits` reads 0. See the
-                // `alloc-stats` feature doc in Cargo.toml.
-                #[cfg(feature = "alloc-stats")]
-                {
-                    let ctr = self.large_cache_hits_sink.unwrap_or(&self.large_cache_hits);
-                    ctr.store(
-                        ctr.load(core::sync::atomic::Ordering::Relaxed)
-                            .wrapping_add(1),
-                        core::sync::atomic::Ordering::Relaxed,
+                if let Some(idx) = hit_idx {
+                    let slot = self.large_cache_slot_take(idx);
+                    let terminal_meta =
+                        crate::alloc_core::segment_header::SegmentMeta::new(slot.base);
+                    let generation = match terminal_meta.begin_large_reuse() {
+                        Some(generation) => generation,
+                        None => {
+                            self.large_cache_used_bytes =
+                                self.large_cache_used_bytes.saturating_sub(slot.usable_size);
+                            let state =
+                                LargeReservationState::new(terminal_meta.large_state_atomic());
+                            let word = terminal_meta.terminal_snapshot().large_state;
+                            if !state.release_cached(
+                                crate::alloc_core::segment_header::large_generation(word),
+                            ) {
+                                std::process::abort();
+                            }
+                            os::release_segment(slot.reservation, slot.reservation_len);
+                            return self.alloc_large_slow(size, align, usable, hdr_aligned, swept);
+                        }
+                    };
+                    // Update the byte-budget counter: this slot is leaving the cache.
+                    self.large_cache_used_bytes =
+                        self.large_cache_used_bytes.saturating_sub(slot.usable_size);
+                    // Pages are kept committed in the cache (no decommit on deposit,
+                    // no recommit needed on hit — they are already mapped and
+                    // accessible). Write a fresh header over the old one. The
+                    // allocation lives at `hdr_aligned` (same computation as the
+                    // slow path).
+                    //
+                    // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
+                    // this used to call `self.table.register(slot.base)` FIRST (to
+                    // obtain `id` for the header) and only THEN
+                    // `Node::write_struct(slot.base, hdr)` — but `register` already
+                    // makes `slot.base` visible to `contains_base`/remote routing
+                    // lookups, so the plain full-struct write that followed could
+                    // race a concurrent remote defensive read
+                    // (the `magic_at`/`kind_at`/`large_size_at`/
+                    // `span_usable_at` reads that existed when UBFIX-6 landed;
+                    // `magic_at` has since been removed) on a stale/duplicate remote free — the same
+                    // data-race class as the two `dealloc`/`reclaim_large_segment`
+                    // "zero magic" sites, just in the opposite (publish) direction.
+                    //
+                    // Fix: reorder so the FULL header write happens while `slot.base`
+                    // is still UNREGISTERED (not yet in `contains_base`'s table, so
+                    // no remote reader can address it at all — the race is closed
+                    // by construction, not by per-field atomics). `segment_id` is
+                    // the only field that genuinely needs the registry-assigned
+                    // `id`, which is only available AFTER `register()` runs; it is
+                    // NOT one of the four remote-readable fields this finding
+                    // targets (`magic`/`kind`/`large_size`/`span_usable` — see
+                    // `SegmentHeader::segment_id_at`'s own doc: written once at
+                    // registration and otherwise only read by same-thread-ish
+                    // unregister/recycle bookkeeping), so it is written with a
+                    // placeholder here and patched with a single-word
+                    // `Node::write_u32` at its `offset_of!` offset, immediately
+                    // after `register()` returns the real slot index — no OTHER
+                    // code path can reach this not-yet-returned-to-its-caller
+                    // segment's `segment_id` between `register()` and the patch (it
+                    // is not yet handed to the allocation caller, so `unregister`/
+                    // `recycle` cannot race it here). The patch mirrors
+                    // `SegmentMeta::owner_state_atomic`'s general shape (write the
+                    // register-derived field last, as its own single-word store)
+                    // while requiring no changes to `segment_header.rs`/`node.rs`;
+                    // `SegmentHeader::set_segment_id_at` is intentionally NOT reused
+                    // here — it is documented TEST-ONLY (`dbg_stamp_segment_id`,
+                    // "never called on any production path"), so this production
+                    // patch performs the identical single `Node::write_u32` inline
+                    // instead of repurposing that test seam.
+                    let bump = hdr_aligned + size;
+                    // `span_usable` is carried forward from the CACHED slot's own
+                    // `usable_size` — the true physical span of the segment being
+                    // reused — NOT recomputed from the new (possibly smaller)
+                    // `size`/`align`. Bug #134. R12-4: `reserved_capacity` is
+                    // carried forward the same way, from `slot.reserved_capacity`
+                    // (the segment's true reserved VA span) — same rationale,
+                    // never recomputed.
+                    //
+                    // F12 (task #498, docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md,
+                    // docs/perf/R32_7_LARGE_CACHE_HIT_TARGETED_HEADER_WRITE_GATE.md):
+                    // this used to build a full fresh `SegmentHeader` via
+                    // `SegmentHeader::large(..)` and overwrite the WHOLE 144-byte
+                    // header with `Node::write_struct`. But 4 of that
+                    // constructor's 8 arguments (`span_usable`/`reserved_capacity`/
+                    // `reservation`/`reservation_len`) are, by the comment above,
+                    // carried forward BYTE-IDENTICAL from `slot.*` — i.e. the
+                    // exact same values already sitting in the header at
+                    // `slot.base`, untouched since this segment's header was last
+                    // constructed. Only `magic` (re-established after the
+                    // large-cache deposit path atomically zeroed it —
+                    // `set_magic_at`'s doc), `large_size`, `large_align`, and
+                    // `bump` genuinely change; `segment_id` is handled by its own
+                    // pre-existing separate 1-word patch below, unaffected by
+                    // this change.
+                    //
+                    // Falsification pin (F12's own recipe, kept as a PERMANENT
+                    // correctness assert rather than a one-shot check — cheap
+                    // relative to the segment-registration work around it, and it
+                    // guards an invariant a future field addition to `slot`/
+                    // `CachedLarge` could silently break): read the header that
+                    // is about to be partially overwritten and confirm its
+                    // carried-forward fields already equal what we would have
+                    // written via the old full-struct path. If this ever fires,
+                    // the "carried forward unchanged" premise is FALSE and the
+                    // targeted-write optimization below is unsound.
+                    #[cfg(debug_assertions)]
+                    {
+                        let pre = SegmentHeader::read_at(slot.base);
+                        debug_assert_eq!(
+                            pre.span_usable, slot.usable_size,
+                            "F12: large-cache slot's in-memory span_usable diverged from slot.usable_size"
+                        );
+                        debug_assert_eq!(
+                            pre.reserved_capacity, slot.reserved_capacity,
+                            "F12: large-cache slot's in-memory reserved_capacity diverged from slot.reserved_capacity"
+                        );
+                        debug_assert_eq!(
+                            pre.reservation, slot.reservation,
+                            "F12: large-cache slot's in-memory reservation diverged from slot.reservation"
+                        );
+                        debug_assert_eq!(
+                            pre.reservation_len, slot.reservation_len,
+                            "F12: large-cache slot's in-memory reservation_len diverged from slot.reservation_len"
+                        );
+                    }
+                    // UBFIX-6 restated for the targeted-write shape: all 4 writes
+                    // below run strictly BEFORE `self.table.register(slot.base)`
+                    // (a few lines down), i.e. while `slot.base` is still absent
+                    // from `SegmentTable`'s `contains_base` hash table — no
+                    // cross-thread reader (the removed `magic_at` or the
+                    // remaining `kind_at`/`large_size_at`/
+                    // `span_usable_at`) can address this segment at all yet, so
+                    // there is no reader to observe a torn/partial write between
+                    // these 4 stores, and their relative ORDER among each other is
+                    // immaterial for the same reason (the same argument the
+                    // original full-struct `write_struct` already relied on —
+                    // see the UBFIX-6 comment above). `kind`/`segment_id` are
+                    // untouched here: `kind` was already `Large` from this
+                    // segment's PRIOR header construction (a large-cache slot is,
+                    // by construction, always a former Large segment — the cache
+                    // never holds Small/Primordial spans) and does not need
+                    // rewriting; `segment_id` keeps its own pre-existing
+                    // post-`register()` 1-word patch below.
+                    SegmentHeader::set_magic_at(
+                        slot.base,
+                        crate::alloc_core::segment_header::SEGMENT_MAGIC,
                     );
+                    SegmentHeader::set_large_size_at(slot.base, size);
+                    SegmentHeader::set_large_align_at(slot.base, align);
+                    SegmentHeader::set_bump_at(slot.base, bump);
+                    Node::write_usize(
+                        Node::offset(
+                            slot.base,
+                            core::mem::offset_of!(SegmentHeader, payload_offset),
+                        ) as *mut usize,
+                        hdr_aligned,
+                    );
+                    // NOW publish `slot.base` to `contains_base`/remote routing.
+                    // Under alloc-decommit, `recycle()` left a NULL slot that
+                    // `register()` will reuse — so this should not fail. If it does
+                    // (table is genuinely full) we cannot reuse this slot; release
+                    // it and fall through to the slow OS path. The header fields
+                    // are already written above (F12's targeted writes), but the
+                    // slot never becomes visible
+                    // in that failure branch, so there is nothing to unwind.
+                    let id = match self.table.register_payload(
+                        slot.base,
+                        slot.reserved_capacity,
+                        SegmentKind::Large,
+                        Node::offset(slot.base, hdr_aligned),
+                    ) {
+                        Some(id) => id,
+                        None => {
+                            if !LargeReservationState::new(terminal_meta.large_state_atomic())
+                                .release_initializing(generation)
+                            {
+                                std::process::abort();
+                            }
+                            os::release_segment(slot.reservation, slot.reservation_len);
+                            return self.alloc_large_slow(size, align, usable, hdr_aligned, swept);
+                        }
+                    };
+                    // Patch the real registry slot index in now that the segment is
+                    // visible — a single-word field write (disjoint from
+                    // `bump`/`owner_state`, same discipline as `large_size_at`'s
+                    // sibling setter `set_large_size_at`).
+                    let segment_id_off = core::mem::offset_of!(SegmentHeader, segment_id);
+                    Node::write_u32(Node::offset(slot.base, segment_id_off) as *mut u32, id);
+                    // Phase C (numa-aware): re-stamp with the CURRENT thread's NUMA
+                    // node. The thread may have migrated since the segment was cached;
+                    // updating the tag reflects the current physical binding. R11-5:
+                    // reads the cached value (re-queried at most once per slot claim).
+                    #[cfg(feature = "numa-aware")]
+                    {
+                        let my_node = self.current_node_cached();
+                        SegmentMeta::new(slot.base).set_node_id(my_node);
+                    }
+                    terminal_meta.finish_large_reuse(generation);
+                    // Diagnostic (task D1): count this as a cache hit.
+                    // Э5 (task #145): load+store instead of `fetch_add` — no
+                    // `lock xadd`. SOUND for the same single-writer reason as
+                    // `HeapCore::tcache_hits`: the counter is per-heap and
+                    // `alloc_large` (its only incrementer) runs solely on the
+                    // owning thread (the slot's claim-CAS winner). No other thread
+                    // writes it, so splitting the atomic RMW into Relaxed load +
+                    // Relaxed store cannot drop a count. The cross-thread
+                    // `large_cache_hits_total` reader still does a Relaxed atomic
+                    // load — identical visibility to the old `fetch_add(Relaxed)`.
+                    //
+                    // W3: increment the SLOT's counter when this heap is bound
+                    // (`large_cache_hits_sink`), else the owned fallback (standalone
+                    // `AllocCore`). Same 2 mem-ops either way. Safe references
+                    // throughout (forbid-unsafe).
+                    //
+                    // W3 Part B: gated behind `alloc-stats` (default OFF, NOT in
+                    // `production`) — when off it compiles OUT of the large-cache
+                    // hit path and `stats().large_cache_hits` reads 0. See the
+                    // `alloc-stats` feature doc in Cargo.toml.
+                    #[cfg(feature = "alloc-stats")]
+                    {
+                        let ctr = self.large_cache_hits_sink.unwrap_or(&self.large_cache_hits);
+                        ctr.store(
+                            ctr.load(core::sync::atomic::Ordering::Relaxed)
+                                .wrapping_add(1),
+                            core::sync::atomic::Ordering::Relaxed,
+                        );
+                    }
+                    return (Node::deref(slot.base, hdr_aligned), false);
                 }
-                return (Node::deref(slot.base, hdr_aligned), false);
+                // No compatible entry after this pass:
+                #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+                if !swept {
+                    // The sweep counts as done even when it reclaims nothing,
+                    // so the slow path does not repeat it.
+                    swept = true;
+                    if self.drain_large_sidecar_ingress() > 0 {
+                        continue;
+                    }
+                }
+                break;
             }
         }
 
-        self.alloc_large_slow(size, align, usable, hdr_aligned)
+        self.alloc_large_slow(size, align, usable, hdr_aligned, swept)
     }
 
     /// The slow (OS round-trip) path for `alloc_large` — called when the
@@ -564,7 +595,23 @@ impl AllocCore {
         align: usize,
         usable: usize,
         hdr_aligned: usize,
+        swept: bool,
     ) -> (*mut u8, bool) {
+        // R6-T10(b): the ONE full-sweep point before an OS Large reservation.
+        // Every fresh-reserve path funnels through here (this body is the sole
+        // caller of `Segment::reserve` / `numa::reserve_*` for Large):
+        // over-aligned Large (`align >= SEGMENT`, which skips the large-cache
+        // block entirely), the two failed-cache-reuse fallback returns inside
+        // `alloc_large`, and the plain cache miss. `alloc_large` passes
+        // `swept = true` when it already ran the miss sweep + cache retry on
+        // this call, so the normal miss path does not sweep twice.
+        #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+        if !swept {
+            self.drain_large_sidecar_ingress();
+        }
+        // No remote publications in this build.
+        #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
+        let _ = swept;
         // Phase C (numa-aware): steer the large segment to the calling thread's
         // NUMA node, same as for small segments. R11-5: cached accessor.
         #[cfg(feature = "numa-aware")]
