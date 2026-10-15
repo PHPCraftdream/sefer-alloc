@@ -39,7 +39,20 @@ impl AllocCore {
         }
         let candidate = os::segment_base_of_ptr(ptr);
         let base = self.table.canonical_base_of_mut(candidate)?;
-        let block = Node::deref(base, ptr.addr().wrapping_sub(base.addr()));
+        // R6-MS-1 (T22): bound the caller-derived offset BEFORE `Node::deref`'s
+        // `add` — a foreign address sharing the 4 MiB key window (exact-span-
+        // large / biased Large) must reject without forming an out-of-bounds
+        // witness pointer.
+        let off = ptr.addr().wrapping_sub(base.addr());
+        let span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            SegmentHeader::span_usable_at(base)
+        } else {
+            os::SEGMENT
+        };
+        if off >= span {
+            return None;
+        }
+        let block = Node::deref(base, off);
         Some((base, block))
     }
 
