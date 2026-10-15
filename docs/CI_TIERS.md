@@ -169,12 +169,12 @@ perf units: arm A is `git merge-base HEAD origin/main` (or an explicit
 `baseSha` in the config), arm B is the PR HEAD. Both arms are built and
 measured in their own worktrees (`target/r6ab/{A,B}`) and target directories,
 using one iai bench target (default `perf_gate_iai`) with the default feature
-set `production bench-internals` (the same set `scripts/iai.mjs` uses).
+set `production bench-internals internals` (the same set `scripts/iai.mjs` uses).
 
 Example `.github/gate-run.json`:
 
 ```json
-{"runner": "scripts/r20_r6_ab_iai_run.mjs", "stages": "prepare,build,oracle,measure", "outDir": "target/r20r6ab", "benchTarget": "perf_gate_iai", "features": "production bench-internals", "cells": "small_churn_16b,cold_alloc_only_256x16b", "thresholds": {"small_churn_16b": 1.0}}
+{"runner": "scripts/r20_r6_ab_iai_run.mjs", "stages": "prepare,build,oracle,measure", "outDir": "target/r20r6ab", "benchTarget": "perf_gate_iai", "features": "production bench-internals internals", "cells": "small_churn_16b,cold_alloc_only_256x16b", "thresholds": {"small_churn_16b": 1.0}}
 ```
 
 Config fields (all optional except `runner`, validated by

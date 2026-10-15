@@ -118,7 +118,7 @@ function validateConfig(cfg, fileExists) {
     }
     benchTarget = cfg.benchTarget;
   }
-  let features = 'production bench-internals';
+  let features = 'production bench-internals internals';
   if (cfg.features !== undefined) {
     if (typeof cfg.features !== 'string' || !FEATURES_RE.test(cfg.features)) {
       return fail(`features must match ${FEATURES_RE.source}, got: '${cfg.features}'`);
@@ -274,7 +274,7 @@ function selftest() {
   ok(r !== null && r.outDir === 'target/r20g0' && r.note === 'ok=still-safe', 'valid outDir+note pass');
 
   // r6 A/B iai fields.
-  ok(validateConfig({ ...good, benchTarget: 'perf_gate_iai', features: 'production bench-internals' }, yes) !== null,
+  ok(validateConfig({ ...good, benchTarget: 'perf_gate_iai', features: 'production bench-internals internals' }, yes) !== null,
     'valid r6 ab fields pass');
   ok(validateConfig({ ...good, benchTarget: 'Perf Gate' }, yes) === null, 'benchTarget charset enforced');
   ok(validateConfig({ ...good, features: 'a,b' }, yes) === null, 'features comma rejected');

@@ -28,7 +28,7 @@
 // Config fields (read from .github/gate-run.json; also validated by
 // scripts/r20-gate-config.mjs, whose validated values reach this runner via
 // the workflow's GITHUB_ENV): benchTarget (default perf_gate_iai), features
-// (default "production bench-internals", as scripts/iai.mjs), cells
+// (default "production bench-internals internals", as scripts/iai.mjs), cells
 // (optional; default = every cell both arms print, sets must match), baseSha
 // (optional explicit A), thresholds (optional map cell -> max tolerated
 // delta_pct). A dirty worktree, a manifest overwrite, a cell-set mismatch
@@ -48,7 +48,7 @@ const AB_DIR = join(REPO, 'target', 'r6ab');
 const DEFAULT_OUT = 'docs/perf/R20_R6_AB_IAI_RUN01';
 const CONFIG_FILE = join(REPO, '.github', 'gate-run.json');
 const DEFAULT_BENCH = 'perf_gate_iai';
-const DEFAULT_FEATURES = 'production bench-internals';
+const DEFAULT_FEATURES = 'production bench-internals internals';
 const RAW_LOG_LIMIT = 2 * 1024 * 1024;
 
 const BENCH_TARGET_RE = /^[a-z][a-z0-9_]{0,63}$/;
@@ -413,13 +413,13 @@ function selftest() {
   okThrows(() => abRow('c', 1.5, 3), 'abRow rejects non-integer Ir');
 
   ok(validBenchTarget('perf_gate_iai') && !validBenchTarget('Perf') && !validBenchTarget('a b'), 'benchTarget allowlist');
-  ok(validFeatures('production bench-internals') && !validFeatures('a,b') && !validFeatures(''), 'features allowlist');
+  ok(validFeatures('production bench-internals internals') && !validFeatures('a,b') && !validFeatures(''), 'features allowlist');
   ok(validCellsSpec('a,b_2') && validCellsSpec('a,,') && !validCellsSpec('a,a') && !validCellsSpec(1), 'cells allowlist (empty items skipped, duplicates rejected)');
   ok(validBaseSha('0123456789abcdef0123456789abcdef01234567') && !validBaseSha('HEAD'), 'baseSha allowlist');
   ok(validThresholds({ c: 1.5, d: -100 }) && !validThresholds({}) && !validThresholds({ c: 'x' }) && !validThresholds([1]), 'thresholds allowlist');
 
   const csv = summaryCsv([row], { shaA: 'a'.repeat(40), shaB: 'b'.repeat(40),
-    features: 'production bench-internals', rustc: 'rustc 1.0', os: 'Linux x' });
+    features: 'production bench-internals internals', rustc: 'rustc 1.0', os: 'Linux x' });
   ok(csv.startsWith('cell,A_Ir,B_Ir,delta,delta_pct,sha_a,sha_b,features,rustc,os\n'), 'summary.csv header');
   ok(csv.includes('c,100,110,10,10.0000'), 'summary.csv data row');
   ok(summaryCsv([{ ...row, cell: 'weird,name' }], { shaA: 'a', shaB: 'b', features: 'f', rustc: 'r', os: 'o' })
