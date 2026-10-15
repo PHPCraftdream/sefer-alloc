@@ -480,6 +480,10 @@ impl SpareBlock {
         mem::forget(self);
         ptr
     }
+
+    fn from_raw(block: *mut Block) -> Self {
+        Self(block)
+    }
 }
 
 impl Drop for SpareBlock {
@@ -500,6 +504,22 @@ enum Insert {
 struct Surplus {
     _block: Option<SpareBlock>,
     _index: Option<BlockIndex>,
+}
+
+/// Blocks displaced by a shard removal, released after the shard lock is
+/// dropped (`System.dealloc` must not run under the lock).
+struct Retired {
+    blocks: [Option<SpareBlock>; 2],
+}
+
+impl Retired {
+    fn push(&mut self, block: SpareBlock) {
+        if self.blocks[0].is_none() {
+            self.blocks[0] = Some(block);
+        } else {
+            self.blocks[1] = Some(block);
+        }
+    }
 }
 
 /// Two-level sorted shard: an index of blocks, each at most `BLOCK_CAP`
@@ -607,7 +627,7 @@ impl Shard {
         Insert::Done
     }
 
-    fn remove(&mut self, key: usize, entry: *mut Entry) {
+    fn remove(&mut self, key: usize, entry: *mut Entry) -> Retired {
         let Some((block, Ok(pos))) = self.locate(key) else {
             std::process::abort();
         };
@@ -617,12 +637,15 @@ impl Shard {
         if blk.get(pos) != entry {
             std::process::abort();
         }
+        let mut retired = Retired {
+            blocks: [None, None],
+        };
         let mut moved = blk.remove_at(pos);
         if blk.len == 0 {
             moved += self.index.remove(block);
-            self.recycle(raw);
+            self.retire(raw, &mut retired);
             self.note_moved(moved);
-            return;
+            return retired;
         }
         if block + 1 < self.index.len {
             let next = self.index.get(block + 1);
@@ -630,7 +653,7 @@ impl Shard {
             if blk.len + unsafe { &*next }.len <= BLOCK_HALF {
                 moved += blk.absorb(unsafe { &mut *next });
                 moved += self.index.remove(block + 1);
-                self.recycle(next);
+                self.retire(next, &mut retired);
             }
         }
         if block > 0 {
@@ -639,20 +662,21 @@ impl Shard {
             if unsafe { &*prev }.len + blk.len <= BLOCK_HALF {
                 moved += unsafe { &mut *prev }.absorb(blk);
                 moved += self.index.remove(block);
-                self.recycle(raw);
+                self.retire(raw, &mut retired);
             }
         }
         self.note_moved(moved);
+        retired
     }
 
-    /// Keeps one empty block for the next split, releases any other.
-    fn recycle(&mut self, block: *mut Block) {
+    /// Keeps one empty block for the next split; other displaced blocks are
+    /// retired and released after the shard lock is dropped (the `Surplus`
+    /// pattern: no `System.dealloc` under the lock).
+    fn retire(&mut self, block: *mut Block, retired: &mut Retired) {
         if self.spare.load(Ordering::Relaxed).is_null() {
             self.spare.store(block, Ordering::Relaxed);
         } else {
-            // SAFETY: the block was just unlinked and is empty; no other
-            // reference exists under the shard lock.
-            unsafe { Block::release(block) };
+            retired.push(SpareBlock::from_raw(block));
         }
     }
 
@@ -939,8 +963,11 @@ impl RouteDirectory {
         ) else {
             return false;
         };
-        guard.remove(key, entry.ptr());
+        let retired = guard.remove(key, entry.ptr());
         // The caller drops the owner reference after this lock is released.
+        drop(guard);
+        // Displaced blocks are released outside the shard lock.
+        drop(retired);
         true
     }
 
