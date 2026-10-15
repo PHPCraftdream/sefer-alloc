@@ -89,16 +89,21 @@ fn foreign_window_key_rejects_without_pointer_arithmetic_ub() {
          SEGMENT ({SEGMENT}) under exact-span-large for this test to be meaningful"
     );
 
-    // Foreign address: same 4 MiB key window as `p` (the header's payload
-    // offset is tiny, so `segment_base_of_ptr` resolves the SAME base), but
+    // Foreign address: same 4 MiB key window as `p` (so `segment_base_of_ptr`
+    // resolves the SAME base), but
     // `SEGMENT - PAGE` past the base — far beyond the exact-span reservation
     // (`span = round_up(hdr + SMALL_MAX + PAGE, PAGE) ≈ SMALL_MAX + 2*PAGE`,
     // at most ~1.8 MiB under `medium-classes-wide`, well below ~4 MiB - PAGE)
     // and therefore unmapped territory. Miri allows
     // `wrapping_add` under `-Zmiri-strict-provenance` (it is the sanctioned
     // witness-address construction, unlike `add` on an allocation's pointer).
-    let foreign = p.wrapping_add(SEGMENT - PAGE);
-    assert_ne!(foreign, core::ptr::null_mut());
+    // Built from the window base, not from `p`: `p` sits after the segment
+    // header, so `p + (SEGMENT - PAGE)` can cross into the NEXT window, which
+    // may be another registered segment of this `AllocCore`.
+    let in_window = p.addr() & (SEGMENT - 1);
+    assert!(in_window < SEGMENT - PAGE, "payload offset {in_window}");
+    let foreign = p.wrapping_add(SEGMENT - PAGE - in_window);
+    assert_eq!(foreign.addr() & !(SEGMENT - 1), p.addr() & !(SEGMENT - 1));
 
     // realloc with a foreign key: must return null (clean reject), never
     // reach the in-place fast path's `Node::deref`.
