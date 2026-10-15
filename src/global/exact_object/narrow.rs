@@ -48,6 +48,13 @@ impl ExactNarrow {
             return ptr;
         }
         if ExactTable::register(ptr.addr(), layout.size(), layout.align()).is_none() {
+            if crate::global::process_exit_in_progress() {
+                // Exit degradation: the descriptor table is unreachable (dead
+                // lock holder or OOM). Return the System block unregistered; a
+                // later free finds no descriptor and leaks it as a counted
+                // unroutable no-op instead of aborting.
+                return ptr;
+            }
             // SAFETY: just allocated above with `layout`, never published.
             unsafe { System.dealloc(ptr, layout) };
             return core::ptr::null_mut();
@@ -76,6 +83,7 @@ impl ExactNarrow {
             ExactTable::take(addr);
             return true;
         }
+        // A refused shard lock during exit also lands here: the block leaks as an unroutable no-op.
         let Some((size, align, _)) = ExactTable::take(addr) else {
             return false;
         };
@@ -118,5 +126,12 @@ impl ExactNarrow {
     #[doc(hidden)]
     pub fn dbg_set_early_free(on: bool) {
         EARLY_FREE.store(on, Ordering::Relaxed);
+    }
+
+    /// Test-only: run `f` while the exact-table shard of `addr` is locked.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_with_exact_shard_locked_for_test(addr: usize, f: impl FnOnce()) {
+        ExactTable::dbg_with_shard_locked_for_test(addr, f);
     }
 }
