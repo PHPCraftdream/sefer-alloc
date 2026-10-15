@@ -61,8 +61,6 @@ The following are considered security vulnerabilities in this project:
 - **Use-after-free via stale handles** — a `Handle` that should return `None`
   after the backing slot is freed instead returns a reference to freed or
   reused memory.
-- **Double-free** — calling `remove` (or `dealloc` in the byte-allocator tier)
-  on the same handle/pointer twice without triggering a well-defined error.
 - **Data races** — unsound concurrent access in `SyncRegion`,
   `LockFreeRegion`, or the epoch reclamation path that results in undefined
   behaviour (not merely a logic error).
@@ -70,6 +68,9 @@ The following are considered security vulnerabilities in this project:
   preconditions for a `safe` or `unsafe` public API still experiences UB.
 - **Soundness holes in safe abstractions** — triggering UB through safe Rust
   code alone (no `unsafe` blocks in the calling code).
+- **Panics or unwinding out of any `GlobalAlloc` method** — unwinding across
+  a `GlobalAlloc` boundary is undefined behaviour per the `std` documentation,
+  and is in scope if reachable.
 
 ### Out of scope
 
@@ -78,13 +79,28 @@ The following are **not** considered security vulnerabilities:
 - Denial-of-service via excess allocation requests — by design, callers control
   memory consumption and the allocator does not impose quotas.
 - Panics reachable through documented panic conditions (e.g., capacity overflow
-  with `expect`).
+  with `expect`) — except unwinding out of any `GlobalAlloc` method, which is
+  undefined behaviour per the `std` documentation and is in scope if
+  reachable.
+- Contract violations of `unsafe` APIs — a double free or a wrong `Layout`
+  passed to `GlobalAlloc`/`AllocCore` (both `unsafe`) is a caller-contract
+  violation, not a vulnerability, unless the observable behaviour is worse
+  than documented (the code explicitly does not guarantee detection of
+  duplicate own-thread frees — see
+  `src/registry/heap_core/free/dealloc_own_base.rs`).
+
 - Performance degradation without a safety impact.
 - Findings that require arbitrary code execution on the host already (e.g.,
   exploiting a separate vulnerability) to trigger.
 - Reports about crates in `[dev-dependencies]` that are not reachable from
   library code.
 
+Feature status: the `internals` and `bench-internals` features are
+test/diagnostic surfaces and are outside the security scope, except where a
+hole is reachable from safe code without those features. The `experimental`,
+`batch-api`, and `exact-object-proto` features are prototype features:
+soundness issues in them are accepted as reports at reduced severity, and no
+security guarantees are made for them.
 
 ## Hall of fame
 

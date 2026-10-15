@@ -187,3 +187,43 @@ the reversal record.)
     - **Current-number-or-verdict:** `AllocCore::alloc_large` now takes a biased reservation for `align >= SEGMENT`, with distinct release token, usable metadata root and aligned payload. Registration uses the payload key and stored root. No successful-case platform matrix is claimed by this doc pass.
     - **Next trigger:** parent acceptance of `SEGMENT`, `2 * SEGMENT`, `16 * SEGMENT` success, own/foreign/fallback/batch/realloc and rollback routes, OS release and Miri provenance. Keep this card open until results are reviewed.
     - **Evidence:** `docs/LARGE_ALIGNMENT_ARCHITECTURE_2026-09-30.md`; `src/alloc_core/large/alloc_core_large.rs`; `src/alloc_core/platform/os.rs`; `tests/r8_large_alignment.rs`. This doc pass did not run tests.
+
+206. **[A] `dealloc_batch`/`alloc_batch` bypass `ExactNarrow` under `exact-object-proto` + `batch-api` → leak of System objects and immortal ExactTable descriptors.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — confirmed Medium defect; queued as round-6 task R6-T09 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** under `exact-object-proto` a narrow `Layout` (≤ 16 B, align ≤ 8) is served by `System` and registered in `ExactTable`; the batch entry points (`src/global/sefer_alloc/batch.rs`) go straight to `HeapCore::dealloc_batch`/`publish_foreign`, find no route, and leak the System object while its ExactTable descriptor lives forever — `foreign_or_unroutable_frees` grows on a correct program.
+    > - **Next trigger:** R6-T09 in the round-6 queue; close via that task's subprocess test (call `ExactNarrow::try_dealloc` first for each nonzero block; route `alloc_batch` through the narrow fork).
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-1; task R6-T09.
+
+207. **[A] `HeapCore` constructor OOM monopolizes `reuse_hint`: ready FREE heaps unreachable, every allocation retries an OS reservation and lands on the fallback spinlock.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — confirmed Medium defect; queued as round-6 task R6-T03 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** an uninitialized FREE slot whose constructor OOMs is pushed back into `reuse_hint` (`claim.rs:689-706`) and evicts ready FREE heaps from the bitmap; while the OOM persists, every claimant picks it, OOMs again, and re-hints it, so each allocation of an unbound thread repeats the OS reservation and falls back to the global spinlock.
+    > - **Next trigger:** R6-T03 in the round-6 queue; close via that task's constructor-OOM injection test plus the loom invariant "an initialised FREE heap is reachable".
+    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-1; task R6-T03.
+
+208. **[A] At process exit (Windows) a shard-lock refusal in `RouteDirectory::register` becomes null from the Own/Fallback branches, and a foreign `realloc` of a System block returns null → abort instead of escape to `System`.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — confirmed Medium defect; queued as round-6 task R6-T04 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the exit escape fires only when the fallback lock itself refuses (`with_fallback_heap` → `None`); a shard-lock refusal in `register` (holder killed by `ExitProcess`) leaves the Own branch and the `Some(null)` Fallback branch returning null → `handle_alloc_error` → abort, and a System-issued block whose `realloc` finds no route also returns null — contradicting the owner decision "dead holder → escape, not abort".
+    > - **Next trigger:** R6-T04 in the round-6 queue; close via that task's CON-01 subprocess oracle (shard scenario, expected exit 0) and the realloc-of-System-block-at-exit scenario.
+    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-2, `docs/agent_reviews_round6/correctness_review.md` R6-CR-8, `docs/agent_reviews_round6/api_security_review.md` R6-SEC-12; task R6-T04.
+
+209. **[A] Own-thread small free takes the class from the caller's `Layout` and never checks block start → interior/mismatched free yields overlapping live allocations.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — confirmed Medium defect; queued as round-6 task R6-T05 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** without `hardened`, `small_free_guard` (`dealloc_own_base.rs:278-312`) checks only `off >= payload_start`, magazine absence, `off < bump` and `!is_free(off)`; an interior granule of a live block passes `Accept` and lands in the magazine of the class derived from the caller's `Layout` (`alloc(64)` → `dealloc(p+16, Layout(48))` → next `alloc(48) == p+16` inside a live block); class identity is checked in no build.
+    > - **Next trigger:** R6-T05 in the round-6 queue; close via that task's mismatched-class free test (no-op or abort, never reissue) plus the iai cost gate.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-1; task R6-T05.
+
+210. **[A] Free-list links are raw and unchecked outside `hardened` → a UAF write yields arbitrary-address allocation plus a heap-address leak.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — confirmed Medium defect; queued as round-6 task R6-T06 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `next` is read from the first word of a free block and head = `(next − segment) as u32` with no range or divisibility check (`alloc_core_small_impl.rs:425-448`, `:603-639`); an 8-byte UAF write makes the next pop hand out an attacker-chosen address within `segment + 4 GiB`, and the first word of a freshly issued block still holds the old `next` (heap-address leak); in debug a poisoned `next < segment` panics by subtraction inside `GlobalAlloc` (see also R6-T14).
+    > - **Next trigger:** R6-T06 in the round-6 queue; close via that task's "poisoned next → abort, not issuance" test plus the iai hot-path cost gate.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-3; task R6-T06.

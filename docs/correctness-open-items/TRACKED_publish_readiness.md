@@ -975,3 +975,43 @@ split the same day.)
     - **Current-number-or-verdict:** run 25 re-derived the production ordering, seal, and ownership arguments and ran the crate gates clean; the remediation waves closed the final HS P2/P3/P4 findings, but did not produce native ARM wall-clock evidence. The current codegen receipts are source-input-identical to the remediation HEAD: source `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, artifact `1fff43a`; matrix/static deltas are unchanged from `0203577`. No closed hardware claim is inferred.
     - **Next trigger:** obtain fresh HS confirmation of the final remediation, and explicitly dispatch `tis-weak-memory-wallclock-gate` on native arm64 for item 61 `store_elided` and item 62 link-ordering timing. These are the only remaining HS-confirmation and hardware gates; natural-workload output remains a path/counter oracle, never timing evidence.
     - **Evidence:** the run-25 report and `6ed4a40`; first-wave closure commits `21fc146`, `9215cba`, `1b5ce46`; second-wave closure commits `b67c550`, `3509ee6`, `77fafc3`; third-wave closure commits `0a33c7c`, `71182f8`, `4a41001`, and `1cc7291`; final P4 documentation commits `3d044ed` and `5549e8d`; current codegen artifact `1fff43a`; `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`; and `docs/perf/OPEN_ITEMS.md` items 61-63. The current receipts contain no ARM wall-clock evidence.
+
+232. **[T] `SECURITY.md` contradicts the code: double-free described as a "well-defined error", panics declared out of scope, no status for `internals`/`bench-internals`/`experimental`/`batch-api`/`exact-object-proto`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T36 (docs/agent_reviews_round6/SUMMARY.md); being fixed this round.
+    > - **Current:** the published security policy misstates the allocator's actual failure behaviour (double-free is not a well-defined error) and is silent on every feature that changes the surface, so a downstream reporter is told the wrong contract.
+    > - **Next trigger:** R6-T36 in the round-6 queue; close via that task's SECURITY.md rewrite with per-feature status.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-7; task R6-T36.
+
+233. **[T] Stale `hardened` doc comment in `Cargo.toml`: nonexistent `reclaim_offset`, nonexistent README section, `RemoteFreeRing`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T36 (docs/agent_reviews_round6/SUMMARY.md); being fixed this round.
+    > - **Current:** the feature's Cargo.toml description still cites a `reclaim_offset` that does not exist, points at a README section that does not exist, and names the removed `RemoteFreeRing` — the first text a user reads about `hardened` is wrong.
+    > - **Next trigger:** R6-T36 in the round-6 queue; close via that task's Cargo.toml doc-comment pass.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-8; task R6-T36.
+
+234. **[T] Additive features (`exact-object-proto`, `virgin-zero-skip`, `hardened`, `bench-internals`) can be enabled by any dependency and change the global allocator.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T56 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** every one of these features is additive, so any crate in a dependency graph can flip them on and silently change the installed `#[global_allocator]`'s behaviour for the whole process; there is no documented stance (or guard) against third-party enabling.
+    > - **Next trigger:** R6-T56 in the round-6 queue; close via that task's documented decision (owner call) on additive-feature governance.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-13; task R6-T56.
+
+235. **[T] Config conflicts split across two APIs; inconsistent API shape.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T49 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** configuration conflicts are detected/reported in two different APIs with different shapes, so the same misconfiguration surfaces differently depending on entry point — a semver-relevant shape decision before first publish.
+    > - **Next trigger:** R6-T49 in the round-6 queue; close via that task's unification decision.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-31; task R6-T49.
+
+236. **[T] No `missing_docs`; undocumented `internals` items.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T49 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the crate does not enforce `missing_docs` and several `internals`-gated public items ship without documentation, so the docs.rs surface has undocumented entries exactly where the audience most needs them.
+    > - **Next trigger:** R6-T49 in the round-6 queue; close via that task's lint + doc pass.
+    > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-32; task R6-T49.

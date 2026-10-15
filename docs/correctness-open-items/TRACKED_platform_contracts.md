@@ -344,3 +344,35 @@ split the same day.)
     - **Current-number-or-verdict:** if `scope` returns first, the common advice "join threads before exit" does not guarantee the allocator's per-thread teardown has finished, and `PinnedRunner::run` (`src/concurrent/pinning.rs`, `std::thread::scope`) and any harness built on `scope` (the PRF-04 wave harness must use `spawn` + `join`) inherit the gap. No instance of a failure is known.
     - **Next trigger:** a deterministic characterization on all platforms with no hooks: a scoped thread whose TLS value's `Drop` waits for a flag F (with a timeout) and then sets DONE; after `scope` returns, the main thread reads DONE and only then sets F. `DONE == false` at that moment confirms the hypothesis.
     - **Evidence:** `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 7; `docs/reviews/2026-10-11-solution-research-windows-exit-con01.md` hypothesis P5.
+
+228. **[T] `start_maintenance()` — an irreversible process-wide worker reachable by any dependency; `start()` waits without a timeout (loader lock).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T35 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** one call from any dependency starts the process-global maintenance worker irreversibly, and the start path blocks without a timeout — on Windows that wait can be held against the loader lock, so an arbitrary dependency can freeze or permanently alter the host process's allocator behavior.
+    > - **Next trigger:** R6-T35 in the round-6 queue; close via that task's ownership/timeout design and its tests.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-6; task R6-T35.
+
+229. **[T] FFI type of `RtlDllShutdownInProgress` is declared as `fn() -> isize` but invoked as `fn() -> u8` (harmless, mismatched).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T56 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the ntdll exit-detector is declared with one return type and called through another; on the current ABIs the behaviour is harmless, but the mismatch is formal UB at the FFI boundary and will trip any future ABI-audit or Miri-FFI pass.
+    > - **Next trigger:** R6-T56 in the round-6 queue; close by unifying the declared and invoked signatures.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-16; task R6-T56.
+
+230. **[T] CAS spins without TTAS/FIFO fairness; the ntdll FFI probe runs on every iteration past 64 spins.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T26 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the shard/fallback spin loops (`shard_lock.rs:49-95`, `fallback.rs:487-526`, `process_exit.rs:55-75`) hammer the CAS line with no test-before-test-and-set or backoff, and each iteration past 64 spins re-probes `process_exit_in_progress()` through FFI — contention cost plus a syscall-adjacent call per spin.
+    > - **Next trigger:** R6-T26 in the round-6 queue; close via that task's TTAS/backoff change and its contention bench.
+    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-6; task R6-T26.
+
+231. **[T] README/docs do not admit that cross-thread misuse produces a deferred `abort` in an arbitrary owner thread, not a no-op (doc aspect, distinct from item 166).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T28 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** item 166 owns the mechanism (class-leaf/cross-thread interior free); this card owns the documentation gap: README and the crate docs never state that a cross-thread contract violation surfaces as a deferred abort in whichever thread happens to own the segment, rather than a discarded no-op in the caller.
+    > - **Next trigger:** R6-T28 in the round-6 queue; close when the README "honest limitations" text names the deferred-abort semantics.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-2 (doc aspect); task R6-T28.

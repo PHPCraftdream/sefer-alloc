@@ -240,6 +240,21 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     >   `doc_commit` (`f51ec37` → `96ae245`, via re-running
     >   `scripts/r32_3_realloc_redundant_contains_base_summary.mjs 96ae245…`).
 
+90. **[A] R6-PF-2 — owner-drain skip by a pin-epoch in the high bits of `Entry.refs` (`src/registry/segment_route/directory.rs`).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T02 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** owner skips drain for segments with no new pins, adding no new RMW on the producer side; largest potential win (multiseg/growth: from O(S·W) locked RMW down to O(S), estimated ×10+), high risk (changes the terminal-publication protocol). Estimates only — round-6 reports are static, nothing measured.
+   > - **Next trigger:** owner decision on re-opening item 82 (closed 2026-10-14 NO-GO for the producer-side summaries C′/C''/C‴; this variant is owner-side and does not belong to the rejected family). Needs a loom model on `Entry.refs` plus pre-registration on the R20_PRF01_C3 framework.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-2; task R6-T02.
+
+91. **[A] R6-PF-3 — full Large-sweep on every Large alloc plus reading every Large-segment header solely for the abort check (`hot.rs:195-200,639-642`, `sidecar_drain.rs`).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T10 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** with L live Large segments the sweep costs ~3–4·L cache misses versus ≤4 probes on a cache hit (estimate; not measured — round-6 reports are static).
+   > - **Next trigger:** task R6-T10.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-3; task R6-T10.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
@@ -268,6 +283,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Current number/verdict:** design-only — implement only when one of three triggers fires.
    > - **Next trigger:** (1) a workload needing >`MAX_SEGMENTS`−1 (4095) simultaneously-live Large objects, OR (2) a `MAX_SEGMENTS` raise stops being "cheap" by §1's criteria, OR (3) page-run (item 3) is pursued (then re-evaluate this doc's tagged-`SegmentId` widening alongside it).
    > - **Evidence:** `R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` §5 (lines 374–391).
+   > - **Round 6 (2026-10-15):** R6-CR-11 — past ~4094 simultaneously-live Large objects `alloc` returns null with free memory available, and the SAFETY comment on `unsafe impl GlobalAlloc` (`src/global/sefer_alloc/global_alloc.rs`) wrongly asserts "only null is true OOM"; R6-SEC-5 — externally reachable abort: 4095 joins with buffers > SMALL_MAX exhaust the slots → `handle_alloc_error`. Evidence: `docs/agent_reviews_round6/correctness_review.md` R6-CR-11 (R6-T17); `docs/agent_reviews_round6/api_security_review.md` R6-SEC-5 (R6-T08).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D4`.
 
 5. **R10-4 run-origin oracle (class-align carve).**
@@ -519,6 +535,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Evidence:** `R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §7
    >   (the CONDITIONAL-GO recommendation + the 3-condition GO path);
    >   `docs/FEATURE_PROMOTION_STATUS.md` (survey row).
+   > - **Round 6 (2026-10-15):** R6-SEC-5 adds a new argument for promotion: without `exact-span-large` every Large ≥ SMALL_MAX reserves+commits in 4 MiB multiples (up to ~16× commit-charge amplification on Windows), on top of the hard 4095-live-Large limit → external abort. Evidence: `docs/agent_reviews_round6/api_security_review.md` R6-SEC-5 (R6-T08).
 
 51. **R828 — sefer-region structural levers (P-perf-1/2/4/5).**
 
@@ -1164,6 +1181,22 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     > - **Next trigger:** a round with access to a 64-bit Unix target and a reservation-heavy workload pattern that demonstrates `align`-amplified VA pressure is a real problem (not merely theoretical), measured via `aligned-vmem`'s `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` bench-internals counters to determine the actual hit rate of the huge-page exact-size path on 64-bit (these counters track the huge-page path on 64-bit, not the general over-reserve path). For the POOL dimension specifically, the trigger requires a hugetlb-configured host (`nr_hugepages > 0`).
     > - **CORRECTION (2026-08-19, task #1182) — the "no hugetlb host" premise above is STALE since task #1152; the compound trigger has NOT fired even though the host half now exists.** `.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` job (tasks #1151/#1152, line 351) configures a real `nr_hugepages=64` pool (`echo 64 | sudo tee /proc/sys/vm/nr_hugepages`, line 409) and hard-asserts a real `MAP_HUGETLB` grant via a path-activation oracle before running `huge_pages.rs`/`decommit_capability.rs`/`reservation_decommit_contract.rs` — correctness item 59's Linux half (59a) is CLOSED for dispatch and kernel-acceptance on exactly this host (`docs/CORRECTNESS_OPEN_ITEMS.md` item 59a). So the HOST half of this card's compound trigger is satisfied. **But the WORKLOAD half is not:** every `reserve_aligned_huge` call in those three test files uses the shape `reserve_aligned_huge(size, size)` — `align == size`, never `align > size` — in a single call, never a loop (`grep -nE "for [a-zA-Z_]+ in |loop \{" crates/aligned-vmem/tests/huge_pages.rs crates/aligned-vmem/tests/decommit_capability.rs crates/aligned-vmem/tests/reservation_decommit_contract.rs` → zero hits, confirmed against those three files exactly — the job's own test list). The one test that reads `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` (`reserve_aligned_huge_exact_size_for_2mib_align`, `crates/aligned-vmem/tests/huge_pages.rs:214-259`) is a single-reservation path-activation sentinel (`assert_eq!(attempts, 1)`), not a hit-rate measurement over a reservation-heavy workload, and it never itself exercises `align > 2 MiB` (the shape the POOL-cost addition above is about). **Correction to an earlier draft of this bullet, caught in zero-trust review of task #1182 before it was committed:** that draft said the only 4 MiB test is Windows-only, which is FALSE. `huge_pages.rs:429`'s `reserve_aligned_huge_4mib_still_two_call_path` is indeed `#[cfg(all(windows, feature = "bench-internals", not(miri)))]` and irrelevant to the Linux pool — but `huge_pages.rs:99`'s `reserve_aligned_huge_ordinary_page_sized_request_succeeds` calls `reserve_aligned_huge(4 * MIB, 4 * MIB)` under NO `cfg` gate at all, so it DOES run in this job and DOES take the `align > 2 MiB` path, once. That does not move this trigger: one reservation, no counter read, no pool observation — the shape is exercised, nothing about it is measured, which is exactly the workload half that is missing. **Verdict: NOT FIRED.** The blocking condition changed from "no host to run this on" to "a host exists, but nothing run on it yet measures `align`-amplified VA/pool pressure under a reservation-heavy workload" — the trigger's workload half, unchanged from the original wording. Producing the missing measurement needs: (a) a new test/bench in the `aligned-vmem-hugetlb-real` job's test set (or a new job) that reserves many times with `align > size` (e.g. `align = 2 × size` or `align = 4 MiB, size = 4 MiB` per the pool-cost addition's own worked example) in a loop, and (b) reads `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` (VA/hit-rate dimension) and/or pool occupancy such as `/proc/sys/vm/nr_hugepages` free count or a `bench-internals` pool counter if one is added (POOL dimension) before and after. No such harness exists in the job's three test files as of this correction (`grep -nE "align.*2 \*|align > size|LINUX_HUGE_PAGE_SIZE \* 2" crates/aligned-vmem/tests/huge_pages.rs crates/aligned-vmem/tests/decommit_capability.rs crates/aligned-vmem/tests/reservation_decommit_contract.rs` → zero hits; the crate's other test files do use `align > size` shapes for unrelated ordinary-page tests, e.g. `smoke.rs:227` — none of those files run under the real hugetlb pool). This gap is also perf-index item 57's P1 (task #1188), filed the same task as this correction — #1188 is the natural owner of building that missing harness, not a new item here.
     > - **Evidence:** `unix_reserve` doc comment in `crates/aligned-vmem/src/os/unix.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/aligned-vmem/src/os/unix.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4); pool-cost addition from `docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md` F9 (task #1069), which re-raises II-4's residual `align > 2 MiB` half.
+
+92. **[D] R6-PF-4 — Tier-1 `own_cache` keys and roots in two parallel arrays plus a `!is_null` check on every free/lookup (`src/alloc_core/segment/segment_table/segment_table_impl.rs`).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T11 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** AoS layout plus a sentinel key removes ~2 Ir and one L1 line per free/lookup (estimate; not measured — round-6 reports are static).
+   > - **Next trigger:** task R6-T11.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-4; task R6-T11.
+
+93. **[D] R6-PF-5 (+R17-OPT-08) — per-record recomputation of segment invariants in owner-drain (`kind_at`/`payload_start`/`block_size`/div/`bump_of`/`dec_live` per record).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T12 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** hoisting a "segment context" to one computation per scan plus a reciprocal table saves ~10–20 Ir per reclaimed record (estimate; not measured — round-6 reports are static). Schedule after R6-T18.
+   > - **Next trigger:** task R6-T12 (after R6-T18).
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-5 (+R17-OPT-08); task R6-T12.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
@@ -2975,6 +3008,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     - **Current-number-or-verdict:** chosen by reasoning, not measurement: 64 tight `compare_exchange` + `spin_loop` attempts, then `std::thread::yield_now()` per attempt (a plain spin under `no_std`). Shipped in commit `f0715594` together with the fix that stops the stall-retry loop from running under the lock.
     - **Next trigger:** a workload that shows fallback lock contention (many threads in TLS teardown at once). Measure lock-wait time and CPU across a threshold sweep before changing the constant.
     - **Evidence:** review §R1-06; `src/global/fallback.rs` `LOCK_TIGHT_SPINS`; `tests/r1_06_fallback_skips_stall_retry_under_lock.rs`.
+   > - **Round 6 (2026-10-15):** R6-SEC-4 — after MAX_HEAPS=4096 live threads, each allocation of a surplus thread repeats bind→claim (`reuse_hint.swap` + `saturation.fetch_or`) and lands on the fallback spinlock; any `publish_claimable` clears saturation → full rescan. The threshold is not in the README "Honest limitations". Evidence: `docs/agent_reviews_round6/api_security_review.md` R6-SEC-4 (R6-T07).
 
 67. **[L] R1-11 / H8 — `#[inline(always)]` on large cold bodies.**
 
@@ -3017,6 +3051,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     - **Current-number-or-verdict:** `src/registry/heap_core/alloc/hot.rs` `finish_magazine_refill` computes `segment_base_of_ptr(p)` for the stamp dedupe in one loop, then again for `mark_magazine` in a second loop. One pass would save `n - 1` mask operations plus loop overhead per refill (`n <= 16`), on the miss path only. The review expects a sub-percent effect.
     - **Next trigger:** the next magazine refill / miss-path round. Gate: `npm run iai` churn benches A/B; merge only on a measured `Ir` drop. Do not extend this to the overflow-flush base recomputation (R24-3/R24-4 NO-GO).
     - **Evidence:** `docs/reviews/2026-09-28-201530-src-review-fxx-round-2.md` §4.1.
+   > - **Round 6 (2026-10-15):** R6-PF-1 absorbs this item — the `owner_state` stamp written in production has no production reader (the only reader is the test-only `dbg_owner_id_for`); after removing the stamp a single pass (`mark_magazine`) remains and the item closes itself. Task R6-T01. Evidence: `docs/agent_reviews_round6/performance_review.md` R6-PF-1.
 
 73. **[L] xs R3 "optimization ideas" — region write-path copies and `ShardedRegion` length query.**
 
@@ -3047,6 +3082,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     - **Current-number-or-verdict:** candidate B kept a Large block in place on `realloc` while `new_eff * 2 >= old_eff`, rewriting only `large_size` (no tail decommit). Measured on `HeapCore::realloc` (`production bench-internals internals`), callgrind Ir with frozen snapshots and A = C0 identity, RSS in 9 fresh processes per arm and scenario. 8 -> 6 MiB: -694401 Ir (14729652/15424053), median RSS 10555392/16855040 B. 8 -> 4.5 MiB: -521409 Ir (13156788/13678197), median RSS 10547200/15282176 B. 20-cycle 8 <-> 6 MiB lifetime VmHWM maximum 10563584/16863232 B. Below-half shrink, growth, equal size and all five prefix controls moved by at most 3 Ir. The existing control `realloc_grow` moved -14 Ir against T = max(10, max |C0 - A1|) = 12, so the two-sided control gate computes NO-GO. A1=A2 and B1=B2 establish within-binary repeatability only; C0-A1=+12 Ir and B1-A1=-14 Ir are comparable in magnitude, so the cross-binary delta cannot be attributed to the code change. Not measured: wall-clock, a real `#[global_allocator]`, `Vec` throughput, non-Linux, `numa-aware`, `exact-span-large`/`large-reserved-capacity`, multi-threaded or foreign-realloc workloads.
     - **Next trigger:** a revisit needs (1) an owner decision that `realloc` may keep the address on a Large shrink that retains at least half the size (an observable behaviour change; payload content and `Layout` contracts are unchanged); and (2) a fresh preregistration with a control strategy justified before measurement, including enough same-source control samples and/or a control built from the candidate source to resolve the observed ±12/−14 Ir scale. Do not infer a code-shape effect from the existing control delta. A post-hoc re-reading of this result does not qualify.
     - **Evidence:** `docs/perf/R16_PERF83_LARGE_SHRINK_INPLACE_GATE.md` (+ `_summary.csv`, `_identity.json.gz`, `docs/perf/_raw_r16_perf83_{A1,A2,B1,B2,C0,rss}.log`); `scripts/r16_perf83_iai.mjs`, `scripts/r16_perf83_gate_table.mjs`; `tests/r16_perf83_activation.rs`; `examples/r16_perf83_large_shrink_rss.rs`; `docs/reviews/2026-10-08-src-review-oxx-round-16.md` §4 H1 and appendix A (W3).
+   > - **Round 6 (2026-10-15):** R6-CR-3 adds a failure aspect — a shrinking realloc under memory pressure returns null even though in-place shrink is trivial. Task R6-T29. Evidence: `docs/agent_reviews_round6/correctness_review.md` R6-CR-3.
 
 88. **[L] oxx R17 OPT-01…13 — unmeasured optimisation proposals from the round-17 performance review (no P-level).** (Filed 2026-10-11.)
 
@@ -3061,6 +3097,54 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
     - **Current-number-or-verdict:** in run 38607822194, A1, A2, B1 and C0 measured 13 050 Ir and B2 measured 13 530 (+480), with the same binary as B1 (sha256 `0e4993e2…8262`). The cell is one 4 MiB `MiMalloc` alloc/free (`benches/perf_gate_iai.rs` `mimalloc_bootstrap_proxy`) and does not call SeferAlloc. Under the exact-zero mimalloc rule it failed mode 1 of the C‴ gate; the verdict was NO-GO on mode 2 regardless. Hypothesis, untested: mimalloc's OS path for an aligned 4 MiB request depends on the address the kernel returns (over-allocate and trim when unaligned), which can differ between processes.
     - **Next trigger:** before the next gate that judges mimalloc cells with exact zero, run this cell repeatedly on one binary in CI and record the distribution. If it varies, change the rule by a pre-measurement prereg amendment citing that evidence (or remove the address dependence, e.g. warm mimalloc's arena outside the measured call); never relax it after seeing candidate data.
     - **Evidence:** `docs/perf/R20_PRF01_C3_RUN01/summary.csv` (rows `mimalloc_bootstrap_proxy`), `docs/perf/R20_PRF01_C3_RUN01/report_tables.md` (mimalloc table).
+
+94. **[L] R6-PF-6 — HYPOTHESIS: a likely bounds check on `slots[i]` (`count: u8`) on magazine hit/push (`hot.rs:237,286`, `dealloc_own_base.rs:404,416`).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T13 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** unverified hypothesis: first `cargo asm` on CI; if the check is absent, close as NULL (estimate, not measured; the round-6 reports are static reads).
+   > - **Next trigger:** task R6-T13.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-6; task R6-T13.
+
+95. **[L] R6-PF-7 — `refill_n_for_class` runs a runtime `div` on every refill miss although the `FREE_PARK_CAP` table already exists.** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T39 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** using the table removes one `div` (~20–40 cycles) per miss (estimate, not measured; the round-6 reports are static reads).
+   > - **Next trigger:** task R6-T39.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-7; task R6-T39.
+
+96. **[L] R6-PF-8 — variable-length `Node::zero`/`write_bytes` emit a memset call in small `alloc_zeroed`; use a fixed loop of 16-byte stores.** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T39 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** needs a cell with `black_box(size)`: the existing constant-layout cell cannot see the effect (estimate, not measured; the round-6 reports are static reads).
+   > - **Next trigger:** task R6-T39.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-8; task R6-T39.
+
+97. **[L] R6-PF-9 — the worker CAS FREE→MAINTENANCE has no TTAS; `state`/`generation` share a cache line with the start of `HeapCore`, so every 10 ms pass invalidates it (RFO).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T39 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** native axis only (perf c2c) (estimate, not measured; the round-6 reports are static reads).
+   > - **Next trigger:** task R6-T39.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-9; task R6-T39.
+
+98. **[L] R6-PF-10 — Large own-free re-resolves the root already held in `OwnedBlock` (`dealloc_own_base.rs` → `mem_impl.rs`).** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T39 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** pass `owned.root()`: one Tier-1 lookup less (~8 Ir); one iai gate together with R6-T10(a) (estimate, not measured; the round-6 reports are static reads).
+   > - **Next trigger:** task R6-T39.
+   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-10; task R6-T39.
+
+99. **[D] R6-CR-6 (perf aspect) — every cold trim resets the segment directory (`ownership.rs`, `alloc_core_small/directory.rs`); it is rebuilt only when a new small segment is reserved.** (Filed 2026-10-15, round-6 src review.)
+
+   > **Current state**
+   > - **Status:** OPEN — tracked; queued as round-6 task R6-T32 (docs/agent_reviews_round6/SUMMARY.md).
+   > - **Current number/verdict:** a heap that stops growing stays on the linear scan forever. Fix: lazy rebuild on a miss, or no reset on re-claim; judge `DIRECTORY_HITS`/`FULL_SCAN_SLOTS_EXAMINED`.
+   > - **Next trigger:** task R6-T32.
+   > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-6; task R6-T32.
 
 ## Recently resolved (closure trail — do not re-list as open)
 

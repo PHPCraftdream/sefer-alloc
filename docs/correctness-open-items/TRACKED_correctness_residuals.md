@@ -140,6 +140,8 @@ split the same day.)
     - **Next trigger:** (1) производитель получает способ проверить начало блока БЕЗ чтения заголовка сегмента (сегмент малформной записи может быть освобождён параллельно — читать геометрию из заголовка производителю нельзя); или (2) решение владельца заменить `abort()` владельца на счёт+отбрасывание для записей, отвергнутых геометрией (потеряем сигнал порчи). Тогда добавить третий случай `live + 32` в подпроцессный тест.
     - **Evidence:** `docs/reviews/2026-10-06-063308-src-review-fxx-round-12.md` R12-01; модуль-doc `tests/r12_01_foreign_free_of_unissued_granule.rs` («Residual»); doc `SidecarBitmap::publish`; commits `0228d150`, `7d3b3e84`.
 
+    - **Round 6 (2026-10-15):** R6-CR-2/R6-SEC-2 refine the mechanism: the spill copies `old` into all 256 granules of a leaf; a uniform leaf stamps the whole leaf with the first block's class; the class map is never reset on segment reset; and a cross-thread free of an interior pointer passes all owner checks and silently corrupts the free list (`write_next` into a live block, `dec_live` undercount). Under `hardened` the own-thread interior case is rejected but the cross-thread one is not. Tracked as task R6-T28; Evidence: `docs/agent_reviews_round6/correctness_review.md` R6-CR-2, `docs/agent_reviews_round6/api_security_review.md` R6-SEC-2.
+
 201. **[T] Production does not validate Small free-list links (`next`); only `hardened` does.**
 
     - **Status:** OPEN — deliberately not executed; recorded so the choice stays visible.
@@ -153,3 +155,92 @@ split the same day.)
     - **Current-number-or-verdict:** the failure policy (bad input before mutation: counted no-op or null; corrupted allocator-owned state: abort; repeatable OOM: null) is documented in `src/global/sefer_alloc/mod.rs`. Only the `hardened` free-list abort writes a diagnostic first (`src/alloc_core/platform/fatal.rs`); the other `std::process::abort()` sites (for example in `sidecar_drain.rs`, `alloc_core_large.rs`, `lifecycle.rs`, `mem_impl.rs`) abort silently, which on Windows is indistinguishable from any other fast-fail exit (`0xC0000409`). Not enumerated exhaustively here; re-derive with `grep -rn "process::abort" src/`.
     - **Next trigger:** the next change that touches one of those sites, or an owner request. Route each through the shared `fatal` helper with a static one-line message; no counter is needed before an abort.
     - **Evidence:** `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 10; `src/alloc_core/platform/fatal.rs`.
+
+211. **[T] Unchecked rounding of `usable` after `checked_add`; promotion calls `alloc_large` before `Layout` validation; debug overflow panic possible out of `GlobalAlloc::realloc`.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T30 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `alloc_core_large.rs:188-230` rounds `usable` with `div_ceil * SEGMENT` and `align_up` without an overflow check right after a `checked_add`, so a debug overflow can panic out of `GlobalAlloc::realloc`; `HeapCore::realloc` performs promotion (`realloc.rs:297-317`) before `Layout::from_size_align` validation at `:343`.
+    > - **Next trigger:** R6-T30 in the round-6 queue; close via that task's unit test (`alloc_large(usize::MAX - 4096, 8)` in debug → null, no panic).
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-4; task R6-T30.
+
+212. **[T] Small-segment pool decay fires only inside `reserve_small_segment_impl`: an idle-but-busy heap never drains, contrary to the doc's "drain to zero when truly idle".** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T31 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `maybe_decay_small_pool` (`alloc_core_small_pool_impl.rs:422-484`) has exactly one call site — `src/alloc_core/small/alloc_core_small/reserve.rs:126` — so a heap that keeps allocating from magazines but never reserves never decays its pooled segments, while the doc (`alloc_core_impl.rs:572-580`) promises drain-to-zero when truly idle.
+    > - **Next trigger:** R6-T31 in the round-6 queue; close via that task's "burst → idle → tick → pool empty" test (or a corrected doc), plus the RSS gate if a decay tick is added.
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-5; task R6-T31.
+
+213. **[T] `small_free_guard` treats `BlockKind::Unknown` as Small and parks the block in the magazine; the substrate does a no-op for the same case.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T33 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** at `dealloc_own_base.rs:198` and `:215-233`/`:292-312` a `BlockKind::Unknown` granule is not rejected before the Small classification, so it is pushed into the magazine, while the substrate's reference no-op for the same case (`mem_impl.rs:536`, `:539-551`) treats it as unroutable — the two layers disagree on the same input.
+    > - **Next trigger:** R6-T33 in the round-6 queue; close via that task's counterfactual test (`Unknown` → reject/no-op, not a magazine push).
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-7; task R6-T33.
+
+214. **[T] Biased Large without `numa-aware` does not retry the reservation after draining the pool.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T34 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** in the biased Large path, `medium_promotion_reachable`-gated pool draining runs only where NUMA-aware retry follows; in a non-NUMA build a transient reservation failure returns null even though draining the pool would have freed the space.
+    > - **Next trigger:** R6-T34 in the round-6 queue; close via that task's injection test (drain-then-retry succeeds where the current path returns null).
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-9; task R6-T34.
+
+215. **[T] Inconsistent semantics of `foreign_or_unroutable_frees`.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T55 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the counter's meaning differs between sites: some increments count genuinely unroutable frees and others also count routable-but-refused or batch-path ones, so the statistic cannot be read as a single well-defined predicate (per the report's site-by-site comparison).
+    > - **Next trigger:** R6-T55 in the round-6 queue; close via that task's definition unification and per-site counterfactual tests.
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-10; task R6-T55.
+
+216. **[T] `canonical_block_of`/`Node::deref` do `ptr::add` with an offset derived from a foreign address before any `off < span` check → formal UB before reject under `exact-span-large`/biased Large.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T22 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `mem_impl.rs:36-44` computes `Node::deref(base, ptr.addr() − base.addr())` and `node.rs:141-153` does `add` without checking `offset < len`; under `exact-span-large` or biased Large the key window is wider than the reservation, so a foreign pointer from the same window is `add`-ed out of the object before the reject at `mem_impl.rs:271`/`:666`.
+    > - **Next trigger:** R6-T22 in the round-6 queue; close via that task's Miri test (foreign address in the window → clean reject, no UB diagnostic).
+    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-1; task R6-T22.
+
+217. **[T] The foreign `realloc` branch checks capacity against the reservation, not the committed range.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T50 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the foreign path of `HeapCore::realloc` validates `new_size` against the reservation length, so a size that fits the reservation but exceeds the committed range passes the check and the copy can read/write past the committed prefix.
+    > - **Next trigger:** R6-T50 in the round-6 queue; close via that task's counterfactual test (committed-range check rejects what the reservation check lets through).
+    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-3; task R6-T50.
+
+218. **[T] `unsafe impl Sync for HeapSlot` moves a `!Send` `HeapCore` across threads without a semantic-`Send` argument.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T52 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** the `Sync` impl makes `&HeapSlot` reachable from other threads and thereby transfers the `HeapCore` it contains across threads, but no SAFETY argument establishes that `HeapCore`'s state is actually safe to observe/mutate cross-thread (a semantic-`Send` claim), only that the cell is atomic.
+    > - **Next trigger:** R6-T52 in the round-6 queue; close via that task's written soundness argument (or the impl's removal/narrowing) with a counterfactual test.
+    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-5; task R6-T52.
+
+219. **[T] A claimant hitting a `MAINTENANCE` slot loses the candidate; bump precedes scan → permanent heap-count growth.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T24 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `claim.rs:278-326` consumes a candidate and then `continue`s when the slot turns out `MAINTENANCE`; because `stack.rs:157-178` bumps before scanning, each such loss mints a brand-new 4 MiB heap permanently (`count` grows without bound under maintenance contention).
+    > - **Next trigger:** R6-T24 in the round-6 queue; close via that task's deterministic `MaintenanceLease` test (claimant takes the freed slot; `count` does not grow).
+    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-4; task R6-T24.
+
+220. **[T] `Shard::remove` releases a `Block` via `System.dealloc` under the shard lock, bypassing the `Surplus` pattern.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T25 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** `directory.rs:610-657` (`Shard::remove` → `recycle` → `Block::release`) performs the OS release while the shard lock is held; the file's own `Surplus` pattern (`:499-503`, `:876-878`) exists precisely to move such releases outside the lock.
+    > - **Next trigger:** R6-T25 in the round-6 queue; close via the existing route tests after returning the displaced block as `Option<SpareBlock>` freed after `drop(guard)` (behaviour-neutral refactor).
+    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-5; task R6-T25.
+
+246. **[T] U-R5-5 residual in its new form: a stale/double free after reservation reissue frees the CURRENT owner's block (Small and Large); the deferred-large mechanism is gone but the indistinguishability remains.** (Filed 2026-10-15, round-6 src review — card created now because round-5's U-R5-5 residual had no card in this index; see note below.)
+
+    > **Current state**
+    > - **Status:** OPEN — tracked; queued as round-6 task R6-T51 (docs/agent_reviews_round6/SUMMARY.md).
+    > - **Current:** round-5's U-R5-5 residual (deferred-large post-reuse stale free, `docs/agent_reviews_round5/memory_safety_review.md`) was re-examined by round-6: the deferred-large mechanism no longer exists, but a stale free after the reservation is reissued is still indistinguishable from a valid one and now frees the CURRENT owner's block — for both Small and Large (R6-MS-4). Caller-contract UB, as before, but the residual survives in its new shape.
+    > - **Round 6 (2026-10-15):** R6-MS-4 confirms the stale/double free after reissue frees the current owner (Small and Large); the deferred-large mechanism is gone but the residual lives in its new form.
+    > - **Next trigger:** R6-T51 in the round-6 queue; close via that task's verification of the new-form residual.
+    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-4 (and the U-R5-5 row in its R5 closure table); task R6-T51.
