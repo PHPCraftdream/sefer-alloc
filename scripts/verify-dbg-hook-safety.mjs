@@ -318,6 +318,18 @@ const SAFE_MUTATORS = [
   [
     "src/registry/heap_registry/claim.rs::dbg_set_inject_ctor_oom",
     "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes claim_impl's materialise call return None early, simulating an already-handled production OOM path (R6-T03)"
+  ],
+  [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_set_inject_large_alloc_oom",
+    "sets a plain AtomicBool test-injection flag only; alloc_large then returns null before touching metadata, the already-handled production OOM result (R6-T29)"
+  ],
+  [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_set_inject_biased_reserve_fail",
+    "sets a plain AtomicBool test-injection flag only; the first non-NUMA biased reserve reports None, the already-handled production reserve-failure result; the retry stays real (R6-T34)"
+  ],
+  [
+    "src/alloc_core/large/alloc_core_large.rs::dbg_alloc_large_for_test",
+    "delegates to the real production AllocCore::alloc_large with a caller size and alignment; takes no pointer, returns a fresh allocation or null; overflow guards are the code under test (R6-T30)"
   ]
 ];
 

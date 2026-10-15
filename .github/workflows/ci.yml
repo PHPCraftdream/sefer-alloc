@@ -106,6 +106,7 @@ jobs:
       - run: node scripts/verify-root-package-list.mjs
       - run: node scripts/ci-plan.mjs --check-doc
       - run: node scripts/r20-gate-config.mjs --selftest
+      - run: node scripts/r20_r6_ab_iai_run.mjs --selftest
       - run: cargo test --locked --test no_stale_doc_references --test r1_03_pool_docs_contract --test unsafe_allow_placement
 
   fmt:

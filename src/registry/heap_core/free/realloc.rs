@@ -16,6 +16,7 @@
 
 use core::alloc::Layout;
 
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::alloc_core::{node::Node, AllocCore};
 
 use crate::registry::heap_core::HeapCore;
@@ -310,6 +311,13 @@ impl HeapCore {
                         BlockKind::Small { .. } | BlockKind::Primordial
                     )
                 {
+                    // R6-CR-4: validate the promoted Layout BEFORE handing new_size to
+                    // alloc_large — an ill-formed size (usize::MAX-scale) must return null
+                    // here, not overflow alloc_large's segment rounding (debug panic inside
+                    // GlobalAlloc::realloc).
+                    if Layout::from_size_align(new_size, old_layout.align()).is_err() {
+                        return core::ptr::null_mut();
+                    }
                     if let Some(p) = self.try_promote_to_large(owned, old_layout, new_size) {
                         return p;
                     }
@@ -346,6 +354,26 @@ impl HeapCore {
                 };
                 let new_ptr = self.alloc(new_layout);
                 if new_ptr.is_null() {
+                    // R6-CR-3: a Large SHRINK whose move leg failed to allocate must not
+                    // concede OOM: keeping the block in place is always possible (the
+                    // shrunk size fits the span it already occupies). Record the new
+                    // effective size and return the original pointer — correct per the
+                    // GlobalAlloc contract (the block still holds >= new_size bytes). The
+                    // success-path in-place shrink stays declined (perf item 83 NO-GO);
+                    // this is the OOM leg only.
+                    let old_eff = old_layout
+                        .size()
+                        .max(crate::alloc_core::size_classes::MIN_BLOCK);
+                    let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
+                    let large_shrink =
+                        new_eff < old_eff && SegmentHeader::kind_at(base) == SegmentKind::Large;
+                    if large_shrink {
+                        let payload_off = SegmentHeader::read_at(base).payload_offset;
+                        if ptr.addr() == base.addr() + payload_off {
+                            SegmentHeader::set_large_size_at(base, new_eff);
+                            return ptr;
+                        }
+                    }
                     return core::ptr::null_mut();
                 }
                 let copy = old_layout.size().min(new_size);
