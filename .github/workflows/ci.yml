@@ -3425,6 +3425,7 @@ jobs:
             --test loom_r8_maintenance_lease \
             --test loom_active_kind_index \
             --test loom_r11_registry_claim \
+            --test loom_r6_selector_model \
             --test loom_r19_registry_free_set \
             --test loom_r20_heap_reuse_spill \
             --test loom_r11_ph4a_heap_lease \
