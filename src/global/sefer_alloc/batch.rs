@@ -9,6 +9,9 @@ use core::alloc::Layout;
 use crate::global::tls_heap::CurrentHeap;
 use crate::global::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
 
+#[cfg(feature = "exact-object-proto")]
+use crate::global::exact_object::ExactNarrow;
+
 use super::SeferAlloc;
 
 impl SeferAlloc {
@@ -64,6 +67,21 @@ impl SeferAlloc {
     /// [`dealloc_batch`]: Self::dealloc_batch
     #[cfg(feature = "batch-api")]
     pub unsafe fn alloc_batch(&self, layout: Layout, out: &mut [*mut u8]) -> usize {
+        // R6-T09: narrow layouts are exact `System` objects (same fork as the
+        // scalar `GlobalAlloc::alloc`); the heap batch path must not serve them.
+        #[cfg(feature = "exact-object-proto")]
+        if ExactNarrow::is_narrow(layout) {
+            let mut filled = 0usize;
+            for slot in out.iter_mut() {
+                let ptr = ExactNarrow::alloc(layout, false);
+                if ptr.is_null() {
+                    break;
+                }
+                *slot = ptr;
+                filled += 1;
+            }
+            return filled;
+        }
         match self.current_heap() {
             CurrentHeap::Fallback => self
                 .with_fallback_heap(|h| h.alloc_batch(layout, out))
@@ -113,6 +131,32 @@ impl SeferAlloc {
     /// [`alloc_batch`]: Self::alloc_batch
     #[cfg(feature = "batch-api")]
     pub unsafe fn dealloc_batch(&self, layout: Layout, blocks: &[*mut u8]) {
+        // R6-T09: mirror the scalar `GlobalAlloc::dealloc` narrow fork. Narrow
+        // layouts are exact `System` objects; the heap batch path cannot route
+        // them and would leak the object and its table descriptor.
+        #[cfg(feature = "exact-object-proto")]
+        if ExactNarrow::is_narrow(layout) {
+            for &ptr in blocks {
+                if ptr.is_null() {
+                    continue;
+                }
+                // SAFETY: the batch caller transfers each live instance once.
+                let handled = unsafe { ExactNarrow::try_dealloc(ptr, layout) };
+                if !handled {
+                    // Not a registered exact object: same fallback the scalar
+                    // path takes.
+                    self.dealloc_batch_heap_routed(layout, core::slice::from_ref(&ptr));
+                }
+            }
+            return;
+        }
+        self.dealloc_batch_heap_routed(layout, blocks);
+    }
+
+    /// Heap-routed half of [`Self::dealloc_batch`]: everything that is not an
+    /// exact-object narrow block. Kept verbatim from the pre-R6-T09 body.
+    #[cfg(feature = "batch-api")]
+    unsafe fn dealloc_batch_heap_routed(&self, layout: Layout, blocks: &[*mut u8]) {
         match current_for_dealloc() {
             CurrentHeapForDealloc::Own(heap) => {
                 // SAFETY: `heap` is non-null and points to a live

@@ -2155,6 +2155,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo check --features "production numa-aware"
 
+      # R6-T09: the batch API must route narrow layouts through `ExactNarrow`
+      # exactly like the scalar `GlobalAlloc` methods. No other CI row builds
+      # `exact-object-proto` together with `batch-api`.
+      - name: test (--features "exact-object-proto batch-api internals bench-internals")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "exact-object-proto batch-api internals bench-internals" --test r6_t09_batch_exact_narrow
+
   global-regressions:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
