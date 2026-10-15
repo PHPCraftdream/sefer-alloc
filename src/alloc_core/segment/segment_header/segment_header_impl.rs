@@ -289,9 +289,7 @@ pub(crate) struct SegmentHeader {
     /// directory's terminal descriptors); it is kept solely to pin the
     /// 144-byte segment-header layout. Test hooks
     /// and the `pack_owner`/`unpack_owner_id` round-trip pins still touch
-    /// it. Stored as a plain `u64` for header snapshots;
-    /// the dedicated [`owner_state_atomic`](SegmentMeta::owner_state_atomic)
-    /// view accesses the same byte range atomically. Foreign-free routing
+    /// it. Stored as a plain `u64` for header snapshots. Foreign-free routing
     /// reads the independent route descriptor, not this field.
     pub owner_state: u64,
     /// Sanity magic — every segment starts with this. A computed segment base

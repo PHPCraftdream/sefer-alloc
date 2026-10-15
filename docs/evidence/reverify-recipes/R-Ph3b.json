@@ -45,7 +45,7 @@
         "expect": {
           "exit": 101,
           "stdoutRegex": [
-            "PH3B PRE-ROUTE BROKEN"
+            "process didn't exit successfully: .*r11_ph3b_kind_aware_entries"
           ]
         }
       }
@@ -53,7 +53,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "PH3B PRE-ROUTE BROKEN"
+        "process didn't exit successfully: .*r11_ph3b_kind_aware_entries"
       ]
     }
   }
