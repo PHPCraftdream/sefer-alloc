@@ -1,0 +1,6 @@
+# oracle: mode=production+exact-span-large n=16 span_usable=270336 segment_base=0x7f9f21c00000
+# post-drop drift: mode=production+exact-span-large n=16 commit_or_virtual_bytes=8388608
+# oracle: mode=production+exact-span-large n=64 span_usable=270336 segment_base=0x7f9f21c00000
+# post-drop drift: mode=production+exact-span-large n=64 commit_or_virtual_bytes=8388608
+# oracle: mode=production+exact-span-large n=256 span_usable=270336 segment_base=0x7f9f21c00000
+# post-drop drift: mode=production+exact-span-large n=256 commit_or_virtual_bytes=8388608

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-15T18:29:19.738Z",
+  "head": "8b05d2a8423d657f59a6ef19b339ba2e20025d5c",
+  "tree": "07101c0f95b94c7d2fea0e29aa3153787121253a",
+  "cleanTree": true,
+  "example": "r6_t08_large_commit_probe",
+  "arms": [
+    {
+      "label": "A",
+      "mode": "production",
+      "features": "production internals"
+    },
+    {
+      "label": "B",
+      "mode": "production+exact-span-large",
+      "features": "production internals,exact-span-large"
+    }
+  ],
+  "cells": [
+    16,
+    64,
+    256
+  ],
+  "prereg": "docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md"
+}
