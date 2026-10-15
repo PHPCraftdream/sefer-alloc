@@ -15,20 +15,13 @@
 // empirically: this exact function body compiled cleanly before the fix).
 // Task #2003 added `+ '_` at all three levels, closing it.
 //
-// Since R6-T38, `AllocCore::segment_bases` is `pub(crate)`, so the bait rides
-// `AllocCore::dbg_segment_bases` — the internals-gated crate-public forwarder
-// of the now-`pub(crate)` method, with the same signature and `+ '_` lifetime
-// bind as the pre-R6-T38 surface. The internals gate is why this fixture's
-// `Cargo.toml` needs the feature. R6-T38 itself (the privacy tail) is pinned
-// separately by tests/compile_fail/r6_t38_public_tail_private/.
-//
 // `probe` returns the iterator out of the function that owns the local
 // `AllocCore` — this MUST fail to compile with E0597 ("`core` does not live
 // long enough") after the fix, and did NOT fail before it.
 
 fn probe() -> impl Iterator<Item = *mut u8> {
     let core = sefer_alloc::AllocCore::new().unwrap();
-    core.dbg_segment_bases()
+    core.segment_bases()
 }
 
 fn main() {

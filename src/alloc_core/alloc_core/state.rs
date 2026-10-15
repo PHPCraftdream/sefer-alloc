@@ -160,11 +160,10 @@ impl AllocCore {
     /// primitive used by cross-thread-free routing and (historically) the
     /// Phase 12.4 abandonment walk (now removed — task #97 / R4-5).
     ///
-    /// R6-T38 (closed the downgrade follow-up of task #136): the walk is now
-    /// `pub(crate)` — its only callers are in-crate (`registry::heap_core::
-    /// HeapCore::segment_bases` and the drain/diag paths), so it no longer
-    /// needs to sit on `AllocCore`'s public surface. Integration tests reach
-    /// it through the `internals`-gated `dbg_segment_bases` forwarder below.
+    /// R6-T38 (closed the downgrade follow-up of task #136): without
+    /// `internals` the walk is `pub(crate)` — its only production callers
+    /// are in-crate (`registry::heap_core::HeapCore::segment_bases` and the
+    /// drain/diag paths). An `internals` build keeps it public for tests.
     ///
     /// R2-01 (task #2003): the return type is `+ '_` — bound to `&self`'s
     /// lifetime. Before this, edition 2021's return-position-`impl-Trait`
@@ -176,22 +175,23 @@ impl AllocCore {
     /// iterator from a function that drops its local `AllocCore` compiled
     /// cleanly pre-fix). `+ '_` closes it: the iterator can no longer
     /// outlive the `AllocCore` it borrows from.
-    #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[cfg(all(
+        not(feature = "internals"),
+        any(feature = "alloc-global", feature = "alloc-xthread")
+    ))]
     pub(crate) fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.table.bases()
     }
 
-    /// Test-only forwarder to the crate-only [`Self::segment_bases`]
-    /// (R6-T38): integration tests iterate this core's registered segment
-    /// bases through this `internals`-gated `#[doc(hidden)]` alias. Same
-    /// `+ '_` lifetime bind as the crate-only original (R2-01).
+    /// Test surface of the same walk (R6-T38): public only in an
+    /// `internals` build, with the same `+ '_` lifetime bind (R2-01).
     #[cfg(all(
         feature = "internals",
         any(feature = "alloc-global", feature = "alloc-xthread")
     ))]
     #[doc(hidden)]
-    pub fn dbg_segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
-        self.segment_bases()
+    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
+        self.table.bases()
     }
 
     /// O(1) membership test: is `base` one of THIS substrate's registered,

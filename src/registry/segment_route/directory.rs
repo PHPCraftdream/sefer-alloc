@@ -814,8 +814,37 @@ impl RouteDirectory {
     /// Registration and all System allocations precede user-visible issue.
     /// `root` must be the allocator-origin usable pointer. Every pointer
     /// issued under this registration must have `route_ptr`'s segment key.
-    #[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
+    /// Crate-only in a build without `internals` (R6-T38); the `internals`
+    /// build exposes it to tests and oracle examples.
+    #[cfg(not(feature = "internals"))]
     pub(crate) fn register(
+        &self,
+        root: *mut u8,
+        len: usize,
+        route_ptr: *mut u8,
+        owner: usize,
+        kind: RouteKind,
+    ) -> Result<RouteRegistration<'_>, RouteError> {
+        self.register_impl(root, len, route_ptr, owner, kind)
+    }
+
+    /// Test surface of [`Self::register`] (R6-T38): pointer args are numeric
+    /// segment keys, and dropping the registration unlinks it.
+    #[cfg(feature = "internals")]
+    #[doc(hidden)]
+    pub fn register(
+        &self,
+        root: *mut u8,
+        len: usize,
+        route_ptr: *mut u8,
+        owner: usize,
+        kind: RouteKind,
+    ) -> Result<RouteRegistration<'_>, RouteError> {
+        self.register_impl(root, len, route_ptr, owner, kind)
+    }
+
+    #[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
+    fn register_impl(
         &self,
         root: *mut u8,
         len: usize,
@@ -901,22 +930,6 @@ impl RouteDirectory {
             drop(guard);
             drop(surplus);
         }
-    }
-
-    /// Test-only forwarder to the crate-only [`Self::register`] (R6-T38):
-    /// `internals`-gated alias for tests and oracle examples; pointer args
-    /// are numeric segment keys, and dropping the registration unlinks it.
-    #[cfg(feature = "internals")]
-    #[doc(hidden)]
-    pub fn register_for_test(
-        &self,
-        root: *mut u8,
-        len: usize,
-        route_ptr: *mut u8,
-        owner: usize,
-        kind: RouteKind,
-    ) -> Result<RouteRegistration<'_>, RouteError> {
-        self.register(root, len, route_ptr, owner, kind)
     }
 
     /// Runs a test closure while holding the shard selected by the address.

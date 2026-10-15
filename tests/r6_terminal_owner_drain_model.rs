@@ -11,7 +11,7 @@ fn publication_after_word_cut_waits_for_next_bounded_scan() {
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
     let route = directory
-        .register_for_test(root, SEGMENT, root, 1, RouteKind::Primordial)
+        .register(root, SEGMENT, root, 1, RouteKind::Primordial)
         .unwrap();
     let sidecar = route.small_sidecar().unwrap();
     assert!(route.issue_small(0, 0));

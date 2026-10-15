@@ -33,7 +33,7 @@ fn lookup_cost_one_shard() {
             .map(|&k| {
                 let p = core::ptr::without_provenance_mut::<u8>(k);
                 directory
-                    .register_for_test(p, SEGMENT, p, 1, RouteKind::Large)
+                    .register(p, SEGMENT, p, 1, RouteKind::Large)
                     .unwrap()
             })
             .collect();

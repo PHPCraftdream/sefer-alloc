@@ -154,8 +154,6 @@ const PURE_OBSERVERS = [
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
-  // R6-T38 internals-gated forwarder for the crate-only segment_bases walk.
-  "src/alloc_core/alloc_core/state.rs::dbg_segment_bases",
   "src/registry/bootstrap/ensure.rs::dbg_slot_or_none"
 ];
 
@@ -416,7 +414,7 @@ export const REVIEWED_SURFACE = [
     ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
-  { id: 'src/registry/segment_route/directory.rs::register_for_test', kind: 'mutator', reason: 'test-only forwarder delegates to the real crate-only registration; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
+  { id: 'src/registry/segment_route/directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only registration (cfg-split with the pub(crate) form), delegating to register_impl; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
   { id: 'src/registry/segment_route/directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
   { id: 'src/registry/segment_route/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
   { id: 'src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },

@@ -34,7 +34,7 @@ fn allocate(core: &mut AllocCore, layout: Layout, index: usize, phase: &str) -> 
     assert!(
         !ptr.is_null(),
         "{phase} NULL at block={index}: slots={}/{} live_segments={} pooled={} reserve_delta={} constructor_failure_delta={}",
-        core.dbg_table_count(), AllocCore::dbg_max_segments(), core.dbg_segment_bases().count(),
+        core.dbg_table_count(), AllocCore::dbg_max_segments(), core.segment_bases().count(),
         core.dbg_pooled_count(), AllocCore::dbg_segments_reserved_total() - reserved,
         AllocCore::dbg_segments_reserve_failed_total() - failures,
     );

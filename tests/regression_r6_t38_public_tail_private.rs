@@ -17,12 +17,12 @@
 //! never reaches it — is never part of `sefer-alloc`'s own target set, so no
 //! `--all-targets`/`cargo test` invocation on the root crate ever touches it.
 //!
-//! This test pins the POST-R6-T38 state: both crate-tail methods
-//! (`AllocCore::segment_bases` and `RouteDirectory::register`) must be
-//! externally UNNAMEABLE — the fixture must fail with at least two **E0624**
-//! diagnostics ("method `segment_bases` is private" / "method `register` is
+//! This test pins the POST-R6-T38 state for a build without `internals`:
+//! `AllocCore::segment_bases` must be externally unnameable — the fixture
+//! must fail with an **E0624** diagnostic ("method `segment_bases` is
 //! private"), not succeed and not fail for an unrelated reason (E0599
-//! no-method, E0433 unresolvable path, ...).
+//! no-method, E0433 unresolvable path, ...). `RouteDirectory::register` is
+//! not probed: without `internals` the whole `registry` module is private.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -65,25 +65,19 @@ fn crate_tail_methods_not_externally_callable() {
 
     assert!(
         !output.status.success(),
-        "the R6-T38 fixture COMPILED — a crate-tail method is still \
-         externally callable (`AllocCore::segment_bases` or \
-         `RouteDirectory::register` leaked past `pub(crate)`). stderr:\n{stderr}"
+        "the R6-T38 fixture COMPILED — `AllocCore::segment_bases` is still \
+         externally callable without `internals`. stderr:\n{stderr}"
     );
     assert!(
-        stderr.matches("E0624").count() >= 2,
-        "the R6-T38 fixture failed to compile, but NOT with two E0624 \
-         (\"method is private\") diagnostics — it may be failing for an \
+        stderr.contains("E0624"),
+        "the R6-T38 fixture failed to compile, but NOT with an E0624 \
+         (\"method is private\") diagnostic — it may be failing for an \
          unrelated reason (E0599 no-method, E0433 unresolvable path, ...). \
          stderr:\n{stderr}"
     );
     assert!(
         stderr.contains("method `segment_bases` is private"),
         "expected a `method `segment_bases` is private` E0624 diagnostic. \
-         stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("method `register` is private"),
-        "expected a `method `register` is private` E0624 diagnostic. \
          stderr:\n{stderr}"
     );
 }

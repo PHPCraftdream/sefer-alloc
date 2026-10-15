@@ -88,7 +88,7 @@ impl IncarnationProbe {
     }
     fn issue(&self) -> u64 {
         let registration = RouteDirectory::global()
-            .register_for_test(
+            .register(
                 self.ptr,
                 self.layout.size(),
                 self.ptr,

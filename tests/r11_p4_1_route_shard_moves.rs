@@ -30,7 +30,7 @@ fn wave(n: usize) -> (u64, u64) {
         let root = core::ptr::without_provenance_mut::<u8>(key);
         routes.push(
             directory
-                .register_for_test(root, SEGMENT, root, 1, RouteKind::Large)
+                .register(root, SEGMENT, root, 1, RouteKind::Large)
                 .unwrap(),
         );
     }
