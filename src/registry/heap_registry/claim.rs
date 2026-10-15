@@ -282,7 +282,7 @@ impl HeapRegistry {
     /// formed only AFTER the core is readable: first claim — after the
     /// `initialised` Release publish and the INITIALIZING→LIVE CAS; re-claim
     /// — the slot was already LIVE + initialised when the FREE→LIVE CAS won.
-    fn claim_impl<M, R>(materialise: M, on_already_initialised: R) -> Option<HeapLease>
+    fn claim_impl<M, R>(mut materialise: M, on_already_initialised: R) -> Option<HeapLease>
     where
         M: FnMut(u32) -> Option<HeapCore>,
         R: FnOnce(*mut HeapCore),
