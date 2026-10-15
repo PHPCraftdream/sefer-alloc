@@ -771,8 +771,8 @@ item-scoped regions.
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 3 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, the forced-monomorphization push probe function, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
-That's the full list (both tiers): **28** tier-1 module-level seams (22 in
-`src/`, 6 in `crates/`) plus **95** tier-2 item-scoped allows across **29**
+That's the full list (both tiers): **27** tier-1 module-level seams (21 in
+`src/`, 6 in `crates/`) plus **96** tier-2 item-scoped allows across **30**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
