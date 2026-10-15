@@ -1,0 +1,60 @@
+{
+  "id": "R-Ph3b",
+  "registryActivationHash": "4f9d7ab9e0110b8c82f4b4e52cc5138060e4a9369ce090586743e6a1ebff98ad",
+  "steps": [
+    {
+      "name": "kind-aware entries baseline under medium-classes",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals medium-classes",
+        "--test",
+        "r11_ph3b_kind_aware_entries"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok. [0-9]+ passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/registry/heap_core/free/dealloc_own_base.rs",
+    "find": "medium_promotion_reachable! {\n    {\n        if matches!(&kind, BlockKind::Large) {",
+    "replace": "medium_promotion_reachable! {\n    {\n        if false && matches!(&kind, BlockKind::Large) {",
+    "steps": [
+      {
+        "name": "promoted-Large branch ignores BlockKind mutant (F7-A)",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals medium-classes",
+          "--test",
+          "r11_ph3b_kind_aware_entries",
+          "promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout",
+          "--",
+          "--exact"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "PH3B PRE-ROUTE BROKEN"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "PH3B PRE-ROUTE BROKEN"
+      ]
+    }
+  }
+}
