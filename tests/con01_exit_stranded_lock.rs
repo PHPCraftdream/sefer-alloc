@@ -30,6 +30,9 @@ static RELEASE: AtomicBool = AtomicBool::new(false);
 #[derive(Clone, Copy)]
 enum Scenario {
     Shard(usize),
+    ShardRealloc(usize),
+    OwnOom,
+    ExactShard(usize),
     Fallback,
     Init,
     Remove,
@@ -67,6 +70,46 @@ impl Drop for Late {
                 // SAFETY: sole free of the live allocation issued by ALLOC on
                 // the child test thread; that owner stays alive until exit.
                 unsafe { ALLOC.dealloc(address as *mut u8, Layout::new::<[u8; 64]>()) };
+            }
+            Scenario::ShardRealloc(address) => {
+                let old = Layout::new::<[u8; 64]>();
+                // SAFETY: sole owner of the live ALLOC-issued block prepared
+                // for exactly this exit-path realloc; the result leaks.
+                let grown = unsafe { ALLOC.realloc(address as *mut u8, old, 128) };
+                if grown.is_null() {
+                    fail("exit realloc of an unrouteable block returned null");
+                }
+                // SAFETY: 128 bytes were just issued by realloc above.
+                let copied = unsafe { std::slice::from_raw_parts(grown, 64) };
+                assert!(copied.iter().all(|&b| b == 0xa5));
+                eprintln!("CON01_SHARD_REALLOC_OK");
+            }
+            Scenario::OwnOom => {
+                // Force the cold null path: the next route registration fails
+                // as OOM, the exit gate must escape the allocation to System
+                // instead of returning null (which would abort here).
+                RouteDirectory::fail_next_registration_for_test();
+                let layout = Layout::from_size_align(1024 * 1024, 4096).expect("oom layout");
+                // SAFETY: valid nonzero layout; the escaped block leaks.
+                let p = unsafe { ALLOC.alloc(layout) };
+                if p.is_null() {
+                    fail("exit alloc escaped null instead of System");
+                }
+                eprintln!("CON01_OWN_OOM_ESCAPE_OK");
+            }
+            Scenario::ExactShard(address) => {
+                // A dead-holder shard lock must refuse during exit: the free
+                // degrades to a counted unroutable no-op instead of spinning.
+                #[cfg(feature = "exact-object-proto")]
+                {
+                    // SAFETY: sole free of the narrow allocation prepared above.
+                    unsafe { ALLOC.dealloc(address as *mut u8, Layout::new::<u64>()) };
+                }
+                #[cfg(not(feature = "exact-object-proto"))]
+                {
+                    let _ = address;
+                }
+                eprintln!("CON01_EXACT_SHARD_DEALLOC_OK");
             }
             Scenario::Remove => {
                 let (registration, pin) = REMOVE
@@ -198,6 +241,46 @@ fn prepare(mode: &str) -> Scenario {
             wait_for(|| HELD.load(Ordering::Acquire));
             Scenario::Shard(address)
         }
+        "shard_realloc" => {
+            // SAFETY: valid nonzero layout; retained until Late's realloc.
+            let p = unsafe { ALLOC.alloc(Layout::new::<[u8; 64]>()) };
+            if p.is_null() || RouteDirectory::global().lookup(p).is_none() {
+                fail("shard_realloc missing issued route");
+            }
+            // SAFETY: the block is a live ALLOC-issued 64-byte allocation
+            // owned solely by this test until the exit-path realloc.
+            unsafe { (*p).write([0xa5u8; 64]) };
+            let address = p.addr();
+            std::thread::spawn(move || {
+                RouteDirectory::global()
+                    .dbg_with_shard_of_locked_for_test(address as *mut u8, hold);
+            });
+            wait_for(|| HELD.load(Ordering::Acquire));
+            Scenario::ShardRealloc(address)
+        }
+        "own_oom" => Scenario::OwnOom,
+        "exact_shard" => {
+            #[cfg(feature = "exact-object-proto")]
+            {
+                // SAFETY: valid nonzero layout; narrow requests are served by
+                // ExactNarrow from System and registered in the exact table.
+                let p = unsafe { ALLOC.alloc(Layout::new::<u64>()) };
+                if p.is_null() {
+                    fail("exact_shard narrow alloc failed");
+                }
+                let address = p.addr();
+                std::thread::spawn(move || {
+                    sefer_alloc::global::exact_object::ExactNarrow
+                        ::dbg_with_exact_shard_locked_for_test(address, hold);
+                });
+                wait_for(|| HELD.load(Ordering::Acquire));
+                Scenario::ExactShard(address)
+            }
+            #[cfg(not(feature = "exact-object-proto"))]
+            {
+                fail("exact_shard requires exact-object-proto");
+            }
+        }
         "fallback" => {
             std::thread::spawn(|| {
                 if HeapCore::dbg_with_fallback_for_test(|_| hold()).is_none() {
@@ -262,7 +345,10 @@ fn arm(scenario: Scenario, mode: &str) {
     }
     LATE.with(|cell| cell.set(Some(scenario)));
     DTOR.with(|_| ());
-    if !matches!(scenario, Scenario::Shard(_) | Scenario::Remove) {
+    if !matches!(
+        scenario,
+        Scenario::Shard(_) | Scenario::ExactShard(_) | Scenario::Remove
+    ) {
         if !matches!(tls_heap::current_for_alloc(), tls_heap::CurrentHeap::Own(_)) {
             fail("E could not bind its empty registry heap");
         }
@@ -282,6 +368,9 @@ fn child(mode: &str, live: bool) -> ! {
     let exiting = std::thread::spawn(move || {
         let mode = match scenario {
             Scenario::Shard(_) => "shard",
+            Scenario::ShardRealloc(_) => "shard_realloc",
+            Scenario::OwnOom => "own_oom",
+            Scenario::ExactShard(_) => "exact_shard",
             Scenario::Fallback => "fallback",
             Scenario::Init => "init",
             Scenario::Remove => "remove",
@@ -478,6 +567,17 @@ pub(crate) fn run_scenario(mode: &str, test: Option<&str>, live: bool) -> bool {
                         .lines()
                         .any(|line| line == "CON01_ESCAPE_ZEROED_REALLOC_FREE_OK")
             }
+            "shard_realloc" => {
+                stderr.lines().any(|line| line == "CON01_SHARD_REALLOC_OK")
+                    && stderr.lines().any(|line| line == "CON01_GIVEUPS delta=1")
+            }
+            "own_oom" => stderr.lines().any(|line| line == "CON01_OWN_OOM_ESCAPE_OK"),
+            "exact_shard" => {
+                stderr
+                    .lines()
+                    .any(|line| line == "CON01_EXACT_SHARD_DEALLOC_OK")
+                    && stderr.lines().any(|line| line == "CON01_GIVEUPS delta=1")
+            }
             "init" => stderr.lines().any(|line| line == "CON01_ALLOC_SUCCESS"),
             _ => false,
         };
@@ -557,6 +657,41 @@ fn exit_fallback_escape() {
     assert!(run_scenario(
         "fallback",
         Some("exit_fallback_escape"),
+        false
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn exit_shard_realloc_escape() {
+    if let Ok(mode) = std::env::var(CHILD) {
+        child(&mode, false);
+    }
+    assert!(run_scenario(
+        "shard_realloc",
+        Some("exit_shard_realloc_escape"),
+        false
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn exit_own_oom_escape() {
+    if let Ok(mode) = std::env::var(CHILD) {
+        child(&mode, false);
+    }
+    assert!(run_scenario("own_oom", Some("exit_own_oom_escape"), false));
+}
+
+#[cfg(all(test, feature = "exact-object-proto"))]
+#[test]
+fn exit_exact_shard_refusal() {
+    if let Ok(mode) = std::env::var(CHILD) {
+        child(&mode, false);
+    }
+    assert!(run_scenario(
+        "exact_shard",
+        Some("exit_exact_shard_refusal"),
         false
     ));
 }
