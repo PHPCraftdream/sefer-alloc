@@ -101,14 +101,17 @@ function cellsFromSpec(spec) {
 function parseIr(out, allowed) {
   const ir = {};
   let current = null;
-  for (const line of String(out).split(/\r?\n/)) {
+  // iai colours its output even when piped; strip ANSI SGR before matching.
+  for (const raw of String(out).split(/\r?\n/)) {
+    const line = raw.replace(/\x1b\[[0-9;]*m/g, '');
     const h = /^\s*([A-Za-z_]\w*::)+([A-Za-z_]\w*)\b/.exec(line);
     if (h) {
       current = h[2];
       if (allowed && !allowed.has(current)) current = null;
       continue;
     }
-    const m = /^\s*Instructions:\s*([\d,]+)\s*$/.exec(line);
+    // `Instructions:  54445|N/A  (...)`: the first number is this run's count.
+    const m = /^\s*Instructions:\s*([\d,]+)(?:\||\s|$)/.exec(line);
     if (m && current !== null && ir[current] === undefined) {
       ir[current] = Number(m[1].replace(/,/g, ''));
     }
@@ -402,6 +405,12 @@ function selftest() {
   const ir = parseIr(sample, new Set(['small_churn_16b', 'cold_alloc_only_256x16b']));
   ok(ir.small_churn_16b === 3281, 'parseIr keeps the allowed cell');
   ok(ir.cold_alloc_only_256x16b === 123456, 'parseIr strips thousands separators');
+  // Real iai-callgrind 0.14 shape: ANSI colours and an `A|B` comparison column.
+  const coloured = [
+    '\x1b[32mperf_gate_iai::perf_gate::small_churn_16b\x1b[0m',
+    '\x1b[90m  \x1b[0mInstructions:                       \x1b[1m54445\x1b[0m|N/A                  (\x1b[90m*********\x1b[0m)',
+  ].join('\n');
+  ok(parseIr(coloured, new Set(['small_churn_16b'])).small_churn_16b === 54445, 'parseIr reads coloured A|B output');
   ok(!('not_a_cell' in ir), 'parseIr drops cells outside the allowed set');
   const discovered = parseIr(sample, null);
   ok(Object.keys(discovered).length === 3, 'parseIr discovery mode accepts any cell-shaped name');
