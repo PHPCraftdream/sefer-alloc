@@ -1,0 +1,8 @@
+{
+  "runner": "scripts/r20_prf04_heap_reuse_run.mjs",
+  "stages": "prepare,build,oracle,measure",
+  "rehearsal": false,
+  "slop": false,
+  "outDir": "docs/perf/R20_PRF04_HEAP_REUSE_RUN02",
+  "note": "P4-7: official PRF-04 v2 gate; B=50c90221 (PR #28), A=3cc870a9"
+}
