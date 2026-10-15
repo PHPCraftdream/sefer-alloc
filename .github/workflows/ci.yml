@@ -3433,6 +3433,7 @@ jobs:
           grep -F "test clean_bit_clear_mutant_is_rejected ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test completed_free_publication_cannot_leave_false_full_or_two_owners ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test two_releasers_spill_hint_claim_and_maintenance_preserve_availability ... ok" "$RUNNER_TEMP/loom-registry.log"
+          grep -F "test ctor_oom_bitmap_slot_does_not_starve_initialised_recovery ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test release_swap_spills_displaced_hint_into_bitmap ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test negative_release_store_loses_displaced_hint - should panic ... ok" "$RUNNER_TEMP/loom-registry.log"
           grep -F "test free_cas_precedes_bitmap_publication ... ok" "$RUNNER_TEMP/loom-registry.log"
