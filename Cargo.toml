@@ -1504,6 +1504,25 @@ required-features = ["alloc-core", "internals"]
 name = "r12_4_reserved_capacity_measure"
 required-features = ["alloc-core"]
 
+# R6-T08 (P0-perf, EXPERIMENTAL A/B): THROWAWAY probe for Large commit
+# amplification. For each N in {16, 64, 256} allocates N simultaneously-live
+# 260 KiB Large objects from one fresh AllocCore and reports reserved-span
+# deltas (Windows: commit charge; Linux/macOS: virtual size) and RSS
+# (proc-memstat), the allocator-side activation oracle
+# (`dbg_span_usable_of`, `dbg_segments_reserved_total`), and per-alloc median
+# wall-clock — cost AND benefit in ONE mode per run (R31-1). Run once per arm:
+# arm A `--features "production internals"`, arm B
+# `--features "production internals exact-span-large"`.
+# See docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md. NOT a shipping
+# artifact — pure measurement, no src/ behavior implemented here.
+# Build/run baseline:    cargo run --release --example r6_t08_large_commit_probe --features "production internals"
+# Build/run experimental: cargo run --release --example r6_t08_large_commit_probe --features "production internals exact-span-large"
+[[example]]
+name = "r6_t08_large_commit_probe"
+# Calls `AllocCore::dbg_span_usable_of` / `dbg_segments_reserved_total`
+# (internals-gated diagnostics; same requirement as r12_3_exact_span_measure).
+required-features = ["alloc-core", "internals"]
+
 # R13-6 (task #276): THROWAWAY measurement harness — exact-count companion to
 # `benches/r13_6_exact_span_reserved_capacity_wallclock.rs`'s
 # `r13_6_large_cache_cycle` criterion group. Criterion's black-box iteration

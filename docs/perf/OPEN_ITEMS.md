@@ -536,6 +536,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    >   (the CONDITIONAL-GO recommendation + the 3-condition GO path);
    >   `docs/FEATURE_PROMOTION_STATUS.md` (survey row).
    > - **Round 6 (2026-10-15):** R6-SEC-5 adds a new argument for promotion: without `exact-span-large` every Large ≥ SMALL_MAX reserves+commits in 4 MiB multiples (up to ~16× commit-charge amplification on Windows), on top of the hard 4095-live-Large limit → external abort. Evidence: `docs/agent_reviews_round6/api_security_review.md` R6-SEC-5 (R6-T08).
+   > - **R6-T08 gate (2026-10-15, PR #44):** NO-GO on the pre-registered 8× bar. Linux runner, N × 260 KiB live: reserved address space per object A 8192 KiB vs B (`exact-span-large`) 4360 KiB (≈1.88×, not 8×); RSS identical; latency within ±6%; oracle `span_usable` 4194304 vs 270336. The remaining cost is the aligned reservation (A: 2 × SEGMENT of VA per object), not span rounding. Windows commit charge not measured. Follow-up trigger: measure the Windows commit axis, and evaluate trimming the aligned-reserve slack. Evidence: `docs/perf/R6_T08_LARGE_COMMIT_AMPLIFICATION_PREREG.md` §7, `docs/perf/r6_t08_runs/`.
 
 51. **R828 — sefer-region structural levers (P-perf-1/2/4/5).**
 

@@ -1,0 +1,4 @@
+arm,mode,N,reserved_delta_KiB,reserved_per_alloc_KiB,amplif_x,span_usable_bytes,segments_reserved_delta,rss_delta_KiB,alloc_ns_median
+A,production,16,131072,8192,31.51,4194304,16,32840,78167
+A,production,64,524288,8192,31.51,4194304,64,131072,79199
+A,production,256,2097152,8192,31.51,4194304,256,524292,81873
