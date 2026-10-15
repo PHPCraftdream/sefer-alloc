@@ -1,5 +1,6 @@
 id,paths,scope_base,anchors,note
 R0-21,src/alloc_core/segment/remote_bitmap;src/alloc_core/large/reservation_state.rs;src/registry/segment_route/large_state.rs,,,"Loom shadow models of the sidecar bitmap, Large phase word and owner credits; production sources they transcribe"
+R4a-08,src/registry/heap_registry,,,Mutant of the initialised gate in the registry claim path; registry claim sources
 R4b-11,src/global/tls_heap.rs;src/registry/heap_registry/claim.rs,,src/global/tls_heap.rs::impl Drop for AbandonGuard;src/registry/heap_registry/claim.rs::impl Drop for HeapLease,Source pin of the teardown order torn -> trim -> release and the Release LIVE->FREE CAS
 R4c-05,src/registry/segment_route;src/registry/heap_core_xthread;src/alloc_core/segment/remote_bitmap,,,"Miri regression of remote Large/Small frees against owner reconciliation (route directory, xthread routing, sidecar bitmap)"
 R4c-06,src/registry/segment_route;src/registry/heap_core_xthread;src/alloc_core/segment/remote_bitmap,,,"Miri regression of two remote producers against the owner (route directory, xthread routing, sidecar bitmap)"
@@ -12,4 +13,5 @@ R4c-10,src/registry/heap_registry,,src/registry/heap_registry/claim.rs::impl Dro
 R4c-11,src/registry/heap_registry,,,Mutant of the slot generation bump on recycle-then-claim; registry claim/recycle sources
 R4c-13,src/registry/heap_registry,,,Mutant of the initialised publication in the uninit-OOM claim path; registry claim sources
 R4c-18,src/registry/heap_registry,,,Mutant of push_back_after_oom phase in the uninit-OOM claim path; registry claim sources
+R-Ph3a-native,src/alloc_core/small/alloc_core_small;src/alloc_core/segment/remote_bitmap,,,"Native issue-transaction witnesses (scalar, batch, partial refill, reserve-promotion fault); Small issue path and the sidecar it publishes into"
 R-Ph3b,src/registry/heap_core/free;src/registry/heap_core/alloc;src/alloc_core/segment/segment_header,,,"Kind-aware alloc/free entries keyed on kind_at (BlockKind decoder); heap_core alloc/free paths and the segment header kind word"

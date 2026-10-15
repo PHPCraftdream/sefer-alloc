@@ -1,6 +1,8 @@
-//! Owner-written class codes in 4 KiB leaves. A producer's terminal
-//! publication READS them (Acquire, before the pending-bit RMW) to drop a
-//! never-issued granule; producers never write them.
+//! Owner-written class codes in 4 KiB leaves. A class code is stored ONLY in
+//! the start granule of an issued block; interior and never-issued granules
+//! read 0, so a producer's terminal publication (Acquire, before the
+//! pending-bit RMW) drops foreign frees of interior pointers without reading
+//! segment state. Producers never write them.
 #![allow(unsafe_code)]
 
 use core::ptr;
@@ -35,7 +37,6 @@ static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct ClassLeaves {
-    uniform: [AtomicU8; LEAVES],
     mixed: [AtomicPtr<AtomicU8>; LEAVES],
 }
 
@@ -46,14 +47,11 @@ impl ClassLeaves {
     pub(crate) unsafe fn initialize_at(raw: *mut Self) {
         // SAFETY: caller grants exclusive writable storage of Self; field
         // addresses are formed without a reference to uninitialized bytes.
-        let uniform = unsafe { ptr::addr_of_mut!((*raw).uniform).cast::<AtomicU8>() };
-        // SAFETY: same exclusive Self storage and non-overlapping field.
         let mixed = unsafe { ptr::addr_of_mut!((*raw).mixed).cast::<AtomicPtr<AtomicU8>>() };
         for i in 0..LEAVES {
             // SAFETY: each index is within its field and written exactly once
             // before the enclosing route is published.
             unsafe {
-                uniform.add(i).write(AtomicU8::new(0));
                 mixed.add(i).write(AtomicPtr::new(ptr::null_mut()));
             }
         }
@@ -63,12 +61,11 @@ impl ClassLeaves {
         if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
             return false;
         }
-        let leaf = granule / LEAF_GRANULES;
-        if !self.mixed[leaf].load(Ordering::Acquire).is_null() {
-            return true;
-        }
-        let old = self.uniform[leaf].load(Ordering::Acquire);
-        old == 0 || old == class + 1
+        // A leaf is prepared once the owner's fallible prepare promoted it;
+        // per-granule stores overwrite, so no per-class check remains.
+        !self.mixed[granule / LEAF_GRANULES]
+            .load(Ordering::Acquire)
+            .is_null()
     }
 
     pub(crate) fn prepare(&self, granule: usize, class: u8) -> bool {
@@ -86,7 +83,6 @@ impl ClassLeaves {
             return true;
         }
         let leaf = granule / LEAF_GRANULES;
-        let old = self.uniform[leaf].load(Ordering::Acquire);
         #[cfg(all(feature = "internals", feature = "bench-internals"))]
         if FAIL_NEXT_SPILLS.try_with(Self::fail_next).unwrap_or(false)
             || FAIL_SPILL_AFTER
@@ -108,7 +104,7 @@ impl ClassLeaves {
         for i in 0..LEAF_GRANULES {
             // SAFETY: i is within the fresh aligned System span; each slot is
             // written once before publication and contains a valid atomic.
-            unsafe { fresh.add(i).write(AtomicU8::new(old)) };
+            unsafe { fresh.add(i).write(AtomicU8::new(0)) };
         }
         self.mixed[leaf].store(fresh, Ordering::Release);
         true
@@ -120,25 +116,24 @@ impl ClassLeaves {
         }
         let leaf = granule / LEAF_GRANULES;
         let mixed = self.mixed[leaf].load(Ordering::Acquire);
-        if !mixed.is_null() {
-            // SAFETY: the owner published a fully initialized 256-atomic
-            // System leaf, retained until the final route pin drops.
-            unsafe { &*mixed.add(granule % LEAF_GRANULES) }.store(class + 1, Ordering::Release);
-            return true;
+        if mixed.is_null() {
+            // Commit-time issue never promotes: the owner's fallible prepare
+            // must have spilled this leaf first (the commit guard aborts
+            // otherwise, so this is unreachable on protocol-correct paths).
+            return false;
         }
-        let uniform = self.uniform[leaf].load(Ordering::Acquire);
-        if uniform == 0 {
-            self.uniform[leaf].store(class + 1, Ordering::Release);
-            return true;
-        }
-        uniform == class + 1
+        // SAFETY: the owner published a fully initialized 256-atomic
+        // System leaf, retained until the final route pin drops.
+        unsafe { &*mixed.add(granule % LEAF_GRANULES) }.store(class + 1, Ordering::Release);
+        true
     }
 
     pub(crate) fn encoded(&self, granule: usize) -> u8 {
         let leaf = granule / LEAF_GRANULES;
         let mixed = self.mixed[leaf].load(Ordering::Acquire);
         if mixed.is_null() {
-            self.uniform[leaf].load(Ordering::Acquire)
+            // A never-promoted leaf has no issued start granule.
+            0
         } else {
             // SAFETY: the mixed leaf was initialized before its Release
             // publication and remains owned through this route's last pin.
