@@ -41,8 +41,10 @@ impl Inner {
         ((h >> 6) as usize) & (self.cap - 1)
     }
 
-    /// Rebuild into a fresh array (tombstones dropped). Fallible.
-    fn rehash(&mut self) -> bool {
+    /// Rebuild into a fresh array (tombstones dropped). Fallible. On success
+    /// returns the retired old array to free AFTER the shard lock is released
+    /// (no `System.dealloc` under the lock).
+    fn rehash(&mut self) -> Result<Option<(*mut Slot, usize)>, ()> {
         let new_cap = if self.cap == 0 {
             INIT_CAP
         } else if self.live * 2 >= self.cap {
@@ -53,7 +55,7 @@ impl Inner {
         // SAFETY: non-zero size layout; zeroed memory is valid `EMPTY` slots.
         let fresh = unsafe { System.alloc_zeroed(array_layout(new_cap)) } as *mut Slot;
         if fresh.is_null() {
-            return false;
+            return Err(());
         }
         let old = self.slots;
         let old_cap = self.cap;
@@ -70,10 +72,9 @@ impl Inner {
             i += 1;
         }
         if !old.is_null() {
-            // SAFETY: `old` came from `System.alloc_zeroed(array_layout(old_cap))`.
-            unsafe { System.dealloc(old as *mut u8, array_layout(old_cap)) };
+            return Ok(Some((old, old_cap)));
         }
-        true
+        Ok(None)
     }
 
     /// Place a known-unique slot into the first free position.
@@ -95,9 +96,13 @@ impl Inner {
         }
     }
 
-    fn insert(&mut self, h: u64, s: Slot) -> InsertOutcome {
-        if (self.used + 1) * 4 > self.cap * 3 && !self.rehash() {
-            return InsertOutcome::Oom;
+    fn insert(&mut self, h: u64, s: Slot) -> (InsertOutcome, Option<(*mut Slot, usize)>) {
+        let mut retired = None;
+        if (self.used + 1) * 4 > self.cap * 3 {
+            match self.rehash() {
+                Ok(old) => retired = old,
+                Err(()) => return (InsertOutcome::Oom, None),
+            }
         }
         let mask = self.cap - 1;
         let mut i = self.start(h);
@@ -115,14 +120,14 @@ impl Inner {
                 // SAFETY: `at` is a probed in-bounds index.
                 unsafe { self.slots.add(at).write(s) };
                 self.live += 1;
-                return InsertOutcome::Inserted;
+                return (InsertOutcome::Inserted, retired);
             }
             if cur.addr == TOMB {
                 if first_free == usize::MAX {
                     first_free = i;
                 }
             } else if cur.addr == s.addr {
-                return InsertOutcome::Duplicate;
+                return (InsertOutcome::Duplicate, retired);
             }
             i = (i + 1) & mask;
         }
@@ -181,6 +186,9 @@ impl ExactShard {
         ((addr as u64) >> 3).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 24
     }
 
+    /// Unconditional spin acquire; only the test hook below holds the lock
+    /// this way (production paths use `acquire_unless_exiting`).
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
     fn acquire(&self) {
         while self
             .lock
@@ -189,6 +197,36 @@ impl ExactShard {
         {
             core::hint::spin_loop();
         }
+    }
+
+    /// Spin, then `yield_now`, then refuse once the process is exiting: a
+    /// holder killed by `ExitProcess` never releases the lock.
+    fn acquire_unless_exiting(&self) -> bool {
+        let mut spins = 0u32;
+        while self
+            .lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            if spins < 64 {
+                spins += 1;
+                core::hint::spin_loop();
+            } else if crate::global::process_exit_in_progress() {
+                crate::global::fallback::record_exit_lock_giveup();
+                return false;
+            } else {
+                std::thread::yield_now();
+            }
+        }
+        true
+    }
+
+    /// Test-only: run a closure while holding this shard's raw spin lock.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(super) fn dbg_with_locked_for_test(&self, f: impl FnOnce()) {
+        self.acquire();
+        f();
+        self.release();
     }
 
     fn release(&self) {
@@ -202,10 +240,12 @@ impl ExactShard {
         align: usize,
         generation: u64,
     ) -> InsertOutcome {
-        self.acquire();
+        if !self.acquire_unless_exiting() {
+            return InsertOutcome::Exiting;
+        }
         // SAFETY: lock held, exclusive access.
         let inner = unsafe { &mut *self.inner.get() };
-        let out = inner.insert(
+        let (out, retired) = inner.insert(
             Self::hash(addr),
             Slot {
                 addr,
@@ -216,6 +256,11 @@ impl ExactShard {
         );
         self.live_hint.store(inner.live, Ordering::Release);
         self.release();
+        if let Some((old, old_cap)) = retired {
+            // SAFETY: the array retired by `rehash`, freed only after the
+            // lock is released; `array_layout(old_cap)` is its exact Layout.
+            unsafe { System.dealloc(old as *mut u8, array_layout(old_cap)) };
+        }
         out
     }
 
@@ -224,7 +269,10 @@ impl ExactShard {
         if self.live_hint.load(Ordering::Acquire) == 0 {
             return None;
         }
-        self.acquire();
+        // Refusal during exit reads as "not ours": the caller leaks safely.
+        if !self.acquire_unless_exiting() {
+            return None;
+        }
         // SAFETY: lock held.
         let inner = unsafe { &*self.inner.get() };
         let r = inner.find(Self::hash(addr), addr).map(|i| {
@@ -241,7 +289,10 @@ impl ExactShard {
         if self.live_hint.load(Ordering::Acquire) == 0 {
             return None;
         }
-        self.acquire();
+        // Refusal during exit reads as "not ours": the caller leaks safely.
+        if !self.acquire_unless_exiting() {
+            return None;
+        }
         // SAFETY: lock held.
         let inner = unsafe { &mut *self.inner.get() };
         let r = inner.find(Self::hash(addr), addr).map(|i| {
