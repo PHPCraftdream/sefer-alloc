@@ -710,6 +710,8 @@ const MEASUREMENT_ONLY_ROOT_FILES = new Set([
   'CHANGELOG.md',
   'README.md',
   'CLAUDE.md',
+  // Security policy prose: documentation by definition, like README.md.
+  'SECURITY.md',
   '.gitignore',
   'bench-iters.txt',
 ]);
