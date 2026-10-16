@@ -38,8 +38,7 @@ Reading of that table (all figures copied from the generated CSV):
   (`cold_alloc_only_256x16b` −10 of 102832, `dealloc_free_only_16b` +8 of
   65914); all PASS.
 - The largest positive delta of any cell is +8 `Ir`.
-- Seven informational cells drop by more than 1000 `Ir`, all of them
-  multi-segment workloads that drain remote publications:
+- Seven informational cells drop by more than 1000 `Ir`:
   `seg_cycle_decommit_256k` −2007908 of 12367045, `multiseg_cold_256k`
   −637732 of 4027567, `r19_prf01_publication` −710916 of 4332455,
   `growth16_n` / `_2n` / `_4n` −1041410 of 20282585 / −4179970 of 53104091 /
@@ -48,8 +47,8 @@ Reading of that table (all figures copied from the generated CSV):
 
 ## Verdict
 
-PASS on the pre-set thresholds. The drop in the drain-heavy informational
-cells is not explained by this report: the exact-count drain oracles
+PASS on the pre-set thresholds. The drop in those seven informational cells
+is not explained by this report: the exact-count drain oracles
 (`r11_ph4c_ingress_consume_exactly_once_oracle`, `r19_prf01_sidecar_oracle`,
 `r6_terminal_owner_drain`, `r6_sidecar_bitmap`) pass unchanged on the PR, so
 the same records are consumed and the same segments released. The likely
