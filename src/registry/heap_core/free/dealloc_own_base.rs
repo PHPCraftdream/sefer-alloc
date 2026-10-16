@@ -123,8 +123,8 @@ pub(super) enum SmallFreeGuard {
 ///    reserves a fresh one, the R14-4 gate §2.2 anomaly). Under `hardened`,
 ///    R19-1 (task #337) additionally verifies the caller's layout is
 ///    consistent with the segment's CURRENT `large_size`/`large_align`
-///    (`large_layout_consistent`, the same primitive
-///    `heap_core_xthread::dealloc_routing` uses) before trusting this as the
+///    (foreign publication uses independent route metadata and never
+///    reaches this local guard) before trusting this as the
 ///    legitimate case — a mismatch degrades to the SAME counted no-op branch
 ///    (B) uses, instead of really freeing a pointer a contract-violating
 ///    caller fabricated. Non-hardened builds make no such defence promise
