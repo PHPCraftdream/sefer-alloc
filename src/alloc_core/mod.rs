@@ -149,7 +149,7 @@ pub(crate) use alloc_core::OwnedBlock;
 /// The dropped-free counter, re-exported crate-wide so
 /// `HeapCore::publish_foreign` can bump it (like
 /// [`LARGE_ZERO_PASS_CALLS`]). Not public API; read via
-/// `AllocCore::dbg_foreign_or_unroutable_frees`.
+/// `AllocCore::foreign_or_unroutable_frees`.
 #[cfg(any(feature = "alloc-xthread", feature = "alloc-stats"))]
 pub(crate) use alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
 #[cfg(feature = "alloc-global")]

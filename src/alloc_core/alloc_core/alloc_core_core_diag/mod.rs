@@ -22,13 +22,17 @@
 //! therefore gates its own `impl AllocCore` blocks directly with
 //! `#[cfg(feature = "internals")]`, split into two blocks:
 //!
-//! 1. An UNGATED block holding exactly the three `dbg_*` accessors
-//!    [`AllocCore::dbg_foreign_or_unroutable_frees`](crate::alloc_core::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees),
-//!    [`AllocCore::dbg_segments_reserved_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_reserved_total),
-//!    [`AllocCore::dbg_segments_released_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_released_total) — these back
+//! 1. An UNGATED block holding exactly the three `AllocStats`-backing
+//!    accessors (R6-T38: now `pub(crate)` production methods named
+//!    `foreign_or_unroutable_frees` / `segments_reserved_total` /
+//!    `segments_released_total` in `totals.rs`, so they no longer sit on
+//!    the public `AllocCore` surface — crate-internal stats callers are
+//!    unaffected). These back
 //!    `AllocStats::stats()` (`src/global/sefer_alloc.rs`), a stable,
 //!    always-available public API method that is NOT `internals`-gated;
-//!    gating these three would break `stats()` under plain `production`.
+//!    gating them would break `stats()` under plain `production`. An
+//!    `internals`-gated block of `dbg_*` test aliases in `totals.rs` covers
+//!    the external test readers (R6-T38).
 //! 2. An `internals`-gated block holding every other `dbg_*` hook in this
 //!    file — none of the rest has a caller outside `tests/`/`benches/`/
 //!    `examples/`, all of which already require `internals` (either via

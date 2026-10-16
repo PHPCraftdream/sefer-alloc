@@ -160,16 +160,10 @@ impl AllocCore {
     /// primitive used by cross-thread-free routing and (historically) the
     /// Phase 12.4 abandonment walk (now removed — task #97 / R4-5).
     ///
-    /// `#[doc(hidden)]` (task #136): `AllocCore` itself is re-exported as
-    /// stable public API (unlike most of `alloc_core`), but this iterator is
-    /// an internal registry-walk primitive, not something an external
-    /// caller is expected to use directly — it leaked into the visible
-    /// public surface only because `AllocCore` is public. Kept `pub` (not
-    /// `pub(crate)`) because `registry::heap_core::HeapCore::segment_bases`
-    /// delegates to it (both modules are in the same crate; the delegation
-    /// does not itself require `pub` over `pub(crate)`, but downgrading is
-    /// left as a separate, non-safety-critical follow-up — see
-    /// `docs/reviews/2026-09-22-120730-src-review-xa-round-2.md`, R2-01).
+    /// R6-T38 (closed the downgrade follow-up of task #136): without
+    /// `internals` the walk is `pub(crate)` — its only production callers
+    /// are in-crate (`registry::heap_core::HeapCore::segment_bases` and the
+    /// drain/diag paths). An `internals` build keeps it public for tests.
     ///
     /// R2-01 (task #2003): the return type is `+ '_` — bound to `&self`'s
     /// lifetime. Before this, edition 2021's return-position-`impl-Trait`
@@ -181,7 +175,20 @@ impl AllocCore {
     /// iterator from a function that drops its local `AllocCore` compiled
     /// cleanly pre-fix). `+ '_` closes it: the iterator can no longer
     /// outlive the `AllocCore` it borrows from.
-    #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[cfg(all(
+        not(feature = "internals"),
+        any(feature = "alloc-global", feature = "alloc-xthread")
+    ))]
+    pub(crate) fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
+        self.table.bases()
+    }
+
+    /// Test surface of the same walk (R6-T38): public only in an
+    /// `internals` build, with the same `+ '_` lifetime bind (R2-01).
+    #[cfg(all(
+        feature = "internals",
+        any(feature = "alloc-global", feature = "alloc-xthread")
+    ))]
     #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.table.bases()
