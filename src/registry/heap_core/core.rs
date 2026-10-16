@@ -92,6 +92,22 @@ pub(crate) type TcacheHitCounter = ::core::sync::atomic::AtomicU64;
 /// `HeapRegistry::claim_lease` as a
 /// `HeapLease`. Single-writer invariant (the owning thread is the only
 /// mutator of its heap's bins) makes the `UnsafeCell` sound.
+///
+/// ## Field-addition checklist (R6-T52 / R6-MS-5)
+///
+/// `HeapSlot: Sync` (`heap_slot.rs`) hands `&mut HeapCore` across threads
+/// (`HeapLease`, `MaintenanceLease`); that proof rests on `HeapCore` being
+/// semantically `Send`. The compile-time audit there destructures `&HeapCore`
+/// with no `..`, so adding a field fails E0027 until this checklist is
+/// followed:
+/// 1. a non-raw-pointer field: add it to the audit's destructuring pattern
+///    (under the field's exact `#[cfg]`) and an `assert_send(<binding>);`
+///    line;
+/// 2. a raw-pointer / `!Send`-typed field: bind it to `_` in the pattern
+///    and add it to the audit's exclusion list with the reason it carries
+///    no thread-affine resource (today: `core: AllocCore`,
+///    `tcache: Tcache`);
+/// 3. re-check the stack-pressure pin below.
 pub struct HeapCore {
     /// The owning slot's index in the registry. Used by `HeapLease`'s `Drop` implementation to release the
     /// slot back to the registry (12.3 stamps this into segment

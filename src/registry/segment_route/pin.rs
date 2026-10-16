@@ -17,6 +17,12 @@ impl RoutePin {
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }
+    /// Allocator-origin usable root from the immutable counted descriptor.
+    /// `HeapCore::realloc`'s foreign leg uses it to read the segment's live
+    /// commit frontier (R6-T50); no reservation byte is touched.
+    pub fn root(&self) -> *mut u8 {
+        self.entry.root()
+    }
     /// Capacity validation reads only the independent immutable descriptor.
     pub fn contains_payload(&self, ptr: *mut u8, size: usize) -> bool {
         self.entry.contains_payload(ptr.addr(), size)
