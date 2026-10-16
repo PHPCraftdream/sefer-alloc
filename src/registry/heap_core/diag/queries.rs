@@ -256,6 +256,19 @@ impl HeapCore {
         )
     }
 
+    /// TEST-ONLY (R6-T39/PF-7): the per-class free-side park cap entry, so
+    /// the regression test can pin `FREE_PARK_CAP[c] ==
+    /// refill_n_for_class(block_size(c))` for every class. `None` when `c`
+    /// is not a small size class.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_free_park_cap(&self, c: usize) -> Option<usize> {
+        if c >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
+            return None;
+        }
+        Some(crate::registry::heap_core::state::tcache::FREE_PARK_CAP[c] as usize)
+    }
+
     /// TEST-ONLY (Mechanism 2, task #51): force-drain this heap's
     /// empty-small-segment hysteresis pool (release + recycle every pooled
     /// segment). Forwards to `AllocCore::drain_small_pool` — the production

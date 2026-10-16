@@ -138,6 +138,8 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/core.rs::dbg_cached_numa_node",
   "src/registry/heap_core/diag/queries.rs::dbg_class_for",
   "src/registry/heap_core/diag/queries.rs::dbg_refill_n_for_class",
+  // Pure const-table read (FREE_PARK_CAP[c]); no pointer, no allocation, no state mutation.
+  "src/registry/heap_core/diag/queries.rs::dbg_free_park_cap",
   "src/registry/heap_core/diag/queries.rs::dbg_directory_bit_for_ptr",
   "src/registry/heap_core/diag/queries.rs::dbg_pooled_count",
   "src/registry/heap_core/diag/queries.rs::dbg_segment_base_of_ptr",

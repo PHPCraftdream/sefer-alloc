@@ -267,13 +267,15 @@ impl AllocCore {
     /// feature is disabled, so it is not linked here). `#[inline(always)]`
     /// keeps `dealloc`'s compiled code identical to before the split.
     ///
+    /// Shared with the fastbin own-thread Large free (PF-10).
+    ///
     /// # Safety
     /// Same contract as [`dealloc`](Self::dealloc) for `ptr`/`layout`, plus:
     /// `base` MUST be the table's canonical, live reservation root at the
     /// segment address of `ptr`, not merely an address-equal lookup key.
     #[inline(always)]
     #[allow(unsafe_code)] // R6-MS-1/2 sibling: shares `dealloc`'s caller-pointer contract.
-    unsafe fn dealloc_at_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
+    pub(crate) unsafe fn dealloc_at_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
         // Field-specific `kind` read (Phase 13.3): a single byte at its
         // `offset_of!` offset, NOT a full-struct `read_at`. Distinguishes
         // Large (free = mark segment) from Small/Primordial (free = push to

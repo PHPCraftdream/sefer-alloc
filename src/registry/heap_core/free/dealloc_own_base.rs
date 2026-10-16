@@ -390,8 +390,13 @@ impl HeapCore {
                             // `kind` (Large) and frees the segment via
                             // `span_usable`, ignoring the layout.
                             #[allow(unsafe_code)]
+                            // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
                             unsafe {
-                                self.core.dealloc(block, layout)
+                                // PF-10: `root` is the table-derived canonical root from the
+                                // `OwnedBlock` witness; do not re-resolve it in the substrate.
+                                // The entry `debug_assert_eq!(canonical_root_for(block), Some(root))`
+                                // already proves the precondition.
+                                self.core.dealloc_at_base(block, layout, root)
                             };
                             return;
                         }
@@ -413,7 +418,8 @@ impl HeapCore {
                         // doc; `docs/perf/IAI_BASELINE.md`'s RAD-5 entry has
                         // the measured verdict on whether this is worth it.
                         meta.magazine_bitmap().mark_magazine(off);
-                        self.tcache.classes[c].slots[cnt] = block;
+                        // R6-T13: identity mask (`cnt < cap <= TCACHE_CAP`); skips bounds check.
+                        self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
                         self.tcache.classes[c].count = (cnt + 1) as u8;
                         // R13-3 (task #273): a pushed-back block was
                         // previously issued (it is being FREED right now) —
@@ -540,14 +546,17 @@ impl HeapCore {
                 }
             }
         }
-        // Large / non-small / non-fastbin: delegate to core.
+        // Large / non-small / non-fastbin: free directly at the witness root.
+        // PF-10: `root` is the table-derived canonical root from the
+        // `OwnedBlock` witness; do not re-resolve it in the substrate.
         // SAFETY: dealloc/realloc callers keep the witnessed allocation live
         // and bind its block/layout to the free contract. The magazine guards
-        // returned above for small fastbin blocks; the substrate resolves the
-        // same block again for this non-small path.
-        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
+        // returned above for small fastbin blocks. The entry
+        // `debug_assert_eq!(canonical_root_for(block), Some(root))` proves the
+        // precondition.
+        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
         unsafe {
-            self.core.dealloc(block, layout)
+            self.core.dealloc_at_base(block, layout, root)
         };
     }
 }
