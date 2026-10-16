@@ -185,6 +185,7 @@ impl RouteSlots {
     /// infrastructure state it did not build; only a positive class mismatch
     /// (including encoded 0 = never-issued start granule) fails closed.
     #[cfg(feature = "fastbin")]
+    #[inline(always)]
     pub(super) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
         let Ok(class) = u8::try_from(class_idx) else {
             return false;

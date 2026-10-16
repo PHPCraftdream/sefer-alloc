@@ -154,6 +154,9 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
   "src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
   "src/registry/heap_core/diag/queries.rs::dbg_kind_byte_of",
+  // Pure numeric size-class divisibility forwarders (no pointer, no state).
+  "src/alloc_core/segment/segment_layout.rs::dbg_size_class_divides",
+  "src/alloc_core/segment/segment_layout.rs::dbg_size_class_divisor",
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",

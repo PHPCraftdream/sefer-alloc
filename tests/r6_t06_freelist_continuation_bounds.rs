@@ -12,9 +12,12 @@
 //! hardened oracle): a poisoned chain ABORTS in a spawned child process
 //! (parent asserts the abort signature and the `fatal` diagnostic), while the
 //! healthy control proves the same setup pops/drains normally. Pre-fix
-//! counterfactual: every poisoned case returned from the trigger and printed
-//! SURVIVED (the truncated-4-GiB case silently became head offset ~0), so the
-//! parent's `status.success() == healthy` and SURVIVED asserts went red.
+//! counterfactual: the in-range poisoned cases returned from the trigger and
+//! printed SURVIVED (the truncated-4-GiB case silently became head offset ~0).
+//! The below-base case was already fatal before this PR, so it remains a
+//! positive floor check rather than a regression witness. The parent's
+//! `status.success() == healthy` and SURVIVED asserts went red for the
+//! formerly returning cases.
 
 #![cfg(all(
     feature = "alloc-core",
@@ -25,18 +28,39 @@
 use core::alloc::Layout;
 use sefer_alloc::{AllocCore, SegmentLayout};
 use std::io::Write;
+use std::process::Command;
 
 const BELOW_BASE: &str = "node: free-list continuation precedes segment base";
 const OUT_OF_RANGE: &str = "node: free-list continuation out of range or misaligned";
 
+fn run_child(case: &str, healthy: bool) -> std::process::Output {
+    let exe = std::env::current_exe().expect("test executable");
+    // Cargo applies its target runner to this test binary, but not to a
+    // subprocess it starts. Cross's aarch64 image supplies this runner.
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    let mut command =
+        if let Ok(runner) = std::env::var("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER") {
+            let mut words = runner.split_ascii_whitespace();
+            let program = words.next().expect("nonempty aarch64 target runner");
+            let mut command = Command::new(program);
+            command.args(words).arg(&exe);
+            command
+        } else {
+            Command::new(&exe)
+        };
+    #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+    let mut command = Command::new(&exe);
+    command
+        .args(["--exact", "bounds_child", "--nocapture"])
+        .env("SEFER_R6_T06_CASE", case)
+        .env("SEFER_R6_T06_HEALTHY", if healthy { "1" } else { "0" })
+        .output()
+        .expect("run R6-T06 child")
+}
+
 fn oracle(case: &str, diagnostic: &str) {
     for healthy in [true, false] {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "bounds_child", "--nocapture"])
-            .env("SEFER_R6_T06_CASE", case)
-            .env("SEFER_R6_T06_HEALTHY", if healthy { "1" } else { "0" })
-            .output()
-            .unwrap();
+        let output = run_child(case, healthy);
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stdout.contains("ARMED"), "{case}: {stdout} {stderr}");
@@ -110,7 +134,7 @@ fn bounds_child() {
     if !healthy {
         let poison = match case.as_str() {
             "pop_out_of_segment" | "drain_out_of_segment" => {
-                core::ptr::without_provenance_mut(c.addr() + SegmentLayout::SEGMENT)
+                core::ptr::without_provenance_mut(base.wrapping_add(SegmentLayout::SEGMENT))
             }
             "pop_below_base" => core::ptr::without_provenance_mut(base.wrapping_sub(8)),
             "pop_metadata" => core::ptr::without_provenance_mut(base),
@@ -118,6 +142,7 @@ fn bounds_child() {
             "pop_beyond_bump" => {
                 core::ptr::without_provenance_mut(base.wrapping_add(SegmentLayout::SEGMENT - 8))
             }
+            #[cfg(target_pointer_width = "64")]
             "pop_truncated_4gib" => {
                 core::ptr::without_provenance_mut(base.wrapping_add(0x1_0000_0000))
             }
@@ -180,10 +205,8 @@ fn pop_beyond_bump_aborts() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn pop_truncated_4gib_aborts() {
-    if !cfg!(target_pointer_width = "64") {
-        return;
-    }
     oracle("pop_truncated_4gib", OUT_OF_RANGE);
 }
 

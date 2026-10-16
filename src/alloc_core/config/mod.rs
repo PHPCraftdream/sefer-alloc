@@ -9,6 +9,7 @@
 // resolve). Gating the declarations keeps their compiled-file set identical
 // to when they lived directly in `alloc_core`.
 
+pub(crate) mod continuation_bounds;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
 #[cfg(feature = "alloc-decommit")]

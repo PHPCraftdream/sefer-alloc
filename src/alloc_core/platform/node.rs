@@ -41,8 +41,6 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::fatal::fatal;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
-use crate::alloc_core::size_classes::SizeClasses;
 
 /// A free-list node: the first word of a freed block stores the `*mut u8` of
 /// the NEXT free block (or null for the tail). This constant is the number of
@@ -86,27 +84,14 @@ impl Node {
     pub(crate) fn continuation_offset_or_fatal(
         base: *mut u8,
         next: *mut u8,
-        class_idx: usize,
+        bounds: crate::alloc_core::config::continuation_bounds::ContinuationBounds,
     ) -> u32 {
         let Some(off) = (next as usize).checked_sub(base as usize) else {
             fatal(b"node: free-list continuation precedes segment base\n")
         };
-        let start = match SegmentHeader::kind_at(base) {
-            SegmentKind::Primordial => {
-                crate::alloc_core::segment_header::Layout::primordial_meta_end()
-            }
-            _ => crate::alloc_core::segment_header::Layout::small_meta_end(),
-        };
-        let bump = SegmentMeta::new(base).bump_of();
-        let block_size = SizeClasses::block_size(class_idx);
-        if off >= crate::alloc_core::os::SEGMENT
-            || off < start
-            || off >= bump
-            || !off.is_multiple_of(block_size)
-        {
+        if !bounds.contains_aligned(off) {
             fatal(b"node: free-list continuation out of range or misaligned\n")
         }
-        // The `off < SEGMENT` bound above makes the narrowing lossless.
         off as u32
     }
 

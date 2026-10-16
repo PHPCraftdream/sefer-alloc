@@ -109,6 +109,7 @@ impl SmallSidecar {
     /// tail), so it never matches. One Acquire load of the class byte plus
     /// the leaf-pointer Acquire load.
     #[cfg(feature = "fastbin")]
+    #[inline(always)]
     pub(crate) fn class_matches(&self, offset: u32, class: u8) -> bool {
         let offset = offset as usize;
         offset < SEGMENT

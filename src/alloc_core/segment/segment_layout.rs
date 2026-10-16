@@ -16,6 +16,19 @@
 pub struct SegmentLayout;
 
 impl SegmentLayout {
+    /// Test-only numeric forwarder for reciprocal divisibility validation.
+    #[cfg(all(feature = "internals", feature = "alloc-core"))]
+    #[doc(hidden)]
+    pub fn dbg_size_class_divides(class_idx: usize, offset: usize) -> bool {
+        crate::alloc_core::size_classes::SizeClasses::divides(class_idx, offset)
+    }
+
+    #[cfg(all(feature = "internals", feature = "alloc-core"))]
+    #[doc(hidden)]
+    pub fn dbg_size_class_divisor(class_idx: usize) -> (u64, u64, u32) {
+        crate::alloc_core::size_classes::SizeClasses::divisor(class_idx)
+    }
+
     /// The segment size and alignment, in bytes (4 MiB). Every segment handed
     /// up by the OS aperture is aligned to a multiple of this value.
     pub const SEGMENT: usize = crate::alloc_core::os::SEGMENT;

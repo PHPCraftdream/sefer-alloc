@@ -129,6 +129,7 @@ impl ClassLeaves {
         true
     }
 
+    #[inline(always)]
     pub(crate) fn encoded(&self, granule: usize) -> u8 {
         let leaf = granule / LEAF_GRANULES;
         let mixed = self.mixed[leaf].load(Ordering::Acquire);

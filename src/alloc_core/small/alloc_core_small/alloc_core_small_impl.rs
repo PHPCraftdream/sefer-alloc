@@ -443,7 +443,10 @@ impl AllocCore {
         let new_head = if next.is_null() {
             FREE_LIST_NULL
         } else {
-            Node::continuation_offset_or_fatal(segment, next, class_idx)
+            let bounds = crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(
+                segment, class_idx,
+            );
+            Node::continuation_offset_or_fatal(segment, next, bounds)
         };
         let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
             return Err(());
@@ -557,6 +560,9 @@ impl AllocCore {
             // Prepare every spill on the still-owned chain. On OOM the head,
             // bitmap, live count and output remain unchanged; promoted leaves
             // are valid zero-filled copies and may be reused by a later retry.
+            let bounds = crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(
+                segment, class_idx,
+            );
             let mut probe = head_off;
             #[cfg(feature = "hardened")]
             let mut slow = head_off;
@@ -604,7 +610,7 @@ impl AllocCore {
                     probe = if next.is_null() {
                         FREE_LIST_NULL
                     } else {
-                        Node::continuation_offset_or_fatal(segment, next, class_idx)
+                        Node::continuation_offset_or_fatal(segment, next, bounds)
                     };
                 }
                 probed += 1;
@@ -633,9 +639,7 @@ impl AllocCore {
                 head_off = if next.is_null() {
                     FREE_LIST_NULL
                 } else {
-                    // `next` is an absolute pointer into the SAME segment (free
-                    // lists are per-segment), so offset = next - segment.
-                    Node::continuation_offset_or_fatal(segment, next, class_idx)
+                    Node::continuation_offset_or_fatal(segment, next, bounds)
                 };
             }
             // Write the new head ONCE: the first un-popped node, or NULL.
