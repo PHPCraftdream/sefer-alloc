@@ -76,7 +76,11 @@ impl Drop for StartingGuard {
 struct WorkerGuard;
 impl Drop for WorkerGuard {
     fn drop(&mut self) {
-        std::process::abort();
+        // Unexpected worker exit is fatal: emit a diagnostic and terminate
+        // instead of silently losing an activated guarantee.
+        crate::alloc_core::platform::fatal::fatal(
+            b"maintenance_service: worker exited unexpectedly\n",
+        );
     }
 }
 
@@ -98,14 +102,20 @@ impl MaintenanceService {
                     .wait_timeout_while(guard, STARTUP_CONFIRM_BOUND, |_| {
                         START_PAUSE.load(Ordering::Acquire)
                     })
-                    .unwrap_or_else(|_| std::process::abort())
+                    .unwrap_or_else(|_| {
+                        crate::alloc_core::platform::fatal::fatal(
+                            b"maintenance_service: start-pause condvar wait poisoned\n",
+                        )
+                    })
                     .1
                     .timed_out();
                 if timed_out {
                     // Same confirmation bound as the RUNNING wait: a wedged
                     // starter aborts, whether it is wedged before or after
                     // the worker spawn.
-                    std::process::abort();
+                    crate::alloc_core::platform::fatal::fatal(
+                        b"maintenance_service: start-pause acknowledgement timeout\n",
+                    );
                 }
                 START_PAUSED.store(false, Ordering::Release);
             }
@@ -123,14 +133,20 @@ impl MaintenanceService {
             .wait_timeout_while(guard, STARTUP_CONFIRM_BOUND, |_| {
                 STATE.load(Ordering::Acquire) != RUNNING
             })
-            .unwrap_or_else(|_| std::process::abort())
+            .unwrap_or_else(|_| {
+                crate::alloc_core::platform::fatal::fatal(
+                    b"maintenance_service: running-state condvar wait poisoned\n",
+                )
+            })
             .1
             .timed_out();
         if timed_out {
             // The detached worker cannot be cancelled or rolled back: it may
             // still activate later. Aborting never hangs the starter and
             // never reports a guarantee that is not RUNNING yet.
-            std::process::abort();
+            crate::alloc_core::platform::fatal::fatal(
+                b"maintenance_service: running-state acknowledgement timeout\n",
+            );
         }
         Ok(())
     }
@@ -152,7 +168,11 @@ impl MaintenanceService {
     fn control() -> MutexGuard<'static, ()> {
         // Poison means an unexpected control-plane panic: never recover a
         // requested guarantee by silently accepting potentially broken state.
-        CONTROL.lock().unwrap_or_else(|_| std::process::abort())
+        CONTROL.lock().unwrap_or_else(|_| {
+            crate::alloc_core::platform::fatal::fatal(
+                b"maintenance_service: control mutex poisoned\n",
+            )
+        })
     }
 
     fn worker() {
@@ -258,7 +278,11 @@ impl MaintenanceService {
         let guard = Self::control();
         let (guard, _) = CHANGED
             .wait_timeout_while(guard, timeout, |_| PASSES.load(Ordering::Acquire) <= before)
-            .unwrap_or_else(|_| std::process::abort());
+            .unwrap_or_else(|_| {
+                crate::alloc_core::platform::fatal::fatal(
+                    b"maintenance_service: pass-wait condvar wait poisoned\n",
+                )
+            });
         let completed = PASSES.load(Ordering::Acquire) > before;
         drop(guard);
         completed
@@ -284,7 +308,11 @@ impl MaintenanceService {
         let guard = Self::control();
         let (guard, _) = CHANGED
             .wait_timeout_while(guard, timeout, |_| !START_PAUSED.load(Ordering::Acquire))
-            .unwrap_or_else(|_| std::process::abort());
+            .unwrap_or_else(|_| {
+                crate::alloc_core::platform::fatal::fatal(
+                    b"maintenance_service: pause-wait condvar wait poisoned\n",
+                )
+            });
         let paused = START_PAUSED.load(Ordering::Acquire);
         drop(guard);
         paused

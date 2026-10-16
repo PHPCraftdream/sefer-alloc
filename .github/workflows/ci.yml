@@ -104,6 +104,7 @@ jobs:
       - run: node scripts/verify-loom-target-wiring.mjs
       - run: node scripts/verify-miri-target-wiring.mjs
       - run: node scripts/verify-root-package-list.mjs
+      - run: node scripts/verify-no-bare-abort.mjs
       - run: node scripts/ci-plan.mjs --check-doc
       - run: node scripts/r20-gate-config.mjs --selftest
       - run: node scripts/r20_r6_ab_iai_run.mjs --selftest

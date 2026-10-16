@@ -10,6 +10,7 @@ use crate::alloc_core::large::reservation_state::LargeReservationState;
 #[cfg(feature = "internals")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
 use crate::alloc_core::os;
+use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::{large_generation, SegmentMeta};
 
 use super::alloc_core_large_cache::{CombinedSlot, DECAY_CLOCK_CHECK_STRIDE};
@@ -48,7 +49,7 @@ impl AllocCore {
             let meta = SegmentMeta::new(victim.base);
             let generation = large_generation(meta.terminal_snapshot().large_state);
             if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
-                std::process::abort();
+                fatal(b"large_cache_eviction: cached release failed\n");
             }
             os::release_segment(victim.reservation, victim.reservation_len);
             released += victim.usable_size;
@@ -257,7 +258,7 @@ impl AllocCore {
         let meta = SegmentMeta::new(victim.base);
         let generation = large_generation(meta.terminal_snapshot().large_state);
         if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
-            std::process::abort();
+            fatal(b"large_cache_eviction: cached release failed\n");
         }
         os::release_segment(victim.reservation, victim.reservation_len);
         true

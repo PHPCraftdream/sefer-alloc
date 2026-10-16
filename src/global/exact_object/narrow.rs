@@ -3,8 +3,8 @@
 // in the descriptor table, never in the payload.
 #![allow(unsafe_code)]
 
-use super::exact_fatal::fatal;
 use super::exact_table::ExactTable;
+use crate::alloc_core::platform::fatal::fatal;
 use core::alloc::Layout;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, System};

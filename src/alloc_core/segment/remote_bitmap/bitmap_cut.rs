@@ -1,4 +1,5 @@
 use super::{sidecar_bitmap::ClassMap, BitmapRecord};
+use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 /// Detached bits must be consumed or persisted before the backing is freed.
@@ -25,7 +26,7 @@ impl BitmapCut<'_> {
         let granule = self.word * 64 + bit;
         let encoded = self.classes.encoded(granule);
         if encoded == 0 || usize::from(encoded) > SMALL_CLASS_COUNT {
-            std::process::abort();
+            fatal(b"bitmap_cut: invalid sidecar class encoding\n");
         }
         self.bits &= self.bits - 1;
         Some(BitmapRecord {

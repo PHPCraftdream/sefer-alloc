@@ -72,6 +72,7 @@ pub fn reserve_aligned_on_node(
     node: u32,
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
     use crate::alloc_core::os::SEGMENT;
+    use crate::alloc_core::platform::fatal::fatal;
 
     let r = if node == NO_NODE {
         // No NUMA preference expressed: plain reservation, no shim detour.
@@ -88,11 +89,11 @@ pub fn reserve_aligned_on_node(
     } else {
         // The enclosing `node == NO_NODE` branch proves the input is not
         // the sentinel, so NodeId::new cannot return None here.
-        match numa_shim::reserve_preferred_on_node(
-            usable,
-            SEGMENT,
-            numa_shim::NodeId::new(node).expect("node != NO_NODE, checked by the enclosing branch"),
-        ) {
+        let node_id = match numa_shim::NodeId::new(node) {
+            Some(id) => id,
+            None => fatal(b"numa: reserve_aligned_on_node: node != NO_NODE violated\n"),
+        };
+        match numa_shim::reserve_preferred_on_node(usable, SEGMENT, node_id) {
             Ok(r) => r,
             // task #1306: best-effort fallback — see this function's own doc.
             // Every error class (UnsupportedPlatform / UnsupportedArchitecture

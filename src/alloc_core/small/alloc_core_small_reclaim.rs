@@ -5,6 +5,8 @@ use crate::alloc_core::alloc_core::AllocCore;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::node::Node;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+use crate::alloc_core::platform::fatal::fatal;
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
@@ -22,11 +24,11 @@ impl AllocCore {
         let off = offset as usize;
         let class_idx = usize::from(class);
         if class_idx >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
-            std::process::abort();
+            fatal(b"alloc_core_small_reclaim: small class index out of range\n");
         }
         let kind = SegmentHeader::kind_at(base);
         if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
-            std::process::abort();
+            fatal(b"alloc_core_small_reclaim: sidecar record kind is not small\n");
         }
         let payload_start = if kind == SegmentKind::Primordial {
             SegLayout::primordial_meta_end()
@@ -41,7 +43,7 @@ impl AllocCore {
                 .checked_add(block_size)
                 .is_none_or(|end| end > meta.bump_of())
         {
-            std::process::abort();
+            fatal(b"alloc_core_small_reclaim: sidecar record offset geometry invalid\n");
         }
         let mut bitmap = meta.alloc_bitmap();
         if bitmap.is_free(offset) {
@@ -59,7 +61,9 @@ impl AllocCore {
         } else {
             Node::deref(base, old_head as usize)
         };
-        let block = NonNull::new(ptr).unwrap_or_else(|| std::process::abort());
+        let block = NonNull::new(ptr).unwrap_or_else(|| {
+            fatal(b"alloc_core_small_reclaim: reclaimed record resolves to null\n")
+        });
         Node::write_next(block, next);
         bins.set_head(class_idx, offset);
         bitmap.mark_free(offset);

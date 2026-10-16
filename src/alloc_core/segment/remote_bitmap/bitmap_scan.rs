@@ -1,4 +1,5 @@
 use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
+use crate::alloc_core::platform::fatal::fatal;
 
 #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
 std::thread_local! {
@@ -39,7 +40,10 @@ impl<'a> BitmapScan<'a> {
         }
         let word = self.next_word;
         self.next_word += 1;
-        let pending = self.pending.next().unwrap_or_else(|| std::process::abort());
+        let pending = self
+            .pending
+            .next()
+            .unwrap_or_else(|| fatal(b"bitmap_scan: sidecar scan iterator exhausted early\n"));
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         let baseline = BASELINE_SCAN.with(core::cell::Cell::get);
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]

@@ -15,6 +15,12 @@ use crate::alloc_core::segment_header::{
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
+#[cfg(all(
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "virgin-zero-skip"
+))]
+use crate::alloc_core::platform::fatal::fatal;
 
 impl AllocCore {
     // -----------------------------------------------------------------------
@@ -166,11 +172,11 @@ impl AllocCore {
         virgin_out: &mut u16,
     ) -> usize {
         const VIRGIN_MASK_BITS: usize = u16::BITS as usize;
-        assert!(
-            out.len() <= VIRGIN_MASK_BITS,
-            "refill_class_bump_virgin: out.len() ({}) exceeds the u16 virgin mask capacity ({VIRGIN_MASK_BITS} bits)",
-            out.len(),
-        );
+        if out.len() > VIRGIN_MASK_BITS {
+            fatal(
+                b"refill_class_bump_virgin: out.len() exceeds the u16 virgin mask capacity (16 bits)\n",
+            );
+        }
         // Clear reused output bits before any partial or early return.
         *virgin_out = 0;
         self.refill_class_bump_impl(class_idx, out, Some(virgin_out))

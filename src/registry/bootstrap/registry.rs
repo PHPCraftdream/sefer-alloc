@@ -117,9 +117,10 @@ impl Registry {
     /// earlier claim, proving that its chunk is already materialised. Test
     /// hooks can also use it to deliberately materialise an untouched slot.
     ///
-    /// # Panics
+    /// # Termination
     ///
-    /// Panics if `idx >= MAX_HEAPS` (an internal contract violation — every
+    /// Terminates the process via the crate's `fatal` diagnostic (no
+    /// unwinding) if `idx >= MAX_HEAPS` (an internal contract violation — every
     /// caller in this crate derives `idx` from `pick_slot`/a previously
     /// `claim`ed heap's `id()`, both of which are range-checked before
     /// reaching here; see each call site's own range check).
@@ -130,7 +131,6 @@ impl Registry {
     /// method aborts. Lease claim uses the fallible accessor.
     #[inline]
     pub(crate) fn slot(&self, idx: usize) -> &'static HeapSlot {
-        debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
         let chunk_idx = idx / CHUNK_SLOTS;
         let slot_in_chunk = idx % CHUNK_SLOTS;
         let chunk = self.ensure_chunk(chunk_idx);
@@ -145,7 +145,6 @@ impl Registry {
     /// Foreign-free routing uses pinned route descriptors, not this accessor.
     #[inline]
     pub(crate) fn slot_or_none(&self, idx: usize) -> Option<&'static HeapSlot> {
-        debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
         let chunk_idx = idx / CHUNK_SLOTS;
         let slot_in_chunk = idx % CHUNK_SLOTS;
         let chunk = self.try_ensure_chunk(chunk_idx)?;
@@ -179,26 +178,32 @@ impl Registry {
     /// `slot()` call has materialised the chunk — driving `stats()` (meant to
     /// be a cheap, read-only diagnostic snapshot) into a real OS reservation,
     /// a spin-wait on the claimer's in-flight initialisation, or — on
-    /// chunk-materialisation OOM — `std::process::abort()`. This accessor
+    /// chunk-materialisation OOM — a diagnostic `fatal` termination. This accessor
     /// closes that: the walk now SKIPS an index whose chunk is not yet
     /// ready, exactly as it already skips an index whose slot is not yet
     /// `initialised` — both are the same "this slot hasn't finished being
     /// claimed yet" case, benign to omit from one snapshot (the very next
     /// `stats()` call observes it once the real claim finishes).
     ///
-    /// # Panics
+    /// # Termination
     ///
-    /// Panics if `idx >= MAX_HEAPS` (same internal-contract-violation
+    /// Terminates the process via the crate's `fatal` diagnostic (no
+    /// unwinding) if `idx >= MAX_HEAPS` (same internal-contract-violation
     /// discipline as [`slot`](Self::slot) / [`slot_or_none`](Self::slot_or_none)
     /// — every caller derives `idx` from a `count`-bounded loop).
     ///
     /// Used by stats and lease scans in every registry feature profile.
     #[inline]
     pub(crate) fn slot_if_materialised(&self, idx: usize) -> Option<&'static HeapSlot> {
-        debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
         let chunk_idx = idx / CHUNK_SLOTS;
         let slot_in_chunk = idx % CHUNK_SLOTS;
-        let p = self.chunks[chunk_idx].get()?;
+        let cell = match self.chunks.get(chunk_idx) {
+            Some(cell) => cell,
+            None => crate::alloc_core::platform::fatal::fatal(
+                b"registry: slot chunk index out of range\n",
+            ),
+        };
+        let p = cell.get()?;
         // SAFETY: identical argument to `ensure_chunk`'s fast path above —
         // `OncePtrCell::get` returned `Some` only after observing a real
         // (non-null, non-sentinel) pointer under `Acquire`, which the
@@ -225,7 +230,13 @@ impl Registry {
     /// [`try_ensure_chunk`] instead.
     #[inline]
     fn ensure_chunk(&self, chunk_idx: usize) -> &'static RegistryChunk {
-        if let Some(p) = self.chunks[chunk_idx].get() {
+        let cell = match self.chunks.get(chunk_idx) {
+            Some(cell) => cell,
+            None => crate::alloc_core::platform::fatal::fatal(
+                b"registry: slot chunk index out of range\n",
+            ),
+        };
+        if let Some(p) = cell.get() {
             // SAFETY: `OncePtrCell::get` returned `Some` only after observing
             // a real (non-null, non-sentinel) pointer under `Acquire`. The
             // initialising thread published it with `Release` AFTER the OS
@@ -236,7 +247,7 @@ impl Registry {
             // so `&'static` is sound.
             return unsafe { p.as_ref() };
         }
-        match ensure_chunk_slow(&self.chunks[chunk_idx]) {
+        match ensure_chunk_slow(cell) {
             Some(chunk) => chunk,
             None => {
                 // Chunk-materialisation OOM. The cell has ALREADY
@@ -245,7 +256,7 @@ impl Registry {
                 //
                 // Production callers pass indices from a successful earlier
                 // claim; test hooks may deliberately force this path.
-                std::process::abort();
+                fatal(b"registry: chunk materialisation OOM\n");
             }
         }
     }
@@ -257,11 +268,17 @@ impl Registry {
     /// only the caller-visible policy differs.
     #[inline]
     fn try_ensure_chunk(&self, chunk_idx: usize) -> Option<&'static RegistryChunk> {
-        if let Some(p) = self.chunks[chunk_idx].get() {
+        let cell = match self.chunks.get(chunk_idx) {
+            Some(cell) => cell,
+            None => crate::alloc_core::platform::fatal::fatal(
+                b"registry: slot chunk index out of range\n",
+            ),
+        };
+        if let Some(p) = cell.get() {
             // SAFETY: same argument as `ensure_chunk`'s fast path above.
             return Some(unsafe { p.as_ref() });
         }
-        ensure_chunk_slow(&self.chunks[chunk_idx])
+        ensure_chunk_slow(cell)
     }
 }
 

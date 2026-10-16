@@ -404,7 +404,6 @@ impl AllocCore {
             b"sefer-alloc: hardened: Small free-list corruption detected; aborting\n",
         )
     }
-
     #[cfg(feature = "hardened")]
     #[inline(always)]
     fn free_continuation(segment: *mut u8, off: u32, class_idx: usize, next: *mut u8) -> u32 {
@@ -444,7 +443,7 @@ impl AllocCore {
         let new_head = if next.is_null() {
             FREE_LIST_NULL
         } else {
-            (next as usize - segment as usize) as u32
+            Node::continuation_offset_or_fatal(segment, next)
         };
         let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
             return Err(());
@@ -605,7 +604,7 @@ impl AllocCore {
                     probe = if next.is_null() {
                         FREE_LIST_NULL
                     } else {
-                        (next as usize - segment as usize) as u32
+                        Node::continuation_offset_or_fatal(segment, next)
                     };
                 }
                 probed += 1;
@@ -636,7 +635,7 @@ impl AllocCore {
                 } else {
                     // `next` is an absolute pointer into the SAME segment (free
                     // lists are per-segment), so offset = next - segment.
-                    (next as usize - segment as usize) as u32
+                    Node::continuation_offset_or_fatal(segment, next)
                 };
             }
             // Write the new head ONCE: the first un-popped node, or NULL.

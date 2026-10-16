@@ -96,34 +96,38 @@
 //!   on a genuinely virgin bump-carved block.
 //!
 //! **Reviewed release panic sites, not an exhaustive abort inventory.**
-//! These checks are panic-capable source constructs, NOT explicit process
-//! aborts. Their presence does not authorize unwinding from `GlobalAlloc`,
-//! and a panic is not guaranteed to abort. The lexical regression guard
-//! reviews feature-gated branches as well as the production bundle:
+//! Every reviewed release panic site has been converted to the crate's
+//! diagnostic `fatal` termination: the large-cache slot take/set checks,
+//! `pack_large_state`'s generation bound, the virgin-mask refill bound, the
+//! numa non-sentinel `NodeId` check, and the exact-shard descriptor layout
+//! check. The inventory of panic-capable sites on these paths is now empty:
 //!
 //! - Four large-cache checks in `alloc_core/large/alloc_core_large_cache.rs`:
-//!   two occupied-slot `expect`s in `large_cache_slot_take` and the
-//!   extension-disabled range `unreachable!` arms in that function and
+//!   two occupied-slot checks in `large_cache_slot_take` and the
+//!   extension-disabled range arms in that function and
 //!   `large_cache_slot_set`. All require `alloc-decommit`; the extension
-//!   `expect` additionally requires `large-cache-extended`, while the range
+//!   check additionally requires `large-cache-extended`, while the range
 //!   arms require its absence. Owner-only scans consult the slot array before
 //!   taking an occupied entry; free-slot selection bounds insertion indices.
-//! - `segment_header/terminal_words.rs::pack_large_state` asserts the packed
+//! - `segment_header/terminal_words.rs::pack_large_state` checks the packed
 //!   generation bound. Fresh initialization uses 0/1; lifecycle transitions
 //!   decode bounded generations and reuse uses fallible checked advancement.
-//! - `alloc_core_small_magazine.rs::refill_class_bump_virgin_internal` asserts
+//! - `alloc_core_small_magazine.rs::refill_class_bump_virgin_internal` checks
 //!   that output fits a `u16` mask (`alloc-xthread` + `fastbin` +
 //!   `virgin-zero-skip`, the last not in `production`). Global allocation
 //!   supplies a refill bounded by `TCACHE_CAP`, which is compile-time bounded
 //!   by 16. Arbitrary oversized direct substrate calls are a different surface.
-//! - `platform/numa.rs::reserve_aligned_on_node` has a `NodeId::new(node)`
-//!   `expect` only in the non-sentinel branch (`numa-aware`, opt-in).
-//! - `global/exact_object/exact_shard.rs::array_layout` has a descriptor-layout
-//!   `expect` (`exact-object-proto`, opt-in). Initial capacity is 64 and rehash
-//!   grows dynamically; there is no explicit checked capacity/layout bound.
-//!   The lexical allowlist records this existing prototype limitation, not a
-//!   proof that all growth is panic-free. No behavior is changed here.
+//! - `platform/numa.rs::reserve_aligned_on_node` checks `NodeId::new(node)`
+//!   only in the non-sentinel branch (`numa-aware`, opt-in).
+//! - `global/exact_object/exact_shard.rs::array_layout` checks the descriptor
+//!   layout (`exact-object-proto`, opt-in). Initial capacity is 64 and rehash
+//!   grows dynamically; the exact-object-proto capacity growth now terminates
+//!   via `fatal` instead of panicking. No behavior is changed here.
 //!
+//! Each of these now calls `platform::fatal::fatal` with a static one-line
+//! message rather than panicking. The lexical regression guard still reviews
+//! feature-gated branches as well as the production bundle. Direct substrate
+//! calls outside `GlobalAlloc` shapes remain the caller's responsibility.
 //! A former ownership assertion in `realloc_inplace_fast_path_known_base` was
 //! first demoted to `debug_assert!`, then replaced by fallible
 //! `canonical_base_of(key)?` using a payload-derived key. Missing or inconsistent
@@ -160,10 +164,11 @@
 //! always-compiled [`AllocStats::config_conflicts`] counter, not an intentional
 //! panic.
 //!
-//! **Explicit registry OOM abort.** `Registry::slot` / `ensure_chunk` retain
-//! a direct `std::process::abort()` on chunk-materialisation failure for
-//! infallible access, including diagnostic accessors. This is not the normal
-//! fallible claim path and is not the only category of explicit abort.
+//! **Explicit registry OOM abort.** `Registry::slot` / `ensure_chunk`
+//! terminate chunk-materialisation OOM through `platform::fatal::fatal` with
+//! a one-line diagnostic, for infallible access, including diagnostic
+//! accessors. This is not the normal fallible claim path and is not the only
+//! category of explicit abort.
 //!
 //! **Invariant aborts (representative, not a census).** Allocator-path
 //! examples include route-slot issue/registration and route-directory
@@ -172,8 +177,9 @@
 //! live-count and registry lease ownership checks. The opt-in
 //! `exact-object-proto` path aborts on duplicate live descriptors. Already-free
 //! or magazine-resident Small records return `false` without reclaiming them.
-//! These are not ordinary allocation OOM. Direct process abort does not
-//! unwind or run the panic hook; panic-capable checks are a separate category.
+//! These are not ordinary allocation OOM. Invariant violations terminate via
+//! `fatal(b"...")` with a module-prefixed static diagnostic — no unwinding,
+//! no panic hook, no allocation; panic-capable checks are a separate category.
 //!
 //! **Failure policy.** Three categories. A detected invalid input rejected
 //! before any metadata mutation is a no-op or null return, counted where a
@@ -182,15 +188,16 @@
 //! degraded. Under `hardened`, Small free-list head/continuation validation
 //! and cycle detection abort after a one-line stderr diagnostic; production
 //! does not validate free-list links. A repeatable resource shortage (OOM)
-//! returns null. Abort sites older than this split are not retrofitted with
-//! counters or diagnostics.
+//! returns null. All abort sites now share the single `platform::fatal`
+//! helper and carry a static one-line diagnostic; the helper itself is no
+//! longer `hardened`-gated.
 //!
 //! **Caller boundary.** Missing routes or rejected foreign publication can
 //! drop a free (no-op), but this does not make arbitrary pointers safe.
 //! Invalid layouts, stale/interior/unmapped pointers, wrong layouts and
 //! double frees are unsupported caller misuse, not guaranteed no-op paths.
-//! Debug assertions, indexing and the reviewed release panic sites remain
-//! panic-capable; this documentation and lexical guard are not a total
+//! Debug assertions and indexing remain the documented residual panic-capable
+//! risk; this documentation and lexical guard are still not a total
 //! no-panic proof, especially for opt-in prototype capacity growth.
 //! If a panic fires, its outcome depends on the panic runtime and call
 //! surface — NOT a guaranteed abort. The normative no-unwind obligation

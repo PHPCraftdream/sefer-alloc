@@ -48,7 +48,8 @@ fn lease_drop_publishes_live_to_free_with_release() {
 fn lease_drop_aborts_on_a_lost_cas() {
     let body = lease_drop_body();
     assert!(
-        body.contains("std::process::abort()"),
-        "a lost LIVE→FREE CAS must abort (single-writer protocol broken)"
+        body.contains("fatal(b\"claim: heap lease"),
+        "a lost LIVE→FREE CAS must terminate via fatal (single-writer \
+         protocol broken)"
     );
 }

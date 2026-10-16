@@ -199,24 +199,10 @@ const RELEASE_SCAN_FILES: &[&str] = &[
 // (file, function + structural expression, count, reviewed reason).
 // String contents and line numbers are NOT identity. Exact multiplicity makes
 // deletion/duplication drift fail too. Feature branches remain visible.
-const RELEASE_ALLOWLIST: &[(&str, &str, usize, &str)] = &[
-    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_take::self.large_cache[idx].take().expect(<string>)", 1,
-     "alloc-decommit base take: owner-only scan consulted Some array entry."),
-    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_take::ext.slots[idx-LARGE_CACHE_SLOTS].take().expect(<string>)", 1,
-     "alloc-decommit + large-cache-extended: occupied extension array entry and bounded index."),
-    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_take::unreachable!(<string>)", 1,
-     "alloc-decommit without extension: take callers select only base indices."),
-    ("alloc_core/large/alloc_core_large_cache.rs", "large_cache_slot_set::unreachable!(<string>)", 1,
-     "alloc-decommit without extension: free-slot selection returns only base indices."),
-    ("alloc_core/segment/segment_header/terminal_words.rs", "pack_large_state::assert!(generation<=MAX_LARGE_GENERATION)", 1,
-     "Fresh initialization 0/1; transitions decode bounded generations; reuse checks next generation."),
-    ("alloc_core/small/alloc_core_small_magazine.rs", "refill_class_bump_virgin_internal::assert!(out.len()<=VIRGIN_MASK_BITS,<string>,out.len(),)", 1,
-     "alloc-xthread + fastbin + virgin-zero-skip: GlobalAlloc refill <= TCACHE_CAP <= 16; not arbitrary substrate slices."),
-    ("alloc_core/platform/numa.rs", "reserve_aligned_on_node::numa_shim::NodeId::new(node).expect(<string>)", 1,
-     "numa-aware only: enclosing else proves node != NO_NODE, the NodeId rejection sentinel."),
-    ("global/exact_object/exact_shard.rs", "array_layout::Layout::from_size_align(cap*core::mem::size_of::<Slot>(),8).expect(<string>)", 1,
-     "exact-object-proto only: existing dynamic capacity/layout limitation, NOT proven bounded or panic-free."),
-];
+// EMPTY since R6-T14: every former entry was converted to `platform::fatal`.
+// Any NEW panic-capable construct in RELEASE_SCAN_FILES must either be
+// converted to `platform::fatal` or re-added here with a reviewed reason.
+const RELEASE_ALLOWLIST: &[(&str, &str, usize, &str)] = &[];
 
 #[derive(Debug)]
 struct Token {

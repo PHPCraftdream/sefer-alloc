@@ -12,6 +12,8 @@ use crate::alloc_core::numa;
 #[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
+#[cfg(any(feature = "alloc-xthread", feature = "alloc-decommit"))]
+use crate::alloc_core::platform::fatal::fatal;
 #[cfg(any(feature = "alloc-xthread", feature = "numa-aware"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};
@@ -331,7 +333,7 @@ impl AllocCore {
                         if !state.release_cached(
                             crate::alloc_core::segment_header::large_generation(word),
                         ) {
-                            std::process::abort();
+                            fatal(b"large: cached release failed\n");
                         }
                         os::release_segment(slot.reservation, slot.reservation_len);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
@@ -492,7 +494,7 @@ impl AllocCore {
                         if !LargeReservationState::new(terminal_meta.large_state_atomic())
                             .release_initializing(generation)
                         {
-                            std::process::abort();
+                            fatal(b"large: initializing release failed\n");
                         }
                         os::release_segment(slot.reservation, slot.reservation_len);
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
@@ -847,7 +849,7 @@ impl AllocCore {
         // The sidecar has transferred one consume obligation. This physical
         // owner-only lifecycle credit is claimed once, never producer-mutated.
         let Some(generation) = state.claim_live() else {
-            std::process::abort();
+            fatal(b"large: live claim credit missing\n");
         };
         let hdr = SegmentHeader::read_at(base);
         // Remove from the table FIRST (frees the slot for reuse regardless of
@@ -921,7 +923,7 @@ impl AllocCore {
                 Node::atomic_u32_at(base, magic_off)
                     .store(0, core::sync::atomic::Ordering::Release);
                 if !state.cache_consumed(generation) {
-                    std::process::abort();
+                    fatal(b"large: consumed cache transition failed\n");
                 }
                 let seq = self.large_cache_seq;
                 self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
@@ -946,7 +948,7 @@ impl AllocCore {
         // above, so there is no dangling table entry pointing at unmapped
         // memory.
         if !state.release_consumed(generation) {
-            std::process::abort();
+            fatal(b"large: consumed release failed\n");
         }
         os::release_segment(hdr.reservation, hdr.reservation_len);
     }

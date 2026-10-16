@@ -40,6 +40,8 @@ use core::mem::size_of;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use super::fatal::fatal;
+
 /// A free-list node: the first word of a freed block stores the `*mut u8` of
 /// the NEXT free block (or null for the tail). This constant is the number of
 /// bytes at the start of a free block that the allocator owns for the node —
@@ -67,6 +69,17 @@ impl Node {
             return None;
         }
         u32::try_from(off).ok()
+    }
+
+    /// Checked free-list continuation offset for non-hardened pop paths: a
+    /// corrupted `next` below `base` terminates via `fatal`, never an
+    /// arithmetic-overflow panic.
+    #[inline(always)]
+    pub(crate) fn continuation_offset_or_fatal(base: *mut u8, next: *mut u8) -> u32 {
+        match (next as usize).checked_sub(base as usize) {
+            Some(off) => off as u32,
+            None => fatal(b"node: free-list continuation precedes segment base\n"),
+        }
     }
 
     /// Store `next` into the first word of the free block at `block`.

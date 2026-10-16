@@ -21,6 +21,7 @@
 //! `base_at` / route-root comparison), which are what make the address sound
 //! to use.
 
+use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment::segment_table::segment_table_impl::SegmentTable;
 use crate::alloc_core::segment_header::SegmentHeader;
 
@@ -116,7 +117,8 @@ impl IssueTransaction {
             index,
             base,
             off,
-            u8::try_from(class_idx).unwrap_or_else(|_| std::process::abort()),
+            u8::try_from(class_idx)
+                .unwrap_or_else(|_| fatal(b"issue_transaction: small class index exceeds u8\n")),
         )
         .commit(table)
     }

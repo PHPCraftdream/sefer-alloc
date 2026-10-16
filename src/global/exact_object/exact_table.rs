@@ -1,6 +1,6 @@
-use super::exact_fatal::fatal;
 use super::exact_shard::ExactShard;
 use super::insert_outcome::InsertOutcome;
+use crate::alloc_core::platform::fatal::fatal;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 const SHARDS: usize = 64;

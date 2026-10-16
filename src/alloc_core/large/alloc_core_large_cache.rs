@@ -11,6 +11,7 @@ use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
 use crate::alloc_core::alloc_core::{AllocCore, CachedLarge, LARGE_CACHE_SLOTS};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 use crate::alloc_core::alloc_core::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
+use crate::alloc_core::platform::fatal::fatal;
 
 /// R32-8 (task #499, F9): once `maybe_decay_large_cache`'s headroom fast-exit
 /// no longer applies (`used > headroom`), only actually consult the clock
@@ -116,7 +117,8 @@ impl AllocCore {
     }
 
     /// Take (remove) the entry at a COMBINED index, leaving that slot empty.
-    /// Panics if `idx` addresses an empty slot or an unmaterialised
+    /// Terminates the process via [`fatal`] (no unwinding) if `idx` addresses
+    /// an empty slot or an unmaterialised
     /// extension range — callers only ever call this on an index just
     /// proven occupied by
     /// [`Self::large_cache_scan_bound`]/[`Self::large_cache_slot_get`],
@@ -145,7 +147,7 @@ impl AllocCore {
         if idx < LARGE_CACHE_SLOTS {
             let taken = self.large_cache[idx]
                 .take()
-                .expect("large_cache_slot_take: empty base slot");
+                .unwrap_or_else(|| fatal(b"large_cache_slot_take: empty base slot\n"));
             self.large_cache_occupied &= !(1u64 << idx);
             return taken;
         }
@@ -161,13 +163,13 @@ impl AllocCore {
             };
             let taken = ext.slots[idx - LARGE_CACHE_SLOTS]
                 .take()
-                .expect("large_cache_slot_take: empty extension slot");
+                .unwrap_or_else(|| fatal(b"large_cache_slot_take: empty extension slot\n"));
             self.large_cache_occupied &= !(1u64 << idx);
             taken
         }
         #[cfg(not(feature = "large-cache-extended"))]
         {
-            unreachable!("large_cache_slot_take: idx out of base range with extension disabled")
+            fatal(b"large_cache_slot_take: idx out of base range with extension disabled\n")
         }
     }
 
@@ -361,7 +363,7 @@ impl AllocCore {
         }
         #[cfg(not(feature = "large-cache-extended"))]
         {
-            unreachable!("large_cache_slot_set: idx out of base range with extension disabled")
+            fatal(b"large_cache_slot_set: idx out of base range with extension disabled\n")
         }
     }
 

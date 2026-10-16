@@ -4,6 +4,7 @@
 #![allow(unsafe_code)]
 
 use super::insert_outcome::InsertOutcome;
+use crate::alloc_core::platform::fatal::fatal;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -32,7 +33,8 @@ struct Inner {
 
 fn array_layout(cap: usize) -> Layout {
     // cap is a small power of two; Slot is 32 bytes, align 8.
-    Layout::from_size_align(cap * core::mem::size_of::<Slot>(), 8).expect("descriptor layout")
+    Layout::from_size_align(cap * core::mem::size_of::<Slot>(), 8)
+        .unwrap_or_else(|_| fatal(b"exact-shard: descriptor layout overflow\n"))
 }
 
 impl Inner {

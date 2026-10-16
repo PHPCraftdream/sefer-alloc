@@ -21,6 +21,7 @@ use super::counters::CONFIG_CONFLICTS;
 use super::stack::{
     pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
 };
+use crate::alloc_core::platform::fatal::fatal;
 use crate::registry::bootstrap::{ensure, Registry, FREE_SLOTS, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
 use crate::registry::heap_slot::{
@@ -366,7 +367,7 @@ impl HeapRegistry {
                             )
                             .is_err()
                         {
-                            std::process::abort();
+                            fatal(b"claim: initializing cas lost in recovery scan\n");
                         }
                         true
                     }
@@ -446,7 +447,7 @@ impl HeapRegistry {
                     )
                     .is_err()
                 {
-                    std::process::abort();
+                    fatal(b"claim: live publish cas lost\n");
                 }
             } else {
                 // Re-claim of an already-materialised slot. SAFETY: slot is
@@ -596,7 +597,7 @@ impl MaintenanceLease {
 impl Drop for MaintenanceLease {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            std::process::abort();
+            fatal(b"claim: maintenance lease dropped while panicking\n");
         }
         if self
             .slot
@@ -608,7 +609,7 @@ impl Drop for MaintenanceLease {
             )
             .is_err()
         {
-            std::process::abort();
+            fatal(b"claim: maintenance lease free rollback cas lost\n");
         }
         let reg = ensure();
         let prev = reg.reuse_hint.swap(self.index as u32, Ordering::Relaxed);
@@ -703,7 +704,7 @@ impl HeapLease {
 impl Drop for HeapLease {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            std::process::abort();
+            fatal(b"claim: heap lease dropped while panicking\n");
         }
         // Release-publish all completed owner writes to the next winning
         // Acquire claim/maintenance CAS (S2). A lost CAS here means the
@@ -713,7 +714,7 @@ impl Drop for HeapLease {
             .cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)
             .is_err()
         {
-            std::process::abort();
+            fatal(b"claim: heap lease free rollback cas lost\n");
         }
         // Same post-publication as any LIVE → FREE recycle: advisory hint +
         // claimability.
@@ -780,7 +781,7 @@ pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
         )
         .is_err()
     {
-        std::process::abort();
+        fatal(b"claim: oom rollback cas lost\n");
     }
     // R6-T03 (R6-CC-1): an uninitialised FREE slot must NOT take the hint —
     // a claimant that retries it only OOMs again, evicting ready FREE heaps

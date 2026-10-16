@@ -11,6 +11,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 #[cfg(feature = "bench-internals")]
 static SYSTEM_TOTALS: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 
+use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::SegmentKind;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
@@ -88,7 +89,7 @@ impl RouteSlots {
         }
         if self.cap != 0 {
             let old_layout = Layout::array::<Option<RouteRegistration<'static>>>(self.cap)
-                .unwrap_or_else(|_| std::process::abort());
+                .unwrap_or_else(|_| fatal(b"route_slots: route-slot array layout overflow\n"));
             // SAFETY: all handles were moved; System owns this exact allocation.
             unsafe { System.dealloc(self.slots.cast(), old_layout) };
             #[cfg(feature = "bench-internals")]
@@ -124,24 +125,24 @@ impl RouteSlots {
 
     pub(super) fn put(&mut self, index: usize, route: RouteRegistration<'static>) {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"route_slots: put index out of range\n");
         }
         // SAFETY: owner-only access, initialized slot, and index < cap.
         let slot = unsafe { &mut *self.slots.add(index) };
         if slot.is_some() {
-            std::process::abort();
+            fatal(b"route_slots: put into occupied route slot\n");
         }
         *slot = Some(route);
     }
 
     pub(super) fn issue_small(&self, index: usize, base: *mut u8, offset: u32, class: u8) {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"route_slots: issue_small index out of range\n");
         }
         // SAFETY: owner-only access to an initialized slot in the live array.
         let route = unsafe { &*self.slots.add(index) }
             .as_ref()
-            .unwrap_or_else(|| std::process::abort());
+            .unwrap_or_else(|| fatal(b"route_slots: issue_small on empty route slot\n"));
         // Commit cannot allocate: the owner completed every fallible prepare.
         if route.root() != base
             || !route
@@ -149,7 +150,7 @@ impl RouteSlots {
                 .is_some_and(|sidecar| sidecar.prepared(offset, class))
             || !route.issue_small(offset, class)
         {
-            std::process::abort();
+            fatal(b"route_slots: small issue commit rejected\n");
         }
     }
 
@@ -162,18 +163,18 @@ impl RouteSlots {
         class: u8,
     ) -> Option<IssueTransaction> {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"route_slots: prepare index out of range\n");
         }
         // SAFETY: owner-only access to an initialized live route slot.
         let route = unsafe { &*self.slots.add(index) }
             .as_ref()
-            .unwrap_or_else(|| std::process::abort());
+            .unwrap_or_else(|| fatal(b"route_slots: prepare on empty route slot\n"));
         if route.root() != base {
-            std::process::abort();
+            fatal(b"route_slots: prepare base does not match route root\n");
         }
         let prepared = route.prepare_small(offset, class);
         if !prepared && route.small_sidecar().is_none() {
-            std::process::abort();
+            fatal(b"route_slots: prepare_small failed without sidecar\n");
         }
         prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
     }
@@ -186,40 +187,40 @@ impl RouteSlots {
         word: usize,
     ) -> Option<RouteScan<'_>> {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"route_slots: scan index out of range\n");
         }
         // SAFETY: owner-only read of an initialized live route slot.
         let route = unsafe { &*self.slots.add(index) }
             .as_ref()
-            .unwrap_or_else(|| std::process::abort());
+            .unwrap_or_else(|| fatal(b"route_slots: scan on empty route slot\n"));
         if route.root() != base {
-            std::process::abort();
+            fatal(b"route_slots: scan base does not match route root\n");
         }
         route.small_sidecar()?.scan_from(high_water, word)
     }
 
     pub(super) fn claim_large_pending(&self, index: usize, base: *mut u8) -> bool {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"route_slots: claim index out of range\n");
         }
         // SAFETY: owner-only read of an initialized live route slot.
         let route = unsafe { &*self.slots.add(index) }
             .as_ref()
-            .unwrap_or_else(|| std::process::abort());
+            .unwrap_or_else(|| fatal(b"route_slots: claim on empty route slot\n"));
         if route.root() != base {
-            std::process::abort();
+            fatal(b"route_slots: claim base does not match route root\n");
         }
         route.claim_large_pending().is_some()
     }
 
     pub(super) fn remove(&mut self, index: usize) {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"route_slots: remove index out of range\n");
         }
         // SAFETY: owner-only access to an initialized slot in the live array.
         let slot = unsafe { &mut *self.slots.add(index) };
         if slot.take().is_none() {
-            std::process::abort();
+            fatal(b"route_slots: remove of empty route slot\n");
         }
     }
 
@@ -239,7 +240,7 @@ impl Drop for RouteSlots {
             return;
         }
         let layout = Layout::array::<Option<RouteRegistration<'static>>>(self.cap)
-            .unwrap_or_else(|_| std::process::abort());
+            .unwrap_or_else(|_| fatal(b"route_slots: route-slot array layout overflow\n"));
         // SAFETY: all handles were dropped; System owns this exact allocation.
         unsafe { System.dealloc(self.slots.cast(), layout) };
         #[cfg(feature = "bench-internals")]
