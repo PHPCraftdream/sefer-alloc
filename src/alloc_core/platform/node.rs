@@ -88,13 +88,23 @@ impl Node {
         next: *mut u8,
         bounds: crate::alloc_core::config::continuation_bounds::ContinuationBounds,
     ) -> u32 {
-        let Some(off) = (next as usize).checked_sub(base as usize) else {
-            fatal(b"node: free-list continuation precedes segment base\n")
-        };
+        // A `next` below `base` wraps to a huge offset, which the range check
+        // rejects; the cold path tells the two cases apart for the diagnostic.
+        let off = (next as usize).wrapping_sub(base as usize);
         if !bounds.contains_aligned(off) {
-            fatal(b"node: free-list continuation out of range or misaligned\n")
+            Self::continuation_fatal(base, next)
         }
         off as u32
+    }
+
+    #[cfg(not(feature = "hardened"))]
+    #[cold]
+    #[inline(never)]
+    fn continuation_fatal(base: *mut u8, next: *mut u8) -> ! {
+        if (next as usize) < (base as usize) {
+            fatal(b"node: free-list continuation precedes segment base\n")
+        }
+        fatal(b"node: free-list continuation out of range or misaligned\n")
     }
 
     /// Store `next` into the first word of the free block at `block`.
