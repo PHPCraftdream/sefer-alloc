@@ -1,0 +1,63 @@
+{
+  "id": "R4a-10",
+  "registryActivationHash": "92ef1071c1e1b2f9ecdbbd99fea478b57943f6941bdd2210323bc8b065459223",
+  "steps": [
+    {
+      "name": "lease drop ordering source pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals",
+        "--test",
+        "r11_ph4a_drop_ordering_pinned",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test result: ok. 2 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/registry/heap_registry/claim.rs",
+    "find": ".cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)",
+    "replace": ".cas_state(STATE_LIVE, STATE_FREE, Ordering::Relaxed, Ordering::Relaxed)",
+    "steps": [
+      {
+        "name": "HeapLease drop publishes FREE with Relaxed mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals",
+          "--test",
+          "r11_ph4a_drop_ordering_pinned",
+          "--",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "the LIVE→FREE publication must be Release"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "the LIVE→FREE publication must be Release"
+      ]
+    }
+  }
+}
