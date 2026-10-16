@@ -7,7 +7,7 @@
 //! or dereferences one. The directory must pin the backing through all
 //! unpublished producers, published bits, and detached cuts.
 
-use super::{AtomicU64, AtomicU8, BitmapScan, Ordering};
+use super::{AtomicPtr, AtomicU64, AtomicU8, BitmapScan, Ordering};
 
 #[path = "sidecar_bitmap/leaf_classes.rs"]
 #[cfg_attr(test, allow(dead_code))]

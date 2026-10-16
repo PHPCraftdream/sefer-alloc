@@ -1790,6 +1790,15 @@ name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global", "bench-internals", "internals"]
 
+# R6-T10 Large cache hits with 16 live Large objects (own iai target so
+# `perf_gate_iai` does not grow; see benches/r6_live_large_iai.rs). Same
+# feature set as `perf_gate_iai`.
+[[bench]]
+name = "r6_live_large_iai"
+harness = false
+test = false
+required-features = ["alloc-global", "bench-internals", "internals"]
+
 # R20 PRF-01 v2 control-geometry cells (own iai target so `perf_gate_iai`
 # does not grow; see benches/r20_prf01_controls_iai.rs and
 # docs/perf/R20_PRF01_SIDECAR_SUMMARY_V2_PREREG.md). Same feature set as

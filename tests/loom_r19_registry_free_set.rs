@@ -20,6 +20,7 @@ struct Registry {
     word: AtomicU64,
     summary: AtomicU64,
     owners: [AtomicU8; 3],
+    count: AtomicU64,
     init: [bool; 3],
 }
 
@@ -35,6 +36,7 @@ impl Registry {
             word: AtomicU64::new(0),
             summary: AtomicU64::new(0),
             owners: [AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)],
+            count: AtomicU64::new(3),
             // Slots start LIVE and initialised; the ctor-OOM model overrides.
             init: [true, true, true],
         }
@@ -428,5 +430,168 @@ fn ctor_oom_bitmap_slot_does_not_starve_initialised_recovery() {
                 "initialised FREE slot discoverable"
             );
         }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// R6-T53: the chunk-OOM recovery slice of `claim_impl`. A bump-minted index
+// whose chunk reservation failed is fuelled into the hint (spilling any
+// displaced hint into the FREE set) and stays retryable; the recovery scan
+// skips the failed index and never hands the unmaterialised slot out.
+// ---------------------------------------------------------------------------
+
+/// A minted index with no materialised chunk behind it (`slot_or_none` → None).
+const UNMATERIALISED: u8 = 3;
+
+impl Registry {
+    /// `bump_count`: mint the next index below the cap.
+    fn bump_index(&self) -> Option<usize> {
+        let mut count = self.count.load(Ordering::Acquire);
+        loop {
+            if count as usize >= 3 {
+                return None;
+            }
+            match self.count.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(count as usize),
+                Err(actual) => count = actual,
+            }
+        }
+    }
+
+    fn materialised(&self, idx: usize) -> bool {
+        self.state[idx].load(Ordering::Acquire) != UNMATERIALISED
+    }
+
+    /// `scan_claim_recovery_free(reg, excluded)`: one pass over the
+    /// high-water range, skipping the failed index; a materialised FREE slot
+    /// wins, preferring initialised heaps.
+    fn recovery_scan(&self, excluded: usize, saw: &AtomicUsize) -> Option<usize> {
+        let count = (self.count.load(Ordering::Acquire) as usize).min(3);
+        let mut uninitialised = None;
+        for idx in 0..count {
+            if idx == excluded || !self.materialised(idx) {
+                continue;
+            }
+            if self.state[idx].load(Ordering::Acquire) == FREE {
+                if self.init[idx] {
+                    saw.store(1, Ordering::Relaxed);
+                    return Some(idx);
+                }
+                uninitialised.get_or_insert(idx);
+            }
+        }
+        uninitialised
+    }
+
+    /// The chunk-OOM slice: the failed minted index is fuelled into the hint
+    /// (retryable), then one recovery pass runs with the failed index
+    /// excluded. The mutant hands the minted index out without
+    /// `slot_or_none`'s materialisation gate; the violation is observed by
+    /// the caller's post-join oracle, not here.
+    fn claim_chunk_oom(&self, failed: usize, mutant: bool, saw: &AtomicUsize) {
+        if mutant {
+            // MUTANT: no `slot_or_none` gate — the fuelled minted index is
+            // used as a heap candidate and takes the slot that has no
+            // materialised chunk behind it.
+            assert_eq!(
+                self.owners[failed].fetch_add(1, Ordering::Relaxed),
+                0,
+                "exclusive state-CAS ownership"
+            );
+            return;
+        }
+        let prev = self.hint.swap(failed as u64, Ordering::Relaxed);
+        if (prev as usize) < 3 {
+            self.publish_word(prev as usize);
+        }
+        if let Some(idx) = self.recovery_scan(failed, saw) {
+            if self.state[idx]
+                .compare_exchange(FREE, LIVE, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                assert_eq!(
+                    self.owners[idx].fetch_add(1, Ordering::Relaxed),
+                    0,
+                    "exclusive state-CAS ownership"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn chunk_oom_minted_index_is_retryable_but_never_handed_out() {
+    bounded(|| {
+        // Slot 0 exists and is LIVE (`count = 1`); the bump mints index 1 and
+        // its chunk reservation fails, leaving it unmaterialised. Slot 0 is
+        // freed concurrently, so the recovery pass and the plain claim race
+        // for the one initialised heap.
+        let mut reg = Registry::new();
+        reg.count.store(1, Ordering::Relaxed);
+        reg.state[1].store(UNMATERIALISED, Ordering::Relaxed);
+        reg.init[1] = false;
+        reg.release(0, LIVE, false);
+        let r = Arc::new(reg);
+        let saw = Arc::new(AtomicUsize::new(0));
+
+        let b = Arc::clone(&r);
+        // The mint: `bump_count` publishes index 1 (count 1 → 2); the chunk
+        // reservation then fails, leaving the slot unmaterialised.
+        let bumper = thread::spawn(move || {
+            b.bump_index();
+        });
+
+        let m = Arc::clone(&r);
+        let saw1 = Arc::clone(&saw);
+        let recovery = thread::spawn(move || m.claim_chunk_oom(1, false, &saw1));
+        let c = Arc::clone(&r);
+        let claimer = thread::spawn(move || c.claim());
+        bumper.join().unwrap();
+        recovery.join().unwrap();
+        claimer.join().unwrap();
+
+        for slot in 0..3 {
+            assert!(r.owners[slot].load(Ordering::Relaxed) <= 1);
+        }
+        assert_eq!(
+            r.owners[1].load(Ordering::Relaxed),
+            0,
+            "unmaterialised minted index is never handed out"
+        );
+        assert_eq!(
+            r.owners[0].load(Ordering::Relaxed),
+            1,
+            "the initialised FREE heap is claimed by exactly one discovery path"
+        );
+    });
+}
+
+#[test]
+#[should_panic(expected = "unmaterialised minted index is never handed out")]
+fn negative_chunk_oom_minted_index_hands_out_without_materialisation() {
+    bounded(|| {
+        let mut reg = Registry::new();
+        reg.count.store(1, Ordering::Relaxed);
+        reg.state[1].store(UNMATERIALISED, Ordering::Relaxed);
+        reg.init[1] = false;
+        let r = Arc::new(reg);
+        let saw = Arc::new(AtomicUsize::new(0));
+        let m = Arc::clone(&r);
+        let claimant = thread::spawn(move || m.claim_chunk_oom(1, true, &saw));
+        claimant.join().unwrap();
+        // Oracle: the high-water does not cover the unmaterialised minted
+        // index, so no ownership may have been granted through it. The
+        // mutant granted ownership above, so this fires in the model's only
+        // schedule — the #[should_panic] expectation is genuinely exercised.
+        assert_eq!(
+            r.owners[1].load(Ordering::Relaxed),
+            0,
+            "unmaterialised minted index is never handed out"
+        );
     });
 }
