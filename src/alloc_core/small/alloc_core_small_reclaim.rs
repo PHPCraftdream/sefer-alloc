@@ -154,7 +154,7 @@ const DIVISIBILITY_MAGIC: [u64; SMALL_CLASS_COUNT] = {
     let mut c = 0;
     while c < SMALL_CLASS_COUNT {
         let d = SizeClasses::block_size(c) as u64;
-        table[c] = ((1u64 << DIVISIBILITY_SHIFT) + d - 1) / d;
+        table[c] = (1u64 << DIVISIBILITY_SHIFT).div_ceil(d);
         c += 1;
     }
     table
