@@ -18,7 +18,6 @@ use crate::alloc_core::segment_header::SegmentKind;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
 use super::issue_transaction::IssueTransaction;
-use super::small_issue_route::SmallIssueRoute;
 use super::MAX_SEGMENTS;
 
 pub(super) struct RouteSlots {
@@ -157,12 +156,14 @@ impl RouteSlots {
         }
     }
 
-    /// R6-T40 OPT05: resolve this segment's small route ONCE per batch — the
-    /// returned borrowed context carries the route and its (already
-    /// materialised) sidecar so the caller's per-block `prepare`/`commit`
-    /// calls skip repeated slot resolution. Fatal bytes are the PREPARE-side
-    /// strings the scalar `prepare_small_issue` has always used.
-    pub(super) fn small_issue_route(&self, index: usize, base: *mut u8) -> SmallIssueRoute<'_> {
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn prepare_small_issue(
+        &self,
+        index: usize,
+        base: *mut u8,
+        offset: u32,
+        class: u8,
+    ) -> Option<IssueTransaction> {
         if index >= self.cap {
             fatal(b"route_slots: prepare index out of range\n");
         }
@@ -173,24 +174,11 @@ impl RouteSlots {
         if route.root() != base {
             fatal(b"route_slots: prepare base does not match route root\n");
         }
-        let sidecar = route
-            .small_sidecar()
-            .unwrap_or_else(|| fatal(b"route_slots: prepare_small failed without sidecar\n"));
-        SmallIssueRoute { route, sidecar }
-    }
-
-    #[cfg_attr(not(debug_assertions), inline(always))]
-    pub(super) fn prepare_small_issue(
-        &self,
-        index: usize,
-        base: *mut u8,
-        offset: u32,
-        class: u8,
-    ) -> Option<IssueTransaction> {
-        let route = self.small_issue_route(index, base);
-        route
-            .prepare(offset, class)
-            .then(|| IssueTransaction::prepared(index, base, offset, class))
+        let prepared = route.prepare_small(offset, class);
+        if !prepared && route.small_sidecar().is_none() {
+            fatal(b"route_slots: prepare_small failed without sidecar\n");
+        }
+        prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
     }
 
     /// R6-T05 (SEC-1): free-side class check against the route's class map.

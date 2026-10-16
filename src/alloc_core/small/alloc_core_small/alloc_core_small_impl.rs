@@ -18,8 +18,7 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
-use crate::alloc_core::fatal::fatal;
-use crate::alloc_core::segment::segment_table::IssueTransaction as Tx;
+use crate::alloc_core::segment::segment_table::IssueTransaction;
 
 /// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
 /// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
@@ -549,15 +548,13 @@ impl AllocCore {
         // The commit half re-validates this index against `segment`'s stamped
         // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
         let index = SegmentHeader::segment_id_at(segment) as usize;
+
         {
             // Read the head ONCE.
             let mut head_off = bt.head(class_idx);
             if head_off == FREE_LIST_NULL {
                 return Ok(0);
             }
-            let route = self.table.small_issue_route(segment); // once per batch; None = standalone
-            let class = u8::try_from(class_idx)
-                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
             // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
             // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
             #[cfg(not(feature = "hardened"))]
@@ -576,7 +573,11 @@ impl AllocCore {
                 let Some(nn) = NonNull::new(block) else {
                     break;
                 };
-                if route.as_ref().is_some_and(|r| !r.prepare(probe, class)) {
+                if self
+                    .table
+                    .prepare_small_issue(segment, probe, class_idx)
+                    .is_none()
+                {
                     return Err(());
                 }
                 let next = Node::read_next(nn);
@@ -628,10 +629,7 @@ impl AllocCore {
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);
-                match route.as_ref() {
-                    Some(r) => r.commit(head_off, class),
-                    None => Tx::commit_prepared(&self.table, index, segment, head_off, class_idx),
-                }
+                IssueTransaction::commit_prepared(&self.table, index, segment, head_off, class_idx);
                 out[k] = block_ptr;
                 k += 1;
                 // The probe pass above validated this same chain link by link.
@@ -991,7 +989,7 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
-            Tx::commit_prepared(&self.table, index, segment, off as u32, class_idx);
+            IssueTransaction::commit_prepared(&self.table, index, segment, off as u32, class_idx);
             *slot = ptr;
         }
         Ok(n)

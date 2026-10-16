@@ -2615,7 +2615,3 @@ name = "r6_t40_sidecar_system_alloc"
 path = "tests/r6_t40_sidecar_system_alloc.rs"
 required-features = ["production", "internals", "bench-internals"]
 
-[[test]]
-name = "r6_t40_batch_issue_route"
-path = "tests/r6_t40_batch_issue_route.rs"
-required-features = ["production", "internals", "bench-internals", "alloc-segment-directory"]
