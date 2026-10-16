@@ -54,12 +54,12 @@ impl EntryHandle {
             RouteKind::Small | RouteKind::Primordial => {
                 // SAFETY: System is independent of the installed allocator;
                 // the aligned span stays private until every atomic is built.
-                let ptr = unsafe { System.alloc_zeroed(Layout::new::<SmallSidecar>()) };
+                let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
                 if !ptr.is_null() {
                     #[cfg(feature = "internals")]
                     crate::alloc_core::remote_bitmap::ClassLeaves::record_alloc(
                         Layout::new::<SmallSidecar>().size(),
-                        true,
+                        false,
                     );
                     // SAFETY: fresh private storage has SmallSidecar's exact
                     // layout; in-place construction initializes every atomic.

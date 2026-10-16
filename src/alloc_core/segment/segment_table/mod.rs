@@ -73,6 +73,12 @@ mod route_slots;
 #[path = "route_slots_observers.rs"]
 mod route_slots_observers;
 
+// R6-T40 OPT05: borrowed small-issue route context. Physically outside this
+// folder (see the folder's baseline entry count); logically a child module.
+#[path = "../segment_directory/small_issue_route_impl.rs"]
+mod small_issue_route;
+pub(crate) use small_issue_route::SmallIssueRoute;
+
 #[path = "segment_table_impl.rs"]
 mod segment_table_impl;
 pub use segment_table_impl::*;
