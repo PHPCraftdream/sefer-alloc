@@ -2123,18 +2123,29 @@ jobs:
       # feature-union smoke check (see the `page-map-diag` row above).
       # `internals` added (R34-3/task #522): the test file itself reaches
       # `sefer_alloc::registry::HeapCore` directly.
+      # R6-T20: this row is predicate-TRUE (`production medium-classes`, no
+      # `exact-span-large`) — it runs the predicate single-source-of-truth
+      # equivalence oracle in the polarity where a wrong const copy (false)
+      # or a wrong macro copy would diverge.
       - name: test (--features "production medium-classes")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production medium-classes internals" --test r14_4_promotion_move_leg_reduction --no-fail-fast
+        run: >-
+          cargo test --features "production medium-classes internals"
+          --test r14_4_promotion_move_leg_reduction
+          --test r6_t20_medium_promotion_predicate
+          --no-fail-fast
       # `internals` added (R34-3/task #522):
       # `r14_4_promotion_move_leg_reduction.rs` reaches
       # `sefer_alloc::registry::HeapCore` directly.
+      # R6-T20: this row is predicate-FALSE (zero-headroom combination) —
+      # the negative-control polarity for the same equivalence oracle.
       - name: test (--features "production medium-classes exact-span-large")
         if: ${{ !cancelled() }}
         run: >-
           cargo test --features "production medium-classes exact-span-large internals" --no-fail-fast
           --test r14_4_promotion_move_leg_reduction
           --test r14_4_promotion_feature_off_non_disturbance
+          --test r6_t20_medium_promotion_predicate
       # R29-14 (P2, sourced from the 2026-07-29 "oh-acceleration-code-project"
       # readonly review, §3.3): post-#1288 `--all-features` no longer forces anything
       # in numa-shim (the mock is a `--cfg numa_shim_mock` build flag; `numa-aware-mock`

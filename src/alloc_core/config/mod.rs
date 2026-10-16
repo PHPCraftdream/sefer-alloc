@@ -24,3 +24,10 @@ pub mod large_cache_mode;
 pub mod profile;
 #[cfg(feature = "alloc-decommit")]
 pub mod small_segment_pool_config;
+
+/// R6-T20: the medium-promotion reachability predicate's single source of
+/// truth (`cfg!` const + the two `#[cfg]` generator macros). Ungated — the
+/// file is feature-independent (only `cfg!` and `macro_rules!`, no imports)
+/// and must exist in every configuration: its consumers span the whole
+/// `alloc_core` tree (always) and the `registry` tree (`alloc-global`).
+pub(crate) mod medium_promotion;
