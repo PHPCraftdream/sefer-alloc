@@ -119,7 +119,7 @@ fn batch_drain_full_chain_commits_every_block_valid_and_class_sized() {
             "issued blocks stay class-0 aligned",
         );
         for &other in &out[..i] {
-            assert!(!ptr.wrapping_eq(other), "issued pointers must be distinct");
+            assert!(!core::ptr::eq(ptr, other), "issued pointers must be distinct");
         }
     }
     assert_eq!(
