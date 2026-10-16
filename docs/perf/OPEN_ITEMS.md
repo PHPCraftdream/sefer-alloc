@@ -251,9 +251,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 91. **[A] R6-PF-3 — full Large-sweep on every Large alloc plus reading every Large-segment header solely for the abort check (`hot.rs:195-200,639-642`, `sidecar_drain.rs`).** (Filed 2026-10-15, round-6 src review.)
 
    > **Current state**
-   > - **Status:** OPEN — tracked; queued as round-6 task R6-T10 (docs/agent_reviews_round6/SUMMARY.md).
-   > - **Current number/verdict:** with L live Large segments the sweep costs ~3–4·L cache misses versus ≤4 probes on a cache hit (estimate; not measured — round-6 reports are static).
-   > - **Next trigger:** task R6-T10.
+   > - **Status:** CLOSED — R6-T10 (PR #49).
+   > - **Current number/verdict:** measured in `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`: with 16 live Large objects a cache hit costs 1588 Ir instead of 2223 Ir; `large_cache_eviction_hit_only_41x4mib` −70333 of 298163 Ir.
+   > - **Next trigger:** none — closed; narrative in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 91.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-3; task R6-T10.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
@@ -3102,17 +3102,17 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 94. **[L] R6-PF-6 — HYPOTHESIS: a likely bounds check on `slots[i]` (`count: u8`) on magazine hit/push (`hot.rs:237,286`, `dealloc_own_base.rs:404,416`).** (Filed 2026-10-15, round-6 src review.)
 
    > **Current state**
-   > - **Status:** OPEN — tracked; queued as round-6 task R6-T13 (docs/agent_reviews_round6/SUMMARY.md).
-   > - **Current number/verdict:** unverified hypothesis: first `cargo asm` on CI; if the check is absent, close as NULL (estimate, not measured; the round-6 reports are static reads).
-   > - **Next trigger:** task R6-T13.
+   > - **Status:** OPEN — code change landed with R6-T13 (PR #49), asm not checked.
+   > - **Current number/verdict:** magazine slot indices are masked with `TCACHE_CAP - 1` (const-asserted power of two); whether the unmasked index had a bounds check was never confirmed with `cargo asm`.
+   > - **Next trigger:** `cargo asm` of `HeapCore::alloc` and `dealloc_own_thread_with_base` on main; if no bounds check existed before the mask, record this as NULL.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-6; task R6-T13.
 
 95. **[L] R6-PF-7 — `refill_n_for_class` runs a runtime `div` on every refill miss although the `FREE_PARK_CAP` table already exists.** (Filed 2026-10-15, round-6 src review.)
 
    > **Current state**
-   > - **Status:** OPEN — tracked; queued as round-6 task R6-T39 (docs/agent_reviews_round6/SUMMARY.md).
-   > - **Current number/verdict:** using the table removes one `div` (~20–40 cycles) per miss (estimate, not measured; the round-6 reports are static reads).
-   > - **Next trigger:** task R6-T39.
+   > - **Status:** CLOSED — R6-T39 PF-7 (PR #49).
+   > - **Current number/verdict:** the refill count is read from `FREE_PARK_CAP`; the cold/recycle refill cells move by −320 of 100545 and −186 of 187206 Ir in `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md` (together with the other changes of that PR).
+   > - **Next trigger:** none — closed; narrative in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 95.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-7; task R6-T39.
 
 96. **[L] R6-PF-8 — variable-length `Node::zero`/`write_bytes` emit a memset call in small `alloc_zeroed`; use a fixed loop of 16-byte stores.** (Filed 2026-10-15, round-6 src review.)
@@ -3134,9 +3134,9 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 98. **[L] R6-PF-10 — Large own-free re-resolves the root already held in `OwnedBlock` (`dealloc_own_base.rs` → `mem_impl.rs`).** (Filed 2026-10-15, round-6 src review.)
 
    > **Current state**
-   > - **Status:** OPEN — tracked; queued as round-6 task R6-T39 (docs/agent_reviews_round6/SUMMARY.md).
-   > - **Current number/verdict:** pass `owned.root()`: one Tier-1 lookup less (~8 Ir); one iai gate together with R6-T10(a) (estimate, not measured; the round-6 reports are static reads).
-   > - **Next trigger:** task R6-T39.
+   > - **Status:** CLOSED — R6-T39 PF-10 (PR #49).
+   > - **Current number/verdict:** own-thread Large free passes the `OwnedBlock` root to `dealloc_at_base`; `tests/r6_t39_large_own_free_single_lookup.rs` pins one canonical lookup per free.
+   > - **Next trigger:** none — closed; narrative in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 98.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-10; task R6-T39.
 
 99. **[D] R6-CR-6 (perf aspect) — every cold trim resets the segment directory (`ownership.rs`, `alloc_core_small/directory.rs`); it is rebuilt only when a new small segment is reserved.** (Filed 2026-10-15, round-6 src review.)
@@ -3161,6 +3161,12 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
+
+- **R6-PF-3 / item 91 — full Large-sweep on every Large alloc.** Closed 2026-10-16, R6-T10: a bounded 4-slot rotating probe on Large alloc, as `alloc_batch` already did (`docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`). Full closure: the `91` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
+
+- **R6-PF-7 / item 95 — runtime `div` on every refill miss.** Closed 2026-10-16, R6-T39: the refill count comes from `FREE_PARK_CAP` (`docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`). Full closure: the `95` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
+
+- **R6-PF-10 / item 98 — Large own-free re-resolved its root.** Closed 2026-10-16, R6-T39: the `OwnedBlock` root is passed to `dealloc_at_base`. Full closure: the `98` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **fxx R2 §4.1 / item 72 — `finish_magazine_refill` walked the refilled blocks twice (stamp-dedupe pass + `mark_magazine` pass).** Closed 2026-10-15, R6-T01: `stamp_segment_owner` and `last_stamped_segment` removed — the `owner_state` header word has no production reader — leaving a single `mark_magazine` pass; the iai A/B gate PASSed on the PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`). Full closure: the `72` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 

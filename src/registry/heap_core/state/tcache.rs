@@ -74,6 +74,13 @@ const _: () = assert!(
     "TCACHE_CAP must fit in PerClass::virgin_mask's u16 (one bit per slot)"
 );
 
+// R6-T13: the alloc/free sides index `slots` with `idx & (TCACHE_CAP - 1)`
+// (bounds-check elision); that is only an identity under a power-of-two cap.
+const _: () = assert!(
+    TCACHE_CAP.is_power_of_two(),
+    "magazine slot indexing relies on `idx & (TCACHE_CAP - 1)` being an identity"
+);
+
 /// Per-class byte budget for a magazine refill (task D3). mimalloc-style:
 /// cap the bytes a single refill parks in one thread's magazine, not just the
 /// block COUNT. With `SMALL_MAX` around 253 KiB, a large small-class refilled

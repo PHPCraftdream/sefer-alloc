@@ -14,4 +14,4 @@ edition = "2021"
 publish = false
 
 [dependencies]
-sefer-alloc = { path = "../../..", features = ["alloc-global"] }
+sefer-alloc = { path = "../../..", features = ["alloc-global", "internals"] }

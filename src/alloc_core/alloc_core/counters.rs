@@ -15,7 +15,7 @@ pub(crate) static LARGE_REMOTE_RETIREMENTS: core::sync::atomic::AtomicU64 =
 
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
 /// `decommit_empty_segment_impl` (the shared decommit body); read by the soak
-/// test via [`AllocCore::dbg_decommit_count`](crate::alloc_core::alloc_core::AllocCore::dbg_decommit_count). Diagnostic only (relaxed).
+/// test via `AllocCore::dbg_decommit_count`. Diagnostic only (relaxed).
 #[cfg(feature = "alloc-decommit")]
 pub(in crate::alloc_core) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
@@ -364,7 +364,7 @@ medium_promotion_reachable! {
 /// Not an exhaustive invalid-free or layout-mismatch detector; callers still
 /// must provide a current allocation and exact layout. Surfaced as
 /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
-/// via [`AllocCore::dbg_foreign_or_unroutable_frees`](crate::alloc_core::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees).
+/// via `AllocCore::foreign_or_unroutable_frees`.
 ///
 /// `HeapCore::publish_foreign` increments route-rejection branches
 /// unconditionally. Standalone `AllocCore::dealloc` counts its rejected

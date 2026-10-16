@@ -165,7 +165,7 @@ impl SeferAlloc {
             large_cache_hits,
 
             #[cfg(feature = "alloc-decommit")]
-            decommit_calls: crate::alloc_core::AllocCore::dbg_decommit_count(),
+            decommit_calls: crate::alloc_core::AllocCore::decommit_count(),
             #[cfg(not(feature = "alloc-decommit"))]
             decommit_calls: 0,
 
@@ -174,14 +174,14 @@ impl SeferAlloc {
 
             tcache_hits,
 
-            segments_reserved_total: crate::alloc_core::AllocCore::dbg_segments_reserved_total(),
-            segments_released_total: crate::alloc_core::AllocCore::dbg_segments_released_total(),
+            segments_reserved_total: crate::alloc_core::AllocCore::segments_reserved_total(),
+            segments_released_total: crate::alloc_core::AllocCore::segments_released_total(),
 
             heaps_claimed_high_water: crate::registry::heaps_claimed_high_water() as u64,
 
             // Dropped-free counter (see `FOREIGN_OR_UNROUTABLE_FREES`).
-            foreign_or_unroutable_frees:
-                crate::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees(),
+            foreign_or_unroutable_frees: crate::alloc_core::AllocCore::foreign_or_unroutable_frees(
+            ),
 
             #[cfg(feature = "alloc-decommit")]
             config_conflicts: crate::registry::config_conflicts_total(),
