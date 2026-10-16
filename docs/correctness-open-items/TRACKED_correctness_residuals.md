@@ -248,3 +248,43 @@ split the same day.)
     > - **Round 6 decision (2026-10-16, r6-u28):** NOT implemented this round; recorded as a design residual. Design sketch — a per-issued-block issue-generation tag the producer copies before publication and the owner re-checks at consumption. Small candidates: (a) steal the free high bit of each `ClassLeaves` class byte (`SMALL_CLASS_COUNT < 128`, so bit 7 is unused) — zero layout growth but a 1-bit epoch detects only ONE reissue (ABA on the second); (b) a dedicated per-granule generation byte/word — ~256 KiB per routed Small segment of extra System sidecar memory (~8× today's 32 KiB pending bitmap), or a per-sidecar 64-bit epoch counter whose per-block copy needs a carrier (the header `owner_state` generation sub-field is hardcoded 0; using it adds an alloc-hot-path header write — the write class R6-T01 just removed as dead). Large: `LargeState` already carries a generation word, but `publish_pending()` publishes for the CURRENT generation — the fix needs the issue-time generation carried to the producer's pin, the same carry problem. Cost: a sidecar format change shared by EVERY `alloc-global` build (a hardened-only tag means a cfg'd format split or the cost everywhere), new producer/consumer protocol states plus a loom model for the epoch compare, and hot-path writes the perf rounds just removed. Kept as caller-contract UB residual (documented in `mem_impl.rs`'s `# Safety` and `alloc_core_small_pool_impl.rs`).
     > - **Next trigger:** owner decision — schedule a hardened-format design round (candidate (a) 1-bit epoch is the cheapest start; its one-reissue ABA window must be documented explicitly) or close as accepted caller-contract UB residual.
     > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-4 (and the U-R5-5 row in its R5 closure table); task R6-T51.
+
+247. **[T, filed 2026-10-16, R6-T06/R6-T05 round 6
+    (`docs/agent_reviews_round6/api_security_review.md` R6-SEC-3, R6-SEC-1)]
+    Free-list poisoning residuals left open after the R6-T06 production-floor
+    validation (checked_sub + range + multiple + metadata bound, corruption →
+    `fatal`): no safe-linking XOR mask, and the class-map free check covers
+    only the own-thread dealloc path.**
+
+    - **Status:** OPEN, residual — the R6-T06 minimum landed as the effective
+      no-flag default (`Node::continuation_offset_or_fatal` now rejects, with
+      `fatal`, a continuation below the segment base, inside the metadata
+      region, at/past `bump`, at/after `SEGMENT` (the former silent `as u32`
+      truncation), or not a multiple of the class block size); the two
+      sub-items below were judged outside the no-flag tolerance budget and
+      are tracked, not actioned.
+    - **Sub-item (a) — safe-linking:** free-list `next` words still store raw
+      addresses, so (i) a UAF write can forge a continuation that passes
+      every range/multiple check (any free-looking in-segment offset), and
+      (ii) the first word of a freshly issued, non-zeroed block still leaks
+      the old `next` heap address (ASLR aid). Design if actioned
+      (glibc-style): store `next ^ per-segment secret` in `Node::write_next`,
+      unmask in `Node::continuation_offset_or_fatal` before the existing
+      checks; the secret is a per-segment word fixed at route registration.
+      Cost: one XOR on the free-push and pop continuations plus secret
+      materialization; requires an iai A/B gate on `small_churn_16b{,_2n}`
+      and `cold_alloc_only_256x16b` within the standing ±0.5% tolerance
+      (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`) before any promotion.
+    - **Sub-item (b) — class-map check coverage:** the R6-T05 owner class-map
+      free check guards the fastbin own-thread dealloc body
+      (`HeapCore::dealloc_own_thread_with_base`, which also serves the
+      fastbin realloc free leg and own-route xthread routing); NOT covered:
+      `dealloc_batch_small` (batch-api) and the non-fastbin substrate free,
+      which still trust the caller's `Layout`, and stale class bytes after
+      an in-route segment reset remain (R6-SEC-2's own residual, see
+      `docs/agent_reviews_round6/SUMMARY.md` R6-T28).
+    - **Next trigger:** an owner decision to spend the iai budget on (a); a
+      batch-api promotion round for (b).
+    - **Evidence:** fix tests `tests/r6_t06_freelist_continuation_bounds.rs`
+      and `tests/r6_t33_t05_own_free_kind_and_class.rs` (landed with the
+      R6-T05/T06/T33 fixes).

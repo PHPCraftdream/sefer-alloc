@@ -267,6 +267,17 @@ pub(super) fn small_free_guard(
         }
     }
 
+    // ── R6-T33 (review R6-CR-7): an untrusted segment kind ──
+    // A `kind` byte that is not a legitimate discriminant decodes to
+    // `BlockKind::Unknown`. The substrate free (`mem_impl.rs`) treats the same
+    // case as a no-op (reject-not-guess); the magazine path must not run the
+    // M2 oracles below against a segment whose real kind it cannot trust —
+    // they would read the bitmaps and `bump` as if Small and hand the block
+    // to the magazine. One compare on the already-read `kind`.
+    if matches!(&kind, BlockKind::Unknown) {
+        return SmallFreeGuard::RejectNoOp;
+    }
+
     // ── H1 (task #167): interior-pointer guard (HARDENED) ──
     #[cfg(feature = "hardened")]
     {
@@ -369,7 +380,20 @@ impl HeapCore {
                     // history, and the RESIDUAL M2 LIMIT this pair does NOT
                     // cover — task #164/X7).
                     let (off, meta) = match small_free_guard(root, block, c, layout) {
-                        SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(root)),
+                        SmallFreeGuard::Accept { off } => {
+                            // R6-T05 (review R6-SEC-1): the caller's `Layout`
+                            // alone must not decide the magazine class — an
+                            // interior or wrong-class free would otherwise be
+                            // accepted here and later reissued inside a live
+                            // block. One class-map load on the owner route
+                            // (encoded start-granule class; 0 = never an
+                            // issued block start) rejects it as a no-op, like
+                            // every other reject above.
+                            if !self.core.small_class_matches(root, off, c) {
+                                return;
+                            }
+                            (off, SegmentMeta::new(root))
+                        }
                         SmallFreeGuard::RejectNoOp => return,
                         SmallFreeGuard::RouteToLargeFree => {
                             // SAFETY: this own-thread body is reached only

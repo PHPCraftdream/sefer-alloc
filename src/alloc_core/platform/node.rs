@@ -41,6 +41,8 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::fatal::fatal;
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+use crate::alloc_core::size_classes::SizeClasses;
 
 /// A free-list node: the first word of a freed block stores the `*mut u8` of
 /// the NEXT free block (or null for the tail). This constant is the number of
@@ -71,15 +73,41 @@ impl Node {
         u32::try_from(off).ok()
     }
 
-    /// Checked free-list continuation offset for non-hardened pop paths: a
-    /// corrupted `next` below `base` terminates via `fatal`, never an
-    /// arithmetic-overflow panic.
+    /// Checked + validated free-list continuation offset for the pop paths
+    /// that do not run hardened's `valid_free_node` oracle (R6-T06 / review
+    /// R6-SEC-3): a corrupted `next` — below `base`, inside the header/
+    /// metadata region, at or past the segment's `bump` cursor, at/after
+    /// `SEGMENT` (the former silent `as u32` truncation for pointers ≥ 4 GiB
+    /// past the base), or not a whole multiple of the class's block size — is
+    /// allocator-metadata corruption and terminates via `fatal`, never an
+    /// arithmetic-overflow panic, never a truncated or out-of-range offset
+    /// handed back as a free-list head.
     #[inline(always)]
-    pub(crate) fn continuation_offset_or_fatal(base: *mut u8, next: *mut u8) -> u32 {
-        match (next as usize).checked_sub(base as usize) {
-            Some(off) => off as u32,
-            None => fatal(b"node: free-list continuation precedes segment base\n"),
+    pub(crate) fn continuation_offset_or_fatal(
+        base: *mut u8,
+        next: *mut u8,
+        class_idx: usize,
+    ) -> u32 {
+        let Some(off) = (next as usize).checked_sub(base as usize) else {
+            fatal(b"node: free-list continuation precedes segment base\n")
+        };
+        let start = match SegmentHeader::kind_at(base) {
+            SegmentKind::Primordial => {
+                crate::alloc_core::segment_header::Layout::primordial_meta_end()
+            }
+            _ => crate::alloc_core::segment_header::Layout::small_meta_end(),
+        };
+        let bump = SegmentMeta::new(base).bump_of();
+        let block_size = SizeClasses::block_size(class_idx);
+        if off >= crate::alloc_core::os::SEGMENT
+            || off < start
+            || off >= bump
+            || !off.is_multiple_of(block_size)
+        {
+            fatal(b"node: free-list continuation out of range or misaligned\n")
         }
+        // The `off < SEGMENT` bound above makes the narrowing lossless.
+        off as u32
     }
 
     /// Store `next` into the first word of the free block at `block`.

@@ -443,7 +443,7 @@ impl AllocCore {
         let new_head = if next.is_null() {
             FREE_LIST_NULL
         } else {
-            Node::continuation_offset_or_fatal(segment, next)
+            Node::continuation_offset_or_fatal(segment, next, class_idx)
         };
         let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
             return Err(());
@@ -604,7 +604,7 @@ impl AllocCore {
                     probe = if next.is_null() {
                         FREE_LIST_NULL
                     } else {
-                        Node::continuation_offset_or_fatal(segment, next)
+                        Node::continuation_offset_or_fatal(segment, next, class_idx)
                     };
                 }
                 probed += 1;
@@ -635,7 +635,7 @@ impl AllocCore {
                 } else {
                     // `next` is an absolute pointer into the SAME segment (free
                     // lists are per-segment), so offset = next - segment.
-                    Node::continuation_offset_or_fatal(segment, next)
+                    Node::continuation_offset_or_fatal(segment, next, class_idx)
                 };
             }
             // Write the new head ONCE: the first un-popped node, or NULL.

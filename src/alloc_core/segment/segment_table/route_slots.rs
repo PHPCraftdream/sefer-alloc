@@ -12,7 +12,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 static SYSTEM_TOTALS: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 
 use crate::alloc_core::fatal::fatal;
-use crate::alloc_core::segment_header::SegmentKind;
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
 use super::issue_transaction::IssueTransaction;
@@ -177,6 +177,32 @@ impl RouteSlots {
             fatal(b"route_slots: prepare_small failed without sidecar\n");
         }
         prepared.then_some(IssueTransaction::prepared(index, base, offset, class))
+    }
+
+    /// R6-T05 (SEC-1): free-side class check against the route's class map.
+    /// Unverifiable cases (class index out of range, unregistered slot, root
+    /// mismatch, missing sidecar) fail OPEN — the free side never aborts on
+    /// infrastructure state it did not build; only a positive class mismatch
+    /// (including encoded 0 = never-issued start granule) fails closed.
+    pub(super) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
+        let Ok(class) = u8::try_from(class_idx) else {
+            return false;
+        };
+        let index = SegmentHeader::segment_id_at(base) as usize;
+        if index >= self.cap {
+            return true;
+        }
+        // SAFETY: owner-only read of an initialized live route slot.
+        let Some(route) = (unsafe { &*self.slots.add(index) }).as_ref() else {
+            return true;
+        };
+        if route.root() != base {
+            return true;
+        }
+        match route.small_sidecar() {
+            Some(sidecar) => sidecar.class_matches(offset, class),
+            None => true,
+        }
     }
 
     pub(super) fn scan_small_from(

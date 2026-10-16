@@ -1072,6 +1072,16 @@ path = "tests/r6_t50_foreign_realloc_committed_span.rs"
 required-features = ["alloc-global", "alloc-xthread", "internals", "large-reserved-capacity"]
 
 [[test]]
+name = "r6_t33_t05_own_free_kind_and_class"
+path = "tests/r6_t33_t05_own_free_kind_and_class.rs"
+required-features = ["alloc-global", "alloc-xthread", "fastbin", "internals"]
+
+[[test]]
+name = "r6_t06_freelist_continuation_bounds"
+path = "tests/r6_t06_freelist_continuation_bounds.rs"
+required-features = ["alloc-core", "internals"]
+
+[[test]]
 name = "r11_box_cap_gate_w1"
 harness = false
 test = false
