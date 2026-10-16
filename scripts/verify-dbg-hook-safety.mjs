@@ -382,7 +382,7 @@ export const REVIEWED_SURFACE = [
     ['src/concurrent/sharded/sharded_region.rs', ['_reset_my_shard_binding_for_tests'], 'mutator', 'clears TLS routing cache, not occupied tokens; may consume additional claims'],
     ['src/concurrent/sharded/sharded_region.rs', ['_remote_free_queue_buffer_identity_for_tests', '_live_token_blocks_for_tests', '_tls_claim_count_for_tests', '_prune_claim_checks_for_tests'], 'observer', 'identity and atomic/TLS count observations'],
     ['src/registry/bootstrap/ensure.rs', ['dbg_num_chunks'], 'observer', 'constant geometry'],
-    ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled'], 'observer', 'compile-time predicate'],
+    ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
     ['src/global/maintenance_service.rs', ['wait_after_for_test'], 'mutator', 'locks/waits on production completion condition'],
     ['src/registry/segment_route/directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
