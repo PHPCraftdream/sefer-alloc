@@ -101,6 +101,39 @@ impl HeapCore {
         self.core.dbg_kind_at_tag(ptr)
     }
 
+    /// TEST-ONLY (R6-T33): read the RAW `kind` discriminant byte of `ptr`'s
+    /// segment (no decode) — thin delegation to
+    /// [`AllocCore::dbg_kind_byte_of`], exposed at the `HeapCore` level behind
+    /// the same `alloc-global` + `internals` gate as [`Self::dbg_kind_at_tag`]
+    /// so a test can capture the legitimate byte before corrupting it and
+    /// restore it afterwards.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
+    #[must_use]
+    pub fn dbg_kind_byte_of(&self, ptr: *mut u8) -> u8 {
+        self.core.dbg_kind_byte_of(ptr)
+    }
+
+    /// TEST-ONLY (R6-T33): overwrite the RAW `kind` discriminant byte of
+    /// `ptr`'s segment — thin delegation to
+    /// [`AllocCore::dbg_stamp_kind_byte`], which owns the full `# Safety`
+    /// contract and the corrupted-kind scenario rationale. Exposed at the
+    /// `HeapCore` level so the R6-T33 regression test can stamp through the
+    /// lease without reaching into crate-internal modules.
+    ///
+    /// # Safety
+    /// Same contract as [`AllocCore::dbg_stamp_kind_byte`]: `ptr` must
+    /// identify a live, mapped segment owned by this heap, with exclusive
+    /// access to its header for the stamp; capture the true byte with
+    /// [`Self::dbg_kind_byte_of`] first and restore it before teardown,
+    /// including on unwinding paths.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
+    #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
+    pub unsafe fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
+        self.core.dbg_stamp_kind_byte(ptr, raw)
+    }
+
     /// TEST-ONLY, non-panicking membership probe: `true` iff `ptr`'s segment
     /// (by canonical table lookup, `canonical_root_for`) is still registered
     /// in this heap's SegmentTable. Unlike [`Self::dbg_kind_at_tag`] it does

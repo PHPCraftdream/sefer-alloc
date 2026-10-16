@@ -14,6 +14,22 @@ use crate::alloc_core::size_classes::MIN_BLOCK;
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::fatal::fatal;
 
+#[derive(Default)]
+struct FindSegmentScanContext {
+    #[cfg(feature = "alloc-segment-directory")]
+    rescue: bool,
+}
+
+#[derive(Default)]
+struct DirectoryCandidateContext {
+    #[cfg(feature = "alloc-stats")]
+    routed_scan_was_nonempty: Option<bool>,
+    #[cfg(feature = "alloc-segment-directory")]
+    periodic_revalidation_active: bool,
+    #[cfg(feature = "alloc-segment-directory")]
+    rescue: bool,
+}
+
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use super::sidecar_drain_outcome::SidecarDrainOutcome;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
@@ -87,11 +103,7 @@ impl AllocCore {
     /// Logical retirement checks physical free/magazine state inside the owner
     /// primitive; callers do not supply a second residency oracle.
     pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
-        self.find_segment_with_free_impl(
-            class_idx,
-            #[cfg(feature = "alloc-segment-directory")]
-            false,
-        )
+        self.find_segment_with_free_impl(class_idx, FindSegmentScanContext::default())
     }
 
     /// Test-only entry to the real canonical-root discovery path.
@@ -113,7 +125,13 @@ impl AllocCore {
     /// mode bypasses standalone negative trust and repairs missing directory bits.
     #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
     pub(crate) fn find_segment_with_free_forced(&mut self, class_idx: usize) -> Option<*mut u8> {
-        self.find_segment_with_free_impl(class_idx, true)
+        self.find_segment_with_free_impl(
+            class_idx,
+            FindSegmentScanContext {
+                #[cfg(feature = "alloc-segment-directory")]
+                rescue: true,
+            },
+        )
     }
 
     /// Patch S: first pending-bitmap word that can carry payload bits. Payload
@@ -188,15 +206,9 @@ impl AllocCore {
     fn find_segment_with_free_impl(
         &mut self,
         class_idx: usize,
-        // R9-8 (task #230): when `true`, this call is a forced "rescue scan"
-        // run as a last resort before the small path surfaces an OOM. It
-        // BYPASSES the R8-2 directory-trust fast path (so a stale-negative
-        // directory bit cannot hide a real free block) and self-heals any bit
-        // the scan finds the directory had wrongly cleared (via the same
-        // mechanism the periodic re-validation path uses). Cf-gated to the
-        // directory feature: only the rescue wrappers (below) ever pass `true`,
-        // and they exist solely under `alloc-segment-directory` + not-`numa-aware`.
-        #[cfg(feature = "alloc-segment-directory")] rescue: bool,
+        // R9-8 (task #230): when `rescue` is true, this call is a forced
+        // rescue scan, bypassing directory trust and enabling self-healing.
+        _context: FindSegmentScanContext,
     ) -> Option<*mut u8> {
         // R8-2 (task #215): set to `true` ONLY when the periodic
         // re-validation branch below actually runs (directory feature ON,
@@ -400,14 +412,14 @@ impl AllocCore {
             #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
             let trust_negative = true;
             if !trust_negative {
-                periodic_revalidation_active = !rescue;
+                periodic_revalidation_active = !_context.rescue;
                 #[cfg(feature = "alloc-stats")]
-                if !rescue {
+                if !_context.rescue {
                     routed_miss_scan = true;
                     crate::alloc_core::directory_stats::ROUTED_MISS_SCANS
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 }
-            } else if !rescue {
+            } else if !_context.rescue {
                 self.directory_miss_streak[class_idx] =
                     self.directory_miss_streak[class_idx].saturating_add(1);
                 if u32::from(self.directory_miss_streak[class_idx])
@@ -422,7 +434,7 @@ impl AllocCore {
                 periodic_revalidation_active = true;
             }
             #[cfg(feature = "alloc-stats")]
-            if !rescue {
+            if !_context.rescue {
                 crate::alloc_core::directory_stats::DIRECTORY_FALLBACK_SCANS
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
@@ -485,6 +497,10 @@ impl AllocCore {
                     SegmentKind::Small | SegmentKind::Primordial
                 )
             {
+                // This is an invariant violation in the active-Small table:
+                // unlike a directory bit, a linear-scan entry is expected to
+                // name a live small segment. Abort rather than continue with
+                // corrupted table state.
                 fatal(b"find_segment: drained segment is not a live small segment\n");
             }
             // Stats only: the class bin before the drain, to tell a drain-created
@@ -538,12 +554,14 @@ impl AllocCore {
                     self.finalize_hit(
                         base,
                         class_idx,
-                        #[cfg(feature = "alloc-stats")]
-                        routed_miss_scan.then_some(was_nonempty),
-                        #[cfg(feature = "alloc-segment-directory")]
-                        periodic_revalidation_active,
-                        #[cfg(feature = "alloc-segment-directory")]
-                        rescue,
+                        DirectoryCandidateContext {
+                            #[cfg(feature = "alloc-stats")]
+                            routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
+                            #[cfg(feature = "alloc-segment-directory")]
+                            periodic_revalidation_active,
+                            #[cfg(feature = "alloc-segment-directory")]
+                            rescue: _context.rescue,
+                        },
                     );
                     return Some(base);
                 }
@@ -553,12 +571,14 @@ impl AllocCore {
                     self.finalize_hit(
                         base,
                         class_idx,
-                        #[cfg(feature = "alloc-stats")]
-                        routed_miss_scan.then_some(was_nonempty),
-                        #[cfg(feature = "alloc-segment-directory")]
-                        periodic_revalidation_active,
-                        #[cfg(feature = "alloc-segment-directory")]
-                        rescue,
+                        DirectoryCandidateContext {
+                            #[cfg(feature = "alloc-stats")]
+                            routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
+                            #[cfg(feature = "alloc-segment-directory")]
+                            periodic_revalidation_active,
+                            #[cfg(feature = "alloc-segment-directory")]
+                            rescue: _context.rescue,
+                        },
                     );
                     return Some(base);
                 }
@@ -569,8 +589,10 @@ impl AllocCore {
         // empty / all recycled).
         #[cfg(feature = "numa-aware")]
         {
-            // Later drains may evict an earlier fully empty pooled candidate.
-            // Revalidate without touching its reservation before finalizing it.
+            // A saved NUMA fallback can become invalid while later candidates
+            // are drained/recycled. Revalidation is deliberately non-fatal:
+            // this is an optional candidate, so invalid state here means no
+            // usable fallback remains for this scan.
             let fallback = fallback.and_then(|slot| {
                 let base = self.table.base_at(slot);
                 if base.is_null()
@@ -592,12 +614,14 @@ impl AllocCore {
                 self.finalize_hit(
                     fb,
                     class_idx,
-                    #[cfg(feature = "alloc-stats")]
-                    routed_miss_scan.then_some(fallback_was_nonempty),
-                    #[cfg(feature = "alloc-segment-directory")]
-                    periodic_revalidation_active,
-                    #[cfg(feature = "alloc-segment-directory")]
-                    rescue,
+                    DirectoryCandidateContext {
+                        #[cfg(feature = "alloc-stats")]
+                        routed_scan_was_nonempty: routed_miss_scan.then_some(fallback_was_nonempty),
+                        #[cfg(feature = "alloc-segment-directory")]
+                        periodic_revalidation_active,
+                        #[cfg(feature = "alloc-segment-directory")]
+                        rescue: _context.rescue,
+                    },
                 );
             } else {
                 #[cfg(feature = "alloc-stats")]
@@ -632,13 +656,11 @@ impl AllocCore {
         &mut self,
         base: *mut u8,
         class_idx: usize,
-        #[cfg(feature = "alloc-stats")] routed_scan_was_nonempty: Option<bool>,
-        #[cfg(feature = "alloc-segment-directory")] periodic_revalidation_active: bool,
-        #[cfg(feature = "alloc-segment-directory")] rescue: bool,
+        _context: DirectoryCandidateContext,
     ) {
         // Round 12 O-4 (data only): exactly one outcome per routed miss scan.
         #[cfg(feature = "alloc-stats")]
-        match routed_scan_was_nonempty {
+        match _context.routed_scan_was_nonempty {
             Some(true) => crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
             Some(false) => crate::alloc_core::directory_stats::ROUTED_MISS_SCAN_DRAIN_CREATED_FREE
@@ -659,7 +681,7 @@ impl AllocCore {
         // this segment actually has a free block. Self-heal the bit in-place
         // and bump the canary counter.
         #[cfg(feature = "alloc-segment-directory")]
-        if periodic_revalidation_active || rescue {
+        if _context.periodic_revalidation_active || _context.rescue {
             let slot_idx = SegmentHeader::segment_id_at(base) as usize;
             self.publish_nonempty(base, class_idx, slot_idx);
             // R9-8: only the PERIODIC re-validation path bumps the
@@ -667,7 +689,7 @@ impl AllocCore {
             // separately by `DIRECTORY_RESCUE_OOM_AVOIDED` at its caller, so
             // the two drift signals stay distinguishable in diagnostics.
             #[cfg(feature = "alloc-stats")]
-            if periodic_revalidation_active {
+            if _context.periodic_revalidation_active {
                 crate::alloc_core::directory_stats::DIRECTORY_MISS_SELF_HEAL
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
