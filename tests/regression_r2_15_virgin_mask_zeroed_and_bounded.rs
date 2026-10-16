@@ -180,9 +180,7 @@ fn out_len_17_aborts_process_wide() {
     if cfg!(miri) {
         return;
     }
-    let status = spawn_abort_child(
-        "regression_r2_15_virgin_mask_zeroed_and_bounded::out_len_17_aborts_child",
-    );
+    let status = spawn_abort_child("out_len_17_aborts_child");
     assert_abort_signature(status);
 }
 
@@ -191,9 +189,7 @@ fn out_len_32_aborts_process_wide() {
     if cfg!(miri) {
         return;
     }
-    let status = spawn_abort_child(
-        "regression_r2_15_virgin_mask_zeroed_and_bounded::out_len_32_aborts_child",
-    );
+    let status = spawn_abort_child("out_len_32_aborts_child");
     assert_abort_signature(status);
 }
 

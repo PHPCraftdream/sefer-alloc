@@ -18,6 +18,7 @@ use super::super::CachedLarge;
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
+use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::AllocKind;
 
@@ -293,7 +294,7 @@ impl AllocCore {
                     terminal_meta.large_state_atomic(),
                 );
                 let Some(generation) = state.claim_live() else {
-                    std::process::abort();
+                    fatal(b"mem_impl: large live credit missing on free\n");
                 };
                 // Large/huge: the segment is being freed. The full header read
                 // here is on the cold Large path (one allocation per segment,
@@ -464,7 +465,7 @@ impl AllocCore {
                         Node::atomic_u32_at(base, magic_off)
                             .store(0, core::sync::atomic::Ordering::Release);
                         if !state.cache_consumed(generation) {
-                            std::process::abort();
+                            fatal(b"mem_impl: consumed cache transition failed\n");
                         }
                         // Deposit into cache and update the byte-budget counter.
                         let seq = self.large_cache_seq;
@@ -500,7 +501,7 @@ impl AllocCore {
                     // will no longer see `base`, so there is no double-free.
                     self.table.unregister(base);
                     if !state.release_consumed(generation) {
-                        std::process::abort();
+                        fatal(b"mem_impl: consumed release failed\n");
                     }
                     os::release_segment(stale.reservation, stale.reservation_len);
                 }
@@ -513,7 +514,7 @@ impl AllocCore {
                     // slot for the remaining process lifetime.
                     self.table.unregister(base);
                     if !state.release_consumed(generation) {
-                        std::process::abort();
+                        fatal(b"mem_impl: consumed release failed\n");
                     }
                     os::release_segment(stale.reservation, stale.reservation_len);
                 }

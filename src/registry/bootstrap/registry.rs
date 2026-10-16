@@ -28,6 +28,7 @@ use super::ensure::ensure_chunk_slow;
 #[cfg(loom)]
 use super::loom_shim::OncePtrCell;
 use super::saturation::SaturationHint;
+use crate::alloc_core::platform::fatal::fatal;
 use crate::registry::heap_slot::HeapSlot;
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;

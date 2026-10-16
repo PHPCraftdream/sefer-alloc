@@ -12,7 +12,6 @@ use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-#[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::platform::fatal::fatal;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::segment_header::large_generation;

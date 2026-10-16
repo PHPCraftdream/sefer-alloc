@@ -4,10 +4,10 @@
 //
 //   Rule 1 (NO-BARE-ABORT): every `std::process::abort` occurrence under
 //   `src/**/*.rs` must live in `src/alloc_core/platform/fatal.rs` (the ONE
-//   sanctioned terminator) or on the TEMPORARY open-PR allowlist below.
-//   R6-T15 converted the bare-abort sites to `platform::fatal` so every
-//   termination carries a diagnostic message; the allowlist keeps open-PR
-//   residue VISIBLE instead of silently green.
+//   sanctioned terminator). R6-T15 converted the bare-abort sites to
+//   `platform::fatal` so every termination carries a diagnostic message; the
+//   allowlist mechanism is RETAINED but currently EMPTY, so any bare abort
+//   outside fatal.rs fails this gate.
 //
 //   Rule 2 (NO-PANIC-CONSTRUCTS): the selected GlobalAlloc-path files (the
 //   R6-T14 set) must contain no panic-capable construct (`panic!`,
@@ -17,10 +17,10 @@
 //
 // ## Allowlists
 //
-// Both allowlists exist so open-PR debt stays visible, not silent: a
-// matching allowlisted hit is printed as `ALLOWED (reason)` and does NOT
-// fail the run. ABORT_ALLOWLIST entries carry a reason naming the owning
-// PR and the conversion task (R6-T15 residue). PANIC_ALLOWLIST is currently
+// Both allowlist mechanisms exist so a future reviewed exception has a place
+// to live with a printed reason: a matching allowlisted hit is printed as
+// `ALLOWED (reason)` and does NOT fail the run. ABORT_ALLOWLIST is empty
+// since the PR #49 / PR #50 merges (R6-T15 complete). PANIC_ALLOWLIST is
 // EMPTY; any new entry needs a reviewed reason (why the construct is safe
 // and which task reviewed it) or it does not belong here.
 //
@@ -59,22 +59,10 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const ABORT_EXEMPT_FILE = 'src/alloc_core/platform/fatal.rs';
 
-// (path relative to repo root, reason). TEMPORARY: each entry is owned by an
-// open PR and must be removed when that PR's abort->fatal conversion lands.
-const ABORT_ALLOWLIST = [
-  [
-    'src/registry/segment_route/directory.rs',
-    'open PR #50 (r6-u24) owns this file; convert its aborts to platform::fatal after the PR merges (R6-T15 residue)',
-  ],
-  [
-    'src/alloc_core/alloc_core/mem/mem_impl.rs',
-    'open PR #49 (r6-u08) owns this file; convert after the PR merges (R6-T15 residue)',
-  ],
-  [
-    'src/alloc_core/alloc_core/sidecar_drain.rs',
-    'open PR #49 (r6-u08) owns this file; convert after the PR merges (R6-T15 residue)',
-  ],
-];
+// Empty since the PR #49 / PR #50 merges: every remaining bare-abort file was
+// converted (R6-T15 complete). Do NOT re-add an entry without a task and a
+// named owner — a bare `process::abort` outside fatal.rs must fail this gate.
+const ABORT_ALLOWLIST = [];
 
 const ABORT_RE = /std::process::abort|process\s*::\s*abort/g;
 
@@ -345,8 +333,8 @@ const FIXTURES = [
     path: 'src/alloc_core/alloc_core/sidecar_drain.rs',
     kind: 'abort',
     content: 'fn f() {\n    std::process::abort();\n}\n',
-    expect: 'allowed',
-    why: 'allowlisted path prints ALLOWED and does not flag',
+    expect: 'flag',
+    why: 'former open-PR allowlisted path must now flag (allowlist is empty)',
   },
   {
     path: 'src/alloc_core/small/alloc_core_small_magazine.rs',

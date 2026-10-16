@@ -292,6 +292,7 @@
 //      structure": at most 7 entries per src directory and 1000 lines per code
 //      file, debt ratcheted by docs/structure_limits_baseline.csv; appended at
 //      the array END so every number above stays stable; pure node scan, no cargo)
+//   57. node scripts/verify-no-bare-abort.mjs   (R6-T15/R6-T14: self-testing abort->fatal + selected-path panic lexical guard; also runs as a ci.yml docs-consistency step; pure node scan, no cargo)
 //
 // This does NOT replace CI (CI additionally runs miri, loom, TSan, multi-arch,
 // no_std, MSRV — see .github/workflows/ci.yml) — it is the FAST subset that
@@ -1152,6 +1153,12 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-structure-limits.mjs'],
   },
+  // R6-T15/R6-T14 self-testing lexical guard (see the script's own header); pure node.
+  {
+    name: 'verify-no-bare-abort (abort->fatal + selected-path panic guard, self-tested)',
+    cmd: 'node',
+    args: ['scripts/verify-no-bare-abort.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
@@ -1228,29 +1235,22 @@ for (const step of steps) {
     allOk = false;
     break;
   }
-  // Task #1086 (M6): `expectTest` is expectWork's RUNTIME twin — a step
-  // carrying `expectTest: '<full libtest name>'` must show that exact
+  // Task #1086 (M6): `expectTest` is expectWork's RUNTIME twin — a step carrying `expectTest: '<full libtest name>'` must show that exact
   // `test <name> ... ok` line in its own output, turning "exit 0" into
-  // "exit 0 AND the cfg-gated test provably compiled in and ran". Built
-  // for the forced-page rows: their forced modules compile only under
-  // `#[cfg(aligned_vmem_page_size_override)]`, so a typo'd RUSTFLAGS
-  // `--cfg aligned_vmem_page_size_overide` (the exact scenario of task
-  // #1086) makes the module vanish with NO warning and NO non-zero exit —
-  // the binary still passes green on the file's ungated pure tests, and
-  // the runtime half of the compile-time-PAGE defence is silently gone.
-  // The test-name line is printed by libtest on EVERY run (cached or
-  // not), so unlike expectWork this cannot false-RED on a warm cache. A
-  // FAILING test never reaches this check (its non-zero exit fails the
-  // step above); this check catches only the silent-absence case.
-  //
-  // Task #1101: `expectTest` may now be an ARRAY of names — every listed
-  // name must appear — because one cargo row can compile SEVERAL
-  // independently cfg-gated test FILES (the mock test row runs the whole
-  // `-p aligned-vmem` suite, in which BOTH tests/mock.rs and
-  // tests/mock_reentrancy.rs are `#![cfg(aligned_vmem_mock)]`-gated; a
-  // single name would leave the second file's gate silently droppable).
-  // A bare string is normalized to a one-element array, so every
-  // pre-#1101 row's pass/fail behavior is unchanged.
+  // "exit 0 AND the cfg-gated test provably compiled in and ran". Built for the forced-page rows: their forced modules compile only
+  // under `#[cfg(aligned_vmem_page_size_override)]`, so a typo'd RUSTFLAGS
+  // `--cfg aligned_vmem_page_size_overide` (the exact #1086 scenario) makes
+  // the module vanish with NO warning and NO non-zero exit — the binary still
+  // passes green on the file's ungated pure tests, and the runtime half of the
+  // compile-time-PAGE defence is silently gone. The test-name line is printed
+  // by libtest on EVERY run (cached or not), so unlike expectWork this cannot
+  // false-RED on a warm cache. A FAILING test never reaches this check (its
+  // non-zero exit fails the step above); this catches only silent absence.
+  // Task #1101: `expectTest` may now be an ARRAY of names — every listed name
+  // must appear — one cargo row can compile SEVERAL independently cfg-gated
+  // test FILES (the mock row runs `-p aligned-vmem`: BOTH tests/mock.rs and tests/mock_reentrancy.rs are
+  // `#![cfg(aligned_vmem_mock)]`-gated; a single name would leave the second file's gate silently droppable). A bare string is
+  // normalized to a one-element array, so every pre-#1101 row's pass/fail behavior is unchanged.
   if (step.expectTest) {
     const expectedTestNames = Array.isArray(step.expectTest)
       ? step.expectTest
