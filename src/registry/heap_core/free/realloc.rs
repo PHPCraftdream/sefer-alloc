@@ -21,33 +21,24 @@ use crate::alloc_core::{node::Node, AllocCore};
 
 use crate::registry::heap_core::HeapCore;
 
-// `medium_promotion_reachable!` / `MEDIUM_REALLOC_PROMOTION_THRESHOLD` moved
-// to the sibling `dealloc` module with the rest of the former file head. The
-// macro is invoked unconditionally below (its `#[cfg]` arms gate the
-// expansions themselves); the const is used only inside the gated promotion
-// call-site block, so its import carries the SAME promotion-reachable
-// predicate.
-use super::dealloc::medium_promotion_reachable;
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
-use super::dealloc::MEDIUM_REALLOC_PROMOTION_THRESHOLD;
+// `MEDIUM_REALLOC_PROMOTION_THRESHOLD` moved to the sibling `dealloc`
+// module with the rest of the former file head; the
+// `medium_promotion_reachable!` macro moved to the crate-wide single source
+// of truth `alloc_core::config::medium_promotion` (R6-T20). The macro is
+// invoked unconditionally below (its `#[cfg]` arms gate the expansions
+// themselves); the const is used only inside the gated promotion call-site
+// block, so its import carries the SAME promotion-reachable predicate.
+use crate::alloc_core::medium_promotion_reachable;
+medium_promotion_reachable! {
+    use super::dealloc::MEDIUM_REALLOC_PROMOTION_THRESHOLD;
+}
 // Ph3b: the promotion gate asks the PHYSICAL kind, not the layout's
 // classification — a block that already lives in a Large segment must not be
 // promoted (and is already served by the Large leg). Gated exactly like the
 // threshold const above, since it is used only inside that call site.
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
-use crate::alloc_core::segment_header::BlockKind;
+medium_promotion_reachable! {
+    use crate::alloc_core::segment_header::BlockKind;
+}
 
 impl HeapCore {
     /// Shrink/grow an allocation. Returns null on OOM (leaving the old
