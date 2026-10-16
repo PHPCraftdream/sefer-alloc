@@ -118,7 +118,7 @@ impl RouteSlots {
             SegmentKind::Unknown => return None,
         };
         RouteDirectory::global()
-            .register(base, len, payload, self.owner, kind)
+            .register_route(base, len, payload, self.owner, kind)
             .ok()
     }
 
