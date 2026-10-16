@@ -1191,14 +1191,6 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** task R6-T11.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-4; task R6-T11.
 
-93. **[D] R6-PF-5 (+R17-OPT-08) — per-record recomputation of segment invariants in owner-drain (`kind_at`/`payload_start`/`block_size`/div/`bump_of`/`dec_live` per record).** (Filed 2026-10-15, round-6 src review.)
-
-   > **Current state**
-   > - **Status:** OPEN — tracked; queued as round-6 task R6-T12 (docs/agent_reviews_round6/SUMMARY.md).
-   > - **Current number/verdict:** hoisting a "segment context" to one computation per scan plus a reciprocal table saves ~10–20 Ir per reclaimed record (estimate; not measured — round-6 reports are static). Schedule after R6-T18.
-   > - **Next trigger:** task R6-T12 (after R6-T18).
-   > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-5 (+R17-OPT-08); task R6-T12.
-
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
@@ -3161,6 +3153,8 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
+
+- **R6-PF-5 (+R17-OPT-08) / item 93 — per-record segment invariants in owner-drain.** Closed 2026-10-16, NO-GO (R6-T12): the per-scan context with one `sub_live(k)` and a reciprocal raised `Ir` on every drain cell (`growth16_n` +26608 of 19241175, `r19_prf01_publication` +1425 of 3621539); not merged (`docs/perf/R6_T12_OWNER_DRAIN_CONTEXT_GATE.md`). Full closure: the `93` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **R6-PF-3 / item 91 — full Large-sweep on every Large alloc.** Closed 2026-10-16, R6-T10: a bounded 4-slot rotating probe on Large alloc, as `alloc_batch` already did (`docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`). Full closure: the `91` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
