@@ -20,6 +20,7 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use crate::alloc_core::{node::Node, AllocCore};
 
 use crate::registry::heap_core::HeapCore;
+use crate::registry::segment_route::RouteKind;
 
 // `MEDIUM_REALLOC_PROMOTION_THRESHOLD` moved to the sibling `dealloc`
 // module with the rest of the former file head; the
@@ -85,21 +86,22 @@ impl HeapCore {
     /// takes the foreign leg. R2-1: before copying, the leg looks `ptr` up
     /// in the route directory and checks NUMERIC DESCRIPTOR CAPACITY — the
     /// address must fall inside the route's payload range and
-    /// `old_layout.size()` must fit the descriptor's end (`contains_payload`).
-    /// This is NOT a live-instance identity check and NOT another owner's
-    /// committed-frontier check: the directory is keyed by address and its
-    /// end is a registration-time bound, so a stale address whose route is
-    /// still linked — or any in-range address within a Small route — can
-    /// pass. Safe access to the copied bytes rests on the CALLER's
-    /// `GlobalAlloc` contract (a live allocation paired with this exact
-    /// `old_layout`), the same contract every `realloc` implementation
-    /// relies on. A missing route or a capacity rejection returns null as
-    /// defence in depth; it is not a claim that every dangling, interior,
-    /// or bogus pointer is caught before the copy. A legitimate cross-heap
-    /// sefer pointer passes the capacity check,
-    /// copies `min(old, new)`, then frees the OLD pointer via `self.dealloc`
-    /// (which routes cross-thread correctly — `alloc-global`, this module's
-    /// gate, unconditionally implies `alloc-xthread`, R5-01).
+    /// `old_layout.size()` must fit the descriptor's end
+    /// (`contains_payload`), and the move leg's read is bounded by the
+    /// segment's live commit frontier (R6-T50: `span_usable` for Large,
+    /// the metadata/payload boundary for Small/Primordial). This is still
+    /// NOT a live-instance identity check: the directory is keyed by
+    /// address, so a stale address whose route is still linked can pass;
+    /// safe access to the copied bytes rests on the CALLER's `GlobalAlloc`
+    /// contract (a live allocation paired with this exact `old_layout`),
+    /// the same contract every `realloc` implementation relies on. A
+    /// missing route, capacity rejection, or frontier rejection returns
+    /// null as defence in depth; it is not a claim that every dangling,
+    /// interior, or bogus pointer is caught before the copy. A legitimate
+    /// cross-heap sefer pointer passes the checks, copies `min(old, new)`,
+    /// then frees the OLD pointer via `self.dealloc` (which routes
+    /// cross-thread correctly — `alloc-global`, this module's gate,
+    /// unconditionally implies `alloc-xthread`, R5-01).
     ///
     /// This is an **`unsafe fn`** (R6-MS-1/2): the move legs' `copy_nonoverlapping`
     /// read out of `ptr` trusts the caller's `old_layout`/`ptr` exactly as
@@ -426,15 +428,73 @@ impl HeapCore {
                 return new_ptr;
             }
         }
-        // A foreign allocation is validated without reading another owner's
-        // header or commit frontier. The caller's Layout bounds the actual
-        // payload read; the stable descriptor adds a capacity check.
+        // A foreign allocation is validated without dereferencing another
+        // owner's payload. The caller's Layout bounds the actual payload
+        // read; the stable descriptor adds a capacity check, and the move
+        // leg's read is bounded by the segment's live commit frontier
+        // below (R6-T50).
         {
             let Some(route) = crate::registry::segment_route::RouteDirectory::global().lookup(ptr)
             else {
                 return core::ptr::null_mut();
             };
             if !route.contains_payload(ptr, old_layout.size()) {
+                return core::ptr::null_mut();
+            }
+            // R6-T50 (R6-MS-3): bound the move leg's read by the segment's
+            // CURRENT committed frontier, not the reservation end — under
+            // `large-reserved-capacity` a forged `old_layout` fits the
+            // reservation while reaching reserved-but-uncommitted VA. Same
+            // defence-in-depth shape as the own branch's
+            // `safe_payload_read_span` above, read from the live header at
+            // the descriptor's root (a foreign caller has no
+            // `SegmentTable` membership, so the owner's table cannot be
+            // consulted here).
+            //
+            // Why this header read is race-free — it needs exactly the
+            // same caller-contract trust as the `copy_nonoverlapping`
+            // below: the contract makes `ptr` a LIVE allocation of
+            // exactly `old_layout`, so its segment is live and its header
+            // (in the first committed pages at `root`) is mapped. The
+            // descriptor pin keeps `root` stable while held (counted
+            // reference); the pin does NOT keep the OS reservation alive —
+            // that is the owner ledger's job (`segment_route/mod.rs`:
+            // "Pins do not keep reservation memory alive: an independent
+            // owner ledger must do that") — but a live caller block pins
+            // the segment itself: every unregister/release path requires
+            // the empty-segment transition (`dec_live_and_maybe_decommit`
+            // declines unless `live == 0`), impossible while the caller's
+            // block is live. `span_usable` of a live Large segment is
+            // written only by that block's own OPT-G in-place grow
+            // (`try_grow_large_reserved_capacity`), performed by the
+            // block's exclusive owner BEFORE the pointer reaches this
+            // caller (happens-before the handoff), or by large-cache
+            // reuse — which re-registers only after the previous block
+            // was freed, so it cannot race a live caller. Small and
+            // Primordial segments commit the whole span eagerly, so only
+            // the payload START is checked: metadata bytes (header, page
+            // map, bins, bitmaps) are not a routable block start.
+            let root = route.root();
+            let frontier_ok = match route.kind() {
+                RouteKind::Large => {
+                    let committed_end =
+                        root.addr().checked_add(SegmentHeader::span_usable_at(root));
+                    match ptr.addr().checked_add(old_layout.size()) {
+                        Some(read_end) => committed_end.is_some_and(|end| read_end <= end),
+                        None => false,
+                    }
+                }
+                RouteKind::Small => {
+                    ptr.addr()
+                        >= root.addr() + crate::alloc_core::segment_header::Layout::small_meta_end()
+                }
+                RouteKind::Primordial => {
+                    ptr.addr()
+                        >= root.addr()
+                            + crate::alloc_core::segment_header::Layout::primordial_meta_end()
+                }
+            };
+            if !frontier_ok {
                 return core::ptr::null_mut();
             }
             let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
