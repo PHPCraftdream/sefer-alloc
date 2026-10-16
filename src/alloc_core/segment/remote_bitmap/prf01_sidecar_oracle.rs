@@ -6,8 +6,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
 static PENDING_WORDS_VISITED: AtomicU64 = AtomicU64::new(0);
 #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-static PENDING_WORDS_EXCHANGED: AtomicU64 = AtomicU64::new(0);
-#[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
 static NONEMPTY_CUTS: AtomicU64 = AtomicU64::new(0);
 #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
 static DISCOVERY_RECORDS_RECLAIMED: AtomicU64 = AtomicU64::new(0);
@@ -31,7 +29,6 @@ impl Prf01SidecarOracle {
     #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
     pub(crate) fn completed(visited: u64, nonempty: u64, reclaimed: u64) {
         PENDING_WORDS_VISITED.fetch_add(visited, Ordering::Relaxed);
-        PENDING_WORDS_EXCHANGED.fetch_add(visited, Ordering::Relaxed);
         NONEMPTY_CUTS.fetch_add(nonempty, Ordering::Relaxed);
         DISCOVERY_RECORDS_RECLAIMED.fetch_add(reclaimed, Ordering::Relaxed);
     }
@@ -52,9 +49,11 @@ impl Prf01SidecarOracle {
 
     #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
     pub(crate) fn snapshot() -> [u64; 8] {
+        let visited = PENDING_WORDS_VISITED.load(Ordering::Relaxed);
         [
-            PENDING_WORDS_VISITED.load(Ordering::Relaxed),
-            PENDING_WORDS_EXCHANGED.load(Ordering::Relaxed),
+            visited,
+            // The established field is retained; each visit is one exchange.
+            visited,
             NONEMPTY_CUTS.load(Ordering::Relaxed),
             DISCOVERY_RECORDS_RECLAIMED.load(Ordering::Relaxed),
             ROUTED_SCANS.load(Ordering::Relaxed),

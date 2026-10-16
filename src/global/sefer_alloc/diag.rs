@@ -5,6 +5,27 @@ use crate::global::AllocStats;
 
 use super::SeferAlloc;
 
+fn cache_hit_totals() -> (u64, u64) {
+    #[cfg(all(feature = "alloc-decommit", feature = "fastbin"))]
+    {
+        crate::registry::tcache_and_large_cache_hits_total()
+    }
+    #[cfg(not(all(feature = "alloc-decommit", feature = "fastbin")))]
+    {
+        #[cfg(feature = "fastbin")]
+        let tcache_hits = crate::registry::tcache_hits_total();
+        #[cfg(not(feature = "fastbin"))]
+        let tcache_hits = 0;
+
+        #[cfg(feature = "alloc-decommit")]
+        let large_cache_hits = crate::registry::large_cache_hits_total();
+        #[cfg(not(feature = "alloc-decommit"))]
+        let large_cache_hits = 0;
+
+        (tcache_hits, large_cache_hits)
+    }
+}
+
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 impl SeferAlloc {
     /// Snapshot this owner's live allocation's original OS release token.
@@ -150,16 +171,8 @@ impl SeferAlloc {
         // both are compiled in (`alloc-decommit` + `fastbin`, both present
         // under `production`) — halves the per-slot walk `stats()` does
         // under `alloc-stats`. Each counter's own feature gate is preserved
-        // exactly (see the four mutually-exclusive arms below); only the
-        // WALK is fused when both apply, never the feature surface.
-        #[cfg(all(feature = "alloc-decommit", feature = "fastbin"))]
-        let (tcache_hits, large_cache_hits) = crate::registry::tcache_and_large_cache_hits_total();
-        #[cfg(all(feature = "alloc-decommit", not(feature = "fastbin")))]
-        let (tcache_hits, large_cache_hits) = (0u64, crate::registry::large_cache_hits_total());
-        #[cfg(all(not(feature = "alloc-decommit"), feature = "fastbin"))]
-        let (tcache_hits, large_cache_hits) = (crate::registry::tcache_hits_total(), 0u64);
-        #[cfg(all(not(feature = "alloc-decommit"), not(feature = "fastbin")))]
-        let (tcache_hits, large_cache_hits) = (0u64, 0u64);
+        // exactly; the combined helper fuses the walk only when both apply.
+        let (tcache_hits, large_cache_hits) = cache_hit_totals();
 
         AllocStats {
             large_cache_hits,

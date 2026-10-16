@@ -31,13 +31,11 @@ impl SegmentHeader {
         // membership, but nothing
         // to validate the `kind` BYTE of a base that IS ours but has been
         // corrupted in place — so this decode must reject on its own.
-        // Every unexpected byte now maps to `SegmentKind::Unknown`, a
-        // sentinel no constructor ever writes; every caller of `kind_at`
-        // tests for a SPECIFIC expected kind via `==`/`matches!` (never an
-        // exhaustive match with an implicit catch-all — see the callers
-        // inventory in this task's audit), so `Unknown` naturally fails
-        // every such check and is routed to that call site's existing
-        // "not this kind" no-op/reject branch.
+        // Unexpected kind bytes become `Unknown`; callers must interpret that
+        // sentinel according to their own contract: some reject/abort when an
+        // active slot violates its invariant, while fallback candidate checks
+        // may treat it as stale and return `None`. Unknown is not universally
+        // a no-op.
         match b {
             0 => SegmentKind::Primordial,
             1 => SegmentKind::Small,

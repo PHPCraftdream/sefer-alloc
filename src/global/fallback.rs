@@ -140,23 +140,29 @@ static LOCK: AtomicBool = AtomicBool::new(false);
 #[must_use]
 #[cfg(feature = "alloc-decommit")]
 pub fn heap_ptr() -> *mut HeapCore {
-    heap_ptr_impl(None)
+    heap_ptr_impl(FallbackInitContext { config: None })
 }
 
 #[must_use]
 #[cfg(not(feature = "alloc-decommit"))]
 pub fn heap_ptr() -> *mut HeapCore {
-    heap_ptr_impl()
+    heap_ptr_impl(FallbackInitContext::default())
 }
 
 #[cfg(feature = "alloc-decommit")]
 fn heap_ptr_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
-    heap_ptr_impl(Some(config))
+    heap_ptr_impl(FallbackInitContext {
+        config: Some(config),
+    })
 }
 
-fn heap_ptr_impl(
-    #[cfg(feature = "alloc-decommit")] config: Option<crate::alloc_core::LargeCacheConfig>,
-) -> *mut HeapCore {
+#[derive(Default)]
+struct FallbackInitContext {
+    #[cfg(feature = "alloc-decommit")]
+    config: Option<crate::alloc_core::LargeCacheConfig>,
+}
+
+fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
     loop {
         // Fast path: already READY. Acquire to see the init thread's writes.
         if INIT_STATE.load(Ordering::Acquire) == STATE_READY {
@@ -219,24 +225,13 @@ fn heap_ptr_impl(
             // out-of-range for every owner-id→slot resolution. `u32::MAX`
             // remains reserved for "not yet bound to a slot" on freshly-init'd
             // registry slots.
-            #[cfg(all(
-                feature = "alloc-xthread",
-                feature = "internals",
-                feature = "bench-internals"
-            ))]
-            let forced_oom = DBG_INJECT_FALLBACK_OOM.load(Ordering::Relaxed);
-            #[cfg(not(all(
-                feature = "alloc-xthread",
-                feature = "internals",
-                feature = "bench-internals"
-            )))]
-            let forced_oom = false;
+            let forced_oom = dbg_forced_oom();
             let new_heap = if forced_oom {
                 None
             } else {
                 #[cfg(feature = "alloc-decommit")]
                 {
-                    match config {
+                    match _context.config {
                         Some(config) => HeapCore::new_with_config(
                             crate::alloc_core::segment_header::OWNER_ID_FALLBACK,
                             config,
@@ -678,6 +673,25 @@ pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
 #[must_use]
 pub fn dbg_fallback_lock_acquisitions() -> u64 {
     LOCK_ACQUISITIONS.load(Ordering::Relaxed)
+}
+
+fn dbg_forced_oom() -> bool {
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "internals",
+        feature = "bench-internals"
+    ))]
+    {
+        DBG_INJECT_FALLBACK_OOM.load(Ordering::Relaxed)
+    }
+    #[cfg(not(all(
+        feature = "alloc-xthread",
+        feature = "internals",
+        feature = "bench-internals"
+    )))]
+    {
+        false
+    }
 }
 
 /// Process-internal read of [`LOCK_ACQUISITIONS`] for the maintenance
