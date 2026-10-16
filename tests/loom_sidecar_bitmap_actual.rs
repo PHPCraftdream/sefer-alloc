@@ -105,6 +105,20 @@ impl LeafBacking {
     }
 }
 
+/// Loom runner for the `ClassLeaves` cells: preparing a leaf writes every
+/// granule's class byte, and each of those atomic stores is a loom branch
+/// point, so the default branch limit is too low. The preemption bound keeps
+/// the run small.
+fn leaf_model<F>(f: F)
+where
+    F: Fn() + Sync + Send + 'static,
+{
+    let mut builder = loom::model::Builder::new();
+    builder.max_branches = 100_000;
+    builder.preemption_bound = Some(2);
+    builder.check(f);
+}
+
 /// Owner discovery: every word's cut through the real `BitmapScan::next_cut`
 /// (plain `swap(0, AcqRel)`), records tagged with the cut's word index.
 fn drain(map: &SidecarBitmap<'_>, high_water: usize, records: &mut Vec<(usize, BitmapRecord)>) {
@@ -339,7 +353,7 @@ fn loom_actual_negative_masked_cut_drops_pending_bits() {
 /// prepared leaf never publishes.
 #[test]
 fn loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable() {
-    loom::model(move || {
+    leaf_model(move || {
         let backing = Arc::new(LeafBacking::new());
         let owner = {
             let backing = Arc::clone(&backing);
@@ -380,7 +394,7 @@ fn loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable() {
 /// whose final re-publish keeps it schedule-uniform.)
 #[test]
 fn loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup() {
-    loom::model(move || {
+    leaf_model(move || {
         let backing = Arc::new(LeafBacking::new());
         assert!(backing.leaves.prepare(0, 3));
         assert!(backing.bitmap().issue(0, 3));
