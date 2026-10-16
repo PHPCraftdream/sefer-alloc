@@ -78,4 +78,5 @@ mod route_slots_observers;
 
 #[path = "segment_table_impl.rs"]
 mod segment_table_impl;
+#[cfg_attr(not(feature = "internals"), allow(unused_imports))] // pub items are internals-only
 pub use segment_table_impl::*;

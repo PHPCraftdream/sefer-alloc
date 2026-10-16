@@ -4,7 +4,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::registry::bootstrap::saturation::SaturationHint;
 use crate::registry::bootstrap::{Registry, MAX_HEAPS};
-use crate::registry::heap_slot::{HeapSlot, STATE_EMPTY, STATE_FREE};
+#[cfg(feature = "internals")]
+use crate::registry::heap_slot::HeapSlot;
+use crate::registry::heap_slot::{STATE_EMPTY, STATE_FREE};
 
 /// Prefer claimable materialised slots, then an index in an unmaterialised
 /// chunk. The latter may have been minted before a failed chunk reservation;
