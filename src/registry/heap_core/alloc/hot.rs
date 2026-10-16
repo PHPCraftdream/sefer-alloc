@@ -183,8 +183,9 @@ impl HeapCore {
         //
         // R6-T10(b): on every Large alloc, probe at most `LARGE_HOT_BUDGET`
         // (= 4) slots via the persistent round-robin cursor
-        // `large_hot_cursor`; the FULL sweep moved to the cache-miss path
-        // inside `AllocCore::alloc_large`.
+        // `large_hot_cursor`, as `alloc_batch` already does (R12-05); the
+        // rotating probe retires remote Large publications over successive
+        // allocs, and the full sweep stays on the refill rescue and trim paths.
         #[cfg(feature = "alloc-xthread")]
         {
             if class.is_none() {
@@ -613,8 +614,7 @@ impl HeapCore {
         }
 
         // Large descriptor obligations are consumed before physical cache reuse.
-        // R6-T10(b): bounded probe on every Large alloc (see `alloc_with_class`);
-        // the full sweep runs on the cache-miss path inside `alloc_large`.
+        // R6-T10(b): bounded probe on every Large alloc (see `alloc_with_class`).
         #[cfg(feature = "alloc-xthread")]
         {
             #[cfg(feature = "fastbin")]
