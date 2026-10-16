@@ -1,0 +1,13 @@
+r6 A/B iai verdict
+
+cell                                                   A_Ir           B_Ir        delta  delta_pct  verdict
+large_cache_live16_hit_only                          114091         108432        -5659     -4.96%  info
+large_cache_live16_prefill_only                       78517          82991         4474      5.70%  info
+
+no thresholds in config: informational only, no pass/fail
+
+A=36ea9f26fecf2b8dc4555de0e33b93978ee3db38
+B=d0216d18dad8545b1e21203932bfba377d8bcc7b
+features: production bench-internals internals
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+os: Linux 6.17.0-1022-azure

@@ -2203,3 +2203,15 @@ Reopen trigger. A native A/B on a quiet bare-metal host (R-live, wave p99, idle 
 **What was removed (R6-T01).** `stamp_segment_owner` itself, the `last_stamped_segment` field backing the OPT-C dedupe, and the Large cache-hit `owner_state` reset (`src/alloc_core/large/alloc_core_large.rs`). The stamp-dedupe pass in `finish_magazine_refill` disappeared with them, leaving a single `mark_magazine` pass. The `owner_state` header word itself is kept INERT — initialized once by the header constructors, then never updated or read by any production path — to preserve the pinned 144-byte `SegmentHeader` layout; foreign-free routing is unaffected (route directory `Entry.owner` / `canonical_root_for`). The stamp-observer tests (`tests/heap_core_tcache_stamp.rs`, `tests/stamp_cache.rs`) were deleted in the same change; ownership assertions move to a non-panicking canonical-table membership probe (a `dbg_segment_registered_for`-style observer), not to a raw-root readback.
 
 **Gate status.** The iai `HeapCore`/`SeferAlloc` A/B gate PASSed on the R6-T01 PR (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`): `cold_alloc_only_256x16b` −3652 of 113034 Ir, `recycle_alloc_only_256x16b` −7012 of 210316 Ir, `large_cache_hit_only_4mib` −298 of 57904 Ir; no cell of 106 regressed. Wall-clock is not claimed either way.
+
+91. **R6-PF-3 — full Large-sweep on every Large alloc.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T10.)
+
+Every Large alloc swept all live Large sidecar slots and re-read each segment header for an abort check. R6-T10(a) turned the header re-read into a `debug_assert!` (`ActiveKindIndex` plus `claim_large_route`'s root check carry the invariant). R6-T10(b) made `HeapCore::alloc` probe at most 4 slots through the persistent `large_hot_cursor`; `AllocCore::alloc_large` runs one full sweep and retries the cache on a miss, and `alloc_large_slow` sweeps once before any OS reservation that has not swept on this call. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md` — with 16 live Large objects a cache hit costs 1590 Ir instead of 2223 Ir; the miss-path cost is perf item 101. Test: `tests/r6_t10_large_sweep_invariant.rs`.
+
+95. **R6-PF-7 — runtime `div` on every refill miss.** (Filed 2026-10-15; closed 2026-10-16 as R6-T39 PF-7.)
+
+`refill_n_for_class(block_size(c))` was replaced by `FREE_PARK_CAP[c]`, which holds the same values. `tests/r6_t39_free_park_cap_equals_refill.rs` pins table values for representative classes. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`.
+
+98. **R6-PF-10 — Large own-free re-resolved its root.** (Filed 2026-10-15; closed 2026-10-16 as R6-T39 PF-10.)
+
+Both own-thread Large free sites in `dealloc_own_base.rs` pass the `OwnedBlock` root to `AllocCore::dealloc_at_base` instead of re-resolving it. `tests/r6_t39_large_own_free_single_lookup.rs` pins one canonical lookup per free. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`.
