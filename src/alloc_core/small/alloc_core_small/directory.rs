@@ -223,15 +223,14 @@ impl AllocCore {
 
     /// R8-1 (task #214): sync the directory for segment at `base` / `slot_idx`
     /// by inspecting ONLY the classes whose bit is set in `changed_classes` —
-    /// the set of classes a ring-drain pass actually touched — instead of
+    /// the set of classes a sidecar-reclamation pass actually touched — instead of
     /// sweeping all `SMALL_CLASS_COUNT` classes. O(popcount(`changed_classes`))
     /// reads instead of O(`SMALL_CLASS_COUNT`). This closes the
     /// O(D × SMALL_CLASS_COUNT) remote-dirty directory-sync regression: a
     /// drain that reclaims blocks of (say) 2 classes does 2 reads, not 49.
     ///
-    /// `changed_classes` is accumulated by a ring-drain closure via
-    /// `changed_classes |= 1u64 << entry_class_idx(off)` for every drained
-    /// entry, so it carries every distinct class the pass touched regardless of
+    /// `changed_classes` is accumulated by the sidecar-reclamation scan from
+    /// each reclaimed record's class, so it carries every distinct class touched
     /// how many entries each class contributed.
     ///
     /// R11-6: derives the node bucket from `base` and routes each set/clear to

@@ -89,16 +89,8 @@ impl HeapCore {
         //     path, looped): decrement count + [hardened] bump the issue
         //     generation. ────────────────────────────────────────────────────
         //
-        // R10-7 follow-up (double-free-deviates-into-double-issue fix):
-        // UNLIKE the scalar `alloc` magazine-hit arm, this loop does NOT
-        // call `clear_magazine(off)` per pop. The residency bits for ALL
-        // drained blocks are left SET through step 2 below and cleared in
-        // ONE bulk pass after step 2 returns (see step 3 + the
-        // "deferred-clear rationale" in this method's doc comment). A
-        // stale cross-thread double-free ring entry for one of these
-        // blocks is then rejected by step 2's predicate (which now
-        // actually consults the bit for class `c`) — instead of being
-        // amplified into a duplicate pointer.
+        // Keep residency bits set through the guarded refill; clear the
+        // drained blocks after it completes, before issuing pointers.
         while filled < want {
             let cnt = self.tcache.classes[c].count as usize;
             if cnt == 0 {

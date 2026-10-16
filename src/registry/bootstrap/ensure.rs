@@ -125,7 +125,7 @@ pub(super) fn ensure_chunk_slow(
 /// chunk of the LIVE process-global registry, without invoking
 /// `std::process::abort` (which would kill the test harness).
 ///
-/// Takes a `chunk_idx` (not a `&AtomicPtr<RegistryChunk>`, which would leak
+/// Takes a `chunk_idx` (not a `&OncePtrCell<RegistryChunk>`, which would leak
 /// the crate-private [`RegistryChunk`] type into this function's `pub`
 /// signature — `RegistryChunk` is deliberately `pub(crate)`, mirroring the
 /// established pattern elsewhere in this module of keeping the real type

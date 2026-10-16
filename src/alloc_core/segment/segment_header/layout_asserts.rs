@@ -49,12 +49,9 @@ const _: () = assert!(
 );
 const _: () =
     assert!(crate::alloc_core::size_classes::MIN_BLOCK >= crate::alloc_core::node::NODE_SIZE);
-// Phase 35: adding the `live_count` / `decommitted` fields must NOT push the
-// header past one page, or `Layout::page_map_off()` (= `align_up(sizeof header,
-// PAGE)`) would shift and break every downstream offset / the M9 abandoned-stack
-// layout. The header is ~96 bytes ≪ PAGE (4 KiB); this asserts it stays so, so
-// the byte layout is identical to the pre-Phase-35 build (the fields land in the
-// header's existing sub-page padding).
+// Phase 35: added header fields must remain within the first page so
+// `Layout::page_map_off()` stays page-aligned and downstream offsets do not
+// move.
 const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
 const _: () = assert!(Layout::page_map_off() == PAGE);
 const _: () = assert!(TERMINAL_WORDS_OFF >= size_of::<SegmentHeader>());

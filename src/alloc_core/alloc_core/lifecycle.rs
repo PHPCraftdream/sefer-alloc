@@ -542,12 +542,9 @@ impl Drop for AllocCore {
     }
 }
 
-// NOTE: `AllocCore` is intentionally NOT `Send` (nor `Sync`) in Phase 8.
-// Phase 8 is single-threaded; `Send` is not needed. Phase 9 (per-thread
-// heaps) will add `Send` at the heap layer (the segment substrate is
-// `Send`-capable, but the claim belongs to the layer that owns the threading
-// discipline, not the substrate itself). Adding it here would require an
-// `unsafe impl` that has no place outside the two named `unsafe` seams.
+// NOTE: `AllocCore` is intentionally NOT `Send` nor `Sync`. The registry
+// keeps it in place while lease ownership transfers between claimants; the
+// ordered slot protocol, not an `AllocCore: Send` bound, provides handoff.
 
 /// `base + off` as `*mut u8`, routed through the `node` seam. The Cartographer
 /// only ever passes offsets derived from the fixed [`SegmentLayout`](crate::alloc_core::segment::segment_layout::SegmentLayout) or the bump

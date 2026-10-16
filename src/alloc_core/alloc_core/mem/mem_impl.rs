@@ -273,6 +273,245 @@ impl AllocCore {
         unsafe { self.dealloc_at_base(block, layout, base) };
     }
 
+    #[cold]
+    #[inline(never)]
+    fn dealloc_large_at_base(&mut self, ptr: *mut u8, base: *mut u8) {
+        if Self::reject_large_interior_free(base, ptr) {
+            return;
+        }
+        // LIVE carries this instance's sole credit until the owner
+        // claims it. A failed claim must not unregister or unmap it.
+        let terminal_meta = SegmentMeta::new(base);
+        let state = crate::alloc_core::large::reservation_state::LargeReservationState::new(
+            terminal_meta.large_state_atomic(),
+        );
+        let Some(generation) = state.claim_live() else {
+            fatal(b"mem_impl: large live credit missing on free\n");
+        };
+        // Large/huge: the segment is being freed. The full header read
+        // here is on the cold Large path (one allocation per segment,
+        // rare), so the dependent-load cost does not matter.
+        //
+        // OPT-E (alloc-decommit): if the segment is small enough to
+        // cache AND a free slot exists, decommit its payload pages and
+        // deposit it into the large_cache so the next alloc_large of a
+        // compatible size can reuse it without an OS round-trip.
+        //
+        // Without alloc-decommit (or when the cache admission is
+        // declined): the OS reservation is released EAGERLY, right
+        // here — NOT deferred to `Drop` (task #125; see the release
+        // branches below for the full rationale). `unregister(base)`
+        // runs first so `Drop`'s `table.bases()` walk never sees
+        // `base` again — no double-free of the reservation.
+        //
+        // Phase 2: run a lazy decay tick on large free (same cheap
+        // Instant check as on the alloc path).
+        #[cfg(feature = "alloc-decommit")]
+        {
+            self.maybe_decay_large_cache();
+            // R6-T31: pool decay tick on the same cold cadence as the large cache.
+            self.maybe_decay_small_pool();
+        }
+
+        let stale = SegmentHeader::read_at(base);
+
+        #[cfg(feature = "alloc-decommit")]
+        {
+            // The physical usable span is read from the header's
+            // stable `span_usable` field — NOT recomputed from
+            // `large_size`/`large_align`. Bug #134: on a cache-hit
+            // reuse the header's logical size/align can be smaller
+            // than the segment's actual physical footprint (the OS
+            // reservation is reused as-is for a smaller request), so
+            // recomputing "usable size" from size/align here
+            // under-reports the true span and corrupts the
+            // large-cache byte-budget accounting. `span_usable` starts
+            // at the initial committed span and can grow after successful
+            // incremental commit under `large-reserved-capacity`.
+            // Cache accounting carries the current committed span,
+            // never a reconstruction from logical size/align. R12-4:
+            // `reserved_capacity` is carried forward the same way
+            // (never recomputed) — see `CachedLarge::reserved_capacity`'s
+            // doc. The field is present in every build's layout
+            // (inert, equal to `span_usable`, when the feature is
+            // off), so this read needs no `#[cfg]` split.
+            let usable_size = stale.span_usable;
+            let reserved_capacity = stale.reserved_capacity;
+
+            // Phase 1 large-cache admission: byte-budget enforcement.
+            //
+            // Strategy:
+            //   1. Find a free slot (None). If none is free, try FIFO eviction.
+            //   2. Check that depositing this span would not exceed the budget
+            //      (if one is set). If the budget would overflow, evict the
+            //      oldest occupied slot to make room. If eviction still can't
+            //      satisfy the budget (budget < usable_size), skip caching.
+            //   3. Deposit into the (now-free) slot.
+            //
+            // FIFO definition (task D1): the "oldest" slot is the
+            // occupied one with the smallest insertion `seq`, found via
+            // `oldest_occupied_slot` (a seq-based min-by scan) — NOT slot
+            // index 0. Each deposit stamps `large_cache_seq` into
+            // `CachedLarge::seq`, so eviction picks the true FIFO-oldest
+            // entry regardless of slot order. This holds for any
+            // LARGE_CACHE_SLOTS (currently 8), not just the old 2-slot
+            // minimal implementation that happened to fill slots in order.
+            // Two independent admission constraints: (1) there must be a
+            // free slot, (2) the byte-budget (if set) must accommodate
+            // `usable_size`. Either failing means we evict the oldest and
+            // retry. Bug #94 history: an earlier version short-circuited
+            // `try_evict_to_fit` to `true` when budget=None and missed
+            // the "slots full" case entirely, silently releasing every
+            // span beyond the first two to the OS. The loop below treats
+            // both constraints uniformly.
+            //
+            // R13-7 (task #277): "free slot" now searches the COMBINED
+            // base+extension index space via `large_cache_find_free_slot`
+            // (base 8 first, then the lazily-materialised
+            // `large-cache-extended` sidecar once the base is full) —
+            // the byte-budget check is UNCHANGED and remains the
+            // primary control regardless of how many slots exist.
+            //
+            // R14-5 (task #290, review finding @fm P3): budget
+            // feasibility is checked BEFORE ever calling
+            // `large_cache_find_free_slot` — a deposit this large can
+            // NEVER fit under the configured budget (even against a
+            // fully-evicted cache), so there is no point paying for a
+            // sidecar materialisation (a real OS page reservation) to
+            // go looking for a free slot the budget will reject
+            // regardless. See `large_cache_deposit_budget_infeasible`'s
+            // doc for the exact rationale and its scope (this is a
+            // single-deposit-vs-budget check, not a full feasibility
+            // predictor for the eviction loop below).
+            let mut admitted: Option<usize> = None;
+            if stale.large_align < os::SEGMENT
+                && !self.large_cache_deposit_budget_infeasible(usable_size)
+            {
+                loop {
+                    let free_slot = self.large_cache_find_free_slot();
+                    let budget_ok = self
+                        .large_cache_budget_bytes
+                        .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
+                    if let Some(idx) = free_slot {
+                        if budget_ok {
+                            admitted = Some(idx);
+                            break;
+                        }
+                    }
+                    // Either no free slot, or budget would overflow → evict
+                    // the oldest entry and retry. If the cache is already
+                    // empty there is nothing more we can do.
+                    if !self.evict_one_oldest() {
+                        break;
+                    }
+                }
+            }
+
+            if let Some(slot_idx) = admitted {
+                // We keep the pages COMMITTED in the cache (no decommit
+                // on deposit). On Windows, `VirtualAlloc(MEM_DECOMMIT)`
+                // followed immediately by `VirtualAlloc(MEM_COMMIT)` on
+                // the next cache hit costs more than just leaving the
+                // pages mapped — the entire purpose of the cache is to
+                // amortise the OS round-trip cost. Decommitting here
+                // would reduce RSS by the usable payload size, but at the
+                // cost of an expensive recommit on every hit, negating
+                // the speedup. We intentionally trade RSS for latency:
+                // a cached large segment keeps its pages warm between uses.
+                //
+                // NULL the table slot WITHOUT releasing the OS reservation.
+                // The cached entry owns the reservation; AllocCore::drop
+                // releases it explicitly from the large_cache array.
+                self.table.unregister(base);
+                // Zero the magic: the atomic store updates owner-side
+                // cached-header state. Foreign frees resolve route
+                // descriptors and sidecars, not reservation headers.
+                //
+                // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-
+                // synthesis.md): this used to be `hdr_zero = stale;
+                // hdr_zero.magic = 0; Node::write_struct(base, hdr_zero)`
+                // — a non-atomic FULL-STRUCT write that raced with
+                // the remote defensive field reads that existed when
+                // this fix landed (`magic_at`/`kind_at`/
+                // `large_size_at`/`span_usable_at`; `magic_at` has
+                // since been removed and the foreign path now resolves
+                // addresses through the route directory — those reads
+                // could observe a live header concurrently with this owner
+                // write under a stale/duplicate remote free — misuse of
+                // the `GlobalAlloc` contract the defensive reads exist to
+                // survive without UB). `stale` is a fresh `read_at(base)`
+                // taken just above, so every OTHER field of `hdr_zero`
+                // is byte-identical to what is already in memory — the
+                // full-struct write's only REAL effect was zeroing
+                // `magic`. Restoring this file's own §11 discipline
+                // ("remote-readable field ⇒ atomic single-word access",
+                // the same pattern `SegmentMeta::owner_state_atomic`
+                // already uses for cross-thread owner-state reads): write only the
+                // `magic` field, through an `&AtomicU32` view at its
+                // `offset_of!` offset, so a concurrent remote
+                // `kind_at`/`large_size_at`/`span_usable_at`
+                // read never races a torn/non-atomic store — those other
+                // three fields are untouched here, so no write to them is
+                // needed at all.
+                let magic_off = core::mem::offset_of!(SegmentHeader, magic);
+                Node::atomic_u32_at(base, magic_off)
+                    .store(0, core::sync::atomic::Ordering::Release);
+                if !state.cache_consumed(generation) {
+                    fatal(b"mem_impl: consumed cache transition failed\n");
+                }
+                // Deposit into cache and update the byte-budget counter.
+                let seq = self.large_cache_seq;
+                self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
+                self.large_cache_slot_set(
+                    slot_idx,
+                    CachedLarge {
+                        reservation: stale.reservation,
+                        reservation_len: stale.reservation_len,
+                        base,
+                        usable_size,
+                        reserved_capacity,
+                        seq,
+                    },
+                );
+                self.large_cache_used_bytes += usable_size;
+                return;
+            }
+            // Not admitted (no free slot after eviction, or budget too small):
+            // release the OS reservation EAGERLY right now rather than
+            // deferring to `AllocCore::drop` (task #125 / same leak
+            // class as A1/#114). In the Phase 12.5 shard model, the
+            // per-thread `AllocCore` living in a registry slot is
+            // effectively never dropped mid-process (the slot is
+            // recycled between threads, but the `AllocCore` itself
+            // persists) — "defer release to Drop" is therefore a
+            // PERMANENT leak of both the OS reservation and the
+            // `SegmentTable` slot on the own-thread admission-reject
+            // path, eventually exhausting `MAX_SEGMENTS` and forcing
+            // `alloc_large` to return null. `unregister` FIRST (frees
+            // the slot for reuse; mirrors `reclaim_large_segment`'s
+            // ordering), THEN release — Drop's `table.bases()` walk
+            // will no longer see `base`, so there is no double-free.
+            self.table.unregister(base);
+            if !state.release_consumed(generation) {
+                fatal(b"mem_impl: consumed release failed\n");
+            }
+            os::release_segment(stale.reservation, stale.reservation_len);
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        {
+            // No large-cache at all: every own-thread large free must
+            // release eagerly for the same reason as the
+            // admission-reject branch above (task #125) — deferring
+            // to `Drop` leaks the reservation AND the `SegmentTable`
+            // slot for the remaining process lifetime.
+            self.table.unregister(base);
+            if !state.release_consumed(generation) {
+                fatal(b"mem_impl: consumed release failed\n");
+            }
+            os::release_segment(stale.reservation, stale.reservation_len);
+        }
+    }
+
     /// The `kind_at`-onward tail of [`dealloc`](Self::dealloc), shared with
     /// `dealloc_with_base` (that sibling exists only when the `fastbin`
     /// feature is disabled, so it is not linked here). `#[inline(always)]`
@@ -293,242 +532,7 @@ impl AllocCore {
         // BinTable). `kind` is immutable after init, so this byte read is
         // race-free against the owner's disjoint `bump` writes.
         match SegmentHeader::kind_at(base) {
-            SegmentKind::Large => {
-                if Self::reject_large_interior_free(base, ptr) {
-                    return;
-                }
-                // LIVE carries this instance's sole credit until the owner
-                // claims it. A failed claim must not unregister or unmap it.
-                let terminal_meta = SegmentMeta::new(base);
-                let state = crate::alloc_core::large::reservation_state::LargeReservationState::new(
-                    terminal_meta.large_state_atomic(),
-                );
-                let Some(generation) = state.claim_live() else {
-                    fatal(b"mem_impl: large live credit missing on free\n");
-                };
-                // Large/huge: the segment is being freed. The full header read
-                // here is on the cold Large path (one allocation per segment,
-                // rare), so the dependent-load cost does not matter.
-                //
-                // OPT-E (alloc-decommit): if the segment is small enough to
-                // cache AND a free slot exists, decommit its payload pages and
-                // deposit it into the large_cache so the next alloc_large of a
-                // compatible size can reuse it without an OS round-trip.
-                //
-                // Without alloc-decommit (or when the cache admission is
-                // declined): the OS reservation is released EAGERLY, right
-                // here — NOT deferred to `Drop` (task #125; see the release
-                // branches below for the full rationale). `unregister(base)`
-                // runs first so `Drop`'s `table.bases()` walk never sees
-                // `base` again — no double-free of the reservation.
-                //
-                // Phase 2: run a lazy decay tick on large free (same cheap
-                // Instant check as on the alloc path).
-                #[cfg(feature = "alloc-decommit")]
-                {
-                    self.maybe_decay_large_cache();
-                    // R6-T31: pool decay tick on the same cold cadence as the large cache.
-                    self.maybe_decay_small_pool();
-                }
-
-                let stale = SegmentHeader::read_at(base);
-
-                #[cfg(feature = "alloc-decommit")]
-                {
-                    // The physical usable span is read from the header's
-                    // stable `span_usable` field — NOT recomputed from
-                    // `large_size`/`large_align`. Bug #134: on a cache-hit
-                    // reuse the header's logical size/align can be smaller
-                    // than the segment's actual physical footprint (the OS
-                    // reservation is reused as-is for a smaller request), so
-                    // recomputing "usable size" from size/align here
-                    // under-reports the true span and corrupts the
-                    // large-cache byte-budget accounting. `span_usable` starts
-                    // at the initial committed span and can grow after successful
-                    // incremental commit under `large-reserved-capacity`.
-                    // Cache accounting carries the current committed span,
-                    // never a reconstruction from logical size/align. R12-4:
-                    // `reserved_capacity` is carried forward the same way
-                    // (never recomputed) — see `CachedLarge::reserved_capacity`'s
-                    // doc. The field is present in every build's layout
-                    // (inert, equal to `span_usable`, when the feature is
-                    // off), so this read needs no `#[cfg]` split.
-                    let usable_size = stale.span_usable;
-                    let reserved_capacity = stale.reserved_capacity;
-
-                    // Phase 1 large-cache admission: byte-budget enforcement.
-                    //
-                    // Strategy:
-                    //   1. Find a free slot (None). If none is free, try FIFO eviction.
-                    //   2. Check that depositing this span would not exceed the budget
-                    //      (if one is set). If the budget would overflow, evict the
-                    //      oldest occupied slot to make room. If eviction still can't
-                    //      satisfy the budget (budget < usable_size), skip caching.
-                    //   3. Deposit into the (now-free) slot.
-                    //
-                    // FIFO definition (task D1): the "oldest" slot is the
-                    // occupied one with the smallest insertion `seq`, found via
-                    // `oldest_occupied_slot` (a seq-based min-by scan) — NOT slot
-                    // index 0. Each deposit stamps `large_cache_seq` into
-                    // `CachedLarge::seq`, so eviction picks the true FIFO-oldest
-                    // entry regardless of slot order. This holds for any
-                    // LARGE_CACHE_SLOTS (currently 8), not just the old 2-slot
-                    // minimal implementation that happened to fill slots in order.
-                    // Two independent admission constraints: (1) there must be a
-                    // free slot, (2) the byte-budget (if set) must accommodate
-                    // `usable_size`. Either failing means we evict the oldest and
-                    // retry. Bug #94 history: an earlier version short-circuited
-                    // `try_evict_to_fit` to `true` when budget=None and missed
-                    // the "slots full" case entirely, silently releasing every
-                    // span beyond the first two to the OS. The loop below treats
-                    // both constraints uniformly.
-                    //
-                    // R13-7 (task #277): "free slot" now searches the COMBINED
-                    // base+extension index space via `large_cache_find_free_slot`
-                    // (base 8 first, then the lazily-materialised
-                    // `large-cache-extended` sidecar once the base is full) —
-                    // the byte-budget check is UNCHANGED and remains the
-                    // primary control regardless of how many slots exist.
-                    //
-                    // R14-5 (task #290, review finding @fm P3): budget
-                    // feasibility is checked BEFORE ever calling
-                    // `large_cache_find_free_slot` — a deposit this large can
-                    // NEVER fit under the configured budget (even against a
-                    // fully-evicted cache), so there is no point paying for a
-                    // sidecar materialisation (a real OS page reservation) to
-                    // go looking for a free slot the budget will reject
-                    // regardless. See `large_cache_deposit_budget_infeasible`'s
-                    // doc for the exact rationale and its scope (this is a
-                    // single-deposit-vs-budget check, not a full feasibility
-                    // predictor for the eviction loop below).
-                    let mut admitted: Option<usize> = None;
-                    if stale.large_align < os::SEGMENT
-                        && !self.large_cache_deposit_budget_infeasible(usable_size)
-                    {
-                        loop {
-                            let free_slot = self.large_cache_find_free_slot();
-                            let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
-                                self.large_cache_used_bytes + usable_size <= budget
-                            });
-                            if let Some(idx) = free_slot {
-                                if budget_ok {
-                                    admitted = Some(idx);
-                                    break;
-                                }
-                            }
-                            // Either no free slot, or budget would overflow → evict
-                            // the oldest entry and retry. If the cache is already
-                            // empty there is nothing more we can do.
-                            if !self.evict_one_oldest() {
-                                break;
-                            }
-                        }
-                    }
-
-                    if let Some(slot_idx) = admitted {
-                        // We keep the pages COMMITTED in the cache (no decommit
-                        // on deposit). On Windows, `VirtualAlloc(MEM_DECOMMIT)`
-                        // followed immediately by `VirtualAlloc(MEM_COMMIT)` on
-                        // the next cache hit costs more than just leaving the
-                        // pages mapped — the entire purpose of the cache is to
-                        // amortise the OS round-trip cost. Decommitting here
-                        // would reduce RSS by the usable payload size, but at the
-                        // cost of an expensive recommit on every hit, negating
-                        // the speedup. We intentionally trade RSS for latency:
-                        // a cached large segment keeps its pages warm between uses.
-                        //
-                        // NULL the table slot WITHOUT releasing the OS reservation.
-                        // The cached entry owns the reservation; AllocCore::drop
-                        // releases it explicitly from the large_cache array.
-                        self.table.unregister(base);
-                        // Zero the magic so that if something reads the header
-                        // while it's in the cache, it won't be confused as a
-                        // live registered segment.
-                        //
-                        // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-
-                        // synthesis.md): this used to be `hdr_zero = stale;
-                        // hdr_zero.magic = 0; Node::write_struct(base, hdr_zero)`
-                        // — a non-atomic FULL-STRUCT write that raced with
-                        // the remote defensive field reads that existed when
-                        // this fix landed (`magic_at`/`kind_at`/
-                        // `large_size_at`/`span_usable_at`; `magic_at` has
-                        // since been removed and the foreign path now resolves
-                        // addresses through the route directory — those reads
-                        // could observe a live header concurrently with this owner
-                        // write under a stale/duplicate remote free — misuse of
-                        // the `GlobalAlloc` contract the defensive reads exist to
-                        // survive without UB). `stale` is a fresh `read_at(base)`
-                        // taken just above, so every OTHER field of `hdr_zero`
-                        // is byte-identical to what is already in memory — the
-                        // full-struct write's only REAL effect was zeroing
-                        // `magic`. Restoring this file's own §11 discipline
-                        // ("remote-readable field ⇒ atomic single-word access",
-                        // the same pattern `SegmentMeta::owner_state_atomic`
-                        // already uses for cross-thread owner-state reads): write only the
-                        // `magic` field, through an `&AtomicU32` view at its
-                        // `offset_of!` offset, so a concurrent remote
-                        // `kind_at`/`large_size_at`/`span_usable_at`
-                        // read never races a torn/non-atomic store — those other
-                        // three fields are untouched here, so no write to them is
-                        // needed at all.
-                        let magic_off = core::mem::offset_of!(SegmentHeader, magic);
-                        Node::atomic_u32_at(base, magic_off)
-                            .store(0, core::sync::atomic::Ordering::Release);
-                        if !state.cache_consumed(generation) {
-                            fatal(b"mem_impl: consumed cache transition failed\n");
-                        }
-                        // Deposit into cache and update the byte-budget counter.
-                        let seq = self.large_cache_seq;
-                        self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
-                        self.large_cache_slot_set(
-                            slot_idx,
-                            CachedLarge {
-                                reservation: stale.reservation,
-                                reservation_len: stale.reservation_len,
-                                base,
-                                usable_size,
-                                reserved_capacity,
-                                seq,
-                            },
-                        );
-                        self.large_cache_used_bytes += usable_size;
-                        return;
-                    }
-                    // Not admitted (no free slot after eviction, or budget too small):
-                    // release the OS reservation EAGERLY right now rather than
-                    // deferring to `AllocCore::drop` (task #125 / same leak
-                    // class as A1/#114). In the Phase 12.5 shard model, the
-                    // per-thread `AllocCore` living in a registry slot is
-                    // effectively never dropped mid-process (the slot is
-                    // recycled between threads, but the `AllocCore` itself
-                    // persists) — "defer release to Drop" is therefore a
-                    // PERMANENT leak of both the OS reservation and the
-                    // `SegmentTable` slot on the own-thread admission-reject
-                    // path, eventually exhausting `MAX_SEGMENTS` and forcing
-                    // `alloc_large` to return null. `unregister` FIRST (frees
-                    // the slot for reuse; mirrors `reclaim_large_segment`'s
-                    // ordering), THEN release — Drop's `table.bases()` walk
-                    // will no longer see `base`, so there is no double-free.
-                    self.table.unregister(base);
-                    if !state.release_consumed(generation) {
-                        fatal(b"mem_impl: consumed release failed\n");
-                    }
-                    os::release_segment(stale.reservation, stale.reservation_len);
-                }
-                #[cfg(not(feature = "alloc-decommit"))]
-                {
-                    // No large-cache at all: every own-thread large free must
-                    // release eagerly for the same reason as the
-                    // admission-reject branch above (task #125) — deferring
-                    // to `Drop` leaks the reservation AND the `SegmentTable`
-                    // slot for the remaining process lifetime.
-                    self.table.unregister(base);
-                    if !state.release_consumed(generation) {
-                        fatal(b"mem_impl: consumed release failed\n");
-                    }
-                    os::release_segment(stale.reservation, stale.reservation_len);
-                }
-            }
+            SegmentKind::Large => self.dealloc_large_at_base(ptr, base),
             SegmentKind::Small | SegmentKind::Primordial => {
                 // Derive the class from the caller's `Layout` (pure
                 // arithmetic via `SIZE2CLASS`) — NOT from `page_map`. §13 of
@@ -626,9 +630,8 @@ impl AllocCore {
     /// Large segment and the grown size (clamped to `MIN_BLOCK`) still fits
     /// the segment's `span_usable`, we update the header's `large_size` and
     /// return the same pointer. Shrinks fall through to the slow path
-    /// (reclaims RSS). The stored size is clamped to `MIN_BLOCK` to stay
-    /// symmetric with the alloc path and the #138 cross-thread consistency
-    /// check (`large_layout_consistent`).
+    /// (reclaims RSS). The stored size is clamped to `MIN_BLOCK` to match
+    /// the allocator's effective request size on the alloc path.
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
     /// Returns null on failure, leaving the old allocation intact. Null `ptr`

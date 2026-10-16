@@ -153,13 +153,10 @@ impl AllocCore {
     ///      `payload_offset + new_eff <= span_usable` (checked add to
     ///      guard against usize wrap on pathological sizes).
     ///
-    /// MIN_BLOCK clamping: the alloc path clamps every request to
-    /// `MIN_BLOCK` before storing `large_size` in the header. The #138
-    /// cross-thread consistency check (`large_layout_consistent`) compares
-    /// the header value against `layout_size.max(MIN_BLOCK)`. We must
-    /// clamp identically here so a later cross-thread free does not see
-    /// `raw != clamped` and silently drop the free — permanently leaking
-    /// the segment + its SegmentTable slot (#114/#130 class).
+    /// MIN_BLOCK clamping keeps the stored Large size consistent with the
+    /// allocator's effective request size. Foreign frees are routed through
+    /// the route directory and sidecar; they do not re-derive a class from
+    /// this header field.
     ///
     /// Soundness:
     ///   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
@@ -261,46 +258,7 @@ impl AllocCore {
         // block in place and records `large_size = new_eff` instead of
         // returning null, so a Large shrink no longer reports OOM.
         if kind == SegmentKind::Large {
-            let old_eff = old_layout
-                .size()
-                .max(crate::alloc_core::size_classes::MIN_BLOCK);
-            let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
-            if new_eff >= old_eff {
-                let payload_off = SegmentHeader::read_at(base).payload_offset;
-                if ptr.addr() != base.addr() + payload_off {
-                    return None;
-                }
-                let span_usable = SegmentHeader::span_usable_at(base);
-                if let Some(end) = payload_off.checked_add(new_eff) {
-                    if end <= span_usable {
-                        SegmentHeader::set_large_size_at(base, new_eff);
-                        #[cfg(feature = "alloc-stats")]
-                        RELOC_INPLACE_LARGE_CALLS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        return Some(ptr);
-                    }
-                    // R12-4 (feature `large-reserved-capacity`): the grow no
-                    // longer fits the COMMITTED span (`span_usable`), but the
-                    // segment may have extra RESERVED-but-uncommitted VA
-                    // (`reserved_capacity`, always `>= span_usable`) it can
-                    // grow into — committing just the missing tail instead
-                    // of falling through to the slow alloc+copy+free path.
-                    // See `SegmentHeader::reserved_capacity`'s doc and the
-                    // `large-reserved-capacity` feature doc in `Cargo.toml`
-                    // for the full R12-3/R12-4 motivation.
-                    #[cfg(feature = "large-reserved-capacity")]
-                    if self.try_grow_large_reserved_capacity(base, end) {
-                        SegmentHeader::set_large_size_at(base, new_eff);
-                        #[cfg(feature = "alloc-stats")]
-                        RELOC_INPLACE_LARGE_CALLS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        return Some(ptr);
-                    }
-                }
-            }
-            #[cfg(feature = "alloc-stats")]
-            RELOC_FASTPATH_DECLINE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            return None;
+            return self.realloc_large_inplace_known_base(base, ptr, old_layout, new_size);
         }
         // OPT-F: Small→Small same-class in-place.
         if matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
@@ -380,9 +338,8 @@ impl AllocCore {
                     // `carve_block` never advances `bump` past
                     // `committed_payload_end` without first committing the
                     // tail up to at least the new `bump` value (see
-                    // `carve_block`'s B2 grow-on-carve block,
-                    // `alloc_core_small.rs:1508-1533`: it commits BEFORE
-                    // `set_bump`, and only ever sets
+                    // `carve_block`'s B2 grow-on-carve block (the owner
+                    // commit step immediately before `set_bump`), and only ever sets
                     // `committed_payload_end` to a value `>=` the new
                     // `bump`). So for a block that satisfies precondition 3
                     // (`off + old_block_size == bump`), the frontier is
@@ -421,6 +378,55 @@ impl AllocCore {
                     {
                         OPT_H_HITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
+                }
+            }
+        }
+        #[cfg(feature = "alloc-stats")]
+        RELOC_FASTPATH_DECLINE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        None
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn realloc_large_inplace_known_base(
+        &mut self,
+        base: *mut u8,
+        ptr: *mut u8,
+        old_layout: Layout,
+        new_size: usize,
+    ) -> Option<*mut u8> {
+        let old_eff = old_layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
+        let new_eff = new_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
+        if new_eff >= old_eff {
+            let payload_off = SegmentHeader::read_at(base).payload_offset;
+            if ptr.addr() != base.addr() + payload_off {
+                return None;
+            }
+            let span_usable = SegmentHeader::span_usable_at(base);
+            if let Some(end) = payload_off.checked_add(new_eff) {
+                if end <= span_usable {
+                    SegmentHeader::set_large_size_at(base, new_eff);
+                    #[cfg(feature = "alloc-stats")]
+                    RELOC_INPLACE_LARGE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return Some(ptr);
+                }
+                // R12-4 (feature `large-reserved-capacity`): the grow no
+                // longer fits the COMMITTED span (`span_usable`), but the
+                // segment may have extra RESERVED-but-uncommitted VA
+                // (`reserved_capacity`, always `>= span_usable`) it can
+                // grow into — committing just the missing tail instead
+                // of falling through to the slow alloc+copy+free path.
+                // See `SegmentHeader::reserved_capacity`'s doc and the
+                // `large-reserved-capacity` feature doc in `Cargo.toml`
+                // for the full R12-3/R12-4 motivation.
+                #[cfg(feature = "large-reserved-capacity")]
+                if self.try_grow_large_reserved_capacity(base, end) {
+                    SegmentHeader::set_large_size_at(base, new_eff);
+                    #[cfg(feature = "alloc-stats")]
+                    RELOC_INPLACE_LARGE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return Some(ptr);
                 }
             }
         }

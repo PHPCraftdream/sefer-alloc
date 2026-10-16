@@ -21,11 +21,8 @@ use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
-    // -----------------------------------------------------------------------
-    // Allocation entry points (12.3). Delegate to the substrate; under
-    // `alloc-xthread` also drain the TFS. (Foreign-free routing goes through
-    // terminal descriptors, not per-alloc owner stamping.)
-    // -----------------------------------------------------------------------
+    // Allocation entry points delegate to the substrate; foreign frees are
+    // published through pinned route descriptors and reclaimed by the owner.
 
     /// Task #2000 (registry review P3-1): the shared "clear this block's
     /// magazine-residency bit at issue time" step — a single-block magazine
@@ -189,10 +186,7 @@ impl HeapCore {
         #[cfg(feature = "alloc-xthread")]
         {
             if class.is_none() {
-                #[cfg(feature = "fastbin")]
-                self.drain_large_sidecar_ingress_hot_bounded();
-                #[cfg(not(feature = "fastbin"))]
-                self.drain_large_sidecar_ingress();
+                self.drain_large_before_alloc();
             }
         }
 
@@ -362,10 +356,27 @@ impl HeapCore {
         // Without fastbin every alloc reaches here, so hand the class computed
         // above down instead of reclassifying inside `AllocCore::alloc`.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-        let ptr = self.core.alloc(layout);
+        let ptr = self.alloc_large_without_magazine(layout);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
         let ptr = self.core.alloc_with_class(layout, class);
         ptr
+    }
+
+    #[cfg(feature = "alloc-xthread")]
+    #[cold]
+    #[inline(never)]
+    fn drain_large_before_alloc(&mut self) {
+        #[cfg(feature = "fastbin")]
+        self.drain_large_sidecar_ingress_hot_bounded();
+        #[cfg(not(feature = "fastbin"))]
+        self.drain_large_sidecar_ingress();
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cold]
+    #[inline(never)]
+    fn alloc_large_without_magazine(&mut self, layout: Layout) -> *mut u8 {
+        self.core.alloc(layout)
     }
 
     /// R13-3 (task #273): magazine-aware pop for [`alloc_zeroed`](Self::alloc_zeroed)'s
@@ -545,21 +556,8 @@ impl HeapCore {
         let align = layout.align();
         let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
 
-        // R13-3 (task #273, P1 — resource-defect promotion): the R12-10
-        // magazine-BYPASS design regressed warm-reuse steady-state (every
-        // `alloc_zeroed` call — including a magazine HIT that would
-        // otherwise be a pure array-pop — paid the substrate's free-list /
-        // ring-drain / carve machinery) and, independently, dropped the
-        // `alloc-xthread` drain prelude the plain `alloc`/`refill_magazine_slow`
-        // path gets for free (see the `not(fastbin)` branch below and
-        // `refill_magazine_slow`'s own UBFIX-10/RAD-4b drains) — a heap that
-        // calls ONLY `alloc_zeroed` never drained its `HeapOverflow`/deferred
-        // large-free stacks. Fixed by threading the virgin signal THROUGH the
-        // magazine (`PerClass::virgin_mask`) instead of bypassing it: this
-        // call now goes back through `self.alloc`'s own hit/miss machinery in
-        // both `cfg` arms below, so both the fast-path win AND the drain
-        // prelude are recovered structurally (same code path as `alloc`),
-        // not re-implemented ad hoc.
+        // The virgin signal flows through the magazine path, preserving warm
+        // reuse and the same owner-side pending-publication discovery as alloc.
         #[cfg(all(feature = "virgin-zero-skip", feature = "fastbin"))]
         if let Some(class_idx) = class {
             let (ptr, is_virgin) = self.alloc_small_zeroed_via_magazine(class_idx);

@@ -20,7 +20,8 @@
 //! isolated per-pop cost of this RMW.
 //!
 //! Owner-private: only the owning thread touches it. No atomics, no locks.
-//! Cross-thread frees never touch it (they go to the per-segment ring).
+//! Cross-thread frees are published to independent route sidecars and
+//! reclaimed by the owner; they do not access this magazine.
 
 use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 

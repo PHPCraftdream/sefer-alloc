@@ -16,8 +16,8 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 // re-export would not resolve).
 #[cfg(feature = "alloc-stats")]
 pub(crate) use counters::LARGE_ZERO_PASS_CALLS;
-// `HeapCore::dealloc_foreign_routing` bumps this counter too (see
-// `alloc_core/mod.rs`); same re-export shape as `LARGE_ZERO_PASS_CALLS`.
+// The process-global `HeapCore::publish_foreign` path updates this counter
+// too (see `alloc_core/mod.rs`); same re-export shape as `LARGE_ZERO_PASS_CALLS`.
 #[cfg(any(feature = "alloc-xthread", feature = "alloc-stats"))]
 pub(crate) use counters::FOREIGN_OR_UNROUTABLE_FREES;
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
@@ -115,8 +115,8 @@ pub(in crate::alloc_core) const LARGE_CACHE_SIZE_FACTOR: usize = 2;
 // `pool_cap`, independent of how large a cap the user configures — no
 // compile-time array bound, and no per-registry-slot storage cost that scales
 // with `MAX_HEAPS` regardless of whether a given heap ever pools a segment
-// (the same class of structural cost RAD-1 removed from the registry's
-// `next_free` bootstrap). `pool_cap` is now HONESTLY the resolved
+// (the same class of structural cost avoided by lazy registry chunks).
+// `pool_cap` is now HONESTLY the resolved
 // `min(pool_segments, pool_byte_cap / SEGMENT)` — no third `.min(_)` term.
 
 // `LargeCacheMode` now lives in its own file (`large_cache_mode.rs`) per the
@@ -499,7 +499,7 @@ pub struct AllocCore {
     /// slots). Raising the cap by widening the array multiplies that fixed
     /// cost by 4096 regardless of whether a given heap ever pools a segment —
     /// exactly the structural RSS/binary-size cost class RAD-1 eliminated
-    /// from the registry's `next_free` bootstrap. An intrusive list instead
+    /// from the registry's per-chunk slot backing. An intrusive list instead
     /// stores its "next"/"prev" links INSIDE the segments themselves (which
     /// already exist, already have header bytes to spare — see
     /// `SegmentHeader`'s RAD-3 doc note) — `AllocCore`'s own per-heap cost

@@ -110,6 +110,20 @@ static DBG_INJECT_LARGE_ALLOC_OOM: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "internals")]
 static DBG_INJECT_BIASED_RESERVE_FAIL: AtomicBool = AtomicBool::new(false);
 
+fn large_payload_offset(align: usize) -> usize {
+    if align >= SEGMENT {
+        align_up(
+            core::mem::size_of::<SegmentHeader>(),
+            aligned_vmem::page_size(),
+        )
+    } else {
+        align_up(
+            core::mem::size_of::<SegmentHeader>(),
+            align.max(aligned_vmem::page_size()),
+        )
+    }
+}
+
 impl AllocCore {
     /// Pure address equality shared by owner metadata and foreign descriptors.
     /// No pointer is dereferenced; overflowing geometry cannot match.
@@ -197,17 +211,7 @@ impl AllocCore {
 
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
-        let hdr_aligned = if align >= SEGMENT {
-            align_up(
-                core::mem::size_of::<SegmentHeader>(),
-                aligned_vmem::page_size(),
-            )
-        } else {
-            align_up(
-                core::mem::size_of::<SegmentHeader>(),
-                align.max(aligned_vmem::page_size()),
-            )
-        };
+        let hdr_aligned = large_payload_offset(align);
         // task #25 (security): `checked_add` for local overflow safety — a
         // wrap here is unreachable under the `Layout` size/align invariant
         // today, but this no longer RELIES on the caller's `Layout` being
@@ -342,51 +346,11 @@ impl AllocCore {
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                // Pages are kept committed in the cache (no decommit on deposit,
-                // no recommit needed on hit — they are already mapped and
-                // accessible). Write a fresh header over the old one. The
-                // allocation lives at `hdr_aligned` (same computation as the
-                // slow path).
-                //
-                // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
-                // this used to call `self.table.register(slot.base)` FIRST (to
-                // obtain `id` for the header) and only THEN
-                // `Node::write_struct(slot.base, hdr)` — but `register` already
-                // makes `slot.base` visible to `contains_base`/remote routing
-                // lookups, so the plain full-struct write that followed could
-                // race a concurrent remote defensive read
-                // (the `magic_at`/`kind_at`/`large_size_at`/
-                // `span_usable_at` reads that existed when UBFIX-6 landed;
-                // `magic_at` has since been removed) on a stale/duplicate remote free — the same
-                // data-race class as the two `dealloc`/`reclaim_large_segment`
-                // "zero magic" sites, just in the opposite (publish) direction.
-                //
-                // Fix: reorder so the FULL header write happens while `slot.base`
-                // is still UNREGISTERED (not yet in `contains_base`'s table, so
-                // no remote reader can address it at all — the race is closed
-                // by construction, not by per-field atomics). `segment_id` is
-                // the only field that genuinely needs the registry-assigned
-                // `id`, which is only available AFTER `register()` runs; it is
-                // NOT one of the four remote-readable fields this finding
-                // targets (`magic`/`kind`/`large_size`/`span_usable` — see
-                // `SegmentHeader::segment_id_at`'s own doc: written once at
-                // registration and otherwise only read by same-thread-ish
-                // unregister/recycle bookkeeping), so it is written with a
-                // placeholder here and patched with a single-word
-                // `Node::write_u32` at its `offset_of!` offset, immediately
-                // after `register()` returns the real slot index — no OTHER
-                // code path can reach this not-yet-returned-to-its-caller
-                // segment's `segment_id` between `register()` and the patch (it
-                // is not yet handed to the allocation caller, so `unregister`/
-                // `recycle` cannot race it here). The patch mirrors
-                // `SegmentMeta::owner_state_atomic`'s general shape (write the
-                // register-derived field last, as its own single-word store)
-                // while requiring no changes to `segment_header.rs`/`node.rs`;
-                // `SegmentHeader::set_segment_id_at` is intentionally NOT reused
-                // here — it is documented TEST-ONLY (`dbg_stamp_segment_id`,
-                // "never called on any production path"), so this production
-                // patch performs the identical single `Node::write_u32` inline
-                // instead of repurposing that test seam.
+                // The cache retains the committed reservation. Before
+                // registration, update the owner-side atomic legacy magic,
+                // size, alignment, and bump fields; the payload offset is
+                // also set before publication. Foreign frees use descriptors
+                // and sidecars, not header readers.
                 let bump = hdr_aligned + size;
                 // `span_usable` is carried forward from the CACHED slot's own
                 // `usable_size` — the true physical span of the segment being
@@ -396,33 +360,8 @@ impl AllocCore {
                 // (the segment's true reserved VA span) — same rationale,
                 // never recomputed.
                 //
-                // F12 (task #498, docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md,
-                // docs/perf/R32_7_LARGE_CACHE_HIT_TARGETED_HEADER_WRITE_GATE.md):
-                // this used to build a full fresh `SegmentHeader` via
-                // `SegmentHeader::large(..)` and overwrite the WHOLE 144-byte
-                // header with `Node::write_struct`. But 4 of that
-                // constructor's 8 arguments (`span_usable`/`reserved_capacity`/
-                // `reservation`/`reservation_len`) are, by the comment above,
-                // carried forward BYTE-IDENTICAL from `slot.*` — i.e. the
-                // exact same values already sitting in the header at
-                // `slot.base`, untouched since this segment's header was last
-                // constructed. Only `magic` (re-established after the
-                // large-cache deposit path atomically zeroed it —
-                // `set_magic_at`'s doc), `large_size`, `large_align`, and
-                // `bump` genuinely change; `segment_id` is handled by its own
-                // pre-existing separate 1-word patch below, unaffected by
-                // this change.
-                //
-                // Falsification pin (F12's own recipe, kept as a PERMANENT
-                // correctness assert rather than a one-shot check — cheap
-                // relative to the segment-registration work around it, and it
-                // guards an invariant a future field addition to `slot`/
-                // `CachedLarge` could silently break): read the header that
-                // is about to be partially overwritten and confirm its
-                // carried-forward fields already equal what we would have
-                // written via the old full-struct path. If this ever fires,
-                // the "carried forward unchanged" premise is FALSE and the
-                // targeted-write optimization below is unsound.
+                // Cached geometry is reused verbatim; allocation fields are rewritten.
+                // Debug assertions verify geometry before targeted header writes.
                 #[cfg(debug_assertions)]
                 {
                     let pre = SegmentHeader::read_at(slot.base);
@@ -443,24 +382,10 @@ impl AllocCore {
                         "F12: large-cache slot's in-memory reservation_len diverged from slot.reservation_len"
                     );
                 }
-                // UBFIX-6 restated for the targeted-write shape: all 4 writes
-                // below run strictly BEFORE `self.table.register(slot.base)`
-                // (a few lines down), i.e. while `slot.base` is still absent
-                // from `SegmentTable`'s `contains_base` hash table — no
-                // cross-thread reader (the removed `magic_at` or the
-                // remaining `kind_at`/`large_size_at`/
-                // `span_usable_at`) can address this segment at all yet, so
-                // there is no reader to observe a torn/partial write between
-                // these 4 stores, and their relative ORDER among each other is
-                // immaterial for the same reason (the same argument the
-                // original full-struct `write_struct` already relied on —
-                // see the UBFIX-6 comment above). `kind`/`segment_id` are
-                // untouched here: `kind` was already `Large` from this
-                // segment's PRIOR header construction (a large-cache slot is,
-                // by construction, always a former Large segment — the cache
-                // never holds Small/Primordial spans) and does not need
-                // rewriting; `segment_id` keeps its own pre-existing
-                // post-`register()` 1-word patch below.
+                // The header is prepared before route registration. The
+                // legacy magic field uses an atomic owner-side store; the
+                // other targeted writes are owner-side initialization, not
+                // synchronization for hypothetical foreign header readers.
                 SegmentHeader::set_magic_at(
                     slot.base,
                     crate::alloc_core::segment_header::SEGMENT_MAGIC,
@@ -500,10 +425,8 @@ impl AllocCore {
                         return self.alloc_large_slow(size, align, usable, hdr_aligned);
                     }
                 };
-                // Patch the real registry slot index in now that the segment is
-                // visible — a single-word field write (disjoint from
-                // `bump`/`owner_state`, same discipline as `large_size_at`'s
-                // sibling setter `set_large_size_at`).
+                // Store the registry-derived segment id after registration;
+                // the header and legacy magic were established beforehand.
                 let segment_id_off = core::mem::offset_of!(SegmentHeader, segment_id);
                 Node::write_u32(Node::offset(slot.base, segment_id_off) as *mut u32, id);
                 // Phase C (numa-aware): re-stamp with the CURRENT thread's NUMA
@@ -904,21 +827,10 @@ impl AllocCore {
             }
 
             if let Some(slot_idx) = admitted {
-                // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
-                // was `hdr_zero = hdr; hdr_zero.magic = 0; Node::write_struct(base,
-                // hdr_zero)` — a non-atomic FULL-STRUCT write racing the remote
-                // defensive field reads that existed when this fix landed
-                // (`magic_at`/`kind_at`/`large_size_at`/`span_usable_at`;
-                // `magic_at` has since been removed and the foreign path now
-                // resolves addresses through the route directory). `hdr` is a
-                // fresh `read_at(base)` taken at the top
-                // of this fn, so every OTHER field is already byte-identical to
-                // what's in memory — the only real effect is zeroing `magic`.
-                // Same fix as the mirror site in `AllocCore::dealloc`'s Large
-                // branch: a single atomic `&AtomicU32` store at `magic`'s
-                // `offset_of!` offset (the same field-wise-atomic-write pattern
-                // `SegmentMeta::owner_state_atomic` already uses for the
-                // cross-thread owner-state read — this crate's §11 discipline).
+                // The segment is removed from the active table before cache
+                // publication. Its legacy magic field is cleared atomically
+                // as owner-side lifecycle state; foreign frees use route
+                // descriptors and sidecars rather than reading this header.
                 let magic_off = core::mem::offset_of!(SegmentHeader, magic);
                 Node::atomic_u32_at(base, magic_off)
                     .store(0, core::sync::atomic::Ordering::Release);

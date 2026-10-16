@@ -976,22 +976,6 @@ split the same day.)
     - **Next trigger:** obtain fresh HS confirmation of the final remediation, and explicitly dispatch `tis-weak-memory-wallclock-gate` on native arm64 for item 61 `store_elided` and item 62 link-ordering timing. These are the only remaining HS-confirmation and hardware gates; natural-workload output remains a path/counter oracle, never timing evidence.
     - **Evidence:** the run-25 report and `6ed4a40`; first-wave closure commits `21fc146`, `9215cba`, `1b5ce46`; second-wave closure commits `b67c550`, `3509ee6`, `77fafc3`; third-wave closure commits `0a33c7c`, `71182f8`, `4a41001`, and `1cc7291`; final P4 documentation commits `3d044ed` and `5549e8d`; current codegen artifact `1fff43a`; `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`; and `docs/perf/OPEN_ITEMS.md` items 61-63. The current receipts contain no ARM wall-clock evidence.
 
-232. **[T] `SECURITY.md` contradicts the code: double-free described as a "well-defined error", panics declared out of scope, no status for `internals`/`bench-internals`/`experimental`/`batch-api`/`exact-object-proto`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T36 (docs/agent_reviews_round6/SUMMARY.md); being fixed this round.
-    > - **Current:** the published security policy misstates the allocator's actual failure behaviour (double-free is not a well-defined error) and is silent on every feature that changes the surface, so a downstream reporter is told the wrong contract.
-    > - **Next trigger:** R6-T36 in the round-6 queue; close via that task's SECURITY.md rewrite with per-feature status.
-    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-7; task R6-T36.
-
-233. **[T] Stale `hardened` doc comment in `Cargo.toml`: nonexistent `reclaim_offset`, nonexistent README section, `RemoteFreeRing`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T36 (docs/agent_reviews_round6/SUMMARY.md); being fixed this round.
-    > - **Current:** the feature's Cargo.toml description still cites a `reclaim_offset` that does not exist, points at a README section that does not exist, and names the removed `RemoteFreeRing` — the first text a user reads about `hardened` is wrong.
-    > - **Next trigger:** R6-T36 in the round-6 queue; close via that task's Cargo.toml doc-comment pass.
-    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-8; task R6-T36.
-
 234. **[T] Additive features (`exact-object-proto`, `virgin-zero-skip`, `hardened`, `bench-internals`) can be enabled by any dependency and change the global allocator.** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**

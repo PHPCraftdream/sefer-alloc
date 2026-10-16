@@ -56,8 +56,8 @@ impl HeapCore {
     ///    uses) vs. everything else (foreign, cross-thread-owned, null).
     ///    Owned blocks go through the batched fast path below; everything
     ///    else falls back to the scalar [`dealloc`](Self::dealloc) per block
-    ///    — the exact same correct routing (foreign no-op / cross-thread
-    ///    ring push) it uses today. This means a batch mixing owned and
+    ///    — the same correct routing (foreign no-op or pinned sidecar
+    ///    publication) it uses today. This means a batch mixing owned and
     ///    foreign/cross-thread pointers is still handled correctly: only the
     ///    confidently-safe subset takes the fast path.
     ///
@@ -222,17 +222,12 @@ impl HeapCore {
     /// [`dealloc_batch`](Self::dealloc_batch)'s doc comment for the full
     /// mechanism and trade-off.
     ///
-    /// `layout` is the CALLER'S ORIGINAL layout (not a reconstruction from
-    /// `block_size(c)`): it must be threaded through unchanged because the
-    /// scalar `dealloc` fallback below (for the non-owned subset) derives
-    /// its OWN class from `layout.size()`/`layout.align()` again — under
-    /// `alloc-xthread`, a cross-thread free's ring entry is tagged with that
-    /// re-derived class (`dealloc_foreign_routing`'s
-    /// `SizeClasses::class_for(size, layout.align())`), and a synthetic
-    /// `align = 1` reconstruction could pick a DIFFERENT class than the one
-    /// `c` (`class_for(size, layout.align())` is alignment-sensitive: a
-    /// class is only valid when `block_size % align == 0`), corrupting the
-    /// remote owner's freelist class tag for that block.
+    /// `layout` is the CALLER'S ORIGINAL layout and must be forwarded unchanged
+    /// to the scalar [`dealloc`](Self::dealloc) fallback. Own-thread scalar
+    /// deallocation derives its class from size and alignment; that derivation
+    /// is alignment-sensitive. Foreign frees use pinned route metadata rather
+    /// than re-deriving a class. Reconstructing the layout with another
+    /// alignment could select a different own-thread class.
     #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
     #[inline]
     #[allow(unsafe_code)] // R6-MS-3: `unsafe fn` boundary (caller-pointer contract).
@@ -273,7 +268,7 @@ impl HeapCore {
             let Some((base, block)) = owned else {
                 // SAFETY: caller upholds the dealloc-batch contract for `p`;
                 // `dealloc` performs its own ownership routing (foreign
-                // no-op / cross-thread ring push) for this individual block.
+                // no-op / pinned sidecar publication) for this individual block.
                 #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into scalar `dealloc`.
                 unsafe {
                     self.dealloc(p, layout)

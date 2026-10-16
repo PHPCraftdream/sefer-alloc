@@ -39,58 +39,25 @@
 //! ## TLS teardown and the TORN sentinel
 //!
 //! `LOCAL` (the cached `*mut HeapCore`) and `GUARD` (the release-on-death
-//! guard) are both `thread_local!`s. The hazard at thread teardown is: once
-//! `GUARD::drop` drops the `HeapLease` (its `Drop` does the `LIVE → FREE`
-//! Release CAS), the slot returns to the free pool and another thread may
-//! `claim` it. If a resolver on the *exiting*
-//! thread then read `LOCAL` and found its stale (pre-release) pointer, it
-//! would hand out a second `&mut HeapCore` aliasing the new owner's. The
-//! guard prevents this by stamping `LOCAL` with the `TORN` sentinel BEFORE
-//! it drops the lease.
+//! guard) are both thread-local. After `GUARD::drop` releases the lease, another
+//! thread may claim that slot; a stale `LOCAL` read would then alias its owner.
+//! The guard therefore stamps `LOCAL` with `TORN` before dropping the lease.
 //!
-//! Note we do NOT rely on any thread-local destructor *ordering*: std makes
-//! no such guarantee (destructor order is unspecified and platform-dependent
-//! — ELF, for one, tears down in reverse *registration* order via
-//! `__cxa_thread_atexit`, not declaration order). The mechanism is sound
-//! regardless, for three independent reasons:
+//! Destructor ordering is unspecified, so the proof does not depend on it:
+//! (a) `LOCAL` is a const `Cell` with no destructor and remains readable on
+//! native TLS; (b) within a thread, an accessible later read observes the
+//! earlier poison write; (c) if keyed TLS is already inaccessible, alloc and
+//! realloc route to fallback while dealloc uses ForeignNoBind publication.
 //!
-//! (a) `LOCAL` is a `const`-initialised `Cell<*mut HeapCore>` with **no
-//!     `Drop` impl** — it has no destructor at all. On native-TLS platforms
-//!     it is therefore never "destroyed"; it simply stays readable (holding
-//!     whatever the guard last stamped) for the entire thread teardown, so
-//!     "`GUARD` runs before `LOCAL` becomes unreadable" holds trivially, no
-//!     ordering assumption required.
-//! (b) TLS accessibility is monotone within a single thread's program order:
-//!     if a post-release resolver's `LOCAL.try_with` returned `Ok`, then the
-//!     earlier-in-program-order `mark_local_torn` (run by `GUARD::drop`
-//!     before the lease's `LIVE → FREE` Drop) must ALSO have returned `Ok` and already written
-//!     `TORN`. So any resolver that can still read `LOCAL` reads `TORN`, never
-//!     the stale pre-release pointer — whatever the destructor order.
-//! (c) On os-keyed platforms where `LOCAL`'s storage may already be gone, the
-//!     resolvers' `try_with` returns `Err` → they route to the always-live
-//!     Fallback heap, which is likewise safe.
+//! Binding resolvers map `TORN` to fallback rather than rebinding a slot that
+//! was just released. Passive dealloc and trim resolvers do not bind: dealloc
+//! publishes foreign frees, while trim reports no existing heap.
 //!
-//! Every binding resolver ([`current_for_alloc`],
-//! [`current_for_alloc_with_config`]) checks for `TORN` before the
-//! non-null check and, on a match, routes to the always-live fallback heap
-//! instead of re-arming a new slot (which would leak the just-recycled one
-//! and could resurrect a slot that another thread already re-claimed). The
-//! two PASSIVE resolvers ([`current_for_dealloc`], [`current_for_trim`]) map
-//! `TORN` (and `null`) to "nothing to do" instead — see their own doc
-//! comments for why binding/falling-back is wrong for their callers.
+//! ## Allocation resolver outcomes
 //!
-//! ## Never-null (M10)
-//!
-//! [`current_for_alloc()`] resolves to a non-null `*mut HeapCore` in every
-//! case:
-//! - the cached pointer is set → return it (tagged [`CurrentHeap::Own`]);
-//! - the cached pointer is null (first call) → `bind_slow_tagged` claims a
-//!   slot and publishes it, or on registry exhaustion falls back to the
-//!   primordial heap;
-//! - the TLS slot is destroyed (thread teardown) → the fallback branch
-//!   resolves to the always-live process-global fallback heap.
-//!
-//! So the alloc face never returns null for a serviceable request (M10).
+//! Resolvers return tagged Own or Fallback outcomes, never a null pointer
+//! directly. Binding or fallback setup may fail, so allocation callers must
+//! handle allocation failure.
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`). Since Ph4b (#2092) core access is safe through
@@ -108,20 +75,15 @@ use crate::registry::{HeapCore, HeapRegistry};
 /// Sentinel value stamped into [`LOCAL`] by [`mark_local_torn`] the instant
 /// this thread's [`AbandonGuard`] starts tearing down (before the slot is
 /// released). It is a "poison" marker, not a heap pointer: it is NEVER
-/// dereferenced, only compared against in the three resolvers below. Chosen
-/// as `usize::MAX` so it is:
+/// dereferenced, only compared against in the four resolver paths below.
+/// It uses `usize::MAX` so it is:
 /// - distinct from `null` (the "never bound yet" state), and
 /// - distinct from any real `*mut HeapCore` (a live allocation can never sit
 ///   at the top of the address space — the registry's slot array and every
 ///   OS-backed segment are far below `usize::MAX`).
 ///
-/// See the module doc's "TLS destructor ordering" section for why this is
-/// necessary: without it, a stale non-null `LOCAL` value would survive
-/// `GUARD`'s release of the slot, and a resolver reading `LOCAL` afterwards
-/// (e.g. from another thread-local's `Drop` that allocates, running after
-/// `GUARD` in the reverse-declaration teardown order) would hand out a
-/// `&mut HeapCore` into a slot some other thread may have already
-/// re-claimed — a second writer, i.e. a data race / UAF.
+/// On thread teardown, the guard stamps `LOCAL` with `TORN` before releasing
+/// the heap lease. No TLS destructor-order assumption is needed.
 const TORN: *mut HeapCore = usize::MAX as *mut HeapCore;
 
 /// R6-T07: how many bind attempts a cached "registry saturated" verdict may
@@ -366,7 +328,7 @@ pub fn current_for_alloc() -> CurrentHeap {
         // either an Own pointer or, on registry exhaustion, the fallback marker.
         Ok(p) if p.is_null() => bind_slow_tagged(),
         // Stale post-recycle pointer (this thread's GUARD already dropped) —
-        // see "TLS destructor ordering" in the module doc. MUST route to
+        // see "TLS teardown and the TORN sentinel" in the module doc. MUST route to
         // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
         // GUARD and leak the recycled slot).
         Ok(_) => CurrentHeap::Fallback, // p == TORN
@@ -536,13 +498,8 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 /// publish the pointer into `LOCAL`, and return the tagged result. Called
 /// from both [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
 ///
-/// task #38: this used to also call `HeapCore::install_thread_free` here
-/// ("install the cross-thread TFS handle on the bind-slow path"). That call
-/// was dead by construction and has been removed. There is no cross-thread
-/// free head left to plant: a cross-thread free resolves the block's route
-/// in the registry's route directory and publishes terminally into the
-/// independent pinned sidecar, never through a heap- or thread-resident
-/// handle. The claim-time bind inside
+/// Binding only stores the lease and publishes the pointer in `LOCAL`; foreign
+/// frees resolve through the route directory and publish to pinned sidecars.
 /// `HeapRegistry::claim_lease`/`claim_lease_with_config` is
 /// `bind_slot_counters`, and it plants only the slot's diagnostic
 /// hit-counter handles (`HeapSlot::tcache_hits` /

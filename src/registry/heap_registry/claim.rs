@@ -3,10 +3,9 @@
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented registry seam (the pointer handoff
 // `*mut HeapCore` out of a slot's `UnsafeCell`). R6-OPT-P0-2 (round 1): the
-// former `get_unchecked` on a `'static` inline slot array is gone — every
-// slot-array access now goes through `Registry`'s chunk-resolving accessors
-// (`bootstrap::registry`), which are safe
-// (range-checked via `debug_assert!` and array-index, not `get_unchecked`).
+// current indexed access is centralized in `Registry`'s chunk-resolving
+// accessors; their proven within-chunk index uses `get_unchecked` in
+// `bootstrap::registry` after deriving the offset modulo `CHUNK_SLOTS`.
 // `allow` lifts the crate-level `deny` for this file only — `unsafe`
 // anywhere else in the crate is a hard error. Every remaining `unsafe` block
 // carries a `// SAFETY:` proof.
@@ -250,11 +249,8 @@ impl HeapRegistry {
     /// it — `HeapCore::new` for [`claim_lease`](Self::claim_lease),
     /// `HeapCore::new_with_config` for
     /// [`claim_lease_with_config`](Self::claim_lease_with_config). Returning `None`
-    /// (OOM) releases the slot to `FREE` (see
-    /// [`push_back_after_oom`]) and this function returns `null`. A chunk
-    /// materialisation OOM happens earlier: it leaves its minted index
-    /// retryable and cold-scans materialised FREE alternatives, preferring
-    /// initialized heaps over constructor retries.
+    /// (OOM) releases the slot to `FREE` (see [`push_back_after_oom`]); the
+    /// claim continues through recovery rather than returning a null pointer.
     ///
     /// A CONSTRUCTOR OOM no longer returns immediately: like a chunk OOM it
     /// publishes the slot into the FREE bitmap (never the hint, R6-T03) and
