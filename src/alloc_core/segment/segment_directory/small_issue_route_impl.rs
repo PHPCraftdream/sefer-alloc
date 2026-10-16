@@ -1,5 +1,5 @@
 //! R6-T40 OPT05: the borrowed small-issue route context, resolved ONCE per
-//! batch. Physically placed beside [`RouteSlots`]' directory to keep the
+//! batch. Physically placed beside `RouteSlots`' directory to keep the
 //! `segment_table` folder at its baseline entry count; logically this is the
 //! `segment_table::small_issue_route` module (declared via `#[path]` in
 //! `segment_table/mod.rs`), so `super` below is the `segment_table` module.
@@ -8,10 +8,8 @@
 //! the type exists (the [`SegmentTable::small_issue_route`] proxy signature is
 //! configuration-independent) but is never constructed and its methods are
 //! no-op stubs — standalone tables have no routes and keep the existing
-//! [`IssueTransaction`]-based fallback at the call sites.
+//! `IssueTransaction`-based fallback at the call sites.
 
-#[cfg(feature = "alloc-global")]
-use super::route_slots::RouteSlots;
 use super::segment_table_impl::SegmentTable;
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::fatal::fatal;
@@ -23,7 +21,7 @@ use crate::registry::segment_route::{RouteRegistration, SmallSidecar};
 /// Borrowed owner-local context: one resolved route plus its materialised
 /// sidecar, cached so a batch's per-block `prepare`/`commit` calls skip the
 /// per-block slot resolution. Constructed ONLY by
-/// [`RouteSlots::small_issue_route`] after the same guards the scalar prepare
+/// `RouteSlots::small_issue_route` after the same guards the scalar prepare
 /// has always enforced (live slot, matching root, present sidecar).
 #[cfg(feature = "alloc-global")]
 pub(crate) struct SmallIssueRoute<'a> {
@@ -83,7 +81,7 @@ impl SegmentTable {
     /// `None` = standalone (route-less) table: callers keep the existing
     /// `IssueTransaction` unrouted fallback. Routed tables validate `base`
     /// against the table slot (same `base_at` guard and fatal bytes as the
-    /// scalar prepare) and delegate to [`RouteSlots::small_issue_route`].
+    /// scalar prepare) and delegate to `RouteSlots::small_issue_route`.
     #[cfg_attr(not(debug_assertions), inline(always))]
     pub(crate) fn small_issue_route(&self, base: *mut u8) -> Option<SmallIssueRoute<'_>> {
         #[cfg(feature = "alloc-global")]

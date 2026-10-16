@@ -991,7 +991,7 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
-            IssueTransaction::commit_prepared(&self.table, index, segment, off as u32, class_idx);
+            Tx::commit_prepared(&self.table, index, segment, off as u32, class_idx);
             *slot = ptr;
         }
         Ok(n)
