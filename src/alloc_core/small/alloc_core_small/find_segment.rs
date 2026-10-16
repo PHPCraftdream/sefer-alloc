@@ -200,17 +200,6 @@ impl AllocCore {
     }
 
     #[inline]
-    #[allow(unsafe_code)] // R17-2 (task #319): calls the `unsafe fn`s
-                          // `os::read_directory_node_bucket` and
-                          // `os::read_directory_class_words`. Sound: both call
-                          // sites are guarded by the
-                          // `!self.directory_sidecar.is_null()` check above (the
-                          // pointer is produced only by
-                          // `reserve_directory_sidecar`, which fully initialises
-                          // it), and `AllocCore`'s owner-only discipline (neither
-                          // `Send` nor `Sync`) rules out a concurrent writer. The
-                          // reads are by-value; no reference to the sidecar
-                          // escapes either call.
     fn find_segment_with_free_impl(
         &mut self,
         class_idx: usize,
@@ -301,7 +290,17 @@ impl AllocCore {
     }
 
     #[cfg(feature = "alloc-segment-directory")]
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code)] // R17-2 (task #319): calls the `unsafe fn`s
+                          // `os::read_directory_node_bucket` and
+                          // `os::read_directory_class_words`. Sound: both call
+                          // sites are guarded by the
+                          // `!self.directory_sidecar.is_null()` check (the
+                          // pointer is produced only by
+                          // `reserve_directory_sidecar`, which fully initialises
+                          // it), and `AllocCore`'s owner-only discipline (neither
+                          // `Send` nor `Sync`) rules out a concurrent writer. The
+                          // reads are by-value; no reference to the sidecar
+                          // escapes either call.
     fn scan_directory_candidates(
         &mut self,
         class_idx: usize,
