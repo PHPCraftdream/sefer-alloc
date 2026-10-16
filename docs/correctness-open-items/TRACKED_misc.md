@@ -130,9 +130,9 @@ split the same day.)
 240. **[T] Duplication (three copies of the Small-sidecar drain loop, exit-escape fragments, `exact_fatal`) and 180–424-line functions with dense cfg grids (R6-CQ-5/6/7).** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 tasks R6-T18, R6-T42 and R6-T19 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** the Small-sidecar drain loop exists in three already-diverging copies (`find_segment.rs`, `sidecar_drain.rs` ×2), the process-exit escape and TLS classification fragments are duplicated, `exact_fatal` duplicates `fatal`, and eleven functions run 180–424 lines with up to 69 `#[cfg]` arms — a maintenance-risk cluster, not a behaviour bug.
-    > - **Next trigger:** R6-T18/R6-T42/R6-T19 in the round-6 queue; close via those tasks' refactors (iai-neutral or better).
+    > - **Status:** PARTIAL — R6-T18 drain-loop unification merged (PR #56 `d3941723`, gate `docs/perf/R6_T18_SIDECAR_DRAIN_UNIFY_GATE.md`); the R6-T42 `exact_fatal` limb landed via PR #55 (`85eb1edd`). R6-T19 long-function work is excluded and not started.
+    > - **Current:** the three Small-sidecar drain copies are unified; no claim of closure for exit-escape/TLS duplication or long-function cfg grids.
+    > - **Next trigger:** the remaining R6-T19 item follows its own task/trigger; do not close this card on the landed limbs alone.
     > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-5/6/7; tasks R6-T18/T42/T19.
 
 241. **[T] Blanket `#[allow(dead_code, unused_imports)]` silences lint across the whole `production` build without `internals`, plus stale point allows (R6-CQ-8/9).** (Filed 2026-10-15, round-6 src review.)
@@ -154,9 +154,9 @@ split the same day.)
 243. **[T] Mass-stale comments (ring/TFS/HeapOverflow in present tense, nonexistent bootstrap protocol, stale SAFETY on `unsafe impl GlobalAlloc`, ~135 references to nonexistent files) (R6-CQ-12/13/14/16/17).** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T17 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** at snapshot `132ab85b` many comments describe removed mechanisms in the present tense (ring/TFS/HeapOverflow, the old bootstrap protocol), the `unsafe impl GlobalAlloc` SAFETY block no longer matches the dispatch it annotates, and roughly 135 comments reference `src/` files that do not exist (see also item 154's examples).
-    > - **Next trigger:** R6-T17 in the round-6 queue; close via that task's single docs pass and the extended `tests/no_stale_doc_references.rs` token list.
+    > - **Status:** PARTIAL — comment/contract corrections landed in PR #57 and PR #60 (`b1ce8409`, plus deferred files `ea815a80`); the full reference-census/guard portion (~135 stale references, lexical guard) is not confirmed complete.
+    > - **Current:** selected stale comments fixed and `tests/r6_t17_doc_contracts.rs` guards chosen phrases; the whole-`src/` census is not established as done.
+    > - **Next trigger:** verify the full comment reference census and the specified lexical guard; close only when remaining matches are historical or removed.
     > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-12/13/14/16/17; task R6-T17.
 
 244. **[T] Magic numbers, `STATE_*` collisions between modules, module-name duplication (R6-CQ-19/20/21).** (Filed 2026-10-15, round-6 src review.)

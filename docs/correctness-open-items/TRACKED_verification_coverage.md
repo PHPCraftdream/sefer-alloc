@@ -279,9 +279,9 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
 221. **[T] Unconfirmed hypotheses: lazy `RtlDllShutdownInProgress` resolution inside lock waits; abort from `HeapLease::drop` while `panicking()`.** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T54 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** two behaviours are reasoned but never confirmed by execution: whether the exit-detector FFI probe (`RtlDllShutdownInProgress`) is resolved lazily inside shard/fallback lock waits, and whether `HeapLease::drop` can abort while `panicking()` is true (drop-during-unwind interaction).
-    > - **Next trigger:** R6-T54 in the round-6 queue; close via that task's targeted witnesses for each hypothesis.
+    > - **Status:** PARTIAL — R6-T54 static disposition landed (dated execution notes in this card); no runtime witnesses were executed, so the hypotheses are documented, not proven.
+    > - **Current:** item 221's dated R6-T54 notes analyze both claims by source reading; no code change was needed. Remaining: targeted witnesses if the owner wants runtime proof.
+    > - **Next trigger:** reopen only on a concrete loader-lock wait scenario or evidence that `HeapLease::drop` can abort during unwinding.
     > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-9; task R6-T54.
     > - **Round 6 execution (2026-10-15, task R6-T54):** static analysis; no code change landed this round.
     >   (1) Lazy exit-detector resolution (`RtlDllShutdownInProgress`, `src/global/process_exit.rs`): the original premise is narrower than assumed. `bind_slow_tagged`/`bind_slow_tagged_with_config` already call `process_exit_in_progress()` FIRST (`src/global/tls_heap.rs:509`/:526), and that call resolves the address on first use — so on the first-bind path the resolution already happens before any allocator lock is held, and a prime placed there would only duplicate the existing check. A first probe can still land inside a wait when the thread's first exit-check happens elsewhere: the directory's `lock_unless_exiting` closures (`src/registry/segment_route/directory.rs:864`/:896/:930/:961 — reachable for a thread that already holds `fallback::LOCK`, the only permitted nesting, while it spins on a shard lock), the fallback lock's own acquisition check (`src/global/fallback.rs:327`/:536 — the probe runs in the wait loop before the lock is won), and the exit paths (`tls_heap.rs:304`). Whether that residual justifies a prime is an owner decision: a real deadlock needs the loader APIs to block on a lock some thread holds while that thread waits on `fallback::LOCK`, which is not derivable from this code (`GetModuleHandleW` takes the loader's SRW module tables, not allocator locks), and the cached `QUERY` limits repeat lookups once a result is published (threads that race on the unresolved state can each run one lookup). Disposition: documented here instead of priming; revisit only with a concrete loader-blocking scenario.
@@ -291,7 +291,7 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
 222. **[T] Miri aspect of R6-MS-1: a Miri test on `exact-span-large` where a foreign address in the key window must be rejected with no UB diagnostic (after R6-T22).** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T22 (docs/agent_reviews_round6/SUMMARY.md) as the verification deliverable of the fix.
-    > - **Current:** item 216 records the `ptr::add`-before-validation mechanism; this card owns the proof side: a Miri run on `exact-span-large` where a foreign pointer inside the 4 MiB key window is rejected cleanly, with no UB diagnostic, once R6-T22's `wrapping_add`/`with_addr` change lands.
-    > - **Next trigger:** R6-T22 in the round-6 queue; the Miri test is that task's closing evidence.
+    > - **Status:** PARTIAL — source fix/test landed under R6-T22 (PR #35 `27b18893`); the CI Miri-execution proof this card owns is not evidenced here.
+    > - **Current:** `tests/regression_r6_t22_foreign_window_key_miri.rs` exists and is selected by `scripts/miri-matrix.mjs` (`exact-span-large`, internals); no green miri-alloc-core CI receipt was inspected in this audit.
+    > - **Next trigger:** confirm a green miri-alloc-core CI run executing this case under the specified features; only then close this proof-only item.
     > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-1 (Miri aspect); task R6-T22.
