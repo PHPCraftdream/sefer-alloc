@@ -65,6 +65,10 @@ pub(crate) use segment::remote_bitmap;
 // visibility/cfg/doc-hidden parity) so every one stays reachable at its
 // existing `alloc_core::<name>` module path.
 pub(crate) use segment::bitmap::{alloc_bitmap, magazine_bitmap, segment_bitmap};
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "alloc-segment-directory")),
+    allow(unused_imports)
+)]
 pub(crate) use segment::directory_stats;
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) use segment::segment_directory;
@@ -259,6 +263,7 @@ pub use segment_layout::SegmentLayout;
 /// test-only (the `#[doc(hidden)]` property test in `tests/`), reachable by
 /// `sefer_alloc::alloc_core::SegmentHashHarness`. Nothing here is stable
 /// public API.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use segment_table::SegmentHashHarness;
 #[cfg(feature = "alloc-decommit")]

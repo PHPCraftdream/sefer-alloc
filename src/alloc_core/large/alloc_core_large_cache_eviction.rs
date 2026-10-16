@@ -13,7 +13,11 @@ use crate::alloc_core::large_cache_mode::LargeCacheMode;
 use crate::alloc_core::os;
 use crate::alloc_core::segment_header::{large_generation, SegmentMeta};
 
-use super::alloc_core_large_cache::{CombinedSlot, DECAY_CLOCK_CHECK_STRIDE};
+use super::alloc_core_large_cache::CombinedSlot;
+// R6-T16: consumed only by the internals(+alloc-decommit)-gated decay-tick
+// test hooks below.
+#[cfg(all(feature = "internals", feature = "alloc-decommit"))]
+use super::alloc_core_large_cache::DECAY_CLOCK_CHECK_STRIDE;
 
 impl AllocCore {
     /// Test-only snapshot of the oldest cached Large reservation.

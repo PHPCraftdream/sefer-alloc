@@ -497,21 +497,11 @@ impl Segment {
     }
 
     /// The SEGMENT-aligned usable base of this span, as a `*mut u8`. Non-null,
-    /// valid for [`len`](Self::len) bytes, aligned to `SEGMENT`.
+    /// valid for the span's usable byte length (see the `reserve*`
+    /// constructors), aligned to `SEGMENT`.
     #[must_use]
     pub(crate) fn as_ptr(&self) -> *mut u8 {
         self.0.as_ptr()
-    }
-
-    /// The number of usable bytes at [`as_ptr`](Self::as_ptr). A multiple of
-    /// `SEGMENT` for a [`reserve`](Self::reserve)/[`reserve_lazy`](Self::reserve_lazy)
-    /// span; for a [`reserve_exact`](Self::reserve_exact) span (feature
-    /// `exact-span-large`) it is only guaranteed to be a multiple of the OS
-    /// page size.
-    #[must_use]
-    #[allow(dead_code)] // Substrate API; Phase 9+ heaps read it.
-    pub(crate) const fn len(&self) -> usize {
-        self.0.len()
     }
 
     /// The start of the OS reservation (may extend below [`as_ptr`](Self::as_ptr)

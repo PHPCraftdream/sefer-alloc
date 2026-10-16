@@ -547,6 +547,7 @@ pub struct MaintenanceLease {
 
 impl MaintenanceLease {
     /// Stable slot index while this lease is held.
+    #[cfg(feature = "internals")]
     pub fn slot_index(&self) -> usize {
         self.index
     }
@@ -641,6 +642,9 @@ pub struct HeapLease {
     /// Snapshot taken on the successful claim (`fetch_add` result + 1).
     /// Numeric observer only — NEVER a coherence gate on the hot path
     /// (addendum: production reads of `HeapSlot::generation` are none).
+    // R6-T16: written on every claim; read only by the internals-gated
+    // `generation()` observer.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     generation: u64,
     _not_send: PhantomData<*mut ()>,
 }
@@ -649,14 +653,14 @@ impl HeapLease {
     /// Stable slot index while this lease is held (numeric observer).
     /// Ph4a (#2091): `#[doc(hidden)] pub` (same gating as the struct) so
     /// `tests/` probes can read it.
-    #[allow(dead_code)] // test/diagnostic observer (Ph4c migrates tests onto it)
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn slot_index(&self) -> u32 {
         self.index
     }
 
     /// Claim-time generation snapshot (numeric observer only, no gating).
-    #[allow(dead_code)]
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn generation(&self) -> u64 {
         self.generation

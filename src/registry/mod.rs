@@ -72,5 +72,3 @@ pub use heap_registry::tcache_hits_total;
 pub use heap_registry::HeapLease;
 #[doc(hidden)]
 pub use heap_registry::HeapRegistry;
-#[doc(hidden)]
-pub use heap_slot::HeapSlot;

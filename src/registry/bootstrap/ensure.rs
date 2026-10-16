@@ -5,18 +5,24 @@
 //! of the flat `bootstrap.rs` (structural reorg step 5); the module-level
 //! history and soundness narrative lives in [`super`]'s doc.
 
+// R6-T16: both are consumed only by the internals-gated OOM-injection flag
+// and the internals-gated test hooks below.
+#[cfg(feature = "internals")]
 use core::sync::atomic::{AtomicBool, Ordering};
 
 // The `OncePtrCell` real/shim swap below mirrors the import-site comment in
 // `registry.rs` (CRATE-P3): under `--cfg loom` the const-capable
 // `core`-atomic shim keeps the chunk-cell type nameable with an identical
 // API surface, since loom's atomics have no const constructor.
-use super::chunk::{RegistryChunk, CHUNK_SIZE, NUM_CHUNKS};
+#[cfg(feature = "internals")]
+use super::chunk::NUM_CHUNKS;
+use super::chunk::{RegistryChunk, CHUNK_SIZE};
 #[cfg(loom)]
 use super::loom_shim::OncePtrCell;
 use super::registry::{Registry, REGISTRY};
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;
+#[cfg(feature = "internals")]
 use once_ptr_cell::RollbackProbe;
 
 // R34-15/task #534: test-only OOM injection for `ensure_chunk_slow`'s winner
@@ -183,6 +189,7 @@ pub(super) fn ensure_chunk_slow(
 /// distinguish a broken rollback from a legitimate concurrent owner, since
 /// both make its postcondition CAS fail identically. A caller must treat
 /// `NotApplicable` as "could not test", never as failure.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> RollbackProbe {
     // Forward to `OncePtrCell::dbg_rollback_reenterable`, which drives the
@@ -219,6 +226,7 @@ pub const fn dbg_num_chunks() -> usize {
 /// reset the slot array — that would leak the lazily-materialised
 /// `HeapCore`s), a test derives its expected slot indices relative to the
 /// count it observed at entry.
+#[cfg(feature = "internals")]
 pub fn count_for_test() -> u32 {
     ensure().count.load(Ordering::Acquire)
 }

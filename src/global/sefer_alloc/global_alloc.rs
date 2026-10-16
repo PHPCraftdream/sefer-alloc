@@ -216,6 +216,7 @@ impl SeferAlloc {
     /// # Safety
     /// `ptr` must be a live allocation produced by this allocator with
     /// `layout`, and must not be freed again.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub unsafe fn dbg_dealloc_while_fallback_lock_held(ptr: *mut u8, layout: Layout) {
         let allocator = Self::new();

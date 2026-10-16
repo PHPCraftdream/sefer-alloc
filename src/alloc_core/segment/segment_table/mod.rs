@@ -55,6 +55,9 @@ pub(crate) use active_kind_index::ActiveKindIndex;
 
 mod active_kind_ops;
 
+// R6-T16: test-only hash harness (`SegmentHashHarness`); no production
+// caller, so it compiles only under `internals`.
+#[cfg(feature = "internals")]
 #[path = "harness.rs"]
 mod harness;
 

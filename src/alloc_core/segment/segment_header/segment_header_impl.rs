@@ -55,6 +55,9 @@ pub const OWNER_STATE_LIVE: u64 = 0;
 const OWNER_STATE_MASK: u64 = 0x1;
 /// Bit-shift for the owner heap id field (starts at bit 1).
 const OWNER_ID_SHIFT: u32 = 1;
+// R6-T16: the masking work is inlined in `pack_owner`; this named mask stays
+// as the documented layout twin of `OWNER_ID_SHIFT`.
+#[allow(dead_code)]
 const OWNER_ID_MASK: u64 = ((1u64 << 31) - 1) << OWNER_ID_SHIFT;
 /// Bit-shift for the generation field (starts at bit 32). Retained because
 /// [`pack_owner`] packs a generation (always 0 now that the adoption substrate
@@ -111,7 +114,8 @@ pub const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u64 {
 }
 
 /// Unpack the owner heap id from an owner-state word.
-#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+// R6-T16: the documented inverse of `pack_owner`; no in-crate caller today.
+#[allow(dead_code)]
 #[doc(hidden)]
 #[inline(always)]
 pub const fn unpack_owner_id(word: u64) -> u32 {

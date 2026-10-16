@@ -123,6 +123,9 @@ impl AllocCore {
         self.refill_class_bump_internal(class_idx, out)
     }
 
+    // R6-T16: call sites compile only under feature-gated arms; internals
+    // probes reach these directly.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     pub(crate) fn refill_class_bump_internal(
         &mut self,
@@ -182,6 +185,9 @@ impl AllocCore {
         self.refill_class_bump_impl(class_idx, out, Some(virgin_out))
     }
 
+    // R6-T16: call sites compile only under feature-gated arms; internals
+    // probes reach these directly.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     fn refill_class_bump_impl(
         &mut self,
@@ -471,6 +477,9 @@ impl AllocCore {
     /// Every non-null entry must be a live, mapped allocation start owned by
     /// this core, of valid `class_idx`, and freed at most once. Interior,
     /// foreign, stale, or duplicate pointers are forbidden; nulls are skipped.
+    // R6-T16: call sites compile only under feature-gated arms; internals
+    // probes reach these directly.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     #[allow(unsafe_code)] // Caller-pointer contract, unchanged production body.
     pub(crate) unsafe fn flush_class_internal(&mut self, class_idx: usize, blocks: &[*mut u8]) {
@@ -568,6 +577,9 @@ impl AllocCore {
     /// be unmapped (released leg) or whose state a blind re-run must not
     /// assume (pooled leg). Always `false` when `alloc-decommit` is off (no
     /// recycle path exists in that config).
+    // R6-T16: call sites compile only under feature-gated arms; internals
+    // probes reach these directly.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     #[must_use]
     fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {

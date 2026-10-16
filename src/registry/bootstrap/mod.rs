@@ -67,9 +67,11 @@ pub(crate) mod saturation;
 
 // Re-exports preserving the flat file's item paths (`bootstrap::X` — consumed
 // by registry heaps and integration tests):
+#[cfg(feature = "internals")]
 pub use ensure::count_for_test;
 #[cfg(feature = "internals")]
 pub use ensure::dbg_num_chunks;
+#[cfg(feature = "internals")]
 pub use ensure::dbg_rollback_chunk_sentinel_reenterable;
 #[cfg(feature = "internals")]
 pub use ensure::dbg_set_inject_chunk_oom;
@@ -84,5 +86,6 @@ pub(crate) use free_slot_hint::FREE_SLOTS;
 /// (it is an OPTIONAL dependency of this crate). The probe's result type is
 /// pure data with no atomics, so it is loom-agnostic and the same enum
 /// serves both the real cell and the `#[cfg(loom)]` shim.
+#[cfg(feature = "internals")]
 pub use once_ptr_cell::RollbackProbe;
 pub use registry::{Registry, MAX_HEAPS};

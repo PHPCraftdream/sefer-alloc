@@ -7,6 +7,7 @@ use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use core::mem::size_of;
 
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use harness::SegmentHashHarness;
 
@@ -706,7 +707,6 @@ impl SegmentTable {
     /// The high-water mark: the number of slots ever written (including
     /// currently-NULL recyclable slots). The number of LIVE (non-NULL)
     /// segments is `self.bases().count()`.
-    #[allow(dead_code)] // Substrate introspection; tests / Phase 9 use it.
     pub(crate) fn count(&self) -> u32 {
         self.count
     }

@@ -4,10 +4,16 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+// R6-T16: each import is gated to the cfg set of its actual consumers, so a
+// build without those features stays warning-clean without a blanket allow.
+#[cfg(feature = "internals")]
 use super::claim::push_back_after_oom;
-use crate::registry::bootstrap::{ensure, MAX_HEAPS};
+use crate::registry::bootstrap::ensure;
+#[cfg(feature = "internals")]
+use crate::registry::bootstrap::MAX_HEAPS;
 #[cfg(feature = "alloc-stats")]
 use crate::registry::heap_slot::HeapSlot;
+#[cfg(feature = "alloc-stats")]
 use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
@@ -366,6 +372,7 @@ fn walk_initialised_slots(mut visit: impl FnMut(&'static HeapSlot)) {
 /// Reserve a fresh slot, simulate constructor failure, and return its index.
 /// The postcondition is FREE with `initialised == false`; the next claim can
 /// retry construction even though `generation` is nonzero.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
@@ -402,6 +409,7 @@ pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
 /// the M-5 postcondition: a slot returned by [`dbg_claim_then_simulate_oom`]
 /// must read `initialised == false` (materialisation never ran), and after a
 /// following successful `claim_lease()` on the same index it must read `true`.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_slot_initialised(idx: u32) -> bool {

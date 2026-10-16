@@ -185,7 +185,6 @@ pub(super) enum SmallFreeGuard {
 /// `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4 for that design history.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[inline(always)]
-#[allow(unused_variables)] // `c`/`layout`/`base` each go unused under some feature subsets.
 pub(super) fn small_free_guard(
     base: *mut u8,
     ptr: *mut u8,
@@ -194,6 +193,13 @@ pub(super) fn small_free_guard(
 ) -> SmallFreeGuard {
     #[cfg(feature = "hardened")]
     use crate::alloc_core::size_classes::SizeClasses;
+
+    // R6-T16: `layout` is consumed only by the promotion-routed branch (A)
+    // below; shim the unused-parameter lint exactly where that branch
+    // compiles out (the macro is the predicate's single textual source).
+    medium_promotion_unreachable! {
+        let _ = layout;
+    }
 
     let kind = BlockKind::of(base, Some(c));
 

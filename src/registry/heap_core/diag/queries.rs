@@ -310,6 +310,7 @@ impl HeapCore {
     /// (where `claim_lease_with_config` cannot reliably disable the pool on a reused
     /// slot) to deterministically observe the decommit that a pooled segment
     /// would otherwise absorb. Returns the number of segments drained.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_drain_small_pool(&mut self) -> usize {
@@ -697,6 +698,7 @@ impl HeapCore {
     /// true `pub` surface. Lets a test verify two pointers share a segment
     /// (a same-segment sanity check on the test's own construction) without
     /// reaching into crate-internal modules.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-global")]
     #[must_use]

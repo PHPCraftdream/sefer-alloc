@@ -30,6 +30,8 @@ pub(crate) struct SidecarBitmap<'a> {
 #[derive(Clone, Copy)]
 #[cfg_attr(test, allow(dead_code))]
 pub(super) enum ClassMap<'a> {
+    // R6-T16: constructed only by the internals/loom-gated `from_initialized`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     Dense(&'a [AtomicU8]),
     Leaves(&'a ClassLeaves),
 }
@@ -49,6 +51,9 @@ impl<'a> SidecarBitmap<'a> {
 
     /// Backing must be separate from reservation bytes and zero-initialized
     /// before segment publication. Its lifetime must extend through all cuts.
+    // R6-T16: loom-shim / internals-probe constructor; production bitmaps
+    // start zeroed via the primordial path.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(crate) fn from_initialized(
         pending: &'a [AtomicU64],
         classes: &'a [AtomicU8],

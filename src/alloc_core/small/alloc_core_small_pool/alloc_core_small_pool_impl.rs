@@ -93,6 +93,12 @@ impl AllocCore {
     /// would still have outstanding credits. The owner applies pool/release
     /// policy only when this final-state check returns true.
     #[cfg(feature = "alloc-decommit")]
+    // R6-T16: its callers are the batch-api dealloc_batch path and the
+    // internals probes.
+    #[cfg_attr(
+        not(any(feature = "batch-api", feature = "internals")),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub(in crate::alloc_core) fn dec_live_batch_and_maybe_decommit(
         base: *mut u8,

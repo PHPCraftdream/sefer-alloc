@@ -322,6 +322,7 @@ impl HeapCore {
 
     /// The slot index this heap is bound to. The current lease-release caller
     /// reads it before releasing the slot.
+    #[cfg(feature = "internals")]
     #[must_use]
     pub const fn id(&self) -> u32 {
         self.id
@@ -337,6 +338,11 @@ impl HeapCore {
     /// R2-01 (task #2003): `+ '_` threads the same lifetime bind through
     /// this re-export — see `AllocCore::segment_bases`'s doc comment for the
     /// full UAF rationale this closes.
+    // R6-T16: its readers are the bench-internals/internals diag paths only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
     #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> + '_ {
         self.core.segment_bases()
@@ -400,7 +406,7 @@ impl HeapCore {
     /// ALSO doing real allocs (see the test) for end-to-end coverage.
     ///
     /// `#[doc(hidden)] pub` per the established test-only-export pattern.
-    #[cfg(feature = "numa-aware")]
+    #[cfg(all(feature = "numa-aware", feature = "internals"))]
     #[doc(hidden)]
     pub fn dbg_populate_numa_cache_for_test(&mut self) {
         let _ = self.core.current_node_cached();

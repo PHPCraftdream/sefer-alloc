@@ -5,7 +5,10 @@
 //! (structural reorg step 5); the module-level history and soundness
 //! narrative lives in [`super`]'s doc.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::AtomicU32;
+// R6-T16: read only by the internals-gated slot-state test accessors below.
+#[cfg(feature = "internals")]
+use core::sync::atomic::Ordering;
 
 // The extracted lazy CAS-published pointer cell (CRATE-P3). Under a NORMAL or
 // `production` build sefer uses the real crate type. Under `--cfg loom`, this
@@ -105,6 +108,12 @@ impl Registry {
         }
     }
 
+    // R6-T16: lib-build readers are the alloc-stats walk and the internals
+    // probes only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "alloc-stats")),
+        allow(dead_code)
+    )]
     /// Resolve a slot index to a `&'static HeapSlot`, materialising the
     /// owning chunk first if it has not been touched yet.
     ///
@@ -216,6 +225,12 @@ impl Registry {
         Some(unsafe { chunk.slots.get_unchecked(slot_in_chunk) })
     }
 
+    // R6-T16: lib-build readers are the alloc-stats walk and the internals
+    // probes only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "alloc-stats")),
+        allow(dead_code)
+    )]
     /// Ensure chunk `chunk_idx` is materialised, then return a `&'static
     /// RegistryChunk` reference to it. Fast path: [`OncePtrCell::get`] (one
     /// `Acquire` load + non-null/non-sentinel check, inside the cell). Slow
@@ -307,6 +322,7 @@ const _: () = {
 // `unsafe { .. }` under a documented precondition. These are NOT stable
 // public API.
 // -------------------------------------------------------------------------
+#[cfg(feature = "internals")]
 impl Registry {
     /// Read a slot's `state` atomically (test helper). Materialises the
     /// slot's chunk if not already materialised; an untouched slot is EMPTY.

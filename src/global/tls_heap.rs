@@ -610,7 +610,9 @@ fn finish_bind(lease: Option<HeapLease>) -> CurrentHeap {
 ///
 /// `#[doc(hidden)]` — not part of the public API; exists solely so the
 /// integration test in `tests/` can reach this otherwise-private teardown
-/// behaviour.
+/// behaviour. `internals`-gated (R6-T16): the module path it lives under is
+/// only externally reachable with `internals` anyway.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_teardown_then_resolve_is_fallback() -> bool {
@@ -633,7 +635,7 @@ pub fn dbg_teardown_then_resolve_is_fallback() -> bool {
 /// integration test in `tests/` can reach this otherwise-private teardown
 /// behaviour, mirroring the established `dbg_teardown_then_resolve_is_fallback`
 /// pattern.
-#[cfg(feature = "alloc-xthread")]
+#[cfg(all(feature = "alloc-xthread", feature = "internals"))]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_teardown_then_resolve_is_foreign_no_bind() -> bool {

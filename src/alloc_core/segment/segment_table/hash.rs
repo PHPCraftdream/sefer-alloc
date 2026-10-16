@@ -58,6 +58,9 @@ impl SegmentTable {
     ///
     /// **Precondition:** the caller guarantees `base` is not already in the
     /// table AND at least one empty slot exists (load factor ≤ 50%).
+    // R6-T16: exercised via the internals hash harness and tests; production
+    // lookups go through `canonical_base_of`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(super) fn hash_insert(&mut self, base: *mut u8) {
         let start = Self::hash_index(base);
         let mut i = start;
@@ -233,6 +236,9 @@ impl SegmentTable {
     /// Backward-shift deletion (R4-8/N3) guarantees every non-live slot is
     /// genuinely empty (no tombstones), so an empty slot unambiguously
     /// terminates the probe — a `false` result is always correct.
+    // R6-T16: exercised via the internals hash harness and tests; production
+    // lookups go through `canonical_base_of`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline(always)]
     pub(super) fn hash_contains(&self, base: *mut u8) -> bool {
         self.hash_find(base).is_some()

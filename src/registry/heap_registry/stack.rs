@@ -104,6 +104,7 @@ pub(super) fn bump_count(reg: &Registry) -> Option<usize> {
 
 /// The claim selector, parameterised so a small deterministic model can
 /// exercise the production fast path without constructing 4096 heaps.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub fn pick_with_saturation(
     hint: &AtomicU32,

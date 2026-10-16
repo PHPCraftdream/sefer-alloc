@@ -445,19 +445,15 @@ mod concurrent;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod alloc_core;
-// `allow(dead_code, unused_imports)`: without `internals` this module's
-// only external callers (integration tests reaching `dbg_*`/other
-// non-re-exported items directly) are unreachable, so a handful of items
-// (and the `mod.rs` `pub use` re-exports that surface them one level up)
-// that exist solely for that white-box test surface would otherwise
-// warn/error under `-D warnings`. This is a `pub(crate)`-visibility
-// artifact of the `internals` gate, not new dead code — every one of these
-// items is used by something outside `src/` (see `internals`'s doc comment
-// in `Cargo.toml`) once `internals` is enabled, which is a real, exercised
-// build
-// configuration (`cargo test --features "production internals"`).
+// R6-T16: no blanket `allow(dead_code, unused_imports)` here. Without
+// `internals` this module's only external callers (integration tests
+// reaching `dbg_*`/other non-re-exported items directly) are unreachable,
+// so every item that exists solely for that white-box test surface is
+// gated per-element with `#[cfg(feature = "internals")]` (or a scoped
+// `cfg_attr(..., allow(...))` with a stated reason) instead of a
+// module-wide suppression that would also hide genuinely dead code in the
+// shipped `production` configuration.
 #[cfg(all(feature = "alloc-core", not(feature = "internals")))]
-#[allow(dead_code, unused_imports)]
 pub(crate) mod alloc_core;
 
 // `#[doc(hidden)] pub` (when `internals` is on; `pub(crate)` otherwise — not
@@ -477,10 +473,10 @@ pub(crate) mod alloc_core;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod global;
-// `allow(dead_code)`: same `internals`-off white-box-surface artifact as
-// `alloc_core` above.
+// No blanket allow: same `internals`-off white-box-surface discipline as
+// `alloc_core` above (R6-T16) — test-only hooks are `internals`-gated
+// per-element, not silenced module-wide.
 #[cfg(all(feature = "alloc-global", not(feature = "internals")))]
-#[allow(dead_code, unused_imports)]
 pub(crate) mod global;
 
 // R34-3 (task #522, finding B1): additive `internals` gate on the EXTERNAL
@@ -490,10 +486,10 @@ pub(crate) mod global;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod registry;
-// `allow(dead_code)`: same `internals`-off white-box-surface artifact as
-// `alloc_core` above.
+// No blanket allow: same `internals`-off white-box-surface discipline as
+// `alloc_core` above (R6-T16) — test-only hooks are `internals`-gated
+// per-element, not silenced module-wide.
 #[cfg(all(feature = "alloc-global", not(feature = "internals")))]
-#[allow(dead_code, unused_imports)]
 pub(crate) mod registry;
 
 pub use sefer_region::{Handle, Region};

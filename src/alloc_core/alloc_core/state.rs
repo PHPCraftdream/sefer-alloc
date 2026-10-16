@@ -175,6 +175,12 @@ impl AllocCore {
     /// iterator from a function that drops its local `AllocCore` compiled
     /// cleanly pre-fix). `+ '_` closes it: the iterator can no longer
     /// outlive the `AllocCore` it borrows from.
+    // R6-T16: readers are the bench-internals/internals diag paths and the
+    // internals harness only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
     #[cfg(all(
         not(feature = "internals"),
         any(feature = "alloc-global", feature = "alloc-xthread")
@@ -185,6 +191,12 @@ impl AllocCore {
 
     /// Test surface of the same walk (R6-T38): public only in an
     /// `internals` build, with the same `+ '_` lifetime bind (R2-01).
+    // R6-T16: readers are the bench-internals/internals diag paths and the
+    // internals harness only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
     #[cfg(all(
         feature = "internals",
         any(feature = "alloc-global", feature = "alloc-xthread")
@@ -210,6 +222,12 @@ impl AllocCore {
     /// at the crate root (`src/lib.rs`) — `alloc-xthread` alone (without
     /// `alloc-global`) does not compile `HeapCore` at all, so a wider gate
     /// here would leave this method genuinely unused under that combination.
+    // R6-T16: readers are the bench-internals/internals diag paths and the
+    // internals harness only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
     #[cfg(feature = "alloc-global")]
     #[inline(always)]
     pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {

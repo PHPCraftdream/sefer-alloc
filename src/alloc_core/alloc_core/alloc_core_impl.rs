@@ -456,6 +456,9 @@ pub struct AllocCore {
     /// path — which has no registry slot and no cross-thread aggregator reading
     /// it, hence no aliasing gap — still counts hits for the `AllocCore`-level
     /// large-cache regression tests.
+    // R6-T16: written on large-cache hits; read only by the internals-gated
+    // `dbg_large_cache_hits` accessor.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) large_cache_hits: LargeCacheHitCounter,
 

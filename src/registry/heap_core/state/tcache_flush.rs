@@ -120,7 +120,7 @@ impl HeapCore {
     /// teardown-trim primitive. Used by decommit-soak tests to drain
     /// magazine-buffered blocks before asserting decommit invariants.
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_flush_all(&mut self) {
         self.flush_all_tcache();
     }
