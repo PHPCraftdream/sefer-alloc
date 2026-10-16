@@ -337,6 +337,28 @@ medium_promotion_unreachable! {
     use super::dealloc::HARDENED_LARGE_NOOP_COUNT;
 }
 
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cold]
+#[inline(never)]
+fn route_to_large_free(core: &mut HeapCore, block: *mut u8, layout: Layout, root: *mut u8) {
+    // SAFETY: this own-thread body is reached only
+    // from `HeapCore::dealloc`, an `unsafe fn` whose
+    // caller bound the block/layout to the free contract;
+    // the witness retains the table-derived root.
+    // The substrate routes by
+    // `kind` (Large) and frees the segment via
+    // `span_usable`, ignoring the layout.
+    #[allow(unsafe_code)]
+    // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
+    unsafe {
+        // PF-10: `root` is the table-derived canonical root from the
+        // `OwnedBlock` witness; do not re-resolve it in the substrate.
+        // The entry `debug_assert_eq!(canonical_root_for(block), Some(root))`
+        // already proves the precondition.
+        core.core.dealloc_at_base(block, layout, root)
+    };
+}
+
 impl HeapCore {
     /// Own-thread free consumes a table-derived root/block witness without
     /// repeating the mutable canonical lookup. The allocation stays live
@@ -400,22 +422,7 @@ impl HeapCore {
                         }
                         SmallFreeGuard::RejectNoOp => return,
                         SmallFreeGuard::RouteToLargeFree => {
-                            // SAFETY: this own-thread body is reached only
-                            // from `HeapCore::dealloc`, an `unsafe fn` whose
-                            // caller bound the block/layout to the free contract;
-                            // the witness retains the table-derived root.
-                            // The substrate routes by
-                            // `kind` (Large) and frees the segment via
-                            // `span_usable`, ignoring the layout.
-                            #[allow(unsafe_code)]
-                            // R6-MS-1/2: unsafe call into `AllocCore::dealloc_at_base`.
-                            unsafe {
-                                // PF-10: `root` is the table-derived canonical root from the
-                                // `OwnedBlock` witness; do not re-resolve it in the substrate.
-                                // The entry `debug_assert_eq!(canonical_root_for(block), Some(root))`
-                                // already proves the precondition.
-                                self.core.dealloc_at_base(block, layout, root)
-                            };
+                            route_to_large_free(self, block, layout, root);
                             return;
                         }
                     };

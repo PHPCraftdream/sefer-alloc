@@ -21,6 +21,14 @@ struct FindSegmentScanContext {
 }
 
 #[derive(Default)]
+struct LinearScanContext {
+    #[cfg(feature = "alloc-segment-directory")]
+    periodic_revalidation_active: bool,
+    #[cfg(feature = "alloc-stats")]
+    routed_miss_scan: bool,
+}
+
+#[derive(Default)]
 struct DirectoryCandidateContext {
     #[cfg(feature = "alloc-stats")]
     routed_scan_was_nonempty: Option<bool>,
@@ -206,8 +214,6 @@ impl AllocCore {
     fn find_segment_with_free_impl(
         &mut self,
         class_idx: usize,
-        // R9-8 (task #230): when `rescue` is true, this call is a forced
-        // rescue scan, bypassing directory trust and enabling self-healing.
         _context: FindSegmentScanContext,
     ) -> Option<*mut u8> {
         // R8-2 (task #215): set to `true` ONLY when the periodic
@@ -234,7 +240,73 @@ impl AllocCore {
         // directory path can use it.
         #[cfg(feature = "numa-aware")]
         let my_node = self.current_node_cached();
-        // ── R7-A3: directory-accelerated path ──────────────────────────────
+        #[cfg(feature = "alloc-segment-directory")]
+        if !self.directory_sidecar.is_null() {
+            if let Some(base) = self.scan_directory_candidates(
+                class_idx,
+                #[cfg(feature = "numa-aware")]
+                my_node,
+            ) {
+                return Some(base);
+            }
+            // R12-03 characterization: keep the trusted-negative path disabled
+            // for routed cores because pending sidecar ingress can make the
+            // owner directory negative while a free block exists. Enable only
+            // after proving undrained terminal publication cannot hide a free
+            // block (O-4 / perf OPEN_ITEMS item 78(c)).
+            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+            let trust_negative = !self.table.is_routed();
+            #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
+            let trust_negative = true;
+            if !trust_negative {
+                periodic_revalidation_active = !_context.rescue;
+                #[cfg(feature = "alloc-stats")]
+                if !_context.rescue {
+                    routed_miss_scan = true;
+                    crate::alloc_core::directory_stats::ROUTED_MISS_SCANS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
+            } else if !_context.rescue {
+                self.directory_miss_streak[class_idx] =
+                    self.directory_miss_streak[class_idx].saturating_add(1);
+                if u32::from(self.directory_miss_streak[class_idx])
+                    < crate::alloc_core::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
+                {
+                    #[cfg(feature = "alloc-stats")]
+                    crate::alloc_core::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return None;
+                }
+                self.directory_miss_streak[class_idx] = 0;
+                periodic_revalidation_active = true;
+            }
+            #[cfg(feature = "alloc-stats")]
+            if !_context.rescue {
+                crate::alloc_core::directory_stats::DIRECTORY_FALLBACK_SCANS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        self.linear_scan(
+            class_idx,
+            _context,
+            #[cfg(feature = "numa-aware")]
+            my_node,
+            LinearScanContext {
+                #[cfg(feature = "alloc-segment-directory")]
+                periodic_revalidation_active,
+                #[cfg(feature = "alloc-stats")]
+                routed_miss_scan,
+            },
+        )
+    }
+
+    #[cfg(feature = "alloc-segment-directory")]
+    #[allow(unsafe_code)]
+    fn scan_directory_candidates(
+        &mut self,
+        class_idx: usize,
+        #[cfg(feature = "numa-aware")] my_node: u32,
+    ) -> Option<*mut u8> {
         //
         // When `alloc-segment-directory` is compiled in AND the sidecar is
         // materialised (table.count() >= threshold), query the per-class
@@ -402,44 +474,21 @@ impl AllocCore {
                     }
                 }
             }
-            // R12-03 characterization: keep the trusted-negative path disabled
-            // for routed cores because pending sidecar ingress can make the
-            // owner directory negative while a free block exists. Enable only
-            // after proving undrained terminal publication cannot hide a free
-            // block (O-4 / perf OPEN_ITEMS item 78(c)).
-            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-            let trust_negative = !self.table.is_routed();
-            #[cfg(not(all(feature = "alloc-global", feature = "alloc-xthread")))]
-            let trust_negative = true;
-            if !trust_negative {
-                periodic_revalidation_active = !_context.rescue;
-                #[cfg(feature = "alloc-stats")]
-                if !_context.rescue {
-                    routed_miss_scan = true;
-                    crate::alloc_core::directory_stats::ROUTED_MISS_SCANS
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                }
-            } else if !_context.rescue {
-                self.directory_miss_streak[class_idx] =
-                    self.directory_miss_streak[class_idx].saturating_add(1);
-                if u32::from(self.directory_miss_streak[class_idx])
-                    < crate::alloc_core::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
-                {
-                    #[cfg(feature = "alloc-stats")]
-                    crate::alloc_core::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    return None;
-                }
-                self.directory_miss_streak[class_idx] = 0;
-                periodic_revalidation_active = true;
-            }
-            #[cfg(feature = "alloc-stats")]
-            if !_context.rescue {
-                crate::alloc_core::directory_stats::DIRECTORY_FALLBACK_SCANS
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            }
         }
+        None
+    }
 
+    fn linear_scan(
+        &mut self,
+        class_idx: usize,
+        _context: FindSegmentScanContext,
+        #[cfg(feature = "numa-aware")] my_node: u32,
+        _scan_context: LinearScanContext,
+    ) -> Option<*mut u8> {
+        #[cfg(feature = "alloc-segment-directory")]
+        let periodic_revalidation_active = _scan_context.periodic_revalidation_active;
+        #[cfg(feature = "alloc-stats")]
+        let routed_miss_scan = _scan_context.routed_miss_scan;
         // Guarded fallback covers routed negative-directory and rescue paths,
         // as well as no-directory mode. Enumerate numeric active-Small slots;
         // each canonical root is read fresh before a possible recycle. No

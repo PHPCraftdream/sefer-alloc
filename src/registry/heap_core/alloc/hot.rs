@@ -186,10 +186,7 @@ impl HeapCore {
         #[cfg(feature = "alloc-xthread")]
         {
             if class.is_none() {
-                #[cfg(feature = "fastbin")]
-                self.drain_large_sidecar_ingress_hot_bounded();
-                #[cfg(not(feature = "fastbin"))]
-                self.drain_large_sidecar_ingress();
+                self.drain_large_before_alloc();
             }
         }
 
@@ -359,10 +356,27 @@ impl HeapCore {
         // Without fastbin every alloc reaches here, so hand the class computed
         // above down instead of reclassifying inside `AllocCore::alloc`.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-        let ptr = self.core.alloc(layout);
+        let ptr = self.alloc_large_without_magazine(layout);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
         let ptr = self.core.alloc_with_class(layout, class);
         ptr
+    }
+
+    #[cfg(feature = "alloc-xthread")]
+    #[cold]
+    #[inline(never)]
+    fn drain_large_before_alloc(&mut self) {
+        #[cfg(feature = "fastbin")]
+        self.drain_large_sidecar_ingress_hot_bounded();
+        #[cfg(not(feature = "fastbin"))]
+        self.drain_large_sidecar_ingress();
+    }
+
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cold]
+    #[inline(never)]
+    fn alloc_large_without_magazine(&mut self, layout: Layout) -> *mut u8 {
+        self.core.alloc(layout)
     }
 
     /// R13-3 (task #273): magazine-aware pop for [`alloc_zeroed`](Self::alloc_zeroed)'s
