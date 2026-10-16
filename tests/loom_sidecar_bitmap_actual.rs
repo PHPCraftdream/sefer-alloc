@@ -2,9 +2,9 @@
 //! `bitmap_cut.rs`, `bitmap_record.rs`, `bitmap_scan.rs`, and
 //! `sidecar_bitmap.rs` are compiled as top-level modules; the remote_bitmap
 //! shim only reexports them. The class map is dense `AtomicU8` backing via
-//! `from_initialized`; the included `leaf_classes.rs` is the actual leaf source
-//! file but its `Leaves` type is not modeled. This is a proof of the dense
-//! backing path, not production `ClassLeaves`' standard-atomic leaf path.
+//! `from_initialized` AND the production `ClassLeaves` mixed-leaf
+//! map via `from_leaves`: `leaf_classes.rs` takes its atomics from `super`, so the
+//! included source runs on loom atomics too.
 //!
 //! Reduced geometry: 3 pending words (`SEGMENT = 3 * 64 * MIN_BLOCK`). The
 //! protocol is CURRENT production code: producer terminal `fetch_or(AcqRel)`
@@ -28,7 +28,7 @@ mod alloc_core {
 }
 
 // The included production files resolve `super` at this root module.
-pub(crate) use loom::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+pub(crate) use loom::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
 #[path = "../src/alloc_core/segment/remote_bitmap/bitmap_cut.rs"]
 mod bitmap_cut;
@@ -43,10 +43,11 @@ mod remote_bitmap {
     pub(crate) use super::bitmap_cut::BitmapCut;
     pub(crate) use super::bitmap_record::BitmapRecord;
     pub(crate) use super::bitmap_scan::BitmapScan;
+    pub(crate) use super::sidecar_bitmap::ClassLeaves;
     pub(crate) use super::sidecar_bitmap::SidecarBitmap;
 }
 
-use remote_bitmap::{BitmapCut, BitmapRecord, BitmapScan, SidecarBitmap};
+use remote_bitmap::{BitmapCut, BitmapRecord, BitmapScan, ClassLeaves, SidecarBitmap};
 
 use loom::sync::Arc;
 use loom::thread;
@@ -74,6 +75,48 @@ impl Backing {
     fn bitmap(&self) -> SidecarBitmap<'_> {
         SidecarBitmap::from_initialized(&self.words, &self.classes).unwrap()
     }
+}
+
+/// `ClassLeaves` backing for the mixed-leaf tests below: the pending words the
+/// production `from_leaves` geometry requires, plus one System-backed leaf set
+/// initialised exactly like `tests/class_leaves_publication_miri.rs` does.
+struct LeafBacking {
+    words: Vec<AtomicU64>,
+    leaves: Box<ClassLeaves>,
+}
+
+impl LeafBacking {
+    fn new() -> Self {
+        let words = (0..SidecarBitmap::WORDS)
+            .map(|_| AtomicU64::new(0))
+            .collect();
+        let mut slot = Box::new(core::mem::MaybeUninit::<ClassLeaves>::uninit());
+        // SAFETY: the Box owns a private, aligned, writable ClassLeaves-sized
+        // slot; nothing references it until `initialize_at` returns.
+        unsafe { ClassLeaves::initialize_at(slot.as_mut_ptr()) };
+        // SAFETY: every field was initialized above; the Box keeps ownership
+        // of its original allocation and layout.
+        let leaves = unsafe { slot.assume_init() };
+        Self { words, leaves }
+    }
+
+    fn bitmap(&self) -> SidecarBitmap<'_> {
+        SidecarBitmap::from_leaves(&self.words, &self.leaves).unwrap()
+    }
+}
+
+/// Loom runner for the `ClassLeaves` cells: preparing a leaf writes every
+/// granule's class byte, and each of those atomic stores is a loom branch
+/// point, so the default branch limit is too low. The preemption bound keeps
+/// the run small.
+fn leaf_model<F>(f: F)
+where
+    F: Fn() + Sync + Send + 'static,
+{
+    let mut builder = loom::model::Builder::new();
+    builder.max_branches = 100_000;
+    builder.preemption_bound = Some(2);
+    builder.check(f);
 }
 
 /// Owner discovery: every word's cut through the real `BitmapScan::next_cut`
@@ -299,5 +342,86 @@ fn loom_actual_negative_masked_cut_drops_pending_bits() {
         pb.join().unwrap();
         seen |= word.bits.swap(0, Ordering::AcqRel);
         assert_eq!(seen, 3, "masked cut dropped pending bits");
+    });
+}
+
+/// Actual-source `ClassLeaves` publication: the owner's `prepare` (System leaf
+/// allocation, Release pointer publication) and `issue` race a producer's
+/// `publish` through `ClassMap::Leaves`. Whatever the interleaving, the
+/// producer either sees no leaf yet or the fully initialized one, a completed
+/// issue is never lost for a later discovery, and a never-issued granule in a
+/// prepared leaf never publishes.
+#[test]
+fn loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable() {
+    leaf_model(move || {
+        let backing = Arc::new(LeafBacking::new());
+        let owner = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                assert!(backing.leaves.prepare(0, 3));
+                assert!(backing.bitmap().issue(0, 3));
+            })
+        };
+        let producer = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                backing.bitmap().publish(0)
+            })
+        };
+        owner.join().unwrap();
+        let _published_early = producer.join().unwrap();
+        let map = backing.bitmap();
+        assert!(!map.publish(16), "never-issued granule must not publish");
+        assert!(map.publish(0), "completed issue must remain discoverable");
+        let mut records = Vec::new();
+        drain(&map, HIGH_WATER, &mut records);
+        assert_union(&records, &[(0, 0, 3)]);
+        let mut drained = Vec::new();
+        drain(&map, HIGH_WATER, &mut drained);
+        assert!(drained.is_empty(), "second discovery finds nothing");
+    });
+}
+
+/// Two producers publishing distinct granules of the SAME mixed leaf. The
+/// owner's `prepare` (System leaf allocation, Release pointer publication)
+/// and both `issue` stores complete before the producers spawn, so each
+/// publish observes the issued classes; the racing part is the two producers
+/// against each other and the owner's cut. Every schedule keeps the cut
+/// union exact: no loss, no duplicates, and unissued granules never publish.
+/// (The prepare-vs-producer race is covered by
+/// `loom_actual_leaves_prepare_race_publish_completed_issue_is_discoverable`,
+/// whose final re-publish keeps it schedule-uniform.)
+#[test]
+fn loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup() {
+    leaf_model(move || {
+        let backing = Arc::new(LeafBacking::new());
+        assert!(backing.leaves.prepare(0, 3));
+        assert!(backing.bitmap().issue(0, 3));
+        assert!(backing.bitmap().issue(16, 4));
+        let p1 = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                assert!(backing.bitmap().publish(0));
+            })
+        };
+        let p2 = {
+            let backing = Arc::clone(&backing);
+            thread::spawn(move || {
+                thread::yield_now();
+                assert!(backing.bitmap().publish(16));
+            })
+        };
+        p1.join().unwrap();
+        p2.join().unwrap();
+        let map = backing.bitmap();
+        assert!(!map.publish(32), "never-issued granule must not publish");
+        let mut records = Vec::new();
+        drain(&map, HIGH_WATER, &mut records);
+        assert_union(&records, &[(0, 0, 3), (0, 16, 4)]);
+        let mut drained = Vec::new();
+        drain(&map, HIGH_WATER, &mut drained);
+        assert!(drained.is_empty(), "third discovery finds nothing");
     });
 }
