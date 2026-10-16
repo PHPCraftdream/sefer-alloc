@@ -224,7 +224,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
 
 **The nine `[T]`-tier files, their criteria and numbered-card totals (including retained closed records):**
 
-- **`docs/correctness-open-items/TRACKED_hook_safety.md`** (4 cards) --
+- **`docs/correctness-open-items/TRACKED_hook_safety.md`** (7 cards) --
   live `dbg_*` hook safety and scanner coverage, plus historical records of
   the former Rust tripwire. Criterion: the safety/soundness of a
   `dbg_*`/`bench-internals` measurement hook that touches live allocator
@@ -586,8 +586,8 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 221 | `TRACKED_verification_coverage.md` |
 | 222 | `TRACKED_verification_coverage.md` |
 | 223 | `TRACKED_hook_safety.md` |
-| 224 | `TRACKED_hook_safety.md` |
-| 225 | `TRACKED_hook_safety.md` |
+| 224 | `RESOLVED.md` |
+| 225 | `RESOLVED.md` |
 | 226 | `TRACKED_hook_safety.md` |
 | 227 | `TRACKED_hook_safety.md` |
 | 228 | `TRACKED_platform_contracts.md` |

@@ -1553,6 +1553,9 @@ jobs:
       # The reviewed hook-security contract survives protocol/test retirement
       # as executable repository tooling with stale allowlist checks.
       - run: node scripts/verify-dbg-hook-safety.mjs
+      # R6-T38: the parser/table self-test (synthetic negative fixtures) is
+      # not exercised by the plain main-mode run above.
+      - run: node scripts/verify-dbg-hook-safety.mjs --self-test
       - run: node scripts/verify-loom-target-wiring.mjs
       - run: node scripts/verify-miri-target-wiring.mjs
       # CLAUDE.md structure limits: at most 7 entries per src directory and 1000

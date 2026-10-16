@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about the safety/soundness of a `dbg_*`/`bench-internals` measurement hook that touches live allocator state, its `unsafe`/feature-gating correctness, or scanner coverage of that hazard class -- the R25-1 lineage (R29-7/8/17, R30-1/2, R31-4/14b, R31-15). The former `tests/dbg_hook_safety_tripwire.rs` was removed at the terminal sidecar/owner-maintenance cutover (commit `a4245965`), but its reviewed policy tables and scanner migrated to `scripts/verify-dbg-hook-safety.mjs`. That live scanner holds the authoritative `PURE_OBSERVERS`/`SAFE_MUTATORS`/`UNSAFE_HOOKS` inventory and is wired into `scripts/check-all.mjs` and `.github/workflows/ci.yml`. Old Rust scanner line references and run receipts below are dated history, not current execution evidence. Scanner presence does not close the hook-safety residual class or prove individual hook invariants; no card's status/trigger changes because of the migration.
 
-**Card count:** 4.
+**Card count:** 7 numbered records (re-derived 2026-10-16): items 5, 7, 8 and 9 (historical records) and 223, 226, 227 (open). Items 224 and 225 are CLOSED; their records are in `RESOLVED.md`.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -847,22 +847,6 @@ split the same day.)
     > - **Current:** `tls_heap.rs` carries a file-level `#![allow(unsafe_code)]` even though, without `bench-internals`, the file contains no `unsafe` at all — a tier-1 lint suppression that masks any future unsafe introduction in that module (and, per R6-CQ-25, an unmotivated allow pattern).
     > - **Next trigger:** R6-T37 in the round-6 queue; close by removing/scoping the allow with the hook-safety scanner green.
     > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-9 (+`code_quality_review.md` R6-CQ-25); task R6-T37.
-
-224. **[T] Safe global-state mutators with non-`dbg` names (`RouteDirectory::register`, `HeapLease::core`) sit outside the `verify-dbg-hook-safety.mjs` inventory; DoS via `mem::forget`.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T38 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** under `internals`, `RouteDirectory::register` and `HeapLease::core` are safe-named functions that mutate live global allocator state, but the scanner inventory (`scripts/verify-dbg-hook-safety.mjs`) only tracks `dbg_*` names, so these mutators escape its gating; a dependent can `mem::forget` a handle and leave global state pinned (DoS).
-    > - **Next trigger:** R6-T38 in the round-6 queue; close via that task's inventory widening and gating decision.
-    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-10; task R6-T38.
-
-225. **[T] Undocumented public tail of the crate-root `AllocCore` (`segment_bases`, ungated static `dbg_*` accessors) (+R6-CQ-26).** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T38 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** the crate-root `AllocCore` re-exports an undocumented public tail — `segment_bases` plus static `dbg_*` accessors with no feature gating — so the published surface exposes internals that are neither documented nor scanner-covered (per R6-CQ-26, a missing_docs gap on the same items).
-    > - **Next trigger:** R6-T38 in the round-6 queue; close via that task's surface audit (document, gate, or hide).
-    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-15 (+`code_quality_review.md` R6-CQ-26); task R6-T38.
 
 226. **[T] `internals` changes the synchronization of the production path that is then tested (`maintenance_service.rs`, `fallback.rs`).** (Filed 2026-10-15, round-6 src review.)
 
