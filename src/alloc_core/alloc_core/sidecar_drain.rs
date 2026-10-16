@@ -1,4 +1,7 @@
 //! Owner-only bounded drain of terminal route-sidecar publications.
+//! `Unknown` denotes a corrupt or unexpected header kind and is fatal here:
+//! these drains process active routed slots whose kind must be recognized
+//! (Small, Primordial, or Large), not treat `Unknown` as an unrelated-kind no-op.
 
 use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
 use crate::alloc_core::fatal::fatal;
