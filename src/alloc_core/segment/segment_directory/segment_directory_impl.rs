@@ -416,7 +416,11 @@ impl SegmentDirectory {
     /// production call sites of `node_bucket` stay `fn`-private and this
     /// test-only entry point is the one, clearly-named, place a test reaches
     /// through.
-    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+    #[cfg(all(
+        feature = "alloc-segment-directory",
+        feature = "numa-aware",
+        feature = "internals"
+    ))]
     #[inline]
     pub(crate) fn node_bucket_ro(&self, node_id: u32) -> usize {
         self.node_bucket(node_id)
@@ -520,7 +524,11 @@ impl SegmentDirectory {
     /// (per-node reads are meaningless in the single-bucket non-NUMA
     /// layout — `dbg_directory_get_bit`/`dbg_directory_get_bit_bucket` cover
     /// that case instead).
-    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+    #[cfg(all(
+        feature = "alloc-segment-directory",
+        feature = "numa-aware",
+        feature = "internals"
+    ))]
     #[inline]
     pub(crate) fn get_bit(&self, node_id: u32, class_idx: usize, slot_idx: usize) -> bool {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);

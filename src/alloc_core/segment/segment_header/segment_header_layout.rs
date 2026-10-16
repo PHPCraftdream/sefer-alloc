@@ -139,6 +139,12 @@ impl Layout {
     /// used the `MAX_REALISTIC_PAGE_SIZE` compile-time superset bound instead;
     /// this function is only ever called from genuinely-runtime
     /// decommit/recommit code paths, so the const-fn constraint doesn't apply.
+    // R6-T16: called by the alloc-decommit decommit/recommit sites and the
+    // internals geometry forwarder only.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "internals")),
+        allow(dead_code)
+    )]
     pub(crate) fn small_decommit_start() -> usize {
         let real_page = aligned_vmem::page_size();
         // Keep MAX_REALISTIC_PAGE_SIZE load-bearing: it documents and guards
@@ -157,6 +163,8 @@ impl Layout {
     /// R8-6 (task #219): same rationale as [`small_decommit_start`], for the
     /// primordial segment. Always `>= primordial_meta_end()`; on a 4 KiB-page
     /// system returns EXACTLY [`primordial_meta_end`].
+    // R6-T16: no decommit-path caller — internals geometry forwarder/tests only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(crate) fn primordial_decommit_start() -> usize {
         let real_page = aligned_vmem::page_size();
         debug_assert!(
@@ -192,6 +200,15 @@ impl Layout {
     /// counterfactual a 4 KiB-only development host cannot produce by
     /// running the real reservation path. Production call sites pass
     /// `aligned_vmem::page_size()`.
+    // R6-T16: both lazy arms are bypassed under `numa-aware` (eager NUMA
+    // reservation), so the fn is live only there without it.
+    #[cfg_attr(
+        not(any(
+            all(feature = "primordial-lazy-commit", not(feature = "numa-aware")),
+            all(feature = "small-segment-lazy-commit", not(feature = "numa-aware"))
+        )),
+        allow(dead_code)
+    )]
     #[cfg(any(
         feature = "primordial-lazy-commit",
         feature = "small-segment-lazy-commit"

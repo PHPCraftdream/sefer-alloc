@@ -13,6 +13,7 @@
 #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
 use core::alloc::Layout;
 
+#[cfg(feature = "internals")]
 use crate::alloc_core::os;
 
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
@@ -201,7 +202,7 @@ impl HeapCore {
     /// storage to `u8` — see `PerClass::count` — but keeps this accessor's
     /// return type stable for existing callers).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_tcache_count(&self, c: usize) -> u16 {
         self.tcache.classes[c].count as u16
     }
@@ -282,7 +283,7 @@ impl HeapCore {
     /// clamp fired for a given class without duplicating (and risking
     /// drifting from) the formula.
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_refill_n_for_class(&self, c: usize) -> usize {
         crate::registry::heap_core::state::tcache::refill_n_for_class(
             crate::alloc_core::size_classes::SizeClasses::block_size(c),
@@ -294,7 +295,7 @@ impl HeapCore {
     /// refill_n_for_class(block_size(c))` for every class. `None` when `c`
     /// is not a small size class.
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_free_park_cap(&self, c: usize) -> Option<usize> {
         if c >= crate::alloc_core::size_classes::SMALL_CLASS_COUNT {
             return None;

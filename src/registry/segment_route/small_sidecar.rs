@@ -47,6 +47,9 @@ impl SmallSidecar {
         crate::alloc_core::segment_table::SegmentTable::route_slot_bytes()
     }
 
+    // R6-T16: no in-src reader (the struct field uses SidecarBitmap::WORDS);
+    // consumed by internals builds and source-included oracle crates only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub const WORDS: usize = SidecarBitmap::WORDS;
 
     /// # Safety
@@ -195,6 +198,9 @@ impl SmallSidecar {
     }
 
     /// Owner-only bounded per-word cut through the existing bitmap scanner.
+    // R6-T16: internals-test/oracle surface only (production drains use
+    // scan_from); suppressed exactly outside internals.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn scan(&self, high_water: usize) -> Option<RouteScan<'_>> {
         self.bitmap()
             .scan(high_water)

@@ -46,6 +46,10 @@ pub(crate) use claim::HeapLease;
 // magazine/large-cache hit counters, bound by `global::fallback` at init
 // (there is no registry slot to bind for it) — see `counters::
 // FALLBACK_TCACHE_HITS`'s doc comment.
+#[cfg_attr(
+    not(all(feature = "alloc-decommit", not(feature = "fastbin"))),
+    allow(unused_imports)
+)]
 #[cfg(feature = "alloc-decommit")]
 pub use counters::large_cache_hits_total;
 #[cfg(all(
@@ -54,6 +58,10 @@ pub use counters::large_cache_hits_total;
     feature = "alloc-decommit"
 ))]
 pub use counters::tcache_and_large_cache_hits_total;
+#[cfg_attr(
+    not(all(feature = "fastbin", not(feature = "alloc-decommit"))),
+    allow(unused_imports)
+)]
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub use counters::tcache_hits_total;
 #[cfg(feature = "alloc-decommit")]

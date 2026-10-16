@@ -22,6 +22,12 @@ impl HeapCore {
     /// cross-thread diagnostic read (see the field's doc comment). Used by
     /// [`crate::registry::heap_registry::tcache_hits_total`] to aggregate across every
     /// LIVE slot into the process-wide view `stats()` exposes.
+    // R6-T16: internals-test reader only — the stats aggregator reads the
+    // slot-resident field directly, not this method.
+    #[cfg_attr(
+        not(any(feature = "alloc-stats", feature = "internals")),
+        allow(dead_code)
+    )]
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[doc(hidden)]
     #[must_use]

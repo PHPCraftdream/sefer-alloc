@@ -36,6 +36,7 @@ pub(super) fn scan_claimable_slot(reg: &Registry) -> Option<usize> {
 
 /// One fair pass over the high-water range, skipping unmaterialised chunks.
 /// No result is authoritative until the caller's FREE→MAINTENANCE CAS wins.
+#[cfg(feature = "internals")]
 pub(super) fn scan_free_slot(reg: &Registry) -> Option<(usize, &'static HeapSlot)> {
     let count = (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS);
     if count == 0 {

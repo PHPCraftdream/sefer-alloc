@@ -21,13 +21,19 @@
 #[cfg(feature = "hardened")]
 use core::ptr::NonNull;
 
+// R6-T16: every import below feeds only the internals-gated dbg impl.
+#[cfg(feature = "internals")]
 use crate::alloc_core::node::Node;
+#[cfg(feature = "internals")]
 use crate::alloc_core::os;
+#[cfg(feature = "internals")]
 use crate::alloc_core::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
+#[cfg(feature = "internals")]
 use crate::alloc_core::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
+#[cfg(feature = "internals")]
 use crate::alloc_core::alloc_core::AllocCore;
 
 #[cfg(feature = "internals")]

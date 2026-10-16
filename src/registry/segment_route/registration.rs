@@ -18,6 +18,7 @@ impl RouteRegistration<'_> {
     pub fn root(&self) -> *mut u8 {
         self.entry.root()
     }
+    #[cfg(feature = "internals")]
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }

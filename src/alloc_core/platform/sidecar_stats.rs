@@ -47,7 +47,10 @@
 // independent features.
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::AtomicU64;
+// R6-T16: consumed only by the internals-gated record/snapshot fns below.
+#[cfg(feature = "internals")]
+use core::sync::atomic::Ordering;
 
 use super::sidecar::SidecarKind;
 

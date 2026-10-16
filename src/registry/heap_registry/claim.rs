@@ -17,9 +17,9 @@ use core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
-use super::stack::{
-    pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
-};
+#[cfg(feature = "internals")]
+use super::stack::scan_free_slot;
+use super::stack::{pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot};
 use crate::alloc_core::fatal::fatal;
 use crate::registry::bootstrap::{ensure, Registry, FREE_SLOTS, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
@@ -138,6 +138,7 @@ impl HeapRegistry {
     ///
     /// Ph4c (ADR addendum §2.6): crate-only after the surface narrowing;
     /// external tests use the `internals`-gated `dbg_try_maintenance` alias.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[must_use]
     pub(crate) fn try_maintenance() -> Option<MaintenanceLease> {

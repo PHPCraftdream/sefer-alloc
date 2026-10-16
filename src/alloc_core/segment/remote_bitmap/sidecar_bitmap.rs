@@ -30,8 +30,9 @@ pub(crate) struct SidecarBitmap<'a> {
 #[derive(Clone, Copy)]
 #[cfg_attr(test, allow(dead_code))]
 pub(super) enum ClassMap<'a> {
-    // R6-T16: constructed only by the internals/loom-gated `from_initialized`.
-    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    // R6-T16: constructed only by `from_initialized`, whose consumers are
+    // source-include harnesses (`--cfg loom` / `cfg(test)`), never the lib.
+    #[cfg_attr(not(test), allow(dead_code))]
     Dense(&'a [AtomicU8]),
     Leaves(&'a ClassLeaves),
 }
@@ -51,9 +52,9 @@ impl<'a> SidecarBitmap<'a> {
 
     /// Backing must be separate from reservation bytes and zero-initialized
     /// before segment publication. Its lifetime must extend through all cuts.
-    // R6-T16: loom-shim / internals-probe constructor; production bitmaps
-    // start zeroed via the primordial path.
-    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    // R6-T16: loom-shim / source-include constructor (`--cfg loom`, `cfg(test)`);
+    // production bitmaps start zeroed via the primordial path.
+    #[cfg_attr(not(loom), allow(dead_code))]
     pub(crate) fn from_initialized(
         pending: &'a [AtomicU64],
         classes: &'a [AtomicU8],
@@ -125,6 +126,8 @@ impl<'a> SidecarBitmap<'a> {
     /// exactly `ceil(high_water / (64 * MIN_BLOCK))` words, without dirty hints
     /// or waiting for paused producers. An in-flight producer after a word's
     /// cut belongs to a later scan.
+    // R6-T16: reached only through the internals/oracle `SmallSidecar::scan`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(crate) fn scan(&self, high_water: usize) -> Option<BitmapScan<'a>> {
         self.scan_from(high_water, 0)
     }

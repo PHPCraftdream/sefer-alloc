@@ -443,6 +443,16 @@ medium_promotion_reachable! {
 /// foreign branch when `alloc-stats` is enabled.
 ///
 /// A healthy program keeps this at `0`. Relaxed: diagnostic only.
+// R6-T16: bumped by the alloc-xthread/alloc-stats publish paths and read by
+// the AllocStats backing accessor; suppressed where all are absent.
+#[cfg_attr(
+    not(any(
+        feature = "alloc-xthread",
+        feature = "alloc-stats",
+        feature = "internals"
+    )),
+    allow(dead_code)
+)]
 #[cfg(feature = "alloc-core")]
 pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);

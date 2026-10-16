@@ -9,11 +9,11 @@ use core::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "internals")]
 use super::claim::push_back_after_oom;
 use crate::registry::bootstrap::ensure;
-#[cfg(feature = "internals")]
+#[cfg(any(feature = "alloc-stats", feature = "internals"))]
 use crate::registry::bootstrap::MAX_HEAPS;
 #[cfg(feature = "alloc-stats")]
 use crate::registry::heap_slot::HeapSlot;
-#[cfg(feature = "alloc-stats")]
+#[cfg(feature = "internals")]
 use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
@@ -161,6 +161,13 @@ pub fn config_conflicts_total() -> u64 {
 /// [`HeapSlot::initialised`]: crate::registry::heap_slot::HeapSlot::initialised
 /// [`HeapSlot::heap`]: crate::registry::heap_slot::HeapSlot::heap
 /// [`HeapCore`]: crate::registry::heap_core::HeapCore
+// R6-T16: consumed only by `cache_hit_totals`' `fastbin ∧ ¬alloc-decommit`
+// branch (and internals builds); the decommit+fastbin combination reads the
+// combined counter instead.
+#[cfg_attr(
+    not(all(feature = "fastbin", not(feature = "alloc-decommit"))),
+    allow(dead_code)
+)]
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 #[must_use]
@@ -233,6 +240,13 @@ pub fn tcache_hits_total() -> u64 {
 /// without `alloc-stats` the walk is compiled out (returns 0 with no loop).
 ///
 /// [`HeapSlot::initialised`]: crate::registry::heap_slot::HeapSlot::initialised
+// R6-T16: consumed only by `cache_hit_totals`' `alloc-decommit ∧ ¬fastbin`
+// branch (and internals builds); the decommit+fastbin combination reads the
+// combined counter instead.
+#[cfg_attr(
+    not(all(feature = "alloc-decommit", not(feature = "fastbin"))),
+    allow(dead_code)
+)]
 #[cfg(feature = "alloc-decommit")]
 #[doc(hidden)]
 #[must_use]
