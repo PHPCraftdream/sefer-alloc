@@ -1,14 +1,13 @@
 //! R6-T50 (`docs/agent_reviews_round6/memory_safety_review.md` R6-MS-3):
-//! the foreign realloc leg must bound its move-leg read by the route
-//! descriptor's registration-time COMMITTED span, not the reserved route
-//! span. Under `large-reserved-capacity` a forged `old_layout` whose size
-//! fits the reservation but exceeds the committed `span_usable` previously
-//! passed the capacity check and drove the copy into reserved-but-
-//! uncommitted VA (access violation on Windows; a garbage copy on
-//! eager-commit backends). The descriptor bound turns both into a clean
-//! null before any allocation. The metadata-address test pins the second
-//! half of the fix: a Small/Primordial segment's metadata is not route
-//! payload, so an address inside it is rejected at route lookup.
+//! the foreign realloc leg must bound its read by the segment's live commit
+//! frontier, not the reserved route span. Under `large-reserved-capacity` a
+//! forged `old_layout` that fits the reservation but exceeds `span_usable`
+//! previously drove the copy into reserved-but-uncommitted VA (access
+//! violation on Windows; a garbage copy on eager-commit backends); it now
+//! returns null before any allocation. A legit block the owner grew in place
+//! stays valid, because the bound is the current `span_usable`, not the
+//! registration-time one. For Small/Primordial routes an address inside the
+//! segment metadata is rejected.
 //!
 //! These tests deliberately violate the `unsafe fn realloc` caller contract
 //! (bogus `old_layout`). They probe defense-in-depth null returns, not a
@@ -27,7 +26,7 @@ use core::alloc::Layout;
 use core::sync::atomic::Ordering;
 
 use sefer_alloc::registry::segment_route::RouteDirectory;
-use sefer_alloc::registry::{bootstrap, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapLease, HeapRegistry};
 use sefer_alloc::SeferAlloc;
 use std::alloc::GlobalAlloc;
 
@@ -52,6 +51,28 @@ impl Drop for SerialGuard {
     }
 }
 
+/// A foreign lease that is leaked, not dropped, while a failed assertion
+/// unwinds: `HeapLease::drop` aborts while panicking, which would turn every
+/// assertion failure below into a message-less SIGABRT.
+struct ForeignLease(Option<HeapLease>);
+impl ForeignLease {
+    fn claim() -> Self {
+        Self(Some(
+            HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None"),
+        ))
+    }
+    fn core(&mut self) -> &mut sefer_alloc::registry::HeapCore {
+        self.0.as_mut().expect("lease present").core()
+    }
+}
+impl Drop for ForeignLease {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            core::mem::forget(self.0.take());
+        }
+    }
+}
+
 /// 1 MiB source allocation: classifies Large (well above the largest small
 /// class), and under `large-reserved-capacity` reserves `4 x usable`
 /// (capped at 64 MiB) while committing only `usable` — so the
@@ -71,15 +92,15 @@ fn foreign_realloc_forged_layout_beyond_committed_span_returns_null() {
     // SAFETY: the source allocator receives a valid nonzero Layout.
     let p = unsafe { source.alloc(large) };
     assert!(!p.is_null(), "setup: 1 MiB large allocation failed");
-    // The block must be foreign-routed (descriptor, not another owner's
-    // header) for the committed-span bound to apply.
-    let route = RouteDirectory::global()
-        .lookup(p)
-        .expect("large allocation has a registered route");
+    // The block must be foreign-routed for the frontier bound to apply.
+    assert!(
+        RouteDirectory::global().lookup(p).is_some(),
+        "large allocation has a registered route"
+    );
     // SAFETY: `p` is valid for LARGE_SIZE bytes.
     unsafe { core::ptr::write_bytes(p, 0x5A, LARGE_SIZE) };
 
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let mut lease = ForeignLease::claim();
     let heap = lease.core();
 
     // The old Layout is intentionally false: LARGE_SIZE < FORGED_OLD <=
@@ -133,7 +154,7 @@ fn foreign_realloc_true_layout_within_committed_span_succeeds() {
     // SAFETY: `p` is valid for LARGE_SIZE bytes.
     unsafe { core::ptr::write_bytes(p, 0x99, LARGE_SIZE) };
 
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let mut lease = ForeignLease::claim();
     let heap = lease.core();
 
     // Positive control: the TRUE old layout fits the committed span, so the
@@ -183,7 +204,7 @@ fn foreign_realloc_small_segment_metadata_address_is_rejected() {
     let base = (p.addr() & !(sefer_alloc::SegmentLayout::SEGMENT - 1)) as *mut u8;
     assert_ne!(base, p, "setup: expected a non-base block address");
 
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let mut lease = ForeignLease::claim();
     let heap = lease.core();
 
     // A metadata address is not a routable payload start: lookup rejects it
@@ -219,7 +240,7 @@ fn foreign_realloc_small_true_block_within_payload_succeeds() {
     // SAFETY: `p` is valid for 64 bytes.
     unsafe { core::ptr::write_bytes(p, 0x77, 64) };
 
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let mut lease = ForeignLease::claim();
     let heap = lease.core();
 
     // Positive control: a REAL small block address (>= meta_end) keeps
@@ -276,7 +297,7 @@ fn foreign_realloc_after_owner_inplace_grow_succeeds() {
     // SAFETY: `p` is valid for FORGED_OLD bytes after the grow.
     unsafe { core::ptr::write_bytes(p.add(LARGE_SIZE), 0x5C, FORGED_OLD - LARGE_SIZE) };
 
-    let mut lease = HeapRegistry::dbg_claim_lease().expect("HeapRegistry::claim returned None");
+    let mut lease = ForeignLease::claim();
     let heap = lease.core();
 
     // Foreign realloc with the TRUE grown layout: the read bound is the
