@@ -139,6 +139,8 @@ job). Lookup rows updated; card counts in the tier files re-typed.
 
 **Src review round 6 wave (2026-10-15).** Six reports (MS/CC/CR/PF/CQ/SEC) reviewed `src/` at `132ab85b`; all static reading, nothing executed, no Critical and no safe-code UB in `production` found. Findings filed as items 206–246 (mapping to tasks R6-Txx in `docs/agent_reviews_round6/SUMMARY.md`); the perf-side findings are in `docs/perf/OPEN_ITEMS.md` items 90–99 plus Round-6 notes on perf items 4/28/66/72/83; existing cards 154, 166 and 186 gained Round-6 evidence notes, and the round-5 U-R5-5 residual was filed as new item 246. Evidence: `docs/agent_reviews_round6/` (six reports + SUMMARY).
 
+**Round-6 closure update (2026-10-16).** Items 206–208 are now CLOSED and resolve to `docs/correctness-open-items/RESOLVED.md`; see entries 206–208 for verified PR/task evidence. No item numbers changed.
+
 ---
 
 ## Structure — this file is a thin index (split 2026-08-20, task #1217;
@@ -568,24 +570,24 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 203 | `TRACKED_platform_contracts.md` |
 | 204 | `TRACKED_ci_gate_coverage.md` |
 | 205 | `TRACKED_verification_coverage.md` |
-| 206 | `ACTIVE.md` |
-| 207 | `ACTIVE.md` |
-| 208 | `ACTIVE.md` |
+| 206 | `RESOLVED.md` |
+| 207 | `RESOLVED.md` |
+| 208 | `RESOLVED.md` |
 | 209 | `RESOLVED.md` |
 | 210 | `RESOLVED.md` |
-| 211 | `TRACKED_correctness_residuals.md` |
-| 212 | `TRACKED_correctness_residuals.md` |
+| 211 | `RESOLVED.md` |
+| 212 | `RESOLVED.md` |
 | 213 | `RESOLVED.md` |
-| 214 | `TRACKED_correctness_residuals.md` |
+| 214 | `RESOLVED.md` |
 | 215 | `TRACKED_correctness_residuals.md` |
-| 216 | `TRACKED_correctness_residuals.md` |
-| 217 | `TRACKED_correctness_residuals.md` |
-| 218 | `TRACKED_correctness_residuals.md` |
-| 219 | `TRACKED_correctness_residuals.md` |
-| 220 | `TRACKED_correctness_residuals.md` |
+| 216 | `RESOLVED.md` |
+| 217 | `RESOLVED.md` |
+| 218 | `RESOLVED.md` |
+| 219 | `RESOLVED.md` |
+| 220 | `RESOLVED.md` |
 | 221 | `TRACKED_verification_coverage.md` |
 | 222 | `TRACKED_verification_coverage.md` |
-| 223 | `TRACKED_hook_safety.md` |
+| 223 | `RESOLVED.md` |
 | 224 | `RESOLVED.md` |
 | 225 | `RESOLVED.md` |
 | 226 | `TRACKED_hook_safety.md` |
@@ -594,8 +596,8 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 229 | `TRACKED_platform_contracts.md` |
 | 230 | `TRACKED_platform_contracts.md` |
 | 231 | `TRACKED_platform_contracts.md` |
-| 232 | `TRACKED_publish_readiness.md` |
-| 233 | `TRACKED_publish_readiness.md` |
+| 232 | `RESOLVED.md` |
+| 233 | `RESOLVED.md` |
 | 234 | `TRACKED_publish_readiness.md` |
 | 235 | `TRACKED_publish_readiness.md` |
 | 236 | `TRACKED_publish_readiness.md` |

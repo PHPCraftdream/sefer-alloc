@@ -348,9 +348,9 @@ split the same day.)
 228. **[T] `start_maintenance()` — an irreversible process-wide worker reachable by any dependency; `start()` waits without a timeout (loader lock).** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T35 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** one call from any dependency starts the process-global maintenance worker irreversibly, and the start path blocks without a timeout — on Windows that wait can be held against the loader lock, so an arbitrary dependency can freeze or permanently alter the host process's allocator behavior.
-    > - **Next trigger:** R6-T35 in the round-6 queue; close via that task's ownership/timeout design and its tests.
+    > - **Status:** PARTIAL — R6-T35 timeout limb merged (PR #38, `dc6b20c9`): startup confirms the worker within a fixed internal bound and aborts instead of hanging (README "Honest limitations" records this). The ownership question — an irreversible process-global worker activatable by any dependency — remains by design, documented but unresolved.
+    > - **Current:** `start()` no longer waits without a bound; the no-opt-out process-wide worker remains.
+    > - **Next trigger:** an owner decision on dependency-reachable activation or an opt-out mechanism; do not close on the timeout limb alone.
     > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-6; task R6-T35.
 
 229. **[T] FFI type of `RtlDllShutdownInProgress` is declared as `fn() -> isize` but invoked as `fn() -> u8` (harmless, mismatched).** (Filed 2026-10-15, round-6 src review.)
@@ -364,15 +364,15 @@ split the same day.)
 230. **[T] CAS spins without TTAS/FIFO fairness; the ntdll FFI probe runs on every iteration past 64 spins.** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T26 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** the shard/fallback spin loops (`shard_lock.rs:49-95`, `fallback.rs:487-526`, `process_exit.rs:55-75`) hammer the CAS line with no test-before-test-and-set or backoff, and each iteration past 64 spins re-probes `process_exit_in_progress()` through FFI — contention cost plus a syscall-adjacent call per spin.
-    > - **Next trigger:** R6-T26 in the round-6 queue; close via that task's TTAS/backoff change and its contention bench.
+    > - **Status:** PARTIAL — R6-T26 TTAS/backoff landed (PR #42, `a800d040`: test-before-test-and-set plus bounded exponential backoff in the shard-lock and fallback-lock spins); the contention bench this card asked for is not evidenced in this audit.
+    > - **Current:** spin loops no longer hammer the CAS line unbounded; whether the native contention bench ran is not confirmed here.
+    > - **Next trigger:** confirm/attach the contention bench receipt; close only then.
     > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-6; task R6-T26.
 
 231. **[T] README/docs do not admit that cross-thread misuse produces a deferred `abort` in an arbitrary owner thread, not a no-op (doc aspect, distinct from item 166).** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T28 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** item 166 owns the mechanism (class-leaf/cross-thread interior free); this card owns the documentation gap: README and the crate docs never state that a cross-thread contract violation surfaces as a deferred abort in whichever thread happens to own the segment, rather than a discarded no-op in the caller.
-    > - **Next trigger:** R6-T28 in the round-6 queue; close when the README "honest limitations" text names the deferred-abort semantics.
+    > - **Status:** PARTIAL — R6-T28 class-leaves change merged (PR #42 commits `cb3794aa`/`a99440c8`/`4167b7cd`, gate `docs/perf/R6_T28_START_GRANULE_CLASS_LEAVES_GATE.md`); the README "Honest limitations" section now states interior cross-thread frees are dropped, not honored, but still does not name the deferred-abort-in-owner-thread semantics this card asks for.
+    > - **Current:** README documents the drop semantics and the residual granule-aligned-start indistinguishability; the deferred-abort wording is absent.
+    > - **Next trigger:** add the explicit deferred-abort sentence (or an owner decision that the new drop semantics make it moot).
     > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-2 (doc aspect); task R6-T28.

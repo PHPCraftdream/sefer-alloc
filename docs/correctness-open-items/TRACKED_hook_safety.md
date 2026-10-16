@@ -840,26 +840,18 @@ split the same day.)
      warnings` clean; `cargo clippy --all-features --all-targets -- -D
      warnings` clean; `cargo fmt --check` clean.
 
-223. **[T] Tier-1 `#![allow(unsafe_code)]` in `src/global/tls_heap.rs` although there is no `unsafe` without `bench-internals` (+R6-CQ-25).** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T37 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** `tls_heap.rs` carries a file-level `#![allow(unsafe_code)]` even though, without `bench-internals`, the file contains no `unsafe` at all — a tier-1 lint suppression that masks any future unsafe introduction in that module (and, per R6-CQ-25, an unmotivated allow pattern).
-    > - **Next trigger:** R6-T37 in the round-6 queue; close by removing/scoping the allow with the hook-safety scanner green.
-    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-9 (+`code_quality_review.md` R6-CQ-25); task R6-T37.
-
 226. **[T] `internals` changes the synchronization of the production path that is then tested (`maintenance_service.rs`, `fallback.rs`).** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T47 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** enabling `internals` alters the locking/synchronization of code that ships in `production` (`maintenance_service.rs`, `fallback.rs`), so the tests that run under `internals` exercise a different synchronization shape than the shipped one — coverage is not measuring production.
-    > - **Next trigger:** R6-T47 in the round-6 queue; close via that task's separation of test-only state from production synchronization.
+    > - **Status:** PARTIAL — R6-T46/T47/T49 non-API limbs landed in PR #59 (`004ad7e0`); the remaining `internals` sync-divergence residual is not closed.
+    > - **Current:** cfg-contexts, missing_docs and related non-API limbs shipped; whether `internals` still changes production synchronization shape is not re-verified here.
+    > - **Next trigger:** close only after confirming test-only state no longer alters production locking.
     > - **Evidence:** `docs/agent_reviews_round6/code_quality_review.md` R6-CQ-27; task R6-T47.
 
 227. **[T] The soundness boundary in `src/lib.rs` is incomplete (membranes omit `dealloc_routing`/`reclaim_sidecar_record`); several SAFETY arguments are stale.** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 tasks R6-T37 and R6-T17 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** the soundness-boundary (membrane) documentation in `src/lib.rs` does not cover `dealloc_routing` or `reclaim_sidecar_record`, and several `unsafe` blocks' SAFETY comments no longer match the code they annotate (the tls-heap part belongs to R6-T37, the rest to R6-T17's unsafe-contract pass).
-    > - **Next trigger:** R6-T37/R6-T17 in the round-6 queue; close when the membrane list is complete and the rewritten SAFETY arguments pass review.
+    > - **Status:** PARTIAL — R6-T37 landed (`4d12e199`); the membrane-list gap remains: `src/lib.rs`'s soundness-boundary list still does not name `dealloc_routing`/`reclaim_sidecar_record`.
+    > - **Current:** module allow removed and SAFETY-comment work landed in PR #57 + PR #60; the membrane examples are not yet listed.
+    > - **Next trigger:** update the membrane list for `dealloc_routing` and `reclaim_sidecar_record`; do not broaden into excluded tasks.
     > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-6; tasks R6-T37, R6-T17.

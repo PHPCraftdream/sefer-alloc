@@ -2219,3 +2219,17 @@ Both own-thread Large free sites in `dealloc_own_base.rs` pass the `OwnedBlock` 
 93. **R6-PF-5 (+R17-OPT-08) — per-record recomputation of segment invariants in owner-drain.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T12, NO-GO.)
 
 The review estimated ~10–20 Ir per reclaimed record from hoisting `kind_at`, payload start, `bump_of` and the metadata views to one computation per scan, batching `dec_live` into one `sub_live(k)`, and replacing `off % block_size` with a compile-time reciprocal. PR #58 built that candidate (`SidecarReclaim`, B `e88c3bce`) and the iai A/B gate measured it against `main` `d3941723`: no cell over threshold, but every drain cell went up — `r19_prf01_publication` +1425 of 3621539, `seg_cycle_decommit_256k` +3559 of 10359137, `multiseg_cold_256k` +1271 of 3389835, and `growth16_n` / `_2n` / `_4n` +26608 / +53232 / +106480, scaling with the work. The code was reverted in the same PR. Gate: `docs/perf/R6_T12_OWNER_DRAIN_CONTEXT_GATE.md`. Next trigger: none; the R6-T06 reciprocal divisibility helper (PR #57) is available if a cheaper shape is proposed.
+
+92. **R6-PF-4 — Tier-1 `own_cache` keys and roots in two parallel arrays plus a `!is_null` check on every free/lookup.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T11.)
+
+- **Status:** CLOSED — R6-T11, PR #43, commit `26c1ae16`.
+- **Current number/verdict:** `own_cache` became a (key, root) pair array with a sentinel key. A/B gate: Tier-1 probe −155 Ir; free/churn cells flat; cold/recycle carves +0.1–0.16%.
+- **Next trigger:** None.
+- **Evidence:** `docs/perf/R6_T11_OWN_CACHE_PAIR_LAYOUT_GATE.md`; `tests/segment_table_own_cache_pair_layout.rs`; PR #43. Test not run in this audit.
+
+99. **R6-CR-6 (perf aspect) — every cold trim resets the segment directory.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T32.)
+
+- **Status:** CLOSED — R6-T32, PR #48, implementation `d69266b7`; task merge `2ffaa7ba`.
+- **Current number/verdict:** `find_segment_with_free_impl` attempts directory materialization before fallback scanning, rebuilding lazily after cold trim. Combined T31/T32 iai gate PASSed its pre-set thresholds; informational/hot Small cells showed small costs.
+- **Next trigger:** None for lazy directory rebuilding. T31's pool decay only runs on allocator activity; the gate does not measure RSS and a completely inactive thread retains up to its configured pool cap.
+- **Evidence:** `tests/r6_t32_directory_rebuild_after_trim.rs`; `docs/perf/R6_T31_T32_POOL_DECAY_DIRECTORY_REBUILD_GATE.md`; `5fffd5a5` gate record. Test not run in this audit.
