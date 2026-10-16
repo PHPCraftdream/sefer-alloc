@@ -1,5 +1,5 @@
-E0_METADATA {"id":"R4c-07","head":"8fdd9213778d7814c57a873befbab1e7fe6560bb","tree":"a1e763e01c70d030df4a216f6887ceefed9a7208","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-07","head":"8fdd9213778d7814c57a873befbab1e7fe6560bb","tree":"a1e763e01c70d030df4a216f6887ceefed9a7208","os":"linux x64","toolchain":"rustc 1.101.0-nightly (4ebd25825 2026-10-15)\nbinary: rustc\ncommit-hash: 4ebd258257737d5b7635c116fa7d281627a7e937\ncommit-date: 2026-10-15\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB (default)","recipe":"docs/evidence/reverify-recipes/R4c-07.json","recipe_sha256":"4ab5310f1333f5890545690a1a5efbac6fbd5c60b749d50fe82a2c13542f30b9","registry_activation_hash":"25da33e6ce1e7be846375d57bf9aba838aac9d3d40cda395763ebf7dd2f27c48"}
+E0_METADATA {"id":"R4c-07","head":"3277724a07665ce7f40907901caf44d8cc22e55a","tree":"5934b7fbf667eed2bad8a2d477d4ea1754e18a44","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-07","head":"3277724a07665ce7f40907901caf44d8cc22e55a","tree":"5934b7fbf667eed2bad8a2d477d4ea1754e18a44","os":"linux x64","toolchain":"rustc 1.101.0-nightly (4ebd25825 2026-10-15)\nbinary: rustc\ncommit-hash: 4ebd258257737d5b7635c116fa7d281627a7e937\ncommit-date: 2026-10-15\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB (default)","recipe":"docs/evidence/reverify-recipes/R4c-07.json","recipe_sha256":"4ab5310f1333f5890545690a1a5efbac6fbd5c60b749d50fe82a2c13542f30b9","registry_activation_hash":"25da33e6ce1e7be846375d57bf9aba838aac9d3d40cda395763ebf7dd2f27c48"}
 
 E0_STEP {"id":"R4c-07","kind":"baseline","name":"plain xthread thread-free alias test","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","regression_xthread_thread_free_alias_miri"],"env":{"MIRIFLAGS":"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"},"expect":{"exit":0,"stdoutRegex":["test xthread_thread_free_write_overlaps_owner_alloc_mut \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -118,7 +118,7 @@ note: the current function got called indirectly due to this code
 
 ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.25s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.23s
 
 warning: 1 warning emitted
 

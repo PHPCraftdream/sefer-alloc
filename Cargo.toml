@@ -2609,3 +2609,9 @@ codegen-units = 1
 # (warns "`panic` setting is ignored for `bench` profile") because the
 # libtest/criterion harness requires unwinding to catch a failing
 # iteration/assertion. Left out; `lto`/`codegen-units` still apply.
+
+[[test]]
+name = "r6_t40_sidecar_system_alloc"
+path = "tests/r6_t40_sidecar_system_alloc.rs"
+required-features = ["production", "internals", "bench-internals"]
+
