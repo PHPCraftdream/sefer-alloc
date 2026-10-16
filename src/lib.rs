@@ -317,6 +317,7 @@
 //  audit — but the *soundness argument* spans those safe callers too.
 //  This is a deliberate, worthwhile trade — named here so a future editor does
 //  not misread "no stray unsafe" as "no UB reachable from safe code".
+#![warn(missing_docs)]
 #![cfg_attr(
     not(any(feature = "experimental", feature = "alloc-core")),
     forbid(unsafe_code)
@@ -442,6 +443,7 @@ mod concurrent;
 // for the full boundary/decision writeup.
 #[cfg(all(feature = "alloc-core", feature = "internals"))]
 #[doc(hidden)]
+#[allow(missing_docs)]
 pub mod alloc_core;
 // `allow(dead_code, unused_imports)`: without `internals` this module's
 // only external callers (integration tests reaching `dbg_*`/other
@@ -473,6 +475,7 @@ pub(crate) mod alloc_core;
 // — see `internals`'s doc comment in `Cargo.toml`.
 #[cfg(all(feature = "alloc-global", feature = "internals"))]
 #[doc(hidden)]
+#[allow(missing_docs)]
 pub mod global;
 // `allow(dead_code)`: same `internals`-off white-box-surface artifact as
 // `alloc_core` above.
@@ -485,6 +488,7 @@ pub(crate) mod global;
 // `internals`'s doc comment in `Cargo.toml`.
 #[cfg(all(feature = "alloc-global", feature = "internals"))]
 #[doc(hidden)]
+#[allow(missing_docs)]
 pub mod registry;
 // `allow(dead_code)`: same `internals`-off white-box-surface artifact as
 // `alloc_core` above.
