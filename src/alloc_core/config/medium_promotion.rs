@@ -175,6 +175,10 @@ macro_rules! medium_promotion_reachable {
 ///     }
 /// }
 /// ```
+///
+/// Gated like its only consumers (the `registry` tree, `alloc-global`), so an
+/// `alloc-core`-only build does not carry an unused macro.
+#[cfg(feature = "alloc-global")]
 macro_rules! medium_promotion_unreachable {
     ($($rest:tt)*) => {
         #[cfg(not(all(
