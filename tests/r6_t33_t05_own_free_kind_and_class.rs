@@ -176,7 +176,7 @@ fn misaligned_interior_free_is_rejected_in_all_configurations() {
         .into_iter()
         .find(|candidate| {
             let off = candidate.addr() - root.addr();
-            off % 48 != 0 && off % 64 != 0
+            !off.is_multiple_of(48) && !off.is_multiple_of(64)
         })
         .expect("at least one candidate is not divisible by either class stride");
     let off = interior.addr() - root.addr();
@@ -222,7 +222,7 @@ fn aligned_wrong_class_block_start_is_rejected_by_hardened_identity_check() {
         let candidate = heap.alloc(big);
         assert!(!candidate.is_null(), "setup: 64-byte allocation failed");
         let off = candidate.addr() - SegmentLayout::segment_base_of(candidate.addr());
-        if off % 192 == 0 {
+        if off.is_multiple_of(192) {
             p = candidate;
             break;
         }

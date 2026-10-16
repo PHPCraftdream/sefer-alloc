@@ -557,9 +557,9 @@ impl AllocCore {
             if head_off == FREE_LIST_NULL {
                 return Ok(0);
             }
-            // Prepare every spill on the still-owned chain. On OOM the head,
-            // bitmap, live count and output remain unchanged; promoted leaves
-            // are valid zero-filled copies and may be reused by a later retry.
+            // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
+            // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
+            #[cfg(not(feature = "hardened"))]
             let bounds = crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(
                 segment, class_idx,
             );
@@ -621,9 +621,8 @@ impl AllocCore {
                 let block_ptr = Node::deref(segment, head_off as usize);
                 let block_nn = match NonNull::new(block_ptr) {
                     Some(nn) => nn,
-                    // A null-deref would only arise from a corrupt offset; stop the
-                    // walk here and commit what we have (defence-in-depth). `head`
-                    // is left pointing at this node so nothing is lost.
+                    // Corrupt offset only: commit what we have (defence-in-depth);
+                    // `head` stays on this node so nothing is lost.
                     None => break,
                 };
                 // Dependent load: read this block's `next` BEFORE recording it. The
@@ -636,10 +635,11 @@ impl AllocCore {
                 IssueTransaction::commit_prepared(&self.table, index, segment, head_off, class_idx);
                 out[k] = block_ptr;
                 k += 1;
+                // The probe pass above validated this same chain link by link.
                 head_off = if next.is_null() {
                     FREE_LIST_NULL
                 } else {
-                    Node::continuation_offset_or_fatal(segment, next, bounds)
+                    next.addr().wrapping_sub(segment.addr()) as u32
                 };
             }
             // Write the new head ONCE: the first un-popped node, or NULL.

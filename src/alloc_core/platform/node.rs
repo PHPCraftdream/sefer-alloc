@@ -40,6 +40,7 @@ use core::mem::size_of;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(not(feature = "hardened"))]
 use super::fatal::fatal;
 
 /// A free-list node: the first word of a freed block stores the `*mut u8` of
@@ -80,6 +81,7 @@ impl Node {
     /// allocator-metadata corruption and terminates via `fatal`, never an
     /// arithmetic-overflow panic, never a truncated or out-of-range offset
     /// handed back as a free-list head.
+    #[cfg(not(feature = "hardened"))]
     #[inline(always)]
     pub(crate) fn continuation_offset_or_fatal(
         base: *mut u8,
