@@ -443,9 +443,8 @@ impl AllocCore {
         let new_head = if next.is_null() {
             FREE_LIST_NULL
         } else {
-            let bounds = crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(
-                segment, class_idx,
-            );
+            let bounds =
+                crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
             Node::continuation_offset_or_fatal(segment, next, bounds)
         };
         let Some(tx) = self.table.prepare_small_issue(segment, head_off, class_idx) else {
@@ -560,9 +559,8 @@ impl AllocCore {
             // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
             // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
             #[cfg(not(feature = "hardened"))]
-            let bounds = crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(
-                segment, class_idx,
-            );
+            let bounds =
+                crate::alloc_core::config::continuation_bounds::ContinuationBounds::new(segment);
             let mut probe = head_off;
             #[cfg(feature = "hardened")]
             let mut slow = head_off;

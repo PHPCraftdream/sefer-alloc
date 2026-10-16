@@ -5,7 +5,8 @@
 //! continuation that is below the segment base, inside the metadata region,
 //! at/past the segment's `bump` cursor, at/after `SEGMENT` (including the
 //! former silent `as u32` truncation for a poisoned pointer ≥ 4 GiB past the
-//! base), or not a whole multiple of the class's block size.
+//! base), or not `MIN_BLOCK`-aligned (class-stride divisibility is
+//! hardened-only, `valid_free_node`).
 //!
 //! This is the production-floor sibling of
 //! `tests/regression_freelist_next_validation.rs` (which covers the stronger

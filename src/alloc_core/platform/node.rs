@@ -77,7 +77,7 @@ impl Node {
     /// R6-SEC-3): a corrupted `next` — below `base`, inside the header/
     /// metadata region, at or past the segment's `bump` cursor, at/after
     /// `SEGMENT` (the former silent `as u32` truncation for pointers ≥ 4 GiB
-    /// past the base), or not a whole multiple of the class's block size — is
+    /// past the base), or not `MIN_BLOCK`-aligned — is
     /// allocator-metadata corruption and terminates via `fatal`, never an
     /// arithmetic-overflow panic, never a truncated or out-of-range offset
     /// handed back as a free-list head.

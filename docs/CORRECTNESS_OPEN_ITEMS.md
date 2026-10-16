@@ -571,11 +571,11 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 206 | `ACTIVE.md` |
 | 207 | `ACTIVE.md` |
 | 208 | `ACTIVE.md` |
-| 209 | `ACTIVE.md` |
-| 210 | `ACTIVE.md` |
+| 209 | `RESOLVED.md` |
+| 210 | `RESOLVED.md` |
 | 211 | `TRACKED_correctness_residuals.md` |
 | 212 | `TRACKED_correctness_residuals.md` |
-| 213 | `TRACKED_correctness_residuals.md` |
+| 213 | `RESOLVED.md` |
 | 214 | `TRACKED_correctness_residuals.md` |
 | 215 | `TRACKED_correctness_residuals.md` |
 | 216 | `TRACKED_correctness_residuals.md` |

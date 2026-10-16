@@ -172,14 +172,6 @@ split the same day.)
     > - **Next trigger:** R6-T31 in the round-6 queue; close via that task's "burst → idle → tick → pool empty" test (or a corrected doc), plus the RSS gate if a decay tick is added.
     > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-5; task R6-T31.
 
-213. **[T] `small_free_guard` treats `BlockKind::Unknown` as Small and parks the block in the magazine; the substrate does a no-op for the same case.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T33 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** at `dealloc_own_base.rs:198` and `:215-233`/`:292-312` a `BlockKind::Unknown` granule is not rejected before the Small classification, so it is pushed into the magazine, while the substrate's reference no-op for the same case (`mem_impl.rs:536`, `:539-551`) treats it as unroutable — the two layers disagree on the same input.
-    > - **Next trigger:** R6-T33 in the round-6 queue; close via that task's counterfactual test (`Unknown` → reject/no-op, not a magazine push).
-    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-7; task R6-T33.
-
 214. **[T] Biased Large without `numa-aware` does not retry the reservation after draining the pool.** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
@@ -252,7 +244,7 @@ split the same day.)
 247. **[T, filed 2026-10-16, R6-T06/R6-T05 round 6
     (`docs/agent_reviews_round6/api_security_review.md` R6-SEC-3, R6-SEC-1)]
     Free-list poisoning residuals left open after the R6-T06 production-floor
-    validation (checked_sub + range + multiple + metadata bound, corruption →
+    validation (range + `MIN_BLOCK` alignment + metadata bound, corruption →
     `fatal`): no safe-linking XOR mask, and the class-map free check covers
     only the own-thread dealloc path.**
 
@@ -260,7 +252,8 @@ split the same day.)
       no-flag default (`Node::continuation_offset_or_fatal` now rejects, with
       `fatal`, a continuation below the segment base, inside the metadata
       region, at/past `bump`, at/after `SEGMENT` (the former silent `as u32`
-      truncation), or not a multiple of the class block size); the two
+      truncation), or not `MIN_BLOCK`-aligned; class-stride divisibility stays
+      hardened-only in `valid_free_node`, iai cost ~10 Ir per link on PR #57); the two
       sub-items below were judged outside the no-flag tolerance budget and
       are tracked, not actioned.
     - **Sub-item (a) — safe-linking:** free-list `next` words still store raw
