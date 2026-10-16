@@ -441,9 +441,9 @@ impl AllocCore {
                         // The cached entry owns the reservation; AllocCore::drop
                         // releases it explicitly from the large_cache array.
                         self.table.unregister(base);
-                        // Zero the magic so that if something reads the header
-                        // while it's in the cache, it won't be confused as a
-                        // live registered segment.
+                        // Zero the magic: the atomic store updates owner-side
+                        // cached-header state. Foreign frees resolve route
+                        // descriptors and sidecars, not reservation headers.
                         //
                         // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-
                         // synthesis.md): this used to be `hdr_zero = stale;
@@ -626,9 +626,8 @@ impl AllocCore {
     /// Large segment and the grown size (clamped to `MIN_BLOCK`) still fits
     /// the segment's `span_usable`, we update the header's `large_size` and
     /// return the same pointer. Shrinks fall through to the slow path
-    /// (reclaims RSS). The stored size is clamped to `MIN_BLOCK` to stay
-    /// symmetric with the alloc path and the #138 cross-thread consistency
-    /// check (`large_layout_consistent`).
+    /// (reclaims RSS). The stored size is clamped to `MIN_BLOCK` to match
+    /// the allocator's effective request size on the alloc path.
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
     /// Returns null on failure, leaving the old allocation intact. Null `ptr`

@@ -1,8 +1,8 @@
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see `src/lib.rs`);
-// this is the documented alloc-face seam. `allow` lifts the crate-level
-// deny for this file only -- `unsafe` anywhere else in the crate is a hard
-// error. The ONLY `unsafe` here is the `unsafe impl GlobalAlloc` (the trait
-// is `unsafe`) plus the `// SAFETY:`-annotated pointer handoff to HeapCore.
+// this is the documented alloc-face seam. `allow` lifts the crate-level deny
+// for this file only. Unsafe operations include raw pointer handoff to
+// `HeapCore`, `System` allocation, realloc pointer copies, and the unsafe
+// diagnostic hook below; each block has a local `// SAFETY:` justification.
 #![allow(unsafe_code)]
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -58,21 +58,20 @@ fn exit_escape_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mu
     }
 }
 
-// SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/
-// `alloc_zeroed`/`realloc` return valid memory for the requested `Layout`
-// (or null on failure), and that `dealloc` receives a pointer previously
-// returned by an allocating method. We delegate to `HeapCore::alloc`/
-// `dealloc`/`realloc`/`alloc_zeroed`, which uphold M1 (validity), M3 (no
-// overlap), and M4 (alignment/size fidelity) -- verified by the Phase 8/9
-// differential proptests and miri. `HeapCore` returns null on OOM (never
-// panics -- the substrate panic sites were hardened in Phase 11). If the
-// TLS heap is unavailable (thread teardown), `current_heap()` returns the
-// process-global fallback heap (never null); `dealloc` on the fallback is
-// sound under the fallback's spinlock. M10 (never-null for serviceable
-// requests) is upheld: the only null return is true OOM. During process
-// exit a cold null return is instead served by a `System` escape
-// (`exit_escape_alloc`/`exit_escape_realloc`) that leaks until the process
-// ends.
+// SAFETY: M4 (`docs/INVARIANTS.md`): `CurrentHeap::Own` calls `HeapCore`; locked
+// `CurrentHeap::Fallback` calls the fallback heap. Alloc, zeroed alloc, and
+// realloc obey GlobalAlloc layout and failure contracts; null can result from
+// checked geometry, `MAX_SEGMENTS` capacity, route registration, reservation
+// or commit, `System` class-leaf/spill metadata, or fallback failure. Dealloc
+// uses `current_for_dealloc`: Own calls `HeapCore`, ForeignNoBind calls
+// `HeapCore::publish_foreign` without binding. `exact-object-proto` narrow
+// alloc returns directly before ordinary routing and process-exit escape,
+// including when that result is null. Otherwise alloc/zeroed alloc may use
+// `exit_escape_alloc` on process-exit null; realloc uses `exit_escape_realloc`.
+// Both obtain System storage that intentionally leaks at exit. Exit realloc
+// copies `min(old, new)` bytes and retains/leaks the old block; ordinary
+// failures still return null. The fatal abort policy is in `sefer_alloc/mod.rs`;
+// other paths may panic, so this is not a no-panic guarantee.
 unsafe impl GlobalAlloc for SeferAlloc {
     #[inline(always)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {

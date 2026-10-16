@@ -23,20 +23,14 @@ pub(crate) const SEGMENT_MAGIC: u32 = 0x5E_F5_E0_01;
 // ---------------------------------------------------------------------------
 // Segment ownership state (the `owner_state: u64` field).
 //
-// INERT: the field is written once by the header constructors
-// (`SegmentHeader::small`/`large`/`primordial`); no production path updates
-// or reads it afterward (routing goes through the route directory). It is
-// kept only for the pinned segment-header layout. Test hooks and pack/unpack
-// round-trip pins still exist.
+// INERT: the field is initialized by the header constructors and is not used
+// by route lookup or foreign-free publication; routing goes through the route
+// directory. It remains for the pinned segment-header layout and test pins.
 //
 // Each small/primordial segment carries an `owner_state: u64` field packing:
 //
-//   bits [0]      : state    — 0 = LIVE (owned by a heap). Always LIVE today:
-//                              the abandoned-segments / adoption substrate that
-//                              wrote the `1 = ABANDONED` value was removed
-//                              (task #97 / R4-5); the bit is retained in the
-//                              packing for layout stability but is structurally
-//                              always 0 now.
+//   bits [0]      : state    — retained layout bit; route state is held by
+//                              independent descriptors, not this field.
 //   bits [1..32]  : owner_id — the owning heap's registry slot index
 //                              (MAX_HEAPS = 4096 ≪ 2^31, so 31 bits is ample)
 //   bits [32..63] : generation — retained packing field, initialized to zero;
@@ -74,20 +68,8 @@ const OWNER_GEN_SHIFT: u32 = 32;
 #[doc(hidden)]
 pub const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
 
-/// Owner id of the process-global fallback heap (src/global/fallback.rs) — the
-/// fallback is NOT a registry slot, so it cannot carry a slot index, and its
-/// historical sentinel `u32::MAX` was NOT representable in the 31-bit id
-/// field: `pack_owner`'s shift leaked bit 32 into the generation field and
-/// `unpack_owner_id` returned `OWNER_ID_NONE`, so the historical owner-stamp
-/// compare (`unpack_owner_id(cur) == self.id`) could never
-/// hit on the fallback heap. Chosen constraints (each pinned by the const
-/// asserts below): < 2^31 so `pack_owner`/`unpack_owner_id` round-trip it
-/// exactly; `!= OWNER_ID_NONE`; and
-/// >= 4096 (`MAX_HEAPS`, src/registry/bootstrap/registry.rs) so every
-/// owner-id -> slot resolution (`>= MAX_HEAPS` bounds check, e.g.
-/// `heap_core_xthread::ring::owner_slot_is_live`) keeps treating
-/// fallback-stamped segments as out-of-range, exactly as the old
-/// masks-to-OWNER_ID_NONE behaviour did.
+/// Owner id of the process-global fallback heap. It is not a registry slot,
+/// so the fallback remains outside the registry-slot index range.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 #[doc(hidden)]
 pub const OWNER_ID_FALLBACK: u32 = 0x7FFF_FFFE;

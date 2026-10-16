@@ -1,7 +1,7 @@
 //! `ReservedSmallSegment` — a typed, non-forgeable, move-consumed handle
 //! standing in place of a bare `*mut u8` for exactly one measurement-only
 //! hook pair: `AllocCore::dbg_decomp_reserve_and_keep` /
-//! `AllocCore::dbg_decomp_release` (`alloc_core_small_pool.rs`).
+//! `AllocCore::dbg_decomp_release` (the current pool implementation).
 //!
 //! ## Owner-binding (R31-15, task #486)
 //!
@@ -50,7 +50,7 @@
 //!    dbg_dealloc_own_thread_with_base` / `dbg_overflow_bitmap_clear_pass`,
 //!    `src/registry/heap_core_diag.rs`).
 //!
-//! ## Why this type exists (R31-4, task #467)
+//! ## Hook implementation
 //!
 //! `docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md` §5 surveyed
 //! every `dbg_*` hook in the crate and found this ONE pair is the only
@@ -72,10 +72,10 @@
 //!   `pub(super)` — since `reserved_small_segment` is a direct child module
 //!   of `alloc_core` (`src/alloc_core/mod.rs`), `pub(super)` here resolves
 //!   to `pub(in crate::alloc_core)`: reachable from anywhere inside
-//!   `alloc_core`, not only `alloc_core_small_pool.rs` — Rust has no
+//!   `alloc_core`, not only the pool module — Rust has no
 //!   sibling-module-only visibility, so this is the tightest expressible
 //!   bound. In practice it is called from exactly one call site,
-//!   `AllocCore::dbg_decomp_reserve_and_keep` (`alloc_core_small_pool.rs:1095`),
+//!   `AllocCore::dbg_decomp_reserve_and_keep` in the current pool module,
 //!   immediately after a genuine `reserve_small_segment_impl()` call
 //!   succeeds. The `base` field is
 //!   private, so external code cannot construct a SECOND handle from a
@@ -137,7 +137,7 @@ impl ReservedSmallSegment {
     /// anywhere inside `alloc_core` (Rust has no sibling-module-only
     /// visibility, so this is the tightest expressible bound); in practice
     /// called from exactly one call site
-    /// (`AllocCore::dbg_decomp_reserve_and_keep`, `alloc_core_small_pool.rs`,
+    /// (`AllocCore::dbg_decomp_reserve_and_keep`, current pool module,
     /// immediately after a real `reserve_small_segment_impl()` success). No
     /// module OUTSIDE `alloc_core` — no test, no bench, no example — can
     /// construct a `ReservedSmallSegment` around an address (or owner id) it
@@ -207,9 +207,7 @@ impl ReservedSmallSegment {
     /// reachable from anywhere inside `alloc_core`, same bound as
     /// [`Self::new_from_reservation`] above (Rust has no
     /// sibling-module-only visibility); not exposed OUTSIDE `alloc_core`, so
-    /// external code still cannot extract the pointer this way. The only
-    /// caller is `AllocCore::dbg_decomp_release`
-    /// (`alloc_core_small_pool.rs:1117`).
+    /// The only caller is `AllocCore::dbg_decomp_release` in the pool module.
     pub(super) fn into_base(self) -> *mut u8 {
         let base = self.base;
         // Disarm Drop's leak-detector: this consumption IS the release,

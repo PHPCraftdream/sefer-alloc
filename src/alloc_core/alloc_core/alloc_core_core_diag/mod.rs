@@ -36,7 +36,7 @@
 //! 2. An `internals`-gated block holding every other `dbg_*` hook in this
 //!    file — none of the rest has a caller outside `tests/`/`benches/`/
 //!    `examples/`, all of which already require `internals` (either via
-//!    `required-features` on the target, or — for the ~106 `tests/` files,
+//!    `required-features` on the target, or — for root `tests/` files,
 //!    which cannot carry `required-features` since they are not `[[test]]`
 //!    Cargo.toml targets — via the `internals`-feature command line CI/local
 //!    convention `internals`'s own Cargo.toml doc comment documents).

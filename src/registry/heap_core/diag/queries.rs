@@ -324,8 +324,8 @@ impl HeapCore {
     /// so the containment guard below returns `None` before any header read).
     /// Thin delegation to `AllocCore::dbg_directory_get_bit` — exposed at the
     /// `HeapCore` level so integration tests driving cross-thread frees through
-    /// `HeapCore::dealloc` can observe whether `drain_heap_overflow` synced the
-    /// directory after reclaiming an overflow entry.
+    /// `HeapCore::dealloc` can observe whether owner-side sidecar reclamation
+    /// synchronized the directory.
     ///
     /// Sol-F1 (task #563): additionally gated `internals` — the delegated
     /// [`AllocCore::dbg_directory_get_bit`] moved behind `internals` (see
@@ -360,8 +360,8 @@ impl HeapCore {
     /// TEST-ONLY (R11-2): the number of empty small segments currently
     /// retained in this heap's hysteresis pool. Thin delegation to
     /// `AllocCore::dbg_pooled_count` — exposed at the `HeapCore` level so
-    /// integration tests can assert that a segment emptied via an overflow-ring
-    /// reclaim was actually pooled (not left as an ordinary registered
+    /// integration tests can assert that a segment emptied by sidecar
+    /// reclamation was actually pooled (not left as an ordinary registered
     /// segment by the pre-R11-2 bug that dropped the pool/release signal).
     ///
     /// H2 (task #572): additionally gated `internals` — the delegated

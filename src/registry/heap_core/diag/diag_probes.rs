@@ -1,7 +1,6 @@
 //! Diagnostics / measurement-only probes for [`HeapCore`] — second half of
 //! the mechanical split of the former flat `heap_core_diag.rs` (the first
-//! half — inspection hooks and ring-push / coarse-only simulation — lives in
-//! the sibling `diag` module).
+//! half — inspection and sidecar probes — lives in the sibling `diag` module).
 //!
 //! This file holds the `impl HeapCore { .. }` block for the promotion /
 //! hardened-defensive-noop counters (`dbg_promotion_compiled`,

@@ -9,7 +9,7 @@
 //! magazine + `alloc-decommit` large-cache state). `HeapSlot` itself contains
 //! only lease state, generation, heap storage, initialisation flag, and stable
 //! diagnostic counters; pending large frees live in the route directory's
-//! independent descriptor words, not an inline `HeapOverflow`. A single monolithic
+//! independent descriptor words, not an intrusive deferred-free structure. A single monolithic
 //! `[HeapSlot; MAX_HEAPS]` (`MAX_HEAPS = 4096`) is therefore large enough
 //! that the WHOLE registry has to be materialised in one `aligned_vmem::
 //! reserve_aligned` call the moment ANY heap is claimed — even a process that

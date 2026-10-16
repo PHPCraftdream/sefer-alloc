@@ -156,9 +156,8 @@ impl AllocCore {
     ///
     /// Phase 12.5 (shard model): a heap owns its segments exclusively — there
     /// is no adoption hook. On a free-list miss it carves/reserves from its
-    /// OWN segments only. Cross-thread frees arrive via the inline TFS and are
-    /// drained by `HeapCore::alloc` BEFORE this runs, so they are already on
-    /// the per-segment BinTables by the time we scan.
+    /// OWN segments only. Foreign frees publish to pinned route sidecars;
+    /// owner-side discovery and reclamation run on allocation miss paths.
     #[inline(always)]
     pub(in crate::alloc_core) fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
         let block_size = SizeClasses::block_size(class_idx);
