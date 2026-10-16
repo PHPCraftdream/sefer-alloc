@@ -1,8 +1,8 @@
 //! Field-specific owner-only accessors for [`SegmentMeta`] (mechanical split
 //! of `segment_header.rs`, task R6-CQ-7c).
 
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
-use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentMeta};
 
 impl SegmentMeta {

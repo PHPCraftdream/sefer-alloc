@@ -11,7 +11,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 #[cfg(feature = "bench-internals")]
 static SYSTEM_TOTALS: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::SegmentKind;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 

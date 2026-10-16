@@ -6,11 +6,11 @@ use crate::alloc_core::alloc_core::{AllocCore, LargeCacheHitCounter};
 use crate::alloc_core::alloc_core::{LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 use crate::alloc_core::alloc_core::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 #[cfg(feature = "internals")]
 use crate::alloc_core::large_cache_mode::LargeCacheMode;
 use crate::alloc_core::os;
-use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::{large_generation, SegmentMeta};
 
 use super::alloc_core_large_cache::{CombinedSlot, DECAY_CLOCK_CHECK_STRIDE};

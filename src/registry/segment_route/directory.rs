@@ -9,8 +9,8 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
-use crate::alloc_core::platform::fatal::fatal;
 
 use super::shard_lock::ShardLock;
 use super::{LargeState, RouteError, RouteKind, RoutePin, RouteRegistration, SmallSidecar};

@@ -28,7 +28,7 @@ use super::ensure::ensure_chunk_slow;
 #[cfg(loom)]
 use super::loom_shim::OncePtrCell;
 use super::saturation::SaturationHint;
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::registry::heap_slot::HeapSlot;
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;
@@ -200,9 +200,7 @@ impl Registry {
         let slot_in_chunk = idx % CHUNK_SLOTS;
         let cell = match self.chunks.get(chunk_idx) {
             Some(cell) => cell,
-            None => crate::alloc_core::platform::fatal::fatal(
-                b"registry: slot chunk index out of range\n",
-            ),
+            None => crate::alloc_core::fatal::fatal(b"registry: slot chunk index out of range\n"),
         };
         let p = cell.get()?;
         // SAFETY: identical argument to `ensure_chunk`'s fast path above —
@@ -233,9 +231,7 @@ impl Registry {
     fn ensure_chunk(&self, chunk_idx: usize) -> &'static RegistryChunk {
         let cell = match self.chunks.get(chunk_idx) {
             Some(cell) => cell,
-            None => crate::alloc_core::platform::fatal::fatal(
-                b"registry: slot chunk index out of range\n",
-            ),
+            None => crate::alloc_core::fatal::fatal(b"registry: slot chunk index out of range\n"),
         };
         if let Some(p) = cell.get() {
             // SAFETY: `OncePtrCell::get` returned `Some` only after observing
@@ -271,9 +267,7 @@ impl Registry {
     fn try_ensure_chunk(&self, chunk_idx: usize) -> Option<&'static RegistryChunk> {
         let cell = match self.chunks.get(chunk_idx) {
             Some(cell) => cell,
-            None => crate::alloc_core::platform::fatal::fatal(
-                b"registry: slot chunk index out of range\n",
-            ),
+            None => crate::alloc_core::fatal::fatal(b"registry: slot chunk index out of range\n"),
         };
         if let Some(p) = cell.get() {
             // SAFETY: same argument as `ensure_chunk`'s fast path above.

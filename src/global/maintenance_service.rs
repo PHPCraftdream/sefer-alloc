@@ -78,9 +78,7 @@ impl Drop for WorkerGuard {
     fn drop(&mut self) {
         // Unexpected worker exit is fatal: emit a diagnostic and terminate
         // instead of silently losing an activated guarantee.
-        crate::alloc_core::platform::fatal::fatal(
-            b"maintenance_service: worker exited unexpectedly\n",
-        );
+        crate::alloc_core::fatal::fatal(b"maintenance_service: worker exited unexpectedly\n");
     }
 }
 
@@ -103,7 +101,7 @@ impl MaintenanceService {
                         START_PAUSE.load(Ordering::Acquire)
                     })
                     .unwrap_or_else(|_| {
-                        crate::alloc_core::platform::fatal::fatal(
+                        crate::alloc_core::fatal::fatal(
                             b"maintenance_service: start-pause condvar wait poisoned\n",
                         )
                     })
@@ -113,7 +111,7 @@ impl MaintenanceService {
                     // Same confirmation bound as the RUNNING wait: a wedged
                     // starter aborts, whether it is wedged before or after
                     // the worker spawn.
-                    crate::alloc_core::platform::fatal::fatal(
+                    crate::alloc_core::fatal::fatal(
                         b"maintenance_service: start-pause acknowledgement timeout\n",
                     );
                 }
@@ -134,7 +132,7 @@ impl MaintenanceService {
                 STATE.load(Ordering::Acquire) != RUNNING
             })
             .unwrap_or_else(|_| {
-                crate::alloc_core::platform::fatal::fatal(
+                crate::alloc_core::fatal::fatal(
                     b"maintenance_service: running-state condvar wait poisoned\n",
                 )
             })
@@ -144,7 +142,7 @@ impl MaintenanceService {
             // The detached worker cannot be cancelled or rolled back: it may
             // still activate later. Aborting never hangs the starter and
             // never reports a guarantee that is not RUNNING yet.
-            crate::alloc_core::platform::fatal::fatal(
+            crate::alloc_core::fatal::fatal(
                 b"maintenance_service: running-state acknowledgement timeout\n",
             );
         }
@@ -169,9 +167,7 @@ impl MaintenanceService {
         // Poison means an unexpected control-plane panic: never recover a
         // requested guarantee by silently accepting potentially broken state.
         CONTROL.lock().unwrap_or_else(|_| {
-            crate::alloc_core::platform::fatal::fatal(
-                b"maintenance_service: control mutex poisoned\n",
-            )
+            crate::alloc_core::fatal::fatal(b"maintenance_service: control mutex poisoned\n")
         })
     }
 
@@ -279,7 +275,7 @@ impl MaintenanceService {
         let (guard, _) = CHANGED
             .wait_timeout_while(guard, timeout, |_| PASSES.load(Ordering::Acquire) <= before)
             .unwrap_or_else(|_| {
-                crate::alloc_core::platform::fatal::fatal(
+                crate::alloc_core::fatal::fatal(
                     b"maintenance_service: pass-wait condvar wait poisoned\n",
                 )
             });
@@ -309,7 +305,7 @@ impl MaintenanceService {
         let (guard, _) = CHANGED
             .wait_timeout_while(guard, timeout, |_| !START_PAUSED.load(Ordering::Acquire))
             .unwrap_or_else(|_| {
-                crate::alloc_core::platform::fatal::fatal(
+                crate::alloc_core::fatal::fatal(
                     b"maintenance_service: pause-wait condvar wait poisoned\n",
                 )
             });

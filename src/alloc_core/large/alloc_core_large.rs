@@ -4,6 +4,8 @@
 //! large/huge alloc + reclaim methods. It is a pure code-movement sibling of
 //! `alloc_core.rs`; no behavior changed.
 
+#[cfg(any(feature = "alloc-xthread", feature = "alloc-decommit"))]
+use crate::alloc_core::fatal::fatal;
 #[cfg(any(feature = "alloc-decommit", feature = "alloc-xthread"))]
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
@@ -12,8 +14,6 @@ use crate::alloc_core::numa;
 #[cfg(not(feature = "numa-aware"))]
 use crate::alloc_core::os::Segment;
 use crate::alloc_core::os::{self, SEGMENT};
-#[cfg(any(feature = "alloc-xthread", feature = "alloc-decommit"))]
-use crate::alloc_core::platform::fatal::fatal;
 #[cfg(any(feature = "alloc-xthread", feature = "numa-aware"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{align_up, SegmentHeader, SegmentKind};

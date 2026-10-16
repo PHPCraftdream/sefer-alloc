@@ -1,5 +1,5 @@
 use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 
 #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
 std::thread_local! {

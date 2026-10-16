@@ -84,6 +84,8 @@ use segment::{segment_header_layout, segment_header_meta_fields, segment_header_
 // `platform/` shims+seams and `config/` configuration types — and are
 // re-exported here (at their original visibility/cfg/doc-hidden parity) so
 // every one stays reachable at its existing `alloc_core::<name>` module path.
+/// The one sanctioned process terminator (`fatal(msg)`), reachable crate-wide (R6-T15).
+pub(crate) use platform::fatal;
 pub(crate) use platform::node;
 #[cfg(feature = "numa-aware")]
 #[doc(hidden)]

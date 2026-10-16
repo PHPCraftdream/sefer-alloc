@@ -1,7 +1,7 @@
 //! Exclusive heap-owner sweep of terminal route-sidecar publications.
 
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {

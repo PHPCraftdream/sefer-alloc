@@ -400,7 +400,7 @@ impl AllocCore {
     fn free_list_corrupted() -> ! {
         // Corrupt allocator-owned state cannot be recovered as an OOM. Abort
         // deliberately skips unwinding, destructors, and the panic hook.
-        crate::alloc_core::platform::fatal::fatal(
+        crate::alloc_core::fatal::fatal(
             b"sefer-alloc: hardened: Small free-list corruption detected; aborting\n",
         )
     }

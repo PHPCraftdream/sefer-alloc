@@ -71,8 +71,8 @@ pub fn reserve_aligned_on_node(
     usable: usize,
     node: u32,
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    use crate::alloc_core::fatal::fatal;
     use crate::alloc_core::os::SEGMENT;
-    use crate::alloc_core::platform::fatal::fatal;
 
     let r = if node == NO_NODE {
         // No NUMA preference expressed: plain reservation, no shim detour.

@@ -1,5 +1,5 @@
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
-use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::SegmentKind;
 
 use super::MAX_SEGMENTS;

@@ -3,7 +3,7 @@ use super::issue_transaction::IssueTransaction;
 use super::route_slots::RouteSlots;
 use super::*;
 #[cfg(feature = "alloc-global")]
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use core::mem::size_of;
 

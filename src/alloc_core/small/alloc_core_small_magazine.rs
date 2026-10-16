@@ -20,7 +20,7 @@ use crate::alloc_core::alloc_core::AllocCore;
     feature = "fastbin",
     feature = "virgin-zero-skip"
 ))]
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 
 impl AllocCore {
     // -----------------------------------------------------------------------

@@ -21,7 +21,7 @@ use super::counters::CONFIG_CONFLICTS;
 use super::stack::{
     pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
 };
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::registry::bootstrap::{ensure, Registry, FREE_SLOTS, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
 use crate::registry::heap_slot::{

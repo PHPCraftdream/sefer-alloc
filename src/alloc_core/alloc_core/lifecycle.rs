@@ -9,10 +9,10 @@
 //! plus the `base_add` node-seam offset helper.
 
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::platform::fatal::fatal;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::segment_header::large_generation;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};

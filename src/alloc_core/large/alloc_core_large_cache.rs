@@ -11,7 +11,7 @@ use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
 use crate::alloc_core::alloc_core::{AllocCore, CachedLarge, LARGE_CACHE_SLOTS};
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 use crate::alloc_core::alloc_core::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 
 /// R32-8 (task #499, F9): once `maybe_decay_large_cache`'s headroom fast-exit
 /// no longer applies (`used > headroom`), only actually consult the clock

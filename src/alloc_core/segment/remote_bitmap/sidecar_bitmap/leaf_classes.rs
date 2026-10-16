@@ -13,7 +13,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use super::{AtomicPtr, AtomicU8, Ordering};
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 const LEAF_GRANULES: usize = 256;

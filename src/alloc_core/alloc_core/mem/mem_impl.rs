@@ -16,9 +16,9 @@ use super::super::counters::SMALL_ZERO_PASS_CALLS;
 #[cfg(feature = "alloc-decommit")]
 use super::super::CachedLarge;
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
-use crate::alloc_core::platform::fatal::fatal;
 use crate::alloc_core::segment_header::{BlockKind, SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::AllocKind;
 

@@ -21,7 +21,7 @@
 //! `base_at` / route-root comparison), which are what make the address sound
 //! to use.
 
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment::segment_table::segment_table_impl::SegmentTable;
 use crate::alloc_core::segment_header::SegmentHeader;
 

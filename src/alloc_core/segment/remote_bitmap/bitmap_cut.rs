@@ -1,5 +1,5 @@
 use super::{sidecar_bitmap::ClassMap, BitmapRecord};
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 /// Detached bits must be consumed or persisted before the backing is freed.

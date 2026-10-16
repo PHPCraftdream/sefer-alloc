@@ -4,7 +4,7 @@
 #![allow(unsafe_code)]
 
 use super::exact_table::ExactTable;
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use core::alloc::Layout;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, System};

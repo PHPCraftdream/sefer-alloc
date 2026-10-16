@@ -4,7 +4,7 @@
 #![allow(unsafe_code)]
 
 use super::insert_outcome::InsertOutcome;
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};

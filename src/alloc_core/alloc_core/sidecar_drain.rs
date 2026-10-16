@@ -1,7 +1,7 @@
 //! Owner-only bounded drain of terminal route-sidecar publications.
 
 use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::MIN_BLOCK;
 

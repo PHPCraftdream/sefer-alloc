@@ -1,7 +1,7 @@
 //! Owner-only numeric candidate enumeration and independent diagnostic census.
 
 use super::{ActiveKindIndex, SegmentTable};
-use crate::alloc_core::platform::fatal::fatal;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::SegmentKind;
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
