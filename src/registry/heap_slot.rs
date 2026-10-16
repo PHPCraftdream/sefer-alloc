@@ -280,6 +280,56 @@ impl HeapSlot {
 // downstream crate could re-claim a LIVE slot under a thread that still held
 // a cached TLS `*mut HeapCore`, materialising two `&mut HeapCore` over one
 // `UnsafeCell` — exactly the aliasing this proof rules out.
+// R6-T52 (R6-MS-5): the semantic-`Send` premise this `Sync` impl relies on
+// (handing `&mut HeapCore` to another thread) is pinned by the compile-time
+// field audit immediately below.
+//
+// R6-T52 (`docs/agent_reviews_round6/memory_safety_review.md` R6-MS-5):
+// compile-time audit of the semantic-`Send` premise behind the `Sync` impl
+// below (`HeapLease`/`MaintenanceLease` hand `&mut HeapCore` across
+// threads). The destructuring names EVERY field with NO `..`, so a newly
+// added field fails the build with E0027 ("pattern does not mention
+// field") and the author must extend this audit instead of silently
+// crossing threads inside a `Sync` slot.
+//
+// Excluded (bound to `_`): raw pointers into THIS core's own OS
+// reservations, System route-slot arrays, or segment blocks — no
+// thread-affine resource: no `Rc`, no TLS, no thread handles; the
+// NUMA-node cache is a plain value invalidated at claim time, R11-5.
+//   - `core: AllocCore` (segment roots, table slots, large-cache sidecar)
+//   - `tcache: Tcache` (`PerClass::slots: [*mut u8; TCACHE_CAP]`)
+// The `#[cfg]` arms mirror `HeapCore`'s field gates exactly (see
+// `heap_core/core.rs`).
+const _: fn(&HeapCore) = |hc| {
+    fn assert_send<T: Send>(_: &T) {}
+    let HeapCore {
+        id,
+        core: _,
+        #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+        background_cursor,
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "fastbin"
+        ))]
+        large_hot_cursor,
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache: _,
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        tcache_hits,
+    } = hc;
+    assert_send(id);
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    assert_send(background_cursor);
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "alloc-xthread",
+        feature = "fastbin"
+    ))]
+    assert_send(large_hot_cursor);
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    assert_send(tcache_hits);
+};
 unsafe impl Sync for HeapSlot {}
 
 // NOTE (no `unsafe impl Send`): `HeapSlot` is deliberately NOT `Send` (task

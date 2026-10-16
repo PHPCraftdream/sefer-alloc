@@ -1063,6 +1063,14 @@ harness = false
 test = false
 required-features = ["exact-object-proto", "batch-api", "internals", "bench-internals"]
 
+# R6-T50: the foreign realloc move leg must stay inside the route
+# descriptor's registration-time committed span. Requires the
+# reserved-capacity layout (committed != reserved Large spans).
+[[test]]
+name = "r6_t50_foreign_realloc_committed_span"
+path = "tests/r6_t50_foreign_realloc_committed_span.rs"
+required-features = ["alloc-global", "alloc-xthread", "internals", "large-reserved-capacity"]
+
 [[test]]
 name = "r11_box_cap_gate_w1"
 harness = false
