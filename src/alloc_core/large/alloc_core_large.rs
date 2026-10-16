@@ -110,6 +110,20 @@ static DBG_INJECT_LARGE_ALLOC_OOM: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "internals")]
 static DBG_INJECT_BIASED_RESERVE_FAIL: AtomicBool = AtomicBool::new(false);
 
+fn large_payload_offset(align: usize) -> usize {
+    if align >= SEGMENT {
+        align_up(
+            core::mem::size_of::<SegmentHeader>(),
+            aligned_vmem::page_size(),
+        )
+    } else {
+        align_up(
+            core::mem::size_of::<SegmentHeader>(),
+            align.max(aligned_vmem::page_size()),
+        )
+    }
+}
+
 impl AllocCore {
     /// Pure address equality shared by owner metadata and foreign descriptors.
     /// No pointer is dereferenced; overflowing geometry cannot match.
@@ -197,17 +211,7 @@ impl AllocCore {
 
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
-        let hdr_aligned = if align >= SEGMENT {
-            align_up(
-                core::mem::size_of::<SegmentHeader>(),
-                aligned_vmem::page_size(),
-            )
-        } else {
-            align_up(
-                core::mem::size_of::<SegmentHeader>(),
-                align.max(aligned_vmem::page_size()),
-            )
-        };
+        let hdr_aligned = large_payload_offset(align);
         // task #25 (security): `checked_add` for local overflow safety — a
         // wrap here is unreachable under the `Layout` size/align invariant
         // today, but this no longer RELIES on the caller's `Layout` being
