@@ -5,10 +5,12 @@
 //! non-fastbin own-thread free body `dealloc_own_thread` (two of the most
 //! safety-critical methods in the former monolith, each carrying a full
 //! `# Safety` doc from R6-MS-1/2), plus the file-head items shared across
-//! the `free/` split: the `medium_promotion_reachable!` cfg-predicate macro
-//! (R19-8, task #344), the `MEDIUM_REALLOC_PROMOTION_THRESHOLD` const
-//! (R14-4, task #289), and the `HARDENED_LARGE_NOOP_COUNT` diagnostic
-//! counter (R22-12, task #363). The rest of the former file lives in the
+//! the `free/` split: the `MEDIUM_REALLOC_PROMOTION_THRESHOLD` const
+//! (R14-4, task #289) and the `HARDENED_LARGE_NOOP_COUNT` diagnostic
+//! counter (R22-12, task #363) — the `medium_promotion_reachable!`
+//! cfg-predicate macro moved to the crate-wide single source of truth
+//! `alloc_core/config/medium_promotion.rs` in R6-T20. The rest of the
+//! former file lives in the
 //! sibling modules: `dealloc_own_base` (`dealloc_own_thread_with_base`) and
 //! `realloc` (`realloc` + `try_promote_to_large`). Otherwise a pure
 //! code-movement sibling of `heap_core.rs`; no other behavior changed — the
@@ -16,95 +18,12 @@
 
 use core::alloc::Layout;
 
+use crate::alloc_core::medium_promotion_reachable;
 use crate::registry::heap_core::HeapCore;
 
-/// R19-8 (task #344): single source of truth for the promotion-reachable
-/// `#[cfg]` predicate, otherwise hand-duplicated across 4 sites in the
-/// `free/` split
-/// (the `MEDIUM_REALLOC_PROMOTION_THRESHOLD` const, branch (A)'s gated
-/// block, `realloc`'s promotion call site, and `try_promote_to_large`'s own
-/// definition). Wraps either an item (`const`/`fn`) or a statement (a bare
-/// block or `if`) in the identical `#[cfg(...)]` gate so those 4 sites can
-/// never textually diverge from each other.
-///
-/// Three arms, matched on a literal leading token rather than on the `item`/
-/// `stmt` fragment specifiers directly, for a real reason discovered while
-/// building this macro (not a style preference): a naive two-arm design —
-/// `($item:item) => {...}; ($stmt:stmt) => {...};` — breaks no matter which
-/// arm is listed first.
-///
-///   - `item` first: `macro_rules!` tries arms in order, and an
-///     `item`-fragment parse that fails (e.g. against a leading `{` or `if`,
-///     as at the two statement call sites) is a HARD parse error ("expected
-///     an item keyword"), not a graceful fall-through to the next arm — it
-///     aborts the whole match instead of trying the `stmt` arm that would
-///     have succeeded.
-///   - `stmt` first (or a single `stmt`-only arm): the `stmt` fragment
-///     grammar DOES accept a bare item (a `const`/`fn` declaration is a
-///     valid "item statement"), so it matches the two item call sites too —
-///     but then splicing `#[cfg(...)] $stmt` back in at ITEM position (a
-///     `const` at module scope, an `fn` inside `impl HeapCore`) fails
-///     ("expected item after attributes"): an interpolated `stmt` fragment
-///     is opaque, and an outer attribute directly preceding it cannot be
-///     re-attached to the item hiding inside it.
-///
-/// The fix: capture the `const`/`fn` sites via `$(#[$m:meta])* $vis:vis
-/// const/fn $($rest:tt)*` (the `$vis:vis` binder added in the `free/` split
-/// so the split's widened `pub(super)` `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
-/// site still matches this arm — `$vis:vis` matches an absent visibility
-/// too, so private sites are unchanged) — plain token-tree matching, which
-/// is transparent (no
-/// fragment-opacity restriction) and never commits to full item/stmt grammar
-/// before falling through, so a literal-keyword mismatch (e.g. `const`
-/// against a `{`-led block) is a graceful "try the next arm", not a hard
-/// error. The generic `$stmt:stmt` arm last catches the two remaining
-/// (block / bare `if`) call sites, where the fragment IS spliced back into
-/// genuine statement position, so no opacity issue arises there.
-///
-/// Does NOT cover the `SegmentKind` import cfg or branch (B)'s cfg — both
-/// COMBINE this predicate with `hardened` (union / negation respectively),
-/// and Rust's `#[cfg(...)]` attribute cannot accept a macro invocation as its
-/// argument, so those two remain hand-written (see their own comments for
-/// the cross-reference back to this macro).
-macro_rules! medium_promotion_reachable {
-    ($(#[$m:meta])* $vis:vis const $($rest:tt)*) => {
-        $(#[$m])*
-        #[cfg(all(
-            feature = "medium-classes",
-            any(
-                not(feature = "exact-span-large"),
-                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-            )
-        ))]
-        $vis const $($rest)*
-    };
-    ($(#[$m:meta])* fn $($rest:tt)*) => {
-        $(#[$m])*
-        #[cfg(all(
-            feature = "medium-classes",
-            any(
-                not(feature = "exact-span-large"),
-                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-            )
-        ))]
-        fn $($rest)*
-    };
-    ($stmt:stmt) => {
-        #[cfg(all(
-            feature = "medium-classes",
-            any(
-                not(feature = "exact-span-large"),
-                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-            )
-        ))]
-        $stmt
-    };
-}
-
-// Re-exported (sibling-module visibility only) so the other `free/` modules
-// (`dealloc_own_base`, `realloc`) can invoke it at their own call/definition
-// sites; `dealloc` itself uses it textually below.
-pub(super) use medium_promotion_reachable;
+// R6-T20: `medium_promotion_reachable!` lives at the crate-wide single
+// source of truth `alloc_core::config::medium_promotion` (imported above);
+// this file's remaining R19-8 file-head duty is the const below.
 
 medium_promotion_reachable! {
     /// R14-4 (task #289): the requested-size threshold above which a GROWING
@@ -129,8 +48,9 @@ medium_promotion_reachable! {
     /// `npm run check`) in any build where `medium-classes` is on but the
     /// zero-headroom exclusion has switched promotion off.
     ///
-    /// R19-8 (task #344): the `#[cfg]` gating this const is now generated by
-    /// the `medium_promotion_reachable!` macro above, not hand-written.
+    /// R19-8 (task #344): the `#[cfg]` gating this const is generated by the
+    /// `medium_promotion_reachable!` macro (R6-T20: defined in
+    /// `alloc_core::config::medium_promotion`), not hand-written.
     pub(super) const MEDIUM_REALLOC_PROMOTION_THRESHOLD: usize = 256 * 1024;
 }
 
