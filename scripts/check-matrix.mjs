@@ -253,6 +253,13 @@ export const PER_PR_ROWS = [
     note: 'Biased Large alignment and retirement with exact spans and reserved-capacity grow/shrink.',
   },
   {
+    id: 'test-r6-t40-sidecar-system-alloc',
+    kind: 'test',
+    features: 'production internals bench-internals',
+    target: { flag: '--test', name: 'r6_t40_sidecar_system_alloc' },
+    note: 'OPT04: non-zeroed System SmallSidecar allocation initializes before route issue.',
+  },
+  {
     id: 'test-r8-large-commit-failure',
     kind: 'test',
     features: 'alloc-core internals lazy-commit-fault-injection',
