@@ -1,5 +1,7 @@
 //! Exclusive heap-owner sweep of terminal route-sidecar publications.
 
+#[cfg(all(feature = "bench-internals", feature = "internals"))]
+use crate::alloc_core::fatal::fatal;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
@@ -95,7 +97,9 @@ impl HeapCore {
         let base = self
             .segment_bases()
             .find(|base| base.addr() == key)
-            .unwrap_or_else(|| std::process::abort());
+            .unwrap_or_else(|| {
+                fatal(b"sidecar_drain: segment base not found for sidecar record\n")
+            });
         let offset = (address - base.addr()) as u32;
         crate::alloc_core::AllocCore::reclaim_sidecar_record(base, offset, class)
     }

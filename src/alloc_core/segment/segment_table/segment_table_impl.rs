@@ -2,6 +2,8 @@ use super::issue_transaction::IssueTransaction;
 #[cfg(feature = "alloc-global")]
 use super::route_slots::RouteSlots;
 use super::*;
+#[cfg(feature = "alloc-global")]
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use core::mem::size_of;
 
@@ -304,10 +306,11 @@ impl SegmentTable {
     pub(crate) fn issue_small(&self, base: *mut u8, offset: u32, class_idx: usize) {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &self.routes {
-            let class = u8::try_from(class_idx).unwrap_or_else(|_| std::process::abort());
+            let class = u8::try_from(class_idx)
+                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
             let index = SegmentHeader::segment_id_at(base) as usize;
             if self.base_at(index) != base {
-                std::process::abort();
+                fatal(b"segment_table: issue base is not the segment base\n");
             }
             routes.issue_small(index, base, offset, class);
         }
@@ -327,10 +330,11 @@ impl SegmentTable {
     ) -> Option<IssueTransaction> {
         #[cfg(feature = "alloc-global")]
         if let Some(routes) = &self.routes {
-            let class = u8::try_from(class_idx).unwrap_or_else(|_| std::process::abort());
+            let class = u8::try_from(class_idx)
+                .unwrap_or_else(|_| fatal(b"segment_table: small class index exceeds u8\n"));
             let index = SegmentHeader::segment_id_at(base) as usize;
             if self.base_at(index) != base {
-                std::process::abort();
+                fatal(b"segment_table: prepare base is not the segment base\n");
             }
             return routes.prepare_small_issue(index, base, offset, class);
         }
@@ -414,7 +418,7 @@ impl SegmentTable {
             if let Some(route) = route {
                 self.routes
                     .as_mut()
-                    .unwrap_or_else(|| std::process::abort())
+                    .unwrap_or_else(|| fatal(b"segment_table: routed table missing routes\n"))
                     .put(i as usize, route);
             }
             ActiveKindIndex::set(self.active_kind, i as usize, kind);
@@ -434,7 +438,7 @@ impl SegmentTable {
         if let Some(route) = route {
             self.routes
                 .as_mut()
-                .unwrap_or_else(|| std::process::abort())
+                .unwrap_or_else(|| fatal(b"segment_table: routed table missing routes\n"))
                 .put(idx, route);
         }
         ActiveKindIndex::set(self.active_kind, idx, kind);
@@ -494,7 +498,7 @@ impl SegmentTable {
                 if self.routes.is_some() {
                     (0..self.count as usize)
                         .find(|&i| self.base_at(i) == base)
-                        .unwrap_or_else(|| std::process::abort())
+                        .unwrap_or_else(|| fatal(b"segment_table: unregister of unowned base\n"))
                 } else {
                     return;
                 }
@@ -597,8 +601,8 @@ impl SegmentTable {
     /// an unverified/unmapped address, exactly the hazard this fix closes.
     /// The cost is a leak (the OS reservation is never returned), not
     /// UB/a double-free — recorded via
-    /// [`SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL`] and flagged loudly with
-    /// `debug_assert!` (this branch is reachable only via caller corruption
+    /// [`SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL`] and flagged via that counter
+    /// only: the free path never panics. (This branch is reachable only via caller corruption
     /// or a genuine double-recycle bug — never through a normal
     /// decommit → recycle call — so no test in this crate is expected to
     /// drive it; a corrupted-but-still-registered `segment_id` instead
@@ -620,12 +624,6 @@ impl SegmentTable {
             // is a leak, never UB.
             SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            debug_assert!(
-                false,
-                "SegmentTable::recycle: base is not a live registered segment \
-                 -- refusing to read its header or release anything (leak, \
-                 not UB); indicates caller corruption or a double-recycle"
-            );
             return;
         }
         // `base` is confirmed live in the hash table, so (by the table's own
@@ -660,11 +658,6 @@ impl SegmentTable {
             // unmapped memory.
             SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            debug_assert!(
-                false,
-                "SegmentTable::recycle: base is a live hash-table member but \
-                 no slots[] entry holds it -- hash/slots invariant broken"
-            );
             return;
         };
         let slot = Self::slot_ptr(self.slots, slot_id);

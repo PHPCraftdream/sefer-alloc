@@ -1,6 +1,7 @@
 //! Owner-only bounded drain of terminal route-sidecar publications.
 
 use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::MIN_BLOCK;
 
@@ -129,10 +130,10 @@ impl AllocCore {
                             .table
                             .scan_small_route_from(index, base, high_water, cursor.1)
                         else {
-                            std::process::abort();
+                            fatal(b"sidecar_drain: routed scan unavailable\n");
                         };
                         let Some(mut cut) = scan.next_cut() else {
-                            std::process::abort();
+                            fatal(b"sidecar_drain: sidecar scan cut unavailable\n");
                         };
                         while let Some(record) = cut.pop() {
                             if Self::reclaim_sidecar_record(base, record.offset, record.class) {
@@ -174,7 +175,7 @@ impl AllocCore {
                     cursor.1 = self.sidecar_word_hint(cursor.0);
                     units += 1;
                 }
-                SegmentKind::Unknown => std::process::abort(),
+                SegmentKind::Unknown => fatal(b"sidecar_drain: unknown segment kind\n"),
             }
         }
         if cursor.0 == end {
@@ -224,7 +225,7 @@ impl AllocCore {
                             .table
                             .scan_small_route_from(index, base, high_water, start)
                         else {
-                            std::process::abort();
+                            fatal(b"sidecar_drain: routed scan unavailable\n");
                         };
                         while let Some(mut cut) = scan.next_cut() {
                             #[cfg(feature = "bench-internals")]
@@ -285,7 +286,7 @@ impl AllocCore {
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                 }
-                SegmentKind::Unknown => std::process::abort(),
+                SegmentKind::Unknown => fatal(b"sidecar_drain: unknown segment kind\n"),
             }
         }
         reclaimed

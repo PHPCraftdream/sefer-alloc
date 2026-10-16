@@ -6,6 +6,7 @@ use core::sync::atomic::AtomicU64;
 #[cfg(feature = "internals")]
 use core::sync::atomic::Ordering;
 
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
 use crate::alloc_core::remote_bitmap::{ClassLeaves, SidecarBitmap};
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
@@ -67,7 +68,7 @@ impl SmallSidecar {
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
         SidecarBitmap::from_leaves(&self.pending, &self.classes)
-            .unwrap_or_else(|| std::process::abort())
+            .unwrap_or_else(|| fatal(b"small_sidecar: sidecar bitmap leaf layout mismatch\n"))
     }
 
     /// Crate-private owner-only, fallible preparation before any issue

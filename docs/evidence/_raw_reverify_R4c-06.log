@@ -1,5 +1,5 @@
-E0_METADATA {"id":"R4c-06","head":"b3cb74cb6ac6b2b8c1e25beece99f5f8bd82c049","tree":"fa4f715d5d3caef06bd79fc9a55c7642f7278f45","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-06","head":"b3cb74cb6ac6b2b8c1e25beece99f5f8bd82c049","tree":"fa4f715d5d3caef06bd79fc9a55c7642f7278f45","os":"linux x64","toolchain":"rustc 1.101.0-nightly (4ebd25825 2026-10-15)\nbinary: rustc\ncommit-hash: 4ebd258257737d5b7635c116fa7d281627a7e937\ncommit-date: 2026-10-15\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB strict-provenance","recipe":"docs/evidence/reverify-recipes/R4c-06.json","recipe_sha256":"f65276a78a940551e6ade2b40f97970dbde86a0d63d50f4ff1ec3c2b9204f6b2","registry_activation_hash":"53f53751b32ca5f9936efc00a3edb053bce145a980ec7be0b119ade4f042f964"}
+E0_METADATA {"id":"R4c-06","head":"491c4bc9e9c1516a6ef0c4c5a63776ce4e4502be","tree":"2021ef326c824b570950ae15634f4636a0ed7094","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-06","head":"491c4bc9e9c1516a6ef0c4c5a63776ce4e4502be","tree":"2021ef326c824b570950ae15634f4636a0ed7094","os":"linux x64","toolchain":"rustc 1.101.0-nightly (4ebd25825 2026-10-15)\nbinary: rustc\ncommit-hash: 4ebd258257737d5b7635c116fa7d281627a7e937\ncommit-date: 2026-10-15\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB strict-provenance","recipe":"docs/evidence/reverify-recipes/R4c-06.json","recipe_sha256":"f65276a78a940551e6ade2b40f97970dbde86a0d63d50f4ff1ec3c2b9204f6b2","registry_activation_hash":"53f53751b32ca5f9936efc00a3edb053bce145a980ec7be0b119ade4f042f964"}
 
 E0_STEP {"id":"R4c-06","kind":"baseline","name":"strict provenance expected scaffold red","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","regression_xthread_small_ring_miri"],"env":{"MIRIFLAGS":"-Zmiri-strict-provenance -Zmiri-disable-isolation"},"expect":{"exit":1,"stdoutRegex":["unsupported operation: integer-to-pointer casts","ptr::with_exposed_provenance","tests[/\\\\]regression_xthread_small_ring_miri\\.rs:\\d+:\\d+"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -76,40 +76,40 @@ E0_STEP {"id":"R4c-06","kind":"baseline","name":"strict provenance expected scaf
    [1m[94m|[0m
 [1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: unused import: `alloc_core::OwnedBlock`[0m
-   [1m[94m--> [0msrc/alloc_core/mod.rs:161:16
+   [1m[94m--> [0msrc/alloc_core/mod.rs:163:16
     [1m[94m|[0m
-[1m[94m161[0m [1m[94m|[0m pub(crate) use alloc_core::OwnedBlock;
+[1m[94m163[0m [1m[94m|[0m pub(crate) use alloc_core::OwnedBlock;
     [1m[94m|[0m                [1m[33m^^^^^^^^^^^^^^^^^^^^^^[0m
     [1m[94m|[0m
     [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.06s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/regression_xthread_small_ring_miri.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/9825f23120a807dd/out/regression_xthread_small_ring_miri-9825f23120a807dd)
 
 running 1 test
 test xthread_small_ring_two_producers_push_owner_drains ... error: unsupported operation: integer-to-pointer casts and `ptr::with_exposed_provenance` are not supported with `-Zmiri-strict-provenance`
-   --> tests/regression_xthread_small_ring_miri.rs:127:42
+   --> tests/regression_xthread_small_ring_miri.rs:145:42
     |
-127 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
+145 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
     |                                          ^^^^^^^^^^^^^^^ unsupported operation occurred here
     |
     = help: use Strict Provenance APIs (https://doc.rust-lang.org/nightly/std/ptr/index.html#strict-provenance, https://crates.io/crates/sptr) instead
-    = note: this is on thread `unnamed-2`
+    = note: this is on thread `unnamed-3`
 note: the current function got called indirectly due to this code
-   --> tests/regression_xthread_small_ring_miri.rs:112:18
+   --> tests/regression_xthread_small_ring_miri.rs:134:18
     |
-112 |       let prod_a = thread::spawn(move || {
+134 |       let prod_b = thread::spawn(move || {
     |  __________________^
-113 | |         let _ = bootstrap::ensure();
-114 | |         let mut remote_lease =
-115 | |             HeapRegistry::dbg_claim_lease().expect("producer A HeapRegistry::claim failed");
+135 | |         let _ = bootstrap::ensure();
+136 | |         let mut remote_lease =
+137 | |             HeapRegistry::dbg_claim_lease().expect("producer B HeapRegistry::claim failed");
 ...   |
-129 | |         drop(remote_lease);
-130 | |     });
+147 | |         drop(remote_lease);
+148 | |     });
     | |______^
 
 note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
@@ -199,9 +199,9 @@ E0_STEP {"id":"R4c-06","kind":"baseline","name":"plain provenance control","argv
    [1m[94m|[0m
 [1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
 [1m[33mwarning[0m[1m: unused import: `alloc_core::OwnedBlock`[0m
-   [1m[94m--> [0msrc/alloc_core/mod.rs:161:16
+   [1m[94m--> [0msrc/alloc_core/mod.rs:163:16
     [1m[94m|[0m
-[1m[94m161[0m [1m[94m|[0m pub(crate) use alloc_core::OwnedBlock;
+[1m[94m163[0m [1m[94m|[0m pub(crate) use alloc_core::OwnedBlock;
     [1m[94m|[0m                [1m[33m^^^^^^^^^^^^^^^^^^^^^^[0m
     [1m[94m|[0m
     [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
@@ -214,9 +214,9 @@ E0_STEP {"id":"R4c-06","kind":"baseline","name":"plain provenance control","argv
 
 running 1 test
 test xthread_small_ring_two_producers_push_owner_drains ... warning: integer-to-pointer cast
-   --> tests/regression_xthread_small_ring_miri.rs:127:42
+   --> tests/regression_xthread_small_ring_miri.rs:145:42
     |
-127 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
+145 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
     |                                          ^^^^^^^^^^^^^^^ integer-to-pointer cast
     |
     = help: this program is using integer-to-pointer casts or (equivalently) `ptr::with_exposed_provenance`, which means that Miri might miss pointer bugs in this program
@@ -224,26 +224,6 @@ test xthread_small_ring_two_producers_push_owner_drains ... warning: integer-to-
     = help: to ensure that Miri does not miss bugs in your program, use Strict Provenance APIs (https://doc.rust-lang.org/nightly/std/ptr/index.html#strict-provenance, https://crates.io/crates/sptr) instead
     = help: you can then set `MIRIFLAGS=-Zmiri-strict-provenance` to ensure you are not relying on `with_exposed_provenance` semantics
     = help: alternatively, `MIRIFLAGS=-Zmiri-permissive-provenance` disables this warning
-    = note: this is on thread `unnamed-2`
-note: the current function got called indirectly due to this code
-   --> tests/regression_xthread_small_ring_miri.rs:112:18
-    |
-112 |       let prod_a = thread::spawn(move || {
-    |  __________________^
-113 | |         let _ = bootstrap::ensure();
-114 | |         let mut remote_lease =
-115 | |             HeapRegistry::dbg_claim_lease().expect("producer A HeapRegistry::claim failed");
-...   |
-129 | |         drop(remote_lease);
-130 | |     });
-    | |______^
-
-warning: integer-to-pointer cast
-   --> tests/regression_xthread_small_ring_miri.rs:145:42
-    |
-145 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
-    |                                          ^^^^^^^^^^^^^^^ integer-to-pointer cast
-    |
     = note: this is on thread `unnamed-3`
 note: the current function got called indirectly due to this code
    --> tests/regression_xthread_small_ring_miri.rs:134:18
@@ -258,9 +238,29 @@ note: the current function got called indirectly due to this code
 148 | |     });
     | |______^
 
+warning: integer-to-pointer cast
+   --> tests/regression_xthread_small_ring_miri.rs:127:42
+    |
+127 |             unsafe { remote_heap.dealloc(addr as *mut u8, small_layout) };
+    |                                          ^^^^^^^^^^^^^^^ integer-to-pointer cast
+    |
+    = note: this is on thread `unnamed-2`
+note: the current function got called indirectly due to this code
+   --> tests/regression_xthread_small_ring_miri.rs:112:18
+    |
+112 |       let prod_a = thread::spawn(move || {
+    |  __________________^
+113 | |         let _ = bootstrap::ensure();
+114 | |         let mut remote_lease =
+115 | |             HeapRegistry::dbg_claim_lease().expect("producer A HeapRegistry::claim failed");
+...   |
+129 | |         drop(remote_lease);
+130 | |     });
+    | |______^
+
 ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.60s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.98s
 
 warning: 2 warnings emitted
 

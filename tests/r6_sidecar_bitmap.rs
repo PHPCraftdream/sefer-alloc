@@ -3,6 +3,15 @@
 // Compile the actual primitive in this integration crate. These aliases are
 // pinned to the production geometry, not independent test constants.
 mod alloc_core {
+    // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`) for the
+    // source-included primitives.
+    pub mod fatal {
+        pub fn fatal(msg: &'static [u8]) -> ! {
+            use std::io::Write;
+            let _ = std::io::stderr().write_all(msg);
+            std::process::abort()
+        }
+    }
     pub mod os {
         pub const SEGMENT: usize = sefer_alloc::SegmentLayout::SEGMENT;
     }

@@ -329,7 +329,7 @@ pub fn tcache_and_large_cache_hits_total() -> (u64, u64) {
 /// call racing that window used to reach `reg.slot(idx)` here too — driving
 /// this "cheap, read-only" walk into a real OS chunk reservation, a
 /// spin-wait on the claiming thread's in-flight initialisation, or (on
-/// chunk-materialisation OOM) `std::process::abort()`, none of which a
+/// chunk-materialisation OOM) a `fatal` diagnostic termination, none of which a
 /// metrics snapshot should ever risk. `slot_if_materialised` is a pure
 /// `Acquire` peek — `None` for a chunk that is not yet `READY` — and this
 /// loop simply `continue`s past that index for this call, exactly as it

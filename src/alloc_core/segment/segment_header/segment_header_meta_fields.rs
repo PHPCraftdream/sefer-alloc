@@ -1,6 +1,7 @@
 //! Field-specific owner-only accessors for [`SegmentMeta`] (mechanical split
 //! of `segment_header.rs`, task R6-CQ-7c).
 
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentMeta};
 
@@ -51,7 +52,7 @@ impl SegmentMeta {
         let limit =
             (crate::alloc_core::os::SEGMENT / crate::alloc_core::size_classes::MIN_BLOCK) as u32;
         let Some(new) = v.checked_add(n).filter(|&sum| sum <= limit) else {
-            std::process::abort();
+            fatal(b"segment_header_meta_fields: add_live live_count overflow\n");
         };
         self.set_live_count(new);
     }
@@ -71,7 +72,7 @@ impl SegmentMeta {
     pub(crate) fn sub_live(&mut self, n: u32) -> u32 {
         let v = self.live_count_of();
         let Some(new) = v.checked_sub(n) else {
-            std::process::abort();
+            fatal(b"segment_header_meta_fields: sub_live live_count underflow\n");
         };
         self.set_live_count(new);
         new

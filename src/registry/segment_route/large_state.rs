@@ -11,7 +11,7 @@ pub struct LargeState {
 
 impl LargeState {
     /// Fresh Large reservation, before first user-visible issue.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             word: AtomicU64::new(pack_large_state(LargePhase::Live, 1)),
         }

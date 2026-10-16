@@ -381,8 +381,8 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
     )
     .expect("read src/registry/bootstrap/registry.rs");
     assert!(
-        bootstrap.contains("std::process::abort()"),
-        "the documented invariant abort is absent from Registry::ensure_chunk"
+        bootstrap.contains("alloc_core::fatal::fatal"),
+        "the documented OOM termination must go through the diagnostic `fatal` helper"
     );
     let claim = fs::read_to_string(
         manifest

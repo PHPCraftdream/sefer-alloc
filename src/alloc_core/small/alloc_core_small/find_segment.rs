@@ -12,6 +12,7 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use crate::alloc_core::size_classes::MIN_BLOCK;
 
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::fatal::fatal;
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use super::sidecar_drain_outcome::SidecarDrainOutcome;
@@ -148,7 +149,7 @@ impl AllocCore {
                 .table
                 .scan_small_route_from(index, base, high_water, start_word)
             else {
-                std::process::abort();
+                fatal(b"find_segment: routed scan unavailable\n");
             };
             #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
             crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
@@ -502,7 +503,7 @@ impl AllocCore {
                     SegmentKind::Small | SegmentKind::Primordial
                 )
             {
-                std::process::abort();
+                fatal(b"find_segment: drained segment is not a live small segment\n");
             }
             // Stats only: the class bin before the drain, to tell a drain-created
             // free block from directory lag.

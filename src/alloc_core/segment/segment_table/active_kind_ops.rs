@@ -1,6 +1,7 @@
 //! Owner-only numeric candidate enumeration and independent diagnostic census.
 
 use super::{ActiveKindIndex, SegmentTable};
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::SegmentKind;
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
@@ -14,7 +15,7 @@ impl SegmentTable {
     pub(crate) fn next_active(&self, kind: SegmentKind, from: usize) -> Option<usize> {
         let next = ActiveKindIndex::next(self.active_kind, kind, from);
         if next.is_some_and(|i| i >= self.count() as usize) {
-            std::process::abort();
+            fatal(b"active_kind_ops: active index entry beyond table count\n");
         }
         next
     }
@@ -32,7 +33,7 @@ impl SegmentTable {
                 match SegmentHeader::kind_at(base) {
                     SegmentKind::Small | SegmentKind::Primordial => (true, false),
                     SegmentKind::Large => (false, true),
-                    SegmentKind::Unknown => std::process::abort(),
+                    SegmentKind::Unknown => fatal(b"active_kind_ops: unknown segment kind\n"),
                 }
             };
             small += usize::from(expect_small);

@@ -9,6 +9,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
 
 use super::shard_lock::ShardLock;
@@ -149,7 +150,7 @@ impl EntryHandle {
             .is_err()
         {
             // A valid free must never silently lose its route on exhaustion.
-            std::process::abort();
+            fatal(b"directory: pin reference count overflow\n");
         }
         Self {
             ptr: AtomicPtr::new(ptr),
@@ -270,7 +271,7 @@ impl Block {
 
     fn get(&self, index: usize) -> *mut Entry {
         if index >= self.len {
-            std::process::abort();
+            fatal(b"directory: block get index out of range\n");
         }
         self.slots[index].load(Ordering::Relaxed)
     }
@@ -300,7 +301,7 @@ impl Block {
     /// Returns the number of pointer cells moved.
     fn insert_at(&mut self, index: usize, value: *mut Entry) -> usize {
         if self.len == BLOCK_CAP || index > self.len {
-            std::process::abort();
+            fatal(b"directory: block insert out of range\n");
         }
         for i in (index..self.len).rev() {
             let moved = self.slots[i].load(Ordering::Relaxed);
@@ -314,7 +315,7 @@ impl Block {
     /// Returns the number of pointer cells moved.
     fn remove_at(&mut self, index: usize) -> usize {
         if index >= self.len {
-            std::process::abort();
+            fatal(b"directory: block remove index out of range\n");
         }
         for i in index..self.len - 1 {
             let moved = self.slots[i + 1].load(Ordering::Relaxed);
@@ -328,7 +329,7 @@ impl Block {
     /// Moves the upper half into the empty `dst`; returns cells moved.
     fn split_into(&mut self, dst: &mut Block) -> usize {
         if dst.len != 0 || self.len != BLOCK_CAP {
-            std::process::abort();
+            fatal(b"directory: block split precondition violated\n");
         }
         for i in BLOCK_HALF..BLOCK_CAP {
             let moved = self.slots[i].swap(ptr::null_mut(), Ordering::Relaxed);
@@ -343,7 +344,7 @@ impl Block {
     /// larger) and empties it; returns cells moved.
     fn absorb(&mut self, other: &mut Block) -> usize {
         if self.len + other.len > BLOCK_CAP {
-            std::process::abort();
+            fatal(b"directory: block absorb overflow\n");
         }
         let moved = other.len;
         for i in 0..moved {
@@ -398,7 +399,7 @@ impl BlockIndex {
 
     fn cell(&self, index: usize) -> &AtomicPtr<Block> {
         if index >= self.cap {
-            std::process::abort();
+            fatal(b"directory: index cell out of range\n");
         }
         // SAFETY: index < cap in the live System array; every slot is an
         // initialized atomic, mutated only by the shard-lock holder.
@@ -407,7 +408,7 @@ impl BlockIndex {
 
     fn get(&self, index: usize) -> *mut Block {
         if index >= self.len {
-            std::process::abort();
+            fatal(b"directory: index get out of range\n");
         }
         self.cell(index).load(Ordering::Relaxed)
     }
@@ -415,7 +416,7 @@ impl BlockIndex {
     /// Returns the number of pointer cells moved.
     fn copy_from(&mut self, old: &Self) -> usize {
         if self.cap < old.len {
-            std::process::abort();
+            fatal(b"directory: index copy capacity too small\n");
         }
         for i in 0..old.len {
             self.cell(i).store(old.get(i), Ordering::Relaxed);
@@ -427,7 +428,7 @@ impl BlockIndex {
     /// Returns the number of pointer cells moved.
     fn insert(&mut self, index: usize, value: *mut Block) -> usize {
         if self.len == self.cap || index > self.len {
-            std::process::abort();
+            fatal(b"directory: index insert out of range\n");
         }
         for i in (index..self.len).rev() {
             self.cell(i + 1)
@@ -441,7 +442,7 @@ impl BlockIndex {
     /// Returns the number of pointer cells moved.
     fn remove(&mut self, index: usize) -> usize {
         if index >= self.len {
-            std::process::abort();
+            fatal(b"directory: index remove out of range\n");
         }
         for i in index..self.len - 1 {
             self.cell(i)
@@ -459,8 +460,9 @@ impl Drop for BlockIndex {
         if self.cap == 0 {
             return;
         }
-        let layout =
-            Layout::array::<AtomicPtr<Block>>(self.cap).unwrap_or_else(|_| std::process::abort());
+        let layout = Layout::array::<AtomicPtr<Block>>(self.cap).unwrap_or_else(|_| {
+            fatal(b"directory: index layout overflow\n");
+        });
         // SAFETY: this is the allocation from with_capacity, with the exact
         // original Layout. The index does not own its blocks.
         unsafe { System.dealloc(self.ptr.load(Ordering::Relaxed).cast(), layout) };
@@ -629,13 +631,13 @@ impl Shard {
 
     fn remove(&mut self, key: usize, entry: *mut Entry) -> Retired {
         let Some((block, Ok(pos))) = self.locate(key) else {
-            std::process::abort();
+            fatal(b"directory: remove of unindexed key\n");
         };
         let raw = self.index.get(block);
         // SAFETY: linked live block under the shard lock.
         let blk = unsafe { &mut *raw };
         if blk.get(pos) != entry {
-            std::process::abort();
+            fatal(b"directory: removed entry does not match key\n");
         }
         let mut retired = Retired {
             blocks: [None, None],
@@ -962,7 +964,7 @@ impl RouteDirectory {
         let incarnation = entry.incarnation;
         let pin = EntryHandle::pin_from_array(raw);
         if guard.find(key) != Some(pin.ptr()) || pin.incarnation() != incarnation {
-            std::process::abort();
+            fatal(b"directory: pin key or incarnation mismatch\n");
         }
         drop(guard);
         Some(RoutePin { entry: pin })

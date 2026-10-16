@@ -2,6 +2,12 @@
 //! output slices. Calls the internals-only safe forwarder; exact carve
 //! assertions are skipped under Miri, where virgin marking is intentionally
 //! disabled. A deterministic partial/OOM refill cannot be induced here.
+//!
+//! Oversized refills no longer panic (R6-T14): the magazine assert was
+//! converted to a `fatal` abort, so the two oversized-length cases run in a
+//! spawned child process (see `con01_exit_stranded_lock.rs` for the pattern)
+//! and the parent asserts the ABORT exit signature. The child trigger tests
+//! are inert in a normal `cargo test` run (env-var gate).
 
 #![cfg(all(
     feature = "internals",
@@ -142,9 +148,56 @@ fn fully_recycled_refill_mask_is_all_clear() {
     );
 }
 
+/// Env var gating the oversized-refill child: without it the trigger tests
+/// return immediately, keeping a normal `cargo test` run alive.
+const ABORT_CHILD: &str = "SEFER_R2_15_ABORT_CHILD";
+
+fn spawn_abort_child(child_test: &str) -> std::process::ExitStatus {
+    let exe = std::env::current_exe().expect("test executable");
+    std::process::Command::new(&exe)
+        .args(["--exact", child_test, "--nocapture", "--test-threads", "1"])
+        .env(ABORT_CHILD, "1")
+        .status()
+        .expect("spawn own child for the oversized-refill abort probe")
+}
+
+fn assert_abort_signature(status: std::process::ExitStatus) {
+    // Windows: UCRT abort exit 3, or fastfail 0xC0000409 (-1073740791).
+    // Unix: SIGABRT (signal 6).
+    let aborted = cfg!(windows) && matches!(status.code(), Some(3) | Some(-1073740791))
+        || cfg!(unix) && format!("{status}").contains("signal: 6");
+    assert!(
+        aborted,
+        "the oversized refill must ABORT process-wide (fatal, R6-T14), not \
+         panic and not succeed; got {status}. A panic in the child would make \
+         libtest exit 101 cleanly, turning this assert red against the \
+         pre-fix behaviour"
+    );
+}
+
 #[test]
-#[should_panic(expected = "exceeds the u16 virgin mask capacity")]
-fn out_len_17_panics_in_every_profile() {
+fn out_len_17_aborts_process_wide() {
+    if cfg!(miri) {
+        return;
+    }
+    let status = spawn_abort_child("out_len_17_aborts_child");
+    assert_abort_signature(status);
+}
+
+#[test]
+fn out_len_32_aborts_process_wide() {
+    if cfg!(miri) {
+        return;
+    }
+    let status = spawn_abort_child("out_len_32_aborts_child");
+    assert_abort_signature(status);
+}
+
+#[test]
+fn out_len_17_aborts_child() {
+    if std::env::var(ABORT_CHILD).is_err() {
+        return; // inert in a normal `cargo test` run
+    }
     let mut core = fresh_core();
     let c = pick_class();
     let mut out = vec![core::ptr::null_mut::<u8>(); 17];
@@ -153,8 +206,10 @@ fn out_len_17_panics_in_every_profile() {
 }
 
 #[test]
-#[should_panic(expected = "exceeds the u16 virgin mask capacity")]
-fn out_len_32_panics_in_every_profile() {
+fn out_len_32_aborts_child() {
+    if std::env::var(ABORT_CHILD).is_err() {
+        return; // inert in a normal `cargo test` run
+    }
     let mut core = fresh_core();
     let c = pick_class();
     let mut out = vec![core::ptr::null_mut::<u8>(); 32];

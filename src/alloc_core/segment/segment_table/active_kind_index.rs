@@ -1,3 +1,4 @@
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::SegmentKind;
 
@@ -33,7 +34,7 @@ impl ActiveKindIndex {
                 core::mem::offset_of!(Self, large),
                 core::mem::offset_of!(Self, large_summary),
             ),
-            SegmentKind::Unknown => std::process::abort(),
+            SegmentKind::Unknown => fatal(b"active_kind_index: unknown segment kind\n"),
         }
     }
 
@@ -65,7 +66,7 @@ impl ActiveKindIndex {
 
     pub(super) fn set(ptr: *mut Self, slot: usize, kind: SegmentKind) {
         if slot >= MAX_SEGMENTS {
-            std::process::abort();
+            fatal(b"active_kind_index: set slot out of range\n");
         }
         let (leaf_off, summary_off) = Self::offsets(kind);
         let w = slot / 64;
@@ -78,7 +79,7 @@ impl ActiveKindIndex {
             core::mem::offset_of!(Self, small)
         };
         if old & bit != 0 || Self::read(ptr, other_off + w * 8) & bit != 0 {
-            std::process::abort();
+            fatal(b"active_kind_index: set on occupied slot\n");
         }
         Self::write(ptr, off, old | bit);
         if old == 0 {
@@ -99,7 +100,7 @@ impl ActiveKindIndex {
 
     pub(super) fn clear(ptr: *mut Self, slot: usize, kind: SegmentKind) {
         if slot == 0 || slot >= MAX_SEGMENTS {
-            std::process::abort();
+            fatal(b"active_kind_index: clear slot out of range\n");
         }
         let (leaf_off, summary_off) = Self::offsets(kind);
         let w = slot / 64;
@@ -107,7 +108,7 @@ impl ActiveKindIndex {
         let bit = 1u64 << (slot % 64);
         let old = Self::read(ptr, off);
         if old & bit == 0 {
-            std::process::abort();
+            fatal(b"active_kind_index: clear of empty slot\n");
         }
         let new = old & !bit;
         Self::write(ptr, off, new);
@@ -138,7 +139,7 @@ impl ActiveKindIndex {
         let next_word = later.trailing_zeros() as usize;
         let next_leaf = Self::read(ptr, leaf_off + next_word * 8);
         if next_leaf == 0 {
-            std::process::abort();
+            fatal(b"active_kind_index: summary word without matching leaf\n");
         }
         Some(next_word * 64 + next_leaf.trailing_zeros() as usize)
     }

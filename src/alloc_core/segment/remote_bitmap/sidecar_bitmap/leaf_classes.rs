@@ -13,6 +13,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use super::{AtomicPtr, AtomicU8, Ordering};
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 const LEAF_GRANULES: usize = 256;
@@ -91,8 +92,8 @@ impl ClassLeaves {
         {
             return false;
         }
-        let layout =
-            Layout::array::<AtomicU8>(LEAF_GRANULES).unwrap_or_else(|_| std::process::abort());
+        let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
+            .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
         // SAFETY: the System span has this exact layout and is owner-private
         // until every atomic byte is initialized and its pointer published.
         let fresh = unsafe { System.alloc(layout) }.cast::<AtomicU8>();
@@ -218,8 +219,8 @@ impl ClassLeaves {
 
 impl Drop for ClassLeaves {
     fn drop(&mut self) {
-        let layout =
-            Layout::array::<AtomicU8>(LEAF_GRANULES).unwrap_or_else(|_| std::process::abort());
+        let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
+            .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
         for slot in &self.mixed {
             let p = slot.load(Ordering::Relaxed);
             if !p.is_null() {

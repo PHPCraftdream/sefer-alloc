@@ -9,6 +9,7 @@
 //! plus the `base_add` node-seam offset helper.
 
 use crate::alloc_core::alloc_core::AllocCore;
+use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::os;
@@ -64,7 +65,7 @@ fn release_cached_on_drop(cached: CachedLarge) {
         let meta = SegmentMeta::new(cached.base);
         let generation = large_generation(meta.terminal_snapshot().large_state);
         if !LargeReservationState::new(meta.large_state_atomic()).release_cached(generation) {
-            std::process::abort();
+            fatal(b"lifecycle: cached release failed\n");
         }
     }
     os::release_segment(cached.reservation, cached.reservation_len);
@@ -524,10 +525,10 @@ impl Drop for AllocCore {
                     let meta = SegmentMeta::new(base);
                     let state = LargeReservationState::new(meta.large_state_atomic());
                     let Some(generation) = state.claim_live() else {
-                        std::process::abort();
+                        fatal(b"lifecycle: live claim credit missing\n");
                     };
                     if !state.release_consumed(generation) {
-                        std::process::abort();
+                        fatal(b"lifecycle: consumed release failed\n");
                     }
                 }
             }

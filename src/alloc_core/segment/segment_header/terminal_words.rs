@@ -5,6 +5,7 @@ use core::mem::{align_of, offset_of, size_of};
 use core::sync::atomic::Ordering;
 use core::sync::atomic::{AtomicU32, AtomicU64};
 
+use crate::alloc_core::fatal::fatal;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::large::reservation_state::LargeReservationState;
 use crate::alloc_core::node::Node;
@@ -45,8 +46,10 @@ pub enum LargePhase {
 }
 
 #[inline(always)]
-pub const fn pack_large_state(phase: LargePhase, generation: u64) -> u64 {
-    assert!(generation <= MAX_LARGE_GENERATION);
+pub fn pack_large_state(phase: LargePhase, generation: u64) -> u64 {
+    if generation > MAX_LARGE_GENERATION {
+        fatal(b"terminal_words: pack_large_state generation exceeds MAX_LARGE_GENERATION\n");
+    }
     (generation << PHASE_BITS) | phase as u64
 }
 
@@ -146,7 +149,7 @@ impl SegmentMeta {
         let state = LargeReservationState::new(self.large_state_atomic());
         let word = self.large_state_atomic().load(Ordering::Acquire);
         if large_phase(word) != Some(LargePhase::Cached) {
-            std::process::abort();
+            fatal(b"terminal_words: begin_large_reuse on non-cached state\n");
         }
         state.begin_reuse()
     }
@@ -158,7 +161,7 @@ impl SegmentMeta {
         self.remote_head_atomic()
             .store(REMOTE_HEAD_EMPTY, Ordering::Relaxed);
         if !LargeReservationState::new(self.large_state_atomic()).finish_reuse(generation) {
-            std::process::abort();
+            fatal(b"terminal_words: finish_large_reuse transition failed\n");
         }
     }
 }
