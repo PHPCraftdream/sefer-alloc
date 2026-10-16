@@ -5,6 +5,12 @@
 //! Oracles follow owner decision Question 2: discovery must recover without
 //! strict assistance; strict must include a completed pending publication even
 //! while its producer is paused before the discovery-only notification.
+//! R6-T53: this file models the REJECTED C‴ summary-hint protocol (owner
+//! decision, PRF-01): production has no discovery summary and the shipping
+//! strict/trim path ignores one. Kept as the protocol's historical record and
+//! negative controls; it does NOT count toward coverage of the current
+//! production sidecar path (item 186,
+//! docs/correctness-open-items/TRACKED_verification_coverage.md).
 #![cfg(loom)]
 #![forbid(unsafe_code)]
 
