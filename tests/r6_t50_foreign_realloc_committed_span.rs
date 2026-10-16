@@ -14,12 +14,17 @@
 //! license for false layouts — same posture as
 //! `tests/regression_realloc_heap_oob.rs`, whose routed positive controls
 //! this file mirrors for Large and Small sources.
+//!
+//! Not built under `numa-aware`: it overrides the reserved headroom
+//! (`reserved_capacity == usable`), so neither the uncommitted tail nor an
+//! in-place grow exists there.
 
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "internals",
-    feature = "large-reserved-capacity"
+    feature = "large-reserved-capacity",
+    not(feature = "numa-aware")
 ))]
 
 use core::alloc::Layout;
@@ -81,6 +86,15 @@ const LARGE_SIZE: usize = 1024 * 1024;
 /// Forged old size: exceeds the committed span (~1 MiB) yet fits the
 /// reservation (~4 MiB).
 const FORGED_OLD: usize = 2 * 1024 * 1024;
+/// The forged-layout test's own source size. It is larger than every span
+/// the other tests leave in a Large cache (at most `FORGED_OLD`, committed),
+/// so its allocation is a fresh reservation committed to ~12 MiB inside a
+/// ~48 MiB reservation, never a cache hit whose committed span already
+/// covers the forged size.
+const FORGED_SRC: usize = 12 * 1024 * 1024;
+/// Forged old size for that test: beyond the ~12 MiB committed span, inside
+/// the ~48 MiB reservation.
+const FORGED_BIG: usize = 24 * 1024 * 1024;
 
 #[test]
 fn foreign_realloc_forged_layout_beyond_committed_span_returns_null() {
@@ -88,23 +102,23 @@ fn foreign_realloc_forged_layout_beyond_committed_span_returns_null() {
     let _ = bootstrap::ensure();
 
     let source = SeferAlloc::new();
-    let large = Layout::from_size_align(LARGE_SIZE, 16).unwrap();
+    let large = Layout::from_size_align(FORGED_SRC, 16).unwrap();
     // SAFETY: the source allocator receives a valid nonzero Layout.
     let p = unsafe { source.alloc(large) };
-    assert!(!p.is_null(), "setup: 1 MiB large allocation failed");
+    assert!(!p.is_null(), "setup: 12 MiB large allocation failed");
     // The block must be foreign-routed for the frontier bound to apply.
     assert!(
         RouteDirectory::global().lookup(p).is_some(),
         "large allocation has a registered route"
     );
-    // SAFETY: `p` is valid for LARGE_SIZE bytes.
-    unsafe { core::ptr::write_bytes(p, 0x5A, LARGE_SIZE) };
+    // SAFETY: `p` is valid for FORGED_SRC bytes.
+    unsafe { core::ptr::write_bytes(p, 0x5A, FORGED_SRC) };
 
     let mut lease = ForeignLease::claim();
     let heap = lease.core();
 
-    // The old Layout is intentionally false: LARGE_SIZE < FORGED_OLD <=
-    // reserved_capacity. The committed-span descriptor bound must reject
+    // The old Layout is intentionally false: FORGED_SRC < FORGED_BIG <=
+    // reserved_capacity. The live commit-frontier bound must reject
     // this BEFORE any allocation or copy — pre-fix, the move leg read the
     // reserved-but-uncommitted tail.
     // SAFETY: `p` is a live allocation; the forged old layout is the
@@ -112,8 +126,8 @@ fn foreign_realloc_forged_layout_beyond_committed_span_returns_null() {
     let result = unsafe {
         heap.realloc(
             p,
-            Layout::from_size_align(FORGED_OLD, 16).unwrap(),
-            FORGED_OLD,
+            Layout::from_size_align(FORGED_BIG, 16).unwrap(),
+            FORGED_BIG,
         )
     };
     assert!(
@@ -123,7 +137,7 @@ fn foreign_realloc_forged_layout_beyond_committed_span_returns_null() {
     );
 
     // Null return: the old block is intact and still owned by the source.
-    // SAFETY: `p` is still valid for LARGE_SIZE bytes.
+    // SAFETY: `p` is still valid for FORGED_SRC bytes.
     unsafe {
         assert_eq!(
             core::ptr::read(p),
