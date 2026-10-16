@@ -1,9 +1,11 @@
 //! The always-compiled, `AllocStats`-backing diagnostic accessors of
-//! [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) (Sol-F1): `dbg_foreign_or_unroutable_frees`,
-//! `dbg_segments_reserved_total`, `dbg_segments_released_total`. NOT
-//! `internals`-gated — see the group module doc for the rationale
-//! (mechanical split of the former flat `alloc_core_core_diag.rs`; pure code
-//! movement, no behavior changed).
+//! [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) (Sol-F1):
+//! `foreign_or_unroutable_frees`, `segments_reserved_total`,
+//! `segments_released_total` as `pub(crate)` production methods, plus
+//! R6-T38's `internals`-gated `dbg_*` test aliases. They no longer sit on
+//! the public `AllocCore` surface — see the group module doc for the
+//! rationale (mechanical split of the former flat `alloc_core_core_diag.rs`;
+//! pure code movement, no behavior changed).
 
 use crate::alloc_core::alloc_core::AllocCore;
 
@@ -21,30 +23,54 @@ impl AllocCore {
     /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees);
     /// see [`FOREIGN_OR_UNROUTABLE_FREES`]. A relaxed load. Reads `0` under a
     /// bare `alloc-core` build unless `alloc-stats` is on.
-    #[doc(hidden)]
     #[cfg(feature = "alloc-core")]
-    pub fn dbg_foreign_or_unroutable_frees() -> u64 {
+    pub(crate) fn foreign_or_unroutable_frees() -> u64 {
         FOREIGN_OR_UNROUTABLE_FREES.load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
     /// reservations since process start (every `os::Segment::reserve`
     /// success plus NUMA-pinned reservations). Monotonic, relaxed — pairs
-    /// with [`AllocCore::dbg_segments_released_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_released_total); the difference is
+    /// with `AllocCore::segments_released_total`; the difference is
     /// the current process-wide live segment count. Always compiled (not
     /// feature-gated) — every build reserves segments via `os::Segment::reserve`.
-    #[doc(hidden)]
     #[must_use]
-    pub fn dbg_segments_reserved_total() -> u64 {
+    pub(crate) fn segments_reserved_total() -> u64 {
         crate::alloc_core::os::segments_reserved_total()
     }
 
     /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
     /// releases since process start. Monotonic, relaxed. See
-    /// [`AllocCore::dbg_segments_reserved_total`](crate::alloc_core::alloc_core::AllocCore::dbg_segments_reserved_total).
+    /// `AllocCore::segments_reserved_total`.
+    #[must_use]
+    pub(crate) fn segments_released_total() -> u64 {
+        crate::alloc_core::os::segments_released_total()
+    }
+}
+
+/// R6-T38: `internals`-gated test aliases of the crate-only stats accessors
+/// above. `tests/` reads the process-wide counters through these `dbg_*`
+/// names; the production accessors they forward to are `pub(crate)`.
+#[cfg(feature = "internals")]
+impl AllocCore {
+    /// Test alias of [`Self::foreign_or_unroutable_frees`].
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-core")]
+    pub fn dbg_foreign_or_unroutable_frees() -> u64 {
+        Self::foreign_or_unroutable_frees()
+    }
+
+    /// Test alias of [`Self::segments_reserved_total`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_segments_reserved_total() -> u64 {
+        Self::segments_reserved_total()
+    }
+
+    /// Test alias of [`Self::segments_released_total`].
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_segments_released_total() -> u64 {
-        crate::alloc_core::os::segments_released_total()
+        Self::segments_released_total()
     }
 }

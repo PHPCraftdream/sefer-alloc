@@ -78,19 +78,26 @@ fn far_large_publication_after_clean_pass_retires_with_pin_held() {
     assert_eq!(heap.dbg_active_kind_census(), (1, 9, true));
     publish.wait();
     published.wait();
+    // Large allocs also advance the hot cursor (R6-T10), so the pass that
+    // reaches the published slot depends on the cursor phase: require
+    // retirement within the passes one full rotation needs, each pass
+    // inspecting at most the hot budget.
     let probes_before = HeapCore::dbg_large_sidecar_slot_inspections();
     let rescues_before = HeapCore::dbg_large_sidecar_full_rescues();
-    for pass in 0..2 {
+    let budget = HeapCore::dbg_large_hot_budget() as u64;
+    let max_passes = 10u64.div_ceil(budget) + 1;
+    let mut passes = 0u64;
+    while heap.dbg_active_kind_census().1 == 9 {
+        assert!(passes < max_passes, "not retired after {passes} passes");
+        let before = HeapCore::dbg_large_sidecar_slot_inspections();
         miss_and_empty(heap, class, &mut small);
-        assert_eq!(
-            heap.dbg_active_kind_census().1,
-            if pass == 0 { 9 } else { 8 }
-        );
+        assert!(HeapCore::dbg_large_sidecar_slot_inspections() - before <= budget);
+        passes += 1;
     }
     assert_eq!(heap.dbg_active_kind_census(), (1, 8, true));
     assert!(RouteDirectory::global().lookup(victim).is_none());
     assert_eq!(HeapCore::dbg_large_sidecar_full_rescues(), rescues_before);
-    assert!(HeapCore::dbg_large_sidecar_slot_inspections() - probes_before <= 8);
+    assert!(HeapCore::dbg_large_sidecar_slot_inspections() - probes_before <= budget * passes);
     release_pin.wait();
     producer.join().unwrap();
     // SAFETY: victim was transferred to the producer; the remainder is live.

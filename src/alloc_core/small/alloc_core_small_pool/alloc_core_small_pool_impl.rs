@@ -485,26 +485,27 @@ impl AllocCore {
         self.table.recycle(base);
     }
 
-    /// The process-wide count of M6 decommit invocations
-    /// (`decommit_empty_segment` calls). The soak test reads this to assert the
-    /// decommit hook actually fires when segments empty (the counterfactual: with
-    /// the live-count proviso miswired it stays zero and the test goes red). A
-    /// plain relaxed atomic — diagnostic only, no ordering obligation.
+    /// Production stats accessor: the process-wide count of M6 decommit
+    /// invocations (`decommit_empty_segment` calls), backing
+    /// `AllocStats::decommit_calls` via [`SeferAlloc::stats`](crate::SeferAlloc::stats)
+    /// (`src/global/sefer_alloc.rs`'s `decommit_calls` field). A plain
+    /// relaxed atomic — diagnostic only, no ordering obligation.
     ///
-    /// H2 (task #572): NOT `internals`-gated, unlike its `dbg_*` siblings in
-    /// this file — [`SeferAlloc::stats`](crate::SeferAlloc::stats) reads this
-    /// directly (`src/global/sefer_alloc.rs`'s `decommit_calls` field) to
-    /// populate the public, production-reachable [`AllocStats`](crate::AllocStats)
-    /// struct, so this is a real production caller, not test-only despite its
-    /// name — the same exemption already applied to its three siblings
-    /// `dbg_foreign_or_unroutable_frees`/`dbg_segments_reserved_total`/
-    /// `dbg_segments_released_total` in `alloc_core_core_diag.rs` (Sol-F1/task
-    /// #563's module doc). See
-    /// `scripts/verify-alloc-core-dbg-internals-exhaustive.mjs`'s `ALLOWLIST`.
-    #[doc(hidden)]
+    /// R6-T38: moved off the public `AllocCore` surface — crate-only, with
+    /// no `dbg_` prefix on a production accessor; tests use the
+    /// `internals`-gated alias below.
     #[cfg(feature = "alloc-decommit")]
-    pub fn dbg_decommit_count() -> u64 {
+    pub(crate) fn decommit_count() -> u64 {
         DECOMMIT_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R6-T38: `internals`-gated test alias of the crate-only
+    /// [`Self::decommit_count`] stats accessor.
+    #[cfg(feature = "internals")]
+    #[cfg(feature = "alloc-decommit")]
+    #[doc(hidden)]
+    pub fn dbg_decommit_count() -> u64 {
+        Self::decommit_count()
     }
 
     /// TEST-ONLY (Mechanism 2, task #51): the number of empty small segments

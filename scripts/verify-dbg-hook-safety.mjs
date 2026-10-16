@@ -7,6 +7,9 @@
 // These are the ONE authoritative reviewed tables. Surviving invariant reasons
 // are preserved verbatim; only explicitly retired definitions were pruned.
 // Unsafe measurement hooks require their real gate and # Safety contract.
+// R6-T38: crate-public safe fns with raw-pointer parameters are inventoried
+// regardless of name.
+// Internals/bench-internals-gated unsafe raw-pointer fns are inventoried too and must carry # Safety.
 // No source-copy test, auto-pruning, wildcard allowlist or cfg_attr exemption.
 // Run: node scripts/verify-dbg-hook-safety.mjs
 
@@ -138,6 +141,8 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/core.rs::dbg_cached_numa_node",
   "src/registry/heap_core/diag/queries.rs::dbg_class_for",
   "src/registry/heap_core/diag/queries.rs::dbg_refill_n_for_class",
+  // Pure const-table read (FREE_PARK_CAP[c]); no pointer, no allocation, no state mutation.
+  "src/registry/heap_core/diag/queries.rs::dbg_free_park_cap",
   "src/registry/heap_core/diag/queries.rs::dbg_directory_bit_for_ptr",
   "src/registry/heap_core/diag/queries.rs::dbg_pooled_count",
   "src/registry/heap_core/diag/queries.rs::dbg_segment_base_of_ptr",
@@ -411,6 +416,19 @@ export const REVIEWED_SURFACE = [
     ['src/concurrent/lock_free/lock_free_region.rs', ['_reset_page_arc_clones_for_tests'], 'mutator', 'TLS diagnostic counter only'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['bench-internals'] }))),
   { id: 'src/alloc_core/segment/segment_table/harness.rs::hide_root_for_test', kind: 'mutator', reason: 'isolated numeric harness; no dereference; external alloc_core module path requires internals, not a compilation gate', gates: [] },
+  { id: 'src/registry/segment_route/directory.rs::register', kind: 'mutator', reason: 'internals-only public form of the crate-only register_route; pointer args are numeric segment keys never dereferenced and the registration unlinks on drop', gates: ['internals'] },
+  { id: 'src/registry/segment_route/directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
+  { id: 'src/registry/segment_route/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
+  { id: 'src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::insert', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::insert_root_for_key', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::remove_root_for_key', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::remove', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::contains', kind: 'observer', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::contains_cached', kind: 'observer', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'src/alloc_core/segment/segment_table/harness.rs::canonical', kind: 'observer', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
+  { id: 'crates/aligned-vmem/src/reservation_parts.rs::new', kind: 'observer', reason: 'pure constructor storing the caller-owned reservation pointer and length into a parts struct; no dereference', gates: [] },
+  { id: 'crates/aligned-vmem/src/reservation_full_parts.rs::new', kind: 'observer', reason: 'pure field-by-field reconstruction of reservation parts; caller-owned pointers stored, never dereferenced', gates: [] },
   { id: 'src/alloc_core/small/alloc_core_small_magazine.rs::flush_class', kind: 'unsafe', reason: 'exclusive caller-owned live blocks, exactly once; delegates to flush substrate', gates: ['internals'] },
   { id: 'src/registry/bootstrap/ensure.rs::count_for_test', kind: 'mutator', reason: 'ensure may initialize registry; then monotonic count load', gates: [] },
   { id: 'src/registry/heap_registry/maintenance.rs::maintenance_pass_for_test', kind: 'mutator', reason: 'production CAS-owned bounded maintenance pass', gates: ['internals'] },
@@ -498,10 +516,29 @@ function invalidBenchAttribute(attr) {
   const inner = cfgInner(attr);
   return inner === undefined || !expressionRequires(parseCfg(inner), 'bench-internals');
 }
+function hasRawPointerParams(mask, from) {
+  let angle = 0, start = -1, depth = 0;
+  for (let i = from; i < mask.length; i++) {
+    const ch = mask[i];
+    if (start < 0) {
+      if (ch === '<') angle++;
+      else if (ch === '>' && mask[i - 1] !== '-') angle = Math.max(0, angle - 1);
+      else if (ch === '(' && angle === 0) start = i;
+      else if (ch === '{' || ch === ';') return false;
+    } else {
+      if (ch === '(') depth++;
+      else if (ch === ')') { if (depth === 0) return /\*\s*(?:mut|const)\b/.test(mask.slice(start, i + 1)); depth--; }
+    }
+  }
+  return false;
+}
 function safetyDocs(text, offset) {
   const lines = text.slice(0, offset).split(/\r?\n/);
   let first = lines.length - 1;
-  while (first >= 0 && (!lines[first].trim() || /^\s*\/\//.test(lines[first]))) first--;
+  // Walk back over blank/comment lines and attributes so docs placed before
+  // an attribute are attributed. Stop at block openers: docs above an
+  // `impl X {` line belong to the impl, not to a fn inside it.
+  while (first >= 0 && (!lines[first].trim() || /^\s*\/\//.test(lines[first]) || /^\s*#!?\[/.test(lines[first]))) first--;
   return lines.slice(first + 1).join('\n');
 }
 export function scanFile(id, text) {
@@ -527,8 +564,14 @@ export function scanFile(id, text) {
       const implTail = lastImpl ? mask.slice(lastImpl.index, match.index) : '';
       const owner = lastImpl && [...implTail].reduce((n, ch) => n + (ch === '{' ? 1 : ch === '}' ? -1 : 0), 0) > 0 ? lastImpl[1] : null;
       const hookId = `${id}::${id === 'crates/tagged-index-stack/src/imp.rs' && owner ? `${owner}::` : ''}${name}`;
-      if (/^dbg_|_for_tests?$|inject/.test(name) || ROOT_FORWARDERS.includes(hookId))
-        hooks.push({ id: hookId, name, owner, file: id, unsafe: !!match[3], attrs: inherited(), docs: safetyDocs(text, pendingStart ?? match.index) });
+      const named = /^dbg_|_for_tests?$|inject/.test(name) || ROOT_FORWARDERS.includes(hookId);
+      // R6-T38 signature rule: safe crate-public fns with raw-pointer
+      // parameters are inventoried regardless of name; gated unsafe fns with
+      // pointer params are inventoried too (scoped in verifyHooks).
+      // Safe AND unsafe fns are collected; verifyHooks scopes gated unsafe ones.
+      const pointerParams = hasRawPointerParams(mask, token.lastIndex);
+      if (named || pointerParams)
+        hooks.push({ id: hookId, name, owner, file: id, unsafe: !!match[3], named, pointerParams, attrs: inherited(), docs: safetyDocs(text, pendingStart ?? match.index) });
     } else if (match[5]) {
       if (match[6] === '{') { scopes.push(pending); moduleScopes.push(match[5]); }
       else modules.push({ name: match[5], attrs: inherited(), inline: moduleScopes.filter(Boolean) });
@@ -587,6 +630,10 @@ export function verifyHooks(files, policy = {}) {
   let gated = 0;
   for (const file of files.values()) for (const hook of file.hooks) {
     const requires = feature => attributesRequire(hook.attrs, feature) || requiresFile(hook.file, feature);
+    if (!hook.named && !hook.pointerParams) continue;
+    // Outside internals/bench-internals a raw-pointer unsafe fn is the
+    // documented production unsafe API (tier policy), not this inventory.
+    if (!hook.named && hook.unsafe && !requires('internals') && !requires('bench-internals')) continue;
     const row = (policy.surface ?? REVIEWED_SURFACE).find(row => row.id === hook.id);
     if (row) for (const feature of row.gates) if (!requires(feature)) errors.push(`reviewed hook missing ${feature} gate: ${hook.id}`);
     for (const attr of hook.attrs) if (invalidBenchAttribute(attr)) errors.push(`non-gating bench cfg/cfg_attr: ${hook.id}: ${attr}`);
@@ -732,6 +779,7 @@ function handAuthoredCheck() {
 }
 function selfCheck() {
   handAuthoredCheck();
+  signatureCheck();
   const fixturePolicy = { safe: [], unsafe: [], surface: [] };
   for (const name of ['dbg_const', 'value_for_test', 'value_for_tests', 'inject_fault']) {
     const file = scanFile('fixture.rs', `impl Core { pub const fn ${name}() {} }`);
@@ -745,10 +793,14 @@ function selfCheck() {
     const qualified = row.id.startsWith('crates/tagged-index-stack/src/imp.rs::');
     const file = qualified ? 'crates/tagged-index-stack/src/imp.rs' : row.id.slice(0, split);
     const owner = qualified && row.id.slice(file.length + 2).includes('::') ? row.id.slice(file.length + 2, split) : 'Core';
+    const namedHook = /^dbg_|_for_tests?$|inject/.test(name) || ROOT_FORWARDERS.includes(`${file}::${name}`);
+    const params = namedHook ? '' : 'p: *mut u8';
     const docs = row.kind === 'unsafe' ? '/// # Safety\n/// Caller owns the mapped allocation.\n' : '';
-    const declaration = `${docs}pub ${row.kind === 'unsafe' ? 'unsafe ' : ''}fn ${name}() {}`;
+    const declaration = `${docs}pub ${row.kind === 'unsafe' ? 'unsafe ' : ''}fn ${name}(${params}) {}`;
     const skeleton = gates => `${gates}\nimpl ${owner} {\n${declaration}\n}`;
-    const attrs = row.gates.map(gate => gate === 'test-model' ? '#[cfg(any(tagged_index_stack_test, loom))]' : gate === 'loom' ? '#[cfg(loom)]' : `#[cfg(feature = "${gate}")]`);
+    // r18_sidecar_scan_bench is a bare cfg (see Cargo.toml check-cfg), like loom —
+    // never a cargo feature, so the synthesized attribute must not use feature =.
+    const attrs = row.gates.map(gate => gate === 'test-model' ? '#[cfg(any(tagged_index_stack_test, loom))]' : gate === 'loom' || gate === 'r18_sidecar_scan_bench' ? `#[cfg(${gate})]` : `#[cfg(feature = "${gate}")]`);
     const policy = { safe: row.kind === 'unsafe' ? [] : [row.id], unsafe: row.kind === 'unsafe' ? [row.id] : [], surface: [row] };
     // Free functions in the model crate must not accidentally acquire an owner.
     const source = gates => qualified && owner === 'Core' ? `${gates}\n${declaration}` : skeleton(gates);
@@ -762,6 +814,45 @@ function selfCheck() {
       assert(verifyHooks(new Map([[file, scanFile(file, noDocs)]]), policy).errors.includes(`unsafe hook lacks its # Safety contract: ${row.id}`));
     }
   }
+  function signatureCheck() {
+    // R6-T38 signature rule: safe crate-public fns with raw-pointer parameters
+    // are inventoried regardless of name.
+    const directory = 'src/registry/segment_route/directory.rs';
+    const signature = '#[cfg(feature = "internals")]\nimpl RouteDirectory {\n  pub fn register(&self, root: *mut u8, len: usize, route_ptr: *mut u8, owner: usize) {}\n}';
+    const signatureHook = scanFile(directory, signature);
+    assert.equal(signatureHook.hooks.length, 1);
+    assert(signatureHook.hooks[0].pointerParams);
+    assert(!signatureHook.hooks[0].named);
+    assert(verifyHooks(new Map([[directory, signatureHook]]), { safe: [], unsafe: [], surface: [] }).errors.includes(`unreviewed safe ungated hook: ${directory}::register`));
+    // The same fn without a raw-pointer parameter stays outside the surface.
+    const scalarSignature = '#[cfg(feature = "internals")]\nimpl RouteDirectory {\n  pub fn register(&self, root: usize, len: usize) {}\n}';
+    assert.equal(scanFile(directory, scalarSignature).hooks.length, 0);
+    // A paren inside a generic bound must not hide the parameter-list pointer.
+    const genericFn = scanFile('fixture.rs', 'impl Core {\n  pub fn take<F: Fn(*mut u8)>(f: F, p: *mut u8) {}\n}');
+    assert(genericFn.hooks[0].pointerParams);
+    // A raw pointer only in the return type does not trigger the rule.
+    const returnOnly = scanFile('fixture.rs', 'impl Core {\n  pub fn base(index: usize) -> *mut u8 { core::ptr::null_mut() }\n}');
+    assert.equal(returnOnly.hooks.length, 0);
+    // A gated unsafe raw-pointer fn is inventoried and must carry # Safety.
+    const unsafeBare = scanFile('fixture.rs', '#[cfg(feature = "internals")]\nimpl Core {\n  pub unsafe fn foo(p: *mut u8) {}\n}');
+    assert.equal(unsafeBare.hooks.length, 1);
+    assert(unsafeBare.hooks[0].pointerParams);
+    assert(unsafeBare.hooks[0].unsafe);
+    assert(!unsafeBare.hooks[0].named);
+    assert(verifyHooks(new Map([['fixture.rs', unsafeBare]]), { safe: [], unsafe: ['fixture.rs::foo'], surface: [] }).errors.includes('unsafe hook lacks its # Safety contract: fixture.rs::foo'));
+    const unsafeDocs = scanFile('fixture.rs', '#[cfg(feature = "internals")]\nimpl Core {\n  /// # Safety\n  /// Caller owns the allocation.\n  pub unsafe fn foo(p: *mut u8) {}\n}');
+    assert.deepEqual(verifyHooks(new Map([['fixture.rs', unsafeDocs]]), { safe: [], unsafe: ['fixture.rs::foo'], surface: [] }).errors, []);
+    // A # Safety above the impl documents the impl, not the fn.
+    const implDocs = scanFile('fixture.rs', '/// # Safety\n/// Caller owns the allocation.\n#[cfg(feature = "internals")]\nimpl Core {\n  pub unsafe fn foo(p: *mut u8) {}\n}');
+    assert(verifyHooks(new Map([['fixture.rs', implDocs]]), { safe: [], unsafe: ['fixture.rs::foo'], surface: [] }).errors.includes('unsafe hook lacks its # Safety contract: fixture.rs::foo'));
+    // Outside the gates the same fn is the production unsafe API: skipped.
+    const unsafeUngated = scanFile('fixture.rs', 'impl Core {\n  pub unsafe fn foo(p: *mut u8) {}\n}');
+    assert.equal(unsafeUngated.hooks.length, 1);
+    assert.deepEqual(verifyHooks(new Map([['fixture.rs', unsafeUngated]]), { safe: [], unsafe: [], surface: [] }).errors, []);
+    // An arrow inside a generic bound must not terminate the generic list.
+    const arrowFn = scanFile('fixture.rs', 'impl Core {\n  pub fn foo<F: Fn() -> ()>(f: F, p: *mut u8) {}\n}');
+    assert(arrowFn.hooks[0].pointerParams);
+  };
   const duplicatePolicy = { safe: ['fixture.rs::dbg_dup', 'fixture.rs::dbg_dup'], unsafe: [], surface: [] };
   assert(verifyHooks(new Map(), duplicatePolicy).errors.includes('duplicate reviewed safe hook: fixture.rs::dbg_dup'));
   assert(verifyHooks(new Map(), duplicatePolicy).errors.includes('stale safe ungated allowlist entry (review required, never auto-pruned): fixture.rs::dbg_dup'));

@@ -8,13 +8,10 @@ import { REPO_ROOT } from './lib.mjs';
 import { scanFile, listRust, idFor, rustMask, attributesRequire, effectiveFileGates, REVIEWED_SURFACE } from './verify-dbg-hook-safety.mjs';
 
 // Arrays deliberately retain duplicate rows for validation before Map creation.
-const ALLOWLIST = [
-  ['src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees', 'backs AllocStats::stats()'],
-  ['src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total', 'backs AllocStats::stats()'],
-  ['src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total', 'backs AllocStats::stats()'],
-  ['src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_decommit_count', 'backs AllocStats::stats()'],
-];
-function verify(files, allowlist = ALLOWLIST, include = hook => hook.file.startsWith('src/alloc_core/') && hook.owner === 'AllocCore') {
+const ALLOWLIST = [];
+// Mirror the hook scanner's surface: named hooks + safe raw-pointer fns are the hidden-API surface;
+// unsafe raw-pointer fns outside the gates are the documented unsafe API (gated ones like flush_class are named anyway).
+function verify(files, allowlist = ALLOWLIST, include = hook => hook.file.startsWith('src/alloc_core/') && hook.owner === 'AllocCore' && (hook.named || (hook.pointerParams && !hook.unsafe))) {
   const errors = [], exceptions = new Map(), found = new Set(), gatedNames = new Set();
   for (const [id, reason] of allowlist) {
     if (exceptions.has(id)) errors.push(`duplicate internals allowlist row: ${id}`);

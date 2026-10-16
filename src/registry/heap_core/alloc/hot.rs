@@ -16,6 +16,8 @@ use crate::alloc_core::os;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
 
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+use crate::registry::heap_core::state::tcache::TCACHE_CAP;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
@@ -178,9 +180,18 @@ impl HeapCore {
         // Large requests consume descriptor obligations before cache/reserve.
         // Small discovery stays in actual substrate misses; magazine hits
         // perform no table or sidecar-word scan.
+        //
+        // R6-T10(b): on every Large alloc, probe at most `LARGE_HOT_BUDGET`
+        // (= 4) slots via the persistent round-robin cursor
+        // `large_hot_cursor`, as `alloc_batch` already does (R12-05); the
+        // rotating probe retires remote Large publications over successive
+        // allocs, and the full sweep stays on the refill rescue and trim paths.
         #[cfg(feature = "alloc-xthread")]
         {
             if class.is_none() {
+                #[cfg(feature = "fastbin")]
+                self.drain_large_sidecar_ingress_hot_bounded();
+                #[cfg(not(feature = "fastbin"))]
                 self.drain_large_sidecar_ingress();
             }
         }
@@ -266,7 +277,8 @@ impl HeapCore {
                                 Ordering::Relaxed,
                             );
                         }
-                        let issued = self.tcache.classes[c].slots[new_cnt];
+                        // R6-T13: mask is an identity under the `count <= TCACHE_CAP` invariant; skips the bounds check without asm proof.
+                        let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
                         // R13-3 (task #273): clear this slot's virgin bit on
                         // EVERY pop through the plain `alloc` fast path, not
                         // just the `alloc_zeroed`-aware pop below. Maintains
@@ -395,7 +407,8 @@ impl HeapCore {
                     Ordering::Relaxed,
                 );
             }
-            let issued = self.tcache.classes[c].slots[new_cnt];
+            // R6-T13: mask is an identity under the `count <= TCACHE_CAP` invariant; skips the bounds check without asm proof.
+            let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
             // Read the slot's virgin bit BEFORE clearing it (this pop is the
             // block's last moment inside allocator bookkeeping — the mask
             // invariant "bits >= count are 0" must hold the instant `count`
@@ -452,15 +465,14 @@ impl HeapCore {
     #[cold]
     #[inline(never)]
     fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
-        use crate::alloc_core::size_classes::SizeClasses;
-
         // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
         // rationale — identical placement, identical cheap-when-empty shape).
         self.drain_large_sidecar_ingress_hot_bounded();
 
-        let want = crate::registry::heap_core::state::tcache::refill_n_for_class(
-            SizeClasses::block_size(c),
-        );
+        // PF-7: `FREE_PARK_CAP[c]` equals `refill_n_for_class(block_size(c))`
+        // by construction (`tests/r6_t39_free_park_cap_equals_refill.rs`
+        // pins it); read the table instead of dividing on every refill miss.
+        let want = crate::registry::heap_core::state::tcache::FREE_PARK_CAP[c] as usize;
         let mut virgin_mask: u16 = 0;
         let n = self.refill_with_large_rescue(|heap| {
             let cur = &mut heap.tcache.classes[c];
@@ -602,8 +614,12 @@ impl HeapCore {
         }
 
         // Large descriptor obligations are consumed before physical cache reuse.
+        // R6-T10(b): bounded probe on every Large alloc (see `alloc_with_class`).
         #[cfg(feature = "alloc-xthread")]
         {
+            #[cfg(feature = "fastbin")]
+            self.drain_large_sidecar_ingress_hot_bounded();
+            #[cfg(not(feature = "fastbin"))]
             self.drain_large_sidecar_ingress();
         }
 
@@ -636,14 +652,13 @@ impl HeapCore {
     #[cold]
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
-        use crate::alloc_core::size_classes::SizeClasses;
-
         // Bounded Large-only probe; Small discovery occurs in the refill.
         self.drain_large_sidecar_ingress_hot_bounded();
 
-        let want = crate::registry::heap_core::state::tcache::refill_n_for_class(
-            SizeClasses::block_size(c),
-        );
+        // PF-7: `FREE_PARK_CAP[c]` equals `refill_n_for_class(block_size(c))`
+        // by construction (`tests/r6_t39_free_park_cap_equals_refill.rs`
+        // pins it); read the table instead of dividing on every refill miss.
+        let want = crate::registry::heap_core::state::tcache::FREE_PARK_CAP[c] as usize;
         // Write directly into this class's empty magazine. Residency checks
         // belong to the owner retirement primitive, not a caller closure.
         let n = self.refill_with_large_rescue(|heap| {

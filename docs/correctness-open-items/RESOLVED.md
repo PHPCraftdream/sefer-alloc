@@ -15,6 +15,20 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 225 — undocumented public tail of the crate-root `AllocCore` (`segment_bases`, ungated static `dbg_*` accessors): CLOSED (2026-10-16)
+
+- **Status:** CLOSED by R6-T38 — without `internals`, `AllocCore::segment_bases` is `pub(crate)` (a cfg-split keeps the same name public in an `internals` build, so existing tests are unchanged); the four stats()-backing accessors are `pub(crate)` with internals-gated `dbg_*` test aliases (`dbg_foreign_or_unroutable_frees`, `dbg_segments_reserved_total`, `dbg_segments_released_total`, `dbg_decommit_count`); the exhaustive gating scanner's stats() ALLOWLIST exceptions were retired. `tests/regression_r6_t38_public_tail_private.rs` pins the E0624 privacy error for `segment_bases` in a build without `internals`.
+- **Current verdict:** the crate-root `AllocCore` no longer exposes these internals outside `internals`.
+- **Next trigger:** none; re-open if a new ungated public accessor appears on the crate-root `AllocCore`.
+- **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-15 (+`code_quality_review.md` R6-CQ-26); task R6-T38.
+
+### 224 — safe global-state mutators with non-`dbg` names outside the scanner inventory (`RouteDirectory::register`, `HeapLease::core`): CLOSED (2026-10-16)
+
+- **Status:** CLOSED by R6-T38 — `RouteDirectory::register` exists only in an `internals` build, as a test forwarder to the crate-only `register_route` that production uses (directory.rs, route_slots.rs); `scripts/verify-dbg-hook-safety.mjs` now inventories crate-public fns with raw-pointer parameters regardless of name and lists `register` as a reviewed mutator. The surviving `HeapLease::core` seam stays documented in the `dbg_claim_lease` SAFE_MUTATORS entry because it has production callers (`src/global/tls_heap.rs`).
+- **Current verdict:** without `internals` the whole `registry` module is crate-private, so `register` was never reachable from a production build; the `mem::forget` scenario is expressible only in an `internals` build, where `register` is now a reviewed, inventoried test surface. The lease-forget residual (R6-SEC-4 class) is likewise limited to `internals` builds.
+- **Next trigger:** none; re-open if a new safe raw-pointer seam escapes the signature rule.
+- **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-10; task R6-T38.
+
 ### 107 — strict-Clippy coverage of `numa-aware internals`: CLOSED (2026-10-13)
 
 - **Status:** CLOSED by direct CI evidence. The generated row `clippy-numa-aware-internals` (`scripts/check-matrix.mjs`) and the workflow step `clippy (--features "numa-aware internals")` (`.github/workflows/ci.yml` job `clippy`, `cargo clippy --lib --features "numa-aware internals" -- -D warnings`, ci.yml:1375; commits `091ca50c`, `0895712a`) ran green in run `38347654258` (main, `c197c70c`, job `clippy` success) and run `38328098911` (workflow_dispatch, `fix/weekly-ci-reds`).
