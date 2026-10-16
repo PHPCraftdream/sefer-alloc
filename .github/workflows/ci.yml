@@ -2194,7 +2194,7 @@ jobs:
       - name: Production batch and terminal owner consumption
         shell: bash
         run: |
-          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r6_t12_sidecar_offset_divisibility --test r6_t12_owner_drain_live_count_batching --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-production.log"
+          cargo test --locked --features "production batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-production.log"
           grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-production.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-production.log"
@@ -2205,7 +2205,7 @@ jobs:
       - name: Non-fastbin batch reclamation
         shell: bash
         run: |
-          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r6_t12_sidecar_offset_divisibility --test r6_t12_owner_drain_live_count_batching --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
+          cargo test --locked --features "alloc-global alloc-xthread alloc-decommit alloc-segment-directory batch-api internals bench-internals" --test r8_terminal_global --test r6_terminal_owner_drain --test r8_owner_sidecar_miss --test batch_large_deferred_reclaim --test batch_tcache -- --skip fallback_direct_free_before_service_and_busy_terminal_publication 2>&1 | tee "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test globalalloc_foreign_terminal_free_is_visible_to_strict_trim ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test requested_sizes_one_through_seven_retire_once_and_reissue ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
           grep -F "test small_free_list_miss_consumes_terminal_publication_without_explicit_sweep ... ok" "$RUNNER_TEMP/global-non-fastbin.log"
@@ -3058,8 +3058,8 @@ jobs:
           log="$RUNNER_TEMP/miri-installed-box-terminal-pause.log"
           grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
           bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|SidecarReclaim::reclaim_record|flush_run|dealloc_small"; then
-            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/SidecarReclaim::reclaim_record/flush_run/dealloc_small)"
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
             exit 1
           fi
         shell: bash
@@ -3085,8 +3085,8 @@ jobs:
           log="$RUNNER_TEMP/miri-installed-box-terminal-pause-tree.log"
           grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
           bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|SidecarReclaim::reclaim_record|flush_run|dealloc_small"; then
-            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/SidecarReclaim::reclaim_record/flush_run/dealloc_small)"
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
             exit 1
           fi
         shell: bash
@@ -3113,8 +3113,8 @@ jobs:
           log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod.log"
           grep -E "Undefined Behavior: not granting access to tag .* weakly protected" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
           bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|SidecarReclaim::reclaim_record|flush_run|dealloc_small"; then
-            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/SidecarReclaim::reclaim_record/flush_run/dealloc_small)"
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
             exit 1
           fi
         shell: bash
@@ -3141,8 +3141,8 @@ jobs:
           log="$RUNNER_TEMP/miri-installed-box-terminal-pause-prod-tree.log"
           grep -E "Undefined Behavior: write access through .* is forbidden" "$log" || { echo "::error::red in an unexpected place: new defect (unexpected UB message)"; exit 1; }
           bt=$(grep -A2 -E "^[[:space:]]+0: sefer_alloc::alloc_core::platform::node::Node::write_next" "$log" || true)
-          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|SidecarReclaim::reclaim_record|flush_run|dealloc_small"; then
-            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/SidecarReclaim::reclaim_record/flush_run/dealloc_small)"
+          if [ -z "$bt" ] || ! echo "$bt" | sed -n '2p' | grep -Eq "at .*node\.rs:" || ! echo "$bt" | sed -n '3p' | grep -Eq "reclaim_sidecar_record|flush_run|dealloc_small"; then
+            echo "::error::red in an unexpected place: new defect (UB not in Node::write_next called from reclaim_sidecar_record/flush_run/dealloc_small)"
             exit 1
           fi
         shell: bash

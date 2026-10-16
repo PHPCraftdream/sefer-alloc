@@ -2215,3 +2215,7 @@ Every Large alloc swept all live Large sidecar slots and re-read each segment he
 98. **R6-PF-10 — Large own-free re-resolved its root.** (Filed 2026-10-15; closed 2026-10-16 as R6-T39 PF-10.)
 
 Both own-thread Large free sites in `dealloc_own_base.rs` pass the `OwnedBlock` root to `AllocCore::dealloc_at_base` instead of re-resolving it. `tests/r6_t39_large_own_free_single_lookup.rs` pins one canonical lookup per free. Gate: `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`.
+
+93. **R6-PF-5 (+R17-OPT-08) — per-record recomputation of segment invariants in owner-drain.** (Filed 2026-10-15, round-6 src review; closed 2026-10-16 as R6-T12, NO-GO.)
+
+The review estimated ~10–20 Ir per reclaimed record from hoisting `kind_at`, payload start, `bump_of` and the metadata views to one computation per scan, batching `dec_live` into one `sub_live(k)`, and replacing `off % block_size` with a compile-time reciprocal. PR #58 built that candidate (`SidecarReclaim`, B `e88c3bce`) and the iai A/B gate measured it against `main` `d3941723`: no cell over threshold, but every drain cell went up — `r19_prf01_publication` +1425 of 3621539, `seg_cycle_decommit_256k` +3559 of 10359137, `multiseg_cold_256k` +1271 of 3389835, and `growth16_n` / `_2n` / `_4n` +26608 / +53232 / +106480, scaling with the work. The code was reverted in the same PR. Gate: `docs/perf/R6_T12_OWNER_DRAIN_CONTEXT_GATE.md`. Next trigger: none; the R6-T06 reciprocal divisibility helper (PR #57) is available if a cheaper shape is proposed.

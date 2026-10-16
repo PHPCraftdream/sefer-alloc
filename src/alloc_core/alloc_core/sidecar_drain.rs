@@ -4,7 +4,6 @@ use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use crate::alloc_core::size_classes::MIN_BLOCK;
-use crate::alloc_core::small::alloc_core_small_reclaim::SidecarReclaim;
 
 #[cfg(feature = "bench-internals")]
 pub(crate) static LARGE_SIDECAR_SLOT_INSPECTIONS: core::sync::atomic::AtomicU64 =
@@ -310,12 +309,6 @@ impl AllocCore {
     ) -> (u64, usize) {
         let mut changed_classes = 0u64;
         let mut reclaimed = 0usize;
-        // Segment context for the record-level retirement (R6-T12): built
-        // lazily on the first record, so an empty scan (no cuts, or cuts
-        // without records) keeps the per-record form's behavior exactly — no
-        // kind read, no live-count write. Accepted credits retire in one
-        // `sub_live` at the end, mirroring `flush_run`.
-        let mut reclaim: Option<SidecarReclaim> = None;
         loop {
             let Some(mut cut) = scan.next_cut() else {
                 if exactly_one_cut {
@@ -325,10 +318,7 @@ impl AllocCore {
             };
             observer.cut_visited(!cut.is_empty());
             while let Some(record) = cut.pop() {
-                let accepted = reclaim
-                    .get_or_insert_with(|| SidecarReclaim::new(base, record.class))
-                    .reclaim_record(record.offset, record.class);
-                if accepted {
+                if Self::reclaim_sidecar_record(base, record.offset, record.class) {
                     changed_classes |= 1u64 << record.class;
                     reclaimed += 1;
                     observer.record_reclaimed();
@@ -337,9 +327,6 @@ impl AllocCore {
             if exactly_one_cut {
                 break;
             }
-        }
-        if let Some(ctx) = reclaim {
-            ctx.finish();
         }
         observer.finish();
         (changed_classes, reclaimed)
