@@ -110,7 +110,7 @@ fn bounds_child() {
     if !healthy {
         let poison = match case.as_str() {
             "pop_out_of_segment" | "drain_out_of_segment" => {
-                core::ptr::without_provenance_mut(c.addr() ^ SegmentLayout::SEGMENT)
+                core::ptr::without_provenance_mut(c.addr() + SegmentLayout::SEGMENT)
             }
             "pop_below_base" => core::ptr::without_provenance_mut(base.wrapping_sub(8)),
             "pop_metadata" => core::ptr::without_provenance_mut(base),
