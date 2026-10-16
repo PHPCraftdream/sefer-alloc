@@ -221,7 +221,9 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         self.sync_directory_for_segment_classes(base, index, changed_classes);
         #[cfg(not(feature = "alloc-segment-directory"))]
-        let _ = changed_classes;
+        let _ = (changed_classes, index);
+        #[cfg(not(any(feature = "alloc-segment-directory", feature = "alloc-decommit")))]
+        let _ = base;
         #[cfg(feature = "alloc-decommit")]
         if changed_classes != 0 && Self::dec_live_and_maybe_decommit(base, self.small_cur) {
             let pooled = self.release_or_pool_empty_segment(base);
