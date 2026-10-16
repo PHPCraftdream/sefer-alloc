@@ -328,6 +328,7 @@ impl SizeClasses {
     }
 
     // Shared R6-T12 entry; continuation walks consume this predicate with cached parameters.
+    // Outside internals and non-hardened fastbin, no in-tree caller uses it.
     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline(always)]
     pub(crate) const fn divides(idx: usize, off: usize) -> bool {

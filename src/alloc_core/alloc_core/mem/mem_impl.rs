@@ -67,6 +67,7 @@ impl AllocCore {
     /// R6-T05 (SEC-1): free-side class-identity check against this core's
     /// owner route class map (see `SegmentTable::small_class_matches`).
     /// Standalone cores without routes always pass.
+    #[cfg(feature = "hardened")]
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[inline(always)]
     pub(crate) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {

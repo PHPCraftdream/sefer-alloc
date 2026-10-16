@@ -12,7 +12,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 static SYSTEM_TOTALS: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
 
 use crate::alloc_core::fatal::fatal;
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
+#[cfg(all(feature = "fastbin", feature = "hardened"))]
+use crate::alloc_core::segment_header::SegmentHeader;
+use crate::alloc_core::segment_header::SegmentKind;
 use crate::registry::segment_route::{RouteDirectory, RouteKind, RouteRegistration, RouteScan};
 
 use super::issue_transaction::IssueTransaction;
@@ -184,7 +186,7 @@ impl RouteSlots {
     /// mismatch, missing sidecar) fail OPEN — the free side never aborts on
     /// infrastructure state it did not build; only a positive class mismatch
     /// (including encoded 0 = never-issued start granule) fails closed.
-    #[cfg(feature = "fastbin")]
+    #[cfg(all(feature = "fastbin", feature = "hardened"))]
     #[inline(always)]
     pub(super) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
         let Ok(class) = u8::try_from(class_idx) else {

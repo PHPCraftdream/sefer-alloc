@@ -275,14 +275,18 @@ split the same day.)
       materialization; requires an iai A/B gate on `small_churn_16b{,_2n}`
       and `cold_alloc_only_256x16b` within the standing ±0.5% tolerance
       (`docs/perf/R6_T01_OWNER_STAMP_REMOVAL_GATE.md`) before any promotion.
-    - **Sub-item (b) — class-map check coverage:** the R6-T05 owner class-map
+    - **Sub-item (b) — class-map check coverage:** in `hardened`, the R6-T05 owner class-map
       free check guards the fastbin own-thread dealloc body
       (`HeapCore::dealloc_own_thread_with_base`, which also serves the
       fastbin realloc free leg and own-route xthread routing); NOT covered:
       `dealloc_batch_small` (batch-api) and the non-fastbin substrate free,
       which still trust the caller's `Layout`, and stale class bytes after
       an in-route segment reset remain (R6-SEC-2's own residual, see
-      `docs/agent_reviews_round6/SUMMARY.md` R6-T28).
+      `docs/agent_reviews_round6/SUMMARY.md` R6-T28). By the owner decision
+      (round2 PR57), default own-thread validation checks only stride
+      divisibility; aligned wrong-class pointers can pass, while hardened keeps
+      exact owner-class identity at the cost noted in the owner decision after
+      the PR #57 iai A/B (~33 Ir/free).
     - **Next trigger:** an owner decision to spend the iai budget on (a); a
       batch-api promotion round for (b).
     - **Evidence:** fix tests `tests/r6_t06_freelist_continuation_bounds.rs`

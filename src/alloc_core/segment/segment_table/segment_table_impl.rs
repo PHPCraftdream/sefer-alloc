@@ -346,6 +346,7 @@ impl SegmentTable {
     /// class map. `true` means "no objection" — including every configuration
     /// where the check cannot be made (standalone table without routes);
     /// `false` rejects the free as a no-op.
+    #[cfg(feature = "hardened")]
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cfg_attr(not(debug_assertions), inline(always))]
     pub(crate) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {

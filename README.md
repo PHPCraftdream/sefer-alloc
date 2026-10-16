@@ -1686,6 +1686,11 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   indistinguishable from a valid remote free of that block and is honored
   (block starts carry no owner-thread identity).
 
+- **Own-thread small frees have an asymmetric class check.** The default path
+  rejects offsets not divisible by the supplied class stride, but a coincident-
+  divisible wrong-class free is rejected only by `hardened`'s exact owner-class
+  check; that check's owner decision after the PR #57 iai A/B was ~33 Ir/free.
+
 - **Single-thread small-class hot path is ~1.2–2× behind `mimalloc`.** The
   flamegraph at [`docs/PROFILE_FLAMEGRAPHS.md §1`](docs/PROFILE_FLAMEGRAPHS.md)
   shows where; OPT-C lazy stamp recovers ~1 %, the structural gap remains.

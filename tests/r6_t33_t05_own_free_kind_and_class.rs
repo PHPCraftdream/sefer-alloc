@@ -6,26 +6,19 @@
 //! the same policy the substrate free in `mem_impl.rs` already applies — and
 //! the block must NOT reach the magazine.
 //!
-//! R6-T05: the class from the caller's `Layout` is checked against the owner
-//! route class map's issued start-granule class. An interior pointer freed
-//! with a mismatched class (the review's `alloc(64)` → `dealloc(p+16,
-//! Layout(48))` scenario) is a no-op: the interior granule encodes no class,
-//! so the address is never parked in any magazine and never reissued inside
-//! the still-live block.
+//! R6-T05: default own-free validation rejects offsets not divisible by the
+//! caller's class stride. Hardened additionally compares the issued class;
+//! aligned wrong-class starts can pass the default arithmetic check.
 //!
-//! Both tests deliberately violate the `unsafe fn dealloc` caller contract
-//! (corrupted allocator metadata; a false layout on an interior pointer) to
-//! probe defense-in-depth no-ops — same posture as
-//! `tests/r6_t50_foreign_realloc_committed_span.rs`, whose `ForeignLease`
-//! wrapper this file reuses verbatim: `HeapLease::drop` aborts while
-//! panicking, so a failed assertion must leak the lease instead.
+//! Counterfactuals: without the Unknown-kind check its block reaches the
+//! magazine and is reissued; without the arithmetic check the misaligned
+//! interior pointer reaches its supplied class's magazine. Without the
+//! hardened identity check an aligned wrong-class start reaches the wrong
+//! magazine despite passing both stride divisibility checks.
 //!
-//! Pre-fix counterfactuals: R6-T33 — the Unknown-kind free fell through to
-//! the M2 oracles into the magazine push, so the tcache count incremented and
-//! the next same-class alloc reissued the corrupted-kind block; R6-T05 — the
-//! interior/mismatched-class pointer passed the oracles into class c_small's
-//! magazine, so `dbg_tcache_count(c_small)` incremented and the next
-//! `alloc(48)` returned `p + 16` inside the live 64-byte block.
+//! The tests deliberately violate the `unsafe fn dealloc` caller contract to
+//! probe defense-in-depth no-ops. `HeapLease::drop` aborts while panicking,
+//! so the `ForeignLease` wrapper leaks the lease on a failed assertion.
 
 #![cfg(all(
     feature = "alloc-global",
@@ -154,81 +147,106 @@ fn corrupted_kind_byte_own_free_is_a_noop_not_a_magazine_push() {
 }
 
 #[test]
-fn mismatched_class_and_interior_frees_are_not_reissued() {
+fn misaligned_interior_free_is_rejected_in_all_configurations() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
     let mut lease = ForeignLease::claim();
     let heap = lease.core();
-
     let big = Layout::from_size_align(64, 16).unwrap();
     let small = Layout::from_size_align(48, 16).unwrap();
     let class_big = SegmentLayout::class_for(64, 16).expect("64 B is a small class");
     let class_small = SegmentLayout::class_for(48, 16).expect("48 B is a small class");
-    assert_ne!(class_big, class_small, "premise: distinct size classes");
-
-    // Positive control: a same-class free increments its magazine count.
-    let p1 = heap.alloc(big);
-    assert!(!p1.is_null(), "setup: 64-byte allocation failed");
-    let resident_big = heap.dbg_tcache_count(class_big);
+    // Positive control: a legitimate same-class free reaches its magazine,
+    // so the no-op assertion below is not vacuous.
+    let p0 = heap.alloc(small);
+    assert!(!p0.is_null(), "setup: 48-byte allocation failed");
+    let before = heap.dbg_tcache_count(class_small);
     // SAFETY: live own-thread allocation, true layout, freed exactly once.
-    unsafe { heap.dealloc(p1, big) };
+    unsafe { heap.dealloc(p0, small) };
     assert_eq!(
-        u32::from(heap.dbg_tcache_count(class_big)),
-        u32::from(resident_big) + 1,
+        u32::from(heap.dbg_tcache_count(class_small)),
+        u32::from(before) + 1,
         "positive control: legitimate free reached the class magazine"
     );
-
-    // R6-T05 review scenario: alloc(64), then dealloc(p + 16, Layout(48,16)).
     let p = heap.alloc(big);
-    assert!(!p.is_null());
-    let interior = p.wrapping_add(16);
-    // The owner class map carries the issuing class only at a block's start
-    // granule — the direct mechanism oracle for the check below.
+    assert!(!p.is_null(), "setup: 64-byte allocation failed");
+    let root = SegmentLayout::segment_base_of(p.addr()) as *mut u8;
+    let interior = [p.wrapping_add(16), p.wrapping_add(32), p.wrapping_add(48)]
+        .into_iter()
+        .find(|candidate| {
+            let off = candidate.addr() - root.addr();
+            off % 48 != 0 && off % 64 != 0
+        })
+        .expect("at least one candidate is not divisible by either class stride");
+    let off = interior.addr() - root.addr();
+    assert_ne!(off % 48, 0);
+    assert_ne!(off % 64, 0);
     assert_eq!(
         RouteRegistration::class_at_global_address_for_test(p.addr()),
         Some(class_big as u8),
-        "the start granule must encode the issuing class"
+        "start granule encodes the issuing class"
     );
     assert_eq!(
         RouteRegistration::class_at_global_address_for_test(interior.addr()),
         None,
-        "an interior granule must not encode a class"
+        "interior granule encodes no class"
     );
     let resident_small = heap.dbg_tcache_count(class_small);
-    let resident_big = heap.dbg_tcache_count(class_big);
-    // SAFETY: the interior pointer + wrong-class layout is the deliberate
-    // R6-T05 caller-misuse scenario (a defense-in-depth no-op is expected;
-    // the live block p is untouched by it).
+    // SAFETY: deliberate interior-pointer and wrong-layout misuse; the guard
+    // must reject before altering the live allocation's free state.
     unsafe { heap.dealloc(interior, small) };
     assert_eq!(
         heap.dbg_tcache_count(class_small),
         resident_small,
-        "an interior/mismatched-class free must be a no-op (R6-T05)"
-    );
-    assert_eq!(
-        heap.dbg_tcache_count(class_big),
-        resident_big,
-        "the interior free must not disturb the true class's magazine either"
+        "misaligned interior free must not reach the magazine"
     );
     let q = heap.alloc(small);
-    assert_ne!(
-        q.addr(),
-        interior.addr(),
-        "pre-fix: p+16 passed the oracles into class c_small's magazine and \
-         the next alloc(48) reissued it inside the live 64-byte block"
-    );
+    assert_ne!(q, interior, "interior pointer was not reissued");
+}
 
-    // Block-start granule with a wrong class: also a no-op.
-    let p3 = heap.alloc(big);
-    assert!(!p3.is_null());
+#[cfg(feature = "hardened")]
+#[test]
+fn aligned_wrong_class_block_start_is_rejected_by_hardened_identity_check() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    let mut lease = ForeignLease::claim();
+    let heap = lease.core();
+    let big = Layout::from_size_align(64, 16).unwrap();
+    let small = Layout::from_size_align(48, 16).unwrap();
+    let class_big = SegmentLayout::class_for(64, 16).expect("64 B is a small class");
+    let class_small = SegmentLayout::class_for(48, 16).expect("48 B is a small class");
+    let mut p = core::ptr::null_mut();
+    for _ in 0..64 {
+        let candidate = heap.alloc(big);
+        assert!(!candidate.is_null(), "setup: 64-byte allocation failed");
+        let off = candidate.addr() - SegmentLayout::segment_base_of(candidate.addr());
+        if off % 192 == 0 {
+            p = candidate;
+            break;
+        }
+    }
+    assert!(
+        !p.is_null(),
+        "setup: no 64-byte block aligned to both class strides"
+    );
+    let off = p.addr() - SegmentLayout::segment_base_of(p.addr());
+    assert_eq!(off % 192, 0, "proves divisibility by 64 and 48");
+    assert_eq!(
+        RouteRegistration::class_at_global_address_for_test(p.addr()),
+        Some(class_big as u8),
+        "start granule encodes the true class"
+    );
     let resident_small = heap.dbg_tcache_count(class_small);
-    // SAFETY: the block-start pointer with a deliberately wrong-class layout
-    // is the mismatched-class half of R6-T05.
-    unsafe { heap.dealloc(p3, small) };
+    // SAFETY: deliberate wrong-layout misuse at a true block start; both
+    // stride checks pass, so only hardened owner identity can reject it.
+    unsafe { heap.dealloc(p, small) };
     assert_eq!(
         heap.dbg_tcache_count(class_small),
         resident_small,
-        "a wrong-class free must not park the block in the wrong magazine"
+        "wrong-class block must not reach the magazine"
     );
+    let q = heap.alloc(small);
+    assert_ne!(q, p, "wrong-class block start was not reissued");
 }

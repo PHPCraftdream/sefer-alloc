@@ -381,15 +381,19 @@ impl HeapCore {
                     // cover — task #164/X7).
                     let (off, meta) = match small_free_guard(root, block, c, layout) {
                         SmallFreeGuard::Accept { off } => {
-                            // R6-T05 (review R6-SEC-1): the caller's `Layout`
-                            // alone must not decide the magazine class — an
-                            // interior or wrong-class free would otherwise be
-                            // accepted here and later reissued inside a live
-                            // block. One class-map load on the owner route
-                            // (encoded start-granule class; 0 = never an
-                            // issued block start) rejects it as a no-op, like
-                            // every other reject above.
+                            // Ordinary builds reject offsets not divisible by
+                            // the supplied stride; aligned wrong-class pointers
+                            // can pass. Exact owner identity costs ~33 Ir/free
+                            // per PR57's owner decision, so it stays hardened-only.
+                            #[cfg(feature = "hardened")]
                             if !self.core.small_class_matches(root, off, c) {
+                                return;
+                            }
+                            #[cfg(not(feature = "hardened"))]
+                            if !crate::alloc_core::size_classes::SizeClasses::divides(
+                                c,
+                                off as usize,
+                            ) {
                                 return;
                             }
                             (off, SegmentMeta::new(root))
