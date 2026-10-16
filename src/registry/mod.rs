@@ -13,12 +13,9 @@
 //!
 //! ## `#[doc(hidden)]` — not public API
 //!
-//! The registry module is `pub` only so integration tests in `tests/` can
-//! exercise it before 12.3 wires it into `SeferAlloc`. It is NOT part of the
-//! crate's supported public surface; every item is `#[doc(hidden)]` and may
-//! change in any Phase 12.x sub-commit. Once 12.3 caches the registry pointer
-//! inside the TLS binding, the test-only pub surface here shrinks (or moves
-//! behind a `registry-test` dev-feature).
+//! The registry module and its selected items are doc-hidden implementation
+//! surfaces. Visibility is limited by each item's current Rust visibility and
+//! cfg gates; this is not a stable public API.
 //!
 //! ## Re-exports only
 //!
@@ -26,11 +23,10 @@
 //!
 //! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
 //! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
-//! - `bootstrap::chunk` — R6-OPT-P0-2 (round 1): a lazily-materialised,
-//!   fixed-size shard of the slot array (`RegistryChunk`), so a process only
-//!   ever pays the OS commit cost for the chunks it actually touches.
-//! - [`bootstrap`] — the process-global `Registry` + per-chunk atomic
-//!   state-machine.
+//! - `bootstrap::chunk` — lazily materialized fixed-size slot-array chunk
+//!   (`RegistryChunk`), limiting committed registry metadata to used chunks.
+//! - [`bootstrap`] — process-global registry initialization and per-chunk
+//!   state management.
 //! - [`heap_registry`] — the claim/recycle API (whole-slot reuse).
 //!
 //! [`heap_core`]: self::heap_core

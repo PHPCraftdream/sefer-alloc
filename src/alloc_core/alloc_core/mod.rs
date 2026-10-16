@@ -19,8 +19,8 @@
 //!   — the single-threaded allocator entry points. `alloc`/`alloc_zeroed`
 //!   are **safe** `pub fn`s; `dealloc`/`realloc` are **`unsafe fn`s** (R6-MS-1/2)
 //!   carrying a `# Safety` contract that mirrors `GlobalAlloc`'s — a
-//!   well-behaved caller passes a valid prior pointer/layout (verify with
-//!   `grep -n "pub unsafe fn dealloc\|pub unsafe fn realloc" src/alloc_core/alloc_core.rs`).
+//!   well-behaved caller passes a valid prior pointer/layout (see the current
+//!   method's `# Safety` contract).
 //!   The crate's former posture was a safe `pub fn` with a defensive **M2
 //!   contract at runtime** (a foreign or already-freed pointer degraded to a
 //!   no-op); that was reversed after the round5 `memory_safety_review` produced
@@ -32,15 +32,10 @@
 //!
 //! ## Single-threaded
 //!
-//! Phase 8 is single-threaded (correctness before concurrency — §5 P8).
-//! Per-thread heaps + lock-free cross-thread free are Phase 9/10. `AllocCore`
-//! is deliberately NEITHER `Send` NOR `Sync` (raw pointers, no `unsafe impl`
-//! of either — see [`lifecycle`](lifecycle)'s and
-//! [`large_cache_extended`](crate::alloc_core::large::large_cache_extended)'s own notes
-//! on this, oxx R2-07). In `production` the `AllocCore` inside a registry
-//! slot stays in place, but its owning thread changes when the slot is
-//! lease handoffs; soundness comes from the slot's ordered ownership transfer or
-//! the fallback `LockGuard`, not from a `Send` bound.
+//! `AllocCore` is deliberately NEITHER `Send` NOR `Sync` (raw pointers, no
+//! `unsafe impl` of either). In `production` the `AllocCore` inside a registry
+//! slot stays in place, but ownership can transfer to a later claimant via the
+//! slot's ordered lease protocol; soundness does not depend on `Send`.
 
 #[path = "alloc_core_core_diag/mod.rs"]
 mod alloc_core_core_diag;

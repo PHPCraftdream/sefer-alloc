@@ -43,8 +43,8 @@ use crate::alloc_core::config::small_segment_pool_config::SmallSegmentPoolConfig
 
 // ── Default constants (kept in sync with the old env-parser defaults) ─────────
 
-/// Default headroom: 256 MiB. The cache does not decay below this level,
-/// providing an anti-thrashing floor.
+/// Default headroom: 256 MiB. This is the decay trigger/target for
+/// anti-thrashing; FIFO eviction can release whole spans and overshoot it.
 pub(crate) const DEFAULT_HEADROOM_BYTES: usize = 256 * 1024 * 1024;
 
 /// Default decay interval: 1000 ms (1 second per due interval).
@@ -184,8 +184,8 @@ pub struct LargeCacheConfig {
     /// being freed, the span is released to the OS immediately (not cached).
     pub(crate) budget_bytes: Option<usize>,
 
-    /// Anti-thrashing floor: the decay step does **not** release bytes below
-    /// this level. `None` uses the default (256 MiB).
+    /// Anti-thrashing decay trigger/target, not a hard floor: whole-span FIFO
+    /// eviction can release below this level. `None` uses the default (256 MiB).
     pub(crate) headroom_bytes: Option<usize>,
 
     /// Elapsed-time period used to count due decay steps, in milliseconds.

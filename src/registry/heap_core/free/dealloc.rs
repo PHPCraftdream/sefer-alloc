@@ -63,12 +63,9 @@ medium_promotion_reachable! {
 /// **One shared counter for BOTH of this file's defensive-no-op return
 /// points**, not two independent ones:
 ///
-///   - **branch (A)'s mismatch case** (`dealloc_own_thread_with_base`,
-///     promotion compiled in): `large_layout_consistent` rejects the
-///     caller's layout against the segment's current `large_size`/
-///     `large_align` (R19-1/task #337, extended by R22-5/task #356 to also
-///     check align) — the free degrades to a no-op instead of really
-///     freeing the segment.
+///   - **branch (A)'s mismatch case** (`dealloc_own_thread_with_base`): the
+///     hardened owner-thread guard checks the caller's layout against the
+///     segment's current `large_size`/`large_align`; the free is a no-op.
 ///   - **branch (B)** (`dealloc_own_thread_with_base`, promotion NOT
 ///     compiled in): `kind_at(base) == Large` on a free keyed by a small
 ///     layout is, in a promotion-off build, structurally ALWAYS a contract
@@ -104,9 +101,9 @@ impl HeapCore {
     ///
     /// Own-thread path: routes to the owning segment's `BinTable` via
     /// [`AllocCore::dealloc`](crate::alloc_core::AllocCore::dealloc) (which applies the M2 double-free guard).
-    /// If the segment is stamped with another heap's head, route
-    /// cross-thread via the TFS (the §2.2 protocol re-based on the
-    /// registry). Only a **null** `ptr` is always a safe no-op; a
+    /// A foreign free is resolved through the process-global route directory,
+    /// pinned, and published to its independent sidecar for owner reclamation.
+    /// Only a **null** `ptr` is always a safe no-op; a
     /// foreign, unmapped, or already-released `ptr` violates the `# Safety`
     /// contract below (UB-adjacent) — the magic/M2 checks are best-effort
     /// defence-in-depth, not a validity check, and reading an unmapped

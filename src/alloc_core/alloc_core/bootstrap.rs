@@ -1,12 +1,9 @@
 //! [`primordial`] — the bootstrap routine that hand-carves the first
 //! [`SegmentTable`] from the first segment (the `_mi_heap_main` analogue).
 //!
-//! This is the primordial bootstrap. It runs ONCE, at `AllocCore::new`, to
-//! establish the self-hosting loop: the primordial segment is reserved; its
-//! header, page map, bin table, and the registry array are laid down at their
-//! fixed [`Layout`] offsets; and the registry's first slot is set to point
-//! back at itself. After this, the safe Cartographer can mutate metadata
-//! through normal `node`-seam writes with no further bootstrap-time writes.
+//! At `AllocCore::new`, reserve the primordial segment and initialize its
+//! header, page map, bin tables, bitmaps, terminal words, and segment table.
+//! Route descriptors and foreign-ingress sidecars are independent metadata.
 //!
 //! ## This file is pure safe composition
 
@@ -44,7 +41,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // LAZY_FIRST_CHUNK` rounded UP to the runtime OS page size (task #1074) —
     // instead of the whole 4 MiB segment. `primordial_meta_end()` is the exact
     // byte offset past every region this function writes below (header, page
-    // map, bin table, [bitmaps under miri], remote ring, registry array, hash
+    // map, bin table, [bitmaps under miri], terminal metadata, registry array, hash
     // table, free-list array + top, active-kind index) — see `Layout::primordial_meta_end`'s doc
     // and the const-assert in `segment_header.rs` pinning the sum (with
     // page-rounding slack) within SEGMENT. Everything this

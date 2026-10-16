@@ -39,10 +39,9 @@ impl AllocCore {
     /// to `ptr`'s page, so the counterfactual test for "own-thread dealloc
     /// derives the class from `Layout`, not `page_map`" can prove it is
     /// non-vacuous. Returns `None` if `ptr` is foreign, the segment is not
-    /// small/primordial, or the page is uncarved. This is the (now-removed)
-    /// `page_map`-class derivation the old intrusive-TFS drain used — kept here
-    /// as a pure read so the test can prove the Layout-class and page_map-class
-    /// genuinely differ on a mixed-class page (the §13 counterfactual).
+    /// small/primordial, or the page is uncarved. `page_map` class derivation
+    /// remains a pure read so the test can prove the Layout and page-map
+    /// classes genuinely differ on a mixed-class page.
     /// `#[doc(hidden)] pub` per the established test-only surface.
     ///
     /// R12-11 (task #262): gated behind `page-map-diag` — this is the ONLY

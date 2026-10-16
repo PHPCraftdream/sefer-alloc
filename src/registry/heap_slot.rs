@@ -22,7 +22,7 @@
 //! resolver checks for `TORN` before dereferencing. This is a same-thread
 //! poison-then-check, not a cross-thread generation compare — it needs no
 //! read of this slot's `generation` at resolve time. See
-//! `global::tls_heap`'s "TLS destructor ordering" module doc for the full
+//! `global::tls_heap`'s "TLS teardown and the TORN sentinel" module doc for the full
 //! argument.
 //!
 //! ## Why `MaybeUninit` (not a live `HeapCore`)

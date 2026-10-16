@@ -1,27 +1,11 @@
 //! [`HeapCore`] — the thin heap value that lives inside a registry slot.
 //!
-//! This is the type the Phase 12.3 raw-pointer TLS caches as
-//! `*mut HeapCore`. Per §2.0 of `ALLOC_PLAN_PHASE12-13.md` the heap is now
-//! thin (segment-centric free state lives in each segment's `BinTable`, not
-//! in a heap-local array), so the per-slot heap needs to carry only:
+//! This is the type the raw-pointer TLS binding caches as `*mut HeapCore`.
+//! Its segment substrate ([`AllocCore`]) owns segments and performs per-segment
+//! `BinTable` operations; foreign frees publish to route sidecars.
 //!
-//! - its **id** (its slot index — or, for the fallback heap, the reserved
-//!   `OWNER_ID_FALLBACK` sentinel; see `pack_owner`'s doc), used by the 12.3
-//!   ownership stamping on segment headers (`owner = OWNER_STATE_LIVE | id`,
-//!   with the stamp's generation sub-field hardcoded to 0 — the adoption
-//!   substrate that once bumped it was removed, task #97 / R4-5), and
-//! - the **segment substrate** ([`AllocCore`]) that owns this heap's segments
-//!   and performs all per-segment `BinTable` arithmetic.
-//!
-//! ## Phase 12.3 — allocation routes through `HeapCore`
-//!
-//! 12.3 wires `HeapCore::alloc`/`dealloc`/`realloc`/`alloc_zeroed` as the
-//! entry points the raw-pointer TLS binding hands to the alloc face. They
-//! delegate to [`AllocCore`] on owner-local paths. Foreign frees publish once
-//! into independently allocated terminal descriptors; they never borrow this
-//! core or touch reservation headers/payload. The exclusive owner consumes
-//! Small records on refill/miss paths, Large obligations on cold allocation
-//! paths, and both kinds during trim or maintenance.
+//! Foreign frees resolve through the process route directory and pinned
+//! sidecars. `HeapLease::drop` releases the registry slot for reuse.
 //!
 //! ## M5-clean bootstrap invariant
 //!
@@ -112,16 +96,13 @@ pub struct HeapCore {
     /// The owning slot's index in the registry. Used by `HeapLease`'s `Drop` implementation to release the
     /// slot back to the registry (12.3 stamps this into segment
     /// headers as the ownership key).
-    /// `u32::MAX` is reserved as "not yet bound to a slot" (a freshly-init'd
-    /// slot has `id = u32::MAX` until the lease is claimed). The
-    /// process-global fallback heap instead uses `OWNER_ID_FALLBACK`
-    /// (0x7FFF_FFFE, `alloc_core::segment_header`).
+    /// Registry claims set the slot id before exposing the `HeapCore`.
+    /// `u32::MAX` is the pre-bind sentinel; the process-global fallback uses
+    /// `OWNER_ID_FALLBACK` (0x7FFF_FFFE, `alloc_core::segment_header`).
     ///
-    /// Invariant: any id stored in a segment header's `owner_state` word
-    /// must stay < 2^31 so `pack_owner`/`unpack_owner_id` round-trip it
-    /// exactly. Do not reintroduce a >= 2^31 sentinel here:
-    /// the `u32::MAX` "unbound" value is safe only because it never reaches
-    /// `pack_owner` — it is overwritten by the lease before any alloc.
+    /// Invariant: registry slot ids fit the 31-bit owner-id field. The
+    /// pre-bind sentinel is replaced before any heap is exposed and must never
+    /// be passed to `pack_owner`.
     pub(crate) id: u32,
     /// The segment substrate this heap owns. Owns the primordial + any
     /// additionally-reserved small/large segments. Phase 12.1: free-list
@@ -339,8 +320,8 @@ impl HeapCore {
         })
     }
 
-    /// The slot index this heap is bound to. Read by `recycle` to locate the
-    /// owning slot from a `*mut HeapCore`.
+    /// The slot index this heap is bound to. The current lease-release caller
+    /// reads it before releasing the slot.
     #[must_use]
     pub const fn id(&self) -> u32 {
         self.id

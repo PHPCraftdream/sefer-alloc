@@ -17,24 +17,14 @@ impl Layout {
     pub(crate) const fn bin_table_off() -> usize {
         Self::page_map_off() + PageMap::FOOTPRINT
     }
-    /// Offset of the per-segment [`AllocBitmap`](crate::alloc_core::alloc_bitmap::AllocBitmap)
-    /// — the O(1) double-free guard (Phase 13.4a), one bit per `MIN_BLOCK` slot
-    /// of the whole segment. Placed AFTER **two** `BinTable::FOOTPRINT`s, 8-byte
-    /// aligned: the second `BinTable` footprint is the slot Phase 13.4b's
-    /// two-list (`free` + `local_free`) will occupy. Reserving it now means
-    /// 13.4b adds its second head array in place WITHOUT shifting the bitmap /
-    /// ring / registry offsets again (the spec's "compute the layout with the
-    /// doubled BinTable up front" requirement — §1.2 / §2).
+    /// Offset of the per-segment allocation bitmap after both bin-table
+    /// footprints, preserving room for the two-list layout.
     pub(crate) const fn alloc_bitmap_off() -> usize {
         align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT * 2, 8)
     }
-    /// RAD-5 (E4) GO/NO-GO EXPERIMENT — offset of the per-segment
-    /// [`MagazineBitmap`](crate::alloc_core::magazine_bitmap::MagazineBitmap), an
-    /// orthogonal second bitmap recording magazine residency (see its module
-    /// doc). Placed immediately after `AllocBitmap`, 8-byte aligned, same
-    /// `FOOTPRINT` geometry (one bit per `MIN_BLOCK` slot). See
-    /// `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured verdict
-    /// before assuming this offset is load-bearing for any shipped feature.
+    /// Orthogonal magazine-residency bitmap after `AllocBitmap`, aligned to
+    /// eight bytes. Its footprint and position are part of segment metadata
+    /// geometry.
     pub(crate) const fn magazine_bitmap_off() -> usize {
         align_up_const(
             Self::alloc_bitmap_off() + crate::alloc_core::alloc_bitmap::AllocBitmap::FOOTPRINT,

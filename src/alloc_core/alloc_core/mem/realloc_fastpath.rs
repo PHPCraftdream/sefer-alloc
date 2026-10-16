@@ -153,13 +153,10 @@ impl AllocCore {
     ///      `payload_offset + new_eff <= span_usable` (checked add to
     ///      guard against usize wrap on pathological sizes).
     ///
-    /// MIN_BLOCK clamping: the alloc path clamps every request to
-    /// `MIN_BLOCK` before storing `large_size` in the header. The #138
-    /// cross-thread consistency check (`large_layout_consistent`) compares
-    /// the header value against `layout_size.max(MIN_BLOCK)`. We must
-    /// clamp identically here so a later cross-thread free does not see
-    /// `raw != clamped` and silently drop the free — permanently leaking
-    /// the segment + its SegmentTable slot (#114/#130 class).
+    /// MIN_BLOCK clamping keeps the stored Large size consistent with the
+    /// allocator's effective request size. Foreign frees are routed through
+    /// the route directory and sidecar; they do not re-derive a class from
+    /// this header field.
     ///
     /// Soundness:
     ///   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
@@ -380,9 +377,8 @@ impl AllocCore {
                     // `carve_block` never advances `bump` past
                     // `committed_payload_end` without first committing the
                     // tail up to at least the new `bump` value (see
-                    // `carve_block`'s B2 grow-on-carve block,
-                    // `alloc_core_small.rs:1508-1533`: it commits BEFORE
-                    // `set_bump`, and only ever sets
+                    // `carve_block`'s B2 grow-on-carve block (the owner
+                    // commit step immediately before `set_bump`), and only ever sets
                     // `committed_payload_end` to a value `>=` the new
                     // `bump`). So for a block that satisfies precondition 3
                     // (`off + old_block_size == bump`), the frontier is
