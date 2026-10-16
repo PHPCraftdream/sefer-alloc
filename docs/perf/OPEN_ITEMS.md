@@ -252,7 +252,7 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 
    > **Current state**
    > - **Status:** CLOSED — R6-T10 (PR #49).
-   > - **Current number/verdict:** measured in `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`: with 16 live Large objects a cache hit costs 1590 Ir instead of 2223 Ir; Large cache misses pay more (perf item 101).
+   > - **Current number/verdict:** measured in `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`: with 16 live Large objects a cache hit costs 1588 Ir instead of 2223 Ir; `large_cache_eviction_hit_only_41x4mib` −70333 of 298163 Ir.
    > - **Next trigger:** none — closed; narrative in `docs/perf/OPEN_ITEMS_ARCHIVE.md` § 91.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-3; task R6-T10.
 
@@ -3155,14 +3155,6 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** a fallback-profile RSS report, or a change to the fallback idle policy (`FALLBACK_IDLE_VISITS` in `src/global/maintenance_service.rs`).
    > - **Evidence:** `tests/r6_t27_fallback_worker_ingress_only.rs`; task R6-T27.
 
-101. **[L] R6-T10 follow-up — a Large cache miss pays the bounded probe on top of the full sweep.** (Filed 2026-10-16, R6-T10.)
-
-   > **Current state**
-   > - **Status:** OPEN — tracked.
-   > - **Current number/verdict:** measured in `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`: `large_cache_eviction_hit_only_41x4mib` +14852 of 295539 Ir and `large_cache_live16_prefill_only` +4474 of 78517 Ir. A Large alloc runs the 4-slot probe in `HeapCore::alloc` before `AllocCore::alloc_large`; on a cache miss the full sweep re-inspects those slots.
-   > - **Next trigger:** a Large-miss-heavy workload report, or a change that lets the miss sweep skip the slots the probe already inspected.
-   > - **Evidence:** `docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`; task R6-T10.
-
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
@@ -3170,7 +3162,7 @@ is a one-line pointer; the complete closure text (root cause, verification,
 files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 "Recently resolved — full closure trail", in the same order as below.
 
-- **R6-PF-3 / item 91 — full Large-sweep on every Large alloc.** Closed 2026-10-16, R6-T10: a bounded 4-slot probe on Large alloc, a full sweep only on a cache miss before an OS reservation (`docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`). Full closure: the `91` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
+- **R6-PF-3 / item 91 — full Large-sweep on every Large alloc.** Closed 2026-10-16, R6-T10: a bounded 4-slot rotating probe on Large alloc, as `alloc_batch` already did (`docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`). Full closure: the `91` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 
 - **R6-PF-7 / item 95 — runtime `div` on every refill miss.** Closed 2026-10-16, R6-T39: the refill count comes from `FREE_PARK_CAP` (`docs/perf/R6_T10_LARGE_SWEEP_PROBE_GATE.md`). Full closure: the `95` entry in `docs/perf/OPEN_ITEMS_ARCHIVE.md`.
 

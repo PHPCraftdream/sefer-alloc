@@ -1,23 +1,23 @@
 [32mr6_live_large_iai::gate::live_large::large_cache_live16_prefill_only[0m
-[90m  [0mInstructions:                       [1m82991[0m|N/A                  ([90m*********[0m)
-[90m  [0mL1 Hits:                           [1m138128[0m|N/A                  ([90m*********[0m)
-[90m  [0mL2 Hits:                              [1m141[0m|N/A                  ([90m*********[0m)
-[90m  [0mRAM Hits:                            [1m1345[0m|N/A                  ([90m*********[0m)
-[90m  [0mTotal read+write:                  [1m139614[0m|N/A                  ([90m*********[0m)
-[90m  [0mEstimated Cycles:                  [1m185908[0m|N/A                  ([90m*********[0m)
+[90m  [0mInstructions:                       [1m74899[0m|N/A                  ([90m*********[0m)
+[90m  [0mL1 Hits:                           [1m127059[0m|N/A                  ([90m*********[0m)
+[90m  [0mL2 Hits:                              [1m139[0m|N/A                  ([90m*********[0m)
+[90m  [0mRAM Hits:                            [1m1332[0m|N/A                  ([90m*********[0m)
+[90m  [0mTotal read+write:                  [1m128530[0m|N/A                  ([90m*********[0m)
+[90m  [0mEstimated Cycles:                  [1m174374[0m|N/A                  ([90m*********[0m)
 [32mr6_live_large_iai::gate::live_large::large_cache_live16_hit_only[0m
-[90m  [0mInstructions:                      [1m108432[0m|N/A                  ([90m*********[0m)
-[90m  [0mL1 Hits:                           [1m173829[0m|N/A                  ([90m*********[0m)
-[90m  [0mL2 Hits:                              [1m144[0m|N/A                  ([90m*********[0m)
-[90m  [0mRAM Hits:                            [1m1367[0m|N/A                  ([90m*********[0m)
-[90m  [0mTotal read+write:                  [1m175340[0m|N/A                  ([90m*********[0m)
-[90m  [0mEstimated Cycles:                  [1m222394[0m|N/A                  ([90m*********[0m)
+[90m  [0mInstructions:                      [1m100308[0m|N/A                  ([90m*********[0m)
+[90m  [0mL1 Hits:                           [1m162729[0m|N/A                  ([90m*********[0m)
+[90m  [0mL2 Hits:                              [1m142[0m|N/A                  ([90m*********[0m)
+[90m  [0mRAM Hits:                            [1m1353[0m|N/A                  ([90m*********[0m)
+[90m  [0mTotal read+write:                  [1m164224[0m|N/A                  ([90m*********[0m)
+[90m  [0mEstimated Cycles:                  [1m210794[0m|N/A                  ([90m*********[0m)
 
-Iai-Callgrind result: [1;32mOk[0m. 2 without regressions; 0 regressed; 2 benchmarks finished in 0.53351s
+Iai-Callgrind result: [1;32mOk[0m. 2 without regressions; 0 regressed; 2 benchmarks finished in 0.53821s
 
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
-[1m[92m    Finished[0m `bench` profile [optimized] target(s) in 0.08s
+[1m[92m    Finished[0m `bench` profile [optimized] target(s) in 0.09s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m benches/r6_live_large_iai.rs (/home/runner/work/sefer-alloc/sefer-alloc/target/r6ab/tg-B/release/deps/r6_live_large_iai-19d3e5405c40a8f4)
