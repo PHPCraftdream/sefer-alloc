@@ -36,3 +36,7 @@ No cells were run. A promotion report must cover these explicit paired baseline/
 8. OPT-04 cold SmallSidecar route registration / initialization, with requested/zeroed allocation metrics.
 
 Report full-round criterion time in addition to any narrower timed window; retain raw logs and summary CSV. These are planned cells, not measured results. CI/format/structure verification is not performance evidence.
+
+## Gate outcome (orchestrator, 2026-10-16)
+
+Measured after this report was written: `docs/perf/R6_T40_OPT04_OPT05_GATE.md`. OPT-05 is NO-GO (mixed: −38 Ir per drained block on `recycle_*`, ~+113 Ir per refill elsewhere; two gated cells over 0.5 %) and was reverted together with `tests/r6_t40_batch_issue_route.rs`. OPT-04 ships as NULL (−1 Ir per process). The OPT-05 sections above describe the reverted candidate.
