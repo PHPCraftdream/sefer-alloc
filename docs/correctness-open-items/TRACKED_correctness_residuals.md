@@ -156,30 +156,6 @@ split the same day.)
     - **Next trigger:** the next change that touches one of those sites, or an owner request. Route each through the shared `fatal` helper with a static one-line message; no counter is needed before an abort.
     - **Evidence:** `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 10; `src/alloc_core/platform/fatal.rs`.
 
-211. **[T] Unchecked rounding of `usable` after `checked_add`; promotion calls `alloc_large` before `Layout` validation; debug overflow panic possible out of `GlobalAlloc::realloc`.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T30 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** `alloc_core_large.rs:188-230` rounds `usable` with `div_ceil * SEGMENT` and `align_up` without an overflow check right after a `checked_add`, so a debug overflow can panic out of `GlobalAlloc::realloc`; `HeapCore::realloc` performs promotion (`realloc.rs:297-317`) before `Layout::from_size_align` validation at `:343`.
-    > - **Next trigger:** R6-T30 in the round-6 queue; close via that task's unit test (`alloc_large(usize::MAX - 4096, 8)` in debug → null, no panic).
-    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-4; task R6-T30.
-
-212. **[T] Small-segment pool decay fires only inside `reserve_small_segment_impl`: an idle-but-busy heap never drains, contrary to the doc's "drain to zero when truly idle".** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T31 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** `maybe_decay_small_pool` (`alloc_core_small_pool_impl.rs:422-484`) has exactly one call site — `src/alloc_core/small/alloc_core_small/reserve.rs:126` — so a heap that keeps allocating from magazines but never reserves never decays its pooled segments, while the doc (`alloc_core_impl.rs:572-580`) promises drain-to-zero when truly idle.
-    > - **Next trigger:** R6-T31 in the round-6 queue; close via that task's "burst → idle → tick → pool empty" test (or a corrected doc), plus the RSS gate if a decay tick is added.
-    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-5; task R6-T31.
-
-214. **[T] Biased Large without `numa-aware` does not retry the reservation after draining the pool.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T34 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** in the biased Large path, `medium_promotion_reachable`-gated pool draining runs only where NUMA-aware retry follows; in a non-NUMA build a transient reservation failure returns null even though draining the pool would have freed the space.
-    > - **Next trigger:** R6-T34 in the round-6 queue; close via that task's injection test (drain-then-retry succeeds where the current path returns null).
-    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-9; task R6-T34.
-
 215. **[T] Inconsistent semantics of `foreign_or_unroutable_frees`.** (Filed 2026-10-15, round-6 src review.)
 
     > **Current state**
@@ -187,49 +163,6 @@ split the same day.)
     > - **Current:** the counter's meaning differs between sites: some increments count genuinely unroutable frees and others also count routable-but-refused or batch-path ones, so the statistic cannot be read as a single well-defined predicate (per the report's site-by-site comparison).
     > - **Next trigger:** R6-T55 in the round-6 queue; close via that task's definition unification and per-site counterfactual tests.
     > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-10; task R6-T55.
-
-216. **[T] `canonical_block_of`/`Node::deref` do `ptr::add` with an offset derived from a foreign address before any `off < span` check → formal UB before reject under `exact-span-large`/biased Large.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T22 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** `mem_impl.rs:36-44` computes `Node::deref(base, ptr.addr() − base.addr())` and `node.rs:141-153` does `add` without checking `offset < len`; under `exact-span-large` or biased Large the key window is wider than the reservation, so a foreign pointer from the same window is `add`-ed out of the object before the reject at `mem_impl.rs:271`/`:666`.
-    > - **Next trigger:** R6-T22 in the round-6 queue; close via that task's Miri test (foreign address in the window → clean reject, no UB diagnostic).
-    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-1; task R6-T22.
-
-217. **[T] The foreign `realloc` branch checks capacity against the reservation, not the committed range.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — FIX IN TREE (round-6 wave 5, worktree r6-u28); closure pending a green CI run of the landing commit.
-    > - **Current:** the foreign path of `HeapCore::realloc` validates `new_size` against the reservation length, so a size that fits the reservation but exceeds the committed range passes the check and the copy can read/write past the committed prefix.
-    > - **Round 6 fix (2026-10-16, r6-u28, rev. 2):** the defence lives in the foreign leg of `HeapCore::realloc` (`free/realloc.rs`), right after the unchanged `RoutePin::contains_payload` capacity check: Large routes are bounded by the segment's CURRENT committed frontier read from the live header at the descriptor root (`span_usable_at(route.root())` via a minimal new `RoutePin::root()` accessor) — the same quantity `AllocCore::try_grow_large_reserved_capacity` advances, so an owner-grown block still reallocs legitimately; Small/Primordial addresses below `small_meta_end()`/`primordial_meta_end()` are rejected. Registration descriptors and `lookup` geometry are UNCHANGED — an earlier immutable registration-time bound was rejected in review: it false-OOMs foreign reallocs of owner-grown blocks and shifts route lookup for every consumer. The code comment justifies the header read: same caller-contract trust as the copy itself (live block ⇒ live segment ⇒ mapped header); `span_usable`'s only writers are init, the block's own OPT-G grow (happens-before the pointer handoff), and post-free large-cache reuse. Tests `tests/r6_t50_foreign_realloc_committed_span.rs` (5): forged 2 MiB layout on a ~1 MiB reserved-capacity Large → null (pre-fix: Windows access violation; eager-commit backends: garbage non-null); a Small segment's metadata address → rejected; owner grows Large 1→2 MiB IN PLACE, foreign realloc with the true grown layout → non-null with data preserved (red under any registration-time immutable bound — the rejected design's counterfactual); two positive controls.
-    > - **CI:** runs in the Windows `large-reserved-capacity` cargo-test step (ci.yml:2332) and the check-matrix `test-r8-large-geometry-policies` row.
-    > - **Next trigger:** first green CI run of the landing commit; then move to RESOLVED.md with the test name as evidence.
-    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-3; task R6-T50.
-
-218. **[T] `unsafe impl Sync for HeapSlot` moves a `!Send` `HeapCore` across threads without a semantic-`Send` argument.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — FIX IN TREE (round-6 wave 5, worktree r6-u28); closure pending a green CI run of the landing commit.
-    > - **Current:** the `Sync` impl makes `&HeapSlot` reachable from other threads and thereby transfers the `HeapCore` it contains across threads, but no SAFETY argument establishes that `HeapCore`'s state is actually safe to observe/mutate cross-thread (a semantic-`Send` claim), only that the cell is atomic.
-    > - **Round 6 fix (2026-10-16, r6-u28, rev. 2):** `heap_slot.rs` gains a compile-time audit that DESTRUCTURES `&HeapCore` with no `..`, mirroring each field's `#[cfg]` gate: non-excluded fields get `assert_send`; `core: AllocCore` and `tcache: Tcache` are bound to `_` with their no-thread-affine-resource justification (NUMA cache is a plain claim-invalidated value, R11-5). Counterfactual: a NEWLY added `Rc<()>`/`Cell`-typed field fails the build with E0027 ("pattern does not mention field") — the author must add an assert or extend the exclusion list; retyping an existing asserted field to a non-Send type fails E0277. (A first revision that asserted a hand-written field LIST missed the addition case — caught in review.) `HeapCore`'s doc checklist describes the E0027 mechanism. The audit lives in `src/`, so no runtime test is required; closure evidence is any green build of the landing commit.
-    > - **Next trigger:** first green CI run of the landing commit; then move to RESOLVED.md.
-    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-5; task R6-T52.
-
-219. **[T] A claimant hitting a `MAINTENANCE` slot loses the candidate; bump precedes scan → permanent heap-count growth.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T24 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** `claim.rs:278-326` consumes a candidate and then `continue`s when the slot turns out `MAINTENANCE`; because `stack.rs:157-178` bumps before scanning, each such loss mints a brand-new 4 MiB heap permanently (`count` grows without bound under maintenance contention).
-    > - **Next trigger:** R6-T24 in the round-6 queue; close via that task's deterministic `MaintenanceLease` test (claimant takes the freed slot; `count` does not grow).
-    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-4; task R6-T24.
-
-220. **[T] `Shard::remove` releases a `Block` via `System.dealloc` under the shard lock, bypassing the `Surplus` pattern.** (Filed 2026-10-15, round-6 src review.)
-
-    > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T25 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** `directory.rs:610-657` (`Shard::remove` → `recycle` → `Block::release`) performs the OS release while the shard lock is held; the file's own `Surplus` pattern (`:499-503`, `:876-878`) exists precisely to move such releases outside the lock.
-    > - **Next trigger:** R6-T25 in the round-6 queue; close via the existing route tests after returning the displaced block as `Option<SpareBlock>` freed after `drop(guard)` (behaviour-neutral refactor).
-    > - **Evidence:** `docs/agent_reviews_round6/concurrency_review.md` R6-CC-5; task R6-T25.
 
 246. **[T] U-R5-5 residual in its new form: a stale/double free after reservation reissue frees the CURRENT owner's block (Small and Large); the deferred-large mechanism is gone but the indistinguishability remains.** (Filed 2026-10-15, round-6 src review — card created now because round-5's U-R5-5 residual had no card in this index; see note below.)
 

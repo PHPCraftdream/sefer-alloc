@@ -15,6 +15,142 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 233 — CLOSED (2026-10-16)
+
+233. **[T] Stale `hardened` doc comment in `Cargo.toml`: nonexistent `reclaim_offset`, nonexistent README section, `RemoteFreeRing`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T36, commit `e4e46bf6`.
+    > - **Current:** Cargo’s hardened feature comment now describes the sidecar protocol, removes references to nonexistent `reclaim_offset`/`RemoteFreeRing`, corrects the cross-thread coverage limitation, and links to the actual README feature-matrix row.
+    > - **Next trigger:** None; reopen if the Cargo.toml hardened description drifts from the code or README.
+    > - **Evidence:** `Cargo.toml` hardened feature comment; commit `e4e46bf6`; source report R6-SEC-8. Comment-only docs fix; no runtime test applies.
+
+### 232 — CLOSED (2026-10-16)
+
+232. **[T] `SECURITY.md` contradicts the code: double-free described as a "well-defined error", panics declared out of scope, no status for `internals`/`bench-internals`/`experimental`/`batch-api`/`exact-object-proto`.** (Filed 2026-10-15, round-6 src review; being fixed this round.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T36, commit `e4e46bf6`.
+    > - **Current:** `SECURITY.md` removes the incorrect claim that double-free is necessarily a well-defined error, brings unwind from `GlobalAlloc` into scope, and records feature status. This reflects an explicitly accepted prototype-feature risk position, not a guarantee of production-grade security for prototypes.
+    > - **Next trigger:** None for the documented scope; reopen if SECURITY.md again misstates the unsafe-API contract or GlobalAlloc unwind scope.
+    > - **Evidence:** `SECURITY.md`; commit `e4e46bf6`; source report R6-SEC-7. Documentation-only; no runtime test applies.
+
+### 223 — CLOSED (2026-10-16)
+
+223. **[T] Tier-1 `#![allow(unsafe_code)]` in `src/global/tls_heap.rs` although there is no `unsafe` without `bench-internals` (+R6-CQ-25).** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T37 (`4d12e199`): `tls_heap.rs` is no longer a tier-1 unsafe module.
+    > - **Current:** file-level allow removed; the sole unsafe test hook is item-scoped tier 2 (inventory refresh `faabe66b`).
+    > - **Next trigger:** None for the tls-heap allow; re-open if an unscoped module-level `allow(unsafe_code)` returns.
+    > - **Evidence:** `docs/agent_reviews_round6/api_security_review.md` R6-SEC-9 (+`code_quality_review.md` R6-CQ-25); task R6-T37.
+
+### 220 — CLOSED (2026-10-16)
+
+220. **[T] `Shard::remove` releases a `Block` via `System.dealloc` under the shard lock, bypassing the `Surplus` pattern.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T25; merged PR #37 (`4d8e059c`).
+    > - **Current:** route-directory removal defers displaced System block release until after the shard guard is dropped (the `Surplus` pattern).
+    > - **Next trigger:** None; reopen if `Shard::remove` performs System release under its shard lock.
+    > - **Evidence:** `src/registry/segment_route/directory.rs`; `tests/con01_exit_stranded_lock.rs`; PR #37 `4d8e059c`. Test not run in this audit.
+
+### 219 — CLOSED (2026-10-16)
+
+219. **[T] A claimant hitting a `MAINTENANCE` slot loses the candidate; bump precedes scan → permanent heap-count growth.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T24; merged PR #41 (`1a3fe7d1`).
+    > - **Current:** when a candidate hits `MAINTENANCE`, it is republished/retried boundedly instead of losing the slot and bumping a new heap.
+    > - **Next trigger:** None; reopen if this path can again mint replacement heaps while an initialized candidate becomes available.
+    > - **Evidence:** `tests/registry_claim_maintenance_candidate.rs`; `tests/loom_r19_registry_free_set.rs`; PR #41 `1a3fe7d1`. Tests not run in this audit.
+
+### 218 — CLOSED (2026-10-16)
+
+218. **[T] `unsafe impl Sync for HeapSlot` moves a `!Send` `HeapCore` across threads without a semantic-`Send` argument.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — merged in PR #54 (`166e3ab1`); landing commit `894cdc17` green on main CI (run 38848117681).
+    > - **Current:** the `Sync` impl makes `&HeapSlot` reachable from other threads and thereby transfers the `HeapCore` it contains across threads, but no SAFETY argument establishes that `HeapCore`'s state is actually safe to observe/mutate cross-thread (a semantic-`Send` claim), only that the cell is atomic.
+    > - **Round 6 fix (2026-10-16, r6-u28, rev. 2):** `heap_slot.rs` gains a compile-time audit that DESTRUCTURES `&HeapCore` with no `..`, mirroring each field's `#[cfg]` gate: non-excluded fields get `assert_send`; `core: AllocCore` and `tcache: Tcache` are bound to `_` with their no-thread-affine-resource justification (NUMA cache is a plain claim-invalidated value, R11-5). Counterfactual: a NEWLY added `Rc<()>`/`Cell`-typed field fails the build with E0027 ("pattern does not mention field") — the author must add an assert or extend the exclusion list; retyping an existing asserted field to a non-Send type fails E0277. (A first revision that asserted a hand-written field LIST missed the addition case — caught in review.) `HeapCore`'s doc checklist describes the E0027 mechanism. The audit lives in `src/`, so no runtime test is required; closure evidence is any green build of the landing commit.
+    > - **Next trigger:** first green CI run of the landing commit; then move to RESOLVED.md.
+    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-5; task R6-T52.
+    > - **Round-6 wave (2026-10-16): merged in PR #54 (`166e3ab1`); closure still awaits the green landing-CI receipt the card requires.
+
+### 217 — CLOSED (2026-10-16)
+
+217. **[T] The foreign `realloc` branch checks capacity against the reservation, not the committed range.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — merged in PR #54 (`166e3ab1`); landing commit `894cdc17` green on main CI (run 38848117681).
+    > - **Current:** the foreign path of `HeapCore::realloc` validates `new_size` against the reservation length, so a size that fits the reservation but exceeds the committed range passes the check and the copy can read/write past the committed prefix.
+    > - **Round 6 fix (2026-10-16, r6-u28, rev. 2):** the defence lives in the foreign leg of `HeapCore::realloc` (`free/realloc.rs`), right after the unchanged `RoutePin::contains_payload` capacity check: Large routes are bounded by the segment's CURRENT committed frontier read from the live header at the descriptor root (`span_usable_at(route.root())` via a minimal new `RoutePin::root()` accessor) — the same quantity `AllocCore::try_grow_large_reserved_capacity` advances, so an owner-grown block still reallocs legitimately; Small/Primordial addresses below `small_meta_end()`/`primordial_meta_end()` are rejected. Registration descriptors and `lookup` geometry are UNCHANGED — an earlier immutable registration-time bound was rejected in review: it false-OOMs foreign reallocs of owner-grown blocks and shifts route lookup for every consumer. The code comment justifies the header read: same caller-contract trust as the copy itself (live block ⇒ live segment ⇒ mapped header); `span_usable`'s only writers are init, the block's own OPT-G grow (happens-before the pointer handoff), and post-free large-cache reuse. Tests `tests/r6_t50_foreign_realloc_committed_span.rs` (5): forged 2 MiB layout on a ~1 MiB reserved-capacity Large → null (pre-fix: Windows access violation; eager-commit backends: garbage non-null); a Small segment's metadata address → rejected; owner grows Large 1→2 MiB IN PLACE, foreign realloc with the true grown layout → non-null with data preserved (red under any registration-time immutable bound — the rejected design's counterfactual); two positive controls.
+    > - **CI:** runs in the Windows `large-reserved-capacity` cargo-test step (ci.yml:2332) and the check-matrix `test-r8-large-geometry-policies` row.
+    > - **Next trigger:** first green CI run of the landing commit; then move to RESOLVED.md with the test name as evidence.
+    > - **Evidence:** `docs/agent_reviews_round6/memory_safety_review.md` R6-MS-3; task R6-T50.
+    > - **Round-6 wave (2026-10-16): merged in PR #54 (`166e3ab1`); closure still awaits the green landing-CI receipt the card requires.
+
+### 216 — CLOSED (2026-10-16)
+
+216. **[T] `canonical_block_of`/`Node::deref` do `ptr::add` with an offset derived from a foreign address before any `off < span` check → formal UB before reject under `exact-span-large`/biased Large.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T22; merged PR #35 (`27b18893`).
+    > - **Current:** caller offsets are bounded against live span/segment geometry before `Node::deref` forms the pointer.
+    > - **Next trigger:** None; reopen if a caller-derived offset reaches `ptr::add` before the relevant bounds check.
+    > - **Evidence:** `tests/regression_r6_t22_foreign_window_key_miri.rs`; wired in `scripts/miri-matrix.mjs` (`exact-span-large`, internals). Miri execution receipt not claimed in this audit.
+
+### 214 — CLOSED (2026-10-16)
+
+214. **[T] Biased Large without `numa-aware` does not retry the reservation after draining the pool.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T34; merged PR #39 (`98dd37ef`).
+    > - **Current:** non-NUMA biased Large allocation drains the pool and retries the reservation after the first failure.
+    > - **Next trigger:** None; reopen if the non-NUMA branch again omits the drain/retry.
+    > - **Evidence:** `tests/r6_t34_biased_large_pool_drain_retry.rs`; PR #39 `98dd37ef`. Test not run in this audit.
+
+### 212 — CLOSED (2026-10-16)
+
+212. **[T] Small-segment pool decay fires only inside `reserve_small_segment_impl`: an idle-but-busy heap never drains, contrary to the doc's "drain to zero when truly idle".** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T31; merged PR #48 (`2ffaa7ba`).
+    > - **Current:** small-pool decay fires on Large cold-allocation edges; it is not a timed idle worker.
+    > - **Next trigger:** None for the missed cold-edge decay; revisit only if the documented pool retention guarantee is contradicted.
+    > - **Evidence:** `tests/r6_t31_small_pool_idle_decay.rs`; gate `docs/perf/R6_T31_T32_POOL_DECAY_DIRECTORY_REBUILD_GATE.md`. Test not run in this audit.
+
+### 211 — CLOSED (2026-10-16)
+
+211. **[T] Unchecked rounding of `usable` after `checked_add`; promotion calls `alloc_large` before `Layout` validation; debug overflow panic possible out of `GlobalAlloc::realloc`.** (Filed 2026-10-15, round-6 src review.)
+
+    > **Current state**
+    > - **Status:** CLOSED — R6-T30; merged PR #39 (`98dd37ef`).
+    > - **Current:** Large rounding and alignment are checked; promotion validates layout before allocation.
+    > - **Next trigger:** None; reopen if invalid/overflowing size arithmetic can panic or promotion precedes layout validation.
+    > - **Evidence:** `tests/r6_t30_alloc_large_overflow_null.rs`; PR #39 `98dd37ef`. Test not run in this audit.
+
+### 206 — `alloc_batch`/`dealloc_batch` bypassed `ExactNarrow`: CLOSED (2026-10-15)
+
+- **Status:** CLOSED by R6-T09, PR #34 (`8f29562d`).
+- **Current verdict:** narrow batch allocations route through `ExactNarrow::alloc`; each non-null narrow deallocation tries `ExactNarrow::try_dealloc` before heap routing.
+- **Next trigger:** none; reopen if batch routing bypasses `ExactNarrow`.
+- **Evidence:** `tests/r6_t09_batch_exact_narrow.rs` (descriptor registration/retirement, stable `foreign_or_unroutable_frees`); CI feature row `exact-object-proto batch-api internals bench-internals` in `.github/workflows/ci.yml`. Not run in this audit.
+
+### 207 — Constructor OOM starved initialized FREE heaps via `reuse_hint`: CLOSED (2026-10-15)
+
+- **Status:** CLOSED by R6-T03, PR #41, merge `1a3fe7d1` (implementation `4d12e199`).
+- **Current verdict:** constructor-OOM candidates return to the FREE bitmap, not `reuse_hint`; the claim path retries recovery. The witness protects reachability of initialized heaps.
+- **Next trigger:** none; reopen if a failed constructor can monopolize the hint or initialized FREE heaps become unreachable.
+- **Evidence:** `tests/registry_claim_ctor_oom_recovery.rs`; `tests/loom_r19_registry_free_set.rs::ctor_oom_bitmap_slot_does_not_starve_initialised_recovery`; CI sentinel in `.github/workflows/ci.yml`. Not run in this audit.
+
+### 208 — Process-exit lock refusal failed to escape to System: CLOSED (2026-10-15)
+
+- **Status:** CLOSED by R6-T04, PR #37, merge `4d8e059c`; cold-null follow-up `dbf46c39`.
+- **Current verdict:** process-exit allocation/reallocation null paths escape to `System`; the CON-01 stranded-lock subprocess witness covers refusal/escape behavior.
+- **Next trigger:** none; reopen if an exit-time refusal returns null rather than escaping.
+- **Evidence:** `tests/con01_exit_stranded_lock.rs`; `.github/workflows/ci.yml` CON-01 row; `src/global/sefer_alloc/global_alloc.rs` and `src/registry/segment_route/directory.rs`. Not run in this audit.
+
 ### 213 — own-thread free parked a `BlockKind::Unknown` block in the magazine: CLOSED (2026-10-16)
 
 - **Status:** CLOSED by R6-T33 — `small_free_guard` returns `RejectNoOp` for `BlockKind::Unknown`, the same no-op the substrate free applies.
