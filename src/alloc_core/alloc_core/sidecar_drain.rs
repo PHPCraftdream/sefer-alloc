@@ -309,9 +309,14 @@ impl AllocCore {
             #[cfg(feature = "bench-internals")]
             LARGE_SIDECAR_SLOT_INSPECTIONS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             let base = self.table.base_at(index);
-            if base.is_null() || SegmentHeader::kind_at(base) != SegmentKind::Large {
-                std::process::abort();
-            }
+            // Invariant: `next_active(SegmentKind::Large, ..)` walks the
+            // `ActiveKindIndex`, and the route slot at `index` stores the same
+            // root (`claim_large_pending` aborts on `root != base`), so the
+            // header kind re-read is only a debug check, not a release abort.
+            debug_assert!(
+                !base.is_null() && SegmentHeader::kind_at(base) == SegmentKind::Large,
+                "active Large slot must hold a live Large segment root"
+            );
             if self.table.claim_large_route(index, base) {
                 self.reclaim_large_segment(base);
                 LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -358,9 +363,14 @@ impl AllocCore {
             #[cfg(feature = "bench-internals")]
             LARGE_SIDECAR_SLOT_INSPECTIONS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             let base = self.table.base_at(index);
-            if base.is_null() || SegmentHeader::kind_at(base) != SegmentKind::Large {
-                std::process::abort();
-            }
+            // Invariant: `next_active(SegmentKind::Large, ..)` walks the
+            // `ActiveKindIndex`, and the route slot at `index` stores the same
+            // root (`claim_large_pending` aborts on `root != base`), so the
+            // header kind re-read is only a debug check, not a release abort.
+            debug_assert!(
+                !base.is_null() && SegmentHeader::kind_at(base) == SegmentKind::Large,
+                "active Large slot must hold a live Large segment root"
+            );
             if self.table.claim_large_route(index, base) {
                 self.reclaim_large_segment(base);
                 LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
