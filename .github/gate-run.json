@@ -1,1 +1,1 @@
-{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab","benchTarget":"perf_gate_iai","features":"production bench-internals internals","thresholds":{"cold_alloc_only_256x16b":0.5,"recycle_alloc_only_256x16b":0.5,"carve_batch_only_16b":0.5,"small_churn_16b":0.5,"alloc_magazine_hit_only_16b":0.5,"dealloc_free_only_16b":0.5,"large_alloc_free_cycle":0.5,"large_cache_hit_only_4mib":0.5}}
+{"runner":"scripts/r20_evidence_reverify_run.mjs","stages":"prepare,build,oracle","outDir":"target/r20-evidence-reverify"}

@@ -119,6 +119,8 @@ pub(crate) struct DiscoverySummaryObserver {
 
 impl SmallCutObserver for DiscoverySummaryObserver {
     fn cut_visited(&mut self, nonempty: bool) {
+        #[cfg(not(all(feature = "bench-internals", r19_sidecar_summary_oracle)))]
+        let _ = nonempty;
         #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
         {
             self.visited += 1;
