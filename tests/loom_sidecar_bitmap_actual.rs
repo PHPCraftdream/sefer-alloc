@@ -17,6 +17,15 @@
 #![cfg(loom)]
 
 mod alloc_core {
+    // Mirrors `alloc_core::fatal` (`src/alloc_core/platform/fatal.rs`) for the
+    // source-included primitives.
+    pub mod fatal {
+        pub fn fatal(msg: &'static [u8]) -> ! {
+            use std::io::Write;
+            let _ = std::io::stderr().write_all(msg);
+            std::process::abort()
+        }
+    }
     pub mod os {
         /// 3 pending words at `MIN_BLOCK = 16`.
         pub const SEGMENT: usize = 3 * 64 * 16;
