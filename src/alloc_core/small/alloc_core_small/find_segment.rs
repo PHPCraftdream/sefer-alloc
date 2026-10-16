@@ -16,6 +16,8 @@ use crate::alloc_core::fatal::fatal;
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use super::sidecar_drain_outcome::SidecarDrainOutcome;
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+use crate::alloc_core::alloc_core::{DiscoverySummaryObserver, DrainEnd};
 
 impl AllocCore {
     /// Carve one fresh block of `class_idx` for the caller, plus a refill
@@ -140,55 +142,35 @@ impl AllocCore {
         }
         let index = SegmentHeader::segment_id_at(base) as usize;
         let high_water = SegmentMeta::new(base).bump_of();
-        let mut changed_classes = 0u64;
-        {
-            // Patch S: start at the payload's first word, not word 0.
-            let end_word = high_water.div_ceil(MIN_BLOCK * 64);
-            let start_word = Self::sidecar_payload_start_word(base).min(end_word);
-            let Some(mut scan) = self
-                .table
-                .scan_small_route_from(index, base, high_water, start_word)
-            else {
-                fatal(b"find_segment: routed scan unavailable\n");
-            };
+        // Patch S: start at the payload's first word, not word 0.
+        let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+        let start_word = Self::sidecar_payload_start_word(base).min(end_word);
+        let (changed_classes, _reclaimed) = {
+            let scan = self.scan_small_route_or_fatal(
+                index,
+                base,
+                high_water,
+                start_word,
+                b"find_segment: routed scan unavailable\n",
+            );
             #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
             crate::alloc_core::remote_bitmap::BitmapScan::count_routed_scan();
             #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
             crate::alloc_core::remote_bitmap::Prf01SidecarOracle::constructed();
-            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-            let (mut visited, mut nonempty, mut reclaimed) = (0u64, 0u64, 0u64);
-            while let Some(mut cut) = scan.next_cut() {
-                #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-                {
-                    visited += 1;
-                    nonempty += u64::from(!cut.is_empty());
-                }
-                while let Some(record) = cut.pop() {
-                    if Self::reclaim_sidecar_record(base, record.offset, record.class) {
-                        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-                        {
-                            reclaimed += 1;
-                        }
-                        changed_classes |= 1u64 << record.class;
-                    }
-                }
-            }
-            #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
-            crate::alloc_core::remote_bitmap::Prf01SidecarOracle::completed(
-                visited, nonempty, reclaimed,
-            );
-        }
+            Self::consume_small_cuts(base, scan, DiscoverySummaryObserver::default())
+        };
         if changed_classes == 0 {
             return SidecarDrainOutcome::Skipped;
         }
-        #[cfg(feature = "alloc-segment-directory")]
-        self.sync_directory_for_segment_classes(base, index, changed_classes);
-        #[cfg(feature = "alloc-decommit")]
-        if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
-            let pooled = self.release_or_pool_empty_segment(base);
-            return SidecarDrainOutcome::Decommitted { pooled };
+        // Every cut and route borrow is consumed above; finalization may
+        // release or pool the reservation.
+        match self.finish_small_drain(base, index, changed_classes) {
+            DrainEnd::Live => SidecarDrainOutcome::Drained,
+            #[cfg(feature = "alloc-decommit")]
+            DrainEnd::Pooled => SidecarDrainOutcome::Decommitted { pooled: true },
+            #[cfg(feature = "alloc-decommit")]
+            DrainEnd::Released => SidecarDrainOutcome::Decommitted { pooled: false },
         }
-        SidecarDrainOutcome::Drained
     }
 
     #[inline]

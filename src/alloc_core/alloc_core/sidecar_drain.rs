@@ -66,6 +66,125 @@ pub(crate) static SIDECAR_INGRESS_RECORDS_CONSUMED: core::sync::atomic::AtomicU6
 #[cfg(feature = "fastbin")]
 pub(crate) const LARGE_HOT_BUDGET: usize = 4;
 
+/// Reservation disposition of a drained Small segment after
+/// [`AllocCore::finish_small_drain`]. `Pooled`/`Released` both mean the
+/// reservation left the live set this pass (a pooled segment stays
+/// registered/committed, a released one is unmapped) — the same split the
+/// discovery drain reports as `SidecarDrainOutcome::Decommitted`.
+pub(crate) enum DrainEnd {
+    Live,
+    #[cfg(feature = "alloc-decommit")]
+    Pooled,
+    #[cfg(feature = "alloc-decommit")]
+    Released,
+}
+
+/// Per-call-site bench observers for one Small cut-consume pass. Each owner
+/// drain keeps exactly its own counters — the discovery drain's R19 summary
+/// oracle ([`DiscoverySummaryObserver`]), the strict trim's `strict_visited`
+/// oracle and record-consumed counter ([`StrictTrimObserver`]), and the
+/// bounded maintenance step's no-op ([`NoSmallCutObserver`]). Pure numeric
+/// observers; never read by production logic.
+pub(crate) trait SmallCutObserver {
+    /// One terminal cut was detached from the routed scan; `nonempty` says
+    /// whether it carried at least one record.
+    fn cut_visited(&mut self, nonempty: bool);
+    /// One record was reclaimed into its segment's free state.
+    fn record_reclaimed(&mut self);
+    /// The pass finished; report accumulated totals.
+    fn finish(&mut self);
+}
+
+/// The bounded maintenance step observes no Small-cut counters.
+pub(crate) struct NoSmallCutObserver;
+
+impl SmallCutObserver for NoSmallCutObserver {
+    fn cut_visited(&mut self, _nonempty: bool) {}
+    fn record_reclaimed(&mut self) {}
+    fn finish(&mut self) {}
+}
+
+/// Discovery-drain ([`AllocCore::drain_segment_sidecar`]) observer: feeds
+/// `Prf01SidecarOracle::completed` with the visited / nonempty / reclaimed
+/// totals under `cfg(r19_sidecar_summary_oracle)`.
+#[derive(Default)]
+pub(crate) struct DiscoverySummaryObserver {
+    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    visited: u64,
+    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    nonempty: u64,
+    #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+    reclaimed: u64,
+}
+
+impl SmallCutObserver for DiscoverySummaryObserver {
+    fn cut_visited(&mut self, nonempty: bool) {
+        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+        {
+            self.visited += 1;
+            self.nonempty += u64::from(nonempty);
+        }
+    }
+
+    fn record_reclaimed(&mut self) {
+        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+        {
+            self.reclaimed += 1;
+        }
+    }
+
+    fn finish(&mut self) {
+        #[cfg(all(feature = "bench-internals", r19_sidecar_summary_oracle))]
+        crate::alloc_core::remote_bitmap::Prf01SidecarOracle::completed(
+            self.visited,
+            self.nonempty,
+            self.reclaimed,
+        );
+    }
+}
+
+/// Strict-trim ([`AllocCore::drain_sidecar_ingress`]) observer: per-pass
+/// cut/record totals feed `Prf01SidecarOracle::strict_visited`, and every
+/// reclaimed record also bumps `SIDECAR_INGRESS_RECORDS_CONSUMED` (the M-C
+/// oracle's record counter).
+#[derive(Default)]
+pub(crate) struct StrictTrimObserver {
+    #[cfg(feature = "bench-internals")]
+    actual: u64,
+    #[cfg(feature = "bench-internals")]
+    records: u64,
+}
+
+impl SmallCutObserver for StrictTrimObserver {
+    fn cut_visited(&mut self, _nonempty: bool) {
+        #[cfg(feature = "bench-internals")]
+        {
+            self.actual += 1;
+        }
+    }
+
+    fn record_reclaimed(&mut self) {
+        #[cfg(feature = "bench-internals")]
+        {
+            self.records += 1;
+        }
+        #[cfg(all(
+            feature = "alloc-global",
+            feature = "alloc-xthread",
+            feature = "bench-internals"
+        ))]
+        SIDECAR_INGRESS_RECORDS_CONSUMED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn finish(&mut self) {
+        #[cfg(feature = "bench-internals")]
+        crate::alloc_core::remote_bitmap::Prf01SidecarOracle::strict_visited(
+            self.actual,
+            self.records,
+        );
+    }
+}
+
 impl AllocCore {
     /// Patch S: the word a resumed cursor starts at for slot `index` — the
     /// payload's first word of that slot, or 0 for a null/Large slot (its word
@@ -82,6 +201,131 @@ impl AllocCore {
             SegmentKind::Small | SegmentKind::Primordial => Self::sidecar_payload_start_word(base),
             _ => 0,
         }
+    }
+
+    /// Shared Small drain finalization — the reservation-lifetime boundary:
+    /// every cut and every route borrow must already be consumed by the
+    /// caller, because from here the segment's reservation can be released
+    /// or pooled. Syncs the directory bitmap with the classes actually
+    /// reclaimed, then — only when something was reclaimed — drops the empty
+    /// segment's live count and releases/pools it.
+    #[inline]
+    pub(crate) fn finish_small_drain(
+        &mut self,
+        base: *mut u8,
+        index: usize,
+        changed_classes: u64,
+    ) -> DrainEnd {
+        #[cfg(feature = "alloc-segment-directory")]
+        self.sync_directory_for_segment_classes(base, index, changed_classes);
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        let _ = changed_classes;
+        #[cfg(feature = "alloc-decommit")]
+        if changed_classes != 0 && Self::dec_live_and_maybe_decommit(base, self.small_cur) {
+            let pooled = self.release_or_pool_empty_segment(base);
+            return if pooled {
+                DrainEnd::Pooled
+            } else {
+                DrainEnd::Released
+            };
+        }
+        DrainEnd::Live
+    }
+
+    /// Claim one pending Large route and physically retire it: the route
+    /// descriptor surrenders its terminal obligation before the reservation
+    /// is reclaimed. `true` means the retirement happened and was counted in
+    /// `LARGE_REMOTE_RETIREMENTS`; callers add only their own bookkeeping on
+    /// `true`.
+    #[inline]
+    pub(crate) fn retire_large_route(&mut self, index: usize, base: *mut u8) -> bool {
+        if !self.table.claim_large_route(index, base) {
+            return false;
+        }
+        self.reclaim_large_segment(base);
+        LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
+    /// Create the routed Small scan or abort. All three owner drains share
+    /// one availability contract (a routed table must yield a scan); each
+    /// call site keeps its own fatal text so evidence recipes stay
+    /// byte-stable.
+    #[inline]
+    pub(crate) fn scan_small_route_or_fatal(
+        &self,
+        index: usize,
+        base: *mut u8,
+        high_water: usize,
+        word: usize,
+        unavailable: &'static [u8],
+    ) -> crate::registry::segment_route::RouteScan<'_> {
+        let Some(scan) = self
+            .table
+            .scan_small_route_from(index, base, high_water, word)
+        else {
+            fatal(unavailable);
+        };
+        scan
+    }
+
+    /// Consume every terminal cut the routed scan yields: pop each record
+    /// into its segment's free state and accumulate `(changed_classes,
+    /// reclaimed)` for the caller's finalization. The caller owns the scan
+    /// and its fatal text; this pass ends all route borrows and detached
+    /// cuts, so the caller's next call may release or pool the reservation
+    /// ([`Self::finish_small_drain`]). `observer` carries the call site's
+    /// bench counters only — the body itself touches none.
+    #[inline]
+    pub(crate) fn consume_small_cuts<O: SmallCutObserver>(
+        base: *mut u8,
+        scan: crate::registry::segment_route::RouteScan<'_>,
+        observer: O,
+    ) -> (u64, usize) {
+        Self::consume_small_cuts_impl(base, scan, observer, false)
+    }
+
+    /// Exactly-one-cut variant for the bounded maintenance step: the word
+    /// cursor advances one payload word per step, so a step detaches at most
+    /// the scan's first cut — and aborts when the routed scan yields none.
+    #[inline]
+    pub(crate) fn consume_one_small_cut<O: SmallCutObserver>(
+        base: *mut u8,
+        scan: crate::registry::segment_route::RouteScan<'_>,
+        observer: O,
+    ) -> (u64, usize) {
+        Self::consume_small_cuts_impl(base, scan, observer, true)
+    }
+
+    fn consume_small_cuts_impl<O: SmallCutObserver>(
+        base: *mut u8,
+        mut scan: crate::registry::segment_route::RouteScan<'_>,
+        mut observer: O,
+        exactly_one_cut: bool,
+    ) -> (u64, usize) {
+        let mut changed_classes = 0u64;
+        let mut reclaimed = 0usize;
+        loop {
+            let Some(mut cut) = scan.next_cut() else {
+                if exactly_one_cut {
+                    fatal(b"sidecar_drain: sidecar scan cut unavailable\n");
+                }
+                break;
+            };
+            observer.cut_visited(!cut.is_empty());
+            while let Some(record) = cut.pop() {
+                if Self::reclaim_sidecar_record(base, record.offset, record.class) {
+                    changed_classes |= 1u64 << record.class;
+                    reclaimed += 1;
+                    observer.record_reclaimed();
+                }
+            }
+            if exactly_one_cut {
+                break;
+            }
+        }
+        observer.finish();
+        (changed_classes, reclaimed)
     }
 
     /// At most `budget` slot inspections or word cuts. Cursor holds no root.
@@ -124,37 +368,25 @@ impl AllocCore {
                         units += 1;
                         continue;
                     }
-                    let mut changed_classes = 0u64;
-                    {
-                        let Some(mut scan) = self
-                            .table
-                            .scan_small_route_from(index, base, high_water, cursor.1)
-                        else {
-                            fatal(b"sidecar_drain: routed scan unavailable\n");
-                        };
-                        let Some(mut cut) = scan.next_cut() else {
-                            fatal(b"sidecar_drain: sidecar scan cut unavailable\n");
-                        };
-                        while let Some(record) = cut.pop() {
-                            if Self::reclaim_sidecar_record(base, record.offset, record.class) {
-                                changed_classes |= 1u64 << record.class;
-                                reclaimed += 1;
-                            }
-                        }
-                    }
+                    let (changed_classes, cut_reclaimed) = {
+                        let scan = self.scan_small_route_or_fatal(
+                            index,
+                            base,
+                            high_water,
+                            cursor.1,
+                            b"sidecar_drain: routed scan unavailable\n",
+                        );
+                        Self::consume_one_small_cut(base, scan, NoSmallCutObserver)
+                    };
+                    reclaimed += cut_reclaimed;
                     units += 1;
                     cursor.1 += 1;
                     // All route borrows and detached records are consumed
                     // before a reservation can be released or pooled.
-                    #[cfg(feature = "alloc-segment-directory")]
-                    self.sync_directory_for_segment_classes(base, index, changed_classes);
-                    #[cfg(not(feature = "alloc-segment-directory"))]
-                    let _ = changed_classes;
-                    #[cfg(feature = "alloc-decommit")]
-                    if changed_classes != 0
-                        && Self::dec_live_and_maybe_decommit(base, self.small_cur)
-                    {
-                        let _ = self.release_or_pool_empty_segment(base);
+                    if !matches!(
+                        self.finish_small_drain(base, index, changed_classes),
+                        DrainEnd::Live
+                    ) {
                         cursor.0 += 1;
                         cursor.1 = self.sidecar_word_hint(cursor.0);
                         continue;
@@ -165,10 +397,7 @@ impl AllocCore {
                     }
                 }
                 SegmentKind::Large => {
-                    if self.table.claim_large_route(index, base) {
-                        self.reclaim_large_segment(base);
-                        LARGE_REMOTE_RETIREMENTS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    if self.retire_large_route(index, base) {
                         reclaimed += 1;
                     }
                     cursor.0 += 1;
@@ -212,70 +441,28 @@ impl AllocCore {
             match SegmentHeader::kind_at(base) {
                 SegmentKind::Small | SegmentKind::Primordial => {
                     let high_water = SegmentMeta::new(base).bump_of();
-                    let mut changed_classes = 0u64;
-                    #[cfg(feature = "bench-internals")]
-                    let mut strict_actual = 0u64;
-                    #[cfg(feature = "bench-internals")]
-                    let mut strict_records = 0u64;
-                    {
-                        // Producer rejects class-0 metadata (sidecar_bitmap.rs:116-121); metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
-                        let end_word = high_water.div_ceil(MIN_BLOCK * 64);
-                        let start = Self::sidecar_payload_start_word(base).min(end_word);
-                        let Some(mut scan) = self
-                            .table
-                            .scan_small_route_from(index, base, high_water, start)
-                        else {
-                            fatal(b"sidecar_drain: routed scan unavailable\n");
-                        };
-                        while let Some(mut cut) = scan.next_cut() {
-                            #[cfg(feature = "bench-internals")]
-                            {
-                                strict_actual += 1;
-                            }
-                            while let Some(record) = cut.pop() {
-                                if Self::reclaim_sidecar_record(base, record.offset, record.class) {
-                                    #[cfg(feature = "bench-internals")]
-                                    {
-                                        strict_records += 1;
-                                    }
-                                    changed_classes |= 1u64 << record.class;
-                                    reclaimed += 1;
-                                    #[cfg(all(
-                                        feature = "alloc-global",
-                                        feature = "alloc-xthread",
-                                        feature = "bench-internals"
-                                    ))]
-                                    SIDECAR_INGRESS_RECORDS_CONSUMED
-                                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                                }
-                            }
-                        }
-                    }
-                    #[cfg(feature = "bench-internals")]
-                    crate::alloc_core::remote_bitmap::Prf01SidecarOracle::strict_visited(
-                        strict_actual,
-                        strict_records,
-                    );
+                    // Producer rejects class-0 metadata (sidecar_bitmap.rs:116-121); metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
+                    let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+                    let start = Self::sidecar_payload_start_word(base).min(end_word);
+                    let (changed_classes, drained_records) = {
+                        let scan = self.scan_small_route_or_fatal(
+                            index,
+                            base,
+                            high_water,
+                            start,
+                            b"sidecar_drain: routed scan unavailable\n",
+                        );
+                        Self::consume_small_cuts(base, scan, StrictTrimObserver::default())
+                    };
+                    reclaimed += drained_records;
                     // Every cut and the route borrow are gone before table
                     // removal or payload decommit. A detached or unpublished
                     // valid instance still owns a credit, so only a fully
                     // consumed segment can reach zero here.
-                    #[cfg(feature = "alloc-segment-directory")]
-                    self.sync_directory_for_segment_classes(base, index, changed_classes);
-                    #[cfg(not(feature = "alloc-segment-directory"))]
-                    let _ = changed_classes;
-                    #[cfg(feature = "alloc-decommit")]
-                    if changed_classes != 0
-                        && Self::dec_live_and_maybe_decommit(base, self.small_cur)
-                    {
-                        let _ = self.release_or_pool_empty_segment(base);
-                    }
+                    self.finish_small_drain(base, index, changed_classes);
                 }
                 SegmentKind::Large => {
-                    if self.table.claim_large_route(index, base) {
-                        self.reclaim_large_segment(base);
-                        LARGE_REMOTE_RETIREMENTS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    if self.retire_large_route(index, base) {
                         reclaimed += 1;
                         #[cfg(all(
                             feature = "alloc-global",
@@ -318,9 +505,7 @@ impl AllocCore {
                 !base.is_null() && SegmentHeader::kind_at(base) == SegmentKind::Large,
                 "active Large slot must hold a live Large segment root"
             );
-            if self.table.claim_large_route(index, base) {
-                self.reclaim_large_segment(base);
-                LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            if self.retire_large_route(index, base) {
                 reclaimed += 1;
             }
         }
@@ -372,9 +557,7 @@ impl AllocCore {
                 !base.is_null() && SegmentHeader::kind_at(base) == SegmentKind::Large,
                 "active Large slot must hold a live Large segment root"
             );
-            if self.table.claim_large_route(index, base) {
-                self.reclaim_large_segment(base);
-                LARGE_REMOTE_RETIREMENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            if self.retire_large_route(index, base) {
                 reclaimed += 1;
             }
         }
