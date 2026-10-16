@@ -1,5 +1,5 @@
-E0_METADATA {"id":"R4c-07","head":"9e626b895ca3c12e26660aab0a05394bf6c0bd22","tree":"689bb613d596ce9241b7ed06ae15f77727817250","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-07","head":"9e626b895ca3c12e26660aab0a05394bf6c0bd22","tree":"689bb613d596ce9241b7ed06ae15f77727817250","os":"linux x64","toolchain":"rustc 1.101.0-nightly (4ebd25825 2026-10-15)\nbinary: rustc\ncommit-hash: 4ebd258257737d5b7635c116fa7d281627a7e937\ncommit-date: 2026-10-15\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB (default)","recipe":"docs/evidence/reverify-recipes/R4c-07.json","recipe_sha256":"4ab5310f1333f5890545690a1a5efbac6fbd5c60b749d50fe82a2c13542f30b9","registry_activation_hash":"25da33e6ce1e7be846375d57bf9aba838aac9d3d40cda395763ebf7dd2f27c48"}
+E0_METADATA {"id":"R4c-07","head":"8fdd9213778d7814c57a873befbab1e7fe6560bb","tree":"a1e763e01c70d030df4a216f6887ceefed9a7208","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-07","head":"8fdd9213778d7814c57a873befbab1e7fe6560bb","tree":"a1e763e01c70d030df4a216f6887ceefed9a7208","os":"linux x64","toolchain":"rustc 1.101.0-nightly (4ebd25825 2026-10-15)\nbinary: rustc\ncommit-hash: 4ebd258257737d5b7635c116fa7d281627a7e937\ncommit-date: 2026-10-15\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB (default)","recipe":"docs/evidence/reverify-recipes/R4c-07.json","recipe_sha256":"4ab5310f1333f5890545690a1a5efbac6fbd5c60b749d50fe82a2c13542f30b9","registry_activation_hash":"25da33e6ce1e7be846375d57bf9aba838aac9d3d40cda395763ebf7dd2f27c48"}
 
 E0_STEP {"id":"R4c-07","kind":"baseline","name":"plain xthread thread-free alias test","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","regression_xthread_thread_free_alias_miri"],"env":{"MIRIFLAGS":"-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"},"expect":{"exit":0,"stdoutRegex":["test xthread_thread_free_write_overlaps_owner_alloc_mut \\.\\.\\.[\\s\\S]*?\\bok\\s*\\n","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -85,7 +85,7 @@ E0_STEP {"id":"R4c-07","kind":"baseline","name":"plain xthread thread-free alias
 
 [1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning (run `cargo fix --lib -p sefer-alloc` to apply 1 suggestion)
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.08s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/regression_xthread_thread_free_alias_miri.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/cd408ddf845492a7/out/regression_xthread_thread_free_alias_miri-cd408ddf845492a7)
@@ -118,7 +118,7 @@ note: the current function got called indirectly due to this code
 
 ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 44.42s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.25s
 
 warning: 1 warning emitted
 

@@ -207,6 +207,31 @@ const _: () = {
 pub(crate) const SIZE_CLASS_TABLE: [usize; TABLE_LEN] =
     size_classes::build_table::<TABLE_LEN>(PARAMS);
 
+const fn reciprocal(d: u64) -> u64 {
+    let odd = d >> d.trailing_zeros();
+    let mut x = 1u64;
+    let mut i = 0;
+    while i < 6 {
+        x = x.wrapping_mul(2u64.wrapping_sub(odd.wrapping_mul(x)));
+        i += 1;
+    }
+    x
+}
+
+const fn divisibility_table() -> [(u64, u64, u32); TABLE_LEN] {
+    let mut out = [(0, 0, 0); TABLE_LEN];
+    let mut i = 0;
+    while i < TABLE_LEN {
+        let d = SIZE_CLASS_TABLE[i] as u64;
+        let k = d.trailing_zeros();
+        out[i] = (reciprocal(d), u64::MAX / d, k);
+        i += 1;
+    }
+    out
+}
+
+const DIVISIBILITY: [(u64, u64, u32); TABLE_LEN] = divisibility_table();
+
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
 pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
 
@@ -291,6 +316,25 @@ pub(crate) static SIZE2CLASS: [u8; S2C_LEN] = *SC.size2class();
 pub(crate) struct SizeClasses;
 
 impl SizeClasses {
+    #[inline(always)]
+    pub(crate) const fn divisor(idx: usize) -> (u64, u64, u32) {
+        DIVISIBILITY[idx]
+    }
+
+    #[inline(always)]
+    pub(crate) const fn divides_with(params: (u64, u64, u32), off: usize) -> bool {
+        let (inv, limit, shift) = params;
+        (off as u64).wrapping_mul(inv).rotate_right(shift) <= limit
+    }
+
+    // Shared R6-T12 entry; continuation walks consume this predicate with cached parameters.
+    // Outside internals and non-hardened fastbin, no in-tree caller uses it.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) const fn divides(idx: usize, off: usize) -> bool {
+        Self::divides_with(Self::divisor(idx), off)
+    }
+
     /// Resolve `(size, align)` to a small-class index, or `None` for large.
     ///
     /// A small class fits iff its `block_size >= max(size, align)` AND

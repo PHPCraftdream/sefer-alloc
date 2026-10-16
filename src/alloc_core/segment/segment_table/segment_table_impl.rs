@@ -342,6 +342,20 @@ impl SegmentTable {
         Some(IssueTransaction::unrouted(base, offset))
     }
 
+    /// R6-T05 (SEC-1): free-side class-identity check against the owner route
+    /// class map. `true` means "no objection" — including every configuration
+    /// where the check cannot be made (standalone table without routes);
+    /// `false` rejects the free as a no-op.
+    #[cfg(feature = "hardened")]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn small_class_matches(&self, base: *mut u8, offset: u32, class_idx: usize) -> bool {
+        if let Some(routes) = &self.routes {
+            return routes.small_class_matches(base, offset, class_idx);
+        }
+        true
+    }
+
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub(crate) fn scan_small_route_from(
         &self,

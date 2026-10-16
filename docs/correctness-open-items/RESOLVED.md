@@ -15,6 +15,27 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 213 — own-thread free parked a `BlockKind::Unknown` block in the magazine: CLOSED (2026-10-16)
+
+- **Status:** CLOSED by R6-T33 — `small_free_guard` returns `RejectNoOp` for `BlockKind::Unknown`, the same no-op the substrate free applies.
+- **Current verdict:** a corrupted kind byte no longer reaches the M2 oracles or the magazine.
+- **Next trigger:** none.
+- **Evidence:** `tests/r6_t33_t05_own_free_kind_and_class.rs` (`corrupted_kind_byte_own_free_is_a_noop_not_a_magazine_push`); `docs/agent_reviews_round6/correctness_review.md` R6-CR-7; PR #57.
+
+### 210 — free-list links raw and unchecked outside `hardened`: CLOSED (2026-10-16)
+
+- **Status:** CLOSED by R6-T06 — non-hardened pops validate every continuation once per link: below the segment base, inside metadata, at/past `bump`, at/after `SEGMENT` (the former `as u32` truncation) or not `MIN_BLOCK`-aligned → `fatal`. Class-stride divisibility of a link stays hardened-only (`valid_free_node`): in the default build it cost ~10 Ir per link on the iai A/B gate of PR #57.
+- **Current verdict:** a poisoned `next` aborts instead of issuing an out-of-segment address. Safe-linking and the in-segment forgery residual are item 247.
+- **Next trigger:** none here; see item 247.
+- **Evidence:** `tests/r6_t06_freelist_continuation_bounds.rs`; `docs/agent_reviews_round6/api_security_review.md` R6-SEC-3; PR #57.
+
+### 209 — own-thread small free trusted the caller's `Layout` class: CLOSED (2026-10-16)
+
+- **Status:** CLOSED by R6-T05 — the default build rejects (no-op) an own-thread free whose offset is not a multiple of the supplied class stride (`SizeClasses::divides`); `hardened` additionally checks the owner class map, so an aligned wrong-class start is rejected only there. Owner decision after the PR #57 iai A/B gate: the exact class-map check costs ~33 Ir per free and stays hardened-only.
+- **Current verdict:** interior/misaligned frees are no-ops in every build; aligned wrong-class frees pass in the default build (item 247, README "Honest limitations").
+- **Next trigger:** none here; see item 247.
+- **Evidence:** `tests/r6_t33_t05_own_free_kind_and_class.rs`; `docs/agent_reviews_round6/api_security_review.md` R6-SEC-1; PR #57.
+
 ### 225 — undocumented public tail of the crate-root `AllocCore` (`segment_bases`, ungated static `dbg_*` accessors): CLOSED (2026-10-16)
 
 - **Status:** CLOSED by R6-T38 — without `internals`, `AllocCore::segment_bases` is `pub(crate)` (a cfg-split keeps the same name public in an `internals` build, so existing tests are unchanged); the four stats()-backing accessors are `pub(crate)` with internals-gated `dbg_*` test aliases (`dbg_foreign_or_unroutable_frees`, `dbg_segments_reserved_total`, `dbg_segments_released_total`, `dbg_decommit_count`); the exhaustive gating scanner's stats() ALLOWLIST exceptions were retired. `tests/regression_r6_t38_public_tail_private.rs` pins the E0624 privacy error for `segment_bases` in a build without `internals`.

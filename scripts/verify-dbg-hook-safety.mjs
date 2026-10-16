@@ -153,6 +153,10 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
   "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
   "src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
+  "src/registry/heap_core/diag/queries.rs::dbg_kind_byte_of",
+  // Pure numeric size-class divisibility forwarders (no pointer, no state).
+  "src/alloc_core/segment/segment_layout.rs::dbg_size_class_divides",
+  "src/alloc_core/segment/segment_layout.rs::dbg_size_class_divisor",
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
   "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
   "src/registry/heap_core/diag/queries.rs::dbg_table_count",
@@ -343,6 +347,7 @@ const CURRENT_RESERVATION_HOOK = "src/global/sefer_alloc/diag.rs::dbg_current_re
 const UNSAFE_HOOKS = [
   "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_stamp_segment_id",
   "src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_stamp_kind_byte",
+  "src/registry/heap_core/diag/queries.rs::dbg_stamp_kind_byte",
   "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_unregister",
   "src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle",
   "src/alloc_core/small/alloc_core_small_diag.rs::dbg_drain_freelist_batch",

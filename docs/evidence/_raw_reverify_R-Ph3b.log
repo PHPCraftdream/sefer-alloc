@@ -1,24 +1,24 @@
-E0_METADATA {"id":"R-Ph3b","head":"9e626b895ca3c12e26660aab0a05394bf6c0bd22","tree":"689bb613d596ce9241b7ed06ae15f77727817250","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R-Ph3b","head":"9e626b895ca3c12e26660aab0a05394bf6c0bd22","tree":"689bb613d596ce9241b7ed06ae15f77727817250","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3b.json","recipe_sha256":"578c84978f9b2474ba34f90c0c2ce80b49de3dd29a9c1d594005c91f60e5aa06","registry_activation_hash":"4f9d7ab9e0110b8c82f4b4e52cc5138060e4a9369ce090586743e6a1ebff98ad"}
+E0_METADATA {"id":"R-Ph3b","head":"8fdd9213778d7814c57a873befbab1e7fe6560bb","tree":"a1e763e01c70d030df4a216f6887ceefed9a7208","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R-Ph3b","head":"8fdd9213778d7814c57a873befbab1e7fe6560bb","tree":"a1e763e01c70d030df4a216f6887ceefed9a7208","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R-Ph3b.json","recipe_sha256":"578c84978f9b2474ba34f90c0c2ce80b49de3dd29a9c1d594005c91f60e5aa06","registry_activation_hash":"4f9d7ab9e0110b8c82f4b4e52cc5138060e4a9369ce090586743e6a1ebff98ad"}
 
 E0_STEP {"id":"R-Ph3b","kind":"baseline","name":"kind-aware entries baseline under medium-classes","argv":["cargo","test","--locked","--features","production internals bench-internals medium-classes","--test","r11_ph3b_kind_aware_entries"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. [0-9]+ passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 2.04s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 2.21s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/deps/r11_ph3b_kind_aware_entries-ca0c9bf644ba1804)
 
 running 6 tests
 test alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size ... ok
-test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
-test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
 test fallback_served_blocks_freed_by_another_thread_keep_their_kind ... ok
+test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
+test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
 test realloc_oom_returns_null_and_leaves_the_old_block_intact ... ok
 test realloc_crosses_the_boundary_in_step_with_the_header_kind ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
@@ -27,7 +27,7 @@ E0_STEP {"id":"R-Ph3b","kind":"mutant","name":"promoted-Large branch ignores Blo
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 2.04s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 2.21s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/deps/r11_ph3b_kind_aware_entries-ca0c9bf644ba1804)
@@ -40,26 +40,26 @@ Caused by:
   process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/r11_ph3b_kind_aware_entries-ca0c9bf644ba1804 promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout --exact` (signal: 6, SIGABRT: process abort signal)
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R-Ph3b","kind":"restored","sha256":"4b01af4b8d3c5535f585f882507ac03cfc50d8ebd1054959d913e196af02b04e"}
+E0_METADATA {"id":"R-Ph3b","kind":"restored","sha256":"08108b14f99dc9e8949085fcdf6740d6db1012ace727e0d9002522df7173b930"}
 
 E0_STEP {"id":"R-Ph3b","kind":"restored-baseline","name":"kind-aware entries baseline under medium-classes","argv":["cargo","test","--locked","--features","production internals bench-internals medium-classes","--test","r11_ph3b_kind_aware_entries"],"env":{},"expect":{"exit":0,"stdoutRegex":["test result: ok. [0-9]+ passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 2.06s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 2.44s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph3b_kind_aware_entries.rs (target/debug/deps/r11_ph3b_kind_aware_entries-ca0c9bf644ba1804)
 
 running 6 tests
-test fallback_served_blocks_freed_by_another_thread_keep_their_kind ... ok
-test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
-test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
 test alloc_alloc_zeroed_and_own_dealloc_agree_on_one_kind_per_size ... ok
-test realloc_crosses_the_boundary_in_step_with_the_header_kind ... ok
+test matching_layout_free_keeps_the_small_route_across_a_same_class_realloc ... ok
+test promoted_then_grown_large_block_routes_its_free_by_kind_not_by_layout ... ok
+test fallback_served_blocks_freed_by_another_thread_keep_their_kind ... ok
 test realloc_oom_returns_null_and_leaves_the_old_block_intact ... ok
+test realloc_crosses_the_boundary_in_step_with_the_header_kind ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}

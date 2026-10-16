@@ -783,6 +783,7 @@ item-scoped regions.
 | [`src/alloc_core/segment/segment_directory/segment_directory_impl.rs`](src/alloc_core/segment/segment_directory/segment_directory_impl.rs) | 2 | `init_node_ids_raw` variants — raw fixup of not-yet-valid sidecar storage. |
 | [`src/registry/heap_core/free/dealloc_batch.rs`](src/registry/heap_core/free/dealloc_batch.rs) | 8 | Batch free caller-pointer boundaries and internal scalar/flush calls. |
 | [`src/registry/heap_core/diag/diag_probes.rs`](src/registry/heap_core/diag/diag_probes.rs) | 8 | `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) / `dbg_clear_magazine_on_hit` (R29-10, task #441, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract) — plus the R29-3 `dbg_decomp_decommit_payload`/`dbg_decomp_recommit_payload` (R31-6, task #469) delegations (gated `bench-internals`); see the R24-6/R25-1 note below the table. (`dbg_decomp_release`'s delegation is `unsafe fn` again as of R31-15/task #486 — forwards the identical `# Safety` contract; see the `alloc_core_small_pool/decomp_hooks.rs` row above for why.) Plus two task #504 (F11 step 2) delegations, `dbg_decomp_win_commit_only`/`dbg_decomp_win_release_only` (gated `bench-internals`), forwarding their identical `# Safety` contracts from the `alloc_core_small_pool/decomp_hooks.rs` originals. |
+| [`src/registry/heap_core/diag/queries.rs`](src/registry/heap_core/diag/queries.rs) | 1 | `dbg_stamp_kind_byte` (R6-T33, gated `alloc-global` + `internals`) — `unsafe fn` delegation to `AllocCore::dbg_stamp_kind_byte` (raw segment-header write), forwarding its `# Safety` contract; used by the corrupted-kind regression test. |
 | [`src/registry/heap_core/free/dealloc.rs`](src/registry/heap_core/free/dealloc.rs) | 2 | `dealloc` — `unsafe fn` boundary (caller-pointer contract) + internal call-site block into `AllocCore::dealloc` |
 | [`src/registry/heap_core/free/dealloc_own_base.rs`](src/registry/heap_core/free/dealloc_own_base.rs) | 4 | `dealloc_own_thread[_with_base]` — internal call-site blocks into `AllocCore::flush_class` / `AllocCore::dealloc` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc` — this file hosts that routing block today) + R1-01's free-side byte-budget-cap call into `AllocCore::flush_class` (a single-block batch, once a class's magazine reaches its D3 refill-byte-budget cap) |
 | [`src/registry/heap_core/free/realloc.rs`](src/registry/heap_core/free/realloc.rs) | 1 | `realloc` — `unsafe fn` boundary (caller-pointer contract); its move leg was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary |
@@ -796,7 +797,7 @@ item-scoped regions.
 | [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **27** tier-1 module-level seams (21 in
-`src/`, 6 in `crates/`) plus **96** tier-2 item-scoped allows across **30**
+`src/`, 6 in `crates/`) plus **97** tier-2 item-scoped allows across **31**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1417,7 +1418,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **416 integration test files**,
+needs its acceptance run. The present tree contains **419 integration test files**,
 **96 example binaries**, **33 benches**, and **19 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1427,7 +1428,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (416 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (419 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (96 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (33 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1684,6 +1685,11 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   granule-aligned foreign free whose offset equals a live block's start is
   indistinguishable from a valid remote free of that block and is honored
   (block starts carry no owner-thread identity).
+
+- **Own-thread small frees have an asymmetric class check.** The default path
+  rejects offsets not divisible by the supplied class stride, but a coincident-
+  divisible wrong-class free is rejected only by `hardened`'s exact owner-class
+  check; that check's owner decision after the PR #57 iai A/B was ~33 Ir/free.
 
 - **Single-thread small-class hot path is ~1.2–2× behind `mimalloc`.** The
   flamegraph at [`docs/PROFILE_FLAMEGRAPHS.md §1`](docs/PROFILE_FLAMEGRAPHS.md)
