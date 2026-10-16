@@ -110,7 +110,8 @@ impl SmallSidecar {
     /// the leaf-pointer Acquire load.
     pub(crate) fn class_matches(&self, offset: u32, class: u8) -> bool {
         let offset = offset as usize;
-        offset < SEGMENT && self.classes.encoded(offset / MIN_BLOCK) == usize::from(class) + 1
+        offset < SEGMENT
+            && usize::from(self.classes.encoded(offset / MIN_BLOCK)) == usize::from(class) + 1
     }
 
     #[cfg(feature = "internals")]
