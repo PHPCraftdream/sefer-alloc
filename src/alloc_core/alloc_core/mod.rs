@@ -70,6 +70,12 @@ pub(crate) use sidecar_drain::{
     BACKGROUND_INGRESS_STEP_CALLS, SIDECAR_INGRESS_DRAIN_CALLS, SIDECAR_INGRESS_RECORDS_CONSUMED,
 };
 
+/// Shared Small-drain finalization result and the discovery drain's bench
+/// observer, re-exported for `alloc_core::small`'s discovery drain (see
+/// `sidecar_drain.rs`).
+#[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+pub(crate) use sidecar_drain::{DiscoverySummaryObserver, DrainEnd};
+
 /// Group module: object lifecycle — construction config resolution, bootstrap
 /// invocation, and teardown.
 #[path = "lifecycle.rs"]
