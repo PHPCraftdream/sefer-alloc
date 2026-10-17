@@ -111,6 +111,8 @@ impl AllocCore {
 
     /// Return a shared reference to the materialised directory sidecar, or
     /// `None` if not yet materialised.
+    // R6-T16: internals diag readers (and the non-numa sidecar path) only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline]
     #[allow(unsafe_code)] // R14-9 (task #294): calls the `unsafe fn sidecar::deref`
                           // boundary. Sound: `self.directory_sidecar` is just proven

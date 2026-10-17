@@ -95,6 +95,7 @@ impl HeapCore {
     /// on (the increment sites are gated); the accessor itself is always
     /// compiled (gated on `alloc-core`, same as the static) so callers need
     /// no `#[cfg]`.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-core")]
     #[must_use]
@@ -120,6 +121,7 @@ impl HeapCore {
     /// is NOT an alternate/bypass implementation of the check; it is the
     /// production check itself, exposed read-only for isolated timing. No
     /// production call site is changed by adding this hook.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
     pub fn dbg_contains_base(&mut self, base: *mut u8) -> bool {

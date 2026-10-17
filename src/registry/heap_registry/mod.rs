@@ -32,7 +32,7 @@ pub use stack::pick_with_hint_spill;
 #[doc(hidden)]
 pub use stack::pick_with_saturation;
 
-pub use claim::{HeapRegistry, MaintenanceLease};
+pub use claim::HeapRegistry;
 // Ph4a (task #2091): test-only exposure of the claim lease (`internals`
 // builds only; the struct itself is `pub(crate)` without `internals`).
 // Ph4b (#2092): without `internals` the re-export stays crate-visible so
@@ -46,6 +46,10 @@ pub(crate) use claim::HeapLease;
 // magazine/large-cache hit counters, bound by `global::fallback` at init
 // (there is no registry slot to bind for it) — see `counters::
 // FALLBACK_TCACHE_HITS`'s doc comment.
+#[cfg_attr(
+    not(all(feature = "alloc-decommit", not(feature = "fastbin"))),
+    allow(unused_imports)
+)]
 #[cfg(feature = "alloc-decommit")]
 pub use counters::large_cache_hits_total;
 #[cfg(all(
@@ -54,6 +58,10 @@ pub use counters::large_cache_hits_total;
     feature = "alloc-decommit"
 ))]
 pub use counters::tcache_and_large_cache_hits_total;
+#[cfg_attr(
+    not(all(feature = "fastbin", not(feature = "alloc-decommit"))),
+    allow(unused_imports)
+)]
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub use counters::tcache_hits_total;
 #[cfg(feature = "alloc-decommit")]
@@ -61,6 +69,7 @@ pub(crate) use counters::FALLBACK_LARGE_CACHE_HITS;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use counters::FALLBACK_TCACHE_HITS;
 pub use counters::{config_conflicts_total, heaps_claimed_high_water};
+#[cfg(feature = "internals")]
 pub use counters::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
 // R2-11 (task #2013): test-only hook to deterministically reproduce the
 // `bump_count`-then-`slot()` window `walk_initialised_slots` used to race

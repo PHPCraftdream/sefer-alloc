@@ -7,6 +7,7 @@ use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 use core::mem::size_of;
 
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use harness::SegmentHashHarness;
 
@@ -40,6 +41,12 @@ pub use harness::SegmentHashHarness;
 /// static itself is always compiled so the accessor has a stable definition
 /// regardless of the rest of the feature set. Relaxed ordering — a
 /// diagnostic count, not a synchronization primitive.
+// R6-T16: written by the alloc-stats-gated `hash_remove` probe and read by
+// the internals diag accessor; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static HASH_REMOVE_MAX_SCAN_STEPS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -48,6 +55,7 @@ pub(crate) static HASH_REMOVE_MAX_SCAN_STEPS: core::sync::atomic::AtomicU64 =
 /// test) start from a clean high-water mark instead of accumulating across
 /// the whole process lifetime.
 #[doc(hidden)]
+#[cfg(feature = "internals")]
 pub fn reset_hash_remove_max_scan_steps() {
     HASH_REMOVE_MAX_SCAN_STEPS.store(0, core::sync::atomic::Ordering::Relaxed);
 }
@@ -63,6 +71,16 @@ pub fn reset_hash_remove_max_scan_steps() {
 /// the diagnostic accessor has a stable definition; stays at 0 unless this
 /// branch is ever actually taken. Relaxed ordering — a diagnostic count, not
 /// a synchronization primitive.
+// R6-T16: bumped by the alloc-decommit-gated `recycle` anomaly branch and
+// read by the internals diag accessor; suppressed where both are absent.
+#[cfg_attr(
+    not(any(
+        feature = "alloc-decommit",
+        feature = "alloc-xthread",
+        feature = "internals"
+    )),
+    allow(dead_code)
+)]
 pub(crate) static SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -706,7 +724,6 @@ impl SegmentTable {
     /// The high-water mark: the number of slots ever written (including
     /// currently-NULL recyclable slots). The number of LIVE (non-NULL)
     /// segments is `self.bases().count()`.
-    #[allow(dead_code)] // Substrate introspection; tests / Phase 9 use it.
     pub(crate) fn count(&self) -> u32 {
         self.count
     }
@@ -736,6 +753,15 @@ impl SegmentTable {
     /// WITHOUT filling (the cache never holds an absent base). Requires `&mut
     /// self` for the fill; all hot free-path callers (`dealloc`,
     /// `dealloc_routing`, `realloc`) already hold `&mut`.
+    // R6-T16: live under `alloc-global`/internals/bench builds only.
+    #[cfg_attr(
+        not(any(
+            feature = "alloc-global",
+            feature = "internals",
+            feature = "bench-internals"
+        )),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
         self.canonical_base_of_mut(base).is_some()
@@ -759,15 +785,6 @@ impl SegmentTable {
         self.own_cache[index] = (key.addr(), root);
         Some(root)
     }
-    /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
-    /// (no fill), for `&self` contexts (test-only `dbg_*` accessors, census).
-    /// Same result as `contains_base` — it just skips the remember-proven
-    /// fill. Kept separate so the read-only surface does not require `&mut`.
-    #[inline(always)]
-    pub(crate) fn contains_base_ro(&self, base: *mut u8) -> bool {
-        self.canonical_base_of(base).is_some()
-    }
-
     /// R2-05 (independent src review round 2, task #2007): like
     /// [`contains_base_ro`](Self::contains_base_ro), but returns the STORED,
     /// canonical segment-base pointer — the exact `*mut u8` THIS table
@@ -808,38 +825,6 @@ impl SegmentTable {
             return Some(cached_root);
         }
         self.hash_find(base)
-    }
-
-    /// MEASUREMENT-ONLY (R23-3, task #372): call the Tier-2 open-addressing
-    /// probe DIRECTLY, unconditionally skipping the Tier-1 `own_cache` check
-    /// that `contains_base`/`contains_base_ro` always try first. This exists
-    /// solely so `benches/perf_gate_iai.rs` can isolate Tier-2's own
-    /// instruction cost, which `contains_base`'s existing Tier-1-hit-shaped
-    /// benches (R22-17/R23-1) cannot show: this crate's benched workloads
-    /// stay within `OWN_CACHE_SIZE` concurrently-hot segments, so every
-    /// `contains_base` call after the first is a Tier-1 hit and Tier-2 never
-    /// runs. `cache_index(base) = (base >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)`
-    /// depends only on the segment's OS-assigned virtual address
-    /// (`mmap`/`VirtualAlloc` decide it, not this allocator), so a benchmark
-    /// cannot portably force a Tier-2 hit just by touching more than
-    /// `OWN_CACHE_SIZE` distinct segments — the OS
-    /// might still lay them out so all their cache indices collide or spread
-    /// favourably. Calling `hash_contains` directly sidesteps that
-    /// non-determinism entirely: it measures Tier-2's real, unconditional
-    /// cost on the exact same data the production probe would (a genuinely
-    /// registered base), regardless of address layout.
-    ///
-    /// This is the SAME `hash_contains` production routine `contains_base`
-    /// falls through to on a Tier-1 miss — not an alternate/reimplemented
-    /// probe — just invoked without the Tier-1 guard in front of it. It
-    /// takes `&self` (no cache fill), matching `contains_base_ro`'s
-    /// resource-cheap surface — a bench does not need `&mut` to measure this.
-    /// Unconditional (no feature gate), mirroring `contains_base`/
-    /// `contains_base_ro` immediately above, which are themselves ungated.
-    #[doc(hidden)]
-    #[inline(always)]
-    pub(crate) fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
-        self.hash_contains(base)
     }
 
     /// PERF-P2 (Э3): direct-mapped cache index for `base`. Segments are

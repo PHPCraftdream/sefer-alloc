@@ -23,6 +23,12 @@ impl AllocCore {
     /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees);
     /// see [`FOREIGN_OR_UNROUTABLE_FREES`]. A relaxed load. Reads `0` under a
     /// bare `alloc-core` build unless `alloc-stats` is on.
+    // R6-T16: backs AllocStats::stats() (alloc-global) and the internals
+    // dbg aliases below; suppressed where both are absent.
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     #[cfg(feature = "alloc-core")]
     pub(crate) fn foreign_or_unroutable_frees() -> u64 {
         FOREIGN_OR_UNROUTABLE_FREES.load(core::sync::atomic::Ordering::Relaxed)
@@ -34,6 +40,11 @@ impl AllocCore {
     /// with `AllocCore::segments_released_total`; the difference is
     /// the current process-wide live segment count. Always compiled (not
     /// feature-gated) — every build reserves segments via `os::Segment::reserve`.
+    // R6-T16: see `foreign_or_unroutable_frees`'s note.
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     #[must_use]
     pub(crate) fn segments_reserved_total() -> u64 {
         crate::alloc_core::os::segments_reserved_total()
@@ -42,6 +53,11 @@ impl AllocCore {
     /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
     /// releases since process start. Monotonic, relaxed. See
     /// `AllocCore::segments_reserved_total`.
+    // R6-T16: see `foreign_or_unroutable_frees`'s note.
+    #[cfg_attr(
+        not(any(feature = "alloc-global", feature = "internals")),
+        allow(dead_code)
+    )]
     #[must_use]
     pub(crate) fn segments_released_total() -> u64 {
         crate::alloc_core::os::segments_released_total()

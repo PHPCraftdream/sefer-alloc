@@ -49,13 +49,14 @@ pub use sefer_alloc::SeferAlloc;
 // regression test (`tests/regression_fallback_panic_lock.rs`) reach the
 // otherwise-private `fallback` spinlock behaviour. Same established pattern as
 // `tls_heap::dbg_teardown_then_resolve_is_fallback` above; not stable API.
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "internals"))]
 #[doc(hidden)]
 pub use fallback::dbg_panic_in_with_heap_releases_lock;
 // `#[doc(hidden)]` test-only hook (R6-OPT-P0-1): lets
 // `tests/dealloc_only_no_bind_torn.rs` observe whether a TORN thread's
 // dealloc took the fallback spinlock — see `LOCK_ACQUISITIONS`'s doc comment
 // in `fallback.rs`. Same established test-only-export pattern.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use fallback::dbg_fallback_lock_acquisitions;
 // `#[doc(hidden)]` test-only hooks + protocol constants (R34-17/task #536):

@@ -44,7 +44,11 @@ pub(crate) mod bitmap;
 #[path = "segment_directory/directory_stats.rs"]
 pub(crate) mod directory_stats;
 /// Non-intrusive remote-free bitmap ingress used by production Small sidecars.
-#[allow(dead_code)]
+// R6-T16: its consumers (the Small sidecar drain and registry-side routing)
+// are all `alloc-xthread`/`alloc-global`-gated, so the subtree is dead only
+// under a bare `alloc-core` build — scope the suppression to exactly that
+// instead of an unconditional allow.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 pub(crate) mod remote_bitmap;
 /// The per-segment geometry tables (`SegmentLayout`), moved unchanged.
 pub(crate) mod segment_layout;

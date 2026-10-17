@@ -55,6 +55,9 @@ pub(crate) use active_kind_index::ActiveKindIndex;
 
 mod active_kind_ops;
 
+// R6-T16: test-only hash harness (`SegmentHashHarness`); no production
+// caller, so it compiles only under `internals`.
+#[cfg(feature = "internals")]
 #[path = "harness.rs"]
 mod harness;
 
@@ -75,4 +78,5 @@ mod route_slots_observers;
 
 #[path = "segment_table_impl.rs"]
 mod segment_table_impl;
+#[cfg_attr(not(feature = "internals"), allow(unused_imports))] // pub items are internals-only
 pub use segment_table_impl::*;

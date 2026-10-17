@@ -417,7 +417,10 @@ pub(crate) unsafe fn reserve_zeroed_with<T>(
 /// pattern as [`reserve`]'s own `#[cfg_attr]` above.
 #[inline]
 #[cfg_attr(
-    not(any(feature = "alloc-segment-directory", feature = "large-cache-extended")),
+    not(any(
+        all(feature = "alloc-segment-directory", not(feature = "numa-aware")),
+        feature = "large-cache-extended"
+    )),
     allow(dead_code)
 )]
 pub(crate) unsafe fn deref<T, O>(p: *const T, _owner: &O) -> &T {

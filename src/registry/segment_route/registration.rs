@@ -18,6 +18,7 @@ impl RouteRegistration<'_> {
     pub fn root(&self) -> *mut u8 {
         self.entry.root()
     }
+    #[cfg(feature = "internals")]
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }
@@ -53,23 +54,35 @@ impl RouteRegistration<'_> {
         self.large_state()?.claim_pending()
     }
 
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn cache_large_consumed(&self, generation: u64) -> bool {
         self.large_state()
             .is_some_and(|state| state.cache_consumed(generation))
     }
 
     /// Leaves the reservation INITIALIZING until owner reset completes.
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn begin_large_reuse(&self) -> Option<u64> {
         self.large_state()?.begin_reuse()
     }
 
     /// Owner-only. Caller guarantees layout/table reset is complete; this
     /// substrate changes only the sidecar phase, not reservation bytes.
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn finish_large_reuse_after_reset(&self, generation: u64) -> bool {
         self.large_state()
             .is_some_and(|state| state.finish_reuse(generation))
     }
 
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn release_cached_large(&self, generation: u64) -> bool {
         self.large_state()
             .is_some_and(|state| state.release_cached(generation))

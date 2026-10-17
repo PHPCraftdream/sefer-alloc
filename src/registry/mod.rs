@@ -54,6 +54,13 @@ pub use heap_core::HeapCore;
 pub use heap_registry::config_conflicts_total;
 #[doc(hidden)]
 pub use heap_registry::heaps_claimed_high_water;
+// R6-T16: the lib-side consumer reads this only in the
+// `alloc-decommit ∧ ¬fastbin` branch of `cache_hit_totals`; suppress the
+// unused-import lint exactly there instead of narrowing the re-export's cfg.
+#[cfg_attr(
+    not(all(feature = "alloc-decommit", not(feature = "fastbin"))),
+    allow(unused_imports)
+)]
 #[cfg(feature = "alloc-decommit")]
 #[doc(hidden)]
 pub use heap_registry::large_cache_hits_total;
@@ -64,6 +71,13 @@ pub use heap_registry::large_cache_hits_total;
 ))]
 #[doc(hidden)]
 pub use heap_registry::tcache_and_large_cache_hits_total;
+// R6-T16: the lib-side consumer reads this only in the
+// `fastbin ∧ ¬alloc-decommit` branch of `cache_hit_totals`; suppress the
+// unused-import lint exactly there instead of narrowing the re-export's cfg.
+#[cfg_attr(
+    not(all(feature = "fastbin", not(feature = "alloc-decommit"))),
+    allow(unused_imports)
+)]
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 pub use heap_registry::tcache_hits_total;
@@ -73,4 +87,5 @@ pub use heap_registry::HeapLease;
 #[doc(hidden)]
 pub use heap_registry::HeapRegistry;
 #[doc(hidden)]
+#[cfg_attr(not(feature = "internals"), allow(unused_imports))] // tests/registry_basic.rs
 pub use heap_slot::HeapSlot;

@@ -22,6 +22,12 @@ impl HeapCore {
     /// cross-thread diagnostic read (see the field's doc comment). Used by
     /// [`crate::registry::heap_registry::tcache_hits_total`] to aggregate across every
     /// LIVE slot into the process-wide view `stats()` exposes.
+    // R6-T16: internals-test reader only — the stats aggregator reads the
+    // slot-resident field directly, not this method.
+    #[cfg_attr(
+        not(any(feature = "alloc-stats", feature = "internals")),
+        allow(dead_code)
+    )]
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[doc(hidden)]
     #[must_use]
@@ -120,7 +126,7 @@ impl HeapCore {
     /// teardown-trim primitive. Used by decommit-soak tests to drain
     /// magazine-buffered blocks before asserting decommit invariants.
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_flush_all(&mut self) {
         self.flush_all_tcache();
     }

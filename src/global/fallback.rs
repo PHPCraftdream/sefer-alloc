@@ -99,7 +99,7 @@ static DBG_INJECT_FALLBACK_OOM: AtomicBool = AtomicBool::new(false);
 /// Exists so a test can prove a negative — "the fallback spinlock was NOT
 /// taken for this dealloc" — which is otherwise unobservable from outside
 /// this module (`LOCK` itself is private). See
-/// [`dbg_fallback_lock_acquisitions`] and
+/// `dbg_fallback_lock_acquisitions` and
 /// `tests/dealloc_only_no_bind_torn.rs`'s TORN-thread test, which snapshots
 /// this counter immediately before and after a TORN-thread dealloc of a
 /// registry-owned block and asserts it did not move. Fallback-owned blocks
@@ -137,6 +137,10 @@ static LOCK: AtomicBool = AtomicBool::new(false);
 /// genuinely out of memory and returns null. This is the ONLY path that can
 /// yield null, and it is the correct M10 outcome (true OOM, not a missing
 /// heap).
+// R6-T16: production enters the fallback via `with_heap_config` /
+// `try_with_heap`; the plain forms serve the `not(alloc-decommit)` arm and
+// the internals probes.
+#[cfg_attr(not(feature = "internals"), allow(dead_code))]
 #[must_use]
 #[cfg(feature = "alloc-decommit")]
 pub fn heap_ptr() -> *mut HeapCore {
@@ -343,6 +347,10 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
 ///
 /// Returns `f`'s result, or `None` if the fallback heap could not be
 /// initialised, or a contended wait was abandoned during process shutdown.
+// R6-T16: production enters the fallback via `with_heap_config` /
+// `try_with_heap`; the plain forms serve the `not(alloc-decommit)` arm and
+// the internals probes.
+#[cfg_attr(not(feature = "internals"), allow(dead_code))]
 pub fn with_heap<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HeapCore) -> R,
@@ -642,7 +650,7 @@ impl Drop for InitStateGuard {
 /// lock were wedged the second `with_heap` would hang here (the test wraps this
 /// in its own bounded watchdog thread, so a regression surfaces as a timeout
 /// rather than a literal forever-hang).
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "internals"))]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
@@ -669,6 +677,7 @@ pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
 /// spinlock acquisitions since process start. A test proves "this dealloc did
 /// NOT take the fallback lock" by snapshotting this value immediately before
 /// and after the call under test and asserting it did not move.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_fallback_lock_acquisitions() -> u64 {

@@ -698,7 +698,6 @@ impl AllocCore {
     /// retained in the pool (Mechanism 2, task #51), then self-heal a stale
     /// directory MISS if this scan reached `base` via the periodic
     /// re-validation or rescue path (R8-2, task #215 / R9-8, task #230).
-    #[allow(unused_variables)]
     #[inline]
     fn finalize_hit(
         &mut self,
@@ -706,6 +705,13 @@ impl AllocCore {
         class_idx: usize,
         _context: DirectoryCandidateContext,
     ) {
+        // R6-T16: pointwise shims replacing the former fn-level
+        // `allow(unused_variables)` — each parameter is consumed only under
+        // the features named in its shim's cfg.
+        #[cfg(not(any(feature = "alloc-decommit", feature = "alloc-segment-directory")))]
+        let _ = base;
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        let _ = class_idx;
         // Round 12 O-4 (data only): exactly one outcome per routed miss scan.
         #[cfg(feature = "alloc-stats")]
         match _context.routed_scan_was_nonempty {

@@ -522,6 +522,7 @@ impl AllocCore {
     /// via `SegmentMeta` for the freelist walk, then calls `publish_empty` on
     /// the directory sidecar (if materialised) when the drain empties the list.
     #[inline]
+    #[cfg(feature = "internals")]
     pub(in crate::alloc_core) fn drain_freelist_batch(
         &mut self,
         segment: *mut u8,
@@ -855,6 +856,7 @@ impl AllocCore {
     // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
     // unused without `page-map-diag`.
     #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
+    #[cfg(feature = "internals")]
     pub(in crate::alloc_core) fn carve_batch(
         &mut self,
         class_idx: usize,

@@ -7,7 +7,6 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind};
 
 impl SegmentHeader {
     /// Owner-only, field-specific kind read from the canonical table root.
-    #[allow(dead_code)] // Used by Phase 9+ cross-thread routing; kept for that.
     #[inline(always)]
     pub(crate) fn kind_at(base: *mut u8) -> SegmentKind {
         let off = core::mem::offset_of!(SegmentHeader, kind);
@@ -254,7 +253,7 @@ impl SegmentHeader {
     /// `AllocCore::dbg_stamp_segment_id` to exercise `SegmentTable::unregister`'s
     /// defensive `slots[id] == base` guard against a corrupted `segment_id`
     /// (see `tests/segment_table_o1.rs`). Never called on any production path.
-    #[allow(dead_code)] // TEST-ONLY hook, see `///` doc above (task #135)
+    #[cfg(feature = "internals")]
     pub(crate) fn set_segment_id_at(base: *mut u8, id: u32) {
         let off = core::mem::offset_of!(SegmentHeader, segment_id);
         Node::write_u32(Node::offset(base, off) as *mut u32, id);

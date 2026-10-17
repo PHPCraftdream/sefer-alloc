@@ -14,6 +14,7 @@ impl RoutePin {
     pub fn kind(&self) -> RouteKind {
         self.entry.kind()
     }
+    #[cfg(feature = "internals")]
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
     }

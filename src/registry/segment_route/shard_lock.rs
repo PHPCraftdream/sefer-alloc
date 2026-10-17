@@ -99,6 +99,10 @@ impl<T> ShardLock<T> {
         }
     }
 
+    // R6-T16: its compiled lib consumers are the bench-gated directory
+    // probes; the standalone auto-trait tests include this file in their own
+    // crate and do not lint this one.
+    #[cfg_attr(not(feature = "bench-internals"), allow(dead_code))]
     pub(super) fn lock(&self) -> ShardGuard<'_, T> {
         let mut spins = 0u32;
         loop {

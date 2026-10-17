@@ -17,9 +17,9 @@ use core::sync::atomic::Ordering;
 
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
-use super::stack::{
-    pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot, scan_free_slot,
-};
+#[cfg(feature = "internals")]
+use super::stack::scan_free_slot;
+use super::stack::{pick_with_hint_spill, scan_claim_recovery_free, scan_claimable_slot};
 use crate::alloc_core::fatal::fatal;
 use crate::registry::bootstrap::{ensure, Registry, FREE_SLOTS, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
@@ -138,6 +138,7 @@ impl HeapRegistry {
     ///
     /// Ph4c (ADR addendum §2.6): crate-only after the surface narrowing;
     /// external tests use the `internals`-gated `dbg_try_maintenance` alias.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[must_use]
     pub(crate) fn try_maintenance() -> Option<MaintenanceLease> {
@@ -547,6 +548,7 @@ pub struct MaintenanceLease {
 
 impl MaintenanceLease {
     /// Stable slot index while this lease is held.
+    #[cfg(feature = "internals")]
     pub fn slot_index(&self) -> usize {
         self.index
     }
@@ -641,6 +643,9 @@ pub struct HeapLease {
     /// Snapshot taken on the successful claim (`fetch_add` result + 1).
     /// Numeric observer only — NEVER a coherence gate on the hot path
     /// (addendum: production reads of `HeapSlot::generation` are none).
+    // R6-T16: written on every claim; read only by the internals-gated
+    // `generation()` observer.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     generation: u64,
     _not_send: PhantomData<*mut ()>,
 }
@@ -649,14 +654,14 @@ impl HeapLease {
     /// Stable slot index while this lease is held (numeric observer).
     /// Ph4a (#2091): `#[doc(hidden)] pub` (same gating as the struct) so
     /// `tests/` probes can read it.
-    #[allow(dead_code)] // test/diagnostic observer (Ph4c migrates tests onto it)
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn slot_index(&self) -> u32 {
         self.index
     }
 
     /// Claim-time generation snapshot (numeric observer only, no gating).
-    #[allow(dead_code)]
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     pub fn generation(&self) -> u64 {
         self.generation

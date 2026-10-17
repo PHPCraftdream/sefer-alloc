@@ -110,6 +110,12 @@ pub(in crate::alloc_core) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic:
 /// (`WASTED_DIRTY_DRAINS`, `FOREIGN_OR_UNROUTABLE_FREES`); the static itself is
 /// always compiled so [`AllocCore::dbg_large_zero_pass_count`](crate::alloc_core::alloc_core::AllocCore::dbg_large_zero_pass_count) has a stable
 /// definition regardless of the feature set.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -139,6 +145,12 @@ pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
 /// additionally gated on `virgin-zero-skip` so the counter reads exactly 0 in
 /// a build without the feature, keeping its behaviour indistinguishable from
 /// "the feature doesn't exist" absent explicit opt-in.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static SMALL_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -164,6 +176,12 @@ pub(crate) static SMALL_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
 /// compiled so the accessor has a stable definition regardless of the rest of
 /// the feature set. Relaxed ordering — a diagnostic count, not a
 /// synchronization primitive.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static OPT_H_ATTEMPTS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -193,6 +211,12 @@ pub(crate) static OPT_H_ATTEMPTS: core::sync::atomic::AtomicU64 =
 ///
 /// Read via [`AllocCore::dbg_opt_h_hits`](crate::alloc_core::alloc_core::AllocCore::dbg_opt_h_hits). Reads 0 unless `alloc-stats` is on
 /// (same gating convention as [`OPT_H_ATTEMPTS`]). Relaxed ordering.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 // ===========================================================================
@@ -220,6 +244,12 @@ pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic
 /// `large-reserved-capacity` reserved-VA path). Bumped at BOTH `return
 /// Some(ptr)` sites in [`AllocCore::realloc_inplace_fast_path_known_base`](crate::alloc_core::alloc_core::AllocCore::realloc_inplace_fast_path_known_base)'s Large branch.
 /// Read via [`AllocCore::dbg_reloc_inplace_large_count`](crate::alloc_core::alloc_core::AllocCore::dbg_reloc_inplace_large_count).
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static RELOC_INPLACE_LARGE_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -227,6 +257,12 @@ pub(crate) static RELOC_INPLACE_LARGE_CALLS: core::sync::atomic::AtomicU64 =
 /// same-class in-place reallocs that succeeded via OPT-F (the block stayed in
 /// its own size class, no copy). Bumped at the `return Some(ptr)` site in the
 /// Small branch. Read via [`AllocCore::dbg_reloc_inplace_small_count`](crate::alloc_core::alloc_core::AllocCore::dbg_reloc_inplace_small_count).
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static RELOC_INPLACE_SMALL_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -237,6 +273,12 @@ pub(crate) static RELOC_INPLACE_SMALL_CALLS: core::sync::atomic::AtomicU64 =
 /// Small-cross-class, and other-kind. Read via
 /// [`AllocCore::dbg_reloc_fastpath_decline_count`](crate::alloc_core::alloc_core::AllocCore::dbg_reloc_fastpath_decline_count). By construction
 /// `inplace_large + inplace_small + decline == total_fast_path_calls`.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static RELOC_FASTPATH_DECLINE_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -273,6 +315,12 @@ pub(crate) static RELOC_FASTPATH_DECLINE_CALLS: core::sync::atomic::AtomicU64 =
 /// since process start. Read via [`AllocCore::dbg_promotion_count`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_count). Relaxed
 /// ordering — a diagnostic count, not a synchronization primitive. Reads 0
 /// unless `bench-internals` is on.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static PROMOTION_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -280,6 +328,12 @@ pub(crate) static PROMOTION_COUNT: core::sync::atomic::AtomicU64 =
 /// [`PROMOTION_COUNT`] (sum of `old_layout.size()` per event). `sum / count`
 /// is the mean copied bytes per promotion. Read via
 /// [`AllocCore::dbg_promotion_bytes_sum`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_sum). Relaxed.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static PROMOTION_BYTES_SUM: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -287,12 +341,24 @@ pub(crate) static PROMOTION_BYTES_SUM: core::sync::atomic::AtomicU64 =
 /// promotion. Updated via `fetch_min` per event. Read via
 /// [`AllocCore::dbg_promotion_bytes_min`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_min). Relaxed. Initial `u64::MAX` reads
 /// as "no promotion has occurred yet" — the accessor maps that to 0.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static PROMOTION_BYTES_MIN: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(u64::MAX);
 
 /// DIAGNOSTIC (R29-5): largest `old_layout.size()` ever copied by a single
 /// promotion. Updated via `fetch_max` per event. Read via
 /// [`AllocCore::dbg_promotion_bytes_max`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_max). Relaxed.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static PROMOTION_BYTES_MAX: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -301,6 +367,12 @@ pub(crate) static PROMOTION_BYTES_MAX: core::sync::atomic::AtomicU64 =
 /// Read via [`AllocCore::dbg_promotion_bytes_hist`](crate::alloc_core::alloc_core::AllocCore::dbg_promotion_bytes_hist). The buckets are:
 /// `[0,4KiB) [4KiB,16KiB) [16KiB,64KiB) [64KiB,128KiB) [128KiB,256KiB)
 /// [256KiB,512KiB) [512KiB,1MiB) [1MiB,∞)`. Relaxed.
+// R6-T16: written by alloc-stats / build-cfg-gated sites, read by the
+// internals diag accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static PROMOTION_BYTES_HIST: [core::sync::atomic::AtomicU64; 8] = [
     core::sync::atomic::AtomicU64::new(0),
     core::sync::atomic::AtomicU64::new(0),
@@ -371,6 +443,16 @@ medium_promotion_reachable! {
 /// foreign branch when `alloc-stats` is enabled.
 ///
 /// A healthy program keeps this at `0`. Relaxed: diagnostic only.
+// R6-T16: bumped by the alloc-xthread/alloc-stats publish paths and read by
+// the AllocStats backing accessor; suppressed where all are absent.
+#[cfg_attr(
+    not(any(
+        feature = "alloc-xthread",
+        feature = "alloc-stats",
+        feature = "internals"
+    )),
+    allow(dead_code)
+)]
 #[cfg(feature = "alloc-core")]
 pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);

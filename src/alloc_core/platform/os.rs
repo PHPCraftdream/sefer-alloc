@@ -117,6 +117,18 @@ pub(crate) const PAGE: usize = vmem::PAGE;
 /// boundary mid-page. Cost: at most ~64 KiB of extra committed-but-unused
 /// metadata slack per segment in the worst case (negligible against
 /// [`SEGMENT`] = 4 MiB).
+// R6-T16: read by the decommit boundaries, the lazy-commit initial-commit
+// math, and the reserved-capacity grow path; suppressed where all are absent.
+#[cfg_attr(
+    not(any(
+        feature = "alloc-decommit",
+        feature = "small-segment-lazy-commit",
+        feature = "primordial-lazy-commit",
+        feature = "large-reserved-capacity",
+        feature = "internals"
+    )),
+    allow(dead_code)
+)]
 pub(crate) const MAX_REALISTIC_PAGE_SIZE: usize = 1 << 16;
 
 /// Convert an address to the SEGMENT-aligned base it falls within.
@@ -497,21 +509,11 @@ impl Segment {
     }
 
     /// The SEGMENT-aligned usable base of this span, as a `*mut u8`. Non-null,
-    /// valid for [`len`](Self::len) bytes, aligned to `SEGMENT`.
+    /// valid for the span's usable byte length (see the `reserve*`
+    /// constructors), aligned to `SEGMENT`.
     #[must_use]
     pub(crate) fn as_ptr(&self) -> *mut u8 {
         self.0.as_ptr()
-    }
-
-    /// The number of usable bytes at [`as_ptr`](Self::as_ptr). A multiple of
-    /// `SEGMENT` for a [`reserve`](Self::reserve)/[`reserve_lazy`](Self::reserve_lazy)
-    /// span; for a [`reserve_exact`](Self::reserve_exact) span (feature
-    /// `exact-span-large`) it is only guaranteed to be a multiple of the OS
-    /// page size.
-    #[must_use]
-    #[allow(dead_code)] // Substrate API; Phase 9+ heaps read it.
-    pub(crate) const fn len(&self) -> usize {
-        self.0.len()
     }
 
     /// The start of the OS reservation (may extend below [`as_ptr`](Self::as_ptr)
@@ -573,12 +575,24 @@ pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
 }
 
 /// Relaxed snapshot of [`SEGMENTS_RESERVED_TOTAL`]. Diagnostic only.
+// R6-T16: read by the AllocStats backing accessors (alloc-global) and the
+// internals diag aliases only.
+#[cfg_attr(
+    not(any(feature = "alloc-global", feature = "internals")),
+    allow(dead_code)
+)]
 #[must_use]
 pub(crate) fn segments_reserved_total() -> u64 {
     SEGMENTS_RESERVED_TOTAL.load(Ordering::Relaxed)
 }
 
 /// Relaxed snapshot of [`SEGMENTS_RELEASED_TOTAL`]. Diagnostic only.
+// R6-T16: read by the AllocStats backing accessors (alloc-global) and the
+// internals diag aliases only.
+#[cfg_attr(
+    not(any(feature = "alloc-global", feature = "internals")),
+    allow(dead_code)
+)]
 #[must_use]
 pub(crate) fn segments_released_total() -> u64 {
     SEGMENTS_RELEASED_TOTAL.load(Ordering::Relaxed)

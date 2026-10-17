@@ -65,6 +65,10 @@ pub(crate) use segment::remote_bitmap;
 // visibility/cfg/doc-hidden parity) so every one stays reachable at its
 // existing `alloc_core::<name>` module path.
 pub(crate) use segment::bitmap::{alloc_bitmap, magazine_bitmap, segment_bitmap};
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(unused_imports)
+)]
 pub(crate) use segment::directory_stats;
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) use segment::segment_directory;
@@ -159,7 +163,9 @@ use large::alloc_core_large_cache;
 pub(crate) use large::large_cache_extended;
 
 pub use alloc_core::AllocCore;
-#[cfg(feature = "alloc-global")]
+// R6-T16: consumed only by the fastbin-gated own-free/realloc paths
+// (`fastbin` implies `alloc-global`).
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use alloc_core::OwnedBlock;
 /// The dropped-free counter, re-exported crate-wide so
 /// `HeapCore::publish_foreign` can bump it (like
@@ -259,6 +265,7 @@ pub use segment_layout::SegmentLayout;
 /// test-only (the `#[doc(hidden)]` property test in `tests/`), reachable by
 /// `sefer_alloc::alloc_core::SegmentHashHarness`. Nothing here is stable
 /// public API.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use segment_table::SegmentHashHarness;
 #[cfg(feature = "alloc-decommit")]

@@ -31,20 +31,32 @@ impl LargeState {
         self.state().claim_pending()
     }
 
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn cache_consumed(&self, generation: u64) -> bool {
         self.state().cache_consumed(generation)
     }
 
     /// CACHED(g) -> INITIALIZING(g+1), without wrap.
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn begin_reuse(&self) -> Option<u64> {
         self.state().begin_reuse()
     }
 
     /// Owner must finish layout/table reset before INITIALIZING -> LIVE.
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn finish_reuse(&self, generation: u64) -> bool {
         self.state().finish_reuse(generation)
     }
 
+    // R6-T16: numeric-observer surface; consumed by the kani proofs and the
+    // internals probes only.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn release_cached(&self, generation: u64) -> bool {
         self.state().release_cached(generation)
     }

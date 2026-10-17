@@ -58,6 +58,9 @@ impl SegmentTable {
     ///
     /// **Precondition:** the caller guarantees `base` is not already in the
     /// table AND at least one empty slot exists (load factor ≤ 50%).
+    // R6-T16: exercised via the internals hash harness and tests; production
+    // lookups go through `canonical_base_of`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub(super) fn hash_insert(&mut self, base: *mut u8) {
         let start = Self::hash_index(base);
         let mut i = start;
@@ -233,6 +236,9 @@ impl SegmentTable {
     /// Backward-shift deletion (R4-8/N3) guarantees every non-live slot is
     /// genuinely empty (no tombstones), so an empty slot unambiguously
     /// terminates the probe — a `false` result is always correct.
+    // R6-T16: exercised via the internals hash harness and tests; production
+    // lookups go through `canonical_base_of`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     #[inline(always)]
     pub(super) fn hash_contains(&self, base: *mut u8) -> bool {
         self.hash_find(base).is_some()
@@ -266,5 +272,56 @@ impl SegmentTable {
                 return None;
             }
         }
+    }
+
+    /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
+    /// (no fill), for `&self` contexts (test-only `dbg_*` accessors, census).
+    /// Same result as `contains_base` — it just skips the remember-proven
+    /// fill. Kept separate so the read-only surface does not require `&mut`.
+    // R6-T16: internals diag readers only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn contains_base_ro(&self, base: *mut u8) -> bool {
+        self.canonical_base_of(base).is_some()
+    }
+
+    /// MEASUREMENT-ONLY (R23-3, task #372): call the Tier-2 open-addressing
+    /// probe DIRECTLY, unconditionally skipping the Tier-1 `own_cache` check
+    /// that `contains_base`/`contains_base_ro` always try first. This exists
+    /// solely so `benches/perf_gate_iai.rs` can isolate Tier-2's own
+    /// instruction cost, which `contains_base`'s existing Tier-1-hit-shaped
+    /// benches (R22-17/R23-1) cannot show: this crate's benched workloads
+    /// stay within `OWN_CACHE_SIZE` concurrently-hot segments, so every
+    /// `contains_base` call after the first is a Tier-1 hit and Tier-2 never
+    /// runs. `cache_index(base) = (base >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)`
+    /// depends only on the segment's OS-assigned virtual address
+    /// (`mmap`/`VirtualAlloc` decide it, not this allocator), so a benchmark
+    /// cannot portably force a Tier-2 hit just by touching more than
+    /// `OWN_CACHE_SIZE` distinct segments — the OS
+    /// might still lay them out so all their cache indices collide or spread
+    /// favourably. Calling `hash_contains` directly sidesteps that
+    /// non-determinism entirely: it measures Tier-2's real, unconditional
+    /// cost on the exact same data the production probe would (a genuinely
+    /// registered base), regardless of address layout.
+    ///
+    /// This is the SAME `hash_contains` production routine `contains_base`
+    /// falls through to on a Tier-1 miss — not an alternate/reimplemented
+    /// probe — just invoked without the Tier-1 guard in front of it. It
+    /// takes `&self` (no cache fill), matching `contains_base_ro`'s
+    /// resource-cheap surface — a bench does not need `&mut` to measure this.
+    /// Unconditional (no feature gate), mirroring `contains_base`/
+    /// `contains_base_ro` immediately above, which are themselves ungated.
+    #[doc(hidden)]
+    // R6-T16: bench/internals timing surface only.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
+        self.hash_contains(base)
     }
 }

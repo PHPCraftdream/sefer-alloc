@@ -4,7 +4,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::registry::bootstrap::saturation::SaturationHint;
 use crate::registry::bootstrap::{Registry, MAX_HEAPS};
-use crate::registry::heap_slot::{HeapSlot, STATE_EMPTY, STATE_FREE};
+#[cfg(feature = "internals")]
+use crate::registry::heap_slot::HeapSlot;
+use crate::registry::heap_slot::{STATE_EMPTY, STATE_FREE};
 
 /// Prefer claimable materialised slots, then an index in an unmaterialised
 /// chunk. The latter may have been minted before a failed chunk reservation;
@@ -36,6 +38,7 @@ pub(super) fn scan_claimable_slot(reg: &Registry) -> Option<usize> {
 
 /// One fair pass over the high-water range, skipping unmaterialised chunks.
 /// No result is authoritative until the caller's FREE→MAINTENANCE CAS wins.
+#[cfg(feature = "internals")]
 pub(super) fn scan_free_slot(reg: &Registry) -> Option<(usize, &'static HeapSlot)> {
     let count = (reg.count.load(Ordering::Acquire) as usize).min(MAX_HEAPS);
     if count == 0 {
@@ -104,6 +107,7 @@ pub(super) fn bump_count(reg: &Registry) -> Option<usize> {
 
 /// The claim selector, parameterised so a small deterministic model can
 /// exercise the production fast path without constructing 4096 heaps.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub fn pick_with_saturation(
     hint: &AtomicU32,

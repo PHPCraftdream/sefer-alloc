@@ -31,32 +31,68 @@ use core::sync::atomic::AtomicU64;
 
 /// Segment directory lookup hits: a candidate passed validation.
 /// Reads 0 unless the applicable `alloc-stats` increment path is enabled.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_HITS: AtomicU64 = AtomicU64::new(0);
 
 /// Stale directory hits: a candidate failed validation and its bit was
 /// cleared. Reads 0 unless the applicable `alloc-stats` path is enabled.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_STALE_HITS: AtomicU64 = AtomicU64::new(0);
 
 /// Directory fallback scans entered after a negative query.
 /// Reads 0 unless the applicable `alloc-stats` increment path is enabled.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_FALLBACK_SCANS: AtomicU64 = AtomicU64::new(0);
 
 /// Directory bitmap words examined: EVERY u64 word inspected during a
 /// per-class bitmap scan, including all-zero words (R13-01) — one increment
 /// per scanned word per scanned node bucket, before the zero-word skip.
 /// Reads 0 unless `alloc-stats` is on (the increment site is gated).
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_WORDS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
 /// Current Small/Primordial candidates probed by the fallback in
 /// `find_segment_with_free_impl`, incremented before each `base_at`.
 /// Historical A0 counted NULL/skipped high-water slots too; the active-kind
 /// index now excludes those slots before a probe.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static FULL_SCAN_SLOTS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 
 /// In `production` (with `alloc-global` + `alloc-xthread`), routed tables do
 /// not trust a negative directory result: discovery falls back to a full scan,
 /// so this authoritative-miss counter is not incremented there. It records
 /// trusted negatives only in configurations where that shortcut is enabled.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_AUTHORITATIVE_MISS: AtomicU64 = AtomicU64::new(0);
 
 /// A negative directory lookup followed by a full scan found a segment the
@@ -65,6 +101,12 @@ pub(crate) static DIRECTORY_AUTHORITATIVE_MISS: AtomicU64 = AtomicU64::new(0);
 /// (R8-2, task #215). Expected to stay at 0 in normal operation — a nonzero
 /// value is a canary for a directory-tracking bug and warrants investigation,
 /// not a normal event. See perf open item 82.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);
 
 /// R9-8 (task #230): a forced O(S) "rescue scan", run as a last resort right
@@ -79,6 +121,12 @@ pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);
 /// investigation, NOT a normal/expected event. Reads 0 unless `alloc-stats` is
 /// on (the increment site is gated) and `alloc-segment-directory` is active
 /// with a materialised sidecar (the rescue is gated on the directory feature).
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static DIRECTORY_RESCUE_OOM_AVOIDED: AtomicU64 = AtomicU64::new(0);
 
 /// Routed negative-directory scans (round 12 O-4, data only): a routed core's
@@ -86,19 +134,43 @@ pub(crate) static DIRECTORY_RESCUE_OOM_AVOIDED: AtomicU64 = AtomicU64::new(0);
 /// (rescue scans excluded). One increment per lookup, not per slot. Invariant:
 /// equals the sum of the three outcome counters below. Reads 0 unless
 /// `alloc-stats` is on.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static ROUTED_MISS_SCANS: AtomicU64 = AtomicU64::new(0);
 
 /// Outcome of a routed miss scan: it hit a segment whose class bin was EMPTY
 /// before that segment's sidecar drain and non-empty after — a terminal
 /// publication hidden behind the negative directory, the case that makes
 /// trusting the negative unsafe. Reads 0 unless `alloc-stats` is on.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static ROUTED_MISS_SCAN_DRAIN_CREATED_FREE: AtomicU64 = AtomicU64::new(0);
 
 /// Outcome of a routed miss scan: it hit a segment whose class bin was already
 /// non-empty before the drain (the directory lagged; the scan self-healed it).
 /// Reads 0 unless `alloc-stats` is on.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static ROUTED_MISS_SCAN_BIN_ALREADY_NONEMPTY: AtomicU64 = AtomicU64::new(0);
 
 /// Outcome of a routed miss scan: no segment had a block (the directory was
 /// right). Reads 0 unless `alloc-stats` is on.
+// R6-T16: bumped by alloc-stats-gated sites, read by the internals diag
+// accessors; suppressed exactly where both are absent.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 pub(crate) static ROUTED_MISS_SCAN_NOTHING: AtomicU64 = AtomicU64::new(0);

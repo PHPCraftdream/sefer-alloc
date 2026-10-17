@@ -3,7 +3,10 @@ mod bitmap_record;
 mod bitmap_scan;
 // Source-include tests compile this module without the drain that uses it.
 #[cfg(feature = "bench-internals")]
-#[allow(dead_code)]
+// R6-T16/CQ-9: the strict counters are live under `bench-internals`
+// (`sidecar_drain.rs`); the summary-oracle readers are used only with
+// `--cfg r19_sidecar_summary_oracle`, so the allow is scoped to its absence.
+#[cfg_attr(not(r19_sidecar_summary_oracle), allow(dead_code))]
 mod prf01_sidecar_oracle;
 #[cfg(feature = "bench-internals")]
 #[allow(unused_imports)]

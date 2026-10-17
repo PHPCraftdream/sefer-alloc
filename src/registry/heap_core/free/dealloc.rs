@@ -92,6 +92,12 @@ medium_promotion_reachable! {
 /// transitively — see `Cargo.toml`) so the accessor has a stable definition
 /// regardless of the rest of the feature set. Relaxed ordering — a
 /// diagnostic count, not a synchronization primitive.
+// R6-T16: bumped only at the hardened/promotion-gated alloc-stats sites and
+// read by the internals probe, so both axes gate the suppression.
+#[cfg_attr(
+    not(any(feature = "alloc-stats", feature = "internals")),
+    allow(dead_code)
+)]
 #[cfg(feature = "alloc-core")]
 pub(crate) static HARDENED_LARGE_NOOP_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
