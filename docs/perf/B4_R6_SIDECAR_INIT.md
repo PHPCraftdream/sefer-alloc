@@ -106,3 +106,38 @@ CI-замер (iai, Ir, main vs ветка, 106 ячеек): **72 хуже, 4 л
 4. ожидания zeroed-байт в `r6_t40`/`r11_p3_small_sidecar_routes`/`r6_b4_class_leaves_drop_frees_promoted_leaves` возвращены к «не-zeroed» (== 0), размер — через `size_of::<SmallSidecar>()` (41 088);
 5. конструкторы `ClassLeaves` в `loom_sidecar_bitmap_actual` / `class_leaves_publication_miri` / `sidecar_granule_index_exhaustive` возвращены к `initialize_at` (для loom это обязательно: loom-атомики — дескрипторы планировщика, побайтовое обнуление `Box::new_zeroed` под `cfg(loom)` некорректно).
 Ожидание v2: регрессии +245 Ir/регистрацию и +1.8..+2.6% на перечисленных ячейках исчезают; выигрыш teardown от presence-Drop сохраняется. Метрика приёмки — тот же iai-набор у оркестратора.
+
+## 9. A/B v3 (GO): out-of-line promotion with explicit zero fill
+
+A/B v2 reproduced v1 to the instruction (same per-promotion ≈ +1900 Ir), and a
+size-only probe (main + 128 B padding, PR #72) was neutral (−34 Ir), so the v1/v2
+cost was codegen: the presence `fetch_or` added to the inline promotion branch
+of `prepare` turned the 256-slot `AtomicU8` zero loop scalar. v3 moves
+promotion into a `#[cold] #[inline(never)] promote` and zero-fills the leaf with
+`ptr::write_bytes` (a zero byte is a valid `core` `AtomicU8`; the per-slot loop
+stays under `cfg(loom)`).
+
+Measurement: GitHub CI `r20-gates` run 39133528431, `scripts/r20_r6_ab_iai_run.mjs`,
+arm A = `6b166a7b` (main), arm B = `865edc44` (this branch), `perf_gate_iai`,
+features `production bench-internals internals`, Linux, rustc 1.99.1. Raw per-cell
+data: `docs/perf/B4_R6_SIDECAR_INIT_summary.csv`. Allocator layer under test: the
+iai cells' own entry points (`SeferAlloc` / `HeapCore` per cell, unchanged by
+this patch). Table derived by `scripts/r6_gate_table.mjs` (asserts B − A = delta):
+
+| cell | A Ir | B Ir | delta Ir | delta / A |
+|---|---:|---:|---:|---:|
+| `decomp_full_cycle_8x` | 666772 | 607300 | -59472 | -59472 / 666772 = -8.92 % |
+| `r19_prf01_joined_producer_same_word` | 1519653 | 1437733 | -81920 | -81920 / 1519653 = -5.39 % |
+| `dealloc_free_only_1088_16b_n17` | 300568 | 294655 | -5913 | -5913 / 300568 = -1.97 % |
+| `cold_alloc_only_256x16b` | 102835 | 101546 | -1289 | -1289 / 102835 = -1.25 % |
+| `cold_alloc_only_256x16b_4n` | 289024 | 283484 | -5540 | -5540 / 289024 = -1.92 % |
+| `small_churn_16b` | 53716 | 53732 | +16 | +16 / 53716 = 0.03 % |
+| `cold_alloc_free_256x16b` | 137457 | 136168 | -1289 | -1289 / 137457 = -0.94 % |
+| `large_cache_eviction_hit_only_41x4mib` | 232323 | 233435 | +1112 | +1112 / 232323 = 0.48 % |
+| `large_cache_hit_only_4mib` | 57504 | 57740 | +236 | +236 / 57504 = 0.41 % |
+
+cells: 106; delta > 0: 34; delta < 0: 42; delta = 0: 30
+
+Verdict: **GO** — every worse cell is below the 0.5 % gate threshold (all in the
+Large-cache family, ≤ +0.48 %); the sidecar teardown and the leaf-promotion
+cells improve.
