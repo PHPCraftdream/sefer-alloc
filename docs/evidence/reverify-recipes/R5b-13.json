@@ -44,7 +44,7 @@
           "exit": 101,
           "stdoutRegex": [
             "test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED",
-            "test result: FAILED\\. 5 passed; 1 failed"
+            "test result: FAILED\\. 7 passed; 1 failed"
           ]
         }
       }
@@ -53,7 +53,7 @@
       "exitNonZero": true,
       "stdoutRegex": [
         "test producer_publish_is_acqrel_fetch_or \\.\\.\\. FAILED",
-        "test result: FAILED\\. 5 passed; 1 failed"
+        "test result: FAILED\\. 7 passed; 1 failed"
       ]
     }
   }
