@@ -79,7 +79,7 @@ pub use segment::segment_header;
 // module names; the re-exports exist purely to keep the old
 // `alloc_core::segment_header_layout` / `_meta_fields` / `_views` module
 // paths valid (module-path parity with the pre-reorg `mod` declarations).
-use segment::segment_layout;
+pub(crate) use segment::segment_layout;
 pub(crate) use segment::segment_table;
 #[allow(unused_imports)]
 use segment::{segment_header_layout, segment_header_meta_fields, segment_header_views};
@@ -151,7 +151,7 @@ pub use config::large_cache_config;
 #[cfg(feature = "alloc-decommit")]
 pub use config::large_cache_mode;
 #[cfg(feature = "alloc-decommit")]
-pub use config::profile;
+pub use config::policy;
 #[cfg(feature = "alloc-decommit")]
 pub use config::small_segment_pool_config;
 #[allow(unused_imports)]
@@ -251,7 +251,7 @@ pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_mode::LargeCacheMode;
 #[cfg(feature = "alloc-decommit")]
-pub use profile::{LargeCachePolicy, Profile, SmallPoolPolicy};
+pub use policy::{LargeCachePolicy, Profile, SmallPoolPolicy};
 /// R31-4 (task #467) MEASUREMENT-ONLY: re-exported so `examples/`/`tests/`
 /// can name the handle type returned by
 /// `AllocCore::dbg_decomp_reserve_and_keep` / consumed by

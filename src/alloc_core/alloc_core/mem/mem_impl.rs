@@ -24,7 +24,12 @@ use crate::alloc_core::size_classes::AllocKind;
 
 impl AllocCore {
     /// Address-only read-only identity resolution; no cache or metadata write.
-    #[cfg(feature = "alloc-global")]
+    // R6-T16: consumers are the fastbin magazine/free debug-assert paths and
+    // the `alloc-global ∧ internals` diag accessors — nothing else.
+    #[cfg(any(
+        feature = "fastbin",
+        all(feature = "alloc-global", feature = "internals")
+    ))]
     #[inline]
     pub(crate) fn canonical_root_for(&self, ptr: *mut u8) -> Option<*mut u8> {
         self.table.canonical_base_of(os::segment_base_of_ptr(ptr))

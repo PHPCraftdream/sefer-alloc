@@ -15,6 +15,8 @@ use core::cell::Cell;
 use core::marker::PhantomData;
 use core::sync::atomic::Ordering;
 
+#[cfg(feature = "bench-internals")]
+use super::counters::ClaimSource;
 #[cfg(feature = "alloc-decommit")]
 use super::counters::CONFIG_CONFLICTS;
 #[cfg(feature = "internals")]
@@ -87,7 +89,7 @@ impl HeapRegistry {
     #[doc(hidden)]
     #[cfg(feature = "bench-internals")]
     pub fn dbg_registry_free_set_claims() -> u64 {
-        super::counters::CLAIM_SOURCES[4].load(Ordering::Relaxed)
+        super::counters::CLAIM_SOURCES[ClaimSource::FreeSet as usize].load(Ordering::Relaxed)
     }
 
     /// Successful leases whose actual resolved policy matches / differs from default.
@@ -294,13 +296,13 @@ impl HeapRegistry {
         loop {
             let reg = ensure();
             #[cfg(feature = "bench-internals")]
-            let source = core::cell::Cell::new(0usize);
+            let source = core::cell::Cell::new(ClaimSource::Hint);
             let scan_selected = Cell::new(false);
             let candidate = match failed_chunk {
                 Some(failed) => {
                     scan_selected.set(true);
                     #[cfg(feature = "bench-internals")]
-                    source.set(3);
+                    source.set(ClaimSource::Recovery);
                     scan_claim_recovery_free(reg, failed)
                 }
                 None => Self::pick_slot(
@@ -479,7 +481,7 @@ impl HeapRegistry {
             // branch above), we are the sole writer. `generation` is a purely
             // numeric observer — no gate on the hot path.
             #[cfg(feature = "bench-internals")]
-            super::counters::CLAIM_SOURCES[source.get()].fetch_add(1, Ordering::Relaxed);
+            super::counters::CLAIM_SOURCES[source.get() as usize].fetch_add(1, Ordering::Relaxed);
             #[cfg(all(feature = "bench-internals", feature = "alloc-decommit"))]
             {
                 // SAFETY: successful claim owns this LIVE, initialized core.
@@ -501,7 +503,7 @@ impl HeapRegistry {
 
     /// Pick from the hint, then the spill bitmap, then saturation, bump and cap scan.
     pub(super) fn pick_slot(
-        #[cfg(feature = "bench-internals")] source: &core::cell::Cell<usize>,
+        #[cfg(feature = "bench-internals")] source: &core::cell::Cell<ClaimSource>,
         scan_selected: &Cell<bool>,
     ) -> Option<usize> {
         let reg = ensure();
@@ -515,21 +517,21 @@ impl HeapRegistry {
                 let picked = FREE_SLOTS.take_nonempty();
                 #[cfg(feature = "bench-internals")]
                 if picked.is_some() {
-                    source.set(4);
+                    source.set(ClaimSource::FreeSet);
                 }
                 picked
             },
             || {
                 scan_selected.set(true);
                 #[cfg(feature = "bench-internals")]
-                source.set(2);
+                source.set(ClaimSource::CapScan);
                 scan_claimable_slot(reg)
             },
             || {
                 let picked = super::stack::bump_count(reg);
                 #[cfg(feature = "bench-internals")]
                 if picked.is_some() {
-                    source.set(1);
+                    source.set(ClaimSource::Bump);
                 }
                 picked
             },

@@ -1,6 +1,7 @@
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::node::Node;
 use crate::alloc_core::segment_header::SegmentKind;
+use crate::alloc_core::segment_layout::word_bit;
 
 use super::MAX_SEGMENTS;
 
@@ -69,9 +70,9 @@ impl ActiveKindIndex {
             fatal(b"active_kind_index: set slot out of range\n");
         }
         let (leaf_off, summary_off) = Self::offsets(kind);
-        let w = slot / 64;
+        let (w, b) = word_bit(slot);
         let off = leaf_off + w * 8;
-        let bit = 1u64 << (slot % 64);
+        let bit = 1u64 << b;
         let old = Self::read(ptr, off);
         let other_off = if leaf_off == core::mem::offset_of!(Self, small) {
             core::mem::offset_of!(Self, large)
@@ -95,7 +96,8 @@ impl ActiveKindIndex {
             return false;
         }
         let (leaf_off, _) = Self::offsets(kind);
-        Self::read(ptr, leaf_off + (slot / 64) * 8) & (1u64 << (slot % 64)) != 0
+        let (w, b) = word_bit(slot);
+        Self::read(ptr, leaf_off + w * 8) & (1u64 << b) != 0
     }
 
     pub(super) fn clear(ptr: *mut Self, slot: usize, kind: SegmentKind) {
@@ -103,9 +105,9 @@ impl ActiveKindIndex {
             fatal(b"active_kind_index: clear slot out of range\n");
         }
         let (leaf_off, summary_off) = Self::offsets(kind);
-        let w = slot / 64;
+        let (w, b) = word_bit(slot);
         let off = leaf_off + w * 8;
-        let bit = 1u64 << (slot % 64);
+        let bit = 1u64 << b;
         let old = Self::read(ptr, off);
         if old & bit == 0 {
             fatal(b"active_kind_index: clear of empty slot\n");
@@ -124,8 +126,8 @@ impl ActiveKindIndex {
             return None;
         }
         let (leaf_off, summary_off) = Self::offsets(kind);
-        let word = from / 64;
-        let leaf = Self::read(ptr, leaf_off + word * 8) & (u64::MAX << (from % 64));
+        let (word, b) = word_bit(from);
+        let leaf = Self::read(ptr, leaf_off + word * 8) & (u64::MAX << b);
         if leaf != 0 {
             return Some(word * 64 + leaf.trailing_zeros() as usize);
         }
