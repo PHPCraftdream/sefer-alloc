@@ -3045,6 +3045,27 @@ jobs:
           cargo miri test --features "alloc-global internals bench-internals" --test miri_global_box_acceptance -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-installed-box-tree.log"
           grep -F "[miri_global_box_acceptance] COMPLETE narrow_two_rounds" "$RUNNER_TEMP/miri-installed-box-tree.log"
         shell: bash
+      # b4-r1 round 2 (P2): pin-cache cell under narrow provenance. REAL Box
+      # ownership via a Send wrapper; activation oracle = PIN_CACHE_HITS
+      # delta >= 1 (reds a "publish_cached always returns Miss" mutant);
+      # gated pending-bit delivery via TerminalPublicationGate and TLS
+      # thread-exit release (PIN_CACHE_THREAD_RELEASES delta >= 2).
+      - name: b4-r1 pin cache narrow provenance (miss, same-base hit, delivery, TLS release)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
+        run: |
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+          grep -F "test narrow_pin_cache_hit_release_and_delivery_miri ... ok" "$RUNNER_TEMP/miri-b4-r1-pin-cache.log"
+        shell: bash
+      - name: b4-r1 pin cache narrow provenance under TreeBorrows
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-report-progress=10000000"
+        run: |
+          set -o pipefail
+          cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+          grep -F "test narrow_pin_cache_hit_release_and_delivery_miri ... ok" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+        shell: bash
       - name: installed Box retirement before terminal producer resumes (EXPECTED RED - P1 - alloc-global - strict Stacked Borrows)
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-report-progress=10000000"
@@ -3392,10 +3413,14 @@ jobs:
           grep -F "test loom_actual_leaves_two_producers_same_leaf_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test route_pin_under_lock_never_resurrects_unlinked_route ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_pin_without_lock_resurrects_freed_route - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test cached_gate_publishes_only_while_linked_and_refs_keep_sidecar_alive ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test fallback_after_false_gate_uses_the_fresh_route ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test negative_skip_gate_publishes_into_unlinked_route - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test negative_relaxed_gate_loses_unlink_witness - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          # loom_b4_r1_pin_cache is the ACTUAL-SOURCE model of the b4-r1
+          # cached-pin fast path (production route_pin_cache.rs / pin.rs /
+          # directory.rs / small_sidecar.rs compiled onto loom atomics); the
+          # should_panic rows are its two negative shadow controls (gate
+          # skip / relaxed gate — the M-A / M-B mechanisms).
+          grep -F "test loom_actual_cached_pin_publish_delivery_survives_unlink_race ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_skip_linked_gate_writes_zombie_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_actual_negative_relaxed_gate_loses_unlink_witness - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_cut_via_load_store_loses_concurrent_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_negative_masked_cut_drops_pending_bits - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_negative_class_after_terminal_bit - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"

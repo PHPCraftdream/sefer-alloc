@@ -1,18 +1,18 @@
-//! Audited System-backed route-directory seam. No pointer derived from a
-//! lookup address is dereferenced; allocator-origin roots stay in entries.
+//! Audited System-backed route-directory seam: no lookup-derived pointer is
+//! dereferenced, and allocator-origin roots stay in entries.
 #![allow(unsafe_code)]
 
 use core::cell::Cell;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
 
-use super::shard_lock::ShardLock;
+use super::{AtomicBool, AtomicUsize, shard_lock::ShardLock};
 use super::{LargeState, RouteError, RouteKind, RoutePin, RouteRegistration, SmallSidecar};
 
 const SHARDS: usize = 64;
@@ -35,8 +35,8 @@ pub(super) struct Entry {
     pub(super) linked: AtomicBool,
 }
 
-/// One counted reference to a stable System allocation. There is no borrowed
-/// `&mut Entry` after publication; all shared mutation is atomic.
+/// One counted reference to a stable System allocation; there is no borrowed
+/// `&mut Entry` after publication — all shared mutation is atomic.
 pub(super) struct EntryHandle {
     ptr: AtomicPtr<Entry>,
 }
@@ -238,8 +238,7 @@ const BLOCK_CAP: usize = 64;
 const BLOCK_HALF: usize = BLOCK_CAP / 2;
 const INITIAL_INDEX_CAP: usize = 8;
 
-/// Fixed-capacity sorted run of non-owning entry pointers. A block linked in
-/// a shard index is never empty.
+/// Fixed-capacity sorted run of non-owning entry pointers; a linked block is never empty.
 struct Block {
     len: usize,
     slots: [AtomicPtr<Entry>; BLOCK_CAP],
@@ -359,8 +358,7 @@ impl Block {
     }
 }
 
-/// Sorted index of owned `Block`s by their first key. Capacity is retained
-/// after removals; the blocks themselves are released by `Shard`.
+/// Sorted index of owned `Block`s by first key; capacity is retained after removals.
 struct BlockIndex {
     ptr: AtomicPtr<AtomicPtr<Block>>,
     len: usize,
@@ -510,8 +508,7 @@ struct Surplus {
     _index: Option<BlockIndex>,
 }
 
-/// Blocks displaced by a shard removal, released after the shard lock is
-/// dropped (`System.dealloc` must not run under the lock).
+/// Blocks displaced by removal, released after the lock; `System.dealloc` never runs under it.
 struct Retired {
     blocks: [Option<SpareBlock>; 2],
 }
@@ -526,9 +523,8 @@ impl Retired {
     }
 }
 
-/// Two-level sorted shard: an index of blocks, each at most `BLOCK_CAP`
-/// pointers. Updates shift within one block (plus the short block index on
-/// split/merge), never the whole shard. All access is under the shard lock.
+/// Two-level sorted shard: an index of blocks, each at most `BLOCK_CAP` pointers. Updates
+/// shift within one block (plus the short block index on split/merge), all under the shard lock.
 struct Shard {
     index: BlockIndex,
     /// One retained empty block, so splits after removals never allocate.
@@ -726,15 +722,14 @@ impl Drop for Shard {
     }
 }
 
-/// Process-stable directory; route count is limited by System memory, not
-/// a fixed slot table. Lookup is O(log routes-in-shard) under one mutex.
+/// Process-stable directory; route count limited by System memory, O(log n) lookup
+/// under one shard mutex.
 pub struct RouteDirectory {
     shards: [ShardLock<Shard>; SHARDS],
     next_incarnation: AtomicU64,
 }
 
 impl RouteDirectory {
-    #[allow(clippy::new_without_default)] // Default impl removed: unused, line cap
     pub const fn new() -> Self {
         Self {
             shards: [const { ShardLock::new(Shard::empty()) }; SHARDS],
@@ -983,10 +978,9 @@ impl RouteDirectory {
             return false;
         };
         let retired = guard.remove(key, entry.ptr());
-        // Cached-pin fast path: `linked` is read Acquire before publishing;
-        // it must be cleared under the shard lock, before unlink/owner drop.
+        // Unlink ran above under the shard lock; the Release `linked = false` store publishes
+        // it, so an Acquire reader observes the unlink; the owner ref drops after lock release.
         entry.entry().linked.store(false, Ordering::Release);
-        // The caller drops the owner reference after this lock is released.
         drop(guard);
         // Displaced blocks are released outside the shard lock.
         drop(retired);
@@ -996,5 +990,11 @@ impl RouteDirectory {
     const fn shard_index(key: usize) -> usize {
         let value = key / SEGMENT;
         (value ^ (value >> 13) ^ (value >> 26)) % SHARDS
+    }
+}
+
+impl Default for RouteDirectory {
+    fn default() -> Self {
+        Self::new()
     }
 }

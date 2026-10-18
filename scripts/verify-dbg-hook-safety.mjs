@@ -381,6 +381,11 @@ const UNSAFE_HOOKS = [
 const SIDECAR_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:publish_small_sidecar_free|reclaim_sidecar_record_for_test)$/.test(id)));
 const BENCH_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:decomp_|dealloc_own_thread_with_base|flush_class_only|clear_magazine_on_hit|force_decommit_retain_for|restore_local_for_test|dealloc_while_fallback_lock_held|publish_small_sidecar_free|reclaim_sidecar_record_for_test)/.test(id)));
 BENCH_UNSAFE_HOOKS.add(CURRENT_RESERVATION_HOOK);
+// Registered explicitly via its REVIEWED_SURFACE row (kind 'unsafe', gates
+// internals + bench-internals); UNSAFE_HOOKS and REVIEWED_SURFACE are mutually
+// exclusive (unique gate), so the row carries the registration and the add
+// below carries the bench-gate requirement.
+BENCH_UNSAFE_HOOKS.add("src/registry/segment_route/pin.rs::dbg_publish_cached_for_test");
 
 // Explicit reviewed rows; groups share only a reviewed contract, never a name wildcard.
 export const REVIEWED_SURFACE = [
@@ -416,6 +421,9 @@ export const REVIEWED_SURFACE = [
     ['src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],
     ['src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs', ['terminal_header_layout_for_test', 'terminal_header_snapshot_for_test', 'terminal_primordial_snapshot_for_test', 'terminal_next_generation_for_test'], 'observer', 'checked header layout/state and generation geometry'],
     ['src/concurrent/sharded/sharded_region.rs', ['_set_remote_free_hint_for_tests'], 'mutator', 'advisory hint only; real queue remains authoritative'],
+    ['src/registry/segment_route/pin.rs', ['dbg_publish_cached_for_test'], 'unsafe', 'entry into the production cached fast path; the address must be the caller’s CURRENT issued Small/Primordial allocation — publication consumes ownership once, and a bare address never establishes it (publishing a foreign live address forces the owner to reclaim a live instance: UAF by construction)'],
+    ['src/registry/segment_route/pin.rs', ['dbg_cache_insert_for_test'], 'mutator', 'inserts caller-looked-up pin; no publish/reclaim obligation'],
+    ['src/registry/segment_route/pin.rs', ['dbg_route_pin_cache_totals'], 'observer', 'pure Relaxed counter snapshot'],
   ].flatMap(([file, names, kind, reason]) => names.map(name => ({ id: `${file}::${name}`, kind, reason, gates: ['internals', 'bench-internals'] }))),
   ...[
     ['src/concurrent/lock_free/lock_free_region.rs', ['_forge_handle_for_tests', '_page_arc_clones_for_tests', '_checked_total_slots_for_tests'], 'observer', 'by-value handle/geometry or TLS counter; ordinary operations still validate handles'],

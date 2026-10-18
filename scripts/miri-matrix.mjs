@@ -40,6 +40,16 @@ export const MIRI_TARGETS = [
     'regression_xthread_small_ring_miri']
     .map((test) => green('miri-plain', test, plainFeatures, { model: 'plain' })),
   green('miri-plain', 'b4_r1_pin_cache_miri', plainFeatures, { model: 'plain' }),
+  // b4-r1 round 2 (P2): the same cell under narrow provenance — REAL Box
+  // ownership transported via a Send wrapper, cache-hit activation oracle
+  // (hits delta >= 1 reds a "publish_cached always Miss" mutant), gated
+  // pending-bit delivery and TLS thread-exit release. plain stays because
+  // the file is plain-compatible (no strict-provenance requirement) and its
+  // preemption=0.5 coverage of the start gate schedule is retained.
+  ...['sb', 'tb'].map((borrows) => green('miri-core', 'b4_r1_pin_cache_miri', 'alloc-global internals bench-internals', {
+    borrows, args: ['--', 'narrow'],
+    marker: 'test narrow_pin_cache_hit_release_and_delivery_miri ... ok',
+  })),
   green('miri-plain', 'r6_terminal_owner_drain', 'alloc-global alloc-xthread internals bench-internals', {
     model: 'plain', args: ['--', '--exact', 'requested_sizes_one_through_seven_retire_once_and_reissue'],
     marker: 'test requested_sizes_one_through_seven_retire_once_and_reissue ... ok',

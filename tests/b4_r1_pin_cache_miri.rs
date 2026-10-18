@@ -1,164 +1,291 @@
-//! Plain-Miri cell for the b4-r1 per-thread route pin cache. This proves, with
-//! real cross-thread frees, that the cached-pin fast path is sound: a cache
-//! MISS followed by a cache HIT on the same segment base, publication through
-//! `publish_small_borrowed` while the pin is retained by the TLS cache, and the
-//! TLS thread-exit release of a retained pin against a route that is still
-//! live (the descriptor outlives via the owner ref — no leak, no UAF).
+//! Narrow-provenance Miri cell for the b4-r1 per-thread route pin cache
+//! (round-2 P2 rewrite). The round-1 cell was rejected: it carried full
+//! pointers through `usize` (no `Box` ownership, no narrow reborrow) and its
+//! only oracle (foreign-or-unroutable counter == 0) is equally satisfied by a
+//! DISABLED cache. This cell fixes both.
 //!
-//! The cache-hit path performs exactly one shared RMW (`pending.fetch_or`) on
-//! the sidecar and takes no lock. Owner allocations run concurrently with the
-//! producer publications so owner frames overlap the worker frees; a start
-//! gate maximises that window without sleeping.
+//! What is proven, with REAL cross-thread frees of REAL `Box` allocations
+//! through the installed `#[global_allocator]`:
+//! - the first foreign free of a segment base is a cache MISS + INSERT;
+//! - the second foreign free of the SAME base takes the cached fast path
+//!   (HIT);
+//! - a delivered publication is observable: after the terminal RMW the
+//!   route's pending bit reads set. `TerminalPublicationGate`
+//!   deterministically pauses the production routing path right after a
+//!   successful publication of the armed block (the same accepted pattern as
+//!   `tests/support/r8_global_box_witness.rs::paused_terminal_owner_retirement`);
+//! - ownership transport is provenance-clean: owner-allocated `Box`es are
+//!   moved across the thread boundary by value inside a `Send` wrapper (the
+//!   reviewed `tests/r8_global_box_provenance.rs` pattern) — NO full pointers
+//!   through `usize`, NO pointer reconstruction: every free is the real
+//!   `Box` destructor;
+//! - worker exit releases the retained pins through the TLS cache dtor
+//!   (`PIN_CACHE_THREAD_RELEASES` delta);
+//! - the owner deterministically drains every pending bit with same-class
+//!   own alloc/free cycles (the production drain trigger, as in
+//!   `tests/b4_r1_pin_cache.rs::foreign_free_delivery_reclaim_and_totals`).
 //!
-//! Address transport uses exposed provenance (usize round-trip). Plain
-//! provenance, Stacked Borrows and preemption 0.5 come from the CI job's
-//! MIRIFLAGS; this is not a strict-provenance or Tree-Borrows acceptance
-//! target.
+//! ACTIVATION ORACLE (R30-8) — counterfactual mutant: "publish_cached always
+//! returns Miss" (cache effectively disabled: the second same-base free
+//! re-runs the cold path every time). Under that mutant `PIN_CACHE_HITS`
+//! stays flat, so the `hits delta >= 1` assertion below turns this cell red
+//! on the CI miri-core steps. A cache-disabled mutant also keeps
+//! `PIN_CACHE_INSERTS` and `PIN_CACHE_THREAD_RELEASES` flat, reding the
+//! insert and TLS-release assertions as well. Miri is NOT run locally; the
+//! mutant check is a CI-only duty of the `miri-core` narrow sb/tb steps.
 //!
-//! The whole test asserts a zero delta of
-//! `AllocCore::dbg_foreign_or_unroutable_frees`: every free here must resolve
-//! through the cached/uncached route paths, never as foreign-or-unroutable.
+//! Concurrency is NOT claimed: owner allocations complete BEFORE the foreign
+//! frees start (a deterministic schedule). Only the delivery observation is
+//! made deterministic, via the publication gate.
+//!
+//! Every free here must resolve through the routed paths:
+//! `AllocCore::dbg_foreign_or_unroutable_frees` delta must be exactly 0.
 
 #![cfg(all(
-    all(feature = "alloc-global", feature = "alloc-xthread"),
-    feature = "internals"
+    miri,
+    feature = "alloc-global",
+    feature = "internals",
+    feature = "bench-internals"
 ))]
 
-use std::alloc::{GlobalAlloc, Layout};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
 
+use sefer_alloc::SeferAlloc;
 use sefer_alloc::alloc_core::AllocCore;
 use sefer_alloc::registry::bootstrap;
-use sefer_alloc::SeferAlloc;
-
-// One shared allocator, driven directly through its `GlobalAlloc` impl (NOT
-// installed as this binary's `#[global_allocator]`; mirrors
-// `stress_concurrent_boundaries.rs`). `SeferAlloc` is `Sync`; every thread
-// binds its own per-thread heap — and pin cache — via TLS on first use.
-static GLOBAL: SeferAlloc = SeferAlloc::new();
-
-// Serialise against sibling tests of this binary: the pin cache and the route
-// registry are process-global TLS/static state, and the libtest harness may
-// run this file's tests in parallel threads.
-static SERIAL: AtomicBool = AtomicBool::new(false);
-
-struct SerialGuard;
-impl SerialGuard {
-    fn acquire() -> Self {
-        while SERIAL
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            std::hint::spin_loop();
-        }
-        SerialGuard
-    }
-}
-impl Drop for SerialGuard {
-    fn drop(&mut self) {
-        SERIAL.store(false, Ordering::Release);
-    }
-}
+use sefer_alloc::registry::segment_route::{RouteDirectory, TerminalPublicationGate as Gate};
 
 #[global_allocator]
-static ALLOCATOR: SeferAlloc = SeferAlloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
+
+/// One small size class, 256 B / align 8 — the same class the native
+/// `tests/b4_r1_pin_cache.rs` fixtures free through the routed path.
+#[repr(align(8))]
+struct Block([u8; 256]);
+
+impl Block {
+    fn addr(&self) -> usize {
+        self.0.as_ptr().addr()
+    }
+}
+
+const SEGMENT: usize = 4 * 1024 * 1024;
+
+fn base_of(addr: usize) -> usize {
+    addr & !(SEGMENT - 1)
+}
+
+/// Address-only observation of a route's pending bit: the pointer is only a
+/// numeric lookup key, exactly like every production foreign free. No
+/// provenance is reconstructed, which keeps the observation valid under
+/// `-Zmiri-strict-provenance`.
+fn pending_at(addr: usize) -> bool {
+    // SAFETY: `lookup` reads only the address; the returned pin observes the
+    // route's sidecar, never dereferences the address.
+    match RouteDirectory::global().lookup(core::ptr::without_provenance_mut::<u8>(addr)) {
+        Some(pin) => pin.pending_for_test(core::ptr::without_provenance_mut::<u8>(addr)),
+        None => false,
+    }
+}
+
+/// Ownership transport accepted by review (the
+/// `tests/support/r8_global_box_witness.rs` pattern): `Box` ownership moved
+/// by value. `Box<Block>` is a unique handle to an unaliased allocation, so
+/// crossing a thread boundary cannot introduce data races, and the
+/// receiver's `drop` performs the one and only free through the installed
+/// global allocator.
+struct ForeignBlock(Box<Block>);
+unsafe impl Send for ForeignBlock {}
+
+/// Owner allocations finish before the worker starts; the flag only keeps
+/// the schedule explicit (and mirrors the previous cell's start gate).
+static OWNER_DONE: AtomicBool = AtomicBool::new(false);
 
 #[test]
-fn pin_cache_hit_and_thread_exit_release_miri() {
-    let _g = SerialGuard::acquire();
+fn narrow_pin_cache_hit_release_and_delivery_miri() {
     let _ = bootstrap::ensure();
 
-    // Miri runs ~1e5x slower than native; keep the block count tiny under it.
-    const BLOCKS: usize = if cfg!(miri) { 16 } else { 64 };
-    const SIZE: usize = 256;
-    let layout = Layout::from_size_align(SIZE, 8).unwrap();
+    let totals = || RoutePin::dbg_route_pin_cache_totals();
+    // The six counters are six separate Relaxed loads, not a snapshot; wait
+    // for two identical consecutive reads before any delta assertion (same
+    // protocol as the native `tests/b4_r1_pin_cache.rs` cell).
+    let quiescent_totals = || {
+        let mut last = totals();
+        for _ in 0..1000 {
+            let next = totals();
+            if next == last {
+                return next;
+            }
+            last = next;
+            std::hint::spin_loop();
+        }
+        last
+    };
 
+    let (h0, m0, i0, _e0, u0, r0) = quiescent_totals();
     let foreign_before = AllocCore::dbg_foreign_or_unroutable_frees();
 
-    // Owner: allocate every block up front so all frees land on registered,
-    // owner-stamped segments. The owner keeps none — all blocks are handed to
-    // the workers, so the post-join block below exercises the own path on an
-    // otherwise quiescent heap.
-    let mut blocks: Vec<usize> = Vec::with_capacity(BLOCKS);
-    for i in 0..BLOCKS {
-        // SAFETY: `layout` is a valid non-zero-sized layout.
-        let p = unsafe { GLOBAL.alloc(layout) };
-        assert!(!p.is_null(), "owner alloc[{i}] returned null");
-        // Exposed-provenance transport: raw pointers are `!Send`.
-        blocks.push(p as usize);
+    // ------------------------------------------------------------------
+    // Owner: REAL `Box` allocations of the 256 B class until one 4 MiB
+    // segment base holds >= 2 live blocks and a second base holds >= 1.
+    // ------------------------------------------------------------------
+    let mut groups: Vec<(usize, Vec<Box<Block>>)> = Vec::new();
+    let covered = |groups: &[(usize, Vec<Box<Block>>)]| {
+        groups.len() == 2
+            && groups.iter().all(|(_, v)| !v.is_empty())
+            && groups.iter().any(|(_, v)| v.len() >= 2)
+    };
+    for _ in 0..1024 {
+        let block = Box::new(Block([0u8; 256]));
+        let base = base_of(block.addr());
+        match groups.iter_mut().find(|(g, _)| *g == base) {
+            Some((_, v)) if v.len() < 2 => v.push(block),
+            _ => drop(block), // surplus freed on the owner thread immediately
+        }
+        if covered(&groups) {
+            break;
+        }
     }
+    assert!(covered(&groups), "owner could not cover two segment bases");
 
-    let split = BLOCKS / 2;
-    let start = Arc::new(AtomicBool::new(false));
+    let heavy = groups
+        .iter()
+        .position(|(_, v)| v.len() >= 2)
+        .expect("a base with two live blocks");
+    let mut x_group = groups.remove(heavy).1;
+    let mut y_group = groups.remove(0).1;
+    // Two same-base blocks: first free = MISS + INSERT, second free = HIT.
+    let first = x_group.remove(0);
+    let hit = x_group.remove(0);
+    let other_base = y_group.remove(0);
+    drop(x_group);
+    drop(y_group);
+    assert_ne!(
+        base_of(first.addr()),
+        base_of(other_base.addr()),
+        "the second base must be a distinct segment"
+    );
 
-    let start_a = Arc::clone(&start);
-    let mut a_blocks = blocks.split_off(split);
-    // Worker A: the first free of a fresh segment is a cache MISS + insert;
-    // the second free has the SAME segment base, so it takes the cached
-    // fast path (HIT). The rest churn the same cache.
-    let first_a = a_blocks.remove(0);
-    let worker_a = thread::spawn(move || {
+    // Narrow reborrows END before the moves (accepted witness pattern):
+    // only the addresses are kept, for gate arming and pending reads.
+    let first_addr = {
+        let narrow: &mut Block = &mut first;
+        narrow.0[0] ^= 0x5A;
+        narrow.0.as_ptr().addr()
+    };
+    let hit_addr = {
+        let narrow: &mut Block = &mut hit;
+        narrow.0[0] ^= 0xA5;
+        narrow.0.as_ptr().addr()
+    };
+    let other_addr = {
+        let narrow: &mut Block = &mut other_base;
+        narrow.0[0] ^= 0x33;
+        narrow.0.as_ptr().addr()
+    };
+    assert_eq!(base_of(first_addr), base_of(hit_addr));
+
+    // ------------------------------------------------------------------
+    // Delivery observation: arm the gate on the FIRST foreign free. The
+    // production routing path calls Gate::pause_after_publication right
+    // after a successful terminal RMW, so the worker is deterministically
+    // suspended in its own Box Drop/dealloc frame with the pending bit set.
+    // ------------------------------------------------------------------
+    Gate::arm(first_addr);
+    struct ResumeProducer;
+    impl Drop for ResumeProducer {
+        fn drop(&mut self) {
+            Gate::resume_producer();
+        }
+    }
+    let resume = ResumeProducer;
+
+    let worker = std::thread::spawn(move || {
         let _ = bootstrap::ensure();
-        while !start_a.load(Ordering::Acquire) {
+        while !OWNER_DONE.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }
-        // SAFETY: `first_a` was allocated by the owner with `layout`.
-        unsafe { GLOBAL.dealloc(first_a as *mut u8, layout) };
-        // Same segment base as `first_a`: this is the cache HIT.
-        // SAFETY: same provenance as above, same layout.
-        unsafe { GLOBAL.dealloc(a_blocks.remove(0) as *mut u8, layout) };
-        for &addr in &a_blocks {
-            // SAFETY: each address was allocated by the owner with `layout`.
-            unsafe { GLOBAL.dealloc(addr as *mut u8, layout) };
-        }
+        // Warm the parking machinery OUTSIDE the Box Drop frames.
+        Gate::prepare_producer();
+        // Real foreign frees through the installed global allocator: the
+        // first same-base free is a miss + insert, and its publication is
+        // where the gate pauses this worker.
+        drop(first);
+        // After resume: the same-base free must take the cached fast path
+        // (HIT), then a fresh-base miss + insert.
+        drop(hit);
+        drop(other_base);
+        // Worker exit: its TLS pin-cache dtor releases the retained pins.
     });
+    OWNER_DONE.store(true, Ordering::Release);
+    Gate::allow_prepared_producer();
+    Gate::wait_for_publication();
 
-    let start_b = Arc::clone(&start);
-    // B frees ONLY this block: the resulting pin is inserted into B's own TLS
-    // cache and stays retained when B returns, so B's thread exit runs the TLS
-    // Drop and releases the pin while the route is still live (its descriptor
-    // survives via the owner ref). The rest of B's half stays with the owner,
-    // which reclaims it after the join.
-    let first_b = blocks.remove(0);
-    let worker_b = thread::spawn(move || {
-        let _ = bootstrap::ensure();
-        while !start_b.load(Ordering::Acquire) {
-            std::hint::spin_loop();
-        }
-        // SAFETY: `first_b` was allocated by the owner with `layout`.
-        unsafe { GLOBAL.dealloc(first_b as *mut u8, layout) };
-    });
+    // The worker is paused after the terminal RMW, inside its own dealloc
+    // frame: the delivery is already observable (sidecar-only read).
+    assert!(
+        pending_at(first_addr),
+        "the armed foreign free must publish its pending bit before resuming"
+    );
+    drop(resume); // release the worker deterministically
+    worker.join().expect("foreign-free worker panicked");
 
-    // Owner: release the gate and immediately service its own small
-    // allocation so owner frames overlap the worker publications.
-    start.store(true, Ordering::Release);
-
-    worker_a.join().unwrap();
-    worker_b.join().unwrap();
-
-    // B exited with a pin retained (its first free); the rest of B's blocks
-    // are returned here so the leak checker sees a balanced heap while the
-    // route is still live — the retained pin's descriptor outlives via the
-    // owner ref, so these are routed frees, not foreign ones.
-    for &addr in &blocks {
-        // SAFETY: each address was allocated by the owner with `layout`.
-        unsafe { GLOBAL.dealloc(addr as *mut u8, layout) };
+    // All three frees published into their (still linked) routes; worker
+    // frees never drain publications (same as the native cell).
+    for (addr, label) in [
+        (first_addr, "first"),
+        (hit_addr, "hit"),
+        (other_addr, "other-base"),
+    ] {
+        assert!(pending_at(addr), "{label} free must leave a pending bit");
     }
 
-    // Owner drains nothing extra: every block was given away. One further
-    // alloc+dealloc of its own keeps the leak checker satisfied and exercises
-    // the own (uncached) path after both producers are gone.
-    // SAFETY: `layout` is a valid non-zero-sized layout.
-    let p = unsafe { GLOBAL.alloc(layout) };
-    assert!(!p.is_null(), "owner post-join alloc returned null");
-    // SAFETY: `p` came from `alloc` with `layout` above.
-    unsafe { GLOBAL.dealloc(p, layout) };
-
+    // ------------------------------------------------------------------
+    // ACTIVATION ORACLE (R30-8). MUTANT "publish_cached always returns
+    // Miss" (cache disabled): the second same-base free re-runs the cold
+    // path, HITS stay flat and this assertion fails.
+    // ------------------------------------------------------------------
+    let (h1, m1, i1, _e1, u1, r1) = quiescent_totals();
+    assert!(
+        h1 - h0 >= 1,
+        "same-base foreign free must HIT the cached pin, got {}",
+        h1 - h0
+    );
+    assert!(
+        m1 - m0 >= 2,
+        "first touch per base must miss, got {}",
+        m1 - m0
+    );
+    assert!(
+        i1 - i0 >= 2,
+        "cold foreign free per base must insert a cached pin, got {}",
+        i1 - i0
+    );
+    // TLS thread-exit release of the retained cached pins: the worker held
+    // one pin per touched base; its exit released both.
+    assert!(
+        r1 - r0 >= 2,
+        "worker exit must release the cached pins, got {}",
+        r1 - r0
+    );
+    assert_eq!(u1 - u0, 0, "linked routes throughout: no unlink fallback");
     assert_eq!(
         AllocCore::dbg_foreign_or_unroutable_frees() - foreign_before,
         0,
-        "every free must resolve via the routed paths, none foreign/unroutable"
+        "every foreign free must be routed, none foreign-or-unroutable"
     );
+
+    // ------------------------------------------------------------------
+    // Owner-side deterministic drain: same-class own alloc/free cycles are
+    // the production drain trigger for detached foreign publications.
+    // ------------------------------------------------------------------
+    for _ in 0..10_000 {
+        drop(Box::new(Block([0u8; 256])));
+        GLOBAL.trim_current_thread();
+        if pending_at(first_addr) || pending_at(hit_addr) || pending_at(other_addr) {
+            continue;
+        }
+        return;
+    }
+    panic!("pending bits were not drained within the owner-cycle bound");
 }

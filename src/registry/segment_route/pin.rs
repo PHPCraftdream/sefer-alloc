@@ -1,5 +1,5 @@
-use super::directory::EntryHandle;
 use super::RouteKind;
+use super::directory::EntryHandle;
 
 /// Counted descriptor and sidecar capability, not a reservation credit.
 /// No allocator-origin root is accessible through a producer pin.
@@ -22,10 +22,7 @@ impl RoutePin {
     /// (cleared under the shard lock) and the pin must not be used for
     /// publication.
     pub fn linked(&self) -> bool {
-        self.entry
-            .entry()
-            .linked
-            .load(core::sync::atomic::Ordering::Acquire)
+        self.entry.entry().linked.load(super::Ordering::Acquire)
     }
     /// Allocator-origin usable root from the immutable counted descriptor.
     /// `HeapCore::realloc`'s foreign leg uses it to read the segment's live
@@ -127,17 +124,27 @@ impl RoutePin {
     pub fn dbg_cache_insert_for_test(self) {
         let base = self.entry.key();
         let incarnation = self.incarnation();
-        crate::registry::heap_core_xthread::route_pin_cache::cache_insert(
-            self, base, incarnation,
-        );
+        crate::registry::heap_core_xthread::route_pin_cache::cache_insert(self, base, incarnation);
     }
-    /// Test-only entry into the production cached fast path; address-only
-    /// (no provenance), exactly like
-    /// `RouteRegistration::class_at_global_address_for_test`. The sidecar RMW
-    /// never dereferences the pointer.
+    /// Test-only entry into the production cached fast path. The input is
+    /// address-only (no provenance); unlike the read-only
+    /// `RouteRegistration::class_at_global_address_for_test` class probe, this
+    /// publication CREATES a reclaim obligation — hence `pub unsafe fn` (see
+    /// `# Safety`). The sidecar RMW never dereferences the pointer.
+    ///
+    /// # Safety
+    /// `address` must be the address of the caller's CURRENT issued Small or
+    /// Primordial allocation instance. Publication consumes ownership: after
+    /// the call returns `true` that instance must never be accessed or freed
+    /// again. A bare address does not establish ownership: publishing a live
+    /// allocation owned by someone else forces the owner to treat the
+    /// instance as freed (reclaim writes the freelist and releases the
+    /// reservation credit) while the owner still uses it — use-after-free by
+    /// construction.
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
-    pub fn dbg_publish_cached_for_test(address: usize) -> bool {
+    #[allow(unsafe_code)]
+    pub unsafe fn dbg_publish_cached_for_test(address: usize) -> bool {
         use crate::registry::heap_core_xthread::route_pin_cache::CachedPublication;
         let ptr = core::ptr::without_provenance_mut::<u8>(address);
         match crate::registry::heap_core_xthread::route_pin_cache::publish_cached(ptr) {

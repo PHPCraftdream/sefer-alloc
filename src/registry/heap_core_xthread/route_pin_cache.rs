@@ -23,7 +23,6 @@
 //! Thread exit: the `thread_local!` `Drop` releases every retained pin count
 //! through the existing `EntryHandle::drop` protocol (`refs.fetch_sub`), the
 //! ONLY release path — no new refcount code exists here.
-#![allow(unsafe_code)]
 use crate::registry::segment_route::RoutePin;
 use core::cell::RefCell;
 
@@ -55,6 +54,10 @@ impl PinCache {
 
 impl Drop for PinCache {
     fn drop(&mut self) {
+        // Measurement-only: a plain production Drop must neither read nor
+        // increment anything; the pins themselves release through their own
+        // `Drop for RoutePin` (the EntryHandle protocol) in every config.
+        #[cfg(all(feature = "internals", feature = "bench-internals"))]
         PIN_CACHE_THREAD_RELEASES.fetch_add(
             self.slots.iter().filter(|slot| slot.pin.is_some()).count() as u64,
             core::sync::atomic::Ordering::Relaxed,
@@ -129,6 +132,7 @@ pub(crate) enum CachedPublication {
 /// Fast path: publish `ptr` through a cached pin for its segment base, if a
 /// still-linked route is cached. Never panics and never allocates; TLS
 /// unavailability or a reentrant borrow degrades to [`CachedPublication::Miss`].
+#[allow(unsafe_code)]
 pub(crate) fn publish_cached(ptr: *mut u8) -> CachedPublication {
     let addr = ptr.addr();
     let base = addr & !(crate::alloc_core::os::SEGMENT - 1);
