@@ -156,13 +156,12 @@ split the same day.)
     - **Next trigger:** the next change that touches one of those sites, or an owner request. Route each through the shared `fatal` helper with a static one-line message; no counter is needed before an abort.
     - **Evidence:** `docs/reviews/2026-10-11-owner-questions-decisions-ox.md` question 10; `src/alloc_core/platform/fatal.rs`.
 
-215. **[T] Inconsistent semantics of `foreign_or_unroutable_frees`.** (Filed 2026-10-15, round-6 src review.)
+215. **[T → CLOSED 2026-10-18] Inconsistent semantics of `foreign_or_unroutable_frees`.** (Filed 2026-10-15, round-6 src review; CLOSED 2026-10-18, round-6 task R6-T55, wave-14 executor r6-u30.)
 
     > **Current state**
-    > - **Status:** OPEN — tracked; queued as round-6 task R6-T55 (docs/agent_reviews_round6/SUMMARY.md).
-    > - **Current:** the counter's meaning differs between sites: some increments count genuinely unroutable frees and others also count routable-but-refused or batch-path ones, so the statistic cannot be read as a single well-defined predicate (per the report's site-by-site comparison).
-    > - **Next trigger:** R6-T55 in the round-6 queue; close via that task's definition unification and per-site counterfactual tests.
-    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-10; task R6-T55.
+    > - **Status:** CLOSED (R6-T55) — the public counter is back to a single well-defined predicate: foreign route drops only (address-only lookup miss or rejected terminal publication), exactly as `AllocStats::foreign_or_unroutable_frees`'s doc reads. Local no-op rejections (interior-address Large frees, `small_free_guard` `RejectNoOp`s) moved to the new `internals`/`bench-internals`-gated `LOCAL_REJECT_FREES` counter (read via `AllocCore::dbg_local_reject_frees`); `reject_large_interior_free` is a pure predicate again. A plain `production` build counts local rejects nowhere (measurement-only gating).
+    > - **Counterfactual tests:** `tests/r6_t55_local_reject_frees.rs` (red before the fix: the local interior Large free bumped the public counter) and `tests/r19_large_interior_free.rs` (rewritten to pin public-flat + `LOCAL_REJECT_FREES` +1 per local reject). Both run only on CI — local checks were `cargo check`/`clippy`/`rustfmt` only.
+    > - **Evidence:** `docs/agent_reviews_round6/correctness_review.md` R6-CR-10; `docs/agent_reviews_round6/SUMMARY.md` R6-T55.
 
 246. **[T] U-R5-5 residual in its new form: a stale/double free after reservation reissue frees the CURRENT owner's block (Small and Large); the deferred-large mechanism is gone but the indistinguishability remains.** (Filed 2026-10-15, round-6 src review — card created now because round-5's U-R5-5 residual had no card in this index; see note below.)
 

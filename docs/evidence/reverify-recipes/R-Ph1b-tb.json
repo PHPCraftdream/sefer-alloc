@@ -1,0 +1,32 @@
+{
+  "id": "R-Ph1b-tb",
+  "registryActivationHash": "f9e685c029d37d083a2663b9bfb6ab4d2ba155ce0c421b577eae6a12c377dfbc",
+  "steps": [
+    {
+      "name": "exact-object paused-Box witness on HEAD (Miri TB)",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-tree-borrows -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "exact-object-proto internals bench-internals",
+        "--test",
+        "r11_exact_object_proto",
+        "--",
+        "paused"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "\\[r11_exact_object_proto\\] COMPLETE paused"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
