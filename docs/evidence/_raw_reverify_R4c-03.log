@@ -1,5 +1,5 @@
-E0_METADATA {"id":"R4c-03","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-03","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","os":"linux x64","toolchain":"rustc 1.101.0-nightly (8006091eb 2026-10-17)\nbinary: rustc\ncommit-hash: 8006091eb71ae7d9e9bccb66c6122c9d68af4466\ncommit-date: 2026-10-17\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB strict-provenance","recipe":"docs/evidence/reverify-recipes/R4c-03.json","recipe_sha256":"ef02f131ecc983f1c060aea9b9879b7f7abdf6fee06b6987d83eebc57594b5c6","registry_activation_hash":"58c45cf1557f945782293b1f273135122c03b009b37930d3b3ac114a6b16a3fb"}
+E0_METADATA {"id":"R4c-03","head":"6560a0a2945e1157a33bb5473fbe31c36f5ebbfa","tree":"be3c5234e8e09b16c9f8885e12cfb5c4df70c598","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-03","head":"6560a0a2945e1157a33bb5473fbe31c36f5ebbfa","tree":"be3c5234e8e09b16c9f8885e12cfb5c4df70c598","os":"linux x64","toolchain":"rustc 1.101.0-nightly (8006091eb 2026-10-17)\nbinary: rustc\ncommit-hash: 8006091eb71ae7d9e9bccb66c6122c9d68af4466\ncommit-date: 2026-10-17\nhost: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4","profile":"Miri SB strict-provenance","recipe":"docs/evidence/reverify-recipes/R4c-03.json","recipe_sha256":"ef02f131ecc983f1c060aea9b9879b7f7abdf6fee06b6987d83eebc57594b5c6","registry_activation_hash":"58c45cf1557f945782293b1f273135122c03b009b37930d3b3ac114a6b16a3fb"}
 
 E0_STEP {"id":"R4c-03","kind":"baseline","name":"strict provenance re-acceptance","argv":["cargo","+nightly","miri","test","--locked","--features","alloc-global alloc-xthread internals","--test","r11_ph4a_lease_miri"],"env":{"MIRIFLAGS":"-Zmiri-strict-provenance"},"expect":{"exit":0,"stdoutRegex":["test lease_claim_drop_reclaim_across_threads_under_miri \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
@@ -75,8 +75,7 @@ E0_STEP {"id":"R4c-03","kind":"baseline","name":"strict provenance re-acceptance
 [1m[94m25[0m [92m+ [lints][0m
    [1m[94m|[0m
 [1m[33mwarning[0m: `proc-memstat` (manifest) generated 1 warning
-[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.06s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph4a_lease_miri.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/sefer-alloc/fbdbc10cd17db338/out/r11_ph4a_lease_miri-fbdbc10cd17db338)
@@ -84,7 +83,7 @@ E0_STEP {"id":"R4c-03","kind":"baseline","name":"strict provenance re-acceptance
 running 1 test
 test lease_claim_drop_reclaim_across_threads_under_miri ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.70s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.72s
 
 
 E0_STEP_END {"code":0,"signal":null,"error":null}
