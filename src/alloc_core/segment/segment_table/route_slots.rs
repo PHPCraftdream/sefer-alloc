@@ -315,6 +315,10 @@ impl RoutedIssueRun<'_> {
             .as_ref()
             .is_some_and(|c| c.leaf_idx() == LeafCursor::leaf_index(granule))
         {
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
+            if ClassLeaves::fail_prepare_injected() {
+                return false;
+            }
             return true;
         }
         match self.classes.prepare_leaf(granule, self.class) {

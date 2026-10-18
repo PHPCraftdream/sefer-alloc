@@ -286,6 +286,16 @@ impl ClassLeaves {
         FAIL_NEXT_SPILLS.try_with(Cell::get).unwrap_or(0)
     }
 
+    /// Per-block prepare fault point for batch runs: a same-leaf block skips
+    /// `prepare_leaf`, so the run consumes the `fail_prepare_after` countdown
+    /// here to keep the injected refusal on the same block as the scalar path.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    pub(crate) fn fail_prepare_injected() -> bool {
+        FAIL_PREPARE_AFTER
+            .try_with(Self::fail_countdown)
+            .unwrap_or(false)
+    }
+
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     pub(crate) fn fail_prepare_after(count: usize) {
         let _ = FAIL_PREPARE_AFTER.try_with(|n| n.set(count));

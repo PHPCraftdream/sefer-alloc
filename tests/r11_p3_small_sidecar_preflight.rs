@@ -68,11 +68,7 @@ fn batch_drain() {
     let directory = core.dbg_directory_get_bit(0, 0);
     let system = SmallSidecar::system_totals_for_test();
     let mut out = [anchor; 260];
-    // B4-R3: the drain prepares once per RUN plus once per 256-granule leaf
-    // CHANGE (the run's first block initializes the cursor; the crossing
-    // block promotes the fresh leaf). Countdown 2 lands the refusal on the
-    // leaf-crossing block, exactly where the old per-block countdown 257 did.
-    SmallSidecar::fail_prepare_after_for_test(2);
+    SmallSidecar::fail_prepare_after_for_test(257);
     // SAFETY: anchor remains a live allocation in this exclusively owned core.
     assert_eq!(
         unsafe { core.dbg_drain_freelist_batch(anchor, 0, &mut out) },
