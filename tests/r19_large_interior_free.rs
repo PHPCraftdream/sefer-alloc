@@ -1,6 +1,14 @@
 //! SEC-03 boundary probes: deliberately invalid interior frees/reallocs must
 //! reject before consuming a live Large credit. Removing the guards makes the
 //! counter/membership/null assertions fail before any source-byte read.
+//! R6-T55: an interior Large address whose numeric key lands in the
+//! registered payload-key window resolves to this core — its reject leaves
+//! the public `foreign_or_unroutable_frees` flat and lands in the
+//! internals-gated `LOCAL_REJECT_FREES` instead. A biased Large pre-payload
+//! address (`ptr - 64` under `align == SEGMENT`) does NOT resolve: it is the
+//! documented "no matching live route" drop and counts in
+//! `foreign_or_unroutable_frees` (standalone core: under
+//! `alloc-global`/`alloc-stats`; global face: unconditionally).
 #![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
@@ -10,9 +18,54 @@ fn layout(size: usize, align: usize) -> Layout {
     Layout::from_size_align(size, align).unwrap()
 }
 
-fn assert_free_count(before: u64) {
-    let expected = before + u64::from(cfg!(any(feature = "alloc-global", feature = "alloc-stats")));
-    assert_eq!(AllocCore::dbg_foreign_or_unroutable_frees(), expected);
+/// R6-T55: a rejected LOCAL interior probe (numeric key resolves to this
+/// core) leaves the public foreign/unroutable stat flat and lands in
+/// `LOCAL_REJECT_FREES` exactly once (the pre-R6-T55 code bumped the public
+/// stat here — that is the red counterfactual).
+fn assert_local_reject(before: u64, rejects_before: u64) {
+    assert_eq!(
+        AllocCore::dbg_foreign_or_unroutable_frees(),
+        before,
+        "a local interior reject must not count as a foreign/unroutable drop"
+    );
+    assert_eq!(
+        AllocCore::dbg_local_reject_frees(),
+        rejects_before + 1,
+        "the local interior reject must land in LOCAL_REJECT_FREES"
+    );
+}
+
+/// R6-T55, review follow-up: a biased Large PRE-payload address (`ptr - 64`
+/// under `align == SEGMENT`) carries a numeric key OUTSIDE every registered
+/// payload-key window (Large registration keys on
+/// `segment_base_of_ptr(payload)`), so the address-only lookup cannot resolve
+/// it to this core. That is the DOCUMENTED `foreign_or_unroutable_frees`
+/// case ("address-only route lookup finds no matching live route"): the
+/// standalone core counts it in its unresolved-address branch (compiled
+/// under `alloc-global`/`alloc-stats`), the global face in
+/// `publish_foreign`'s lookup-miss branch (unconditional under
+/// `alloc-global`). It never reaches a local reject site, so
+/// `LOCAL_REJECT_FREES` stays flat.
+fn assert_unroutable_reject(before: u64, rejects_before: u64) {
+    assert_eq!(
+        AllocCore::dbg_foreign_or_unroutable_frees(),
+        before + u64::from(cfg!(any(feature = "alloc-global", feature = "alloc-stats"))),
+        "an unresolved interior address must count only as the documented \
+         foreign/unroutable drop",
+    );
+    assert_eq!(
+        AllocCore::dbg_local_reject_frees(),
+        rejects_before,
+        "an unresolved interior address never reaches a local reject site",
+    );
+}
+
+/// The R6-T55 rule for one probe address: `true` when the address's numeric
+/// key lands in the registered payload-key window (both probes under
+/// `align == 16`, and `ptr + 64` under `align == SEGMENT`); `false` for the
+/// biased pre-payload `ptr - 64` under `align == SEGMENT`.
+fn resolves_locally(align: usize, ptr: *mut u8, address: usize) -> bool {
+    align < SegmentLayout::SEGMENT || address == ptr.addr() + 64
 }
 
 unsafe fn fill(ptr: *mut u8, size: usize) {
@@ -43,10 +96,11 @@ fn large_interior_free_and_realloc_preserve_source() {
         assert!(!ptr.is_null());
         let geometry = core.large_geometry_for_test(ptr).unwrap();
         let before = AllocCore::dbg_foreign_or_unroutable_frees();
+        let rejects_before = AllocCore::dbg_local_reject_frees();
         let interior = core::ptr::without_provenance_mut(ptr.addr() + 64);
         // SAFETY: deliberate rejection probe into a mapped live Large block.
         unsafe { core.dealloc(interior, old) };
-        assert_free_count(before);
+        assert_local_reject(before, rejects_before);
         assert_eq!(core.large_geometry_for_test(ptr), Some(geometry));
         // SAFETY: the exact issued start remains owned after rejection; free
         // once. Moving rejection after claim_live aborts at this valid free.
@@ -67,6 +121,7 @@ fn large_interior_free_and_realloc_preserve_source() {
             // Address keys only: allocator resolves canonical root provenance.
             let interior = core::ptr::without_provenance_mut(address);
             let before = AllocCore::dbg_foreign_or_unroutable_frees();
+            let rejects_before = AllocCore::dbg_local_reject_frees();
             let released = AllocCore::dbg_segments_released_total();
             #[cfg(feature = "alloc-decommit")]
             let cached = (
@@ -76,7 +131,11 @@ fn large_interior_free_and_realloc_preserve_source() {
             // SAFETY: deliberate defence-in-depth contract-violation probe;
             // live owner root is mapped, but this address must be rejected.
             unsafe { core.dealloc(interior, old) };
-            assert_free_count(before);
+            if resolves_locally(align, ptr, interior.addr()) {
+                assert_local_reject(before, rejects_before);
+            } else {
+                assert_unroutable_reject(before, rejects_before);
+            }
             assert_eq!(core.large_geometry_for_test(ptr), Some(geometry));
             assert_eq!(AllocCore::dbg_segments_released_total(), released);
             #[cfg(feature = "alloc-decommit")]
@@ -166,6 +225,7 @@ fn heap_cases() {
                     && free_layout != old
                     && heap.dbg_segment_registered_for(interior);
                 let before = AllocCore::dbg_foreign_or_unroutable_frees();
+                let rejects_before = AllocCore::dbg_local_reject_frees();
                 let hardened_before =
                     sefer_alloc::registry::HeapCore::dbg_hardened_large_noop_count();
                 #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
@@ -177,10 +237,10 @@ fn heap_cases() {
                 // SAFETY: deliberate invalid-address/layout boundary probe;
                 // only rejection, not payload access or free, is permitted.
                 unsafe { heap.dealloc(interior, free_layout) };
-                if hardened_layout_reject {
-                    assert_eq!(AllocCore::dbg_foreign_or_unroutable_frees(), before);
+                if resolves_locally(align, ptr, interior.addr()) {
+                    assert_local_reject(before, rejects_before);
                 } else {
-                    assert_free_count(before);
+                    assert_unroutable_reject(before, rejects_before);
                 }
                 assert_eq!(
                     sefer_alloc::registry::HeapCore::dbg_hardened_large_noop_count(),
@@ -208,6 +268,7 @@ fn heap_cases() {
                 #[cfg(feature = "batch-api")]
                 {
                     let before = AllocCore::dbg_foreign_or_unroutable_frees();
+                    let rejects_before = AllocCore::dbg_local_reject_frees();
                     let hardened_before =
                         sefer_alloc::registry::HeapCore::dbg_hardened_large_noop_count();
                     #[cfg(all(feature = "fastbin", feature = "bench-internals"))]
@@ -217,10 +278,10 @@ fn heap_cases() {
                     // SAFETY: same deliberate rejection probe, through batch
                     // routing (both scalar Large and fastbin Small layout).
                     unsafe { heap.dealloc_batch(free_layout, &[interior]) };
-                    if hardened_layout_reject {
-                        assert_eq!(AllocCore::dbg_foreign_or_unroutable_frees(), before);
+                    if resolves_locally(align, ptr, interior.addr()) {
+                        assert_local_reject(before, rejects_before);
                     } else {
-                        assert_free_count(before);
+                        assert_unroutable_reject(before, rejects_before);
                     }
                     assert_eq!(
                         sefer_alloc::registry::HeapCore::dbg_hardened_large_noop_count(),

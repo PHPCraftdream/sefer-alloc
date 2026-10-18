@@ -434,7 +434,10 @@ medium_promotion_reachable! {
 /// Process-wide count of frees dropped because address-only lookup found no
 /// matching live route or the pinned terminal sidecar rejected publication.
 /// Not an exhaustive invalid-free or layout-mismatch detector; callers still
-/// must provide a current allocation and exact layout. Surfaced as
+/// must provide a current allocation and exact layout. Local (own-thread)
+/// no-op rejections — interior Large frees, double-free oracles, hardened
+/// layout/kind rejects — are NOT counted here (R6-T55); they live in
+/// [`LOCAL_REJECT_FREES`]. Surfaced as
 /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
 /// via `AllocCore::foreign_or_unroutable_frees`.
 ///
@@ -455,6 +458,27 @@ medium_promotion_reachable! {
 )]
 #[cfg(feature = "alloc-core")]
 pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R6-T55 (R6-CR-10): process-wide count of LOCAL frees rejected as counted
+/// no-ops — an interior-address Large free rejected on the owner's own path
+/// (`AllocCore::dealloc_large_at_base`, the `small_free_guard` Large pre-route)
+/// and the guard chain's `RejectNoOp` outcomes (M2 double-free oracles,
+/// hardened layout/kind violations). Deliberately NOT part of
+/// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees):
+/// that public field stays a pure route-health signal (lookup miss or rejected
+/// terminal publication), exactly as its doc reads — counting the local
+/// interior Large reject there mixed routing health with caller misuse
+/// (R6-CR-10). Increments are gated behind `internals`/`bench-internals`
+/// (measurement-only, the `CONTAINS_BASE_TIER1_HITS` convention); a plain
+/// `production` build counts local rejects nowhere. Read via
+/// `AllocCore::dbg_local_reject_frees`. Relaxed: diagnostic only.
+#[cfg(feature = "alloc-core")]
+#[cfg_attr(
+    not(any(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static LOCAL_REJECT_FREES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 // TEST/DIAGNOSTIC-ONLY (task D1 → 0.4.x task #133): large-cache HIT

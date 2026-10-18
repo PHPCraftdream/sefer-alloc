@@ -76,6 +76,17 @@ impl AllocCore {
         Self::foreign_or_unroutable_frees()
     }
 
+    /// Test alias of the internal local-reject counter (R6-T55): LOCAL no-op
+    /// rejections — interior Large frees and `small_free_guard` `RejectNoOp`s
+    /// — that deliberately never enter the public
+    /// `foreign_or_unroutable_frees`. See `counters::LOCAL_REJECT_FREES`.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-core")]
+    #[must_use]
+    pub fn dbg_local_reject_frees() -> u64 {
+        crate::alloc_core::LOCAL_REJECT_FREES.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Test alias of [`Self::segments_reserved_total`].
     #[doc(hidden)]
     #[must_use]
