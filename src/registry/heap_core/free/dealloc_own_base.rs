@@ -59,7 +59,8 @@ pub(super) enum SmallFreeGuard {
     Accept { off: u32 },
     /// Rejected as a benign no-op (double-free / interior-pointer /
     /// hardened Large-kind contract violation) — already fully handled; the
-    /// caller does nothing further for this pointer.
+    /// caller does nothing further for this pointer. (R6-T55: the callers
+    /// bump the `LOCAL_REJECT_FREES` diagnostic here.)
     RejectNoOp,
     /// F7 branch (A) / the Ph3b pre-route: `ptr` is a LEGITIMATE
     /// promoted-and-grown Large block (`medium-classes` promotion). The
@@ -426,7 +427,16 @@ impl HeapCore {
                             }
                             (off, SegmentMeta::new(root))
                         }
-                        SmallFreeGuard::RejectNoOp => return,
+                        SmallFreeGuard::RejectNoOp => {
+                            // R6-T55: local no-op reject — internal counter,
+                            // not the public foreign/unroutable stat. The
+                            // guard's Large-interior cases surface HERE, so
+                            // this is one increment per rejected free.
+                            #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                            crate::alloc_core::LOCAL_REJECT_FREES
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                            return;
+                        }
                         SmallFreeGuard::RouteToLargeFree => {
                             route_to_large_free(self, block, layout, root);
                             return;

@@ -282,6 +282,12 @@ impl AllocCore {
     #[inline(never)]
     fn dealloc_large_at_base(&mut self, ptr: *mut u8, base: *mut u8) {
         if Self::reject_large_interior_free(base, ptr) {
+            // R6-T55: a local interior reject is caller misuse, not a routing
+            // failure — internal reject counter, never the public
+            // `foreign_or_unroutable_frees`.
+            #[cfg(any(feature = "internals", feature = "bench-internals"))]
+            crate::alloc_core::LOCAL_REJECT_FREES
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return;
         }
         // LIVE carries this instance's sole credit until the owner

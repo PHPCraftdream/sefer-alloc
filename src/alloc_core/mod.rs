@@ -185,6 +185,14 @@ pub(crate) use alloc_core::LARGE_REMOTE_RETIREMENTS;
 /// module path and must remain available regardless of feature set).
 #[cfg(feature = "alloc-stats")]
 pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
+/// R6-T55: the local-reject counter, re-exported crate-wide so the
+/// `dealloc_large_at_base` reject branch and the `small_free_guard` consumers
+/// can bump it (same pattern as `FOREIGN_OR_UNROUTABLE_FREES` above). Read via
+/// `AllocCore::dbg_local_reject_frees`. Not public API; the increment sites
+/// are `internals`/`bench-internals`-gated, so the re-export carries the same
+/// predicate.
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+pub(crate) use alloc_core::LOCAL_REJECT_FREES;
 /// R12-10 (task #261, `virgin-zero-skip`) test seam: the process-wide
 /// Small-path explicit zero-pass counter, re-exported crate-wide so
 /// `HeapCore::alloc_zeroed` (registry) can bump the SAME counter

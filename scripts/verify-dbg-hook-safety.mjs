@@ -55,6 +55,7 @@ const PURE_OBSERVERS = [
   "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
   "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",
   "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_foreign_or_unroutable_frees",
+  "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_local_reject_frees",
   "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_reserved_total",
   "src/alloc_core/alloc_core/alloc_core_core_diag/totals.rs::dbg_segments_released_total",
   "src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs::dbg_segments_reserve_failed_total",

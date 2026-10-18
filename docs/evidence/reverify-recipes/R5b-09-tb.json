@@ -1,0 +1,34 @@
+{
+  "id": "R5b-09-tb",
+  "registryActivationHash": "17ba5671abacd979a8efb0589a0846e2a2d87f671787cbf2a39435acbf5fbc7f",
+  "steps": [
+    {
+      "name": "C4 pause-window witness expected red on HEAD (Miri TB, alloc-global shape)",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-tree-borrows -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global internals bench-internals",
+        "--test",
+        "miri_global_box_acceptance",
+        "--",
+        "paused"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdoutRegex": [
+          "Undefined Behavior: write access through .* is forbidden",
+          "0: sefer_alloc::alloc_core::platform::node::Node::write_next",
+          "reclaim_sidecar_record|flush_run|dealloc_small"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

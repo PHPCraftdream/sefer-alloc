@@ -1,0 +1,28 @@
+{
+  "id": "R-Ph1b-native",
+  "registryActivationHash": "9178511e0bfea940f5332d139a88a347dfe32c17d2ec4bbb8e4454ff1e8a4f2d",
+  "steps": [
+    {
+      "name": "exact-object paused-Box witness on HEAD (native)",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "exact-object-proto internals bench-internals",
+        "--test",
+        "r11_exact_object_proto",
+        "--",
+        "paused"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "\\[r11_exact_object_proto\\] COMPLETE paused"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

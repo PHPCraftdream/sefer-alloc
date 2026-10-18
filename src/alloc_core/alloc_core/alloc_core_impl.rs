@@ -20,11 +20,17 @@ pub(crate) use counters::LARGE_ZERO_PASS_CALLS;
 // too (see `alloc_core/mod.rs`); same re-export shape as `LARGE_ZERO_PASS_CALLS`.
 #[cfg(any(feature = "alloc-xthread", feature = "alloc-stats"))]
 pub(crate) use counters::FOREIGN_OR_UNROUTABLE_FREES;
+// R6-T55: same path-parity shape — the local-reject counter's consumers (the
+// `dealloc_large_at_base` reject branch and the `small_free_guard` callers in
+// the registry) gate their increments on `internals`/`bench-internals`, and
+// the crate-root re-export in `alloc_core/mod.rs` carries the same predicate.
+#[cfg(any(feature = "internals", feature = "bench-internals"))]
+pub(crate) use counters::LOCAL_REJECT_FREES;
+#[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
+pub(crate) use counters::SMALL_ZERO_PASS_CALLS;
 // B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observers,
 // mirrored at the pre-split path so `alloc_core/mod.rs` can re-export them
 // crate-wide (same shape as `FOREIGN_OR_UNROUTABLE_FREES` above).
-#[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
-pub(crate) use counters::SMALL_ZERO_PASS_CALLS;
 #[cfg(feature = "bench-internals")]
 pub(crate) use counters::{
     B4_DIRECTORY_LOOKUPS, B4_FIND_SEGMENT_CALLS, B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS,

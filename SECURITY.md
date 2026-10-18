@@ -102,6 +102,16 @@ hole is reachable from safe code without those features. The `experimental`,
 soundness issues in them are accepted as reports at reduced severity, and no
 security guarantees are made for them.
 
+Related supply-chain note: Cargo features are additive and unified across
+the dependency graph, so any dependency can enable `exact-object-proto`,
+`virgin-zero-skip`, `hardened`, or `bench-internals` and silently change the
+global allocator's behavior for the whole binary (prototype paths, skipped
+zero fills, new abort paths, extra measurement hooks). Verify the feature
+set that actually ships (`cargo tree -e features -i sefer-alloc`) before
+relying on allocator-level guarantees; the README's Security section
+("Additive features can change the global allocator") lists what each of
+these features changes.
+
 ## Hall of fame
 
 Researchers who responsibly disclose valid vulnerabilities will be credited here
