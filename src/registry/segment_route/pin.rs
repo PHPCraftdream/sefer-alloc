@@ -14,9 +14,18 @@ impl RoutePin {
     pub fn kind(&self) -> RouteKind {
         self.entry.kind()
     }
-    #[cfg(feature = "internals")]
     pub fn incarnation(&self) -> u64 {
         self.entry.incarnation()
+    }
+    /// Read-only link-state probe. The cached-pin fast path checks this
+    /// (Acquire) before publishing; `false` means the route was unlinked
+    /// (cleared under the shard lock) and the pin must not be used for
+    /// publication.
+    pub fn linked(&self) -> bool {
+        self.entry
+            .entry()
+            .linked
+            .load(core::sync::atomic::Ordering::Acquire)
     }
     /// Allocator-origin usable root from the immutable counted descriptor.
     /// `HeapCore::realloc`'s foreign leg uses it to read the segment's live
@@ -27,6 +36,19 @@ impl RoutePin {
     /// Capacity validation reads only the independent immutable descriptor.
     pub fn contains_payload(&self, ptr: *mut u8, size: usize) -> bool {
         self.entry.contains_payload(ptr.addr(), size)
+    }
+    /// Span validation mirroring `RouteDirectory::lookup` for a single
+    /// address; used by the cached-pin fast path to re-derive the same
+    /// verdict a fresh lookup would produce.
+    pub fn span_contains_addr(&self, addr: usize) -> bool {
+        let e = self.entry.entry();
+        addr >= e.payload
+            && addr < e.end
+            && (if matches!(e.kind, RouteKind::Large) {
+                crate::alloc_core::AllocCore::large_payload_address_matches(addr, e.payload, 0)
+            } else {
+                true
+            })
     }
     /// Read-only terminal-publication oracle; does not grant owner mutation.
     #[cfg(feature = "internals")]
@@ -49,8 +71,30 @@ impl RoutePin {
     /// Primordial allocation. The caller transfers its unique ownership once
     /// and must not access or free that allocation after successful publication.
     /// Address lookup alone does not establish this ownership.
+    // The cached path publishes via `publish_small_borrowed`; the consuming
+    // form remains for external/tests publication sites.
+    #[cfg_attr(
+        not(any(feature = "internals", feature = "bench-internals")),
+        allow(dead_code)
+    )]
     #[allow(unsafe_code)]
     pub unsafe fn publish_small(self, offset: u32) -> bool {
+        self.publish_small_borrowed(offset)
+    }
+    /// Borrowing variant of [`RoutePin::publish_small`]; the pin stays alive
+    /// for the per-thread route pin cache.
+    ///
+    /// # Safety
+    /// This pin and `offset` identify the caller's current issued Small or
+    /// Primordial allocation. The caller transfers its unique ownership once
+    /// and must not access or free that allocation after successful publication.
+    /// Address lookup alone does not establish this ownership. The pin is NOT
+    /// consumed; each call transfers the caller's unique ownership of one
+    /// current allocation instance published through this route, and the pin
+    /// may serve further instances of the same route (this is what the
+    /// per-thread pin cache relies on).
+    #[allow(unsafe_code)]
+    pub unsafe fn publish_small_borrowed(&self, offset: u32) -> bool {
         self.entry
             .small_sidecar()
             .is_some_and(|sidecar| sidecar.publish(offset))
@@ -66,5 +110,39 @@ impl RoutePin {
         self.entry
             .large_state()
             .is_some_and(|state| state.publish_pending())
+    }
+    /// Test/diagnostic totals of the per-thread route pin cache
+    /// (hits, misses, inserts, evictions, unlink fallbacks, thread releases).
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_route_pin_cache_totals() -> (u64, u64, u64, u64, u64, u64) {
+        crate::registry::heap_core_xthread::route_pin_cache::dbg_totals()
+    }
+    /// Test-only seam that inserts a caller-looked-up pin into the per-thread
+    /// route pin cache through the production insert path, so tests can
+    /// exercise the cached fast path and its unlink handling deterministically
+    /// without a second live heap.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_cache_insert_for_test(self) {
+        let base = self.entry.key();
+        let incarnation = self.incarnation();
+        crate::registry::heap_core_xthread::route_pin_cache::cache_insert(
+            self, base, incarnation,
+        );
+    }
+    /// Test-only entry into the production cached fast path; address-only
+    /// (no provenance), exactly like
+    /// `RouteRegistration::class_at_global_address_for_test`. The sidecar RMW
+    /// never dereferences the pointer.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_publish_cached_for_test(address: usize) -> bool {
+        use crate::registry::heap_core_xthread::route_pin_cache::CachedPublication;
+        let ptr = core::ptr::without_provenance_mut::<u8>(address);
+        match crate::registry::heap_core_xthread::route_pin_cache::publish_cached(ptr) {
+            CachedPublication::Published(published) => published,
+            CachedPublication::Miss => false,
+        }
     }
 }

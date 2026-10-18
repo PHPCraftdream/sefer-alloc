@@ -39,6 +39,7 @@ export const MIRI_TARGETS = [
   ...['regression_xthread_large_free_no_leak', 'regression_xthread_thread_free_alias_miri',
     'regression_xthread_small_ring_miri']
     .map((test) => green('miri-plain', test, plainFeatures, { model: 'plain' })),
+  green('miri-plain', 'b4_r1_pin_cache_miri', plainFeatures, { model: 'plain' }),
   green('miri-plain', 'r6_terminal_owner_drain', 'alloc-global alloc-xthread internals bench-internals', {
     model: 'plain', args: ['--', '--exact', 'requested_sizes_one_through_seven_retire_once_and_reissue'],
     marker: 'test requested_sizes_one_through_seven_retire_once_and_reissue ... ok',

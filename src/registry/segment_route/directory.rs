@@ -6,7 +6,7 @@ use core::cell::Cell;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 use crate::alloc_core::fatal::fatal;
@@ -22,16 +22,17 @@ std::thread_local! {
     static FAIL_NEXT_REGISTRATION: Cell<usize> = const { Cell::new(0) };
 }
 
-struct Entry {
-    key: usize,
-    end: usize,
-    payload: usize,
-    root: AtomicPtr<u8>,
-    owner: usize,
-    kind: RouteKind,
-    incarnation: u64,
-    refs: AtomicUsize,
-    sidecar: AtomicPtr<u8>,
+pub(super) struct Entry {
+    pub(super) key: usize,
+    pub(super) end: usize,
+    pub(super) payload: usize,
+    pub(super) root: AtomicPtr<u8>,
+    pub(super) owner: usize,
+    pub(super) kind: RouteKind,
+    pub(super) incarnation: u64,
+    pub(super) refs: AtomicUsize,
+    pub(super) sidecar: AtomicPtr<u8>,
+    pub(super) linked: AtomicBool,
 }
 
 /// One counted reference to a stable System allocation. There is no borrowed
@@ -100,6 +101,7 @@ impl EntryHandle {
                 incarnation,
                 refs: AtomicUsize::new(1),
                 sidecar: AtomicPtr::new(sidecar),
+                linked: AtomicBool::new(true),
             });
         }
         Ok(Self {
@@ -129,7 +131,7 @@ impl EntryHandle {
         }
     }
 
-    fn entry(&self) -> &Entry {
+    pub(super) fn entry(&self) -> &Entry {
         // SAFETY: this handle owns one counted reference to a fully
         // initialized, non-moving Entry; final free occurs after its Drop.
         unsafe { &*self.ptr.load(Ordering::Relaxed) }
@@ -732,6 +734,7 @@ pub struct RouteDirectory {
 }
 
 impl RouteDirectory {
+    #[allow(clippy::new_without_default)] // Default impl removed: unused, line cap
     pub const fn new() -> Self {
         Self {
             shards: [const { ShardLock::new(Shard::empty()) }; SHARDS],
@@ -980,6 +983,9 @@ impl RouteDirectory {
             return false;
         };
         let retired = guard.remove(key, entry.ptr());
+        // Cached-pin fast path: `linked` is read Acquire before publishing;
+        // it must be cleared under the shard lock, before unlink/owner drop.
+        entry.entry().linked.store(false, Ordering::Release);
         // The caller drops the owner reference after this lock is released.
         drop(guard);
         // Displaced blocks are released outside the shard lock.
@@ -990,11 +996,5 @@ impl RouteDirectory {
     const fn shard_index(key: usize) -> usize {
         let value = key / SEGMENT;
         (value ^ (value >> 13) ^ (value >> 26)) % SHARDS
-    }
-}
-
-impl Default for RouteDirectory {
-    fn default() -> Self {
-        Self::new()
     }
 }
