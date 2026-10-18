@@ -11,6 +11,37 @@
 //! already found correct, now made explicit by the type system instead of by
 //! convention at five call sites.
 //!
+//! # `IssueRun` — the batch twin (B4-R3)
+//!
+//! [`IssueRun`] is the run-level twin for whole-batch refills (one run = one
+//! refill batch in one segment, used by `try_drain_freelist_batch` and
+//! `try_carve_batch`). It hoists the per-block prepare/commit chain:
+//!
+//! - The fatal route guards (live slot, matching root, materialised Small
+//!   sidecar) run ONCE per run, in `prepare_small_issue_run`.
+//! - Preparedness is a per-LEAF property, not a per-block one: a promoted
+//!   256-granule leaf stays promoted for every granule in it, and per-granule
+//!   class stores overwrite, so once the leaf backing exists any granule in
+//!   it can be written. Therefore the per-block prepare reduces to a
+//!   same-leaf check (`RoutedIssueRun::prepare_for`) that only calls the
+//!   fallible promotion on a leaf CHANGE — `Err`/rollback OOM semantics are
+//!   unchanged (callers still run the whole prepare loop before ANY
+//!   mutation, C6).
+//! - The per-block commit reduces to one Release class store
+//!   (`RoutedIssueRun::commit`); on a leaf CHANGE it re-resolves the leaf,
+//!   and a NEVER-promoted leaf aborts (release-mode trap) — a skipped
+//!   prepare cannot silently store, mirroring the scalar commit's
+//!   abort-on-violation contract.
+//! - Borrow soundness: the run borrows the table (`&'a SegmentTable` ->
+//!   `&'a RouteSlots` -> the route's sidecar leaves), so the borrow checker
+//!   itself excludes route removal / `&mut self` table work for the run's
+//!   entire lifetime.
+//!
+//! The unrouted (standalone, route-less) branch preserves today's semantics
+//! exactly: `prepare_for` is an unconditional tautology and `commit` a
+//! documented no-op. The producer protocol and its memory orderings (leaf
+//! pointer Release-publish, class byte Release store) are untouched.
+//!
 //! Protocol type only — ADR
 //! `docs/design/2026-10-01-adr-physical-boundary-and-progress.md` §Матрица:
 //! `IssueTransaction`/`IssueTicket` never become `pub unsafe`; tests observe
@@ -21,7 +52,6 @@
 //! `base_at` / route-root comparison), which are what make the address sound
 //! to use.
 
-use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment::segment_table::segment_table_impl::SegmentTable;
 use crate::alloc_core::segment_header::SegmentHeader;
 
@@ -29,7 +59,7 @@ use crate::alloc_core::segment_header::SegmentHeader;
 /// complete. Built only by the prepare side of the protocol —
 /// `RouteSlots::prepare_small_issue` under `alloc-global`, or the standalone
 /// (route-less) branch of `SegmentTable::prepare_small_issue` — and consumed
-/// only by [`commit`](Self::commit) / [`commit_prepared`](Self::commit_prepared).
+/// only by [`commit`](Self::commit).
 ///
 /// Dropping an unconsumed witness is NOT a rollback and NOT an issue: the
 /// promotions it stands for are retained by the sidecar and stay valid for a
@@ -56,6 +86,7 @@ impl IssueTransaction {
     /// Witness for a routed prepare: `index`/`base`/`offset`/`class` passed
     /// `RouteSlots`' guards (live slot, matching root, materialised sidecar)
     /// and the sidecar promotion for them succeeded.
+    #[cfg(feature = "alloc-global")]
     #[cfg_attr(not(debug_assertions), inline(always))]
     pub(super) fn prepared(index: usize, base: *mut u8, offset: u32, class: u8) -> Self {
         Self {
@@ -94,32 +125,89 @@ impl IssueTransaction {
         );
         table.issue_small(self.base, self.offset, usize::from(self.class));
     }
+}
 
-    /// Batch twin of [`commit`](Self::commit) for the whole-batch producers
-    /// (`try_drain_freelist_batch`, `try_carve_batch`): those run ALL prepares
-    /// before any mutation, so the prepared state for
-    /// `(index, base, off, class_idx)` was established by the caller's
-    /// preceding prepare loop. The commit re-validates it through the same
-    /// aborting guards the scalar path uses — a violation aborts rather than
-    /// issuing an unprepared block.
-    ///
-    /// `index` must be `base`'s stamped segment id; `commit` re-checks it in
-    /// debug builds, and `issue_small` re-derives + re-validates it in all.
+/// Run-level twin of [`IssueTransaction`] for whole-batch refills: see the
+/// module docs for the soundness argument behind the per-run / per-leaf
+/// hoist. Built only by `SegmentTable::prepare_small_issue_run`; consumed by
+/// [`prepare_for`](Self::prepare_for) / [`commit`](Self::commit).
+pub(crate) struct IssueRun<'a> {
+    /// Registry slot of the issuing segment (`segment_id_at(base)`);
+    /// debug-only witness, same contract as `IssueTransaction::index`.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    index: usize,
+    /// Segment base the run issues into (debug witness address token).
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    base: *mut u8,
+    /// Routed half; `None` for a standalone core with NO route, where the
+    /// per-block protocol is a tautology (see `IssueTransaction::unrouted`).
+    #[cfg(feature = "alloc-global")]
+    routed: Option<super::route_slots::RoutedIssueRun<'a>>,
+    /// Ties `'a` to the table borrow when the routed half is compiled out.
+    _table: core::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> IssueRun<'a> {
+    /// Run for a routed refill batch: `index`/`base` passed the fatal route
+    /// guards once in `RouteSlots::prepare_small_issue_run`.
+    #[cfg(feature = "alloc-global")]
     #[cfg_attr(not(debug_assertions), inline(always))]
-    pub(crate) fn commit_prepared(
-        table: &SegmentTable,
+    pub(super) fn routed(
         index: usize,
         base: *mut u8,
-        off: u32,
-        class_idx: usize,
-    ) {
-        Self::prepared(
+        inner: super::route_slots::RoutedIssueRun<'a>,
+    ) -> Self {
+        Self {
             index,
             base,
-            off,
-            u8::try_from(class_idx)
-                .unwrap_or_else(|_| fatal(b"issue_transaction: small class index exceeds u8\n")),
-        )
-        .commit(table)
+            routed: Some(inner),
+            _table: core::marker::PhantomData,
+        }
+    }
+
+    /// Run for a standalone core with NO route: per-block prepare is a
+    /// tautology and commit a documented no-op; the index is still the
+    /// segment's real slot (see `IssueTransaction::unrouted`).
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn unrouted(base: *mut u8) -> Self {
+        Self {
+            index: SegmentHeader::segment_id_at(base) as usize,
+            base,
+            #[cfg(feature = "alloc-global")]
+            routed: None,
+            _table: core::marker::PhantomData,
+        }
+    }
+
+    /// Fallible per-block half. Unrouted: always `true` (today's unrouted
+    /// prepare is an unconditional tautology — no bounds checks, preserved
+    /// exactly). Routed: leaf-change promotion; `false` is the spill OOM.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn prepare_for(&mut self, offset: u32) -> bool {
+        #[cfg(feature = "alloc-global")]
+        if let Some(inner) = &mut self.routed {
+            return inner.prepare_for(offset);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = offset;
+        true
+    }
+
+    /// Infallible per-block half: one Release class store on the routed path,
+    /// a documented no-op unrouted.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(crate) fn commit(&mut self, offset: u32) {
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(
+            self.index,
+            SegmentHeader::segment_id_at(self.base) as usize,
+            "batch commit: run index must still be its segment's stamped id",
+        );
+        #[cfg(feature = "alloc-global")]
+        if let Some(inner) = &mut self.routed {
+            inner.commit(offset);
+        }
+        #[cfg(not(feature = "alloc-global"))]
+        let _ = offset;
     }
 }

@@ -80,6 +80,12 @@ impl SmallSidecar {
             .unwrap_or_else(|| fatal(b"small_sidecar: sidecar bitmap leaf layout mismatch\n"))
     }
 
+    /// Owner-only batch-issue seam over the class leaves; producers never
+    /// touch it.
+    pub(crate) fn classes(&self) -> &ClassLeaves {
+        &self.classes
+    }
+
     /// Crate-private owner-only, fallible preparation before any issue
     /// transaction mutates its freelist, bitmap, bump, live credit, directory,
     /// or output; public owner mutation is carried only by

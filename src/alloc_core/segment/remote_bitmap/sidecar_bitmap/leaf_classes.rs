@@ -10,6 +10,7 @@
 //! valid initial state (null leaf pointers, zero presence bits).
 #![allow(unsafe_code)]
 use core::ptr;
+use core::ptr::NonNull;
 #[cfg(feature = "internals")]
 use core::sync::atomic::AtomicUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -23,6 +24,28 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 const LEAF_GRANULES: usize = 256;
 const LEAVES: usize = 1024;
 const PRESENT_WORDS: usize = LEAVES / u64::BITS as usize;
+
+/// Run-level batch-issue cursor: the leaf a refill batch is currently issuing
+/// into, its backing pointer resolved once at the leaf CHANGE (via
+/// [`ClassLeaves::prepare_leaf`] or [`ClassLeaves::resolve_leaf`]) and reused
+/// for every same-leaf granule afterwards. Private to the batch-issue seam.
+#[derive(Clone, Copy)]
+pub(crate) struct LeafCursor {
+    leaf_idx: usize,
+    leaf: NonNull<AtomicU8>,
+}
+
+impl LeafCursor {
+    /// Leaf index this cursor's backing pointer belongs to.
+    pub(crate) fn leaf_idx(&self) -> usize {
+        self.leaf_idx
+    }
+
+    /// Leaf index of a granule (one leaf covers `LEAF_GRANULES` granules).
+    pub(crate) fn leaf_index(granule: usize) -> usize {
+        granule / LEAF_GRANULES
+    }
+}
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 std::thread_local! {
@@ -144,6 +167,67 @@ impl ClassLeaves {
         // Drop (also owner-only, after the last pin) walks exactly these bits.
         self.present[leaf / 64].fetch_or(1u64 << (leaf % 64), Ordering::Release);
         true
+    }
+
+    /// Batch twin of [`Self::prepare`]: same guard order and fault-injection
+    /// hook placement, but returns the promoted leaf's cursor so a whole
+    /// refill run can issue into it without re-resolving per block. `None` is
+    /// the identical spill OOM (`prepare` returning false).
+    pub(crate) fn prepare_leaf(&self, granule: usize, class: u8) -> Option<LeafCursor> {
+        if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
+            return None;
+        }
+        #[cfg(all(feature = "internals", feature = "bench-internals"))]
+        if FAIL_PREPARE_AFTER
+            .try_with(Self::fail_countdown)
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        if !self.prepared(granule, class) {
+            let leaf = granule / LEAF_GRANULES;
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
+            if FAIL_NEXT_SPILLS.try_with(Self::fail_next).unwrap_or(false)
+                || FAIL_SPILL_AFTER
+                    .try_with(Self::fail_countdown)
+                    .unwrap_or(false)
+            {
+                return None;
+            }
+            if !self.promote(leaf) {
+                return None;
+            }
+        }
+        let leaf_idx = granule / LEAF_GRANULES;
+        let ptr = self.mixed[leaf_idx].load(Ordering::Acquire);
+        // prepare/promote above succeeded, so the leaf pointer is published.
+        NonNull::new(ptr).map(|leaf| LeafCursor { leaf_idx, leaf })
+    }
+
+    /// Re-resolve a leaf's cursor without promoting; `None` if the leaf was
+    /// never promoted (the batch commit trap: commit never blindly stores
+    /// through a stale or absent backing).
+    pub(crate) fn resolve_leaf(&self, granule: usize) -> Option<LeafCursor> {
+        if granule >= LEAVES * LEAF_GRANULES {
+            return None;
+        }
+        let leaf_idx = granule / LEAF_GRANULES;
+        NonNull::new(self.mixed[leaf_idx].load(Ordering::Acquire))
+            .map(|leaf| LeafCursor { leaf_idx, leaf })
+    }
+
+    /// Per-block batch issue: one Release store, no promotion and no prepared
+    /// re-check (that is the point of the run hoist).
+    pub(crate) fn issue_in(&self, cursor: &LeafCursor, granule: usize, class: u8) {
+        debug_assert_eq!(cursor.leaf_idx(), LeafCursor::leaf_index(granule));
+        debug_assert!(usize::from(class) < SMALL_CLASS_COUNT);
+        debug_assert!(granule < LEAVES * LEAF_GRANULES);
+        // SAFETY: the cursor's leaf pointer was Release-published by the
+        // owner's promotion and stays owned through the route's last pin,
+        // exactly like `issue()`'s deref; the run holds `&self`, so the leaf
+        // cannot be dropped mid-run.
+        unsafe { &*cursor.leaf.as_ptr().add(granule % LEAF_GRANULES) }
+            .store(class + 1, Ordering::Release);
     }
 
     pub(crate) fn issue(&self, granule: usize, class: u8) -> bool {
