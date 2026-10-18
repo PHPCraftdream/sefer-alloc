@@ -46,7 +46,8 @@ fn sidecar_granule_index_exhaustive() {
     let mut storage = Box::<ClassLeaves>::new_uninit();
     // SAFETY: Box provides one private, aligned, writable ClassLeaves slot.
     // No ClassLeaves reference or Drop exists before initialize_at returns;
-    // it initializes every uniform atomic and mixed pointer in place.
+    // it initializes every uniform atomic, mixed pointer and presence word
+    // in place.
     unsafe { ClassLeaves::initialize_at(storage.as_mut_ptr()) };
     // SAFETY: initialize_at completed initialization of every value-bearing
     // field. This Box owns the slot and outlives the bitmap and every cut.

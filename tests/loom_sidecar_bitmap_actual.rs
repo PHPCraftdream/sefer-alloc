@@ -90,9 +90,10 @@ impl Backing {
     }
 }
 
-/// `ClassLeaves` backing for the mixed-leaf tests below: the pending words the
-/// production `from_leaves` geometry requires, plus one System-backed leaf set
-/// initialised exactly like `tests/class_leaves_publication_miri.rs` does.
+/// ClassLeaves backing for the mixed-leaf tests below: the pending words the
+/// production `from_leaves` geometry requires, plus one System-backed leaf
+/// set initialised exactly like `tests/class_leaves_publication_miri.rs`
+/// does.
 struct LeafBacking {
     words: Vec<AtomicU64>,
     leaves: Box<ClassLeaves>,
@@ -105,7 +106,9 @@ impl LeafBacking {
             .collect();
         let mut slot = Box::new(core::mem::MaybeUninit::<ClassLeaves>::uninit());
         // SAFETY: the Box owns a private, aligned, writable ClassLeaves-sized
-        // slot; nothing references it until `initialize_at` returns.
+        // slot; nothing references it until `initialize_at` returns. Loom
+        // atomics are scheduler handles: byte-zeroing the slot would not
+        // construct valid atomic cells, so `initialize_at` is mandatory here.
         unsafe { ClassLeaves::initialize_at(slot.as_mut_ptr()) };
         // SAFETY: every field was initialized above; the Box keeps ownership
         // of its original allocation and layout.

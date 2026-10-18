@@ -720,7 +720,7 @@ hard compile error in every configuration:
 | [`src/registry/heap_registry/claim.rs`](src/registry/heap_registry/claim.rs) | file owns the lease-claim path: slot picking + the `FREE → LIVE` CAS (`claim_lease` / `claim_lease_with_config`), OOM push-back, the config-conflict rollback guard, and `HeapLease` (its `Drop` performs the `LIVE → FREE` Release CAS) — the pointer handoff `*mut HeapCore` out of a slot's `UnsafeCell`. The legacy raw-pointer surface (`claim` / `claim_with_config` / `unsafe fn recycle` / `HeapLease::into_raw`) was removed (task #2119) | `alloc-global` |
 | [`src/registry/segment_route/directory.rs`](src/registry/segment_route/directory.rs) | System-backed route entries and sidecars; shard-lock pin acquisition prevents load/increment UAF. Numeric foreign-free lookup uses this directory. | `alloc-global` |
 | [`src/registry/segment_route/small_sidecar.rs`](src/registry/segment_route/small_sidecar.rs) | In-place construction of the pending words and adaptive class map before publication. | `alloc-global` |
-| [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, atomic initialization and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
+| [`src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`](src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs) | Genuine System-backed mixed-leaf pointers, owner-only presence bits, and exact layout deallocation after unlink and the last pin. | `alloc-core`; used by `alloc-global` |
 | [`src/alloc_core/segment/segment_table/route_slots.rs`](src/alloc_core/segment/segment_table/route_slots.rs) | System-backed owner-only registration handles; unlink before segment OS release without GlobalAlloc recursion. | `alloc-global` |
 | [`src/registry/segment_route/shard_lock.rs`](src/registry/segment_route/shard_lock.rs) | Non-allocating spin lock guarding route-directory shards; std `Mutex` boxes a pthread mutex on first lock on macOS, which would re-enter the installed global allocator during heap construction. | `alloc-global` |
 | [`src/concurrent/epoch/hand.rs`](src/concurrent/epoch/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
@@ -1418,7 +1418,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **422 integration test files**,
+needs its acceptance run. The present tree contains **424 integration test files**,
 **96 example binaries**, **33 benches**, and **19 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1428,7 +1428,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (422 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (424 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (96 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (33 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
