@@ -9,8 +9,8 @@
 //! # Design
 //!
 //! Two workloads, both reporting **aggregate ops/sec** (an op = one
-//! alloc+free pair) over a fixed operation budget measured with
-//! `Instant::elapsed`:
+//! alloc+free pair) over a fixed operation budget, timed from the earliest
+//! worker's own post-barrier `Instant` to the latest worker's end:
 //!
 //! - **larson** — server-churn: each thread keeps a working set of live
 //!   slots; each step frees a random slot and allocates a new random-size
@@ -431,7 +431,9 @@ impl Default for Config {
 ///    cross-thread block handoff.
 /// 2. Uses a [`Barrier`] so all workers start the timed region together
 ///    (eliminates thread-spawn skew from the measurement).
-/// 3. Sums total ops across all workers and divides by wall-clock elapsed.
+/// 3. Sums total ops across all workers and divides by the wall-clock span
+///    from the earliest worker start to the latest worker end, each stamped
+///    by the worker itself after the barrier.
 ///
 /// # Safety contract upheld by the harness
 ///
@@ -546,8 +548,12 @@ where
             // barrier and before any allocation, so the setup is in place for
             // the whole timed steady-state region.
             on_thread_start(t);
-            // Each worker waits at the barrier so all start together.
+            // Each worker waits at the barrier so all start together, then
+            // stamps its own start: the main thread can be descheduled right
+            // after the barrier, so a clock started there may miss most of
+            // the work and report an impossible ops/s.
             barrier.wait();
+            let started = Instant::now();
 
             // SAFETY: `alloc` is a valid GlobalAlloc; workers uphold the
             // free-exactly-once invariant (see module docs).
@@ -580,23 +586,29 @@ where
             // leaked. `run` does one more drain per receiver after ALL
             // workers have joined (so no sender can still be sending), which
             // closes that window.
-            (ops + extra, rx)
+            (ops + extra, rx, started, Instant::now())
         });
         handles.push(handle);
     }
 
-    // Start the clock once every worker is at the barrier (steady state).
+    // Release the workers once every one is at the barrier (steady state).
+    // The timed span runs from the earliest worker start to the latest worker
+    // end, both stamped by the workers themselves.
     barrier.wait();
-    let start = Instant::now();
 
     let mut total_ops: u64 = 0;
     let mut leftover_receivers = Vec::with_capacity(threads);
+    let mut first_start: Option<Instant> = None;
+    let mut last_end: Option<Instant> = None;
     for h in handles {
-        let (ops, rx) = h.join().expect("worker panicked");
+        let (ops, rx, started, ended) = h.join().expect("worker panicked");
         total_ops += ops;
         leftover_receivers.push(rx);
+        first_start = Some(first_start.map_or(started, |t| t.min(started)));
+        last_end = Some(last_end.map_or(ended, |t| t.max(ended)));
     }
-    let elapsed = start.elapsed();
+    let elapsed =
+        last_end.expect("at least one worker") - first_start.expect("at least one worker");
 
     // Every worker has joined, so every `send` call that will ever happen has
     // already happened — no sender can race this final sweep. Drop the
