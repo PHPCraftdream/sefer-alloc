@@ -52,8 +52,8 @@ impl EntryHandle {
     ) -> Result<Self, RouteError> {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: System is independent of the installed allocator;
-                // the aligned span stays private until every atomic is built.
+                // SAFETY: System is independent of the installed allocator; the
+                // span stays private until `initialize_at` builds every atomic.
                 let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
                 if !ptr.is_null() {
                     #[cfg(feature = "internals")]
@@ -117,7 +117,7 @@ impl EntryHandle {
                 crate::alloc_core::remote_bitmap::ClassLeaves::record_free(
                     Layout::new::<SmallSidecar>().size(),
                 );
-                // SAFETY: pointer came from System.alloc_zeroed with this Layout
+                // SAFETY: pointer came from System.alloc with this Layout
                 // and its mixed leaves were released by Drop above.
                 unsafe { System.dealloc(sidecar, Layout::new::<SmallSidecar>()) };
             }
