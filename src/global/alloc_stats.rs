@@ -141,6 +141,16 @@ pub struct AllocStats {
     /// not an exhaustive audit of invalid `GlobalAlloc::dealloc` calls;
     /// callers still must supply a live allocation and its exact `Layout`.
     ///
+    /// Local (own-thread) rejections are deliberately **not** counted here
+    /// (R6-T55): an interior-pointer Large free rejected on the owner's own
+    /// path and the small free guard chain's no-op rejects (double-free
+    /// oracles, hardened layout/kind violations) are caller-misuse
+    /// diagnostics, not route failures. They live in the
+    /// `internals`/`bench-internals`-gated internal `LOCAL_REJECT_FREES`
+    /// counter (read via `AllocCore::dbg_local_reject_frees`); earlier builds
+    /// also counted the local interior-reject Large here, which made this
+    /// field mix routing health with caller misuse.
+    ///
     /// **Always available — no `alloc-stats` required.** `alloc-global`
     /// always implies `alloc-xthread` (R5-01), and the cross-thread routing
     /// drop branches (`HeapCore::publish_foreign`) increment this counter

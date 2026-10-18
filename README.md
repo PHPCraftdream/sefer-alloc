@@ -1882,6 +1882,34 @@ qualify as security issues. **Please do not open public issues for these.**
 Use GitHub Security Advisories (private) per [`SECURITY.md`](SECURITY.md).
 Acknowledgement within 72 hours; coordinated disclosure standard.
 
+### Additive features can change the global allocator
+
+Cargo features are additive and unified across the whole dependency graph:
+any dependency that enables a `sefer-alloc` feature changes the feature set
+of the entire build — including for your binary. The features that change
+global-allocator behavior are:
+
+- `exact-object-proto` — prototype (not in `production`): narrow requests are
+  served by exact `System` allocations with an out-of-object descriptor shard;
+  a `Layout` mismatch aborts.
+- `virgin-zero-skip` — not in `production`: `alloc_zeroed` may skip the
+  explicit zero fill for a genuinely virgin block; the zeroing guarantee then
+  rests on the allocator's virgin-bit invariant.
+- `hardened` — adds own-thread interior-pointer and layout-consistency
+  guards; detected Small free-list corruption aborts the process instead of
+  returning null (new abort paths).
+- `bench-internals` — measurement-only counters on hot paths plus additional
+  `unsafe` diagnostic hooks; allocation results do not change, but the
+  shipped code does.
+
+Check what a build actually ships with
+`cargo tree -e features -i sefer-alloc`, and set `default-features = false`
+on your direct dependency to control the feature set deliberately. Mock
+backends are already restricted by a build-time `--cfg` flag (see
+`numa-aware-mock` in `Cargo.toml`) for exactly this reason; a similar
+`--cfg` restriction for the features above is a possible future direction,
+not the current behavior.
+
 ---
 
 ## Code of Conduct

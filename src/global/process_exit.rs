@@ -1,4 +1,4 @@
-//! FFI query of Windows loader shutdown state.
+//! FFI query of Windows loader shutdown state (exact `BOOLEAN (u8)` export type, R6-SEC-16).
 #![allow(unsafe_code)] // Sole reason: FFI query of loader state.
 
 #[cfg(windows)]
@@ -11,7 +11,7 @@ extern "system" {
     fn GetProcAddress(
         module: *mut core::ffi::c_void,
         name: *const u8,
-    ) -> Option<unsafe extern "system" fn() -> isize>;
+    ) -> Option<unsafe extern "system" fn() -> u8>;
 }
 
 #[cfg(windows)]
@@ -62,14 +62,14 @@ pub(crate) fn process_exit_in_progress() -> bool {
         if address == ABSENT {
             return false;
         }
-        // SAFETY: `address` is the non-absent export resolved above. The named
-        // export has the system ABI, no arguments and a BOOLEAN (u8) result;
-        // Windows function pointers have equal size. The query reads loader
-        // state and transfers no ownership to Rust.
+        // SAFETY: `address` is the non-absent export resolved above. The
+        // declared type IS the export's documented one (`BOOLEAN
+        // RtlDllShutdownInProgress(void)` — system ABI, no arguments, u8
+        // result), so the single transmute only undoes the AtomicUsize
+        // round-trip; there is no second conversion at the call. The query
+        // reads loader state and transfers no ownership to Rust.
         unsafe {
-            let query = core::mem::transmute::<*const (), unsafe extern "system" fn() -> u8>(
-                address as *const (),
-            );
+            let query = core::mem::transmute::<usize, unsafe extern "system" fn() -> u8>(address);
             query() != 0
         }
     }

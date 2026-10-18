@@ -310,7 +310,14 @@ impl HeapCore {
             // scalar outcomes byte-identical and one hop shorter.
             let (off, meta) = match small_free_guard(base, p, c, layout) {
                 SmallFreeGuard::Accept { off } => (off, SegmentMeta::new(base)),
-                SmallFreeGuard::RejectNoOp => continue,
+                SmallFreeGuard::RejectNoOp => {
+                    // R6-T55: same single increment per rejected free as the
+                    // scalar consumer — internal counter, not the public stat.
+                    #[cfg(any(feature = "internals", feature = "bench-internals"))]
+                    crate::alloc_core::LOCAL_REJECT_FREES
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    continue;
+                }
                 SmallFreeGuard::RouteToLargeFree => {
                     // SAFETY: caller upholds the dealloc-batch contract for
                     // `p`; `base`/`block` were just resolved from THIS heap's
