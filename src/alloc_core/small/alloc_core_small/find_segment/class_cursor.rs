@@ -94,6 +94,7 @@ impl AllocCore {
     /// stale (cleared + miss), or drained bin (kept + miss — never a trusted
     /// negative; the caller runs discovery). On `Some`, the segment is
     /// unpooled and its bin is non-empty, ready for a pop/drain.
+    #[inline(never)]
     fn cursor_probe_base(&mut self, class_idx: usize) -> Option<*mut u8> {
         let slot = self.small_class_cursor[class_idx];
         if slot == CLASS_CURSOR_NONE {
@@ -137,7 +138,12 @@ impl AllocCore {
     /// B4 §11: probe this class's discovery-cursor segment for one free
     /// block. `Ok(None)` = fall through to discovery; `Err(())` is a
     /// class-spill OOM propagated to the caller (same as discovery's pop).
+    #[inline]
     fn pop_from_class_cursor(&mut self, class_idx: usize) -> Result<Option<*mut u8>, ()> {
+        // Fast path: no cursor recorded — no call into the probe.
+        if self.small_class_cursor[class_idx] == CLASS_CURSOR_NONE {
+            return Ok(None);
+        }
         let Some(base) = self.cursor_probe_base(class_idx) else {
             return Ok(None);
         };
@@ -154,11 +160,16 @@ impl AllocCore {
     /// B4 §11: batch-drain this class's cursor segment's bin into `out`.
     /// Same semantics as [`pop_from_class_cursor`](Self::pop_from_class_cursor);
     /// `Err(())` is a class-spill OOM propagated to the caller.
+    #[inline]
     pub(in crate::alloc_core) fn batch_drain_from_class_cursor(
         &mut self,
         class_idx: usize,
         out: &mut [*mut u8],
     ) -> Result<usize, ()> {
+        // Fast path: no cursor recorded — no call into the probe.
+        if self.small_class_cursor[class_idx] == CLASS_CURSOR_NONE {
+            return Ok(0);
+        }
         let Some(base) = self.cursor_probe_base(class_idx) else {
             return Ok(0);
         };

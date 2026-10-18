@@ -487,136 +487,129 @@ impl AllocCore {
         #[cfg(all(feature = "numa-aware", feature = "alloc-stats"))]
         let mut fallback_was_nonempty = false;
 
-        // B4 §11: start the enumeration one slot AFTER this class's cursor
-        // segment and wrap once through [0, start) so every active slot is
-        // still visited exactly once; without a cursor, scan from 0.
-        let scan_start = self.class_cursor_scan_start(class_idx, n);
-        let mut from = scan_start.unwrap_or(0);
-        let mut wrapped = scan_start.is_none();
-        loop {
-            let Some(i) = self.table.next_active(SegmentKind::Small, from) else {
-                if wrapped {
+        // B4 §11: enumerate [start, n) then [0, start), start = one slot after
+        // this class's cursor, so every active slot is still visited exactly
+        // once; without a cursor start = 0 and the second leg is empty.
+        let start = self.class_cursor_scan_start(class_idx, n).unwrap_or(0);
+        for (lo, hi) in [(start, n), (0, start)] {
+            let mut from = lo;
+            while from < hi {
+                let Some(i) = self.table.next_active(SegmentKind::Small, from) else {
+                    break;
+                };
+                if i >= hi {
                     break;
                 }
-                wrapped = true;
-                from = 0;
-                continue;
-            };
-            if i >= n {
-                break;
-            }
-            if wrapped && scan_start.is_some_and(|s| i >= s) {
-                // The circle is complete: [start, n) and [0, start) visited.
-                break;
-            }
-            // Advance before a sidecar drain can recycle this candidate.
-            from = i + 1;
-            #[cfg(feature = "alloc-stats")]
-            crate::alloc_core::directory_stats::FULL_SCAN_SLOTS_EXAMINED
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            let base = self.table.base_at(i);
-            if base.is_null()
-                || !matches!(
-                    SegmentHeader::kind_at(base),
-                    SegmentKind::Small | SegmentKind::Primordial
-                )
-            {
-                // Invariant violation in the active-Small table: a linear-scan
-                // entry must name a live small segment. Abort rather than
-                // continue with corrupted table state.
-                fatal(b"find_segment: drained segment is not a live small segment\n");
-            }
-            // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): ONE pre-drain bin read
-            // serving both purposes — it decides whether the sidecar walk is
-            // needed and (alloc-stats) classifies the hit as pre-nonempty.
-            // A publication only reaches the bins through a drain, so a
-            // non-empty bin makes the drain pure overhead for this lookup
-            // (storm runs: most discoveries hit blocks already in the bins);
-            // when the bin is empty the drain is required and stays as it
-            // was. Pending bits of a skipped drain remain pending for a later
-            // drain/strict trim — release is credit-gated
-            // (`dec_live_and_maybe_decommit`), nothing is lost. Event shift
-            // vs pre-B4: a nonempty segment is no longer drained at all, so
-            // drain-outcome counters see fewer Drained events (the
-            // "was_nonempty" hit classification is unchanged — same pre-drain
-            // read as before).
-            #[cfg(any(
-                feature = "alloc-stats",
-                all(feature = "alloc-global", feature = "alloc-xthread")
-            ))]
-            let pre_nonempty = SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
-            #[cfg(feature = "alloc-stats")]
-            let was_nonempty = routed_miss_scan && pre_nonempty;
-            // Consume only this canonical candidate before inspecting its bins.
-            #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-            if !pre_nonempty {
-                match self.drain_segment_sidecar(base) {
-                    // Decommitted+released: `base` is unmapped — skip the
-                    // BinTable check in THIS scan. Decommitted+pooled: `base`
-                    // is still live/registered/committed (R1-03) — fall
-                    // through to the SAME BinTable check every other live
-                    // segment gets, so a just-emptied segment can be reused
-                    // in this very scan (see `SidecarDrainOutcome`'s doc).
-                    #[cfg(feature = "alloc-decommit")]
-                    SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                    #[cfg(feature = "alloc-decommit")]
-                    SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                    SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
-                }
-            }
-            let meta = SegmentMeta::new(base);
-            let bt = meta.bin_table();
-            if bt.head(class_idx) != FREE_LIST_NULL {
-                // Phase C (numa-aware): NO_NODE_RAW segments count as local,
-                // degrading gracefully to the pre-NUMA single-pass behaviour.
-                #[cfg(feature = "numa-aware")]
+                // Advance before a sidecar drain can recycle this candidate.
+                from = i + 1;
+                #[cfg(feature = "alloc-stats")]
+                crate::alloc_core::directory_stats::FULL_SCAN_SLOTS_EXAMINED
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                let base = self.table.base_at(i);
+                if base.is_null()
+                    || !matches!(
+                        SegmentHeader::kind_at(base),
+                        SegmentKind::Small | SegmentKind::Primordial
+                    )
                 {
-                    let seg_node = meta.node_id_of();
-                    if seg_node != my_node
-                        && seg_node != crate::alloc_core::segment_header::NO_NODE_RAW
-                    {
-                        // Foreign-node segment with a free block.  Remember as
-                        // fallback if we find nothing local, then keep scanning.
-                        if fallback.is_none_or(|slot| self.table.base_at(slot).is_null()) {
-                            fallback = Some(i);
-                            #[cfg(feature = "alloc-stats")]
-                            {
-                                fallback_was_nonempty = was_nonempty;
-                            }
-                        }
-                        continue;
+                    // Invariant violation in the active-Small table: a linear-scan
+                    // entry must name a live small segment. Abort rather than
+                    // continue with corrupted table state.
+                    fatal(b"find_segment: drained segment is not a live small segment\n");
+                }
+                // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): ONE pre-drain bin read
+                // serving both purposes — it decides whether the sidecar walk is
+                // needed and (alloc-stats) classifies the hit as pre-nonempty.
+                // A publication only reaches the bins through a drain, so a
+                // non-empty bin makes the drain pure overhead for this lookup
+                // (storm runs: most discoveries hit blocks already in the bins);
+                // when the bin is empty the drain is required and stays as it
+                // was. Pending bits of a skipped drain remain pending for a later
+                // drain/strict trim — release is credit-gated
+                // (`dec_live_and_maybe_decommit`), nothing is lost. Event shift
+                // vs pre-B4: a nonempty segment is no longer drained at all, so
+                // drain-outcome counters see fewer Drained events (the
+                // "was_nonempty" hit classification is unchanged — same pre-drain
+                // read as before).
+                #[cfg(any(
+                    feature = "alloc-stats",
+                    all(feature = "alloc-global", feature = "alloc-xthread")
+                ))]
+                let pre_nonempty =
+                    SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
+                #[cfg(feature = "alloc-stats")]
+                let was_nonempty = routed_miss_scan && pre_nonempty;
+                // Consume only this canonical candidate before inspecting its bins.
+                #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+                if !pre_nonempty {
+                    match self.drain_segment_sidecar(base) {
+                        // Decommitted+released: `base` is unmapped — skip the
+                        // BinTable check in THIS scan. Decommitted+pooled: `base`
+                        // is still live/registered/committed (R1-03) — fall
+                        // through to the SAME BinTable check every other live
+                        // segment gets, so a just-emptied segment can be reused
+                        // in this very scan (see `SidecarDrainOutcome`'s doc).
+                        #[cfg(feature = "alloc-decommit")]
+                        SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                        #[cfg(feature = "alloc-decommit")]
+                        SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                        SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
                     }
-                    // Local or unknown node — use it immediately.
-                    self.finalize_hit(
-                        base,
-                        class_idx,
-                        DirectoryCandidateContext {
-                            #[cfg(feature = "alloc-stats")]
-                            routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
-                            #[cfg(feature = "alloc-segment-directory")]
-                            periodic_revalidation_active,
-                            #[cfg(feature = "alloc-segment-directory")]
-                            rescue: _context.rescue,
-                        },
-                    );
-                    return Some(base);
                 }
-                // Without numa-aware: same as before — return the first match.
-                #[cfg(not(feature = "numa-aware"))]
-                {
-                    self.finalize_hit(
-                        base,
-                        class_idx,
-                        DirectoryCandidateContext {
-                            #[cfg(feature = "alloc-stats")]
-                            routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
-                            #[cfg(feature = "alloc-segment-directory")]
-                            periodic_revalidation_active,
-                            #[cfg(feature = "alloc-segment-directory")]
-                            rescue: _context.rescue,
-                        },
-                    );
-                    return Some(base);
+                let meta = SegmentMeta::new(base);
+                let bt = meta.bin_table();
+                if bt.head(class_idx) != FREE_LIST_NULL {
+                    // Phase C (numa-aware): NO_NODE_RAW segments count as local,
+                    // degrading gracefully to the pre-NUMA single-pass behaviour.
+                    #[cfg(feature = "numa-aware")]
+                    {
+                        let seg_node = meta.node_id_of();
+                        if seg_node != my_node
+                            && seg_node != crate::alloc_core::segment_header::NO_NODE_RAW
+                        {
+                            // Foreign-node segment with a free block.  Remember as
+                            // fallback if we find nothing local, then keep scanning.
+                            if fallback.is_none_or(|slot| self.table.base_at(slot).is_null()) {
+                                fallback = Some(i);
+                                #[cfg(feature = "alloc-stats")]
+                                {
+                                    fallback_was_nonempty = was_nonempty;
+                                }
+                            }
+                            continue;
+                        }
+                        // Local or unknown node — use it immediately.
+                        self.finalize_hit(
+                            base,
+                            class_idx,
+                            DirectoryCandidateContext {
+                                #[cfg(feature = "alloc-stats")]
+                                routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
+                                #[cfg(feature = "alloc-segment-directory")]
+                                periodic_revalidation_active,
+                                #[cfg(feature = "alloc-segment-directory")]
+                                rescue: _context.rescue,
+                            },
+                        );
+                        return Some(base);
+                    }
+                    // Without numa-aware: same as before — return the first match.
+                    #[cfg(not(feature = "numa-aware"))]
+                    {
+                        self.finalize_hit(
+                            base,
+                            class_idx,
+                            DirectoryCandidateContext {
+                                #[cfg(feature = "alloc-stats")]
+                                routed_scan_was_nonempty: routed_miss_scan.then_some(was_nonempty),
+                                #[cfg(feature = "alloc-segment-directory")]
+                                periodic_revalidation_active,
+                                #[cfg(feature = "alloc-segment-directory")]
+                                rescue: _context.rescue,
+                            },
+                        );
+                        return Some(base);
+                    }
                 }
             }
         }
