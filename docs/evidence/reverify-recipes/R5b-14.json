@@ -17,7 +17,7 @@
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "6 passed; 0 failed",
+          "8 passed; 0 failed",
           "test owner_cut_is_acqrel_swap \\.\\.\\. ok"
         ]
       }
