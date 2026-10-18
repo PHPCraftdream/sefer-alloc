@@ -25,8 +25,8 @@
   ],
   "mutant": {
     "file": "src/global/maintenance_service.rs",
-    "find": "    fn drop(&mut self) {\n        STATE.store(IDLE, Ordering::Release);\n    }",
-    "replace": "    fn drop(&mut self) {\n        let _ = (STATE, IDLE, Ordering::Release); // mutant M8: rollback removed\n    }",
+    "find": "impl Drop for StartingGuard {\n    fn drop(&mut self) {\n        STATE.store(IDLE, Ordering::Release);",
+    "replace": "impl Drop for StartingGuard {\n    fn drop(&mut self) {\n        let _ = IDLE;",
     "steps": [
       {
         "name": "StartingGuard drop without rollback mutant",

@@ -43,7 +43,7 @@
         "expect": {
           "exit": 101,
           "stdoutRegex": [
-            "thread 'bounded_scan_skips_uninitialized_busy_and_absent_slots' .*panicked at tests/r8_maintenance_registry.rs"
+            "claim: heap lease dropped while panicking"
           ]
         }
       }
@@ -51,7 +51,7 @@
     "expect": {
       "exitNonZero": true,
       "stdoutRegex": [
-        "thread 'bounded_scan_skips_uninitialized_busy_and_absent_slots' .*panicked at tests/r8_maintenance_registry.rs"
+        "claim: heap lease dropped while panicking"
       ]
     }
   }
