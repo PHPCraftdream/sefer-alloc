@@ -1,0 +1,59 @@
+name: mt-bisect
+
+# Throwaway bisect harness (B1): runs examples/malloc_macro at each listed SHA
+# on windows-2022. Triggered by the `mt-bench` label on its own PR.
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+jobs:
+  bisect:
+    name: malloc_macro @ ${{ matrix.sha }}
+    if: contains(github.event.pull_request.labels.*.name, 'mt-bench')
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        sha:
+          - "7ea2798d3451fcf7f9a3e01f868febb500bbfecc"
+          - "b420d39d9ae6000a793e57ea4ebcd69968b63486"
+          - "f93e66311ad3ea47aaa1a2fe2461caeb4c0968fe"
+          - "2cdb765badf23efc591ac9ebf9cb49da2d77a5ff"
+          - "9d6078b87ae60de76f784b35a4a561b2482c2123"
+          - "90760affc1e57b202caa9d05f62d22b663444bca"
+          - "f78cbf594b9a7c23db1205dd4486ab162ff02695"
+          - "485f5a70ab27e5a5c877a58f59e0359c3d7e82ca"
+          - "ceffecb5c07d45e9d715670dfcaec3de69b2f9d2"
+          - "dab9686f9975acefd364ee0366aaccc43e4f1e2d"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Checkout target SHA
+        run: git checkout --detach "${{ matrix.sha }}" && git log -1 --format='%H %ad %s' --date=short | tee meta.txt
+      - name: Run malloc_macro twice
+        run: |
+          set -euo pipefail
+          for r in 1 2; do
+            cargo run --release --example malloc_macro --features "alloc-global alloc-xthread pinning" 2>&1 | tee "run$r.log"
+          done
+      - name: Upload
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: bisect-${{ matrix.sha }}
+          path: |
+            meta.txt
+            run1.log
+            run2.log
+          if-no-files-found: warn
+          retention-days: 30
