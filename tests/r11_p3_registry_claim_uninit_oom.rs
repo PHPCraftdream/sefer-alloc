@@ -9,7 +9,7 @@ use sefer_alloc::registry::bootstrap::{self, MAX_HEAPS};
 use sefer_alloc::registry::heap_registry::{
     dbg_claim_then_simulate_oom, dbg_slot_initialised, HeapRegistry,
 };
-use sefer_alloc::registry::heap_slot::STATE_FREE;
+use sefer_alloc::registry::heap_slot::SlotState;
 
 struct OomReset;
 
@@ -24,10 +24,13 @@ fn chunk_oom_retries_materialised_uninitialised_free() {
     let old = dbg_claim_then_simulate_oom().expect("first failed constructor");
     let latest = dbg_claim_then_simulate_oom().expect("second failed constructor");
     assert_eq!((old, latest), (0, 1));
-    assert_eq!(bootstrap::ensure().dbg_slot_state(old as usize), STATE_FREE);
+    assert_eq!(
+        bootstrap::ensure().dbg_slot_state(old as usize),
+        SlotState::Free as u8
+    );
     assert_eq!(
         bootstrap::ensure().dbg_slot_state(latest as usize),
-        STATE_FREE
+        SlotState::Free as u8
     );
     assert!(!dbg_slot_initialised(old));
     assert!(!dbg_slot_initialised(latest));

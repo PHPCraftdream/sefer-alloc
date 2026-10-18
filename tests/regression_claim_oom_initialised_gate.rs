@@ -67,7 +67,7 @@
 //! Test `simulated_oom_does_not_leak_the_slot` is non-vacuous against L-9a's
 //! sibling defect (a leaked-forever `LIVE` slot): if `push_back_after_oom`
 //! were removed from the OOM branch (the pre-M-5-fix shape), the slot would
-//! stay `STATE_LIVE` and OFF `free_slots` forever, so a subsequent `claim()`
+//! stay LIVE (`SlotState::Live`) and off `free_slots` forever, so a subsequent `claim()`
 //! could never reuse that exact index via the free-list (it would only be
 //! reachable again via `bump_count` minting an entirely NEW index) — this
 //! test's slot-index re-use assertion would fail.
@@ -78,7 +78,7 @@ use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::registry::heap_registry::{dbg_claim_then_simulate_oom, dbg_slot_initialised};
-use sefer_alloc::registry::{bootstrap, heap_slot::STATE_FREE, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, heap_slot::SlotState, HeapRegistry};
 
 // Serialise against the other registry-touching test files in this crate
 // (matches the discipline used throughout `tests/` — see `registry_basic.rs`).
@@ -176,7 +176,7 @@ fn simulated_oom_leaves_initialised_false() {
     );
     assert_eq!(
         slot_state(idx as usize),
-        STATE_FREE,
+        SlotState::Free as u8,
         "the OOM push-back must CAS the slot back to FREE (mirrors recycle)"
     );
     assert_eq!(
@@ -203,7 +203,7 @@ fn simulated_oom_does_not_leak_the_slot() {
 
     let freed_idx = dbg_claim_then_simulate_oom()
         .expect("registry must not be exhausted in a fresh test process");
-    assert_eq!(slot_state(freed_idx as usize), STATE_FREE);
+    assert_eq!(slot_state(freed_idx as usize), SlotState::Free as u8);
 
     // The next real claim must reuse this exact slot via the free_slots
     // LIFO stack -- if the OOM branch failed to push it back, this claim

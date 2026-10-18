@@ -6,7 +6,7 @@ use sefer_alloc::registry::bootstrap::{self, MAX_HEAPS};
 use sefer_alloc::registry::heap_registry::{
     dbg_bump_count_without_materialising, dbg_claim_then_simulate_oom,
 };
-use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE, STATE_MAINTENANCE};
+use sefer_alloc::registry::heap_slot::SlotState;
 use sefer_alloc::registry::HeapRegistry;
 
 #[test]
@@ -15,7 +15,10 @@ fn bounded_scan_skips_uninitialized_busy_and_absent_slots() {
     let failed = dbg_claim_then_simulate_oom().expect("initialization rollback");
     let mut cursor = failed as usize;
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 0);
-    assert_eq!(registry.dbg_slot_state(failed as usize), STATE_FREE);
+    assert_eq!(
+        registry.dbg_slot_state(failed as usize),
+        SlotState::Free as u8
+    );
 
     let mut owner = HeapRegistry::dbg_claim_lease().expect("claim");
     let index = owner.core().id() as usize;
@@ -25,13 +28,13 @@ fn bounded_scan_skips_uninitialized_busy_and_absent_slots() {
     );
     cursor = index;
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 0);
-    assert_eq!(registry.dbg_slot_state(index), STATE_LIVE);
+    assert_eq!(registry.dbg_slot_state(index), SlotState::Live as u8);
 
     // Never use the owner's core again below.
     drop(owner);
     let lease = HeapRegistry::dbg_try_maintenance().expect("initialized FREE heap");
-    assert_eq!(lease.slot_index(), index);
-    assert_eq!(registry.dbg_slot_state(index), STATE_MAINTENANCE);
+    assert_eq!(lease.slot_index(), index as u32);
+    assert_eq!(registry.dbg_slot_state(index), SlotState::Maintenance as u8);
     cursor = index;
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 0);
     let rival = HeapRegistry::dbg_claim_lease().expect("claim");
@@ -40,11 +43,11 @@ fn bounded_scan_skips_uninitialized_busy_and_absent_slots() {
         index,
         "failed MAINTENANCE claim CAS grants no authority"
     );
-    assert_eq!(registry.dbg_slot_state(index), STATE_MAINTENANCE);
+    assert_eq!(registry.dbg_slot_state(index), SlotState::Maintenance as u8);
     drop(lease);
     cursor = index;
     assert_eq!(HeapRegistry::maintenance_pass_for_test(&mut cursor, 1), 1);
-    assert_eq!(registry.dbg_slot_state(index), STATE_FREE);
+    assert_eq!(registry.dbg_slot_state(index), SlotState::Free as u8);
     assert_eq!(cursor, (index + 1) % bootstrap::count_for_test() as usize);
 
     // Derive the next chunk boundary from the exposed registry dimensions.

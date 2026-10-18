@@ -6,7 +6,7 @@
 ))]
 use sefer_alloc::registry::bootstrap;
 use sefer_alloc::registry::heap_registry::HeapRegistry;
-use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE};
+use sefer_alloc::registry::heap_slot::SlotState;
 
 struct OomReset;
 
@@ -35,8 +35,8 @@ fn failed_new_chunk_recovers_older_free_then_retries_minted_index() {
     }
     let latest = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_eq!(latest.slot_index(), old1);
-    assert_eq!(reg.dbg_slot_state(0), STATE_FREE);
-    assert_eq!(reg.dbg_slot_state(1), STATE_LIVE);
+    assert_eq!(reg.dbg_slot_state(0), SlotState::Free as u8);
+    assert_eq!(reg.dbg_slot_state(1), SlotState::Live as u8);
     // Slot 0 is still FREE; clear only its advisory bit to force recovery scan.
     HeapRegistry::dbg_forget_free_slot_hint(old0 as usize);
 
@@ -68,7 +68,7 @@ fn failed_new_chunk_recovers_older_free_then_retries_minted_index() {
     }
 
     let lease = HeapRegistry::dbg_try_maintenance().expect("materialized FREE heap");
-    let leased_index = lease.slot_index() as u32;
+    let leased_index = lease.slot_index();
     drop(lease);
     let mut after_lease = HeapRegistry::dbg_claim_lease().expect("claim");
     assert_eq!(after_lease.core().id(), leased_index);

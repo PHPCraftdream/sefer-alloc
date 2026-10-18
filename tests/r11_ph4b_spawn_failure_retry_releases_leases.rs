@@ -18,7 +18,7 @@ use std::alloc::{GlobalAlloc, Layout};
 
 use sefer_alloc::global::{MaintenanceService, MaintenanceStartError};
 use sefer_alloc::registry::bootstrap;
-use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_MAINTENANCE};
+use sefer_alloc::registry::heap_slot::SlotState;
 use sefer_alloc::registry::HeapRegistry;
 use sefer_alloc::SeferAlloc;
 
@@ -60,14 +60,14 @@ fn spawn_failure_leaves_no_half_activation_and_retry_releases_leases() {
         .expect("after a Spawn failure a FREE heap must be maintainable");
     let index = lease.slot_index();
     assert_eq!(
-        registry.dbg_slot_state(index),
-        STATE_MAINTENANCE,
+        registry.dbg_slot_state(index as usize),
+        SlotState::Maintenance as u8,
         "an acquired maintenance lease must hold its slot"
     );
     drop(lease);
     assert_eq!(
-        registry.dbg_slot_state(index),
-        STATE_FREE,
+        registry.dbg_slot_state(index as usize),
+        SlotState::Free as u8,
         "dropping the lease must publish the slot back to FREE"
     );
     let again = HeapRegistry::dbg_try_maintenance()

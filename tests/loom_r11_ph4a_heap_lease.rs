@@ -10,7 +10,7 @@ use loom::cell::UnsafeCell;
 use loom::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
-use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE, STATE_MAINTENANCE};
+use sefer_alloc::registry::heap_slot::SlotState;
 
 struct Slot {
     state: AtomicU8,
@@ -31,7 +31,12 @@ const DROP_ORDERING: Ordering = Ordering::Release;
 fn owner_take_and_drop(slot: &Slot) {
     if slot
         .state
-        .compare_exchange(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+        .compare_exchange(
+            SlotState::Free as u8,
+            SlotState::Live as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
         .is_err()
     {
         return; // lost claimant CAS — no authority, no core access
@@ -51,7 +56,12 @@ fn owner_take_and_drop(slot: &Slot) {
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
     assert!(slot
         .state
-        .compare_exchange(STATE_LIVE, STATE_FREE, DROP_ORDERING, Ordering::Relaxed)
+        .compare_exchange(
+            SlotState::Live as u8,
+            SlotState::Free as u8,
+            DROP_ORDERING,
+            Ordering::Relaxed
+        )
         .is_ok());
 }
 
@@ -61,7 +71,7 @@ fn lease_drop_release_pairs_with_claim_and_maintenance_acquires() {
     builder.preemption_bound = Some(2);
     builder.check(|| {
         let slot = Arc::new(Slot {
-            state: AtomicU8::new(STATE_FREE),
+            state: AtomicU8::new(SlotState::Free as u8),
             active: AtomicUsize::new(0),
             payload: UnsafeCell::new(0),
         });
@@ -74,8 +84,8 @@ fn lease_drop_release_pairs_with_claim_and_maintenance_acquires() {
             if maintenance_slot
                 .state
                 .compare_exchange(
-                    STATE_FREE,
-                    STATE_MAINTENANCE,
+                    SlotState::Free as u8,
+                    SlotState::Maintenance as u8,
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 )
@@ -96,8 +106,8 @@ fn lease_drop_release_pairs_with_claim_and_maintenance_acquires() {
             assert!(maintenance_slot
                 .state
                 .compare_exchange(
-                    STATE_MAINTENANCE,
-                    STATE_FREE,
+                    SlotState::Maintenance as u8,
+                    SlotState::Free as u8,
                     Ordering::Release,
                     Ordering::Relaxed
                 )
@@ -107,7 +117,7 @@ fn lease_drop_release_pairs_with_claim_and_maintenance_acquires() {
         claimant.join().expect("claimant");
         maintenance.join().expect("maintenance");
         // Every join observes the final Release publication.
-        assert_eq!(slot.state.load(Ordering::Acquire), STATE_FREE);
+        assert_eq!(slot.state.load(Ordering::Acquire), SlotState::Free as u8);
         assert_eq!(slot.active.load(Ordering::Relaxed), 0);
         slot.payload.with(|pointer| {
             // SAFETY: all threads joined; no lease or mutator remains.

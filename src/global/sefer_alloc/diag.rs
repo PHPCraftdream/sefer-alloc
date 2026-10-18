@@ -283,7 +283,7 @@ impl SeferAlloc {
     /// and bind an (empty) per-thread heap (`global::tls_heap::finish_bind`)
     /// purely as a side effect of asking "is there anything to trim?",
     /// exactly as an ordinary first allocation would. That was harmless
-    /// (the slot's `AbandonGuard` was armed, so it still recycled correctly
+    /// (the slot's `LeaseReleaseGuard` was armed, so it still recycled correctly
     /// at thread exit) but wasteful: a monitoring/housekeeping routine that
     /// calls `trim_current_thread()` speculatively across many threads —
     /// some of which never allocate — would claim a registry slot for every

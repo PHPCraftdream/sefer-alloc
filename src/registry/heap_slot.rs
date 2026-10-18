@@ -3,7 +3,7 @@
 //! slot table).
 //!
 //! Each slot is a fixed-size record in a lazy registry chunk. Its state runs
-//! `EMPTY → INITIALIZING → OWNED → FREE`, then `FREE → OWNED` or
+//! `EMPTY → INITIALIZING → LIVE → FREE`, then `FREE → LIVE` or
 //! `FREE → MAINTENANCE → FREE`. Only a successful CAS grants mutation access.
 //! `generation` is NOT the M8/M9 coherence key: the segment-header owner
 //! stamp (`pack_owner`, `alloc_core/segment/segment_header/mod.rs`) packs the
@@ -17,7 +17,7 @@
 //! **It is NOT read on the TLS alloc path.** The stale-TLS-pointer hazard
 //! (a thread's cached `*mut HeapCore` outliving its slot's `recycle`) is
 //! guarded by a different, cheaper mechanism: `global::tls_heap`'s `TORN`
-//! sentinel (task #129). The owning thread's `AbandonGuard::drop` stamps its
+//! sentinel (task #129). The owning thread's `LeaseReleaseGuard::drop` stamps its
 //! OWN thread-local cache to `TORN` before it recycles the slot, and every
 //! resolver checks for `TORN` before dereferencing. This is a same-thread
 //! poison-then-check, not a cross-thread generation compare — it needs no
@@ -63,7 +63,7 @@
 //
 // The slot's `Sync` proof (and every neighbouring registry SAFETY proof)
 // relies on the CAS-gated single-writer protocol on `state`/`heap`. Safe code
-// that could flip `state` OWNED→FREE or write `heap` directly would
+// that could flip `state` LIVE→FREE or write `heap` directly would
 // break that invariant with NO `unsafe` keyword at the violation site — this
 // is the general "safe membrane over a seam" limit spelled out in
 // `src/lib.rs`. EVERY slot field is therefore `pub(crate)` (reachable only
@@ -85,18 +85,50 @@ use core::sync::atomic::{AtomicBool, AtomicU8};
 
 use super::heap_core::HeapCore;
 
-/// Zeroed, never-materialised slot.
-pub const STATE_EMPTY: u8 = 0;
-/// First claimant is constructing the core; no other thread may use it.
-pub const STATE_INITIALIZING: u8 = 2;
-/// An owner has exclusive mutation authority.
-pub const STATE_OWNED: u8 = 1;
-/// Initialised core available for a new owner or maintenance worker.
-pub const STATE_FREE: u8 = 3;
-/// A maintenance worker has exclusive mutation authority.
-pub const STATE_MAINTENANCE: u8 = 4;
-/// Compatibility name for existing owner-side routing.
-pub const STATE_LIVE: u8 = STATE_OWNED;
+/// The lease-state machine of a registry slot (the values carried by
+/// `HeapSlot::state`). `#[repr(u8)]`: the discriminants ARE the memory
+/// format — the exact numbers the `state: AtomicU8` has always stored
+/// (0..=4, unchanged); `as u8` stores a variant, `TryFrom<u8>` reads a
+/// loaded value back. One canonical spelling per state: the former
+/// `STATE_OWNED` constant was an alias of `STATE_LIVE` — `Live` is the
+/// single name now — and the former `STATE_INITIALIZING` constant shared
+/// its name with the fallback bootstrap's initializing constant (same
+/// name, DIFFERENT value); that collision is gone because the two state
+/// machines are now distinct types (`SlotState` vs
+/// `global::fallback::FallbackInitState`).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SlotState {
+    /// Zeroed, never-materialised slot.
+    Empty = 0,
+    /// An owner has exclusive mutation authority.
+    Live = 1,
+    /// First claimant is constructing the core; no other thread may use it.
+    Initializing = 2,
+    /// Initialised core available for a new owner or maintenance worker.
+    Free = 3,
+    /// A maintenance worker has exclusive mutation authority.
+    Maintenance = 4,
+}
+
+impl TryFrom<u8> for SlotState {
+    type Error = u8;
+
+    /// Exact inverse of the `as u8` cast: accepts exactly the discriminants
+    /// above. The guards compare against the variants' own `as u8`, so
+    /// renumbering a variant cannot silently desynchronise this impl.
+    #[inline]
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            v if v == Self::Empty as u8 => Ok(Self::Empty),
+            v if v == Self::Live as u8 => Ok(Self::Live),
+            v if v == Self::Initializing as u8 => Ok(Self::Initializing),
+            v if v == Self::Free as u8 => Ok(Self::Free),
+            v if v == Self::Maintenance as u8 => Ok(Self::Maintenance),
+            unknown => Err(unknown),
+        }
+    }
+}
 
 /// Stable process-lifetime counters read without borrowing the owner's core.
 /// Cache-line isolation keeps diagnostic readers off owner-hot storage.
@@ -152,7 +184,7 @@ pub struct HeapSlot {
     /// Lease state. The claim/recycle/maintenance CAS target.
     ///
     /// `pub(crate)` (task #93 / R4-MS-4): while this was `pub`, safe downstream
-    /// code could `state.store(STATE_FREE, ..)` on an OWNED slot, breaking the
+    /// code could `state.store(SlotState::Free as u8, ..)` on a LIVE slot, breaking the
     /// single-writer invariant the
     /// `unsafe impl Sync` below depends on (R4-MS-4). Integration tests read it
     /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap`).
@@ -246,15 +278,19 @@ pub struct HeapSlot {
 impl HeapSlot {
     /// CAS the slot's state from `expected` to `new` with the given ordering.
     /// Returns `Ok` on success. The linearization point of claim/recycle.
+    /// Typed over [`SlotState`]: the atomic still stores the `as u8` casts of
+    /// the exact same values; the types make it impossible to mix in the
+    /// fallback's bootstrap states or raw bytes at a call site.
     #[inline]
     pub(crate) fn cas_state(
         &self,
-        expected: u8,
-        new: u8,
+        expected: SlotState,
+        new: SlotState,
         success: core::sync::atomic::Ordering,
         failure: core::sync::atomic::Ordering,
     ) -> Result<u8, u8> {
-        self.state.compare_exchange(expected, new, success, failure)
+        self.state
+            .compare_exchange(expected as u8, new as u8, success, failure)
     }
 }
 
@@ -270,12 +306,12 @@ impl HeapSlot {
 // single-writer discipline; the registry's atomic protocol is what establishes
 // the single writer. `MaybeUninit` adds no new hazard: the registry's contract
 // is that `heap` is read only by the INITIALIZING winner or while state is
-// OWNED/MAINTENANCE (the latter two require prior full initialisation).
+// LIVE/MAINTENANCE (the latter two require prior full initialisation).
 //
 // This single-writer invariant ADDITIONALLY rests on `state`, `generation`,
 // and every `Registry` control atomic being `pub(crate)`
 // (task #93 / R4-MS-4): safe code OUTSIDE the crate cannot execute the
-// `OWNED → FREE` transition, so it cannot smuggle a
+// `LIVE → FREE` transition, so it cannot smuggle a
 // second owner past the CAS gate. While those fields were `pub`, a safe
 // downstream crate could re-claim a LIVE slot under a thread that still held
 // a cached TLS `*mut HeapCore`, materialising two `&mut HeapCore` over one

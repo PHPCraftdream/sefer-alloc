@@ -19,7 +19,7 @@
 //! - Workers allocate through `SeferAlloc` (the installed global allocator):
 //!   every `Vec`/`String`/`Box`/`HashMap` op routes through the registry-backed
 //!   heap via raw-pointer TLS.
-//! - Workers SPAWN and EXIT mid-allocation: on exit the `AbandonGuard::drop`
+//! - Workers SPAWN and EXIT mid-allocation: on exit the `LeaseReleaseGuard::drop`
 //!   runs, releasing the slot (the HeapCore stays whole — segments + inline
 //!   TFS — for the next claimant). A later worker reclaims the slot and drains
 //!   its TFS on first alloc (the shard-reuse discipline).
@@ -143,7 +143,7 @@ fn global_allocator_serves_multithreaded_churn_with_thread_exit() {
                 let worker_id = (wave * WAVE_SIZE + i) as u64;
                 let total = Arc::clone(&total);
                 std::thread::spawn(move || {
-                    // Each worker churns and exits — on exit the AbandonGuard
+                    // Each worker churns and exits — on exit the LeaseReleaseGuard
                     // recycles this thread's slot (Phase 12.5 whole-slot reuse:
                     // the `HeapCore` stays whole for the next claimer; nothing
                     // is abandoned).

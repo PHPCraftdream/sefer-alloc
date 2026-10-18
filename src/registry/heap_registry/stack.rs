@@ -6,7 +6,7 @@ use crate::registry::bootstrap::saturation::SaturationHint;
 use crate::registry::bootstrap::{Registry, MAX_HEAPS};
 #[cfg(feature = "internals")]
 use crate::registry::heap_slot::HeapSlot;
-use crate::registry::heap_slot::{STATE_EMPTY, STATE_FREE};
+use crate::registry::heap_slot::SlotState;
 
 /// Prefer claimable materialised slots, then an index in an unmaterialised
 /// chunk. The latter may have been minted before a failed chunk reservation;
@@ -27,8 +27,8 @@ pub(super) fn scan_claimable_slot(reg: &Registry) -> Option<usize> {
             continue;
         };
         let state = slot.state.load(Ordering::Acquire);
-        if state == STATE_FREE
-            || (state == STATE_EMPTY && !slot.initialised.load(Ordering::Acquire))
+        if state == SlotState::Free as u8
+            || (state == SlotState::Empty as u8 && !slot.initialised.load(Ordering::Acquire))
         {
             return Some(idx);
         }
@@ -51,7 +51,7 @@ pub(super) fn scan_free_slot(reg: &Registry) -> Option<(usize, &'static HeapSlot
             continue;
         };
         if slot.initialised.load(Ordering::Acquire)
-            && slot.state.load(Ordering::Acquire) == STATE_FREE
+            && slot.state.load(Ordering::Acquire) == SlotState::Free as u8
         {
             return Some((idx, slot));
         }
@@ -77,7 +77,7 @@ pub(super) fn scan_claim_recovery_free(reg: &Registry, excluded: usize) -> Optio
         let Some(slot) = reg.slot_if_materialised(idx) else {
             continue;
         };
-        if slot.state.load(Ordering::Acquire) == STATE_FREE {
+        if slot.state.load(Ordering::Acquire) == SlotState::Free as u8 {
             if slot.initialised.load(Ordering::Acquire) {
                 return Some(idx);
             }

@@ -1,0 +1,29 @@
+{
+  "id": "R4a-02",
+  "registryActivationHash": "c16854590cb9a92fa3cae0cbb33e9270b8dfb6cfecb876119e545f16f3acb464",
+  "steps": [
+    {
+      "name": "default provenance (SB) re-run, no MIRIFLAGS",
+      "env": {},
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals",
+        "--test",
+        "r11_ph4a_lease_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test lease_claim_drop_reclaim_across_threads_under_miri \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

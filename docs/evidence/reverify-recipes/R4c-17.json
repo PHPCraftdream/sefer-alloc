@@ -1,0 +1,58 @@
+{
+  "id": "R4c-17",
+  "registryActivationHash": "ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7",
+  "steps": [
+    {
+      "name": "r8 maintenance registry baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals",
+        "--test",
+        "r8_maintenance_registry"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test bounded_scan_skips_uninitialized_busy_and_absent_slots \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/registry/heap_registry/maintenance.rs",
+    "find": "        let visits = budget.min(count);\n        let start = *cursor % count;",
+    "replace": "        let visits = count; // mutant 9: budget ignored\n        let start = *cursor % count;",
+    "steps": [
+      {
+        "name": "maintenance budget ignored mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals",
+          "--test",
+          "r8_maintenance_registry"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "claim: heap lease dropped while panicking"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "claim: heap lease dropped while panicking"
+      ]
+    }
+  }
+}

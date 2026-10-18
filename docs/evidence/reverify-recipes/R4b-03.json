@@ -1,0 +1,29 @@
+{
+  "id": "R4b-03",
+  "registryActivationHash": "881052daee46b9d13a650fff422ff19703cd558bdc4d0937976558d2a6d62e1d",
+  "steps": [
+    {
+      "name": "loom_r11_ph4b_publish_recycle_drain target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+        "--test",
+        "loom_r11_ph4b_publish_recycle_drain"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test publication_survives_recycle_and_is_consumed_exactly_once \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

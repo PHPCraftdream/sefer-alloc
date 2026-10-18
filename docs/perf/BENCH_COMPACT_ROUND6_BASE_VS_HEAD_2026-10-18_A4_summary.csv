@@ -1,0 +1,13 @@
+commit,workload,threads,sefer_mops,sefer_scaling_vs_1t,mimalloc_mops,gap_mimalloc_over_sefer,system_mops,runs
+base,larson/unpinned,1,26.84,1,62.41,2.3252608047690013,15.85,single run
+base,larson/unpinned,2,2.92,0.10879284649776452,54.04,18.506849315068493,14.27,single run
+base,larson/unpinned,4,0.66,0.024590163934426233,90.35,136.89393939393938,28.14,single run
+base,mstress/unpinned,1,3.04,1,54.86,18.04605263157895,6.37,single run
+base,mstress/unpinned,2,0.14,0.04605263157894737,112.52,803.7142857142857,12.59,single run
+base,mstress/unpinned,4,0.27,0.08881578947368421,138.13,511.59259259259255,17.51,single run
+head,larson/unpinned,1,27.2,1,55.98,2.0580882352941177,16.24,single run
+head,larson/unpinned,2,2.29,0.08419117647058824,62.87,27.45414847161572,15.86,single run
+head,larson/unpinned,4,0.67,0.024632352941176473,87.29,130.28358208955225,28.69,single run
+head,mstress/unpinned,1,2.66,1,70.44,26.481203007518793,5.88,single run
+head,mstress/unpinned,2,0.1,0.03759398496240601,95.95,959.5,11.97,single run
+head,mstress/unpinned,4,0.22,0.08270676691729323,177.64,807.4545454545454,19.84,single run
