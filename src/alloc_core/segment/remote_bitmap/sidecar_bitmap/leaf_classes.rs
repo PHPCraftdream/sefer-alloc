@@ -39,6 +39,8 @@ static FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct ClassLeaves {
     mixed: [AtomicPtr<AtomicU8>; LEAVES],
+    // MEASUREMENT PROBE ONLY: +128 B size, no logic (B4 R6 size isolation).
+    _probe_pad: core::mem::MaybeUninit<[u64; 16]>,
 }
 
 impl ClassLeaves {
