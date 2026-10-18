@@ -105,6 +105,14 @@ impl ClassLeaves {
         {
             return false;
         }
+        self.promote(leaf)
+    }
+
+    /// Owner-only leaf promotion: rare (once per 256 granules), kept out of
+    /// line so the hot `prepare` path stays small.
+    #[cold]
+    #[inline(never)]
+    fn promote(&self, leaf: usize) -> bool {
         let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
             .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
         // SAFETY: the System span has this exact layout and is owner-private
@@ -115,6 +123,15 @@ impl ClassLeaves {
         }
         #[cfg(feature = "internals")]
         Self::record_alloc(layout.size(), false);
+        // SAFETY: the fresh aligned System span holds LEAF_GRANULES bytes; a
+        // zero byte is a valid `core::sync::atomic::AtomicU8`, written once
+        // before publication.
+        #[cfg(not(loom))]
+        unsafe {
+            core::ptr::write_bytes(fresh, 0, LEAF_GRANULES)
+        };
+        // Loom atomics are not plain bytes: construct each one.
+        #[cfg(loom)]
         for i in 0..LEAF_GRANULES {
             // SAFETY: i is within the fresh aligned System span; each slot is
             // written once before publication and contains a valid atomic.
