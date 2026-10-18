@@ -4,10 +4,10 @@
 //! the `src/global/tls_heap.rs` source itself:
 //! (a) `LOCAL` is declared `Cell<*mut HeapCore>` with a `const` initializer
 //!     (no destructor registration, no lease stored in it);
-//! (b) `AbandonGuard` stores the typed lease as `Cell<Option<HeapLease>>`;
+//! (b) `LeaseReleaseGuard` stores the typed lease as `Cell<Option<HeapLease>>`;
 //! (d) `finish_bind`'s rollback leg resets `LOCAL` to null BEFORE dropping
 //!     the lease.
-//! (The `Drop for AbandonGuard` teardown ordering is pinned by
+//! (The `Drop for LeaseReleaseGuard` teardown ordering is pinned by
 //! `tests/r11_ph4b_teardown_ordering_pinned.rs` — one responsibility per file.)
 //! Token-based, so reformatting cannot break it; a semantic regression does.
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
@@ -72,14 +72,16 @@ fn local_is_a_const_initialised_dropless_raw_cell() {
 #[test]
 fn guard_stores_the_typed_lease_option() {
     let start = tls_src()
-        .find("struct AbandonGuard")
-        .expect("AbandonGuard is the thread-exit guard");
+        .find("struct LeaseReleaseGuard")
+        .expect("LeaseReleaseGuard is the thread-exit guard");
     let rest = &tls_src()[start..];
-    let end = rest.find("\n}\n").expect("end of the AbandonGuard struct");
+    let end = rest
+        .find("\n}\n")
+        .expect("end of the LeaseReleaseGuard struct");
     let body = &rest[..end];
     assert!(
         body.contains("lease: Cell<Option<HeapLease>>"),
-        "AbandonGuard must hold the typed HeapLease in a Cell<Option<_>> \
+        "LeaseReleaseGuard must hold the typed HeapLease in a Cell<Option<_>> \
          (take-then-drop teardown, no borrow state): {body}"
     );
 }

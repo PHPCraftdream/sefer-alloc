@@ -248,6 +248,24 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    > - **Next trigger:** owner decision on re-opening item 82 (closed 2026-10-14 NO-GO for the producer-side summaries C′/C''/C‴; this variant is owner-side and does not belong to the rejected family). Needs a loom model on `Entry.refs` plus pre-registration on the R20_PRF01_C3 framework.
    > - **Evidence:** `docs/agent_reviews_round6/performance_review.md` R6-PF-2; task R6-T02.
 
+101. **[A] B4 — частота discovery-вызовов на refill-miss НЕ устранена
+    (`b4_find_segment_calls` до 368,604/проход в counters-сборке s7_cnt_12
+    при штатных 550–700).** (Filed 2026-10-18, B4 MT collapse diagnosis.)
+
+   > **Current state**
+   > - **Status:** open.
+   > - **Current:** после фиксов B4 остаётся O(сегменты) чтений bin-головы на
+   >   каждый refill-miss; шторм частоты виден только в counters-сборке
+   >   (в plain не измеряется). Стоимость одного вызова после фиксов 1+2
+   >   радикально снижена (scan_words −143×), но сам частотный триггер
+   >   (массовый refill-miss → discovery) не атрибутирован.
+   > - **Next trigger:** если mt larson/mstress T=4 на чистой машине покажет
+   >   остаточную деградацию против цели ADR ≥ 0.95 от mimalloc — направление
+   >   B1 §6.3 / R7 (безблокировочный каталог/эпохи).
+   > - **Evidence:** `docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md` §7a (строка 146);
+   >   логи s7_cnt_12: `b4_find_segment_calls=368,604`, `b4_scan_words`
+   >   ≤ 4,071,583 — −143× к s6_warm_01.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**

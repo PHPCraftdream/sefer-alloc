@@ -25,9 +25,7 @@ use super::stack::{pick_with_hint_spill, scan_claim_recovery_free, scan_claimabl
 use crate::alloc_core::fatal::fatal;
 use crate::registry::bootstrap::{ensure, Registry, FREE_SLOTS, MAX_HEAPS};
 use crate::registry::heap_core::HeapCore;
-use crate::registry::heap_slot::{
-    HeapSlot, STATE_EMPTY, STATE_FREE, STATE_INITIALIZING, STATE_LIVE, STATE_MAINTENANCE,
-};
+use crate::registry::heap_slot::{HeapSlot, SlotState};
 
 /// R6-T03 test-only injection: when set, the next `claim_impl` constructor
 /// call (`HeapCore::new` / `new_with_config`) returns `None` without touching
@@ -39,7 +37,7 @@ static DBG_INJECT_CTOR_OOM: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
 /// R6-T24: how many times a claimant re-offers a candidate that read
-/// STATE_MAINTENANCE before falling through to bump/scan. Maintenance passes
+/// `SlotState::Maintenance` before falling through to bump/scan. Maintenance passes
 /// are short and bounded; the budget only bounds the wait.
 const MAINTENANCE_RECLAIM_BUDGET: u32 = 8192;
 
@@ -171,13 +169,13 @@ impl HeapRegistry {
         }
         // PF-9: a Relaxed pre-read skips the RMW entirely for the common
         // not-FREE case; the CAS below stays authoritative.
-        if slot.state.load(Ordering::Relaxed) != STATE_FREE {
+        if slot.state.load(Ordering::Relaxed) != SlotState::Free as u8 {
             return None;
         }
         if slot
             .cas_state(
-                STATE_FREE,
-                STATE_MAINTENANCE,
+                SlotState::Free,
+                SlotState::Maintenance,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             )
@@ -186,7 +184,9 @@ impl HeapRegistry {
             return None;
         }
         Some(MaintenanceLease {
-            index,
+            // The bounds check above (`index >= count.min(MAX_HEAPS)` returns
+            // early) makes this cast lossless.
+            index: index as u32,
             slot,
             _not_send: PhantomData,
         })
@@ -324,13 +324,13 @@ impl HeapRegistry {
                 continue;
             };
 
-            let observed = slot.state.load(Ordering::Acquire);
+            let observed = SlotState::try_from(slot.state.load(Ordering::Acquire));
             let first_claim = match observed {
-                STATE_EMPTY => {
+                Ok(SlotState::Empty) => {
                     if slot
                         .cas_state(
-                            STATE_EMPTY,
-                            STATE_INITIALIZING,
+                            SlotState::Empty,
+                            SlotState::Initializing,
                             Ordering::AcqRel,
                             Ordering::Acquire,
                         )
@@ -340,11 +340,16 @@ impl HeapRegistry {
                     }
                     true
                 }
-                STATE_FREE => {
+                Ok(SlotState::Free) => {
                     // Claim ownership before reading the monotonic flag: a
                     // pre-CAS read could go stale across another claim/recycle.
                     if slot
-                        .cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+                        .cas_state(
+                            SlotState::Free,
+                            SlotState::Live,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
                         .is_err()
                     {
                         continue;
@@ -359,8 +364,8 @@ impl HeapRegistry {
                         // target this slot. Maintenance requires initialised.
                         if slot
                             .cas_state(
-                                STATE_LIVE,
-                                STATE_INITIALIZING,
+                                SlotState::Live,
+                                SlotState::Initializing,
                                 Ordering::Release,
                                 Ordering::Relaxed,
                             )
@@ -377,7 +382,7 @@ impl HeapRegistry {
                     // retained for a bounded retry instead of being lost to a
                     // fresh 4 MiB bump. The FREE bitmap stays advisory: the
                     // FREE→LIVE CAS below remains the ownership authority.
-                    if observed == STATE_MAINTENANCE
+                    if observed == Ok(SlotState::Maintenance)
                         && maintenance_retries < MAINTENANCE_RECLAIM_BUDGET
                     {
                         maintenance_retries += 1;
@@ -439,8 +444,8 @@ impl HeapRegistry {
                 slot.initialised.store(true, Ordering::Release);
                 if slot
                     .cas_state(
-                        STATE_INITIALIZING,
-                        STATE_LIVE,
+                        SlotState::Initializing,
+                        SlotState::Live,
                         Ordering::Release,
                         Ordering::Relaxed,
                     )
@@ -476,6 +481,15 @@ impl HeapRegistry {
             #[cfg(feature = "numa-aware")]
             unsafe {
                 (*slot.heap.get().cast::<HeapCore>()).invalidate_numa_node_cache();
+            }
+            // B4 §11: same (re-)claim invalidation discipline as the NUMA
+            // cache above, ungated: a recycled slot's new owner must not
+            // inherit the previous owner's per-class discovery cursors.
+            // SAFETY: we are the sole writer (FREE→LIVE CAS winner) and the
+            // slot is LIVE + initialised, exactly as for the NUMA
+            // invalidation above.
+            unsafe {
+                (*slot.heap.get().cast::<HeapCore>()).invalidate_class_cursors();
             }
             // The typed authority (Ph4a): slot is LIVE + initialised (see the
             // branch above), we are the sole writer. `generation` is a purely
@@ -543,15 +557,17 @@ impl HeapRegistry {
 /// Its atomic sidecar is outside the `HeapCore` exclusive-borrow range.
 #[doc(hidden)]
 pub struct MaintenanceLease {
-    index: usize,
+    index: u32,
     slot: &'static HeapSlot,
     _not_send: PhantomData<*mut ()>,
 }
 
 impl MaintenanceLease {
-    /// Stable slot index while this lease is held.
+    /// Stable slot index while this lease is held. `u32` — the same type as
+    /// [`HeapLease::slot_index`] (R6-T45: one slot-index type across both
+    /// leases); the index is bounded by `MAX_HEAPS`.
     #[cfg(feature = "internals")]
-    pub fn slot_index(&self) -> usize {
+    pub fn slot_index(&self) -> u32 {
         self.index
     }
     /// Safe core access for one maintenance pass (Ph4c: no longer
@@ -602,8 +618,8 @@ impl Drop for MaintenanceLease {
         if self
             .slot
             .cas_state(
-                STATE_MAINTENANCE,
-                STATE_FREE,
+                SlotState::Maintenance,
+                SlotState::Free,
                 Ordering::Release,
                 Ordering::Relaxed,
             )
@@ -612,7 +628,7 @@ impl Drop for MaintenanceLease {
             fatal(b"claim: maintenance lease free rollback cas lost\n");
         }
         let reg = ensure();
-        let prev = reg.reuse_hint.swap(self.index as u32, Ordering::Relaxed);
+        let prev = reg.reuse_hint.swap(self.index, Ordering::Relaxed);
         if (prev as usize) < MAX_HEAPS {
             FREE_SLOTS.publish(prev as usize);
         }
@@ -714,7 +730,12 @@ impl Drop for HeapLease {
         // single-writer protocol is broken — abort, like `MaintenanceLease`.
         if self
             .slot
-            .cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)
+            .cas_state(
+                SlotState::Live,
+                SlotState::Free,
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
             .is_err()
         {
             fatal(b"claim: heap lease free rollback cas lost\n");
@@ -777,8 +798,8 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
 pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     if slot
         .cas_state(
-            STATE_INITIALIZING,
-            STATE_FREE,
+            SlotState::Initializing,
+            SlotState::Free,
             Ordering::Release,
             Ordering::Relaxed,
         )

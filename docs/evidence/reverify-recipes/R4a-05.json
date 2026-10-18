@@ -1,0 +1,29 @@
+{
+  "id": "R4a-05",
+  "registryActivationHash": "82f1a9aa38a4a87a64b303dfc7e378b2f2d3f67b72565279308c31492a6b8502",
+  "steps": [
+    {
+      "name": "loom_r11_ph4a_heap_lease target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+        "--test",
+        "loom_r11_ph4a_heap_lease"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test lease_drop_release_pairs_with_claim_and_maintenance_acquires \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

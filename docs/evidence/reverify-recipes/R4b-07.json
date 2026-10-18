@@ -1,0 +1,27 @@
+{
+  "id": "R4b-07",
+  "registryActivationHash": "e6c6c67cb701e40e15a8b994f756b341a06761113c2d3ef84dd9b7a1b1ce9b2e",
+  "steps": [
+    {
+      "name": "spawn-failure retry lease-release source-pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals",
+        "--test",
+        "r11_ph4b_spawn_failure_retry_releases_leases"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

@@ -1,0 +1,29 @@
+{
+  "id": "R4c-19",
+  "registryActivationHash": "6e9a19b38c7ce1ab11b2f9f951a6b48d400ba9f4b5772ba1f1fcdbb447572a15",
+  "steps": [
+    {
+      "name": "loom_r8_maintenance_lease target",
+      "env": {
+        "RUSTFLAGS": "--cfg loom"
+      },
+      "argv": [
+        "cargo",
+        "test",
+        "--release",
+        "--features",
+        "alloc-global,alloc-xthread,internals,tagged-index-stack/loom",
+        "--test",
+        "loom_r8_maintenance_lease"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

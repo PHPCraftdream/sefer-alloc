@@ -5,7 +5,7 @@
 //! This module wires the small-object allocation path and re-exports the
 //! implementation in `alloc_core_small_impl.rs`.
 //! Free-list operations are grouped in `dealloc.rs`, optional directory
-//! maintenance in `directory.rs`, segment lookup in `find_segment.rs`, and
+//! maintenance in `directory.rs`, segment lookup in `find_segment/`, and
 //! reservation logic in `reserve.rs`. Cross-thread reclaim, magazine batch,
 //! and diagnostics remain in their sibling modules.
 

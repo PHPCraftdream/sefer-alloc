@@ -4,7 +4,7 @@
 //! ## The bug this guards against
 //!
 //! `LOCAL` (a `Cell<*mut HeapCore>`, no `Drop`) and `GUARD` (an
-//! `AbandonGuard`, has `Drop`) are both `thread_local!`s declared in that
+//! `LeaseReleaseGuard`, has `Drop`) are both `thread_local!`s declared in that
 //! order. Rust destroys thread-locals in REVERSE declaration order, so on
 //! thread exit `GUARD` drops FIRST — recycling this thread's registry slot —
 //! and `LOCAL` (a bare `Cell`, no drop glue) survives with its now-stale
@@ -22,7 +22,7 @@
 //! state from the outside is not expressible in safe test code (the thread
 //! is gone by the time you could observe it). So `tls_heap` exposes a
 //! `#[doc(hidden)]` hook, `dbg_teardown_then_resolve_is_fallback`, that
-//! calls the EXACT SAME `mark_local_torn` function `AbandonGuard::drop`
+//! calls the EXACT SAME `mark_local_torn` function `LeaseReleaseGuard::drop`
 //! calls (not a reimplementation), then resolves `current_for_alloc()` and
 //! reports whether it took the `Fallback` arm. This is the deterministic,
 //! same-thread counterfactual for the ordering bug: it isolates "does the

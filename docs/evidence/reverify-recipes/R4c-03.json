@@ -1,0 +1,31 @@
+{
+  "id": "R4c-03",
+  "registryActivationHash": "58c45cf1557f945782293b1f273135122c03b009b37930d3b3ac114a6b16a3fb",
+  "steps": [
+    {
+      "name": "strict provenance re-acceptance",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals",
+        "--test",
+        "r11_ph4a_lease_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test lease_claim_drop_reclaim_across_threads_under_miri \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

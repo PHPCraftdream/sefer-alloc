@@ -14,7 +14,7 @@
 /// The small-object alloc/dealloc/carve hot cluster of
 /// [`AllocCore`](crate::alloc_core::alloc_core::AllocCore) — the
 /// former flat `alloc_core_small.rs`, mechanically split into `mod.rs` +
-/// `find_segment.rs` + `dealloc.rs` + `reserve.rs` + `directory.rs`.
+/// `find_segment/` + `dealloc.rs` + `reserve.rs` + `directory.rs`.
 pub(super) mod alloc_core_small;
 /// Small-path diagnostic accessors (`dbg_*`) over the segment substrate.
 pub(super) mod alloc_core_small_diag;

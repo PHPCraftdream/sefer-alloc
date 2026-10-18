@@ -250,6 +250,18 @@ impl AllocCore {
                     filled += n;
                     continue;
                 }
+                // B4 §11: probe the per-class discovery cursor BEFORE the scan
+                // — batch-drain the remembered segment's bin. A miss (stale or
+                // empty bin) is never a trusted negative: discovery still runs
+                // below (starting after the cursor's slot).
+                let n = match self.batch_drain_from_class_cursor(class_idx, &mut out[filled..]) {
+                    Ok(n) => n,
+                    Err(()) => return filled,
+                };
+                if n != 0 {
+                    filled += n;
+                    continue;
+                }
                 // `find_segment_with_free` consumes sidecar publications before
                 // returning a usable base. Batch freelist drain uses that base
                 // only after discovery's pool/release decision.

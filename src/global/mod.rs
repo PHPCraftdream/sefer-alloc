@@ -5,7 +5,7 @@
 //! Re-exports only -- no logic lives here (per the one-export-per-file rule).
 //! The confined-`unsafe` seams of this module are:
 //! - [`tls_heap`] -- the raw-pointer TLS binding (`Cell<*mut HeapCore>` +
-//!   `AbandonGuard`); the `unsafe` is the pointer handoff under the
+//!   `LeaseReleaseGuard`); the `unsafe` is the pointer handoff under the
 //!   single-writer invariant; the guard's drop runs TORN -> `trim_for_recycle`
 //!   -> `HeapLease::drop` (LIVE -> FREE Release CAS, whole-slot reuse).
 //! - `fallback` -- the process-global always-live fallback heap; the
@@ -59,7 +59,8 @@ pub use fallback::dbg_panic_in_with_heap_releases_lock;
 #[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use fallback::dbg_fallback_lock_acquisitions;
-// `#[doc(hidden)]` test-only hooks + protocol constants (R34-17/task #536):
+// `#[doc(hidden)]` test-only hooks + the fallback bootstrap protocol state type
+// (R34-17/task #536):
 // let `tests/regression_fallback_init_unwind_guard.rs` exercise the F-8
 // `InitStateGuard` panic-safety of the fallback init-state bootstrap.
 // Same established test-only-export pattern; not stable API.
@@ -67,7 +68,7 @@ pub use fallback::dbg_fallback_lock_acquisitions;
 #[doc(hidden)]
 pub use fallback::{
     dbg_init_state, dbg_panic_in_fallback_init_rolls_back, dbg_set_inject_fallback_init_panic,
-    STATE_INITIALIZING, STATE_READY, STATE_UNINIT,
+    FallbackInitState,
 };
 
 // `#[doc(hidden)]` test-only hooks (R12-04): prove the fallback-init loser loop

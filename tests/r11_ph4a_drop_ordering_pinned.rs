@@ -31,13 +31,17 @@ fn lease_drop_publishes_live_to_free_with_release() {
     let cas = body.find("cas_state(").expect("Drop performs a state CAS");
     let call = &body[cas..];
     let close = call.find(')').expect("cas_state call is closed");
-    let args: Vec<&str> = call[..close].split(',').map(str::trim).collect();
+    let args: Vec<&str> = call[..close]
+        .split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .collect();
     assert_eq!(args.len(), 4, "cas_state(old, new, success, failure)");
     assert!(
-        args[0].ends_with("STATE_LIVE"),
+        args[0].ends_with("SlotState::Live"),
         "CAS expects LIVE: {args:?}"
     );
-    assert_eq!(args[1], "STATE_FREE", "CAS publishes FREE: {args:?}");
+    assert_eq!(args[1], "SlotState::Free", "CAS publishes FREE: {args:?}");
     assert_eq!(
         args[2], "Ordering::Release",
         "the LIVE→FREE publication must be Release (S2): {args:?}"

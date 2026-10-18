@@ -27,8 +27,8 @@
   ],
   "mutant": {
     "file": "src/registry/heap_registry/claim.rs",
-    "find": ".cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)",
-    "replace": ".cas_state(STATE_LIVE, STATE_FREE, Ordering::Relaxed, Ordering::Relaxed)",
+    "find": "        if self\n            .slot\n            .cas_state(\n                SlotState::Live,\n                SlotState::Free,\n                Ordering::Release,\n                Ordering::Relaxed,\n            )",
+    "replace": "        if self\n            .slot\n            .cas_state(\n                SlotState::Live,\n                SlotState::Free,\n                Ordering::Relaxed,\n                Ordering::Relaxed,\n            )",
     "steps": [
       {
         "name": "HeapLease drop publishes FREE with Relaxed mutant",

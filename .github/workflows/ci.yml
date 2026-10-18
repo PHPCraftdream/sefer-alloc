@@ -3404,7 +3404,8 @@ jobs:
             --test loom_route_pin_unlink \
             --test loom_b4_r1_pin_cache \
             --test loom_terminal_owner_drain \
-            --test loom_terminal_large 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
+            --test loom_terminal_large \
+            --test loom_b4_scan_skip_empty_publish 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_sidecar_class_publication_and_two_producers ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_same_word_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test loom_actual_two_producers_distinct_words_two_discoveries_no_loss_no_dup ... ok" "$RUNNER_TEMP/loom-xthread.log"
@@ -3435,6 +3436,7 @@ jobs:
           grep -F "test unpublished_and_detached_instances_hold_the_reservation_credit ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test negative_producer_retirement_allows_premature_release - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test producer_owner_cut_and_duplicate_admission ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test loom_b4_publish_racing_zero_word_skip_found_by_later_scan ... ok" "$RUNNER_TEMP/loom-xthread.log"
         shell: bash
 
   loom-experimental:

@@ -355,6 +355,10 @@ impl AllocCore {
             let slot_idx = SegmentHeader::segment_id_at(base) as usize;
             self.clear_segment_directory(slot_idx);
         }
+        // B4 §11: the slot is about to be recycled — drop any class cursor
+        // naming it (a released segment must never stay a discovery hint).
+        let cursor_slot = SegmentHeader::segment_id_at(base) as usize;
+        self.invalidate_class_cursor_for_slot(cursor_slot);
         self.table.recycle(base);
     }
 

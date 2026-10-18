@@ -27,6 +27,16 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_strict_words_visited",
   // Strict-trim read-only relaxed counter totals plus owned segment geometry; no reset or policy.
   "src/global/sefer_alloc/diag.rs::dbg_prf01_strict_words_visited",
+  // B4: static snapshot of 7 Relaxed counters; impl gated on internals+bench-internals, no instance/pointer use.
+  "src/global/sefer_alloc/diag.rs::dbg_b4_collapse_counters",
+  // B4 §11: static snapshot of 2 Relaxed cursor counters; impl gated on internals+bench-internals, no instance/pointer use.
+  "src/global/sefer_alloc/diag.rs::dbg_b4_cursor_counters",
+  // B4 §11 test-only: read-only cursor slot of the current thread's heap; no pointer/mutation.
+  "src/global/sefer_alloc/diag.rs::dbg_class_cursor_slot_for_current_thread",
+  // B4 §11 test-only: read-only cursor slot of this AllocCore.
+  "src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs::dbg_class_cursor_slot",
+  // B4 §11 test-only: read-only cursor slot of this heap's AllocCore.
+  "src/registry/heap_core/core.rs::dbg_class_cursor_slot",
   // PRF01: actual type layout only, no allocator instance or pointer access.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.

@@ -31,7 +31,7 @@ mod gate {
         let mut config = LibraryBenchmarkConfig::default();
         config
             .entry_point(EntryPoint::Custom(
-                "std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::AbandonGuard>".into(),
+                "std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::LeaseReleaseGuard>".into(),
             ))
             .callgrind_args(["--separate-threads=yes"]);
         config

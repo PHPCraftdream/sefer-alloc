@@ -121,3 +121,62 @@
 7. `rustfmt --edition 2021 --check` по всем изменённым `.rs` (включая 4 новых `policy/*`; удалённый `profile.rs` исключён) → exit 0.
 8. `node scripts/verify-structure-limits.mjs` → exit 0 («none new, none grown»; `config/` = 7 записей, `policy/` = 4).
 9. `node scripts/verify-dbg-hook-safety.mjs` → PASS (249 safe / 34 unsafe / 123 bench-gated), exit 0 — новых dbg-хуков нет, реестр валиден.
+
+## U26b (волна 14) — R6-T44 + остаток R6-T45: СДЕЛАНО, пинящие тесты обновлены
+
+База: ветка `r6-u26b` (HEAD `6b166a7b`). По решению владельца тесты, пинящие старое, обновлены под новое. Итог: 52 изменённых файла. Этот раздел дополняет и частично отменяет строки таблицы «Итог по задачам» выше (R6-T44: НЕ СДЕЛАНО → СДЕЛАНО; R6-T45 (e): НЕ СДЕЛАНО → СДЕЛАНО; R6-T45 (d) уточнён ниже). Сборки/тесты не запускались (правила раунда); компиляция проверена разрешёнными `cargo check`/`clippy` (см. конец раздела).
+
+### R6-T44 — переименование `AbandonGuard` → `LeaseReleaseGuard`
+
+- `src/global/tls_heap.rs` — 13 мест: модульная дока (`:8`), TORN-дока (`:76`, `:178`), GUARD-дока (`:190`, `:213`), `static GUARD` (`:204`), `struct` (`:215`), `impl` (`:223`), `mark_local_torn`-дока (`:234`), `impl Drop` (`:248`), резолверы (`:433`), `finish_bind` (`:499`), dbg-хук (`:602`); проза «abandon guard» → «lease-release guard».
+- Комментарии: `src/global/mod.rs:8`, `src/registry/mod.rs:9`, `src/registry/heap_slot.rs:20`, `src/registry/heap_core/state/ownership.rs:11`, `src/global/sefer_alloc/diag.rs:231`, `Cargo.toml:1761` и `:1765` (только строки комментариев bench-блока).
+- Пин-тесты обновлены под новые литералы: `tests/r11_ph4b_teardown_ordering_pinned.rs` (`find("impl Drop for LeaseReleaseGuard")`, хелпер переименован в `lease_release_guard_drop_body`), `tests/r11_ph4b_local_no_drop_pinned.rs` (`find("struct LeaseReleaseGuard")` + сообщения).
+- Символ TLS-деструктора обновлён синхронно в трёх местах: `benches/r20_prf04_heap_reuse_l2_iai.rs:34` (`EntryPoint::Custom`), `scripts/r20_prf04_heap_reuse_support.mjs:35` (`expectedSymbols`), `scripts/r20_prf04_heap_reuse_run.mjs:604` (regex-альтернатива).
+- `tests/no_stale_doc_references.rs:232-239` и коммент в тесте (`~:246-249`): больше не называют `AbandonGuard` живым типом (R6-T44 переименовал guard); файл возвращён к baseline 2923 строк (лимит структуры).
+- `docs/evidence/source_scope.csv:4` — якорь R4b-11 → `src/global/tls_heap.rs::impl Drop for LeaseReleaseGuard` (после коммита резолвится ровно 1 раз — проверено `verify-evidence-registry` против рабочего дерева). `registry.csv` не правил (по постановке).
+- Комментарии в 8 тестах: `dealloc_only_no_bind_torn`, `global_alloc_installed`, `global_alloc_mt`, `r17_8_deterministic_trim_releases_cached_large_span`, `race_repro`, `regression_r2_08_globalalloc_no_unwind`, `regression_r4_3_teardown_trim`, `tls_heap_teardown_torn_sentinel`.
+- `git grep AbandonGuard` после правки: только история — `CHANGELOG.md` (1) и `docs/**` (41: `reviews/`, `checkpoints/`, `design/`, `perf/` (включая PREREG), `_raw_*.log`, `agent_reviews_*`, датированные планы `ALLOC_PLAN_PHASE12-13`/`FASTBIN_DESIGN`/`RACE_DRAIN_RECLAIM`/`REMOTE_FREE_SIDECAR_*` — трактованы как история и не тронуты).
+
+### R6-T45(d) — типизированные состояния
+
+- `src/registry/heap_slot.rs`: шесть `STATE_*`-констант → `#[repr(u8)] pub enum SlotState { Empty=0, Live=1, Initializing=2, Free=3, Maintenance=4 }` + `TryFrom<u8>` (гварды сравнивают с вариантным `as u8` — перенумерация не рассинхронизирует impl). Значения в памяти/атомиках не менялись: `HeapSlot::cas_state` принимает `SlotState` и кастует внутри (`expected as u8, new as u8`), внешняя форма `Result<u8, u8>` сохранена. Алиас `STATE_LIVE`/`STATE_OWNED` свёрнут в единственный канон `Live`: у `STATE_OWNED` не было потребителей вне файла, а вся живая проза, пин-тесты и evidence-CSV формулируют переход как «LIVE → FREE». Коллизия имён `STATE_INITIALIZING` (fallback=1, slot=2) снята типами.
+- `src/global/fallback.rs`: `#[repr(u8)] pub enum FallbackInitState { Uninit=0, Initializing=1, Ready=2 }` + `TryFrom<u8>`; `INIT_STATE` остался `AtomicU8`, все 9 использований — через `FallbackInitState::X as u8`; `dbg_init_state()` по-прежнему возвращает `u8`.
+- Production-чтение состояния идёт через `TryFrom`: `src/registry/heap_registry/claim.rs` — `let observed = SlotState::try_from(slot.state.load(..))`, ветки `Ok(SlotState::Empty)` / `Ok(SlotState::Free)` / `_`, сравнение `observed == Ok(SlotState::Maintenance)`; CAS-аргументы типизированы во всех 8 местах `claim.rs` + `counters.rs` (`dbg_claim_then_simulate_oom`); сравнения в `stack.rs` — `== SlotState::Free as u8` и т.п.
+- `src/global/mod.rs:68-71` — реэкспорт трёх констант заменён на `FallbackInitState` (тот же `#[cfg(feature = "internals")] #[doc(hidden)]`); `src/registry/bootstrap/ensure.rs:89` — комментарий у zeroed-чанка.
+- Потребители в тестах обновлены механически (`STATE_X` → `SlotState::X as u8` / `FallbackInitState::X as u8`): loom-модели `loom_r11_ph4a_heap_lease`, `loom_r11_ph4b_publish_recycle_drain`, `loom_r8_maintenance_lease`; `r11_p3_registry_claim_{chunk_oom,first_bind,uninit_oom}`; `r11_ph4a_lease_miri`; `r11_ph4a_lease_not_send_sync`; `r11_ph4b_lease_miri`; `r11_ph4b_spawn_failure_retry_releases_leases`; `r6_terminal_lease_registry`; `r7_p1_chunk_oom`; `r8_maintenance_registry`; `registry_basic`; `regression_claim_oom_initialised_gate`; `regression_counter_wrap`; `con01_exit_stranded_lock`; `r12_04_fallback_init_losers_yield`; `regression_fallback_init_unwind_guard`; док-комментарии `r11_ph5b_c6_fallback_oom`.
+- Пин-скрейпы обновлены с сохранением смысла: `tests/r11_ph4b_teardown_ordering_pinned.rs:111` и — вопреки постановке «только :111» — также `tests/r11_ph4a_drop_ordering_pinned.rs:37-40`, который пинил те же литералы: `args[0].ends_with("SlotState::Live")`, `args[1] == "SlotState::Free"`, `args[2] == "Ordering::Release"`.
+- Не тронуто (собственные локальные протоколы): `tests/loom_registry_free_slots.rs` (свои u32-константы), `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `OWNER_STATE_LIVE` (owner-stamp сегментных заголовков — другой протокол).
+
+### R6-T45(e) — один тип `slot_index()`
+
+`MaintenanceLease::slot_index()`: `usize` → `u32` — канон выбран по типу слот-id крейта (`HeapLease.index: u32`, `reuse_hint: u32`, owner-id в сегментных заголовках `u32`); `HeapLease::slot_index()` уже был `u32` и не менялся. Поле `MaintenanceLease.index: usize → u32` с комментарием о безубыточности каста (bounds-check `< MAX_HEAPS` выше по функции); публикация хинта в `Drop` — `reuse_hint.swap(self.index, ..)` без каста. Потребители: `tests/r11_ph4b_spawn_failure_retry_releases_leases.rs` (`dbg_slot_state(index as usize)` ×2), `tests/r6_terminal_lease_registry.rs:23` (убран устаревший `as usize`), `tests/r8_maintenance_registry.rs:33` (`index as u32`), `tests/r11_p3_registry_claim_chunk_oom.rs:71` (убран identity-каст `as u32`), `tests/registry_basic.rs:257` (`id_a as u32`). Бенчи `heap_fanin_{production,persistent}` не менялись (путь `HeapLease` не затронут).
+
+### Тесты / counterfactual
+
+Новых тестов нет (постановка — чистое переименование/типизация с обновлением пинов). Роль «красного на старом коде» несут обновлённые source-pin тесты: `r11_ph4b_teardown_ordering_pinned` / `r11_ph4b_local_no_drop_pinned` паникуют на старом тексте `tls_heap.rs` (литералы `impl Drop for AbandonGuard` / `struct AbandonGuard` больше не находятся); `r11_ph4a_drop_ordering_pinned` / `r11_ph4b_teardown_ordering_pinned:111` красные, если CAS в `HeapLease::drop` перестанет быть `SlotState::Live → SlotState::Free` с `Ordering::Release`. CI-строки — существующие (cfg-гейты тестов не менялись): `alloc-global internals`/`production internals` (пины и registry/fallback-тесты), loom-джоба (`--cfg loom`, фичи `alloc-global alloc-xthread internals tagged-index-stack/loom`), miri-джобы (`r11_ph4a_lease_miri`, `r11_ph4b_lease_miri`), iai-джоба prf04 (символ деструктора), con01/r12_04/unwind_guard — строка с `bench-internals`.
+
+### Разрешённые проверки (команда → результат)
+
+Все `cargo check`/`clippy` — с `CARGO_TARGET_DIR` в общем каталоге вне worktree (пути этой машины в репозиторий не пишутся):
+
+1. `cargo check --lib --features "alloc-global alloc-xthread" --message-format short` → exit 0.
+2. `cargo check --tests --benches --features "alloc-global alloc-xthread internals bench-internals" --message-format short` → exit 0 (все не-miri/не-loom тесты + `heap_fanin_*`, `heap_lifecycle_teardown`).
+3. `cargo check --features production --message-format short` → exit 0.
+4. `cargo check --benches --features "production internals" --message-format short` → exit 0 (`r20_prf04_heap_reuse_l2_iai` с новым символом).
+5. `cargo clippy --lib --features "alloc-global alloc-xthread" -- -D warnings` → exit 0.
+6. `cargo clippy --lib --features "production internals" -- -D warnings` → exit 0.
+7. `RUSTFLAGS="--cfg loom" cargo check --tests --features "alloc-global alloc-xthread internals tagged-index-stack/loom"` → exit 0 (loom-модели типечеканы; запуск моделей — только CI).
+8. `rustfmt --edition 2021 --check` по всем 41 изменённым `.rs` → чисто.
+9. `node scripts/verify-structure-limits.mjs` → OK («none new, none grown»; `no_stale_doc_references.rs` возвращён к baseline 2923).
+10. `node scripts/verify-dbg-hook-safety.mjs` → PASS (249/34/123 — без изменений).
+11. `node scripts/verify-evidence-registry.mjs` → RED, ожидаемо на незакоммиченном дереве: якорь R4b-11 скрипт ищет в `git show HEAD:` (там ещё старое имя), плюс legacy evidence-stale-строки. После коммита якорь резолвится ровно 1 раз в рабочем дереве (проверено отдельно); перепинивание строк — reverify на CI.
+12. `node --check` обоих изменённых `scripts/r20_prf04_heap_reuse_*.mjs` → синтаксис OK.
+
+Нужно прогнать на CI (запрещено локально): `cargo test` всех строк (особенно `alloc-global internals`, `production internals`, `bench-internals`-строки con01/r12_04/unwind_guard), loom-раннер `scripts/loom.mjs`, miri (`r11_ph4a_lease_miri`, `r11_ph4b_lease_miri` — их тела под `cfg(miri)` локально не типечекались), iai-гейт prf04 (реальный манглированный символ деструктора), `cargo doc`/`npm run check`/`iai`/`bench:table`, reverify evidence.
+
+### Вопросы владельцу и риски
+
+1. `docs/evidence/registry.csv` строка R4b-11 устарела (ожидаемо по постановке); якорь в `source_scope.csv` обновлён синхронно с кодом.
+2. Канон состояния выбран `Live` (не `Owned`): у `STATE_OWNED` не было ни одного потребителя, а вся проза/пины/CSV говорят «LIVE → FREE»; альтернатива означала бы массовую правку прозы без выигрыша.
+3. Тип `slot_index()` унифицирован до `u32` (не `usize`): хинты/owner-id/`HeapLease` уже u32; потребители в тестах обновлены (5 мест), бенчи не тронуты.
+4. Miri- и loom-исполнение, реальные iai-символы — только CI (см. выше); локальная компиляция loom-моделей проверена.

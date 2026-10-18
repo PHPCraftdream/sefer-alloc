@@ -66,8 +66,17 @@ impl<T> ShardLock<T> {
         exiting: impl Fn() -> bool,
         giveup: impl Fn(),
     ) -> Option<ShardGuard<'_, T>> {
+        // `not(test)` guard: this file is path-included standalone by
+        // tests/r13_shard_guard_auto_traits.rs (its own crate, no `alloc_core`
+        // module), so the counter must be off in any cfg(test) build even
+        // with bench-internals on.
         let mut spins = 0u32;
         let mut yield_rounds = 0u32;
+        // Same `not(test)` shape as the reads below: in the path-included
+        // test builds the counter is off entirely, so the variable would be
+        // written but never read there.
+        #[cfg(all(feature = "bench-internals", not(test)))]
+        let mut contended = false;
         loop {
             // Fast path and retry: a single CAS; no read precedes the first
             // attempt, so the uncontended path is unchanged.
@@ -76,10 +85,19 @@ impl<T> ShardLock<T> {
                 .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
             {
+                #[cfg(all(feature = "bench-internals", not(test)))]
+                if contended {
+                    crate::alloc_core::B4_SHARD_LOCK_SPINS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
                 return Some(ShardGuard {
                     lock: self,
                     _unique: PhantomData,
                 });
+            }
+            #[cfg(all(feature = "bench-internals", not(test)))]
+            {
+                contended = true;
             }
             // TTAS: read-only spin while the lock looks held — the cache line
             // stays shared instead of ping-ponging RMW between waiters.
@@ -93,6 +111,9 @@ impl<T> ShardLock<T> {
                         giveup();
                         return None;
                     }
+                    #[cfg(all(feature = "bench-internals", not(test)))]
+                    crate::alloc_core::B4_SHARD_LOCK_YIELDS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     std::thread::yield_now();
                 }
             }

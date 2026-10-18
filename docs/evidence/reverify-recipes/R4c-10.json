@@ -29,8 +29,8 @@
   ],
   "mutant": {
     "file": "src/registry/heap_registry/claim.rs",
-    "find": "let prev = reg.reuse_hint.swap(self.index, Ordering::Relaxed);\n        if (prev as usize) < MAX_HEAPS {\n            FREE_SLOTS.publish(prev as usize);\n        }",
-    "replace": "let _ = self.index;",
+    "find": "        // claimability.\n        let reg = ensure();\n        let prev = reg.reuse_hint.swap(self.index, Ordering::Relaxed);\n        if (prev as usize) < MAX_HEAPS {\n            FREE_SLOTS.publish(prev as usize);\n        }",
+    "replace": "        // claimability.\n        let reg = ensure();\n        let _ = self.index;",
     "steps": [
       {
         "name": "release hint publication removed mutant",

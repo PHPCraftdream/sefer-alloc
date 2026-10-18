@@ -374,6 +374,15 @@ impl HeapCore {
         self.core.invalidate_numa_node_cache();
     }
 
+    /// B4 §11: clear every per-class discovery cursor of this heap. Called by
+    /// the registry claim path so a (re-)claimed slot never hands the
+    /// previous owner's cursor hints to the new owner — same sole-writer
+    /// shape as `invalidate_numa_node_cache`, but required in every feature
+    /// set (the cursor exists unconditionally).
+    pub(crate) fn invalidate_class_cursors(&mut self) {
+        self.core.invalidate_all_class_cursors();
+    }
+
     /// R11-5 test-only: read this heap's cached NUMA-node value without
     /// populating it. Delegates to
     /// [`AllocCore::dbg_cached_numa_node`](crate::alloc_core::AllocCore::dbg_cached_numa_node).
@@ -392,6 +401,15 @@ impl HeapCore {
     #[doc(hidden)]
     pub fn dbg_cached_numa_node(&self) -> Option<u32> {
         self.core.dbg_cached_numa_node()
+    }
+
+    /// B4 §11 test-only: read this heap's discovery-cursor slot for
+    /// `class_idx` (`None` = none recorded). Delegates to
+    /// `AllocCore::dbg_class_cursor_slot`.
+    #[cfg(all(feature = "internals", feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn dbg_class_cursor_slot(&self, class_idx: usize) -> Option<usize> {
+        self.core.dbg_class_cursor_slot(class_idx)
     }
 
     /// R11-5 test-only: deterministically populate the cache by directly

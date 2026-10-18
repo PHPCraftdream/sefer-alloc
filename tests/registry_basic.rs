@@ -35,11 +35,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::registry::HeapLease;
-use sefer_alloc::registry::{
-    bootstrap,
-    heap_slot::{STATE_FREE, STATE_LIVE},
-    HeapRegistry, HeapSlot,
-};
+use sefer_alloc::registry::{bootstrap, heap_slot::SlotState, HeapRegistry, HeapSlot};
 
 // The registry is a process-global static; tests that touch it MUST run
 // serially (a parallel claim race makes absolute-slot-index assertions
@@ -161,9 +157,13 @@ fn claim_yields_distinct_live_slots() {
     );
     assert_eq!(id_b, base as usize + 1);
     assert_eq!(id_c, base as usize + 2);
-    assert_eq!(slot_state(id_a), STATE_LIVE, "claimed slot must be LIVE");
-    assert_eq!(slot_state(id_b), STATE_LIVE);
-    assert_eq!(slot_state(id_c), STATE_LIVE);
+    assert_eq!(
+        slot_state(id_a),
+        SlotState::Live as u8,
+        "claimed slot must be LIVE"
+    );
+    assert_eq!(slot_state(id_b), SlotState::Live as u8);
+    assert_eq!(slot_state(id_c), SlotState::Live as u8);
     // The leases are dropped (LIVE → FREE) at scope exit, exactly like
     // `recycle`.
 }
@@ -188,7 +188,7 @@ fn recycle_then_claim_reuses_slot_and_bumps_generation() {
     drop(a);
     assert_ne!(
         slot_state(id_a),
-        STATE_LIVE,
+        SlotState::Live as u8,
         "recycled slot must NOT be LIVE (it is FREE)"
     );
 
@@ -228,8 +228,8 @@ fn latest_hint_then_older_free_precedes_fresh() {
     // ordering: LIFO hint B, then the bitmap's lowest FREE index A.
     drop(a);
     drop(b);
-    assert_eq!(slot_state(id_a), STATE_FREE);
-    assert_eq!(slot_state(id_b), STATE_FREE);
+    assert_eq!(slot_state(id_a), SlotState::Free as u8);
+    assert_eq!(slot_state(id_b), SlotState::Free as u8);
 
     let c = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
     assert_eq!(c.slot_index() as usize, id_b, "latest hint must reuse B");
@@ -243,8 +243,8 @@ fn latest_hint_then_older_free_precedes_fresh() {
         "older FREE precedes fresh capacity"
     );
     assert_eq!(count_at_entry(), next_fresh);
-    assert_eq!(slot_state(id_b), STATE_LIVE);
-    assert_eq!(slot_state(id_a), STATE_LIVE);
+    assert_eq!(slot_state(id_b), SlotState::Live as u8);
+    assert_eq!(slot_state(id_a), SlotState::Live as u8);
     assert_eq!(d.generation(), generation_a + 1, "A was reclaimed");
     drop(d);
 
@@ -254,7 +254,7 @@ fn latest_hint_then_older_free_precedes_fresh() {
     // intermediates are leaked LIVE (same shape as `claim_fresh_lease`), so
     // the pool shrinks each iteration and the loop terminates.
     let mut lease = HeapRegistry::dbg_try_maintenance().expect("older FREE A remains discoverable");
-    while lease.slot_index() != id_a {
+    while lease.slot_index() != id_a as u32 {
         std::mem::forget(lease);
         lease = HeapRegistry::dbg_try_maintenance()
             .expect("maintenance must keep discovering FREE slots");
@@ -262,7 +262,7 @@ fn latest_hint_then_older_free_precedes_fresh() {
     drop(lease);
     let recovered = HeapRegistry::dbg_claim_lease().expect("claim must not return null");
     assert_eq!(recovered.slot_index() as usize, id_a);
-    assert_eq!(slot_state(id_a), STATE_LIVE);
+    assert_eq!(slot_state(id_a), SlotState::Live as u8);
     assert_eq!(slot_generation(id_a), generation_a + 2);
     assert_eq!(count_at_entry(), next_fresh);
     // The LIVE leases (c, recovered) are held to the end of the test — the

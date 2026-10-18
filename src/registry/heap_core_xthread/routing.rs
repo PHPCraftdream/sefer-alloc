@@ -31,6 +31,11 @@ impl HeapCore {
                 unsafe { Self::publish_foreign_uncached(ptr, layout) }
             }
         };
+        #[cfg(feature = "bench-internals")]
+        if published {
+            crate::alloc_core::B4_FOREIGN_PUBLISH_OK
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
         if !published {
             crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);

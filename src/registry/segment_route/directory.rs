@@ -938,15 +938,16 @@ impl RouteDirectory {
 
     /// Only `ptr.addr()` is used as a key; no reservation byte is read.
     pub fn lookup(&self, ptr: *mut u8) -> Option<RoutePin> {
-        let addr = ptr.addr();
-        let key = addr & !(SEGMENT - 1);
+        #[cfg(feature = "bench-internals")]
+        crate::alloc_core::B4_DIRECTORY_LOOKUPS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        let (addr, key) = (ptr.addr(), ptr.addr() & !(SEGMENT - 1));
         let guard = self.shards[Self::shard_index(key)].lock_unless_exiting(
             crate::global::process_exit_in_progress,
             crate::global::fallback::record_exit_lock_giveup,
         )?;
         let raw = guard.find(key)?;
-        // SAFETY: the shard lock excludes unlink and final release; the
-        // indexed entry is fully initialized and still owner-referenced.
+        // SAFETY: the shard lock excludes unlink and final release; the entry
+        // is fully initialized and still owner-referenced.
         let entry = unsafe { &*raw };
         if addr < entry.payload
             || addr >= entry.end
@@ -977,16 +978,16 @@ impl RouteDirectory {
         ) else {
             return false;
         };
-        let retired = guard.remove(key, entry.ptr());
+        // The caller drops the owner reference after this lock is released.
+        // Displaced blocks are plain System allocations whose Drop never
+        // re-enters the directory, so `_retired` dropping first is safe.
+        let _retired = guard.remove(key, entry.ptr());
         // Unlink ran above under the shard lock; the Release `linked = false` store publishes
         // it, so an Acquire reader observes the unlink; the owner ref drops after lock release.
         entry.entry().linked.store(false, Ordering::Release);
         drop(guard);
-        // Displaced blocks are released outside the shard lock.
-        drop(retired);
         true
     }
-
     const fn shard_index(key: usize) -> usize {
         let value = key / SEGMENT;
         (value ^ (value >> 13) ^ (value >> 26)) % SHARDS

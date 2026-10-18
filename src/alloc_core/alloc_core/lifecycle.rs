@@ -20,6 +20,7 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta}
 use super::bootstrap;
 #[cfg(feature = "alloc-decommit")]
 use super::counters::LargeCacheHitCounter;
+use super::CLASS_CURSOR_NONE;
 #[cfg(feature = "alloc-decommit")]
 use super::{CachedLarge, LargeCacheDecayConfig, LARGE_CACHE_SLOTS};
 #[cfg(feature = "alloc-decommit")]
@@ -28,7 +29,6 @@ use crate::alloc_core::large_cache_mode::LargeCacheMode;
 use crate::alloc_core::numa;
 #[cfg(feature = "alloc-decommit")]
 use crate::alloc_core::os::SEGMENT;
-#[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 /// R31-15 (task #486): process-wide monotonic source for
@@ -284,6 +284,9 @@ impl AllocCore {
         Some(Self {
             table: prim.table,
             small_cur,
+            // B4 §11: no discovery has run yet on this fresh core; every class
+            // starts cursor-less (scan from slot 0 exactly as before).
+            small_class_cursor: [CLASS_CURSOR_NONE; SMALL_CLASS_COUNT],
             // R11-5: cache starts empty; first call to `current_node_cached`
             // populates it. `HeapRegistry::claim_lease` resets it to `None` on
             // every (re-)claim of a registry slot so a recycled slot never
