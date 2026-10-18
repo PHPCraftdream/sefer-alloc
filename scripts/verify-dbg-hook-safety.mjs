@@ -27,6 +27,8 @@ const PURE_OBSERVERS = [
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_strict_words_visited",
   // Strict-trim read-only relaxed counter totals plus owned segment geometry; no reset or policy.
   "src/global/sefer_alloc/diag.rs::dbg_prf01_strict_words_visited",
+  // B4: static snapshot of 7 Relaxed counters; impl gated on internals+bench-internals, no instance/pointer use.
+  "src/global/sefer_alloc/diag.rs::dbg_b4_collapse_counters",
   // PRF01: actual type layout only, no allocator instance or pointer access.
   "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.

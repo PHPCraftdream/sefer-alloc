@@ -44,6 +44,7 @@ const FEATURES = {
   loom_sidecar_summary: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_route_pin_unlink: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_large: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
+  loom_b4_scan_skip_empty_publish: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_terminal_owner_drain: 'alloc-core,alloc-xthread,tagged-index-stack/loom',
   loom_registry_free_slots: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   loom_r8_maintenance_lease: 'alloc-global,alloc-xthread,internals,tagged-index-stack/loom',

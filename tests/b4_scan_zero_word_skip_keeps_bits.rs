@@ -31,10 +31,9 @@ mod alloc_core {
     }
 }
 
-#[cfg_attr(
-    all(feature = "bench-internals", r18_sidecar_scan_bench),
-    allow(dead_code)
-)]
+// Included scanner siblings unused by this test (same pattern as
+// `tests/class_leaves_publication_miri.rs`).
+#[allow(dead_code)]
 #[path = "../src/alloc_core/segment/remote_bitmap/mod.rs"]
 mod remote_bitmap;
 

@@ -1154,6 +1154,15 @@ required-features = ["alloc-global"]
 name = "global_allocator"
 required-features = ["alloc-global"]
 
+# B4 collapse diagnosis: bimodal larson collapse probe (SeferAlloc-only, per-
+# window throughput + perf counters + Windows process metrics). Described in
+# the B4 report (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md). Needs `alloc-xthread`
+# for the cross-thread routing path the probe exercises (bare `alloc-global`
+# already implies it via `alloc-core`, but the doc/command line names both).
+[[example]]
+name = "b4_collapse_probe"
+required-features = ["alloc-global", "alloc-xthread"]
+
 # RAD-1 / Phase 0(a): process-per-sample first-alloc RSS + latency probe — the
 # E1 registry-bootstrap judge. Measures the ~16 MiB first-touch cost of the
 # registry `next_free` materialisation, which is invisible to Criterion/iai (they

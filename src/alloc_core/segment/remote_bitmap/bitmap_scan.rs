@@ -19,6 +19,19 @@ std::thread_local! {
     static BASELINE_SCAN: core::cell::Cell<bool> = const { core::cell::Cell::new(true) };
 }
 
+// B4 production-branch RMW counter (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS):
+// counts the `swap(0, AcqRel)` executions of the production `next_cut`
+// branch, so an integration test can prove the B4 load-gate actually skips
+// the RMW on zero words. Lives OUTSIDE `r18_sidecar_scan_bench` because the
+// production branch does not exist under it; readers are source-included
+// integration tests (same pattern as r18 `SCAN_COUNTS`, read by the bench
+// harness), hence the point-wise `allow(dead_code)` below for lib builds
+// with `bench-internals` and no inside-crate reader.
+#[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
+std::thread_local! {
+    static B4_PROD_SCAN_RMW: core::cell::Cell<Option<u64>> = const { core::cell::Cell::new(None) };
+}
+
 /// A fixed high-water scan. One cut is taken per word, including empty words.
 #[must_use = "finish the fixed scan or persist the remaining cursor"]
 pub(crate) struct BitmapScan<'a> {
@@ -44,6 +57,20 @@ impl<'a> BitmapScan<'a> {
                 counts.set(Some(current));
             }
         });
+    }
+
+    /// B4: arm/disarm the production-branch RMW-swap counter ([`B4_PROD_SCAN_RMW`]).
+    /// Mirrors [`Self::measure_scans`]: returns the previous value, `Some(0)`
+    /// while armed, `None` (counter inert) when disarmed.
+    #[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
+    #[cfg_attr(
+        all(feature = "bench-internals", not(r18_sidecar_scan_bench)),
+        allow(dead_code)
+    )]
+    // readers are source-included integration tests (same pattern as the r18
+    // SCAN_COUNTS, read by the bench harness), not lib-crate code.
+    pub(crate) fn measure_rmw_swaps(enable: bool) -> u64 {
+        B4_PROD_SCAN_RMW.with(|count| count.replace(enable.then_some(0)).unwrap_or(0))
     }
 
     pub(crate) fn next_cut(&mut self) -> Option<BitmapCut<'a>> {
@@ -78,6 +105,12 @@ impl<'a> BitmapScan<'a> {
         let bits = if pending.load(Ordering::Acquire) == 0 {
             0
         } else {
+            #[cfg(all(feature = "bench-internals", not(r18_sidecar_scan_bench)))]
+            B4_PROD_SCAN_RMW.with(|count| {
+                if let Some(current) = count.get() {
+                    count.set(Some(current + 1));
+                }
+            });
             pending.swap(0, Ordering::AcqRel)
         };
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]

@@ -72,7 +72,10 @@ impl<T> ShardLock<T> {
         // with bench-internals on.
         let mut spins = 0u32;
         let mut yield_rounds = 0u32;
-        #[cfg(feature = "bench-internals")]
+        // Same `not(test)` shape as the reads below: in the path-included
+        // test builds the counter is off entirely, so the variable would be
+        // written but never read there.
+        #[cfg(all(feature = "bench-internals", not(test)))]
         let mut contended = false;
         loop {
             // Fast path and retry: a single CAS; no read precedes the first
@@ -92,7 +95,7 @@ impl<T> ShardLock<T> {
                     _unique: PhantomData,
                 });
             }
-            #[cfg(feature = "bench-internals")]
+            #[cfg(all(feature = "bench-internals", not(test)))]
             {
                 contended = true;
             }

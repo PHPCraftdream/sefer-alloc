@@ -576,6 +576,10 @@ impl AllocCore {
             // drain-outcome counters see fewer Drained events (the
             // "was_nonempty" hit classification is unchanged — same pre-drain
             // read as before).
+            #[cfg(any(
+                feature = "alloc-stats",
+                all(feature = "alloc-global", feature = "alloc-xthread")
+            ))]
             let pre_nonempty = SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
             #[cfg(feature = "alloc-stats")]
             let was_nonempty = routed_miss_scan && pre_nonempty;

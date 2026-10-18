@@ -8,7 +8,6 @@
 //! Ops accounting: `ops` = step ops + drained-mailbox ops, matching
 //! `malloc_bench_rs::larson_worker`'s returned count.
 
-#![cfg(feature = "alloc-global")]
 // Win32 FFI structs are declared locally (cfg(windows) only); no FFI dep.
 #![allow(unsafe_code)]
 #![allow(
@@ -324,11 +323,6 @@ fn proc_metrics_snapshot() -> (u64, u64, u64, u64, u64) {
     }
 }
 
-/// Non-Windows stub: no process metrics available.
-#[cfg(not(windows))]
-fn proc_metrics_snapshot() -> (u64, u64, u64, u64, u64) {
-    (0, 0, 0, 0, 0)
-}
 /// Snapshot all counters in fixed sorted order; groups gated like the lib.
 fn counters_snapshot(alloc: &SeferAlloc) -> Vec<(&'static str, u64)> {
     let mut out: Vec<(&'static str, u64)> = Vec::new();

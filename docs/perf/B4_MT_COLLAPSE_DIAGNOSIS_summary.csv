@@ -47,6 +47,82 @@ s2-prefix,pre-fix,s2_warm_21.log,4,1695701,37,4480647377
 s2-prefix,pre-fix,s2_warm_22.log,4,1695606,33,5060604071
 s2-prefix,pre-fix,s2_warm_23.log,4,1697522,26,6375669484
 s2-prefix,pre-fix,s2_warm_24.log,4,1684494,560,300734835
+s3-prefix,pre-fix counters,s3_cold_01.log,4,1699259,53,3190497559
+s3-prefix,pre-fix counters,s3_cold_02.log,4,1679313,650,258054121
+s3-prefix,pre-fix counters,s3_cold_03.log,4,1695234,54,3091800109
+s3-prefix,pre-fix counters,s3_cold_04.log,4,1694501,119,1412825900
+s3-prefix,pre-fix counters,s3_cold_05.log,4,1697636,53,3189066932
+s3-prefix,pre-fix counters,s3_cold_06.log,4,1694339,56,2981364044
+s3-prefix,pre-fix counters,s3_cold_07.log,4,1693355,62,2713535991
+s3-prefix,pre-fix counters,s3_cold_08.log,4,1684246,689,244128650
+s3-prefix,pre-fix counters,s3_cold_09.log,4,1684711,667,252481563
+s3-prefix,pre-fix counters,s3_cold_10.log,4,1693492,59,2843528780
+s3-prefix,pre-fix counters,s3_cold_11.log,4,1683586,551,305008515
+s3-prefix,pre-fix counters,s3_cold_12.log,4,1693090,58,2916606374
+s3-prefix,pre-fix counters,s3_cold_13.log,4,1697775,55,3085797634
+s3-prefix,pre-fix counters,s3_cold_14.log,4,1699591,52,3211683894
+s3-prefix,pre-fix counters,s3_cold_15.log,4,1686231,424,397081638
+s3-prefix,pre-fix counters,s3_cold_16.log,4,1699294,54,3093337459
+s3-prefix,pre-fix counters,s3_cold_17.log,4,1695884,55,3082248596
+s3-prefix,pre-fix counters,s3_cold_18.log,4,1698703,55,3085241287
+s3-prefix,pre-fix counters,s3_cold_19.log,4,1684407,513,328257421
+s3-prefix,pre-fix counters,s3_cold_20.log,4,1692947,56,2988801794
+s3-prefix,pre-fix counters,s3_warm_01.log,4,1688511,62,2716438488
+s3-prefix,pre-fix counters,s3_warm_02.log,4,1689358,250,674289432
+s3-prefix,pre-fix counters,s3_warm_03.log,4,1696202,56,3022940243
+s3-prefix,pre-fix counters,s3_warm_04.log,4,1692661,64,2626275775
+s3-prefix,pre-fix counters,s3_warm_05.log,4,1674760,2605,64273458
+s3-prefix,pre-fix counters,s3_warm_06.log,4,1688993,60,2785646193
+s3-prefix,pre-fix counters,s3_warm_07.log,4,1689614,258,652968206
+s3-prefix,pre-fix counters,s3_warm_08.log,4,1673268,2909,57514809
+s3-prefix,pre-fix counters,s3_warm_09.log,4,1674354,2559,65427890
+s3-prefix,pre-fix counters,s3_warm_10.log,4,1695285,57,2953921347
+s3-prefix,pre-fix counters,s3_warm_11.log,4,1696759,56,2988514513
+s3-prefix,pre-fix counters,s3_warm_12.log,4,1692275,57,2924573137
+s3-prefix,pre-fix counters,s3_warm_13.log,4,1694067,59,2834973894
+s3-prefix,pre-fix counters,s3_warm_14.log,4,1698067,52,3216706132
+s3-prefix,pre-fix counters,s3_warm_15.log,4,1692682,166,1016546456
+s3-prefix,pre-fix counters,s3_warm_16.log,4,1690638,141,1197734373
+s3-prefix,pre-fix counters,s3_warm_17.log,4,1675571,2927,57237104
+s3-prefix,pre-fix counters,s3_warm_18.log,4,1684283,507,331667333
+s3-prefix,pre-fix counters,s3_warm_19.log,4,1681569,773,217440706
+s3-prefix,pre-fix counters,s3_warm_20.log,4,1676087,777,215539515
+s3-prefix,pre-fix counters,s3_warm_21.log,4,1692206,58,2871942568
+s3-prefix,pre-fix counters,s3_warm_22.log,4,1673640,3088,54186079
+s3-prefix,pre-fix counters,s3_warm_23.log,4,1696541,57,2946304401
+s3-prefix,pre-fix counters,s3_warm_24.log,4,1694499,54,3109286579
+s3-prefix,pre-fix counters,s3_warm_25.log,4,1696171,63,2665678139
+s3-prefix,pre-fix counters,s3_warm_26.log,4,1688767,300,562082956
+s3-prefix,pre-fix counters,s3_warm_27.log,4,1674976,2679,62522014
+s3-prefix,pre-fix counters,s3_warm_28.log,4,1691660,60,2804569117
+s3-prefix,pre-fix counters,s3_warm_29.log,4,1688098,338,498871988
+s3-prefix,pre-fix counters,s3_warm_30.log,4,1687079,72,2333474875
+s3-prefix,pre-fix counters,s3_warm_31.log,4,1693251,113,1486951367
+s3-prefix,pre-fix counters,s3_warm_32.log,4,1696701,56,3019685698
+s3-prefix,pre-fix counters,s3_warm_33.log,4,1695038,55,3037593635
+s3-prefix,pre-fix counters,s3_warm_34.log,4,1689375,168,1003585134
+s3-prefix,pre-fix counters,s3_warm_35.log,4,1697474,56,3020362627
+s3-prefix,pre-fix counters,s3_warm_36.log,4,1692543,55,3065867840
+s3-prefix,pre-fix counters,s3_warm_37.log,4,1697551,55,3044333853
+s3-prefix,pre-fix counters,s3_warm_38.log,4,1692274,76,2199300808
+s3-prefix,pre-fix counters,s3_warm_39.log,4,1692209,61,2762474493
+s3-prefix,pre-fix counters,s3_warm_40.log,4,1680018,909,184777368
+s4-fix,pre-fix counters,s4_warm_01.log,4,1694629,59,2850703159
+s4-fix,pre-fix counters,s4_warm_02.log,4,1685229,525,320900647
+s4-fix,pre-fix counters,s4_warm_03.log,4,1694866,67,2499691754
+s4-fix,pre-fix counters,s4_warm_04.log,4,1682742,484,347071611
+s4-fix,pre-fix counters,s4_warm_05.log,4,1690258,215,782740656
+s4-fix,pre-fix counters,s4_warm_06.log,4,1677196,2504,66961096
+s4-fix,pre-fix counters,s4_warm_07.log,4,1686091,574,293605458
+s4-fix,pre-fix counters,s4_warm_08.log,4,1691932,110,1536653195
+s4-fix,pre-fix counters,s4_warm_09.log,4,1694094,60,2810235058
+s4-fix,pre-fix counters,s4_warm_10.log,4,1686154,488,344928218
+s4-fix,pre-fix counters,s4_warm_11.log,4,1699353,53,3196736206
+s4-fix,pre-fix counters,s4_warm_12.log,4,1698170,56,3014199755
+s4-fix,pre-fix counters,s4_warm_13.log,4,1691876,164,1026368440
+s4-fix,pre-fix counters,s4_warm_14.log,4,1698319,53,3150110363
+s4-fix,pre-fix counters,s4_warm_15.log,4,1686354,340,495760462
+s4-fix,pre-fix counters,s4_warm_16.log,4,1693571,60,2795317400
 s5-fix1,fix1,s5_cold_01.log,4,1690448,35,4711262228
 s5-fix1,fix1,s5_cold_02.log,4,1692031,31,5325541357
 s5-fix1,fix1,s5_cold_03.log,4,1699379,33,5115067875
@@ -95,6 +171,16 @@ s5-fix1,fix1,s5_warm_21.log,4,1698962,42,4036497981
 s5-fix1,fix1,s5_warm_22.log,4,1691326,42,3971367521
 s5-fix1,fix1,s5_warm_23.log,4,1689671,35,4706735564
 s5-fix1,fix1,s5_warm_24.log,4,1696499,44,3836497060
+s6-fix1,fix1 counters,s6_warm_01.log,4,1672973,347,481539166
+s6-fix1,fix1 counters,s6_warm_02.log,4,1693499,65,2592460658
+s6-fix1,fix1 counters,s6_warm_03.log,4,1692761,68,2468805239
+s6-fix1,fix1 counters,s6_warm_04.log,4,1693942,60,2789392043
+s6-fix1,fix1 counters,s6_warm_05.log,4,1689653,82,2054539154
+s6-fix1,fix1 counters,s6_warm_06.log,4,1686155,101,1659454379
+s6-fix1,fix1 counters,s6_warm_07.log,4,1689321,77,2178195111
+s6-fix1,fix1 counters,s6_warm_08.log,4,1699156,65,2606827143
+s6-fix1,fix1 counters,s6_warm_09.log,4,1689860,61,2730910325
+s6-fix1,fix1 counters,s6_warm_10.log,4,1686214,91,1846954445
 s7-cnt-fix1+2,fix1+2 counters-build,s7_cnt_01.log,4,1687373,65,2591254338
 s7-cnt-fix1+2,fix1+2 counters-build,s7_cnt_02.log,4,1691582,60,2792080548
 s7-cnt-fix1+2,fix1+2 counters-build,s7_cnt_03.log,4,1698559,67,2524236885
