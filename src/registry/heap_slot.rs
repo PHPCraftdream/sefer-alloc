@@ -86,7 +86,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8};
 use super::heap_core::HeapCore;
 
 /// The lease-state machine of a registry slot (the values carried by
-/// [`HeapSlot::state`]). `#[repr(u8)]`: the discriminants ARE the memory
+/// `HeapSlot::state`). `#[repr(u8)]`: the discriminants ARE the memory
 /// format — the exact numbers the `state: AtomicU8` has always stored
 /// (0..=4, unchanged); `as u8` stores a variant, `TryFrom<u8>` reads a
 /// loaded value back. One canonical spelling per state: the former
