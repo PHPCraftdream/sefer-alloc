@@ -32,7 +32,7 @@ function add(layer, family, suffix, n, group, name) {
           : 'cold';
   const expectedSymbols = functionName
     ? [layer === 'L2' ? `${target}::hr::first_global_alloc` : `${target}::hr::${functionName}`]
-    : ['std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::AbandonGuard>'];
+    : ['std::sys::thread_local::native::eager::destroy::<sefer_alloc::global::tls_heap::LeaseReleaseGuard>'];
   rows.push(Object.freeze({
     name,
     group,

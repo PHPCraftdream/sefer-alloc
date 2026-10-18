@@ -43,7 +43,7 @@
 //! ## Why process-per-sample (same discipline as `first_alloc_process.rs`)
 //!
 //! Thread-local heap bindings persist for a thread's entire lifetime (until
-//! `AbandonGuard::drop` on thread exit releases the registry slot back to the
+//! `LeaseReleaseGuard::drop` on thread exit releases the registry slot back to the
 //! free pool). You cannot cleanly test "a never-before-bound thread's first
 //! dealloc" by reusing worker threads across samples within one process —
 //! the second sample's "fresh" thread would actually be reusing a

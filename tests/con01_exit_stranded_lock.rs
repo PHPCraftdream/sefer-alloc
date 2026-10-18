@@ -301,7 +301,7 @@ fn prepare(mode: &str) -> Scenario {
             Scenario::Fallback
         }
         "init" => {
-            if global::dbg_init_state() != global::STATE_UNINIT {
+            if global::dbg_init_state() != global::FallbackInitState::Uninit as u8 {
                 fail("fallback already initialized");
             }
             global::dbg_set_hold_fallback_init(true);
@@ -310,7 +310,7 @@ fn prepare(mode: &str) -> Scenario {
                     fail("init winner OOM");
                 }
             });
-            wait_for(|| global::dbg_init_state() == global::STATE_INITIALIZING);
+            wait_for(|| global::dbg_init_state() == global::FallbackInitState::Initializing as u8);
             let yields = global::dbg_fallback_init_wait_yields();
             // A second real caller proves the loser wait loop is active, not
             // merely an assumed hold. Neither caller touches Sefer TLS.
@@ -320,7 +320,7 @@ fn prepare(mode: &str) -> Scenario {
                 }
             });
             wait_for(|| global::dbg_fallback_init_wait_yields() > yields);
-            if global::dbg_init_state() != global::STATE_INITIALIZING {
+            if global::dbg_init_state() != global::FallbackInitState::Initializing as u8 {
                 fail("init hold lost");
             }
             eprintln!("CON01_INIT_READY state=INITIALIZING loser_yields_positive=true");

@@ -2,7 +2,7 @@
 //! ordering that the shadow model
 //! `tests/loom_r11_ph4b_publish_recycle_drain.rs` mirrors but cannot observe.
 //!
-//! In `impl Drop for AbandonGuard` (`src/global/tls_heap.rs`) the order is
+//! In `impl Drop for LeaseReleaseGuard` (`src/global/tls_heap.rs`) the order is
 //! load-bearing:
 //!   1. `mark_local_torn()` — poison LOCAL before the slot is released, so a
 //!      post-teardown resolver can never alias the next claimant;
@@ -35,14 +35,14 @@ fn claim_src() -> &'static str {
     .as_str()
 }
 
-fn abandon_guard_drop_body() -> String {
+fn lease_release_guard_drop_body() -> String {
     let start = tls_src()
-        .find("impl Drop for AbandonGuard")
-        .expect("AbandonGuard implements Drop");
+        .find("impl Drop for LeaseReleaseGuard")
+        .expect("LeaseReleaseGuard implements Drop");
     let rest = &tls_src()[start..];
     let end = rest
         .find("\n}\n")
-        .expect("end of the AbandonGuard Drop impl");
+        .expect("end of the LeaseReleaseGuard Drop impl");
     rest[..end]
         .lines()
         .filter(|line| !line.trim_start().starts_with("//"))
@@ -52,7 +52,7 @@ fn abandon_guard_drop_body() -> String {
 
 #[test]
 fn teardown_stamps_torn_then_trims_then_releases_the_slot() {
-    let body = abandon_guard_drop_body();
+    let body = lease_release_guard_drop_body();
     let torn = body
         .find("mark_local_torn()")
         .expect("teardown poisons LOCAL via the shared mark_local_torn choke point");
@@ -108,7 +108,7 @@ fn lease_release_cas_is_release_ordered() {
     let args: Vec<&str> = call[..close].split(',').map(str::trim).collect();
     assert_eq!(args.len(), 4, "cas_state(old, new, success, failure)");
     assert!(
-        args[0].ends_with("STATE_LIVE") && args[1] == "STATE_FREE",
+        args[0].ends_with("SlotState::Live") && args[1] == "SlotState::Free",
         "the teardown CAS must be LIVE → FREE: {args:?}"
     );
     assert_eq!(

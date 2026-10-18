@@ -5,7 +5,7 @@
 //! `RefCell<Option<Heap>>` binding for the global face. The keystone move:
 //! the heap is NOT owned by the TLS slot (RAII-dropped on thread exit); it
 //! is a slot in the global [`HeapRegistry`], and the TLS slot caches only a
-//! raw `*mut HeapCore` to it. On thread exit, `AbandonGuard::drop` does NOT
+//! raw `*mut HeapCore` to it. On thread exit, `LeaseReleaseGuard::drop` does NOT
 //! abandon segments — it releases the slot (`LIVE → FREE`) by dropping its
 //! [`HeapLease`], with the `HeapCore` and all its segments staying whole, for
 //! reuse by whichever thread claims the slot next (whole-slot reuse, Phase
@@ -73,7 +73,7 @@ use crate::registry::heap_registry::HeapLease;
 use crate::registry::{HeapCore, HeapRegistry};
 
 /// Sentinel value stamped into [`LOCAL`] by [`mark_local_torn`] the instant
-/// this thread's [`AbandonGuard`] starts tearing down (before the slot is
+/// this thread's [`LeaseReleaseGuard`] starts tearing down (before the slot is
 /// released). It is a "poison" marker, not a heap pointer: it is NEVER
 /// dereferenced, only compared against in the four resolver paths below.
 /// It uses `usize::MAX` so it is:
@@ -175,7 +175,7 @@ thread_local! {
     /// The cached raw pointer to this thread's heap (a slot in the global
     /// [`HeapRegistry`]). `null` until the first call to [`current_for_alloc`];
     /// non-null thereafter, until the thread exits — at which point the
-    /// [`AbandonGuard`] releases the slot (via the [`HeapLease`]'s `LIVE → FREE`
+    /// [`LeaseReleaseGuard`] releases the slot (via the [`HeapLease`]'s `LIVE → FREE`
     /// Drop) AND stamps this cell to [`TORN`]
     /// (via [`mark_local_torn`]) BEFORE releasing it, so a post-teardown
     /// read never observes the stale pre-release pointer. Other TLS destructors
@@ -187,7 +187,7 @@ thread_local! {
     /// borrow state to fail under reentrancy: reading is a single load.
     static LOCAL: Cell<*mut HeapCore> = const { Cell::new(core::ptr::null_mut()) };
 
-    /// The thread-exit abandon guard. Holds the thread's [`HeapLease`]
+    /// The thread-exit lease-release guard. Holds the thread's [`HeapLease`]
     /// (set in [`finish_bind`]) so its `Drop` does not need to read `LOCAL`
     /// (which may already be torn down). On drop: take the lease — `None` →
     /// nothing to do (the thread never bound a heap); otherwise stamp
@@ -201,7 +201,7 @@ thread_local! {
     /// the explicit `drop(lease)` in the teardown path. Reentrancy semantics
     /// are unchanged: `GUARD` was already a `thread_local!` with a
     /// destructor.
-    static GUARD: AbandonGuard = const { AbandonGuard::new() };
+    static GUARD: LeaseReleaseGuard = const { LeaseReleaseGuard::new() };
 
     /// R6-T07: per-thread negative-verdict cache for [`bind_slow_tagged`].
     /// Written only on the cold bind path (`LOCAL` is null); never touched by
@@ -210,9 +210,9 @@ thread_local! {
         const { Cell::new(SaturationGate { saturated: false, version: 0, skips: 0 }) };
 }
 
-/// The per-thread abandon guard. See the module docs for the TLS destructor
+/// The per-thread lease-release guard. See the module docs for the TLS destructor
 /// ordering reasoning.
-struct AbandonGuard {
+struct LeaseReleaseGuard {
     /// The typed lease for the heap this thread bound via
     /// [`bind_slow_tagged`]. Read ONLY in `Drop` (never in `LOCAL`-reading
     /// code paths). Storing it here is what makes the guard robust to
@@ -220,7 +220,7 @@ struct AbandonGuard {
     lease: Cell<Option<HeapLease>>,
 }
 
-impl AbandonGuard {
+impl LeaseReleaseGuard {
     /// Construct an empty guard (no heap bound yet). `const` so it can
     /// initialise a `thread_local!` slot.
     const fn new() -> Self {
@@ -231,7 +231,7 @@ impl AbandonGuard {
 }
 
 /// Stamp [`LOCAL`] with the [`TORN`] sentinel. The single choke point for
-/// poisoning `LOCAL` — [`AbandonGuard::drop`] and the `#[doc(hidden)]` test
+/// poisoning `LOCAL` — [`LeaseReleaseGuard::drop`] and the `#[doc(hidden)]` test
 /// hook [`dbg_teardown_then_resolve_is_fallback`] both call this SAME
 /// function (rather than duplicating the `LOCAL.try_with(|c| c.set(TORN))`
 /// call), so the test hook exercises the exact poisoning logic the real
@@ -245,7 +245,7 @@ fn mark_local_torn() {
     let _ = LOCAL.try_with(|c| c.set(TORN));
 }
 
-impl Drop for AbandonGuard {
+impl Drop for LeaseReleaseGuard {
     fn drop(&mut self) {
         let Some(mut lease) = self.lease.take() else {
             return; // This thread never bound a registry heap.
@@ -430,7 +430,7 @@ pub(crate) fn current_for_alloc_with_config(
 ///
 /// Same `LOCAL`-read shape as [`current_for_alloc`]/`current_for_dealloc`,
 /// but ALL three "no live own-thread heap" cases — `null` (never bound),
-/// `TORN` (this thread's `AbandonGuard` already recycled its slot), and
+/// `TORN` (this thread's `LeaseReleaseGuard` already recycled its slot), and
 /// `Err` (TLS destroyed) — map to `None`. **Never calls
 /// `bind_slow_tagged` and never resolves the fallback pointer**: unlike
 /// [`current_for_alloc`] (whose `null` arm binds) and unlike
@@ -496,7 +496,7 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
     finish_bind(HeapRegistry::claim_lease_with_config(config))
 }
 
-/// Shared post-claim logic: store the [`HeapLease`] into the `AbandonGuard`,
+/// Shared post-claim logic: store the [`HeapLease`] into the `LeaseReleaseGuard`,
 /// publish the pointer into `LOCAL`, and return the tagged result. Called
 /// from both [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
 ///
@@ -599,7 +599,7 @@ fn finish_bind(lease: Option<HeapLease>) -> CurrentHeap {
 /// Test-only hook (task #129): deterministically exercises the TORN→Fallback
 /// mapping WITHOUT going through real thread teardown (which is
 /// non-deterministic to trigger on demand). It calls the exact same
-/// [`mark_local_torn`] function [`AbandonGuard::drop`] calls — not a
+/// [`mark_local_torn`] function [`LeaseReleaseGuard::drop`] calls — not a
 /// reimplementation — so a pass here is evidence about the real teardown
 /// path, not a parallel code path that could drift from it.
 ///

@@ -11,7 +11,7 @@
 //! published `READY` (or rolled back to `UNINIT` on primordial OOM) — with NO
 //! guard. If any of those steps unwound, `INIT_STATE` stayed `INITIALIZING`
 //! FOREVER, and every other thread that reached `heap_ptr` spun unbounded in
-//! the `while INIT_STATE.load(Acquire) == STATE_INITIALIZING { spin_loop() }`
+//! the `while INIT_STATE.load(Acquire) == FallbackInitState::Initializing as u8 { ... }`
 //! loser loop — a process-wide livelock. This is the EXACT failure mode
 //! `LockGuard` already eliminated one function down (`with_heap`'s spinlock);
 //! same RAII form, one level up. No current reachable production path triggers
@@ -38,7 +38,7 @@
 //!
 //! ## Non-vacuousness (counterfactual)
 //!
-//! The precondition assertion (`dbg_init_state() == STATE_UNINIT` on entry)
+//! The precondition assertion (`dbg_init_state() == FallbackInitState::Uninit as u8` on entry)
 //! guarantees the injection is reachable (otherwise `heap_ptr`'s fast path
 //! returns before the CAS). The watchdog join timeout is the counterfactual:
 //! without `InitStateGuard`, the panicking first call leaves `INIT_STATE` stuck
@@ -55,8 +55,7 @@ use std::thread;
 use std::time::Duration;
 
 use sefer_alloc::global::{
-    dbg_init_state, dbg_panic_in_fallback_init_rolls_back, STATE_INITIALIZING, STATE_READY,
-    STATE_UNINIT,
+    dbg_init_state, dbg_panic_in_fallback_init_rolls_back, FallbackInitState,
 };
 
 /// A panic out of the fallback init region must roll `INIT_STATE` back to
@@ -70,7 +69,7 @@ fn fallback_init_panic_rolls_back_state_not_wedged() {
     // allocator, the fallback is never hit by the harness, so this holds.
     assert_eq!(
         dbg_init_state(),
-        STATE_UNINIT,
+        FallbackInitState::Uninit as u8,
         "precondition: fallback must be UNINIT so the panic injection is \
          reachable (if already READY, this test binary initialised the fallback \
          elsewhere and the test is vacuous)"
@@ -106,7 +105,7 @@ fn fallback_init_panic_rolls_back_state_not_wedged() {
     // Post-condition: after the successful re-init, the fallback is READY.
     assert_eq!(
         dbg_init_state(),
-        STATE_READY,
+        FallbackInitState::Ready as u8,
         "post-condition: the second heap_ptr must have published READY"
     );
     // Sanity: the state never passed through a wedged INITIALIZING that the
@@ -115,7 +114,7 @@ fn fallback_init_panic_rolls_back_state_not_wedged() {
     // INITIALIZING.
     assert_ne!(
         dbg_init_state(),
-        STATE_INITIALIZING,
+        FallbackInitState::Initializing as u8,
         "state must not be wedged at INITIALIZING"
     );
 }

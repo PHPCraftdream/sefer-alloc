@@ -14,7 +14,7 @@ use crate::registry::bootstrap::MAX_HEAPS;
 #[cfg(feature = "alloc-stats")]
 use crate::registry::heap_slot::HeapSlot;
 #[cfg(feature = "internals")]
-use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
+use crate::registry::heap_slot::SlotState;
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
 /// — times `claim_lease_with_config` found an already-materialised slot whose live
@@ -409,8 +409,8 @@ pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
     let slot = reg.slot(idx);
     if slot
         .cas_state(
-            STATE_EMPTY,
-            STATE_INITIALIZING,
+            SlotState::Empty,
+            SlotState::Initializing,
             Ordering::AcqRel,
             Ordering::Acquire,
         )

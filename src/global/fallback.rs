@@ -56,12 +56,42 @@ use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use crate::registry::HeapCore;
 
-/// Bootstrap-state values (mirrors `registry::bootstrap`). `pub` so the F-8
-/// counterfactual test (`tests/regression_fallback_init_unwind_guard.rs`) can
-/// name them by intent rather than by raw `0`/`1`/`2` literals.
-pub const STATE_UNINIT: u8 = 0;
-pub const STATE_INITIALIZING: u8 = 1;
-pub const STATE_READY: u8 = 2;
+/// The fallback bootstrap state machine, typed. `#[repr(u8)]`: the
+/// discriminants ARE the values [`INIT_STATE`] has always carried (`pub` so
+/// the F-8 counterfactual test, `tests/regression_fallback_init_unwind_guard.rs`,
+/// can name them by intent rather than by raw `0`/`1`/`2` literals). One
+/// canonical spelling per state; the former `STATE_INITIALIZING` constant
+/// shared its name with the registry slot's initializing constant (same
+/// name, DIFFERENT value) — that collision is gone because the two state
+/// machines are now distinct types (`FallbackInitState` vs
+/// `registry::heap_slot::SlotState`).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FallbackInitState {
+    /// No heap constructed yet (or rolled back after a failed init).
+    Uninit = 0,
+    /// A winner is constructing the core; losers spin until it publishes.
+    Initializing = 1,
+    /// The process-lifetime fallback heap is live.
+    Ready = 2,
+}
+
+impl TryFrom<u8> for FallbackInitState {
+    type Error = u8;
+
+    /// Exact inverse of the `as u8` cast: accepts exactly the discriminants
+    /// above. The guards compare against the variants' own `as u8`, so
+    /// renumbering a variant cannot silently desynchronise this impl.
+    #[inline]
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            v if v == Self::Uninit as u8 => Ok(Self::Uninit),
+            v if v == Self::Initializing as u8 => Ok(Self::Initializing),
+            v if v == Self::Ready as u8 => Ok(Self::Ready),
+            unknown => Err(unknown),
+        }
+    }
+}
 
 /// The fallback heap storage. `MaybeUninit` until [`heap_ptr`] runs; once
 /// `READY`, holds a live `HeapCore` for the process lifetime (never
@@ -76,7 +106,7 @@ pub const STATE_READY: u8 = 2;
 static mut FALLBACK: MaybeUninit<HeapCore> = MaybeUninit::uninit();
 
 /// The bootstrap state-machine word: `UNINIT → INITIALIZING → READY`.
-static INIT_STATE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
+static INIT_STATE: AtomicU8 = AtomicU8::new(FallbackInitState::Uninit as u8);
 
 #[cfg(feature = "alloc-decommit")]
 static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
@@ -169,7 +199,7 @@ struct FallbackInitContext {
 fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
     loop {
         // Fast path: already READY. Acquire to see the init thread's writes.
-        if INIT_STATE.load(Ordering::Acquire) == STATE_READY {
+        if INIT_STATE.load(Ordering::Acquire) == FallbackInitState::Ready as u8 {
             // SAFETY: we observed READY under Acquire, which synchronises
             // with the initialising thread's Release store of READY.
             // `FALLBACK` is fully initialised and never dropped; the
@@ -182,8 +212,8 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
         // Slow path: race to initialise.
         let won = INIT_STATE
             .compare_exchange(
-                STATE_UNINIT,
-                STATE_INITIALIZING,
+                FallbackInitState::Uninit as u8,
+                FallbackInitState::Initializing as u8,
                 Ordering::Acquire,
                 Ordering::Relaxed,
             )
@@ -196,9 +226,10 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
             // or the test-injection panic below), the guard's `Drop` rolls
             // `INIT_STATE` back to `UNINIT` so loser threads stop spinning in
             // the loop below and re-race the CAS themselves. WITHOUT this guard
-            // a single unwind leaves `INIT_STATE` stuck at `INITIALIZING`
+            // a single unwind leaves `INIT_STATE` stuck in the Initializing
+            // state
             // forever — every other thread that reaches `heap_ptr` spins
-            // unbounded in the `while ... == STATE_INITIALIZING` loop (process-
+            // unbounded in the `while ... == FallbackInitState::Initializing as u8` loop (process-
             // wide livelock), the exact failure mode `LockGuard` already
             // eliminated one function down (`with_heap`) for the spinlock. Same
             // RAII form, one level up.
@@ -250,7 +281,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
             };
             match new_heap {
                 Some(hc) => {
-                    // SAFETY: we won the init race (STATE_INITIALIZING); no
+                    // SAFETY: we won the init race (the Initializing state); no
                     // other thread can read `FALLBACK` until we publish
                     // READY. Writing a `HeapCore` into the `MaybeUninit`
                     // initialises it. `addr_of_mut!` gives us the
@@ -262,7 +293,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
                     // Bind real process-wide observer counters before READY.
                     #[cfg(any(feature = "fastbin", feature = "alloc-decommit"))]
                     {
-                        // SAFETY: we won the init race (STATE_INITIALIZING) and
+                        // SAFETY: we won the init race (the Initializing state) and
                         // just `write`(hc) into `FALLBACK`; we are its sole
                         // writer and no other thread can reference it until we
                         // publish READY. This exclusive `&mut` lives only for
@@ -286,7 +317,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
                             &crate::registry::heap_registry::FALLBACK_LARGE_CACHE_HITS,
                         );
                     }
-                    INIT_STATE.store(STATE_READY, Ordering::Release);
+                    INIT_STATE.store(FallbackInitState::Ready as u8, Ordering::Release);
                     // Happy path: READY just published — disarm the guard so
                     // its Drop does NOT clobber READY back to UNINIT.
                     init_guard.disarm();
@@ -303,7 +334,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
                     // below observe a state change and re-race the CAS
                     // itself, instead of spinning forever waiting for a
                     // READY that this failed winner will never publish.
-                    INIT_STATE.store(STATE_UNINIT, Ordering::Release);
+                    INIT_STATE.store(FallbackInitState::Uninit as u8, Ordering::Release);
                     // OOM path: already rolled back ourselves — disarm the
                     // guard so its Drop does not store UNINIT a second time
                     // (harmless under the single-writer invariant, but
@@ -319,7 +350,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
         // loop back to the top and re-race the CAS ourselves, rather than
         // spinning forever waiting for a READY that will never come).
         let mut spins: u32 = 0;
-        while INIT_STATE.load(Ordering::Acquire) == STATE_INITIALIZING {
+        while INIT_STATE.load(Ordering::Acquire) == FallbackInitState::Initializing as u8 {
             if lock_tight_spin(&mut spins) {
                 core::hint::spin_loop();
             } else {
@@ -405,7 +436,7 @@ pub(crate) fn try_with_heap<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HeapCore) -> R,
 {
-    if INIT_STATE.load(Ordering::Acquire) != STATE_READY {
+    if INIT_STATE.load(Ordering::Acquire) != FallbackInitState::Ready as u8 {
         return None;
     }
     // SAFETY: READY is monotonic and Acquire observes the fully initialized
@@ -431,7 +462,7 @@ impl HeapCore {
         with_heap(f)
     }
 
-    /// Test-only primordial-OOM injection, effective before `STATE_READY`.
+    /// Test-only primordial-OOM injection, effective before `FallbackInitState::Ready`.
     #[cfg(feature = "bench-internals")]
     #[doc(hidden)]
     pub fn dbg_inject_fallback_oom_for_test(on: bool) {
@@ -562,7 +593,7 @@ impl Drop for LockGuard {
 /// above where `LockGuard` already guards the spinlock. Before this guard, an
 /// unwind out of `HeapCore::new` / the in-place `write` / the hit-counter binds
 /// left `INIT_STATE` stuck at `INITIALIZING` permanently — every subsequent
-/// `heap_ptr` loser spun unbounded in the `while ... == STATE_INITIALIZING`
+/// `heap_ptr` loser spun unbounded in the `while ... == FallbackInitState::Initializing as u8`
 /// loop (process-wide livelock). No-panic is a project invariant (`HeapCore`
 /// never panics in production), but the guard's zero-cost happy path
 /// (`disarm` is a plain bool store; the armed `Drop` runs only on unwind)
@@ -622,7 +653,7 @@ impl Drop for InitStateGuard {
             // INITIALIZING holder (single CAS winner), so this store cannot
             // race another writer. Release mirrors the explicit OOM-rollback
             // store's ordering.
-            INIT_STATE.store(STATE_UNINIT, Ordering::Release);
+            INIT_STATE.store(FallbackInitState::Uninit as u8, Ordering::Release);
         }
     }
 }
@@ -735,8 +766,8 @@ pub fn dbg_set_inject_fallback_init_panic(on: bool) {
 }
 
 /// `#[doc(hidden)]` test hook (R34-17/task #536) — not part of the public API.
-/// Reads the current [`INIT_STATE`] value (`STATE_UNINIT` / `STATE_INITIALIZING`
-/// / `STATE_READY`). Lets a test assert the precondition (UNINIT, before any
+/// Reads the current [`INIT_STATE`] value (`FallbackInitState::Uninit` /
+/// `FallbackInitState::Initializing` / `FallbackInitState::Ready`). Lets a test assert the precondition (UNINIT, before any
 /// fallback init has run) and the post-panic/post-recovery state.
 #[cfg(feature = "internals")]
 #[doc(hidden)]
@@ -779,7 +810,7 @@ pub fn dbg_init_state() -> u8 {
 pub fn dbg_panic_in_fallback_init_rolls_back() -> bool {
     // Precondition: the fallback must not already be initialised, or the
     // injection is unreachable (the fast path returns before the CAS).
-    if INIT_STATE.load(Ordering::Acquire) != STATE_UNINIT {
+    if INIT_STATE.load(Ordering::Acquire) != FallbackInitState::Uninit as u8 {
         // Vacuously "ok" — the test should independently assert the
         // precondition via `dbg_init_state()` so a vacuous run is caught.
         return true;

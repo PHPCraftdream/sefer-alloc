@@ -601,7 +601,7 @@ export function parseProfiles(profiles, log, options) {
     visit(target);
     const hasDynamicPath = [...dynamicPaths].some(name => claim
       ? /alloc|claim|HeapRegistry|HeapCore|TLSHeap|registry/i.test(name)
-      : /HeapLease|AbandonGuard|drop|release|tls_heap/i.test(name));
+      : /HeapLease|LeaseReleaseGuard|drop|release|tls_heap/i.test(name));
     const bindsTls = [...dynamicPaths].some(name =>
       /tls_heap::bind_slow_tagged(?:_with_config)?/.test(name));
     const claimsRegistry = [...dynamicPaths].some(name =>
