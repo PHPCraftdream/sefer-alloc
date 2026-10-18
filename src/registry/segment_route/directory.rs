@@ -52,12 +52,8 @@ impl EntryHandle {
     ) -> Result<Self, RouteError> {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: System is independent of the installed allocator;
-                // the aligned span stays private until every atomic is built
-                // by `initialize_at` below. A/B v1 (docs/perf/
-                // B4_R6_SIDECAR_INIT.md §8): System.alloc_zeroed for this
-                // 41 KiB sidecar is glibc malloc+memset and measured +245 Ir
-                // per route registration — explicit stores are cheaper.
+                // SAFETY: System is independent of the installed allocator; the
+                // span stays private until `initialize_at` builds every atomic.
                 let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
                 if !ptr.is_null() {
                     #[cfg(feature = "internals")]
