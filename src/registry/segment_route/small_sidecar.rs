@@ -24,6 +24,12 @@ const _: () = {
     assert!(SMALL_CLASS_COUNT < u8::MAX as usize);
 };
 
+/// `#[repr(C)]` external ingress backing: pending words, then the adaptive
+/// class leaves. The directory allocates it with `System.alloc` and
+/// constructs it in place with `initialize_at`, which writes the all-zero
+/// pattern — the valid initial state (null leaf pointers, zero pending words:
+/// `SidecarBitmap::publish` rejects a zero encoded class — and zero presence
+/// bits).
 #[repr(C)]
 pub struct SmallSidecar {
     pending: [AtomicU64; SidecarBitmap::WORDS],

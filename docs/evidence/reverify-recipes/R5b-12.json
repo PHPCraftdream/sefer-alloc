@@ -17,7 +17,7 @@
       "expect": {
         "exit": 0,
         "stdoutRegex": [
-          "6 passed; 0 failed",
+          "8 passed; 0 failed",
           "test mixed_leaf_published_after_its_initialization \\.\\.\\. ok",
           "test owner_cut_is_acqrel_swap \\.\\.\\. ok",
           "test class_leaves_ordering_inventory_is_exact \\.\\.\\. ok",

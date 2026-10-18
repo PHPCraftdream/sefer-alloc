@@ -270,7 +270,7 @@ export const PER_PR_ROWS = [
     kind: 'test',
     features: 'production internals bench-internals',
     target: { flag: '--test', name: 'r6_t40_sidecar_system_alloc' },
-    note: 'OPT04: non-zeroed System SmallSidecar allocation initializes before route issue.',
+    note: 'B4-R6 A/B v1: System.alloc_zeroed for the 41 KiB sidecar lost to explicit initialization (+245 Ir per registration, glibc malloc+memset); r6_t40 asserts the non-zeroed accounting.',
   },
   {
     id: 'test-r8-large-commit-failure',

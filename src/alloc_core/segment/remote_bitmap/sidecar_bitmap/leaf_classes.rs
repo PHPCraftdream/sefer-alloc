@@ -3,8 +3,12 @@
 //! read 0, so a producer's terminal publication (Acquire, before the
 //! pending-bit RMW) drops foreign frees of interior pointers without reading
 //! segment state. Producers never write them.
+//!
+//! # Construction contract
+//! The directory allocates the backing with `System.alloc` and constructs it
+//! in place with `initialize_at`, which writes the all-zero pattern — the
+//! valid initial state (null leaf pointers, zero presence bits).
 #![allow(unsafe_code)]
-
 use core::ptr;
 #[cfg(feature = "internals")]
 use core::sync::atomic::AtomicUsize;
@@ -12,12 +16,13 @@ use std::alloc::{GlobalAlloc, Layout, System};
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 use std::cell::Cell;
 
-use super::{AtomicPtr, AtomicU8, Ordering};
+use super::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 const LEAF_GRANULES: usize = 256;
 const LEAVES: usize = 1024;
+const PRESENT_WORDS: usize = LEAVES / u64::BITS as usize;
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 std::thread_local! {
@@ -39,6 +44,10 @@ static FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct ClassLeaves {
     mixed: [AtomicPtr<AtomicU8>; LEAVES],
+    /// Owner-private leaf-presence bits, maintained only by `prepare`
+    /// (promotion); producers never read them. A set bit implies the leaf
+    /// pointer in `mixed` was Release-published.
+    present: [AtomicU64; PRESENT_WORDS],
 }
 
 impl ClassLeaves {
@@ -52,9 +61,13 @@ impl ClassLeaves {
         for i in 0..LEAVES {
             // SAFETY: each index is within its field and written exactly once
             // before the enclosing route is published.
-            unsafe {
-                mixed.add(i).write(AtomicPtr::new(ptr::null_mut()));
-            }
+            unsafe { mixed.add(i).write(AtomicPtr::new(ptr::null_mut())) };
+        }
+        let present = unsafe { ptr::addr_of_mut!((*raw).present).cast::<AtomicU64>() };
+        for i in 0..PRESENT_WORDS {
+            // SAFETY: disjoint presence field in the same private storage;
+            // written once before the enclosing route is published.
+            unsafe { present.add(i).write(AtomicU64::new(0)) };
         }
     }
 
@@ -92,6 +105,14 @@ impl ClassLeaves {
         {
             return false;
         }
+        self.promote(leaf)
+    }
+
+    /// Owner-only leaf promotion: rare (once per 256 granules), kept out of
+    /// line so the hot `prepare` path stays small.
+    #[cold]
+    #[inline(never)]
+    fn promote(&self, leaf: usize) -> bool {
         let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
             .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
         // SAFETY: the System span has this exact layout and is owner-private
@@ -102,12 +123,26 @@ impl ClassLeaves {
         }
         #[cfg(feature = "internals")]
         Self::record_alloc(layout.size(), false);
+        // SAFETY: the fresh aligned System span holds LEAF_GRANULES bytes; a
+        // zero byte is a valid `core::sync::atomic::AtomicU8`, written once
+        // before publication.
+        #[cfg(not(loom))]
+        unsafe {
+            core::ptr::write_bytes(fresh, 0, LEAF_GRANULES)
+        };
+        // Loom atomics are not plain bytes: construct each one.
+        #[cfg(loom)]
         for i in 0..LEAF_GRANULES {
             // SAFETY: i is within the fresh aligned System span; each slot is
             // written once before publication and contains a valid atomic.
             unsafe { fresh.add(i).write(AtomicU8::new(0)) };
         }
         self.mixed[leaf].store(fresh, Ordering::Release);
+        // Owner-only promotion bookkeeping: set the presence bit only after the
+        // leaf pointer is Release-published, so any future reader that sees the
+        // bit also sees the fully initialized leaf. Producers never read it;
+        // Drop (also owner-only, after the last pin) walks exactly these bits.
+        self.present[leaf / 64].fetch_or(1u64 << (leaf % 64), Ordering::Release);
         true
     }
 
@@ -221,16 +256,33 @@ impl Drop for ClassLeaves {
     fn drop(&mut self) {
         let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
             .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
-        for slot in &self.mixed {
-            let p = slot.load(Ordering::Relaxed);
-            if !p.is_null() {
+        for (word, bits) in self.present.iter().enumerate() {
+            let mut bits = bits.load(Ordering::Relaxed);
+            while bits != 0 {
+                let leaf = word * 64 + bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let ptr = self.mixed[leaf].load(Ordering::Relaxed);
+                debug_assert!(
+                    !ptr.is_null(),
+                    "present bit without a leaf pointer: leaf {leaf}"
+                );
                 #[cfg(feature = "internals")]
                 Self::record_free(layout.size());
-                // SAFETY: each pointer is the genuine System allocation
-                // published once by this route's owner, with this layout;
-                // last-pin Drop is after unlink, so no scanner remains.
-                unsafe { System.dealloc(p.cast(), layout) };
+                // SAFETY: promotion published a genuine System allocation with
+                // this layout for every presence bit; Drop runs after unlink,
+                // so no scanner or pin still references the leaf.
+                unsafe { System.dealloc(ptr.cast(), layout) };
             }
+        }
+        #[cfg(debug_assertions)]
+        for (leaf, slot) in self.mixed.iter().enumerate() {
+            let present =
+                self.present[leaf / 64].load(Ordering::Relaxed) & (1u64 << (leaf % 64)) != 0;
+            debug_assert_eq!(
+                present,
+                !slot.load(Ordering::Relaxed).is_null(),
+                "leaf presence invariant broken: leaf {leaf}"
+            );
         }
     }
 }
