@@ -28,6 +28,29 @@ fn cache_hit_totals() -> (u64, u64) {
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 impl SeferAlloc {
+    /// B4 collapse diagnosis (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): snapshot of
+    /// the slow-path observers added for this investigation. Order is
+    /// positional and pinned by the probe; see the B4_* statics in
+    /// `alloc_core::alloc_core::counters`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_b4_collapse_counters() -> [u64; 7] {
+        use crate::alloc_core::{
+            B4_DIRECTORY_LOOKUPS, B4_FIND_SEGMENT_CALLS, B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS,
+            B4_SCAN_WORDS, B4_SHARD_LOCK_SPINS, B4_SHARD_LOCK_YIELDS,
+        };
+        use core::sync::atomic::Ordering;
+        [
+            B4_FIND_SEGMENT_CALLS.load(Ordering::Relaxed),
+            B4_SCAN_CALLS.load(Ordering::Relaxed),
+            B4_SCAN_WORDS.load(Ordering::Relaxed),
+            B4_FOREIGN_PUBLISH_OK.load(Ordering::Relaxed),
+            B4_DIRECTORY_LOOKUPS.load(Ordering::Relaxed),
+            B4_SHARD_LOCK_SPINS.load(Ordering::Relaxed),
+            B4_SHARD_LOCK_YIELDS.load(Ordering::Relaxed),
+        ]
+    }
+
     /// Snapshot this owner's live allocation's original OS release token.
     ///
     /// # Safety

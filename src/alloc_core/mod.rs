@@ -200,6 +200,14 @@ pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
 /// static itself stays always-compiled.
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): slow-path observer
+/// counters, re-exported crate-wide for their increment sites and
+/// `SeferAlloc::dbg_b4_collapse_counters`.
+#[cfg(feature = "bench-internals")]
+pub(crate) use alloc_core::{
+    B4_DIRECTORY_LOOKUPS, B4_FIND_SEGMENT_CALLS, B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS,
+    B4_SCAN_WORDS, B4_SHARD_LOCK_SPINS, B4_SHARD_LOCK_YIELDS,
+};
 medium_promotion_reachable! {
     /// R29-5 (task #436) re-export seam: the medium→Large promotion-frequency /
     /// copied-byte-distribution diagnostic statics, re-exported crate-wide so

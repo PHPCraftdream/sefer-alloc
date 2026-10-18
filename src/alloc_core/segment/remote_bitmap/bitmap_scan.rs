@@ -68,7 +68,18 @@ impl<'a> BitmapScan<'a> {
             (pending.swap(0, Ordering::AcqRel), false, true)
         };
         #[cfg(not(all(feature = "bench-internals", r18_sidecar_scan_bench)))]
-        let bits = pending.swap(0, Ordering::AcqRel);
+        // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): a zero word can never yield
+        // a record; read it plain and pay the RMW only when bits are present.
+        // The discovery scan is one-pass, so a bit published after this read
+        // was already outside this scan's reach under the unconditional swap —
+        // it stays pending for the next discovery scan or strict trim. Release
+        // is credit-gated (`dec_live_and_maybe_decommit`), so a skipped word is
+        // never lost.
+        let bits = if pending.load(Ordering::Acquire) == 0 {
+            0
+        } else {
+            pending.swap(0, Ordering::AcqRel)
+        };
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         SCAN_COUNTS.with(|counts| {
             if let Some(mut current) = counts.get() {

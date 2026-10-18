@@ -8,6 +8,48 @@
 
 use crate::alloc_core::medium_promotion_reachable;
 
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): calls of the small
+/// free-segment discovery entry (`find_segment_with_free`).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_FIND_SEGMENT_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): sidecar scan passes
+/// (`drain_segment_sidecar` reaching the routed scan).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_SCAN_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): total bitmap words
+/// scanned by sidecar scans (scan-width cost proxy).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_SCAN_WORDS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): foreign frees that
+/// successfully published through the pinned terminal route.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_FOREIGN_PUBLISH_OK: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): route-directory
+/// lookups (`RouteDirectory::lookup`).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_DIRECTORY_LOOKUPS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): shard-lock
+/// acquisitions that lost the first CAS (contended acquisitions).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_SHARD_LOCK_SPINS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 collapse diagnosis (task B4_MT_COLLAPSE_DIAGNOSIS): shard-lock
+/// `yield_now` rounds taken while waiting on a held lock.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_SHARD_LOCK_YIELDS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// Completed Large terminal obligations, including cache admission or release.
 #[cfg(feature = "alloc-global")]
 pub(crate) static LARGE_REMOTE_RETIREMENTS: core::sync::atomic::AtomicU64 =

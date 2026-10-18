@@ -111,6 +111,9 @@ impl AllocCore {
     /// Logical retirement checks physical free/magazine state inside the owner
     /// primitive; callers do not supply a second residency oracle.
     pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
+        #[cfg(feature = "bench-internals")]
+        crate::alloc_core::B4_FIND_SEGMENT_CALLS
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         self.find_segment_with_free_impl(class_idx, FindSegmentScanContext::default())
     }
 
@@ -171,6 +174,14 @@ impl AllocCore {
         // Patch S: start at the payload's first word, not word 0.
         let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
         let start_word = Self::sidecar_payload_start_word(base).min(end_word);
+        #[cfg(feature = "bench-internals")]
+        {
+            crate::alloc_core::B4_SCAN_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::alloc_core::B4_SCAN_WORDS.fetch_add(
+                (end_word - start_word) as u64,
+                core::sync::atomic::Ordering::Relaxed,
+            );
+        }
         let (changed_classes, _reclaimed) = {
             let scan = self.scan_small_route_or_fatal(
                 index,
@@ -551,27 +562,42 @@ impl AllocCore {
                 // corrupted table state.
                 fatal(b"find_segment: drained segment is not a live small segment\n");
             }
-            // Stats only: the class bin before the drain, to tell a drain-created
-            // free block from directory lag.
+            // B4 (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): ONE pre-drain bin read
+            // serving both purposes — it decides whether the sidecar walk is
+            // needed and (alloc-stats) classifies the hit as pre-nonempty.
+            // A publication only reaches the bins through a drain, so a
+            // non-empty bin makes the drain pure overhead for this lookup
+            // (storm runs: most discoveries hit blocks already in the bins);
+            // when the bin is empty the drain is required and stays as it
+            // was. Pending bits of a skipped drain remain pending for a later
+            // drain/strict trim — release is credit-gated
+            // (`dec_live_and_maybe_decommit`), nothing is lost. Event shift
+            // vs pre-B4: a nonempty segment is no longer drained at all, so
+            // drain-outcome counters see fewer Drained events (the
+            // "was_nonempty" hit classification is unchanged — same pre-drain
+            // read as before).
+            let pre_nonempty = SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
             #[cfg(feature = "alloc-stats")]
-            let was_nonempty = routed_miss_scan
-                && SegmentMeta::new(base).bin_table().head(class_idx) != FREE_LIST_NULL;
+            let was_nonempty = routed_miss_scan && pre_nonempty;
             // Consume only this canonical candidate before inspecting its bins.
             #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-            match self.drain_segment_sidecar(base) {
-                // Decommitted+released: `base` is unmapped — skip the
-                // BinTable check for it in THIS scan. Decommitted+pooled:
-                // `base` is still live/registered/committed (R1-03, src
-                // review round 1) — fall through to the SAME BinTable check
-                // every other live segment gets below, so a segment that just
-                // emptied (and therefore has every one of its blocks free)
-                // can be reused as a hit in this very scan, not only on a
-                // later call (see `SidecarDrainOutcome::Decommitted`'s doc).
-                #[cfg(feature = "alloc-decommit")]
-                SidecarDrainOutcome::Decommitted { pooled: false } => continue,
-                #[cfg(feature = "alloc-decommit")]
-                SidecarDrainOutcome::Decommitted { pooled: true } => {}
-                SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+            if !pre_nonempty {
+                match self.drain_segment_sidecar(base) {
+                    // Decommitted+released: `base` is unmapped — skip the
+                    // BinTable check for it in THIS scan. Decommitted+pooled:
+                    // `base` is still live/registered/committed (R1-03, src
+                    // review round 1) — fall through to the SAME BinTable
+                    // check every other live segment gets below, so a segment
+                    // that just emptied (and therefore has every one of its
+                    // blocks free) can be reused as a hit in this very scan,
+                    // not only on a later call (see
+                    // `SidecarDrainOutcome::Decommitted`'s doc).
+                    #[cfg(feature = "alloc-decommit")]
+                    SidecarDrainOutcome::Decommitted { pooled: false } => continue,
+                    #[cfg(feature = "alloc-decommit")]
+                    SidecarDrainOutcome::Decommitted { pooled: true } => {}
+                    SidecarDrainOutcome::Skipped | SidecarDrainOutcome::Drained => {}
+                }
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
