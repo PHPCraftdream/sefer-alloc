@@ -1,0 +1,1 @@
+{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-b2","benchTarget":"perf_gate_iai","features":"production bench-internals internals","baseSha":"3dbfb3013aede489170f40ce3951a0e9a4787007","note":"B2: round-6 base 3dbfb301 vs head dab9686f, all perf_gate_iai cells, no thresholds"}
