@@ -174,3 +174,61 @@ if !pre_nonempty {  // :588, условие ~:588–601
 - Бинарники `b4_collapse_probe.exe` (sha256, пересобраны после серий на финальном дереве — см. честную оговорку выше):
   - counters (`alloc-global alloc-xthread internals bench-internals`): `3886ac8ef994449dce16247b3da422b002ee4e49cde8811a97944b7b3e2d788b`
   - plain (`alloc-global alloc-xthread`, соответствует последней серии s7): `ce0c02a9979d85e73c78d2697c6b688cc79b74e983b1e80132a5cdf591911971`
+
+## 9. Локальный wall-clock A/B против main (Windows, машина владельца)
+
+`.rush/ab_local.sh`-протокол: 6 раундов с чередованием порядка A,B / B,A; в каждом раунде `examples/malloc_macro` (`--features "alloc-global alloc-xthread"`) и criterion-бенч `global_alloc` (`production internals bench-internals`, быстрый профиль). A = main `24ef8be2fb2ad483d9f0fdcba7ccd81285da6a19`, B = эта ветка `288cf2c1d484a0d94fd57268ac82fb68d9130d1d` (обе стороны собраны из закоммиченных SHA). Сырые логи всех раундов: `docs/perf/_raw_b4_collapse_local_ab.log.gz`; таблица — дословный вывод `node scripts/ab_local_parse.mjs docs/perf/_raw_b4_collapse_local_ab.log.gz`. MT — M ops/s (больше — лучше), ST — время criterion в ns (меньше — лучше); «~equal» — отношение медиан в пределах ±5 %.
+
+| cell | Sefer A median (min..max) | Sefer B median (min..max) | B vs A | mimalloc B median | B vs mimalloc | n A/B |
+|---|---:|---:|---|---:|---|---:|
+| MT larson/unpinned T=1 (Mops) | 20.30 (16.82..29.44) | 22.26 (17.21..28.29) | faster x1.10 | 35.26 | slower x1.58 | 6/6 |
+| MT larson/unpinned T=2 (Mops) | 23.79 (20.63..30.40) | 29.34 (24.94..32.13) | faster x1.23 | 38.29 | slower x1.31 | 6/6 |
+| MT larson/unpinned T=4 (Mops) | 41.86 (7.900..47.06) | 47.74 (45.83..51.69) | faster x1.14 | 64.37 | slower x1.35 | 6/6 |
+| MT mstress/unpinned T=1 (Mops) | 24.29 (0.2500..35.46) | 25.43 (22.76..36.25) | ~equal | 53.19 | slower x2.09 | 6/6 |
+| MT mstress/unpinned T=2 (Mops) | 35.79 (0.2100..41.42) | 39.94 (37.13..48.55) | faster x1.12 | 72.41 | slower x1.81 | 6/6 |
+| MT mstress/unpinned T=4 (Mops) | 69.87 (0.1900..72.54) | 71.34 (62.87..93.64) | ~equal | 131.7 | slower x1.85 | 6/6 |
+| ST global_alloc/1024B (ns) | 3.765e+4 (2.849e+4..4.443e+4) | 3.788e+4 (3.015e+4..3.838e+4) | ~equal | 2.556e+4 | slower x1.48 | 6/6 |
+| ST global_alloc/16B (ns) | 3.548e+4 (2.806e+4..3.860e+4) | 3.479e+4 (3.032e+4..3.818e+4) | ~equal | 7589 | slower x4.58 | 6/6 |
+| ST global_alloc/256B (ns) | 3.488e+4 (3.224e+4..3.606e+4) | 3.708e+4 (3.163e+4..4.049e+4) | slower x1.06 | 1.218e+4 | slower x3.04 | 6/6 |
+| ST global_alloc/64B (ns) | 3.425e+4 (3.262e+4..3.553e+4) | 3.632e+4 (3.046e+4..3.950e+4) | slower x1.06 | 9939 | slower x3.65 | 6/6 |
+| ST global_alloc_churn/1024B (ns) | 1.734e+4 (1.513e+4..1.951e+4) | 1.610e+4 (1.508e+4..1.714e+4) | faster x1.08 | 1.036e+5 | faster x6.44 | 6/6 |
+| ST global_alloc_churn/16B (ns) | 1.659e+4 (1.036e+4..1.807e+4) | 1.293e+4 (1.121e+4..1.597e+4) | faster x1.28 | 9472 | slower x1.36 | 6/6 |
+| ST global_alloc_churn/256B (ns) | 1.815e+4 (1.354e+4..2.045e+4) | 1.599e+4 (1.244e+4..1.865e+4) | faster x1.14 | 1.899e+4 | faster x1.19 | 6/6 |
+| ST global_alloc_churn/64B (ns) | 1.522e+4 (1.457e+4..1.682e+4) | 1.550e+4 (1.280e+4..1.728e+4) | ~equal | 1.211e+4 | slower x1.28 | 6/6 |
+| ST global_alloc_churn_with_teardown/1024B (ns) | 2.252e+4 (1.871e+4..2.675e+4) | 2.479e+4 (1.769e+4..3.095e+4) | slower x1.10 | 2.760e+4 | faster x1.11 | 6/6 |
+| ST global_alloc_churn_with_teardown/16B (ns) | 1.971e+4 (1.712e+4..2.159e+4) | 2.152e+4 (1.799e+4..2.317e+4) | slower x1.09 | 1.134e+4 | slower x1.90 | 6/6 |
+| ST global_alloc_churn_with_teardown/256B (ns) | 2.170e+4 (1.456e+4..2.682e+4) | 2.353e+4 (2.153e+4..2.645e+4) | slower x1.08 | 1.454e+4 | slower x1.62 | 6/6 |
+| ST global_alloc_churn_with_teardown/64B (ns) | 2.089e+4 (1.843e+4..2.196e+4) | 2.099e+4 (1.732e+4..2.296e+4) | ~equal | 1.153e+4 | slower x1.82 | 6/6 |
+| ST global_alloc_churn_write/1024B (ns) | 1.763e+4 (1.466e+4..2.227e+4) | 1.744e+4 (1.626e+4..1.869e+4) | ~equal | 1.093e+5 | faster x6.27 | 6/6 |
+| ST global_alloc_churn_write/16B (ns) | 1.574e+4 (1.404e+4..1.725e+4) | 1.528e+4 (1.489e+4..1.849e+4) | ~equal | 9748 | slower x1.57 | 6/6 |
+| ST global_alloc_churn_write/256B (ns) | 1.764e+4 (1.575e+4..2.200e+4) | 1.797e+4 (1.370e+4..2.063e+4) | ~equal | 2.052e+4 | faster x1.14 | 6/6 |
+| ST global_alloc_churn_write/64B (ns) | 1.572e+4 (1.442e+4..1.825e+4) | 1.547e+4 (1.381e+4..1.881e+4) | ~equal | 1.216e+4 | slower x1.27 | 6/6 |
+| ST manual_realloc_sim (ns) | 596.9 (551.6..642.9) | 589.8 (581.8..641.0) | ~equal | 534.4 | slower x1.10 | 6/6 |
+
+Чтение:
+- MT: на main в этой же серии коллапс воспроизвёлся (минимумы стороны A: larson T=4 7.900 M, mstress T=1/2/4 0.2500/0.2100/0.1900 M ops/s); на ветке минимумы 45.83 M (larson T=4) и 22.76/37.13/62.87 M (mstress T=1/2/4) — ни одного коллапса за 6 раундов. Медианы larson выросли на 10–23 %.
+- ST: отличия медиан в пределах разброса раундов (например, `global_alloc_churn_with_teardown/256B`: A 14.56–26.82 µs, B 21.53–26.45 µs по раундам); детерминированный iai A/B на CI (§10) не находит ухудшений больше +0.17 %, кроме одной ячейки межпоточной публикации (+0.57 %), поэтому эти строки не считаются регрессией.
+- Против mimalloc на этой машине MT остаётся медленнее в 1.3–2.1 раза; это исправление снимает коллапс, но не закрывает базовый разрыв (кандидаты R1/R7 в `docs/perf/B1_MT_REGRESSION_ANALYSIS.md`).
+
+## 10. iai A/B на CI (Linux)
+
+Run 39148418804 (`r20-gates`, PR #76, `scripts/r20_r6_ab_iai_run.mjs`, бенч `perf_gate_iai`, фичи `production bench-internals internals`, rustc 1.99.1). A = main `24ef8be2`, B = `288cf2c1`. Все 106 ячеек: `docs/perf/B4_MT_COLLAPSE_IAI_AB_summary.csv`; таблица — `node scripts/r6_gate_table.mjs docs/perf/B4_MT_COLLAPSE_IAI_AB_summary.csv <cells>`.
+
+| cell | A Ir | B Ir | delta Ir | delta / A |
+|---|---:|---:|---:|---:|
+| `r19_prf01_publication` | 3621967 | 1254992 | -2366975 | -2366975 / 3621967 = -65.35 % |
+| `seg_cycle_decommit_256k` | 10361239 | 4238941 | -6122298 | -6122298 / 10361239 = -59.09 % |
+| `multiseg_cold_256k` | 3389467 | 2047385 | -1342082 | -1342082 / 3389467 = -39.60 % |
+| `growth16_n` | 19266762 | 18768575 | -498187 | -498187 / 19266762 = -2.59 % |
+| `growth16_4n` | 139849443 | 131565272 | -8284171 | -8284171 / 139849443 = -5.92 % |
+| `r19_prf01_joined_producer_same_word` | 1437733 | 1445925 | +8192 | +8192 / 1437733 = 0.57 % |
+| `cold_alloc_only_256x16b_2n` | 162840 | 163109 | +269 | +269 / 162840 = 0.17 % |
+| `cold_alloc_free_256x16b` | 135985 | 136146 | +161 | +161 / 135985 = 0.12 % |
+| `recycle_alloc_free_256x16b` | 226301 | 226462 | +161 | +161 / 226301 = 0.07 % |
+| `small_churn_16b` | 53604 | 53606 | +2 | +2 / 53604 = 0.00 % |
+| `mimalloc_cold_alloc_free_256x16b` | 32325 | 32325 | 0 | 0 / 32325 = 0.00 % |
+
+cells: 106; delta > 0: 47; delta < 0: 27; delta = 0: 32
+
+Худшая ячейка — `r19_prf01_joined_producer_same_word` (+8192 / 1437733 = +0.57 %); прочие ухудшения ≤ +0.17 %. В этих сборках включён `bench-internals`, поэтому в их стоимость входят и новые диагностические счётчики B4 (Relaxed `fetch_add` на путях discovery/directory/publish); в production-сборке этих счётчиков нет. Ячейки, где работает скан sidecar, ускорились на 40–65 %.
+
