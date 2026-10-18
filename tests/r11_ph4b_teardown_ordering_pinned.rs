@@ -105,7 +105,11 @@ fn lease_release_cas_is_release_ordered() {
         .expect("Drop performs the state CAS");
     let call = &body[cas..];
     let close = call.find(')').expect("cas_state call is closed");
-    let args: Vec<&str> = call[..close].split(',').map(str::trim).collect();
+    let args: Vec<&str> = call[..close]
+        .split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .collect();
     assert_eq!(args.len(), 4, "cas_state(old, new, success, failure)");
     assert!(
         args[0].ends_with("SlotState::Live") && args[1] == "SlotState::Free",
