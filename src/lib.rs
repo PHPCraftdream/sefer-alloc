@@ -239,9 +239,7 @@
 //      * `registry::bootstrap::loom_shim` — `--cfg loom`-only const-capable
 //                             `OncePtrCell` stand-in needed by `static REGISTRY`;
 //                             `unsafe impl Send/Sync` + `NonNull::new_unchecked`.
-//                             Its separate local stack mirror has no current
-//                             source caller; root stack tests import the member
-//                             crate directly. The cell shim is not on a modeled
+//                             The cell shim is not on a modeled
 //                             interleaving. (under `alloc-global`,
 //                             AND only when built with `--cfg loom`)
 //      * `registry::heap_slot`     — `Sync` impl + `UnsafeCell` hand-off;

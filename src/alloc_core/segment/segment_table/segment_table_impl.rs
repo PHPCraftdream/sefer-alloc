@@ -74,11 +74,7 @@ pub fn reset_hash_remove_max_scan_steps() {
 // R6-T16: bumped by the alloc-decommit-gated `recycle` anomaly branch and
 // read by the internals diag accessor; suppressed where both are absent.
 #[cfg_attr(
-    not(any(
-        feature = "alloc-decommit",
-        feature = "alloc-xthread",
-        feature = "internals"
-    )),
+    not(any(feature = "alloc-decommit", feature = "internals")),
     allow(dead_code)
 )]
 pub(crate) static SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL: core::sync::atomic::AtomicU64 =

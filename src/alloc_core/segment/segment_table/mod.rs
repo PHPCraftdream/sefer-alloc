@@ -49,7 +49,6 @@
 //!   as a unit, so there is never a window where the OS reservation is released
 //!   but the slot is still non-NULL (which would cause `drop` to double-free).
 
-#[path = "active_kind_index.rs"]
 mod active_kind_index;
 pub(crate) use active_kind_index::ActiveKindIndex;
 
@@ -58,25 +57,19 @@ mod active_kind_ops;
 // R6-T16: test-only hash harness (`SegmentHashHarness`); no production
 // caller, so it compiles only under `internals`.
 #[cfg(feature = "internals")]
-#[path = "harness.rs"]
 mod harness;
 
-#[path = "hash.rs"]
 mod hash;
 
-#[path = "issue_transaction.rs"]
 mod issue_transaction;
 pub(crate) use issue_transaction::IssueTransaction;
 
 #[cfg(feature = "alloc-global")]
-#[path = "route_slots.rs"]
 mod route_slots;
 
 #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
-#[path = "route_slots_observers.rs"]
 mod route_slots_observers;
 
-#[path = "segment_table_impl.rs"]
 mod segment_table_impl;
 #[cfg_attr(not(feature = "internals"), allow(unused_imports))] // pub items are internals-only
 pub use segment_table_impl::*;

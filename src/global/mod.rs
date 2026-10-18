@@ -49,7 +49,7 @@ pub use sefer_alloc::SeferAlloc;
 // regression test (`tests/regression_fallback_panic_lock.rs`) reach the
 // otherwise-private `fallback` spinlock behaviour. Same established pattern as
 // `tls_heap::dbg_teardown_then_resolve_is_fallback` above; not stable API.
-#[cfg(all(feature = "std", feature = "internals"))]
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use fallback::dbg_panic_in_with_heap_releases_lock;
 // `#[doc(hidden)]` test-only hook (R6-OPT-P0-1): lets
@@ -72,6 +72,6 @@ pub use fallback::{
 
 // `#[doc(hidden)]` test-only hooks (R12-04): prove the fallback-init loser loop
 // yields to the scheduler (`tests/r12_04_fallback_init_losers_yield.rs`).
-#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 #[doc(hidden)]
 pub use fallback::{dbg_fallback_init_wait_yields, dbg_set_hold_fallback_init};

@@ -19,7 +19,7 @@ use crate::alloc_core::os;
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
-use crate::alloc_core::size_classes::MIN_BLOCK;
+use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
 use crate::registry::heap_core::HeapCore;
 
 impl HeapCore {
@@ -55,12 +55,14 @@ impl HeapCore {
                 SegmentHeader::kind_at(base),
                 SegmentKind::Small | SegmentKind::Primordial
             ) {
-                let end = SegmentMeta::new(base).bump_of().div_ceil(MIN_BLOCK * 64);
+                let end = SegmentMeta::new(base)
+                    .bump_of()
+                    .div_ceil(SIDECAR_WORD_BYTES);
                 let start = if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
                     crate::alloc_core::segment_header::Layout::primordial_meta_end()
-                        / (MIN_BLOCK * 64)
+                        / SIDECAR_WORD_BYTES
                 } else {
-                    crate::alloc_core::segment_header::Layout::small_meta_end() / (MIN_BLOCK * 64)
+                    crate::alloc_core::segment_header::Layout::small_meta_end() / SIDECAR_WORD_BYTES
                 };
                 let start = start.min(end);
                 end_sum += end as u64;

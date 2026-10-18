@@ -1367,9 +1367,10 @@ jobs:
   clippy:
     needs: changes
     if: needs.changes.outputs.fast == 'true'
-    # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
+    # R30-5 (task #454): this job's 8 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
-    # internals, the last added by R34-3/task #522) are transcribed
+    # internals / numa-aware internals / alloc-global alloc-xthread, the
+    # last added by R6-T43) are transcribed
     # BY HAND from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — the single
     # source of truth also consumed by `scripts/run-check-matrix.mjs` (which
     # `scripts/check-all.mjs`'s local `npm run check` runs as one of its
@@ -1468,6 +1469,14 @@ jobs:
         run: cargo clippy --all-targets --features "production internals" -- -D warnings
       - name: clippy (--features "numa-aware internals")
         run: cargo clippy --lib --features "numa-aware internals" -- -D warnings
+      # R6-T43: the minimal production-shaped combination WITHOUT the large
+      # cache (no alloc-decommit/internals). Regressed to 7 dead-code and
+      # unused-import warnings after R6-T16 moved the blanket lib.rs allows
+      # to per-item cfgs; fixed per-item and pinned clean here. --lib: the
+      # root tests/benches/examples do not compile under this combination
+      # (the sol_f1 negative-boundary probe is a deliberate compile-fail).
+      - name: clippy (--features "alloc-global alloc-xthread")
+        run: cargo clippy --lib --features "alloc-global alloc-xthread" -- -D warnings
 
   evidence-registry:
     runs-on: ubuntu-latest

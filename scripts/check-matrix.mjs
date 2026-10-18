@@ -163,6 +163,19 @@ export const PER_PR_ROWS = [
       '--lib keeps the dev suite outside this combination (item 95).',
   },
   {
+    id: 'clippy-alloc-global-alloc-xthread',
+    kind: 'clippy',
+    features: 'alloc-global alloc-xthread',
+    libOnly: true,
+    note:
+      'R6-T43: the minimal production-shaped combination WITHOUT the large ' +
+      'cache (no alloc-decommit/internals). Regressed to 7 dead-code and ' +
+      'unused-import warnings after R6-T16 moved the blanket lib.rs allows ' +
+      'to per-item cfgs; fixed per-item and pinned clean here. --lib: the ' +
+      'root tests/benches/examples do not compile under this combination ' +
+      '(the sol_f1 negative-boundary probe is a deliberate compile-fail).',
+  },
+  {
     id: 'check-perf-gate-iai-default',
     kind: 'check',
     features: 'production bench-internals internals',
