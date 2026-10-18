@@ -37,17 +37,14 @@
 //! slot stays in place, but ownership can transfer to a later claimant via the
 //! slot's ordered lease protocol; soundness does not depend on `Send`.
 
-#[path = "alloc_core_core_diag/mod.rs"]
 mod alloc_core_core_diag;
 
-#[path = "bootstrap.rs"]
 mod bootstrap;
 
 /// Group module: the always-compiled bench/diagnostic statics
 /// (`DECOMMIT_CALLS`, the decay/Tier-1 routing oracles, the zero-pass and
 /// realloc/promotion counters, `FOREIGN_OR_UNROUTABLE_FREES`),
 /// `promotion_byte_bucket`, and the `LargeCacheHitCounter` alias.
-#[path = "counters.rs"]
 mod counters;
 #[cfg(feature = "alloc-global")]
 pub(crate) use counters::LARGE_REMOTE_RETIREMENTS;
@@ -73,11 +70,9 @@ pub(crate) use sidecar_drain::{DiscoverySummaryObserver, DrainEnd};
 
 /// Group module: object lifecycle — construction config resolution, bootstrap
 /// invocation, and teardown.
-#[path = "lifecycle.rs"]
 mod lifecycle;
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-#[path = "sidecar_drain.rs"]
 mod sidecar_drain;
 
 #[cfg(all(
@@ -91,17 +86,16 @@ mod sidecar_test_hooks;
 
 /// Group module: the GlobalAlloc-face entry points (`alloc`, `alloc_zeroed`,
 /// `dealloc`, `realloc`) and the in-place realloc fast-path family.
-#[path = "mem/mod.rs"]
 mod mem;
-#[cfg(feature = "alloc-global")]
+// R6-T16: consumed only by the fastbin-gated own-free/realloc paths via the
+// `alloc_core::OwnedBlock` re-export (`fastbin` implies `alloc-global`).
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) use mem::OwnedBlock;
 
 /// Group module: NUMA-node caching, the registry-walk/membership accessors
 /// (`segment_bases`/`contains_base`/`small_cur`), and `(size, align)`
 /// classification.
-#[path = "state.rs"]
 mod state;
 
-#[path = "alloc_core_impl.rs"]
 mod alloc_core_impl;
 pub use alloc_core_impl::*;

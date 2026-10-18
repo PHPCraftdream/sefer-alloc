@@ -86,10 +86,25 @@ const _: () = assert!(
     OWNER_ID_FALLBACK != OWNER_ID_NONE,
     "OWNER_ID_FALLBACK must not collide with the unstamped-segment sentinel"
 );
+/// Maximum number of heaps the registry can hold. Each live thread claims one
+/// slot for its heap; `recycle` returns it. 4096 is generous for realistic
+/// thread counts (a process with > 4096 simultaneous threads is pathological
+/// for an allocator; the cap can be raised if a measured workload needs it).
+/// The slot space is chunked (see the registry bootstrap module doc) into
+/// `chunk::NUM_CHUNKS` chunks of `chunk::CHUNK_SLOTS` slots, each materialised
+/// lazily via `aligned_vmem::reserve_aligned` on first touch of an index
+/// inside it — NOT a `.data`/`.bss` cost, and no longer a single whole-array
+/// reservation either.
+///
+/// Defined HERE (segment-header layer, next to the owner-id packing it
+/// bounds) because `OWNER_ID_FALLBACK`'s out-of-range guarantee is stated
+/// against it; `registry::bootstrap` re-exports it for path stability.
+pub const MAX_HEAPS: usize = 4096;
+
 const _: () = assert!(
-    OWNER_ID_FALLBACK as usize >= 4096,
+    OWNER_ID_FALLBACK as usize >= MAX_HEAPS,
     "OWNER_ID_FALLBACK must stay outside every real registry slot index \
-     (< MAX_HEAPS = 4096) so owner-id resolution keeps treating it as \
+     (< MAX_HEAPS) so owner-id resolution keeps treating it as \
      out-of-range"
 );
 

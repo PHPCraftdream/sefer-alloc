@@ -15,6 +15,7 @@ mod leaf_classes;
 pub(crate) use leaf_classes::ClassLeaves;
 
 use crate::alloc_core::os::SEGMENT;
+use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
 use crate::alloc_core::size_classes::{MIN_BLOCK, SMALL_CLASS_COUNT};
 
 const GRANULES: usize = SEGMENT / MIN_BLOCK;
@@ -123,7 +124,7 @@ impl<'a> SidecarBitmap<'a> {
 
     /// Owner fixes an exclusive upper bound in bytes. The caller's high water
     /// must include every issued block that can still publish. This scans
-    /// exactly `ceil(high_water / (64 * MIN_BLOCK))` words, without dirty hints
+    /// exactly `ceil(high_water / SIDECAR_WORD_BYTES)` words, without dirty hints
     /// or waiting for paused producers. An in-flight producer after a word's
     /// cut belongs to a later scan.
     // R6-T16: reached only through the internals/oracle `SmallSidecar::scan`.
@@ -137,7 +138,7 @@ impl<'a> SidecarBitmap<'a> {
         if high_water > SEGMENT {
             return None;
         }
-        let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+        let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
         if start_word > end_word {
             return None;
         }

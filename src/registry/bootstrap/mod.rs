@@ -55,8 +55,7 @@
 // - [`chunk`] — `RegistryChunk` (the former `registry_chunk.rs`, moved
 //   verbatim; the module path becomes `bootstrap::chunk`).
 // - [`loom_shim`] — the `#[cfg(loom)]` const-capable `OncePtrCell` stand-in
-//   needed by the static initializer. Its separate local stack mirror has
-//   no current source caller; root stack models use the member crate directly.
+//   needed by the static initializer.
 mod chunk;
 mod ensure;
 mod free_slot_hint;

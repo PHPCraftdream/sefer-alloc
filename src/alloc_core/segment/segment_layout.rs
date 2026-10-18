@@ -33,18 +33,16 @@ impl SegmentLayout {
     /// up by the OS aperture is aligned to a multiple of this value.
     pub const SEGMENT: usize = crate::alloc_core::os::SEGMENT;
 
-    /// First sidecar pending-bitmap word (1 word = `MIN_BLOCK * 64` payload bytes)
+    /// First sidecar pending-bitmap word (1 word = `SIDECAR_WORD_BYTES` payload bytes)
     /// that can carry payload bits in the primordial segment: the scan starts here,
     /// not at word 0 (the words below hold metadata and always read zero).
     pub const PRIMORDIAL_PAYLOAD_START_WORD: usize =
-        crate::alloc_core::segment_header::Layout::primordial_meta_end()
-            / (crate::alloc_core::size_classes::MIN_BLOCK * 64);
+        crate::alloc_core::segment_header::Layout::primordial_meta_end() / SIDECAR_WORD_BYTES;
 
     /// Same as [`PRIMORDIAL_PAYLOAD_START_WORD`](Self::PRIMORDIAL_PAYLOAD_START_WORD)
     /// for a Small segment.
     pub const SMALL_PAYLOAD_START_WORD: usize =
-        crate::alloc_core::segment_header::Layout::small_meta_end()
-            / (crate::alloc_core::size_classes::MIN_BLOCK * 64);
+        crate::alloc_core::segment_header::Layout::small_meta_end() / SIDECAR_WORD_BYTES;
 
     /// The page granularity used by the per-segment `PageMap` (4 KiB).
     pub const PAGE: usize = crate::alloc_core::os::PAGE;
@@ -259,4 +257,16 @@ impl SegmentLayout {
     pub const fn segment_base_of(addr: usize) -> usize {
         crate::alloc_core::os::segment_base_of(addr)
     }
+}
+
+/// Bytes covered by one sidecar pending-bitmap word: `u64::BITS` slots of
+/// `MIN_BLOCK` each.
+pub(crate) const SIDECAR_WORD_BYTES: usize =
+    crate::alloc_core::size_classes::MIN_BLOCK * u64::BITS as usize;
+
+/// `(word, bit)` decomposition of a slot index against `u64::BITS`-wide
+/// bitmap words (the slot-domain bitmaps hold one bit per slot).
+#[inline(always)]
+pub(crate) fn word_bit(index: usize) -> (usize, usize) {
+    (index / u64::BITS as usize, index % u64::BITS as usize)
 }

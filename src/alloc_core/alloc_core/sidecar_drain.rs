@@ -6,7 +6,7 @@
 use super::{AllocCore, LARGE_REMOTE_RETIREMENTS};
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
-use crate::alloc_core::size_classes::MIN_BLOCK;
+use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
 
 #[cfg(feature = "bench-internals")]
 pub(crate) static LARGE_SIDECAR_SLOT_INSPECTIONS: core::sync::atomic::AtomicU64 =
@@ -363,7 +363,7 @@ impl AllocCore {
             match SegmentHeader::kind_at(base) {
                 SegmentKind::Small | SegmentKind::Primordial => {
                     let high_water = SegmentMeta::new(base).bump_of();
-                    let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+                    let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
                     // Patch S: never scan below the payload's first word.
                     let start_word = Self::sidecar_payload_start_word(base);
                     if cursor.1 < start_word {
@@ -449,7 +449,7 @@ impl AllocCore {
                 SegmentKind::Small | SegmentKind::Primordial => {
                     let high_water = SegmentMeta::new(base).bump_of();
                     // Producer rejects class-0 metadata (sidecar_bitmap.rs:116-121); metadata is >=64 KiB, page aligned (segment_header_layout.rs:44-72, 126-127).
-                    let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+                    let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
                     let start = Self::sidecar_payload_start_word(base).min(end_word);
                     let (changed_classes, drained_records) = {
                         let scan = self.scan_small_route_or_fatal(

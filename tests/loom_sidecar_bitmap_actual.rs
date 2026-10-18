@@ -34,6 +34,10 @@ mod alloc_core {
         pub const MIN_BLOCK: usize = 16;
         pub const SMALL_CLASS_COUNT: usize = 8;
     }
+    pub mod segment_layout {
+        pub const SIDECAR_WORD_BYTES: usize =
+            crate::alloc_core::size_classes::MIN_BLOCK * u64::BITS as usize;
+    }
 }
 
 // The included production files resolve `super` at this root module.

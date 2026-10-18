@@ -305,7 +305,7 @@ pub enum CurrentHeap {
 /// avoid a redundant `fallback::heap_ptr()` comparison (which would
 /// needlessly initialise the fallback on every alloc).
 ///
-/// Under `alloc-decommit`, [`current_for_alloc_with_config`] is used
+/// Under `alloc-decommit`, `current_for_alloc_with_config` is used
 /// instead (it threads the config into the TLS bind). This function is
 /// kept for `not(alloc-decommit)` builds and direct-API consumers.
 #[cfg_attr(feature = "alloc-decommit", allow(dead_code))]
@@ -340,7 +340,7 @@ pub fn current_for_alloc() -> CurrentHeap {
 /// Which route the dealloc-only resolver selected without binding a heap.
 #[cfg(feature = "alloc-xthread")]
 #[must_use]
-pub enum CurrentHeapForDealloc {
+pub(crate) enum CurrentHeapForDealloc {
     /// A registry slot owned by this thread (identical fast path to
     /// [`CurrentHeap::Own`] — the thread has a real, bound heap).
     Own(*mut HeapCore),
@@ -375,7 +375,7 @@ pub enum CurrentHeapForDealloc {
 ///   stale pointer is never dereferenced.
 #[cfg(feature = "alloc-xthread")]
 #[inline(always)]
-pub fn current_for_dealloc() -> CurrentHeapForDealloc {
+pub(crate) fn current_for_dealloc() -> CurrentHeapForDealloc {
     match LOCAL.try_with(|c| c.get()) {
         // Same Э2 (task #145) one-branch collapse as `current_for_alloc`:
         // real p → `< MAX-1` → Own (fast); null (0) and TORN (MAX) both fall
@@ -406,7 +406,9 @@ pub fn current_for_dealloc() -> CurrentHeapForDealloc {
 /// concept does not exist and [`current_for_alloc`] is used directly.
 #[cfg(feature = "alloc-decommit")]
 #[inline(always)]
-pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
+pub(crate) fn current_for_alloc_with_config(
+    config: &crate::alloc_core::LargeCacheConfig,
+) -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
         // See `current_for_alloc` — same Э2 (task #145) one-branch collapse:
         // real p → `< MAX-1` → Own (fast); null (0) → cold bind; TORN (MAX) →
@@ -426,13 +428,13 @@ pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfi
 /// is no tcache/pool/cache state to trim), so speculatively claiming a fresh
 /// registry slot just to immediately trim it empty would only waste a slot.
 ///
-/// Same `LOCAL`-read shape as [`current_for_alloc`]/[`current_for_dealloc`],
+/// Same `LOCAL`-read shape as [`current_for_alloc`]/`current_for_dealloc`,
 /// but ALL three "no live own-thread heap" cases — `null` (never bound),
 /// `TORN` (this thread's `AbandonGuard` already recycled its slot), and
 /// `Err` (TLS destroyed) — map to `None`. **Never calls
 /// `bind_slow_tagged` and never resolves the fallback pointer**: unlike
 /// [`current_for_alloc`] (whose `null` arm binds) and unlike
-/// [`current_for_dealloc`] (whose bind-less arm still routes a live
+/// `current_for_dealloc` (whose bind-less arm still routes a live
 /// pointer through cross-thread free-routing), this resolver's whole
 /// contract is "tell me only what already exists, touch nothing new."
 ///

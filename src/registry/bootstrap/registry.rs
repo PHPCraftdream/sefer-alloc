@@ -36,17 +36,11 @@ use crate::registry::heap_slot::HeapSlot;
 #[cfg(not(loom))]
 use once_ptr_cell::OncePtrCell;
 
-/// Maximum number of heaps the registry can hold. Each live thread claims one
-/// slot for its heap; `recycle` returns it. 4096 is generous for realistic
-/// thread counts (a process with > 4096 simultaneous threads is pathological
-/// for an allocator; the cap can be raised if a measured workload needs it).
-/// The slot space is chunked (see the module doc) into
-/// `chunk::NUM_CHUNKS` chunks of
-/// `chunk::CHUNK_SLOTS`
-/// slots, each materialised lazily via `aligned_vmem::reserve_aligned` on
-/// first touch of an index inside it — NOT a `.data`/`.bss` cost, and no
-/// longer a single whole-array reservation either.
-pub const MAX_HEAPS: usize = 4096;
+/// Re-exported from [`crate::alloc_core::segment_header`] — the constant moved
+/// there (R6-T45) so the segment-header owner-id domain bound and this
+/// registry's slot count stay literally the same item. All existing
+/// `registry::(bootstrap::)MAX_HEAPS` paths keep resolving through this.
+pub use crate::alloc_core::segment_header::MAX_HEAPS;
 
 /// The bootstrap outcome: `chunk::NUM_CHUNKS`
 /// lazily-materialised chunk pointers plus the dynamic atomics that drive

@@ -18,6 +18,10 @@ mod alloc_core {
         pub const MIN_BLOCK: usize = sefer_alloc::SegmentLayout::MIN_BLOCK;
         pub const SMALL_CLASS_COUNT: usize = sefer_alloc::SegmentLayout::SIZE_CLASS_TABLE.len();
     }
+    pub mod segment_layout {
+        pub const SIDECAR_WORD_BYTES: usize =
+            crate::alloc_core::size_classes::MIN_BLOCK * u64::BITS as usize;
+    }
 }
 
 #[allow(dead_code)] // Dense test-only constructor is deliberately not exercised.

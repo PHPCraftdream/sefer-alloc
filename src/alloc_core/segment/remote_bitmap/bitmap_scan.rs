@@ -1,6 +1,18 @@
 use super::{sidecar_bitmap::ClassMap, AtomicU64, BitmapCut, Ordering};
 use crate::alloc_core::fatal::fatal;
 
+/// Positions of the [`SCAN_COUNTS`] benchmark array (`measure_scans`'s
+/// return shape, positional and pinned by tests — do not reorder).
+#[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
+#[repr(usize)]
+enum ScanCount {
+    Cut = 0,
+    Empty = 1,
+    Exchanged = 2,
+    NonEmptyBits = 3,
+    Routed = 4,
+}
+
 #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
 std::thread_local! {
     static SCAN_COUNTS: core::cell::Cell<Option<[u64; 5]>> = const { core::cell::Cell::new(None) };
@@ -28,7 +40,7 @@ impl<'a> BitmapScan<'a> {
     pub(crate) fn count_routed_scan() {
         SCAN_COUNTS.with(|counts| {
             if let Some(mut current) = counts.get() {
-                current[4] += 1;
+                current[ScanCount::Routed as usize] += 1;
                 counts.set(Some(current));
             }
         });
@@ -60,10 +72,10 @@ impl<'a> BitmapScan<'a> {
         #[cfg(all(feature = "bench-internals", r18_sidecar_scan_bench))]
         SCAN_COUNTS.with(|counts| {
             if let Some(mut current) = counts.get() {
-                current[0] += 1;
-                current[1] += u64::from(empty);
-                current[2] += u64::from(exchanged);
-                current[3] += u64::from(bits != 0);
+                current[ScanCount::Cut as usize] += 1;
+                current[ScanCount::Empty as usize] += u64::from(empty);
+                current[ScanCount::Exchanged as usize] += u64::from(exchanged);
+                current[ScanCount::NonEmptyBits as usize] += u64::from(bits != 0);
                 counts.set(Some(current));
             }
         });

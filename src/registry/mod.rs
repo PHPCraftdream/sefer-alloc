@@ -50,6 +50,12 @@ pub mod segment_route;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;
+// R6-T16: read by `stats()` under `alloc-decommit`; external diagnostics
+// reach it under `internals`. Suppress the unused-import lint elsewhere.
+#[cfg_attr(
+    not(any(feature = "alloc-decommit", feature = "internals")),
+    allow(unused_imports)
+)]
 #[doc(hidden)]
 pub use heap_registry::config_conflicts_total;
 #[doc(hidden)]

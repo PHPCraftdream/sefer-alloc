@@ -1,11 +1,11 @@
-E0_METADATA {"id":"R4b-11","head":"8ae1dd640b7297e9678a4c6d140f71ad884bd44c","tree":"9ac416478dff46c09a44dff99dc19714d5a52962","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (4ebd25825 2026-10-15)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-16 for version 1.101.0-nightly (4ebd25825 2026-10-15)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4b-11","head":"8ae1dd640b7297e9678a4c6d140f71ad884bd44c","tree":"9ac416478dff46c09a44dff99dc19714d5a52962","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-11.json","recipe_sha256":"0ab50eddc2057fa100b839149955fdfd7246a5359d5cceb3690512c5ef6d9f9c","registry_activation_hash":"9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd"}
+E0_METADATA {"id":"R4b-11","head":"924bb0014de17198a58948f3b59b48794fe7fd54","tree":"ac8a4c00690549c664dd46177edc0c9fd3c34686","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4b-11","head":"924bb0014de17198a58948f3b59b48794fe7fd54","tree":"ac8a4c00690549c664dd46177edc0c9fd3c34686","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-11.json","recipe_sha256":"0ab50eddc2057fa100b839149955fdfd7246a5359d5cceb3690512c5ef6d9f9c","registry_activation_hash":"9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd"}
 
 E0_STEP {"id":"R4b-11","kind":"baseline","name":"teardown source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_teardown_ordering_pinned","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test teardown_stamps_torn_then_trims_then_releases_the_slot .* ok","test lease_release_cas_is_release_ordered .* ok","test result: ok. "]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.21s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph4b_teardown_ordering_pinned.rs (target/debug/deps/r11_ph4b_teardown_ordering_pinned-adfde2548ada70fa)
@@ -23,14 +23,14 @@ E0_STEP {"id":"R4b-11","kind":"mutant","name":"TORN stamp omitted mutant","argv"
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.16s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph4b_teardown_ordering_pinned.rs (target/debug/deps/r11_ph4b_teardown_ordering_pinned-adfde2548ada70fa)
 
 running 2 tests
 
-thread 'teardown_stamps_torn_then_trims_then_releases_the_slot' (8142) panicked at tests/r11_ph4b_teardown_ordering_pinned.rs:58:10:
+thread 'teardown_stamps_torn_then_trims_then_releases_the_slot' (8388) panicked at tests/r11_ph4b_teardown_ordering_pinned.rs:58:10:
 teardown poisons LOCAL via the shared mark_local_torn choke point
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test lease_release_cas_is_release_ordered ... ok
@@ -46,13 +46,13 @@ test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 [1m[91merror[0m: test failed, to rerun pass `--test r11_ph4b_teardown_ordering_pinned`
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4b-11","kind":"restored","sha256":"69318befeef5ee79747597fe3e4ab85b455ebe758280cbcc605cca72dfc0d037"}
+E0_METADATA {"id":"R4b-11","kind":"restored","sha256":"4b1e7a9a3f45fcb7cc10bae5ee3883d9dccdbc47b233980e8add8bee574a4209"}
 
 E0_STEP {"id":"R4b-11","kind":"restored-baseline","name":"teardown source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_teardown_ordering_pinned","--","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test teardown_stamps_torn_then_trims_then_releases_the_slot .* ok","test lease_release_cas_is_release_ordered .* ok","test result: ok. "]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.81s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.17s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/r11_ph4b_teardown_ordering_pinned.rs (target/debug/deps/r11_ph4b_teardown_ordering_pinned-adfde2548ada70fa)

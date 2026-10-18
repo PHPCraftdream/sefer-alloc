@@ -120,7 +120,16 @@ impl<'a> LargeReservationState<'a> {
     }
 
     /// Cache-hit rollback after CACHED -> INITIALIZING, before user issuance.
-    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    // R6-T16: the only production caller is the `alloc-decommit`-gated
+    // large-cache branch of `alloc_large`; kani/tests reach it under their
+    // own cfgs.
+    #[cfg_attr(
+        not(any(
+            feature = "alloc-decommit",
+            all(feature = "internals", feature = "alloc-global")
+        )),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub fn release_initializing(&self, generation: u64) -> bool {
         self.transition(generation, LargePhase::Initializing, LargePhase::Released)

@@ -58,6 +58,16 @@ static START_PAUSED: AtomicBool = AtomicBool::new(false);
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 static FAIL_WORKER: AtomicU8 = AtomicU8::new(0);
 
+/// Termination codes stored in [`FAIL_WORKER`] (0 = keep running): the next
+/// worker pass returns quietly or unwinds, per `fail_worker_for_test`'s
+/// argument.
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+#[repr(u8)]
+enum WorkerFault {
+    Returned = 1,
+    Unwound = 2,
+}
+
 /// Internal process-global executor. Test-only methods are not stable API.
 #[doc(hidden)]
 pub struct MaintenanceService;
@@ -194,8 +204,10 @@ impl MaintenanceService {
         loop {
             #[cfg(all(feature = "internals", feature = "bench-internals"))]
             match FAIL_WORKER.load(Ordering::Acquire) {
-                1 => return,
-                2 => panic!("injected maintenance worker unwind"),
+                f if f == WorkerFault::Returned as u8 => return,
+                f if f == WorkerFault::Unwound as u8 => {
+                    panic!("injected maintenance worker unwind")
+                }
                 _ => {}
             }
             let _ = HeapRegistry::maintenance_pass(&mut cursor, SLOT_BUDGET);
@@ -317,6 +329,13 @@ impl MaintenanceService {
     #[cfg(all(feature = "internals", feature = "bench-internals"))]
     #[doc(hidden)]
     pub fn fail_worker_for_test(unwind: bool) {
-        FAIL_WORKER.store(if unwind { 2 } else { 1 }, Ordering::Release);
+        FAIL_WORKER.store(
+            if unwind {
+                WorkerFault::Unwound as u8
+            } else {
+                WorkerFault::Returned as u8
+            },
+            Ordering::Release,
+        );
     }
 }
