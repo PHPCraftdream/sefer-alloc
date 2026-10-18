@@ -1,0 +1,58 @@
+{
+  "id": "R6a-M8",
+  "registryActivationHash": "ef38d37742035c53b718c488cb054b41bd5e2edc6cfee313691f1be1db49eaf7",
+  "steps": [
+    {
+      "name": "r11 spawn failure retry baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals",
+        "--test",
+        "r11_ph4b_spawn_failure_retry_releases_leases"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/global/maintenance_service.rs",
+    "find": "impl Drop for StartingGuard {\n    fn drop(&mut self) {\n        STATE.store(IDLE, Ordering::Release);",
+    "replace": "impl Drop for StartingGuard {\n    fn drop(&mut self) {\n        let _ = IDLE;",
+    "steps": [
+      {
+        "name": "StartingGuard drop without rollback mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals bench-internals",
+          "--test",
+          "r11_ph4b_spawn_failure_retry_releases_leases"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. FAILED"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test spawn_failure_leaves_no_half_activation_and_retry_releases_leases \\.\\.\\. FAILED"
+      ]
+    }
+  }
+}

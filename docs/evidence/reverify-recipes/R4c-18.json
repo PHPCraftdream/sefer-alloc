@@ -29,8 +29,8 @@
   ],
   "mutant": {
     "file": "src/registry/heap_registry/claim.rs",
-    "find": "pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {\n    if slot\n        .cas_state(\n            STATE_INITIALIZING,\n            STATE_FREE,",
-    "replace": "pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {\n    if slot\n        .cas_state(\n            STATE_INITIALIZING,\n            STATE_LIVE,",
+    "find": "pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {\n    if slot\n        .cas_state(\n            SlotState::Initializing,\n            SlotState::Free,",
+    "replace": "pub(super) fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {\n    if slot\n        .cas_state(\n            SlotState::Initializing,\n            SlotState::Live,",
     "steps": [
       {
         "name": "OOM push-back publishes LIVE mutant",

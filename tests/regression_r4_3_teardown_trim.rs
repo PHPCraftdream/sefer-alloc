@@ -1,6 +1,6 @@
 //! Task #95 / R4-3 (N1) — teardown trim releases retained memory on thread exit.
 //!
-//! RED→GREEN proof for the teardown-trim wiring (`AbandonGuard::drop` →
+//! RED→GREEN proof for the teardown-trim wiring (`LeaseReleaseGuard::drop` →
 //! `HeapCore::trim_for_recycle`). The scenario from
 //! `docs/agent_reviews_round4/performance_review.md` finding N1: a wave of
 //! short-lived threads, each allocating and freeing through `SeferAlloc`,
@@ -12,12 +12,12 @@
 //!
 //! Each spawned thread allocates a Large block (reserving an OS segment) and
 //! frees it (depositing the span into the per-thread large cache under
-//! `alloc-decommit`). On thread exit, `AbandonGuard::drop` now calls
+//! `alloc-decommit`). On thread exit, `LeaseReleaseGuard::drop` now calls
 //! `trim_for_recycle` → `evict_all` releases every cached span's OS
 //! reservation → `segments_released_total` increases.
 //!
 //! **RED (before fix):** without the `trim_for_recycle` call in
-//! `AbandonGuard::drop`, the freed span stays cached on the recycled heap
+//! `LeaseReleaseGuard::drop`, the freed span stays cached on the recycled heap
 //! slot. No OS release fires on thread exit → `segments_released_total`
 //! delta is 0 (verified by commenting out the `trim_for_recycle` call and
 //! running this test in isolation).
@@ -52,7 +52,7 @@
 //!   their own build logs), all passed. Two additional full
 //!   `cargo test --release --features production` runs under the same
 //!   sustained load also passed.
-//! - The production code was read end-to-end (`AbandonGuard::drop` →
+//! - The production code was read end-to-end (`LeaseReleaseGuard::drop` →
 //!   `HeapCore::trim_for_recycle` → `AllocCore::evict_all` →
 //!   `evict_one_oldest` → `os::release_segment`): every step that could
 //!   plausibly swallow a release was checked and ruled out. `release_segment`
@@ -148,14 +148,14 @@ fn teardown_trim_releases_retained_large_cache_spans() {
     let before = a.stats().segments_released_total;
 
     // Wave of N short-lived threads. Each allocates + frees a mix of small
-    // and large blocks, then exits. On exit, AbandonGuard::drop calls
+    // and large blocks, then exits. On exit, LeaseReleaseGuard::drop calls
     // trim_for_recycle → flush tcache + drain pool + evict large cache.
     const N: usize = 8;
     thread::scope(|s| {
         for _ in 0..N {
             s.spawn(|| {
                 drive_activity(&a);
-                // Thread exits here → AbandonGuard::drop → trim_for_recycle.
+                // Thread exits here → LeaseReleaseGuard::drop → trim_for_recycle.
             });
         }
     });

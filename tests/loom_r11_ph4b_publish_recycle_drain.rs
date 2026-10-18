@@ -21,7 +21,7 @@ use loom::cell::UnsafeCell;
 use loom::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
-use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE};
+use sefer_alloc::registry::heap_slot::SlotState;
 
 /// Publication ordering of the Drop's LIVE→FREE CAS. `Release` at rest; the
 /// chunk-C mutant flips this to `Relaxed` and the model below must go red.
@@ -80,7 +80,12 @@ fn publisher(slot: &Slot) {
 fn owner_binds_trims_and_recycles(slot: &Slot) {
     if slot
         .state
-        .compare_exchange(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+        .compare_exchange(
+            SlotState::Free as u8,
+            SlotState::Live as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
         .is_err()
     {
         return; // lost claimant CAS — no authority, no core access
@@ -94,7 +99,12 @@ fn owner_binds_trims_and_recycles(slot: &Slot) {
     // HeapLease::drop: Release-publish the owner writes (S2), authority ends.
     assert!(slot
         .state
-        .compare_exchange(STATE_LIVE, STATE_FREE, DROP_ORDERING, Ordering::Relaxed)
+        .compare_exchange(
+            SlotState::Live as u8,
+            SlotState::Free as u8,
+            DROP_ORDERING,
+            Ordering::Relaxed
+        )
         .is_ok());
 }
 
@@ -103,7 +113,12 @@ fn owner_binds_trims_and_recycles(slot: &Slot) {
 fn claimant_claims_and_drains(slot: &Slot) {
     if slot
         .state
-        .compare_exchange(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+        .compare_exchange(
+            SlotState::Free as u8,
+            SlotState::Live as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
         .is_err()
     {
         return; // the loser must never enter the drain
@@ -113,7 +128,12 @@ fn claimant_claims_and_drains(slot: &Slot) {
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
     assert!(slot
         .state
-        .compare_exchange(STATE_LIVE, STATE_FREE, DROP_ORDERING, Ordering::Relaxed)
+        .compare_exchange(
+            SlotState::Live as u8,
+            SlotState::Free as u8,
+            DROP_ORDERING,
+            Ordering::Relaxed
+        )
         .is_ok());
 }
 
@@ -123,7 +143,7 @@ fn publication_survives_recycle_and_is_consumed_exactly_once() {
     builder.preemption_bound = Some(2);
     builder.check(|| {
         let slot = Arc::new(Slot {
-            state: AtomicU8::new(STATE_FREE),
+            state: AtomicU8::new(SlotState::Free as u8),
             active: AtomicUsize::new(0),
             pending: AtomicUsize::new(0),
             payload: UnsafeCell::new(0),
@@ -141,7 +161,7 @@ fn publication_survives_recycle_and_is_consumed_exactly_once() {
         claimant.join().expect("claimant");
 
         // Every join observes the final Release publication.
-        assert_eq!(slot.state.load(Ordering::Acquire), STATE_FREE);
+        assert_eq!(slot.state.load(Ordering::Acquire), SlotState::Free as u8);
         assert_eq!(slot.active.load(Ordering::Relaxed), 0);
         // Exactly-once / never-lost: the publication was either consumed by
         // the trim or the claimant's drain, or it is still pending.

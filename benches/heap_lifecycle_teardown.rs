@@ -5,7 +5,7 @@
 //!
 //! ## Why this bench exists
 //!
-//! Round4's N1 (task #95) wired `AbandonGuard::drop`
+//! Round4's N1 (task #95) wired `LeaseReleaseGuard::drop`
 //! (`src/global/tls_heap.rs`) to call `HeapCore::trim_for_recycle`
 //! (`src/registry/heap_core/state/ownership.rs`) on thread exit/recycle: flush the entire
 //! tcache, drain the small-segment hysteresis pool, and evict the whole large
@@ -18,7 +18,7 @@
 //!   (b) the cost of a final drain in isolation, as a function of how much
 //!       state accumulated before it ran, and
 //!   (c) the FULL `trim_for_recycle` cost as it actually happens in
-//!       production — via real thread exit, `AbandonGuard::drop`, INCLUDING
+//!       production — via real thread exit, `LeaseReleaseGuard::drop`, INCLUDING
 //!       the OS thread-spawn/join overhead that comes bundled with it in any
 //!       real "spin up a worker, do some work, let it die" workload.
 //!
@@ -47,19 +47,19 @@
 //!    without folding it into the ops number. `dbg_trim_current_thread`
 //!    (`src/global/sefer_alloc.rs`, `#[doc(hidden)]`, `alloc-global`-gated)
 //!    calls the exact production `HeapCore::trim_for_recycle` primitive the
-//!    real `AbandonGuard::drop` teardown path runs, but WITHOUT tearing down
+//!    real `LeaseReleaseGuard::drop` teardown path runs, but WITHOUT tearing down
 //!    TLS or recycling the registry slot — the calling (bench) thread keeps
 //!    its own (now-emptied) heap afterward, so this group can run entirely
 //!    on criterion's single bench thread with no thread spawn involved.
 //!
 //! 3. **`heap_lifecycle_thread_exit`** — the FULL production lifecycle: a
 //!    real `std::thread::spawn` does N allocations then returns normally,
-//!    letting the REAL `AbandonGuard::drop` run via native TLS teardown (not
+//!    letting the REAL `LeaseReleaseGuard::drop` run via native TLS teardown (not
 //!    the `dbg_trim_current_thread` shortcut) as the thread unwinds, and the
 //!    whole `spawn(...).join()` round trip is timed. A companion
 //!    `heap_lifecycle_thread_spawn_empty` group spawns and joins a thread
-//!    that does ZERO allocations (so its `AbandonGuard` never bound a heap
-//!    and its `Drop` is a no-op — see `AbandonGuard::drop`'s null-check early
+//!    that does ZERO allocations (so its `LeaseReleaseGuard` never bound a heap
+//!    and its `Drop` is a no-op — see `LeaseReleaseGuard::drop`'s null-check early
 //!    return), giving a reference point for "OS thread spawn/join overhead
 //!    alone" to subtract from group 3's numbers by eye. **This bench does
 //!    not do the subtraction itself** (criterion doesn't support cross-group
@@ -221,7 +221,7 @@ fn bench_drain_only(c: &mut Criterion) {
 
 /// Allocate `n` blocks and free them all on a freshly spawned thread, then
 /// let the thread return normally — this is what lets the REAL
-/// `AbandonGuard::drop` run via native TLS teardown when the thread's stack
+/// `LeaseReleaseGuard::drop` run via native TLS teardown when the thread's stack
 /// unwinds after `join`, exercising the exact production path (not the
 /// `dbg_trim_current_thread` shortcut group 2 uses).
 fn thread_exit_with_ops(n: usize) {
@@ -239,7 +239,7 @@ fn thread_exit_with_ops(n: usize) {
             // SAFETY: `p` was returned by `alloc.alloc(layout)` above.
             unsafe { alloc.dealloc(p, layout) };
         }
-        // Falling off the end here drops this thread's `AbandonGuard` during
+        // Falling off the end here drops this thread's `LeaseReleaseGuard` during
         // native TLS teardown — the REAL production trim/recycle path runs
         // here, not via `dbg_trim_current_thread`.
     });
@@ -278,7 +278,7 @@ fn bench_thread_exit(c: &mut Criterion) {
 }
 
 /// Reference group: spawn and join a thread that allocates NOTHING. Its
-/// `AbandonGuard` never binds a heap (`heap.get()` stays null), so its
+/// `LeaseReleaseGuard` never binds a heap (`heap.get()` stays null), so its
 /// `Drop` hits the early-return no-op branch — this isolates pure OS
 /// thread-spawn/join overhead, with no allocator teardown work in the
 /// picture at all. Not swept over `N_VALUES` (there is no "N operations" for

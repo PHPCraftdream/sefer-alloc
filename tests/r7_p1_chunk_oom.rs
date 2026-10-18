@@ -15,7 +15,7 @@ use sefer_alloc::registry::bootstrap;
 use sefer_alloc::registry::heap_registry::{
     dbg_bump_count_without_materialising, dbg_slot_initialised, HeapRegistry,
 };
-use sefer_alloc::registry::heap_slot::{STATE_EMPTY, STATE_LIVE};
+use sefer_alloc::registry::heap_slot::SlotState;
 use sefer_alloc::registry::HeapCore;
 use sefer_alloc::SeferAlloc;
 
@@ -119,7 +119,7 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     let mut pending: Vec<_> = (64..minted).filter(|&idx| idx != hinted_id).collect();
     assert!(!pending.is_empty());
     for &idx in &pending {
-        assert_eq!(reg.dbg_slot_state(idx as usize), STATE_EMPTY);
+        assert_eq!(reg.dbg_slot_state(idx as usize), SlotState::Empty as u8);
         assert_eq!(reg.dbg_slot_generation(idx as usize), 0);
         assert!(!dbg_slot_initialised(idx));
     }
@@ -144,7 +144,7 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     }
     assert_eq!(bootstrap::count_for_test(), minted + 1);
     for &idx in &pending {
-        assert_eq!(reg.dbg_slot_state(idx as usize), STATE_EMPTY);
+        assert_eq!(reg.dbg_slot_state(idx as usize), SlotState::Empty as u8);
         assert!(!dbg_slot_initialised(idx));
     }
 
@@ -171,7 +171,7 @@ fn claim_chunk_oom_falls_back_and_preserves_minted_indices() {
     }
     assert!(pending.is_empty(), "no minted OOM index was lost");
     for idx in 64..=minted {
-        assert_eq!(reg.dbg_slot_state(idx as usize), STATE_LIVE);
+        assert_eq!(reg.dbg_slot_state(idx as usize), SlotState::Live as u8);
         assert_eq!(reg.dbg_slot_generation(idx as usize), 1);
         assert!(dbg_slot_initialised(idx));
     }

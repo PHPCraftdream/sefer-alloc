@@ -1,0 +1,31 @@
+{
+  "id": "R4a-01",
+  "registryActivationHash": "db2e256bc8c3d1ae622edf438d3158b01f8e5926a4af9a6614eb1d1144463728",
+  "steps": [
+    {
+      "name": "strict provenance re-run",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals",
+        "--test",
+        "r11_ph4a_lease_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test lease_claim_drop_reclaim_across_threads_under_miri \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

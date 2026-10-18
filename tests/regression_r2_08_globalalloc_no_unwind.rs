@@ -85,7 +85,7 @@ const LAYOUT: Layout = match Layout::from_size_align(64, 8) {
 };
 
 /// Bind a registry slot with `CONFIG_A` on a fresh thread and let the thread
-/// exit, so its `AbandonGuard` recycles the slot onto the top of the LIFO
+/// exit, so its `LeaseReleaseGuard` recycles the slot onto the top of the LIFO
 /// free stack with `CONFIG_A` baked in. Returns one block allocated from
 /// that slot's heap and deliberately left live (as a `usize`), for the
 /// `realloc` case; the other cases ignore it.

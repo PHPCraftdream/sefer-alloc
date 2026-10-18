@@ -25,8 +25,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use sefer_alloc::global::{
-    dbg_fallback_init_wait_yields, dbg_init_state, dbg_set_hold_fallback_init, STATE_INITIALIZING,
-    STATE_READY, STATE_UNINIT,
+    dbg_fallback_init_wait_yields, dbg_init_state, dbg_set_hold_fallback_init, FallbackInitState,
 };
 use sefer_alloc::registry::HeapCore;
 
@@ -59,7 +58,7 @@ fn touch_fallback() -> bool {
 fn losers_yield_while_winner_initialises() {
     assert_eq!(
         dbg_init_state(),
-        STATE_UNINIT,
+        FallbackInitState::Uninit as u8,
         "precondition: fallback must be UNINIT or the hold is unreachable"
     );
     assert_eq!(dbg_fallback_init_wait_yields(), 0);
@@ -68,7 +67,7 @@ fn losers_yield_while_winner_initialises() {
     let release = Release;
     let winner = thread::spawn(touch_fallback);
     wait_until("the winner to enter INITIALIZING", || {
-        dbg_init_state() == STATE_INITIALIZING
+        dbg_init_state() == FallbackInitState::Initializing as u8
     });
 
     let losers: Vec<_> = (0..LOSERS).map(|_| thread::spawn(touch_fallback)).collect();
@@ -77,7 +76,7 @@ fn losers_yield_while_winner_initialises() {
     });
     assert_eq!(
         dbg_init_state(),
-        STATE_INITIALIZING,
+        FallbackInitState::Initializing as u8,
         "losers must still be waiting on the held winner"
     );
 
@@ -89,5 +88,5 @@ fn losers_yield_while_winner_initialises() {
     for loser in losers {
         assert!(loser.join().expect("loser panicked"), "loser got no heap");
     }
-    assert_eq!(dbg_init_state(), STATE_READY);
+    assert_eq!(dbg_init_state(), FallbackInitState::Ready as u8);
 }

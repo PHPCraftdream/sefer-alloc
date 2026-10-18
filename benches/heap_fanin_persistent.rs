@@ -117,7 +117,7 @@ impl CellResult {
 /// inheriting that slot's `HeapCore` and segments WHOLE (Phase 12.5's
 /// documented whole-slot-reuse design). Neither `HeapRegistry::recycle` nor
 /// `HeapCore::trim_for_recycle` (the production teardown hook, wired only
-/// through `AbandonGuard::drop` on real thread exit — this bench never goes
+/// through `LeaseReleaseGuard::drop` on real thread exit — this bench never goes
 /// through that path) drains a segment's `RemoteFreeRing` or a heap's
 /// `HeapOverflow` ring; both are drained lazily/opportunistically by the
 /// OWNER's own `alloc()` calls, which is not guaranteed to have fully

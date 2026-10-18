@@ -10,7 +10,7 @@
 //!
 //! `regression_r4_3_teardown_trim.rs` covers the REAL thread-exit wiring: `N`
 //! threads spawned via `thread::scope`, each exiting through the actual TLS
-//! `AbandonGuard::drop` → `HeapCore::trim_for_recycle` path, proving the
+//! `LeaseReleaseGuard::drop` → `HeapCore::trim_for_recycle` path, proving the
 //! production hook-up end to end (bind → claim → exit → recycle). That value
 //! is real and this file does not attempt to duplicate it — TLS teardown
 //! timing across 8 real OS threads is exactly the kind of coverage a
@@ -120,7 +120,7 @@ fn dbg_trim_current_thread_releases_cached_large_span_deterministically() {
     unsafe { a.dealloc(p, large) };
 
     // Deterministic, synchronous call — same production primitive
-    // `AbandonGuard::drop` runs on real thread exit, invoked directly here
+    // `LeaseReleaseGuard::drop` runs on real thread exit, invoked directly here
     // with no thread spawn/join and no TLS teardown in between.
     a.dbg_trim_current_thread();
 

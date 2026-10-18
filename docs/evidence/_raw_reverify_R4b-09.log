@@ -1,0 +1,68 @@
+E0_METADATA {"id":"R4b-09","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4b-09","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4b-09.json","recipe_sha256":"aea4fb00d66d47b2fef4b1cec3688eaf666d78820ab0c95a4be74764c2c70cb9","registry_activation_hash":"9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd"}
+
+E0_STEP {"id":"R4b-09","kind":"baseline","name":"rollback LOCAL-before-drop source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_local_no_drop_pinned"],"env":{},"expect":{"exit":0,"stdoutRegex":["test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. ok","test result: ok\\. 3 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph4b_local_no_drop_pinned.rs (target/debug/deps/r11_ph4b_local_no_drop_pinned-45ec29f729f0051a)
+
+running 3 tests
+test guard_stores_the_typed_lease_option ... ok
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+
+E0_STEP {"id":"R4b-09","kind":"mutant","name":"rollback releases lease before unpublishing LOCAL mutant","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_local_no_drop_pinned","finish_bind_rollback_unpublishes_local_before_the_lease_drop","--","--exact","--nocapture"],"env":{},"expect":{"exit":101,"stdoutRegex":["test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. FAILED"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.09s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph4b_local_no_drop_pinned.rs (target/debug/deps/r11_ph4b_local_no_drop_pinned-45ec29f729f0051a)
+
+running 1 test
+
+thread 'finish_bind_rollback_unpublishes_local_before_the_lease_drop' (9394) panicked at tests/r11_ph4b_local_no_drop_pinned.rs:107:5:
+rollback order regression: LOCAL := null must precede drop(lease) so a stale published pointer never outlives the released slot
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... FAILED
+
+failures:
+
+failures:
+    finish_bind_rollback_unpublishes_local_before_the_lease_drop
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+[1m[91merror[0m: test failed, to rerun pass `--test r11_ph4b_local_no_drop_pinned`
+
+E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_METADATA {"id":"R4b-09","kind":"restored","sha256":"82990501c6b43ec089ed4a67a9e35fae84d23e235e75b10e69b7dee6eeb82637"}
+
+E0_STEP {"id":"R4b-09","kind":"restored-baseline","name":"rollback LOCAL-before-drop source-pin baseline","argv":["cargo","test","--locked","--features","production internals","--test","r11_ph4b_local_no_drop_pinned"],"env":{},"expect":{"exit":0,"stdoutRegex":["test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. ok","test result: ok\\. 3 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.11s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph4b_local_no_drop_pinned.rs (target/debug/deps/r11_ph4b_local_no_drop_pinned-45ec29f729f0051a)
+
+running 3 tests
+test guard_stores_the_typed_lease_option ... ok
+test local_is_a_const_initialised_dropless_raw_cell ... ok
+test finish_bind_rollback_unpublishes_local_before_the_lease_drop ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}

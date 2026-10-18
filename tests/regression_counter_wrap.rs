@@ -36,7 +36,7 @@
 // is observably u64 (holds a value > u32::MAX).
 // ===========================================================================
 
-use sefer_alloc::registry::{bootstrap, heap_slot::STATE_LIVE, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, heap_slot::SlotState, HeapRegistry};
 
 // This is the ONLY test in this binary that touches the registry. Each
 // integration test file is its own process with a fresh process-global
@@ -56,7 +56,7 @@ fn generation_crosses_u32_boundary_as_u64() {
     let reg = bootstrap::ensure();
     assert_eq!(
         reg.dbg_slot_state(id),
-        STATE_LIVE,
+        SlotState::Live as u8,
         "claimed slot must be LIVE"
     );
 

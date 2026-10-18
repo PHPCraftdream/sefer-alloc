@@ -1,11 +1,11 @@
-E0_METADATA {"id":"R4c-10","head":"924bb0014de17198a58948f3b59b48794fe7fd54","tree":"ac8a4c00690549c664dd46177edc0c9fd3c34686","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
-E0_METADATA {"id":"R4c-10","head":"924bb0014de17198a58948f3b59b48794fe7fd54","tree":"ac8a4c00690549c664dd46177edc0c9fd3c34686","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-10.json","recipe_sha256":"e7912b3f22ae441ba63f50a9db3f37b029c7a9dfe841150cb8966ab68284ab04","registry_activation_hash":"4eb7eb006207aaf2752a2fd1ea3e02800049170f87c17f044bde75d9a734eb2a"}
+E0_METADATA {"id":"R4c-10","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-10","head":"03beee283885aa397250828decc0f5013809dda2","tree":"9de66e624a2b8664426af80de83b3ed0e69b4b30","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R4c-10.json","recipe_sha256":"b280893840d6b9a8c94bc58cba870d13294e085e6fea35c12dda139b5f3e887f","registry_activation_hash":"4eb7eb006207aaf2752a2fd1ea3e02800049170f87c17f044bde75d9a734eb2a"}
 
 E0_STEP {"id":"R4c-10","kind":"baseline","name":"hint-spill selection test baseline","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","latest_hint_then_older_free_precedes_fresh","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test latest_hint_then_older_free_precedes_fresh .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.95s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.92s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-065cb8d46fff9c1d)
@@ -22,14 +22,14 @@ E0_STEP {"id":"R4c-10","kind":"mutant","name":"release hint publication removed 
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.96s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-065cb8d46fff9c1d)
 
 running 1 test
 
-thread 'latest_hint_then_older_free_precedes_fresh' (9957) panicked at tests/registry_basic.rs:235:5:
+thread 'latest_hint_then_older_free_precedes_fresh' (10223) panicked at tests/registry_basic.rs:235:5:
 assertion `left == right` failed: latest hint must reuse B
   left: 2
  right: 1
@@ -41,13 +41,13 @@ Caused by:
   process didn't exit successfully: `/home/runner/work/sefer-alloc/sefer-alloc/target/debug/deps/registry_basic-065cb8d46fff9c1d latest_hint_then_older_free_precedes_fresh --exact --nocapture` (signal: 6, SIGABRT: process abort signal)
 
 E0_STEP_END {"code":101,"signal":null,"error":null}
-E0_METADATA {"id":"R4c-10","kind":"restored","sha256":"4ffeab0c3ea67d8bce081a5eecc0dfaf71abc726878821f619c28666e5797513"}
+E0_METADATA {"id":"R4c-10","kind":"restored","sha256":"93b027508603fb6e93087ec7f19f2d83a7c4da1db0025355cd57e211d5c84c4a"}
 
 E0_STEP {"id":"R4c-10","kind":"restored-baseline","name":"hint-spill selection test baseline","argv":["cargo","test","--locked","--features","alloc-global internals","--test","registry_basic","latest_hint_then_older_free_precedes_fresh","--","--exact","--nocapture"],"env":{},"expect":{"exit":0,"stdoutRegex":["test latest_hint_then_older_free_precedes_fresh .* ok","test result: ok\\. 1 passed; 0 failed"]}}
 [1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
 [1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
 [1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.97s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.96s
 [1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 [1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
 [1m[92m     Running[0m tests/registry_basic.rs (target/debug/deps/registry_basic-065cb8d46fff9c1d)
