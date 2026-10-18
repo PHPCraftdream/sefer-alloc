@@ -1,0 +1,145 @@
+name: mt-bench
+
+# R6-B1: multi-thread macro-bench harness for the SeferAlloc throughput
+# collapse investigation (docs/perf/BENCH_COMPACT_ROUND6_BASE_VS_HEAD_2026-10-18.md,
+# section "B1"): runs examples/malloc_macro (SeferAlloc vs mimalloc vs System,
+# larson + mstress sweeps over T = 1/2/4) on GitHub runners, because local
+# builds on the owner machine are forbidden (disk wear) and a 10x-100x gap is
+# visible even on shared CI VMs.
+#
+# Two ways to run:
+# - pull_request: add the `mt-bench` label to a PR (re-runs on synchronize and
+#   reopened while the label is set). This is the PRIMARY path.
+# - workflow_dispatch: manual run from the Actions tab. NOTE: the dispatch
+#   trigger only appears once this file exists on the DEFAULT branch; until
+#   then, label-gated PR runs are the only way to start this workflow.
+#
+# Least privilege (mirrors r20-gates.yml / ci.yml SEC-4): contents: read is
+# sufficient - the job never pushes, never comments on the PR; actions/
+# upload-artifact uses its own scoped backend and needs no extra token scope.
+# No secrets are read or required.
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  # Per-PR (per-run for dispatch): concurrent bench runs must queue, not
+  # trample each other's measurements.
+  group: mt-bench-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  mt-bench:
+    name: malloc_macro (${{ matrix.os }}, ${{ matrix.features }})
+    # Only dispatch runs and PR runs explicitly labeled `mt-bench`.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'mt-bench')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        # One bash script for both Linux and Windows (Git Bash on windows-2022).
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+        # malloc_macro's required-features are alloc-global + alloc-xthread
+        # (Cargo.toml); `production` already contains both, and the `pinning`
+        # set makes the example print BOTH the pinned and the unpinned sweep.
+        features:
+          - 'alloc-global alloc-xthread'
+          - 'production'
+          - 'alloc-global alloc-xthread pinning'
+    steps:
+      # PR mode checks out the PR branch head (not the merge commit) so the
+      # measurement sees the candidate's own tree; on dispatch `ref:` is empty
+      # and the default (triggered ref) is used. persist-credentials: false so
+      # the checkout token never reaches the run environment (SEC-4 shape).
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      # Same stable toolchain as ci.yml.
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Runner passport: OS, toolchain, logical CPUs, measured HEAD. Also
+      # derives the artifact-name slug (spaces -> dashes) for this feature set.
+      - name: Runner passport
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: |
+          set -euo pipefail
+          cpus="$(nproc 2>/dev/null || printf '%s' "$NUMBER_OF_PROCESSORS")"
+          echo "FEATURES_SLUG=${FEATURES// /-}" >> "$GITHUB_ENV"
+          {
+            echo '```'
+            uname -a
+            rustc -Vv
+            cargo -V
+            echo "logical CPUs: $cpus"
+            echo "HEAD: $(git rev-parse HEAD)"
+            echo '```'
+          } | tee runner-passport.txt
+          {
+            echo '## mt-bench runner passport (${{ matrix.os }})'
+            echo ''
+            cat runner-passport.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Two sequential runs: run 2 is the noise estimate (build cache warm).
+      # `shell: bash` steps run with -eo pipefail, so cargo's exit code (via
+      # tee) fails the step - it is not suppressed.
+      - name: Run malloc_macro (run 1)
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: |
+          set -euo pipefail
+          echo "::group::cargo run --release --example malloc_macro --features \"$FEATURES\" (run 1)"
+          cargo run --release --example malloc_macro --features "$FEATURES" 2>&1 | tee malloc_macro_run1.log
+          echo "::endgroup::"
+
+      - name: Run malloc_macro (run 2)
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: |
+          set -euo pipefail
+          echo "::group::cargo run --release --example malloc_macro --features \"$FEATURES\" (run 2)"
+          cargo run --release --example malloc_macro --features "$FEATURES" 2>&1 | tee malloc_macro_run2.log
+          echo "::endgroup::"
+
+      - name: Summarize runs
+        if: ${{ !cancelled() }}
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## malloc_macro (${{ matrix.os }})"
+            echo ''
+            echo "features: ${FEATURES}"
+            for f in malloc_macro_run1.log malloc_macro_run2.log; do
+              echo ''
+              echo "### $f"
+              echo ''
+              echo '```'
+              cat "$f" 2>/dev/null || echo '(missing: the run failed before producing output)'
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs and passport
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: mt-bench-${{ matrix.os }}-${{ env.FEATURES_SLUG }}
+          path: |
+            malloc_macro_run1.log
+            malloc_macro_run2.log
+            runner-passport.txt
+          if-no-files-found: warn
+          retention-days: 30
