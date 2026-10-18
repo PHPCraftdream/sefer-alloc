@@ -257,6 +257,31 @@ collapsed runs B: 0/50 (any SeferAlloc MT cell < 10 M ops/s)
 
 CI: miri не требуется (доступ к памяти тот же — чтения `base_at`/заголовков/бинов, что и в существующем скане); loom не требуется (состояние только у владельца, новых атомиков нет); iai A/B — gate-run на PR.
 
+### 11.7 iai A/B на CI (детерминированный судья)
+
+Вход: `benches/perf_gate_iai.rs`, фичи `production bench-internals internals`, Linux CI (run `39172092170`, r20-gates). A = main `d87217e5`, B = `a42d3477` (PR #76: фиксы §4 + курсор §11 + оптимизация холодного пути курсора). Полный CSV — `docs/perf/B4_CURSOR_IAI_AB_summary.csv`; таблица — `node scripts/r6_gate_table.mjs docs/perf/B4_CURSOR_IAI_AB_summary.csv <ячейки>`:
+
+| cell | A Ir | B Ir | delta Ir | delta / A |
+|---|---:|---:|---:|---:|
+| `r19_prf01_publication` | 3621967 | 147961 | -3474006 | -3474006 / 3621967 = -95.91 % |
+| `seg_cycle_decommit_256k` | 10361239 | 1642601 | -8718638 | -8718638 / 10361239 = -84.15 % |
+| `multiseg_cold_256k` | 3389467 | 1523917 | -1865550 | -1865550 / 3389467 = -55.04 % |
+| `growth16_n` | 19266762 | 18772699 | -494063 | -494063 / 19266762 = -2.56 % |
+| `growth16_2n` | 48975180 | 46938461 | -2036719 | -2036719 / 48975180 = -4.16 % |
+| `growth16_4n` | 139849443 | 131581684 | -8267759 | -8267759 / 139849443 = -5.91 % |
+| `r19_prf01_joined_producer_same_word` | 1437733 | 1445925 | +8192 | +8192 / 1437733 = 0.57 % |
+| `carve_batch_only_16b` | 2749 | 2757 | +8 | +8 / 2749 = 0.29 % |
+| `cold_alloc_only_256x16b` | 101546 | 101767 | +221 | +221 / 101546 = 0.22 % |
+| `cold_alloc_only_256x16b_4n` | 283484 | 283933 | +449 | +449 / 283484 = 0.16 % |
+| `cold_alloc_free_256x16b` | 135985 | 136206 | +221 | +221 / 135985 = 0.16 % |
+| `dealloc_free_only_1088_16b_n17` | 294642 | 295082 | +440 | +440 / 294642 = 0.15 % |
+| `small_churn_16b` | 53604 | 53636 | +32 | +32 / 53604 = 0.06 % |
+| `alloc_magazine_hit_only_16b` | 53186 | 53218 | +32 | +32 / 53186 = 0.06 % |
+
+cells: 106; delta > 0: 63; delta < 0: 13; delta = 0: 30
+
+Разбор ухудшений: `r19_prf01_joined_producer_same_word` +8192 Ir = 4096 публикаций × 2 Ir — счётчик `B4_FOREIGN_PUBLISH_OK` под `bench-internals` (та же дельта была в A/B без курсора, §10; в `production` его нет). Холодные ячейки +0.15…0.22 % и константа +32 Ir в горячих ячейках — цена курсора после оптимизации (первый прогон до неё давал +0.75 % в холодных ячейках; атрибуция — callgrind в WSL, см. коммит `a42d3477`). Вердикт: GO — выигрыш `r19_prf01_publication` −95.9 %, `seg_cycle_decommit_256k` −84.1 %, `multiseg_cold_256k` −55.0 %, `growth16_*` −2.6…−5.9 %, плюс устранение коллапса (§11.6).
+
 ## Идентификация (R29-6, форма 4)
 
 - База: коммит `114eb41aa2a2c9bedeb1e5d362ac507eb315f676` + рабочее дерево данной задачи. Изменённые файлы по `git diff --stat` относительно базы: `.github/workflows/ci.yml`, `Cargo.toml`, `examples/b4_collapse_probe.rs`, `scripts/loom.mjs`, `scripts/verify-dbg-hook-safety.mjs`, `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/small/alloc_core_small/find_segment.rs`, `src/registry/segment_route/shard_lock.rs`, `tests/b4_scan_zero_word_skip_keeps_bits.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/r6_sidecar_bitmap.rs`; новые `tests/b4_find_segment_bin_head_gates_drain.rs`, `tests/b4_scan_rmw_zero_word_skips_swap.rs`, плюс документы/CSV/логи этой задачи (`docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md`, `docs/perf/B4_MT_COLLAPSE_DIAGNOSIS_summary.csv`, `docs/perf/_raw_b4_*.log`, `scripts/b4_collapse_summary.mjs`).
