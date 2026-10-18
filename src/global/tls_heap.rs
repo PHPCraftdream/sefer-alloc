@@ -305,7 +305,7 @@ pub enum CurrentHeap {
 /// avoid a redundant `fallback::heap_ptr()` comparison (which would
 /// needlessly initialise the fallback on every alloc).
 ///
-/// Under `alloc-decommit`, [`current_for_alloc_with_config`] is used
+/// Under `alloc-decommit`, `current_for_alloc_with_config` is used
 /// instead (it threads the config into the TLS bind). This function is
 /// kept for `not(alloc-decommit)` builds and direct-API consumers.
 #[cfg_attr(feature = "alloc-decommit", allow(dead_code))]
@@ -428,13 +428,13 @@ pub(crate) fn current_for_alloc_with_config(
 /// is no tcache/pool/cache state to trim), so speculatively claiming a fresh
 /// registry slot just to immediately trim it empty would only waste a slot.
 ///
-/// Same `LOCAL`-read shape as [`current_for_alloc`]/[`current_for_dealloc`],
+/// Same `LOCAL`-read shape as [`current_for_alloc`]/`current_for_dealloc`,
 /// but ALL three "no live own-thread heap" cases — `null` (never bound),
 /// `TORN` (this thread's `AbandonGuard` already recycled its slot), and
 /// `Err` (TLS destroyed) — map to `None`. **Never calls
 /// `bind_slow_tagged` and never resolves the fallback pointer**: unlike
 /// [`current_for_alloc`] (whose `null` arm binds) and unlike
-/// [`current_for_dealloc`] (whose bind-less arm still routes a live
+/// `current_for_dealloc` (whose bind-less arm still routes a live
 /// pointer through cross-thread free-routing), this resolver's whole
 /// contract is "tell me only what already exists, touch nothing new."
 ///

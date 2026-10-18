@@ -112,7 +112,7 @@ pub enum LargeCachePolicy {
     /// The `production` default: `256 MiB` headroom
     /// ([`LargeCacheConfig::DEFAULT`]'s own value, unchanged). Selecting
     /// this on the large-cache axis while opting into
-    /// [`SmallPoolPolicy::Throughput`] on the small-pool axis is exactly how
+    /// [`SmallPoolPolicy::Throughput`](crate::SmallPoolPolicy::Throughput) on the small-pool axis is exactly how
     /// defect #2 (R31-9, task #473) is fixed: the two axes are independent,
     /// so choosing a small-pool win no longer silently narrows the
     /// large-cache window as a package deal the way the old bundled
