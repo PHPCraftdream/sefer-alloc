@@ -3,6 +3,34 @@
 Core instructions, mandatory for all code in this repository. They
 **override** default behavior.
 
+## Compilation, tests, builds: GitHub CI by default
+
+- **Never start a build, test, benchmark or any other code-generating or
+  executing run locally unless the user explicitly asks for it in the current
+  request.** This covers `cargo build`/`test`/`bench`/`run`/`doc`, `npm run
+  check`, `npm run bench:table`, `npm run iai`, example and bench binaries,
+  miri, loom, sanitizers and `cargo-hack`. By default all of it runs on
+  GitHub CI: push the branch (when the user has asked for a push), open a PR,
+  and read the result from CI (`gh run`, the jobs API).
+- **Allowed locally without a request: only checks that build nothing and
+  run nothing** — `cargo check`, `cargo clippy`, `cargo fmt` / `rustfmt`,
+  and repo scripts that do not invoke cargo (e.g. `scripts/verify-*.mjs`).
+  `npm run check` is NOT in this set: it runs `cargo test` and `npm run
+  iai`, so it runs on GitHub CI like everything else.
+- **An explicit request authorizes exactly the run it names** ("run the
+  benchmarks" is not permission to also build or test anything else).
+- **Sub-agents follow the same rule, and their prompt must spell it out
+  explicitly:** the full list of forbidden commands (build, test, bench, run,
+  doc, miri, `npm run check`, ...) AND the full list of allowed ones (`cargo
+  check`, `cargo clippy`, `cargo fmt`, cargo-free scripts, read-only git/`gh`)
+  — an agent does not infer either list from this file. Builds, tests and
+  benchmarks run only on GitHub CI; zero-trust review of their work reads the
+  diff and the CI result and does not rebuild locally.
+- **This section overrides any other rule in this file that says to run,
+  re-run or refresh a test, build or benchmark** — those rules still define
+  *what* must be verified, but the run itself needs the user's request or
+  happens on CI.
+
 ## File and module structure
 
 - **One file — one export.** Each source file defines exactly one public item
@@ -165,15 +193,16 @@ Core instructions, mandatory for all code in this repository. They
   for the full criterion-by-criterion breakdown and the table.
 - **Every phase is delivered with tests** — code without tests is not considered
   a completed phase.
-- **Between phases: run tests and commit.** Before moving to the next phase,
-  run `cargo test` (and miri/loom where applicable), confirm everything is
-  green, and commit that phase. These are explicitly sanctioned commits between
+- **Between phases: confirm tests are green and commit.** Before moving to the
+  next phase, confirm everything is green (tests, miri/loom where applicable —
+  on GitHub CI, see "Compilation, tests, builds" above; no local `cargo test`
+  without the user's request), and commit that phase. These are explicitly sanctioned commits between
   phases (the general prohibition "do not commit without being asked" is lifted
   by the user for phase boundaries). Push — only on a separate explicit request.
 - **After each phase — ZERO-TRUST review.** Before committing a phase
   (especially if the code was written by a sub-agent): personally read the
-  entire diff line by line; rerun the tests yourself (do not trust the agent's
-  claim "tests passed"); verify the tests are not vacuous (would they fail
+  entire diff line by line; check the CI result yourself (do not trust the
+  agent's claim "tests passed"; no local rerun without the user's request); verify the tests are not vacuous (would they fail
   without the fix — counterfactual); run an adversarial audit by rust-intel
   categories (rust-cc-audit / code-review); look for out-of-scope edits,
   TODO/placeholder, half-wired features, and any new safe `pub fn` that
@@ -489,11 +518,19 @@ Core instructions, mandatory for all code in this repository. They
 - **Heavy/exhaustive runs (large N, many cases, CPU-hours of fuzz,
   multi-arch) — that is Phase 5 hardening**, not the everyday cycle.
 
-## Before every push: `npm run check`
+## Before every push: no-build checks locally, the full gate on CI
 
-- **Run `npm run check` before pushing, every time.** It runs the fast subset
-  of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all six
-  CI clippy rows (default / `experimental` / `--all-features` / `hardened
+- **Only no-build checks are allowed locally without an explicit user
+  request** — `cargo check`, `cargo clippy`, `cargo fmt` (see "Compilation,
+  tests, builds" above); everything else, `npm run check` included, runs on
+  GitHub CI.
+- **Before pushing, every time: run `cargo fmt --check` and `cargo check`,
+  plus `cargo clippy -D warnings` on the feature rows the change touches; do
+  not run `npm run check` locally.** For reference, `npm run check`
+  (`scripts/check-all.mjs`) is the fast subset of what CI runs, and CI is
+  where that coverage now executes — `cargo fmt --check`, `clippy -D
+  warnings` across all six CI clippy rows (default / `experimental` /
+  `--all-features` / `hardened
   medium-classes internals` / `production` / `production internals` —
   GENERATED from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` since R30-5/task
   #454, not hand-written; byte-identical to ci.yml's clippy job, pinned by
@@ -503,20 +540,21 @@ Core instructions, mandatory for all code in this repository. They
   `--all-features` — there is no bare `--features production` test step;
   `production` alone appears only as a clippy row above), then
   `npm run iai` (the deterministic judge) — and fails fast at the first red
-  step (`scripts/check-all.mjs`). It does NOT replace CI (CI additionally runs
-  miri, loom, TSan, multi-arch, no_std, MSRV) but it catches the most common
-  drift class before a push, not after.
+  step (`scripts/check-all.mjs`). CI additionally runs miri, loom, TSan,
+  multi-arch, no_std, MSRV. Locally only the no-build checks guard a push; the
+  rest of the drift class is caught by the per-PR CI jobs right after it.
 - **Why this rule exists:** a push in this session shipped 17 commits with a
   red CI (rustfmt drift accumulated across several phases, plus two CI
   workflow jobs still pointing at test files/features deleted by an earlier
   task) — discovered only by watching the Actions run *after* pushing.
-  `npm run check` is the command that would have caught all of it first.
-- **Then confirm CI went green — do not assume it.** `npm run check` and CI
-  are NOT identical: CI additionally runs miri/loom/TSan/multi-arch/no_std/MSRV
+  The per-PR CI jobs (the content of `npm run check`) catch all of it: watch
+  them after the push.
+- **Then confirm CI went green — do not assume it.** The per-PR jobs and the
+  full CI are NOT identical: CI additionally runs miri/loom/TSan/multi-arch/no_std/MSRV
   on a toolchain and OS this repo does NOT pin (there is no
-  `rust-toolchain.toml`), so a clean local run can still go red in CI for
-  reasons the local gate cannot reproduce. The local gate is the *first* line
-  of defense; CI is the *last*. After every push, confirm CI ran green on
+  `rust-toolchain.toml`), so a clean local check can still go red in CI for
+  reasons the local gate cannot reproduce. The local no-build checks are the
+  *first* line of defense; CI is the *last*. After every push, confirm CI ran green on
   the **landing SHA** — the SHA that actually appeared on GitHub's `main`
   after the push, NOT the commit you created locally before pushing. Read
   it from the remote, not from your local HEAD: `git fetch && git rev-parse
