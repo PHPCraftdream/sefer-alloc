@@ -506,7 +506,8 @@ fn run_pass(
                 mstress_worker(
                     &alloc,
                     sd,
-                    cfg.steps,
+                    // Rounds, as in malloc_bench_rs: steps / blocks + 1.
+                    cfg.steps / cfg.mb.max(1) + 1,
                     cfg.mb,
                     &senders,
                     &rx,
