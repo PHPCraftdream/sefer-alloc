@@ -1,0 +1,249 @@
+//! Per-thread route pin cache for the foreign-free terminal-publication path.
+//!
+//! What is cached: a per-thread direct-mapped array of
+//! `base -> (pinned Entry descriptor, incarnation)` pairs. Only Small and
+//! Primordial NON-fallback routes are ever inserted, so the hot path
+//! publishes small directly without reading `kind()`.
+//!
+//! Why the pin can be held long-term: a route's `Entry` descriptor and its
+//! sidecar are independent System allocations that survive the release of the
+//! segment reservation they describe (see `routing.rs`'s existing comment on
+//! the foreign path). Holding a counted `RoutePin` therefore keeps the
+//! descriptor + sidecar bytes alive after the segment is gone, which is
+//! exactly what the cache relies on. The cache never keeps the segment
+//! RESERVATION itself alive — only the directory descriptor and sidecar.
+//!
+//! Safety protocol: a cached pin publishes only after `linked()` (an Acquire
+//! load of `Entry::linked`) observes the route still linked. The flag is
+//! cleared under the shard lock in `RouteDirectory::remove` before the unlink
+//! and the owner-reference drop, so observing `linked == true` means the
+//! single pending RMW on the sidecar can still be the route's terminal
+//! publication; the pin's references keep the sidecar alive in the meantime.
+//!
+//! Thread exit: the `thread_local!` `Drop` releases every retained pin count
+//! through the existing `EntryHandle::drop` protocol (`refs.fetch_sub`), the
+//! ONLY release path — no new refcount code exists here.
+#![allow(unsafe_code)]
+use crate::registry::segment_route::RoutePin;
+use core::cell::RefCell;
+
+const PIN_CACHE_SLOTS: usize = 4;
+
+struct PinCacheSlot {
+    base: usize,
+    incarnation: u64,
+    pin: Option<RoutePin>,
+}
+
+struct PinCache {
+    slots: [PinCacheSlot; PIN_CACHE_SLOTS],
+    next_victim: usize,
+}
+
+impl PinCache {
+    const EMPTY: Self = Self {
+        slots: [const {
+            PinCacheSlot {
+                base: 0,
+                incarnation: 0,
+                pin: None,
+            }
+        }; PIN_CACHE_SLOTS],
+        next_victim: 0,
+    };
+}
+
+impl Drop for PinCache {
+    fn drop(&mut self) {
+        PIN_CACHE_THREAD_RELEASES.fetch_add(
+            self.slots.iter().filter(|slot| slot.pin.is_some()).count() as u64,
+            core::sync::atomic::Ordering::Relaxed,
+        );
+    }
+}
+
+thread_local! {
+    static CACHE: RefCell<PinCache> = const { RefCell::new(PinCache::EMPTY) };
+}
+
+// Test/diagnostic-only counters. Statics are always compiled, but increments
+// exist only under `internals ∧ bench-internals` (measurement-only, the
+// `LOCAL_REJECT_FREES` convention): a plain `production` build pays nothing
+// on the hot path. Relaxed: diagnostic only.
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static PIN_CACHE_HITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static PIN_CACHE_MISSES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static PIN_CACHE_INSERTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static PIN_CACHE_EVICTIONS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static PIN_CACHE_UNLINK_FALLBACKS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg_attr(
+    not(all(feature = "internals", feature = "bench-internals")),
+    allow(dead_code)
+)]
+pub(crate) static PIN_CACHE_THREAD_RELEASES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+macro_rules! count {
+    ($counter:expr) => {
+        $counter.fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+    };
+}
+#[cfg(not(all(feature = "internals", feature = "bench-internals")))]
+macro_rules! count {
+    ($counter:expr) => {};
+}
+
+/// Outcome of a cached-pin publication attempt.
+pub(crate) enum CachedPublication {
+    /// Published (or the sidecar RMW rejected the publication).
+    Published(bool),
+    /// No usable cached pin; the caller must run the uncached path.
+    Miss,
+}
+
+/// Fast path: publish `ptr` through a cached pin for its segment base, if a
+/// still-linked route is cached. Never panics and never allocates; TLS
+/// unavailability or a reentrant borrow degrades to [`CachedPublication::Miss`].
+pub(crate) fn publish_cached(ptr: *mut u8) -> CachedPublication {
+    let addr = ptr.addr();
+    let base = addr & !(crate::alloc_core::os::SEGMENT - 1);
+    CACHE
+        .try_with(|cell| {
+            let Ok(mut cache) = cell.try_borrow_mut() else {
+                return CachedPublication::Miss;
+            };
+            let Some(slot) = cache
+                .slots
+                .iter_mut()
+                .find(|slot| slot.pin.is_some() && slot.base == base)
+            else {
+                count!(PIN_CACHE_MISSES);
+                return CachedPublication::Miss;
+            };
+            if let Some(pin) = slot.pin.as_ref() {
+                if !pin.linked() {
+                    // The route was unlinked; release the dead pin immediately
+                    // (taking it out drops it via the existing EntryHandle
+                    // protocol) and fall back to a fresh lookup.
+                    count!(PIN_CACHE_UNLINK_FALLBACKS);
+                    slot.pin = None;
+                    count!(PIN_CACHE_MISSES);
+                    return CachedPublication::Miss;
+                }
+                if pin.incarnation() != slot.incarnation {
+                    // Defense in depth; the field is immutable so this never
+                    // fires today.
+                    slot.pin = None;
+                    count!(PIN_CACHE_MISSES);
+                    return CachedPublication::Miss;
+                }
+                if !pin.span_contains_addr(addr) {
+                    // The fresh lookup path re-derives the same verdict and
+                    // counts its own drop, so no extra counting here.
+                    count!(PIN_CACHE_MISSES);
+                    return CachedPublication::Miss;
+                }
+                let offset = (addr - base) as u32;
+                // SAFETY: the caller transfers the current issued allocation
+                // once — identical to `publish_foreign`'s contract; address
+                // lookup alone does not establish ownership.
+                let published = unsafe { pin.publish_small_borrowed(offset) };
+                count!(PIN_CACHE_HITS);
+                return CachedPublication::Published(published);
+            }
+            count!(PIN_CACHE_MISSES);
+            CachedPublication::Miss
+        })
+        .unwrap_or(CachedPublication::Miss)
+}
+
+/// Insert a freshly looked-up pin for `base` into the cache. Slots only ever
+/// hold Small/Primordial NON-fallback routes (enforced by the caller).
+/// On TLS unavailability or a reentrant borrow the pin is simply dropped
+/// (releasing its references through the existing protocol).
+pub(crate) fn cache_insert(pin: RoutePin, base: usize, incarnation: u64) {
+    let inserted = CACHE.try_with(|cell| {
+        let Ok(mut cache) = cell.try_borrow_mut() else {
+            return Err(pin);
+        };
+        if let Some(slot) = cache.slots.iter_mut().find(|slot| slot.base == base) {
+            if slot.pin.take().is_some() {
+                count!(PIN_CACHE_EVICTIONS);
+            }
+            slot.incarnation = incarnation;
+            slot.pin = Some(pin);
+        } else {
+            let victim = cache.next_victim;
+            cache.next_victim = (victim + 1) % PIN_CACHE_SLOTS;
+            let slot = &mut cache.slots[victim];
+            if slot.pin.take().is_some() {
+                count!(PIN_CACHE_EVICTIONS);
+            }
+            slot.base = base;
+            slot.incarnation = incarnation;
+            slot.pin = Some(pin);
+        }
+        count!(PIN_CACHE_INSERTS);
+        Ok(())
+    });
+    // TLS unavailable: `Err` carries the pin; dropping it here releases its
+    // references through the existing EntryHandle protocol.
+    drop(inserted);
+}
+
+/// Drop any cached pin for `base` (the caller's fresh lookup already counted
+/// its own MISS for this address).
+pub(crate) fn cache_evict(base: usize) {
+    let _ = CACHE.try_with(|cell| {
+        let Ok(mut cache) = cell.try_borrow_mut() else {
+            return;
+        };
+        if let Some(slot) = cache
+            .slots
+            .iter_mut()
+            .find(|slot| slot.base == base && slot.pin.is_some())
+        {
+            slot.pin = None;
+            count!(PIN_CACHE_EVICTIONS);
+        }
+    });
+}
+
+/// Test/diagnostic totals of the per-thread route pin cache.
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
+pub(crate) fn dbg_totals() -> (u64, u64, u64, u64, u64, u64) {
+    use core::sync::atomic::Ordering::Relaxed;
+    (
+        PIN_CACHE_HITS.load(Relaxed),
+        PIN_CACHE_MISSES.load(Relaxed),
+        PIN_CACHE_INSERTS.load(Relaxed),
+        PIN_CACHE_EVICTIONS.load(Relaxed),
+        PIN_CACHE_UNLINK_FALLBACKS.load(Relaxed),
+        PIN_CACHE_THREAD_RELEASES.load(Relaxed),
+    )
+}
