@@ -377,11 +377,11 @@ impl LargeCacheConfig {
         self
     }
 
-    /// Build a config from a [`Profile`](crate::alloc_core::config::profile::Profile) — a small
+    /// Build a config from a [`Profile`](crate::alloc_core::config::policy::profile::Profile) — a small
     /// builder over two independent, named, measured axes
-    /// ([`SmallPoolPolicy`](crate::alloc_core::config::profile::SmallPoolPolicy) for the
-    /// small-pool pair, [`LargeCachePolicy`](crate::alloc_core::config::profile::LargeCachePolicy)
-    /// for the large-cache `headroom_bytes`). See [`Profile`](crate::alloc_core::config::profile::Profile)'s
+    /// ([`SmallPoolPolicy`](crate::alloc_core::config::policy::small_pool_policy::SmallPoolPolicy) for the
+    /// small-pool pair, [`LargeCachePolicy`](crate::alloc_core::config::policy::large_cache_policy::LargeCachePolicy)
+    /// for the large-cache `headroom_bytes`). See [`Profile`](crate::alloc_core::config::policy::profile::Profile)'s
     /// own docs for exactly what each axis sets and the measured gate reports
     /// (R27-3/R27-4/R30-6/R31-1/R31-2) each value is drawn from.
     ///
@@ -402,7 +402,7 @@ impl LargeCacheConfig {
     /// `decay_rate_percent`, `mode`) stays at its own built-in default —
     /// chain further setter calls on the result to override them.
     #[must_use]
-    pub const fn for_profile(profile: crate::alloc_core::config::profile::Profile) -> Self {
+    pub const fn for_profile(profile: crate::alloc_core::config::policy::profile::Profile) -> Self {
         profile.to_config()
     }
 

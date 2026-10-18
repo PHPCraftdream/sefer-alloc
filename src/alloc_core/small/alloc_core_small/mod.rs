@@ -15,23 +15,18 @@
 // declaration keeps its compiled-file set identical to when the code lived
 // directly in `alloc_core_small.rs` (same intrinsic-gate discipline as
 // `platform::numa`).
-#[path = "dealloc.rs"]
 mod dealloc;
 
 #[cfg(feature = "alloc-segment-directory")]
-#[path = "directory.rs"]
 mod directory;
 
-#[path = "find_segment.rs"]
 mod find_segment;
 
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 mod sidecar_drain_outcome;
 
-#[path = "reserve.rs"]
 mod reserve;
 
-#[path = "alloc_core_small_impl.rs"]
 mod alloc_core_small_impl;
 #[allow(unused_imports)]
 pub(crate) use alloc_core_small_impl::*;

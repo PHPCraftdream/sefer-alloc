@@ -1,4 +1,5 @@
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL};
+use crate::alloc_core::segment_layout::word_bit;
 use crate::alloc_core::segment_table::{SegmentTable, MAX_SEGMENTS};
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
@@ -443,8 +444,7 @@ impl SegmentDirectory {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let nb = self.node_bucket_mut(node_id);
-        let word = slot_idx / 64;
-        let bit = slot_idx % 64;
+        let (word, bit) = word_bit(slot_idx);
         let mask = 1u64 << bit;
         let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
         // R13-2: only `numa-aware` maintains the active-bit counter (there is
@@ -490,8 +490,7 @@ impl SegmentDirectory {
         let nb = self.node_bucket_mut(node_id);
         #[cfg(feature = "numa-aware")]
         let nb = self.node_bucket(node_id);
-        let word = slot_idx / 64;
-        let bit = slot_idx % 64;
+        let (word, bit) = word_bit(slot_idx);
         let mask = 1u64 << bit;
         let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
         #[cfg(feature = "numa-aware")]
@@ -534,8 +533,7 @@ impl SegmentDirectory {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let nb = self.node_bucket(node_id);
-        let word = slot_idx / 64;
-        let bit = slot_idx % 64;
+        let (word, bit) = word_bit(slot_idx);
         (self.class_nonempty_by_node[nb][class_idx][word] >> bit) & 1 != 0
     }
 
@@ -557,8 +555,8 @@ impl SegmentDirectory {
     pub(crate) fn clear_bit_all_nodes(&mut self, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
-        let word = slot_idx / 64;
-        let mask = !(1u64 << (slot_idx % 64));
+        let (word, bit) = word_bit(slot_idx);
+        let mask = !(1u64 << bit);
         for nb in 0..NODE_BITMAPS {
             let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
             #[cfg(feature = "numa-aware")]
@@ -596,8 +594,8 @@ impl SegmentDirectory {
     #[inline]
     pub(crate) fn clear_slot(&mut self, slot_idx: usize) {
         debug_assert!(slot_idx < MAX_SEGMENTS);
-        let word = slot_idx / 64;
-        let mask = !(1u64 << (slot_idx % 64));
+        let (word, bit) = word_bit(slot_idx);
+        let mask = !(1u64 << bit);
         for nb in 0..NODE_BITMAPS {
             for c in 0..SMALL_CLASS_COUNT {
                 let cell = &mut self.class_nonempty_by_node[nb][c][word];

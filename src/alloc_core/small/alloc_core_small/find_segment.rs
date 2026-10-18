@@ -9,7 +9,7 @@ use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta,
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 use crate::alloc_core::segment_header::Layout as SegLayout;
 #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::size_classes::MIN_BLOCK;
+use crate::alloc_core::segment_layout::SIDECAR_WORD_BYTES;
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::fatal::fatal;
@@ -154,7 +154,7 @@ impl AllocCore {
         } else {
             SegLayout::small_meta_end()
         };
-        payload_start / (MIN_BLOCK * 64)
+        payload_start / SIDECAR_WORD_BYTES
     }
 
     /// Consume one canonical Small root, dropping every cut and route borrow
@@ -169,7 +169,7 @@ impl AllocCore {
         let index = SegmentHeader::segment_id_at(base) as usize;
         let high_water = SegmentMeta::new(base).bump_of();
         // Patch S: start at the payload's first word, not word 0.
-        let end_word = high_water.div_ceil(MIN_BLOCK * 64);
+        let end_word = high_water.div_ceil(SIDECAR_WORD_BYTES);
         let start_word = Self::sidecar_payload_start_word(base).min(end_word);
         let (changed_classes, _reclaimed) = {
             let scan = self.scan_small_route_or_fatal(

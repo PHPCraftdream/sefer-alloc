@@ -143,13 +143,13 @@ static LOCK: AtomicBool = AtomicBool::new(false);
 #[cfg_attr(not(feature = "internals"), allow(dead_code))]
 #[must_use]
 #[cfg(feature = "alloc-decommit")]
-pub fn heap_ptr() -> *mut HeapCore {
+pub(crate) fn heap_ptr() -> *mut HeapCore {
     heap_ptr_impl(FallbackInitContext { config: None })
 }
 
 #[must_use]
 #[cfg(not(feature = "alloc-decommit"))]
-pub fn heap_ptr() -> *mut HeapCore {
+pub(crate) fn heap_ptr() -> *mut HeapCore {
     heap_ptr_impl(FallbackInitContext::default())
 }
 
@@ -218,7 +218,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
             }
             // R12-04: test-only hold — keeps the winner inside INITIALIZING so
             // losers deterministically reach the wait loop below.
-            #[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+            #[cfg(all(feature = "internals", feature = "bench-internals"))]
             while DBG_HOLD_FALLBACK_INIT.load(Ordering::Acquire) {
                 std::thread::yield_now();
             }
@@ -327,14 +327,11 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
                     record_exit_lock_giveup();
                     return core::ptr::null_mut();
                 }
-                #[cfg(feature = "std")]
                 {
                     #[cfg(all(feature = "internals", feature = "bench-internals"))]
                     DBG_FALLBACK_INIT_WAIT_YIELDS.fetch_add(1, Ordering::Relaxed);
                     std::thread::yield_now();
                 }
-                #[cfg(not(feature = "std"))]
-                core::hint::spin_loop();
             }
         }
     }
@@ -351,7 +348,7 @@ fn heap_ptr_impl(_context: FallbackInitContext) -> *mut HeapCore {
 // `try_with_heap`; the plain forms serve the `not(alloc-decommit)` arm and
 // the internals probes.
 #[cfg_attr(not(feature = "internals"), allow(dead_code))]
-pub fn with_heap<F, R>(f: F) -> Option<R>
+pub(crate) fn with_heap<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HeapCore) -> R,
 {
@@ -505,10 +502,7 @@ impl LockGuard {
     /// continuing to spin on `core::hint::spin_loop()` alone — that hint is a
     /// CPU-level pause (e.g. `PAUSE`), not an OS-level yield, so it never
     /// gives the scheduler a chance to run whichever thread currently holds
-    /// the lock. `#[cfg(not(feature = "std"))]` keeps this fn buildable
-    /// without `std` (this module's rest is already `std`-free); without
-    /// `std` there is no better primitive than the tight spin, so it
-    /// continues unconditionally in that configuration. TTAS + bounded
+    /// the lock. TTAS + bounded
     /// exponential backoff keep failed attempts off the RMW line; the exit
     /// probe is thinned to once per `EXIT_PROBE_YIELD_ROUNDS` yields.
     fn acquire() -> Option<Self> {
@@ -541,10 +535,7 @@ impl LockGuard {
                         record_exit_lock_giveup();
                         return None;
                     }
-                    #[cfg(feature = "std")]
                     std::thread::yield_now();
-                    #[cfg(not(feature = "std"))]
-                    core::hint::spin_loop();
                 }
             }
         }
@@ -650,7 +641,7 @@ impl Drop for InitStateGuard {
 /// lock were wedged the second `with_heap` would hang here (the test wraps this
 /// in its own bounded watchdog thread, so a regression surfaces as a timeout
 /// rather than a literal forever-hang).
-#[cfg(all(feature = "std", feature = "internals"))]
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
@@ -782,7 +773,7 @@ pub fn dbg_init_state() -> u8 {
 /// in its own bounded watchdog thread, so a regression surfaces as a timeout
 /// rather than a literal forever-hang) — exactly mirroring
 /// [`dbg_panic_in_with_heap_releases_lock`]'s structure one function above.
-#[cfg(all(feature = "std", feature = "internals"))]
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_panic_in_fallback_init_rolls_back() -> bool {
@@ -815,18 +806,18 @@ pub fn dbg_panic_in_fallback_init_rolls_back() -> bool {
 }
 
 /// R12-04: test-only hold of the fallback-init winner inside `INITIALIZING`.
-#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 static DBG_HOLD_FALLBACK_INIT: AtomicBool = AtomicBool::new(false);
 
 /// R12-04: `yield_now` calls made by losers waiting for the init winner.
-#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 static DBG_FALLBACK_INIT_WAIT_YIELDS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// `#[doc(hidden)]` test hook (R12-04) — not part of the public API. While set,
 /// the fallback-init winner stays inside `INITIALIZING` (after the CAS, before
 /// `HeapCore::new`). Process-global; the setter MUST clear it before returning.
-#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 #[doc(hidden)]
 pub fn dbg_set_hold_fallback_init(on: bool) {
     DBG_HOLD_FALLBACK_INIT.store(on, Ordering::SeqCst);
@@ -835,7 +826,7 @@ pub fn dbg_set_hold_fallback_init(on: bool) {
 /// `#[doc(hidden)]` test hook (R12-04) — not part of the public API. Number of
 /// `yield_now` calls losers made while waiting for the init winner: non-zero
 /// proves the wait loop yields to the scheduler past its tight-spin budget.
-#[cfg(all(feature = "std", feature = "internals", feature = "bench-internals"))]
+#[cfg(all(feature = "internals", feature = "bench-internals"))]
 #[doc(hidden)]
 #[must_use]
 pub fn dbg_fallback_init_wait_yields() -> u64 {

@@ -5,6 +5,8 @@
 
 use crate::alloc_core::alloc_core::AllocCore;
 use crate::alloc_core::directory_stats;
+#[cfg(feature = "alloc-segment-directory")]
+use crate::alloc_core::segment_layout::word_bit;
 
 /// Sol-F1 (task #563): `internals`-gated — every other `dbg_*` diagnostic
 /// hook in this file. See this file's module doc for the full rationale.
@@ -56,8 +58,8 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         {
             self.directory().map(|dir| {
-                let word = slot_idx / 64;
-                let bit_mask = 1u64 << (slot_idx % 64);
+                let (word, bit) = word_bit(slot_idx);
+                let bit_mask = 1u64 << bit;
                 (0..crate::alloc_core::segment_directory::NODE_BITMAPS)
                     .any(|nb| dir.class_nonempty_by_node[nb][class_idx][word] & bit_mask != 0)
             })
@@ -146,8 +148,8 @@ impl AllocCore {
         slot_idx: usize,
     ) -> Option<bool> {
         self.directory().map(|dir| {
-            let word = slot_idx / 64;
-            let bit_mask = 1u64 << (slot_idx % 64);
+            let (word, bit) = word_bit(slot_idx);
+            let bit_mask = 1u64 << bit;
             dir.class_nonempty_by_node[bucket][class_idx][word] & bit_mask != 0
         })
     }

@@ -40,22 +40,17 @@
 // Items carved into the `descriptors` / `layout_asserts` siblings are
 // re-flattened here so every one keeps its exact `segment_header::` path
 // (the original single-file module scope).
-#[path = "descriptors.rs"]
 mod descriptors;
 
-#[path = "layout_asserts.rs"]
 mod layout_asserts;
 
-#[path = "segment_header_impl.rs"]
 mod segment_header_impl;
 pub use segment_header_impl::*;
 
 /// Ph3b: the private physical-kind witness shared by the free entries.
-#[path = "block_kind.rs"]
 mod block_kind;
 pub(crate) use block_kind::BlockKind;
 
-#[path = "terminal_words.rs"]
 mod terminal_words;
 pub(crate) use terminal_words::*;
 #[cfg(feature = "internals")]

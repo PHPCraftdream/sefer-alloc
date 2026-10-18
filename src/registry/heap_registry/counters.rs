@@ -30,6 +30,13 @@ use crate::registry::heap_slot::{STATE_EMPTY, STATE_INITIALIZING};
 /// `claim_lease_with_config` does not exist).
 ///
 /// Relaxed ordering — diagnostic only, no synchronization obligation.
+// R6-T16: bumped under `alloc-decommit` (`claim_lease_with_config`) and read
+// by `config_conflicts_total` (live under `alloc-decommit` via `stats()` and
+// under `internals` for external diagnostics); suppressed where neither applies.
+#[cfg_attr(
+    not(any(feature = "alloc-decommit", feature = "internals")),
+    allow(dead_code)
+)]
 pub(super) static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 
 /// R1-10 (src review round 1): the fallback heap's own magazine (tcache) hit
@@ -81,6 +88,12 @@ pub fn heaps_claimed_high_water() -> u32 {
 /// See [`CONFIG_CONFLICTS`] for the full rationale. A plain relaxed atomic
 /// load — diagnostic only, no ordering obligation. Reads `0` in a build
 /// without `alloc-decommit` (where `claim_lease_with_config` does not exist).
+// R6-T16: read by `stats()` under `alloc-decommit`; external diagnostics
+// reach it under `internals`. Suppressed where neither applies.
+#[cfg_attr(
+    not(any(feature = "alloc-decommit", feature = "internals")),
+    allow(dead_code)
+)]
 #[doc(hidden)]
 #[must_use]
 pub fn config_conflicts_total() -> u64 {
@@ -479,6 +492,21 @@ pub fn dbg_slot_initialised(idx: u32) -> bool {
 pub fn dbg_bump_count_without_materialising() -> Option<u32> {
     let reg = ensure();
     super::stack::bump_count(reg).map(|idx| idx as u32)
+}
+
+/// Which selector produced a successful claim. The discriminants ARE the
+/// [`CLAIM_SOURCES`] array indices; `FreeSet` occupies the array's extra
+/// 5th slot so the `dbg_registry_claim_sources` observer keeps its
+/// `[u64; 4]` hint/bump/cap-scan/recovery shape.
+#[cfg(feature = "bench-internals")]
+#[repr(usize)]
+#[derive(Clone, Copy)]
+pub(super) enum ClaimSource {
+    Hint = 0,
+    Bump = 1,
+    CapScan = 2,
+    Recovery = 3,
+    FreeSet = 4,
 }
 
 // Measurement-only successful claim totals by source (hint, bump, cap scan,
