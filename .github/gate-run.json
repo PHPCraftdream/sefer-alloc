@@ -1,0 +1,1 @@
+{"runner":"scripts/r20_r6_ab_iai_run.mjs","stages":"prepare,build,oracle,measure","outDir":"target/r20r6ab-b4cursor","benchTarget":"perf_gate_iai","features":"production bench-internals internals","note":"B4 §11 class cursor: main vs branch, all cells"}
