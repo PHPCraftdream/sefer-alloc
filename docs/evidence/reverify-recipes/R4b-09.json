@@ -1,0 +1,62 @@
+{
+  "id": "R4b-09",
+  "registryActivationHash": "9a65177e83cefd54adae33fcabca79debec1a74bca2a7eb6133266b38a6169dd",
+  "steps": [
+    {
+      "name": "rollback LOCAL-before-drop source-pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production internals",
+        "--test",
+        "r11_ph4b_local_no_drop_pinned"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. ok",
+          "test result: ok\\. 3 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": {
+    "file": "src/global/tls_heap.rs",
+    "find": "        let _ = LOCAL.try_with(|c| c.set(core::ptr::null_mut()));\n        // Rollback: LOCAL := null BEFORE Drop lease (owner decision).\n        // HeapLease Drop: LIVE → FREE (Release). Allocates nothing, no TLS.\n        drop(lease);",
+    "replace": "        drop(lease);\n        let _ = LOCAL.try_with(|c| c.set(core::ptr::null_mut()));\n        // Rollback mutant R4b-09: release BEFORE unpublish (must trip the pin).",
+    "steps": [
+      {
+        "name": "rollback releases lease before unpublishing LOCAL mutant",
+        "env": {},
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--features",
+          "production internals",
+          "--test",
+          "r11_ph4b_local_no_drop_pinned",
+          "finish_bind_rollback_unpublishes_local_before_the_lease_drop",
+          "--",
+          "--exact",
+          "--nocapture"
+        ],
+        "expect": {
+          "exit": 101,
+          "stdoutRegex": [
+            "test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. FAILED"
+          ]
+        }
+      }
+    ],
+    "expect": {
+      "exitNonZero": true,
+      "stdoutRegex": [
+        "test finish_bind_rollback_unpublishes_local_before_the_lease_drop \\.\\.\\. FAILED"
+      ]
+    }
+  }
+}

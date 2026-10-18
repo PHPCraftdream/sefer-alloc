@@ -1,0 +1,27 @@
+{
+  "id": "R5b-18",
+  "registryActivationHash": "9330e5618f9d349d05abde5595087acfbd4efe17123ae0d4d77a2338d27e0028",
+  "steps": [
+    {
+      "name": "fallback OOM injection source-pin baseline",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread alloc-decommit internals bench-internals",
+        "--test",
+        "r11_ph5b_c6_fallback_oom"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

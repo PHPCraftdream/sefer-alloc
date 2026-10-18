@@ -1,0 +1,29 @@
+{
+  "id": "R4b-05",
+  "registryActivationHash": "33304f463626882dd23c5be038446f270ae4bebb729b07b9f2127c5126c69498",
+  "steps": [
+    {
+      "name": "default provenance (SB) re-run, no MIRIFLAGS",
+      "env": {},
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals",
+        "--test",
+        "r11_ph4b_lease_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test lease_teardown_lifecycle_same_thread_under_miri \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

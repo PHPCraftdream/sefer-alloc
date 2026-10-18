@@ -1,0 +1,31 @@
+{
+  "id": "R4c-04",
+  "registryActivationHash": "daf5b85ec9baa22ef0b2906a8f5166677a58babf05e9e0177ec4d51b8887da3e",
+  "steps": [
+    {
+      "name": "strict provenance re-acceptance",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "alloc-global alloc-xthread internals",
+        "--test",
+        "r11_ph4b_lease_miri"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "test lease_teardown_lifecycle_same_thread_under_miri \\.\\.\\. ok",
+          "test result: ok\\. 1 passed; 0 failed"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
