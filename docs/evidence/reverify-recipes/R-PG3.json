@@ -1,0 +1,27 @@
+{
+  "id": "R-PG3",
+  "registryActivationHash": "c0e940ec5e76fd49115f58aa56776d7191e79addb74a75f66c48058c7a6b2511",
+  "steps": [
+    {
+      "name": "iai harness still compiles on HEAD (production bench-internals)",
+      "env": {},
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "production bench-internals",
+        "--bench",
+        "perf_gate_iai",
+        "--no-run"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "Finished"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}
