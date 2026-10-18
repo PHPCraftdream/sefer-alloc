@@ -377,6 +377,7 @@ fn counters_snapshot(alloc: &SeferAlloc) -> Vec<(&'static str, u64)> {
     {
         let (drain_calls, records) = alloc.dbg_sidecar_ingress_stats();
         let b4 = SeferAlloc::dbg_b4_collapse_counters();
+        let cursor = SeferAlloc::dbg_b4_cursor_counters();
         out.extend_from_slice(&[
             ("sidecar_ingress_drain_calls", drain_calls),
             ("sidecar_ingress_records_consumed", records),
@@ -391,6 +392,8 @@ fn counters_snapshot(alloc: &SeferAlloc) -> Vec<(&'static str, u64)> {
             ("b4_directory_lookups", b4[4]),
             ("b4_shard_lock_spins", b4[5]),
             ("b4_shard_lock_yields", b4[6]),
+            ("b4_cursor_hits", cursor[0]),
+            ("b4_cursor_misses", cursor[1]),
         ]);
     }
 

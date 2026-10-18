@@ -106,6 +106,10 @@ impl AllocCore {
     pub(crate) fn release_directory_for_cold_trim(&mut self) {
         self.directory_sidecar = core::ptr::null_mut();
         self.directory_miss_streak.fill(0);
+        // B4 §11: a cold trim releases/recycles segments — drop the discovery
+        // cursors alongside the directory state.
+        self.small_class_cursor
+            .fill(crate::alloc_core::alloc_core::CLASS_CURSOR_NONE);
         drop(self.directory_sidecar_vm.take());
     }
 

@@ -477,6 +477,15 @@ impl HeapRegistry {
             unsafe {
                 (*slot.heap.get().cast::<HeapCore>()).invalidate_numa_node_cache();
             }
+            // B4 §11: same (re-)claim invalidation discipline as the NUMA
+            // cache above, ungated: a recycled slot's new owner must not
+            // inherit the previous owner's per-class discovery cursors.
+            // SAFETY: we are the sole writer (FREE→LIVE CAS winner) and the
+            // slot is LIVE + initialised, exactly as for the NUMA
+            // invalidation above.
+            unsafe {
+                (*slot.heap.get().cast::<HeapCore>()).invalidate_class_cursors();
+            }
             // The typed authority (Ph4a): slot is LIVE + initialised (see the
             // branch above), we are the sole writer. `generation` is a purely
             // numeric observer — no gate on the hot path.

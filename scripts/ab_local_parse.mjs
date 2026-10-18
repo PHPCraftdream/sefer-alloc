@@ -70,3 +70,19 @@ for (const [k, s] of Object.entries(cells).sort()) {
     `| ${k} | ${p4(sa)} (${span(s.A.sefer)}) | ${p4(sb)} (${span(s.B.sefer)}) | ${word(ba)} | ${p4(mb)} | ${word(vsMi)} | ${s.A.sefer.length}/${s.B.sefer.length} |`,
   );
 }
+
+// Collapse census: a malloc_macro run collapsed when any of its SeferAlloc
+// MT cells fell below COLLAPSE_MOPS (the 100–300x bimodal failure; healthy
+// runs never drop below ~11 M ops/s on the measured machine).
+const COLLAPSE_MOPS = 10;
+const runs = { A: [0, 0], B: [0, 0] };
+for (const [f, body] of files) {
+  const m = f.match(/^mm_([AB])_\d+\.log$/);
+  if (!m) continue;
+  const vals = [...body.matchAll(/^\s+\d+\s+([\d.]+) M\s+[\d.]+ M\s+[\d.]+ M/gm)].map((x) => +x[1]);
+  runs[m[1]][1] += 1;
+  if (vals.some((v) => v < COLLAPSE_MOPS)) runs[m[1]][0] += 1;
+}
+for (const side of ["A", "B"]) {
+  if (runs[side][1]) console.log(`collapsed runs ${side}: ${runs[side][0]}/${runs[side][1]} (any SeferAlloc MT cell < ${COLLAPSE_MOPS} M ops/s)`);
+}

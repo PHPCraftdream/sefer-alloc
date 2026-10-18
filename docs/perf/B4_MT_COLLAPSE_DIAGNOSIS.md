@@ -166,6 +166,97 @@ if !pre_nonempty {  // :588, условие ~:588–601
 - `bench: b4_collapse_probe example + B4 route/scan/shard diagnostic counters` — body: «bench-internals-gated Relaxed observers (7 counters, one dbg accessor) and a per-window larson/mstress probe for collapse attribution.»
 - `docs: B4 MT collapse diagnosis (scan-storm mechanism, 48-run series)` — body: «Mechanism, counter deltas, safety analysis and CI plan for the sidecar scan-storm collapse; summary CSV derived mechanically from raw logs.»
 
+## 11. Остаточный шторм discovery: per-class курсор сегмента с непустым бином
+
+Дата: 2026-10-18. Статус: реализация, ревью и локальный Windows A/B — done (§11.5–§11.6); iai A/B — на CI.
+
+### 11.1 Механизм
+
+Диагноз §3 остаётся в силе: на промахе бина `small_cur` скалярный путь и путь пополнения журнала каждый раз выполняли полный discovery-обход (`find_segment_with_free`, O(S) слотов, каждый с drain-проверкой) — при «остаточном шторме» (много непустых бинов, но все обходы промахиваются мимо тёплого сегмента) это доминирует.
+
+Исправление (B4 §11) — per-class курсор-подсказка:
+
+- поле `AllocCore::small_class_cursor: [u16; SMALL_CLASS_COUNT]` (сентинел `CLASS_CURSOR_NONE`, `alloc_core_impl.rs:218–287`): после успешного discovery слот обслуживающего сегмента запоминается для класса (`record_class_cursor`);
+- следующие промахи бина `small_cur` сначала пробуют бин курсора: скалярный путь — `alloc_small_via_discovery` → `pop_from_class_cursor` (один блок; `find_segment.rs:158–206`, вызовы `alloc_core_small_impl.rs:185` и `:294`), путь пополнения журнала — `refill_class_bump_impl` → `batch_drain_from_class_cursor` (пакетный слив; `alloc_core_small_magazine.rs:257`);
+- только при промахе курсора запускается discovery, и `linear_scan` теперь СТАРТУЕТ НА ОДИН СЛОТ ПОСЛЕ курсора (`class_cursor_scan_start`, `find_segment.rs:62–69`, применение `:679`) и делает один оборот по `[0, start)` — каждый активный слот по-прежнему посещается ровно один раз;
+- курсор — не trusted-negative: пустой бин курсора НЕ отменяет discovery (тот же запрет, что для routed-directory негативов, R12-03); это обычный discovery с drain-гейтом Фикса 2.
+
+### 11.2 Изменения по файлам (номера строк — чтение текущих файлов)
+
+- `src/alloc_core/alloc_core/alloc_core_impl.rs:218–219, 283–287` — `CLASS_CURSOR_NONE`, поле `small_class_cursor` (`u16`: `MAX_SEGMENTS` = 4096 помещается; footprint `2 × SMALL_CLASS_COUNT` байт на heap — дисциплина task #1998);
+- `src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs:185, 294` — вызовы `alloc_small_via_discovery` (скалярный путь и zero-pass-путь);
+- `src/alloc_core/small/alloc_core_small/find_segment/` — бывший `find_segment.rs` разнесён чистым переносом (лимит 1000 строк; каталог `alloc_core_small/` остаётся с 7 записями): `scan.rs` — прежний скан (`linear_scan` стартует после курсора и делает один оборот; запись курсора после попадания discovery/директории), `class_cursor.rs` — курсор: `live_small_slot_at` (валидация подсказки), `class_cursor_scan_start`, `record_class_cursor`, `invalidate_class_cursor_for_slot`, `invalidate_all_class_cursors`, `dbg_class_cursor_slot` (test-only), счётчики hit/miss, `cursor_probe_base`, `pop_from_class_cursor`, `batch_drain_from_class_cursor`, `alloc_small_via_discovery`;
+- `src/alloc_core/small/alloc_core_small_magazine.rs:257` — пакетный слив курсора в `refill_class_bump_impl`;
+- инвалидация на release/recycle (5+1 точек): `alloc_core_small_pool_impl.rs:242` (release-leg в `release_or_pool_empty_segment`), `:498` (pool-eviction/release в `release_pooled_segment_now`), `:594`, `:628` (decomp/pool-leg), `table_diag.rs:361` (`dbg_recycle`);
+- (re-)claim: `heap_core/core.rs:382–384` (`invalidate_class_cursors` — делегация к `invalidate_all_class_cursors`), вызов из `heap_registry/claim.rs:487` в `claim_impl` (рядом с NUMA-инвалидацией R11-5);
+- cold-trim: `directory.rs:106` (`release_directory_for_cold_trim` — вместе с директорией сбрасывается и якорь скана);
+- обсерверы: `src/alloc_core/alloc_core/counters.rs:57–64` (`B4_CURSOR_HITS`/`B4_CURSOR_MISSES`), `src/global/sefer_alloc/diag.rs` — `dbg_b4_cursor_counters()` (`[u64; 2]`: [0] хиты, [1] промахи) и `dbg_class_cursor_slot_for_current_thread(class_idx)` (test-only);
+- регистрации в `scripts/verify-dbg-hook-safety.mjs:33–39` (новых хуков в этой задаче не добавлено);
+- бюджет-пин `size_of::<HeapCore>() <= 9216` (`src/registry/heap_core/core.rs`) НЕ менялся: `u16`-курсор помещается в прежний запас (проверено `cargo check --all-features`, пин — compile-time assert).
+
+### 11.3 Почему это безопасно
+
+- Подсказка, не истина: курсор никогда не отменяет discovery и никогда не служит негативом. Валидация кандидата (`cursor_probe_base`, `find_segment.rs:130–156`) — канонические корневые проверки кандидатов discovery: `base_at` не-NULL (курсор owner-only: `recycle` NULL-ит слот в том же вызове владельца, где снимается маппинг, и проба не может выполниться между этими шагами, поэтому после recycle `base_at` всегда NULL), kind Small/Primordial, заголовочный `segment_id == slot`, `!= small_cur`; `unpool_if_present` перед pop. Пустой бин курсора — не trusted-negative (тот же запрет, что для routed-directory негативов, R12-03): курсор сохраняется как якорь скана, запускается обычный discovery.
+- Инверсия при всех смене владельца состояния сегмента/heap: release/recycle (`invalidate_class_cursor_for_slot`, 5+1 точек выше), cold-trim directory release, (re-)claim слота реестра (`invalidate_all_class_cursors` через `HeapCore::invalidate_class_cursors` в `claim_impl`) — новый владелец переработанного слота никогда не наследует курсоры прежнего (тот же класс рассогласования, что NUMA-кэш R11-5).
+- Прогресс удалённых free (ревью, вывод статический): пока аллокации обслуживает курсор, discovery не запускается, поэтому pending-публикации в других сегментах могут ждать дольше — до промаха курсора, полного обхода перед резервированием нового сегмента, strict trim или reclaim. Публикация при этом не теряется и не освобождается раньше времени (pending удерживает credit). Тот же класс задержки уже был у `small_cur`; верхней границы задержки код не задаёт ни до, ни после курсора.
+- Скалярная проба курсора передаёт class-spill OOM (`Err`) вызывающему, как и pop после discovery (исправлено при ревью).
+- Никаких новых аллокаций на горячем пути; никаких изменений протокола производителя/ADR/контракта/C6/hardened; footprint — `2 × SMALL_CLASS_COUNT` байт на heap (дисциплина task #1998).
+- Стек-давление: `HeapCore` растёт на `2 × SMALL_CLASS_COUNT` B и остаётся в прежнем пине 9216 (compile-time assert под `--all-features`).
+- `numa-aware`: курсор на сегмент чужого узла (фоллбэк discovery) при пробе сбрасывается — подсказка не обходит предпочтение локального узла.
+
+### 11.4 Тесты и counterfactual (локальные прогоны — done)
+
+- `tests/b4_class_cursor_discovery_burst.rs` (gate `production+internals+bench-internals`, без `numa-aware`): детерминированная фрагментация — M=8 сегментов по 2 освобождённых блока класса; K=2M аллокаций окна дают discovery-delta ≤ M+4 (с курсором) против ≈2M без; хиты ≥ 1 и промахи ≥ 1; курсорный слот совпадает с обслуженным сегментом; директория не материализуется (<32 сегментов). Counterfactual (нейтрализация `cursor_probe_base`+`record_class_cursor`+`class_cursor_scan_start` в `find_segment.rs`): красный — `no class cursor was ever recorded — the cursor feature is absent or the scenario did not exhaust small_cur (counterfactual red)`; после восстановления — зелёный.
+- `tests/b4_class_cursor_invalidation.rs` (gate `production+internals+bench-internals`; pool cap 0): KEY-ассерт — после опустошения и release курсорного сегмента S курсор класса равен `None`; следующий alloc проходит без UB (в контрфактическом мире протухший курсор снимается NULL-root-проверкой с счётным промахом). Counterfactual (та же нейтрализация записи курсора): красный — `no class cursor was ever recorded`; зелёный после восстановления. (Точная контр-правка «убрать `invalidate_class_cursor_for_slot` из release-ноги» даёт красный на том же ассерте: курсор переживает release — проверено косвенно через A3-механику; в число обязательных прогонов оркестратора входит зелёный вариант.)
+- `tests/b4_class_cursor_heap_slot_reuse.rs` (gate `alloc-global+alloc-xthread+internals+bench-internals`; зеркало `tests/numa_cache_invalidation.rs`): поток A фиксирует курсор и выходит без освобождения (TLS heap → FREE с сохранёнными сегментами/бинами); поток-претендент пере-захватывает ТОТ ЖЕ слот и обязан видеть `None`. Counterfactual №1 (нейтрализация `find_segment.rs`): красный — `no class cursor was ever recorded`. Counterfactual №2 (точная контр-правка для (в): закомментирован вызов `invalidate_class_cursors` в `src/registry/heap_registry/claim.rs:484–487`): красный — `assertion left == right failed: left: Some(0), right: None` («the new owner of the recycled slot must not inherit thread A's cursor…») — новый владелец видел чужой курсор. Обе правки восстановлены; `git status --porcelain` и `git diff --stat` (14 файлов, +461/−192) совпадают с pre-counterfactual состоянием.
+- `tests/b4_class_cursor_high_slot.rs` (gate `production+internals+bench-internals`, без `numa-aware`; добавлен при ревью): заполняет больше `SMALL_CLASS_COUNT + 2` сегментов классом `SMALL_MAX`, освобождает 2 блока в полном сегменте с наибольшим слотом S (слот ≥ числа классов) и требует, чтобы первый записанный курсор назвал S. Ловит дефект сравнения слота с длиной массива курсоров (см. §11.5).
+
+### 11.5 Ревью оркестратора (исправления поверх реализации агента)
+
+- `record_class_cursor` сравнивал номер слота с `small_class_cursor.len()` (числом классов), а не с ёмкостью таблицы: сегменты в слотах ≥ `SMALL_CLASS_COUNT` никогда не становились курсором. Исправлено (проверка ширины `u16`); тип курсора `u32` → `u16`, подъём пина 9216 → 9472 отменён.
+- Инвариант-проверка кандидатов `linear_scan` оставлена прежней (kind Small/Primordial); дополнительная сверка `segment_id == slot` применяется только к подсказке курсора — аварийное поведение скана не меняется.
+- `numa-aware`: см. §11.3.
+
+### 11.6 Замеры (оркестратор, Windows, i7-11800H)
+
+Вход: `examples/malloc_macro` как `#[global_allocator]`-цепочка (`SeferAlloc`, фичи `alloc-global alloc-xthread`) — тот же слой, на котором курсор поставляется. Все нагрузки в одном процессе подряд (larson T=1,2,4, затем mstress T=1,2,4), как в §9.
+
+Идентичность (R29-6): сторона A = бинарь `.rush/bins/mm_fix_ae7871c2.exe` (PR #76 `ae7871c2`, sha256 `6037d59c2485aaa279d8d8e9482c88de01d738f8baaf5ac14053af0aca66e47d`); сторона B = дерево `d1d9d2118862f55a692f73801b702c5c974ab15f` (`git write-tree` до замера, база `7aa106bb`), бинарь sha256 `f21e6d46145d41a033912e218fa6dc0448a2a039a079f676e3e57470c773145d`. `src/` коммита этого раздела совпадает с деревом B (разница — только логи, скрипты и счётчики курсора в пробе).
+
+50 раундов, порядок A/B чередуется по раундам. Сырые логи: `docs/perf/_raw_b4_cursor_local_ab.log.gz`; таблица — `node scripts/ab_local_parse.mjs docs/perf/_raw_b4_cursor_local_ab.log.gz` (A = fix, B = fix + курсор; M ops/s, больше — лучше):
+
+| cell | Sefer A median (min..max) | Sefer B median (min..max) | B vs A | mimalloc B median | B vs mimalloc | n A/B |
+|---|---:|---:|---|---:|---|---:|
+| MT larson/unpinned T=1 (Mops) | 25.58 (11.68..30.83) | 26.33 (15.98..31.67) | ~equal | 61.46 | slower x2.33 | 50/50 |
+| MT larson/unpinned T=2 (Mops) | 28.91 (1.940..34.27) | 31.01 (23.40..35.92) | faster x1.07 | 48.17 | slower x1.55 | 50/50 |
+| MT larson/unpinned T=4 (Mops) | 48.05 (0.5000..57.17) | 54.43 (46.50..65.23) | faster x1.13 | 76.02 | slower x1.40 | 50/50 |
+| MT mstress/unpinned T=1 (Mops) | 27.80 (0.05000..40.58) | 32.66 (21.02..40.46) | faster x1.17 | 72.00 | slower x2.20 | 50/50 |
+| MT mstress/unpinned T=2 (Mops) | 38.69 (0.08000..59.50) | 42.04 (32.37..60.18) | faster x1.09 | 86.66 | slower x2.06 | 50/50 |
+| MT mstress/unpinned T=4 (Mops) | 74.37 (0.1200..83.59) | 76.41 (67.67..94.61) | ~equal | 140.7 | slower x1.84 | 50/50 |
+collapsed runs A: 19/50 (any SeferAlloc MT cell < 10 M ops/s)
+collapsed runs B: 0/50 (any SeferAlloc MT cell < 10 M ops/s)
+
+Оракул активации пути (правило path-activation): `examples/b4_collapse_probe` (`internals bench-internals`, одна нагрузка на процесс, 30 процессов на нагрузку и сторону). Сторона fix — логи §10 (`.rush/b4-residual`, бинарь ветки `7aa106bb`), сторона cursor — сборка этого коммита. Сырые логи: `docs/perf/_raw_b4_cursor_probe_fix.log.gz`, `docs/perf/_raw_b4_cursor_probe_cursor.log.gz`; таблица — `node scripts/b4_cursor_probe_summary.mjs fix=... cursor=...` (значения за один проход):
+
+| bundle | workload | T | runs | find_segment median | find_segment max | cursor hits median | cursor hits max |
+|---|---|---:|---:|---:|---:|---:|---:|
+| fix | larson | 1 | 30 | 60 | 60 | 0 | 0 |
+| fix | larson | 2 | 30 | 367 | 17753 | 0 | 0 |
+| fix | larson | 4 | 30 | 942 | 383763 | 0 | 0 |
+| fix | mstress | 1 | 30 | 48 | 48 | 0 | 0 |
+| fix | mstress | 2 | 30 | 303 | 1933 | 0 | 0 |
+| fix | mstress | 4 | 30 | 631 | 554583 | 0 | 0 |
+| cursor | larson | 1 | 30 | 60 | 60 | 0 | 0 |
+| cursor | larson | 2 | 30 | 363 | 659 | 0 | 17443 |
+| cursor | larson | 4 | 30 | 833 | 1323 | 0 | 382954 |
+| cursor | mstress | 1 | 30 | 48 | 48 | 0 | 0 |
+| cursor | mstress | 2 | 30 | 282 | 443 | 0 | 3610 |
+| cursor | mstress | 4 | 30 | 583 | 901 | 0 | 528723 |
+
+Вывод: шторм discovery (у fix — до 383 763 / 554 583 вызовов `find_segment_with_free` за проход) с курсором не возникает (максимум 1 323): в тех же проходах курсор обслуживает блоки сам (до 528 723 попаданий). В проходах без шторма курсор не срабатывает (медиана попаданий 0), поведение прежнее. Коллапсов с курсором 0/50 против 19/50 у fix; медианы всех MT-ячеек не хуже fix. До mimalloc остаётся ×1.40–×2.33 — следующая волна (R1, R3, R4/R5).
+
+CI: miri не требуется (доступ к памяти тот же — чтения `base_at`/заголовков/бинов, что и в существующем скане); loom не требуется (состояние только у владельца, новых атомиков нет); iai A/B — gate-run на PR.
+
 ## Идентификация (R29-6, форма 4)
 
 - База: коммит `114eb41aa2a2c9bedeb1e5d362ac507eb315f676` + рабочее дерево данной задачи. Изменённые файлы по `git diff --stat` относительно базы: `.github/workflows/ci.yml`, `Cargo.toml`, `examples/b4_collapse_probe.rs`, `scripts/loom.mjs`, `scripts/verify-dbg-hook-safety.mjs`, `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`, `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`, `src/alloc_core/small/alloc_core_small/find_segment.rs`, `src/registry/segment_route/shard_lock.rs`, `tests/b4_scan_zero_word_skip_keeps_bits.rs`, `tests/loom_b4_scan_skip_empty_publish.rs`, `tests/loom_sidecar_bitmap_actual.rs`, `tests/r6_sidecar_bitmap.rs`; новые `tests/b4_find_segment_bin_head_gates_drain.rs`, `tests/b4_scan_rmw_zero_word_skips_swap.rs`, плюс документы/CSV/логи этой задачи (`docs/perf/B4_MT_COLLAPSE_DIAGNOSIS.md`, `docs/perf/B4_MT_COLLAPSE_DIAGNOSIS_summary.csv`, `docs/perf/_raw_b4_*.log`, `scripts/b4_collapse_summary.mjs`).

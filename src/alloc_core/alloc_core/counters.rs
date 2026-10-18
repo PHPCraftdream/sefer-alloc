@@ -50,6 +50,20 @@ pub(crate) static B4_SHARD_LOCK_SPINS: core::sync::atomic::AtomicU64 =
 pub(crate) static B4_SHARD_LOCK_YIELDS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// B4 §11 residual-discovery-storm fix: per-class discovery-cursor probes that
+/// SERVED at least one block (scalar pop or magazine batch drain) from the
+/// remembered segment's bin, replacing a full discovery scan.
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_CURSOR_HITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// B4 §11: per-class discovery-cursor probes that did NOT serve a block (stale
+/// cursor invalidated, or a validated segment whose bin read empty — never a
+/// trusted negative; the caller falls through to the ordinary discovery scan).
+#[cfg(feature = "bench-internals")]
+pub(crate) static B4_CURSOR_MISSES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// Completed Large terminal obligations, including cache admission or release.
 #[cfg(feature = "alloc-global")]
 pub(crate) static LARGE_REMOTE_RETIREMENTS: core::sync::atomic::AtomicU64 =

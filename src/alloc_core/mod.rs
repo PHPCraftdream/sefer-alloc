@@ -213,8 +213,8 @@ pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
 /// `SeferAlloc::dbg_b4_collapse_counters`.
 #[cfg(feature = "bench-internals")]
 pub(crate) use alloc_core::{
-    B4_DIRECTORY_LOOKUPS, B4_FIND_SEGMENT_CALLS, B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS,
-    B4_SCAN_WORDS, B4_SHARD_LOCK_SPINS, B4_SHARD_LOCK_YIELDS,
+    B4_CURSOR_HITS, B4_CURSOR_MISSES, B4_DIRECTORY_LOOKUPS, B4_FIND_SEGMENT_CALLS,
+    B4_FOREIGN_PUBLISH_OK, B4_SCAN_CALLS, B4_SCAN_WORDS, B4_SHARD_LOCK_SPINS, B4_SHARD_LOCK_YIELDS,
 };
 medium_promotion_reachable! {
     /// R29-5 (task #436) re-export seam: the medium→Large promotion-frequency /

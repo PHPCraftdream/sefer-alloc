@@ -51,6 +51,38 @@ impl SeferAlloc {
         ]
     }
 
+    /// B4 §11 test-only: this thread's current heap's discovery-cursor slot
+    /// for `class_idx` (`None` = no heap bound or no cursor recorded).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_class_cursor_slot_for_current_thread(class_idx: usize) -> Option<usize> {
+        if let Some(heap) = current_for_trim() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (same single-writer
+            // invariant `alloc`/`dealloc` rely on) — `current_for_trim`
+            // only returns `Some` for an already-bound own-thread slot.
+            #[allow(unsafe_code)]
+            unsafe {
+                return (*heap).dbg_class_cursor_slot(class_idx);
+            }
+        }
+        None
+    }
+
+    /// B4 §11: snapshot of the per-class discovery-cursor observers.
+    /// Positional: [0] = cursor probes that served a block (hits), [1] =
+    /// cursor probes that did not (misses; never a trusted negative).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_b4_cursor_counters() -> [u64; 2] {
+        use crate::alloc_core::{B4_CURSOR_HITS, B4_CURSOR_MISSES};
+        use core::sync::atomic::Ordering;
+        [
+            B4_CURSOR_HITS.load(Ordering::Relaxed),
+            B4_CURSOR_MISSES.load(Ordering::Relaxed),
+        ]
+    }
+
     /// Snapshot this owner's live allocation's original OS release token.
     ///
     /// # Safety
