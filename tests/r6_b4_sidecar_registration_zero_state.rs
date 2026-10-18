@@ -1,9 +1,11 @@
 //! B4-R6: a freshly registered route's sidecar backing reads as all zero —
-//! the System.alloc_zeroed construction contract (pending bits, presence
+//! the in-place initialize_at construction contract (pending bits, presence
 //! bits, and class codes all start at the zero state).
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
-use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind};
+use core::mem::size_of;
+
+use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidecar};
 
 const SEGMENT: usize = 4 * 1024 * 1024;
 const GRANULES: usize = 262_144;
@@ -14,6 +16,12 @@ fn fresh_route_backing_reads_all_zero() {
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
     let root = reservation.as_ptr();
+    // Poison a same-size System block and free it immediately before the
+    // registration: the sidecar allocation is then likely served RECYCLED
+    // (dirty) memory, so a skipped initialize_at field surfaces as observable
+    // garbage instead of page-luck zeros (counterfactual sensitivity).
+    let poison = vec![0xA5_u8; size_of::<SmallSidecar>()];
+    drop(poison);
     let route = directory
         .register(root, SEGMENT, root, 9, RouteKind::Small)
         .unwrap();

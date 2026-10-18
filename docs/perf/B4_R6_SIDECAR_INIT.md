@@ -1,5 +1,7 @@
 ---
-# B4 / R6: дешёвые init и Drop sidecar (System.alloc_zeroed + битмап присутствия листьев)
+# B4 / R6: дешёвый Drop sidecar по presence-битам (init-половина v1 откачена по A/B)
+
+> **Итог (v2, после A/B):** половина с `System.alloc_zeroed` — NO-GO и ОТКАЧЕНА к явной инициализации (§8); половина с presence-битами и Drop по ним — GO, остаётся. Заголовок и §1–§4 выше описывают v1 и сохранены как история; актуальное состояние — v2.
 
 Дата: 2026-10-18. Волна B4, задача `b4-r6-sidecar-init` (worktree `worktrees/perf-cand`, ветка `b4-r6-sidecar-init`, база `4ba6d44a`). План-источник: `docs/perf/B1_MT_REGRESSION_ANALYSIS.md` §6.2 R6. Режим: правки + адресные тесты локально; бенчмарки НЕ запускались (их прогоняет оркестратор).
 
@@ -83,3 +85,24 @@ Targets: iai small_churn_16b fixed part and teardown; churn+teardown
 wall-clock. Evidence: r11_ph5b_c5 pins, new r6_b4_* tests (presence-mutant
 RED recorded), r11_p3/r6_route_directory suites green locally.
 ```
+
+## 8. A/B v1: NO-GO для alloc_zeroed (откат init-половины, v2)
+
+CI-замер (iai, Ir, main vs ветка, 106 ячеек): **72 хуже, 4 лучше**.
+
+Хуже (атрибуция — alloc_zeroed на пути регистрации маршрута):
+- `dealloc_free_only_1088_16b_*` — +1.8..+2.6%;
+- `cold_alloc_only_256x16b` (N/2N/4N) — +1.9..+2.6%;
+- `small_churn_16b`, `churn_256b` — **+245 Ir фиксированно** (на каждую регистрацию маршрута).
+
+Лучше (атрибуция — presence-биты/Drop и шум раннера):
+- `decomp_full_cycle_8x` — −8.9%;
+- `r19_prf01_joined_producer_same_word` — −5.4%.
+
+Вывод: `System.alloc_zeroed` на 41 KiB на glibc — это malloc+memset, что ДОРОЖЕ 5120 явных store'ов инициализации. **NO-GO для init-половины.** Решение v2:
+1. `directory.rs` вернулся к `System.alloc` + `SmallSidecar::initialize_at` (pending + листья), `record_alloc(size, false)`;
+2. `ClassLeaves::initialize_at` дополнительно обнуляет 16 слов `present` (новое поле v1 сохранено);
+3. presence-биты и Drop по ним — без изменений (GO-половина);
+4. ожидания zeroed-байт в `r6_t40`/`r11_p3_small_sidecar_routes`/`r6_b4_class_leaves_drop_frees_promoted_leaves` возвращены к «не-zeroed» (== 0), размер — через `size_of::<SmallSidecar>()` (41 088);
+5. конструкторы `ClassLeaves` в `loom_sidecar_bitmap_actual` / `class_leaves_publication_miri` / `sidecar_granule_index_exhaustive` возвращены к `initialize_at` (для loom это обязательно: loom-атомики — дескрипторы планировщика, побайтовое обнуление `Box::new_zeroed` под `cfg(loom)` некорректно).
+Ожидание v2: регрессии +245 Ir/регистрацию и +1.8..+2.6% на перечисленных ячейках исчезают; выигрыш teardown от presence-Drop сохраняется. Метрика приёмки — тот же iai-набор у оркестратора.

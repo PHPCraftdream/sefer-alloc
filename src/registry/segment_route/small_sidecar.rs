@@ -25,11 +25,11 @@ const _: () = {
 };
 
 /// `#[repr(C)]` external ingress backing: pending words, then the adaptive
-/// class leaves. The directory constructs it with
-/// `System.alloc_zeroed(Layout::new::<Self>())`; the all-zero byte pattern is
-/// the published valid initial state — null leaf pointers, zero pending words
-/// (a zeroed sidecar publishes nothing: `SidecarBitmap::publish` rejects a
-/// zero encoded class), zero presence bits. There is no in-place constructor.
+/// class leaves. The directory allocates it with `System.alloc` and
+/// constructs it in place with `initialize_at`, which writes the all-zero
+/// pattern — the valid initial state (null leaf pointers, zero pending words:
+/// `SidecarBitmap::publish` rejects a zero encoded class — and zero presence
+/// bits).
 #[repr(C)]
 pub struct SmallSidecar {
     pending: [AtomicU64; SidecarBitmap::WORDS],
@@ -57,6 +57,23 @@ impl SmallSidecar {
     // consumed by internals builds and source-included oracle crates only.
     #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub const WORDS: usize = SidecarBitmap::WORDS;
+
+    /// # Safety
+    /// `raw` is a private, aligned, writable System allocation with this
+    /// exact layout. It may not be observed or dropped before return.
+    pub(crate) unsafe fn initialize_at(raw: *mut Self) {
+        // SAFETY: caller grants exclusive writable SmallSidecar storage;
+        // this raw field projection makes no reference to uninitialized data.
+        let pending = unsafe { ptr::addr_of_mut!((*raw).pending).cast::<AtomicU64>() };
+        for i in 0..SidecarBitmap::WORDS {
+            // SAFETY: i is within the pending field and each atomic word is
+            // initialized once before directory publication.
+            unsafe { pending.add(i).write(AtomicU64::new(0)) };
+        }
+        // SAFETY: disjoint classes field in the same private allocation;
+        // pending is initialized and publication is still excluded.
+        unsafe { ClassLeaves::initialize_at(ptr::addr_of_mut!((*raw).classes)) };
+    }
 
     fn bitmap(&self) -> SidecarBitmap<'_> {
         SidecarBitmap::from_leaves(&self.pending, &self.classes)

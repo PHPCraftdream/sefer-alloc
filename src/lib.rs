@@ -252,9 +252,8 @@
 //                             reclamation; numeric foreign lookup pins under
 //                             the shard lock.
 //                             (under `alloc-global`)
-//      * `registry::segment_route::small_sidecar` — System-zeroed backing
-//                             (the all-zero pattern is the valid initial
-//                             state) for pending atomics and class leaves.
+//      * `registry::segment_route::small_sidecar` — in-place construction of
+//                             pending atomics and the owner class map.
 //                             (under `alloc-global`)
 //      * `alloc_core::segment::remote_bitmap::sidecar_bitmap::leaf_classes` —
 //                             genuine System mixed-leaf pointers, owner-only

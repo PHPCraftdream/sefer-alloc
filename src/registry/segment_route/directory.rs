@@ -53,16 +53,21 @@ impl EntryHandle {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
                 // SAFETY: System is independent of the installed allocator;
-                // the all-zero byte pattern is the valid initial state for
-                // every atomic in SmallSidecar (null leaf pointers, zero
-                // pending/presence words), so no in-place construction runs.
-                let ptr = unsafe { System.alloc_zeroed(Layout::new::<SmallSidecar>()) };
+                // the aligned span stays private until every atomic is built
+                // by `initialize_at` below. A/B v1 (docs/perf/
+                // B4_R6_SIDECAR_INIT.md §8): System.alloc_zeroed for this
+                // 41 KiB sidecar is glibc malloc+memset and measured +245 Ir
+                // per route registration — explicit stores are cheaper.
+                let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
                 if !ptr.is_null() {
                     #[cfg(feature = "internals")]
                     crate::alloc_core::remote_bitmap::ClassLeaves::record_alloc(
                         Layout::new::<SmallSidecar>().size(),
-                        true,
+                        false,
                     );
+                    // SAFETY: fresh private storage has SmallSidecar's exact
+                    // layout; in-place construction initializes every atomic.
+                    unsafe { SmallSidecar::initialize_at(ptr.cast()) };
                 }
                 ptr
             }
@@ -116,7 +121,7 @@ impl EntryHandle {
                 crate::alloc_core::remote_bitmap::ClassLeaves::record_free(
                     Layout::new::<SmallSidecar>().size(),
                 );
-                // SAFETY: pointer came from System.alloc_zeroed with this Layout
+                // SAFETY: pointer came from System.alloc with this Layout
                 // and its mixed leaves were released by Drop above.
                 unsafe { System.dealloc(sidecar, Layout::new::<SmallSidecar>()) };
             }

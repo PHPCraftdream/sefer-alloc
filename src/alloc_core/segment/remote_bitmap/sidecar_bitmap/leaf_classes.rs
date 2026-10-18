@@ -5,10 +5,11 @@
 //! segment state. Producers never write them.
 //!
 //! # Construction contract
-//! The backing is built from all-zero bytes (the directory uses
-//! `System.alloc_zeroed`); the all-zero pattern is the valid initial state
-//! (null leaf pointers, zero presence bits). There is no in-place constructor.
+//! The directory allocates the backing with `System.alloc` and constructs it
+//! in place with `initialize_at`, which writes the all-zero pattern — the
+//! valid initial state (null leaf pointers, zero presence bits).
 #![allow(unsafe_code)]
+use core::ptr;
 #[cfg(feature = "internals")]
 use core::sync::atomic::AtomicUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -50,6 +51,26 @@ pub(crate) struct ClassLeaves {
 }
 
 impl ClassLeaves {
+    /// # Safety
+    /// `raw` is a private, aligned, writable ClassLeaves slot in the
+    /// System-backed sidecar. No reference or Drop may access it until return.
+    pub(crate) unsafe fn initialize_at(raw: *mut Self) {
+        // SAFETY: caller grants exclusive writable storage of Self; field
+        // addresses are formed without a reference to uninitialized bytes.
+        let mixed = unsafe { ptr::addr_of_mut!((*raw).mixed).cast::<AtomicPtr<AtomicU8>>() };
+        for i in 0..LEAVES {
+            // SAFETY: each index is within its field and written exactly once
+            // before the enclosing route is published.
+            unsafe { mixed.add(i).write(AtomicPtr::new(ptr::null_mut())) };
+        }
+        let present = unsafe { ptr::addr_of_mut!((*raw).present).cast::<AtomicU64>() };
+        for i in 0..PRESENT_WORDS {
+            // SAFETY: disjoint presence field in the same private storage;
+            // written once before the enclosing route is published.
+            unsafe { present.add(i).write(AtomicU64::new(0)) };
+        }
+    }
+
     pub(crate) fn prepared(&self, granule: usize, class: u8) -> bool {
         if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
             return false;

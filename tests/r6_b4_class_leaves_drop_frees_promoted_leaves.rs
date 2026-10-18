@@ -40,8 +40,9 @@ fn drop_frees_exactly_the_promoted_leaves() {
     let leaf_bytes = promoted.len() * 256;
     let live = SmallSidecar::system_totals_for_test();
     assert_eq!(live.0 - before.0, size + leaf_bytes);
-    // Only the sidecar backing is zeroed; the leaf spills are unzeroed.
-    assert_eq!(live.1 - before.1, size);
+    // Nothing is zeroed: v2 constructs the sidecar in place over System.alloc
+    // (A/B v1 reverted alloc_zeroed), and leaf spills are unzeroed.
+    assert_eq!(live.1 - before.1, 0);
     assert_eq!(live.2 - before.2, 0);
     assert_eq!(live.3 - before.3, 1 + promoted.len());
     assert_eq!(live.4 - before.4, 0);
@@ -59,6 +60,6 @@ fn drop_frees_exactly_the_promoted_leaves() {
     assert_eq!(after.3 - before.3, 1 + promoted.len());
     assert_eq!(after.4 - before.4, 1 + promoted.len());
     assert_eq!(after.0 - before.0, after.2 - before.2);
-    assert_eq!(after.1 - before.1, size);
+    assert_eq!(after.1 - before.1, 0);
     drop(reservation);
 }

@@ -9,7 +9,7 @@ use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidec
 const SEGMENT: usize = 4 * 1024 * 1024;
 
 #[test]
-fn small_sidecar_uses_zeroed_system_storage_all_zero_state_is_valid() {
+fn small_sidecar_uses_unzeroed_system_storage_then_initializes_all_state() {
     let before = SmallSidecar::system_totals_for_test();
     let directory = RouteDirectory::new();
     let reservation = aligned_vmem::reserve_aligned(SEGMENT, SEGMENT).unwrap();
@@ -22,8 +22,8 @@ fn small_sidecar_uses_zeroed_system_storage_all_zero_state_is_valid() {
     assert_eq!(after.0 - before.0, size);
     assert_eq!(
         after.1 - before.1,
-        size,
-        "sidecar backing must come from System.alloc_zeroed; the all-zero byte pattern is the published valid initial state"
+        0,
+        "sidecar System bytes must not be zeroed"
     );
     assert_eq!(after.3 - before.3, 1);
 

@@ -31,7 +31,7 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     // SmallSidecar size: pending (4096 × 8 B) + ClassLeaves mixed pointers
     // (1024 × 8 B) + presence bitmap (16 × 8 B).
     assert_eq!(base.0 - before.0, size_of::<SmallSidecar>());
-    assert_eq!(base.1 - before.1, size_of::<SmallSidecar>()); // B4-R6: System.alloc_zeroed backing; the all-zero pattern is the valid initial state.
+    assert_eq!(base.1 - before.1, 0); // R6-T40 OPT-04: unzeroed System storage.
     assert_eq!(base.3 - before.3, 1);
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
 
@@ -145,7 +145,7 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
     assert_eq!(sidecar.mixed_leaves_for_test(), LEAVES);
     let live = SmallSidecar::system_totals_for_test();
     assert_eq!(live.0 - before.0, size_of::<SmallSidecar>() + LEAVES * 256);
-    assert_eq!(live.1 - before.1, size_of::<SmallSidecar>());
+    assert_eq!(live.1 - before.1, 0);
     assert_eq!(live.3 - before.3, 1 + LEAVES);
     drop(route);
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));

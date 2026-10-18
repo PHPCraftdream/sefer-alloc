@@ -43,11 +43,15 @@ fn sidecar_granule_index_exhaustive() {
     assert_eq!(SidecarBitmap::WORDS, words);
     assert!(classes >= 2);
     let pending: Vec<_> = (0..words).map(|_| AtomicU64::new(0)).collect();
-    // SAFETY: the all-zero byte pattern is a valid ClassLeaves value (null
-    // leaf pointers, zero presence bits) — the same contract the directory's
-    // System.alloc_zeroed backing relies on. The Box keeps ownership and its
-    // original allocation/layout; it outlives the bitmap and every cut.
-    let leaves = unsafe { Box::<ClassLeaves>::new_zeroed().assume_init() };
+    let mut storage = Box::<ClassLeaves>::new_uninit();
+    // SAFETY: Box provides one private, aligned, writable ClassLeaves slot.
+    // No ClassLeaves reference or Drop exists before initialize_at returns;
+    // it initializes every uniform atomic, mixed pointer and presence word
+    // in place.
+    unsafe { ClassLeaves::initialize_at(storage.as_mut_ptr()) };
+    // SAFETY: initialize_at completed initialization of every value-bearing
+    // field. This Box owns the slot and outlives the bitmap and every cut.
+    let leaves = unsafe { storage.assume_init() };
     let map = SidecarBitmap::from_leaves(&pending, &leaves).unwrap();
 
     // Oracle: 4 KiB class leaves; bit position comes from the byte position
