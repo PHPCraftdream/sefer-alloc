@@ -4,9 +4,9 @@
 //! null/None, and DISARMING it must fully restore service — no stuck OOM, no
 //! panic, and the successfully-allocated block must dealloc cleanly.
 //!
-//! The injector is effective only BEFORE `STATE_READY` (it forces the
+//! The injector is effective only before `FallbackInitState::Ready` (it forces the
 //! primordial `HeapCore::new` inside `fallback::heap_ptr` to fail and roll
-//! back to `STATE_UNINIT`). This file is its own test binary and installs no
+//! back to `FallbackInitState::Uninit`). This file is its own test binary and installs no
 //! global allocator, so the process-wide fallback static is guaranteed UNINIT
 //! until our first `dbg_with_fallback_for_test` — the same precondition
 //! discipline as `tests/regression_fallback_init_unwind_guard.rs` (which

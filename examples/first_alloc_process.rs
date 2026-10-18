@@ -154,7 +154,7 @@ fn peak_rss_kib() -> u64 {
 /// once) and return the RSS while all `n` are concurrently live.
 ///
 /// Why not spawn-then-join one thread at a time: on thread exit the registry
-/// slot is immediately recycled (`AbandonGuard::drop`, "thread death =
+/// slot is immediately recycled (`LeaseReleaseGuard::drop`, "thread death =
 /// RELEASE THE SLOT ONLY" — `src/global/tls_heap.rs`), so a naive
 /// spawn-join-spawn-join loop never has more than ~1-2 slots concurrently
 /// claimed no matter how many threads it churns through — it would measure

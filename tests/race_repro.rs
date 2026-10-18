@@ -317,7 +317,7 @@ fn drain_reclaim_uaf_repro_tight_handoff() {
                             return local_sent;
                         }
                     }
-                    // Producer returns; on thread exit the AbandonGuard drops,
+                    // Producer returns; on thread exit the LeaseReleaseGuard drops,
                     // recycling the slot. The HeapCore (segments + inline TFS)
                     // stays whole for the next claimant — late cross-thread
                     // frees from the consumer land on this slot's TFS after

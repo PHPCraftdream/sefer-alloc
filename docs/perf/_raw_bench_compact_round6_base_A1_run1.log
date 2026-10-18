@@ -1,0 +1,387 @@
+   Compiling sefer-alloc v0.3.0 (<repo>)
+    Finished `bench` profile [optimized] target(s) in 22.08s
+     Running benches\global_alloc.rs (target\release\deps\global_alloc-252726ebca976f12.exe)
+Gnuplot not found, using plotters backend
+Benchmarking global_alloc/mimalloc/16B
+Benchmarking global_alloc/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/16B: Collecting 10 samples in estimated 600.08 ms (119k iterations)
+Benchmarking global_alloc/mimalloc/16B: Analyzing
+global_alloc/mimalloc/16B
+                        time:   [4.6581 µs 5.0128 µs 5.1773 µs]
+Benchmarking global_alloc/SeferAlloc/16B
+Benchmarking global_alloc/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/16B: Collecting 10 samples in estimated 600.45 ms (22k iterations)
+Benchmarking global_alloc/SeferAlloc/16B: Analyzing
+global_alloc/SeferAlloc/16B
+                        time:   [23.151 µs 23.596 µs 24.520 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc/System/16B
+Benchmarking global_alloc/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/16B: Collecting 10 samples in estimated 600.78 ms (10k iterations)
+Benchmarking global_alloc/System/16B: Analyzing
+global_alloc/System/16B time:   [50.271 µs 52.740 µs 55.735 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc/mimalloc/64B
+Benchmarking global_alloc/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/64B: Collecting 10 samples in estimated 600.01 ms (73k iterations)
+Benchmarking global_alloc/mimalloc/64B: Analyzing
+global_alloc/mimalloc/64B
+                        time:   [5.8858 µs 6.0470 µs 6.3662 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc/System/64B
+Benchmarking global_alloc/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/64B: Collecting 10 samples in estimated 600.21 ms (9845 iterations)
+Benchmarking global_alloc/System/64B: Analyzing
+global_alloc/System/64B time:   [54.061 µs 57.078 µs 59.445 µs]
+Benchmarking global_alloc/SeferAlloc/64B
+Benchmarking global_alloc/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/64B: Collecting 10 samples in estimated 601.43 ms (20k iterations)
+Benchmarking global_alloc/SeferAlloc/64B: Analyzing
+global_alloc/SeferAlloc/64B
+                        time:   [24.280 µs 25.231 µs 26.182 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc/System/256B
+Benchmarking global_alloc/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/256B: Collecting 10 samples in estimated 601.84 ms (13k iterations)
+Benchmarking global_alloc/System/256B: Analyzing
+global_alloc/System/256B
+                        time:   [45.028 µs 45.912 µs 46.589 µs]
+Benchmarking global_alloc/SeferAlloc/256B
+Benchmarking global_alloc/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/256B: Collecting 10 samples in estimated 600.26 ms (20k iterations)
+Benchmarking global_alloc/SeferAlloc/256B: Analyzing
+global_alloc/SeferAlloc/256B
+                        time:   [24.662 µs 26.091 µs 27.865 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking global_alloc/mimalloc/256B
+Benchmarking global_alloc/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/256B: Collecting 10 samples in estimated 600.43 ms (73k iterations)
+Benchmarking global_alloc/mimalloc/256B: Analyzing
+global_alloc/mimalloc/256B
+                        time:   [7.5116 µs 7.8692 µs 8.3073 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc/System/1024B
+Benchmarking global_alloc/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/1024B: Collecting 10 samples in estimated 610.32 ms (2915 iterations)
+Benchmarking global_alloc/System/1024B: Analyzing
+global_alloc/System/1024B
+                        time:   [74.917 µs 83.010 µs 95.440 µs]
+Benchmarking global_alloc/mimalloc/1024B
+Benchmarking global_alloc/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/1024B: Collecting 10 samples in estimated 600.53 ms (37k iterations)
+Benchmarking global_alloc/mimalloc/1024B: Analyzing
+global_alloc/mimalloc/1024B
+                        time:   [14.720 µs 15.042 µs 15.265 µs]
+Benchmarking global_alloc/SeferAlloc/1024B
+Benchmarking global_alloc/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/1024B: Collecting 10 samples in estimated 601.19 ms (22k iterations)
+Benchmarking global_alloc/SeferAlloc/1024B: Analyzing
+global_alloc/SeferAlloc/1024B
+                        time:   [25.301 µs 26.377 µs 27.711 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc/manual_realloc_sim/SeferAlloc
+Benchmarking global_alloc/manual_realloc_sim/SeferAlloc: Warming up for 150.00 ms
+Benchmarking global_alloc/manual_realloc_sim/SeferAlloc: Collecting 10 samples in estimated 600.01 ms (1.0M iterations)
+Benchmarking global_alloc/manual_realloc_sim/SeferAlloc: Analyzing
+global_alloc/manual_realloc_sim/SeferAlloc
+                        time:   [423.27 ns 429.39 ns 436.33 ns]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking global_alloc/manual_realloc_sim/mimalloc
+Benchmarking global_alloc/manual_realloc_sim/mimalloc: Warming up for 150.00 ms
+Benchmarking global_alloc/manual_realloc_sim/mimalloc: Collecting 10 samples in estimated 600.00 ms (1.6M iterations)
+Benchmarking global_alloc/manual_realloc_sim/mimalloc: Analyzing
+global_alloc/manual_realloc_sim/mimalloc
+                        time:   [333.71 ns 341.88 ns 351.65 ns]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc/manual_realloc_sim/System
+Benchmarking global_alloc/manual_realloc_sim/System: Warming up for 150.00 ms
+Benchmarking global_alloc/manual_realloc_sim/System: Collecting 10 samples in estimated 600.03 ms (925k iterations)
+Benchmarking global_alloc/manual_realloc_sim/System: Analyzing
+global_alloc/manual_realloc_sim/System
+                        time:   [581.40 ns 616.52 ns 638.62 ns]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+Benchmarking global_alloc_churn/SeferAlloc/16B
+Benchmarking global_alloc_churn/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/16B: Collecting 10 samples in estimated 601.15 ms (22k iterations)
+Benchmarking global_alloc_churn/SeferAlloc/16B: Analyzing
+global_alloc_churn/SeferAlloc/16B
+                        time:   [8.0827 µs 8.3202 µs 8.9015 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn/System/16B
+Benchmarking global_alloc_churn/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/16B: Collecting 10 samples in estimated 601.69 ms (11k iterations)
+Benchmarking global_alloc_churn/System/16B: Analyzing
+global_alloc_churn/System/16B
+                        time:   [39.162 µs 40.696 µs 43.189 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn/mimalloc/16B
+Benchmarking global_alloc_churn/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/16B: Collecting 10 samples in estimated 600.13 ms (62k iterations)
+Benchmarking global_alloc_churn/mimalloc/16B: Analyzing
+global_alloc_churn/mimalloc/16B
+                        time:   [5.9172 µs 6.0965 µs 6.3572 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn/mimalloc/64B
+Benchmarking global_alloc_churn/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/64B: Collecting 10 samples in estimated 600.60 ms (52k iterations)
+Benchmarking global_alloc_churn/mimalloc/64B: Analyzing
+global_alloc_churn/mimalloc/64B
+                        time:   [7.1297 µs 7.9505 µs 8.5558 µs]
+Benchmarking global_alloc_churn/SeferAlloc/64B
+Benchmarking global_alloc_churn/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/64B: Collecting 10 samples in estimated 604.18 ms (5720 iterations)
+Benchmarking global_alloc_churn/SeferAlloc/64B: Analyzing
+global_alloc_churn/SeferAlloc/64B
+                        time:   [8.1623 µs 8.7042 µs 9.1651 µs]
+Benchmarking global_alloc_churn/System/64B
+Benchmarking global_alloc_churn/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/64B: Collecting 10 samples in estimated 601.24 ms (9405 iterations)
+Benchmarking global_alloc_churn/System/64B: Analyzing
+global_alloc_churn/System/64B
+                        time:   [40.468 µs 42.754 µs 46.751 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn/mimalloc/256B
+Benchmarking global_alloc_churn/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/256B: Collecting 10 samples in estimated 600.10 ms (32k iterations)
+Benchmarking global_alloc_churn/mimalloc/256B: Analyzing
+global_alloc_churn/mimalloc/256B
+                        time:   [10.279 µs 11.965 µs 14.735 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn/System/256B
+Benchmarking global_alloc_churn/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/256B: Collecting 10 samples in estimated 601.42 ms (8085 iterations)
+Benchmarking global_alloc_churn/System/256B: Analyzing
+global_alloc_churn/System/256B
+                        time:   [43.530 µs 45.918 µs 48.265 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn/SeferAlloc/256B
+Benchmarking global_alloc_churn/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/256B: Collecting 10 samples in estimated 607.95 ms (2805 iterations)
+Benchmarking global_alloc_churn/SeferAlloc/256B: Analyzing
+global_alloc_churn/SeferAlloc/256B
+                        time:   [8.6437 µs 9.8045 µs 12.296 µs]
+Benchmarking global_alloc_churn/System/1024B
+Benchmarking global_alloc_churn/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/1024B: Collecting 10 samples in estimated 600.49 ms (5775 iterations)
+Benchmarking global_alloc_churn/System/1024B: Analyzing
+global_alloc_churn/System/1024B
+                        time:   [50.395 µs 56.908 µs 61.632 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn/SeferAlloc/1024B
+Benchmarking global_alloc_churn/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/1024B: Collecting 10 samples in estimated 603.34 ms (990 iterations)
+Benchmarking global_alloc_churn/SeferAlloc/1024B: Analyzing
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [8.1173 µs 8.3388 µs 8.6406 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn/mimalloc/1024B
+Benchmarking global_alloc_churn/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/1024B: Collecting 10 samples in estimated 602.09 ms (6710 iterations)
+Benchmarking global_alloc_churn/mimalloc/1024B: Analyzing
+global_alloc_churn/mimalloc/1024B
+                        time:   [66.566 µs 71.194 µs 73.957 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+Benchmarking global_alloc_churn_with_teardown/System/16B
+Benchmarking global_alloc_churn_with_teardown/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/16B: Collecting 10 samples in estimated 600.44 ms (11k iterations)
+Benchmarking global_alloc_churn_with_teardown/System/16B: Analyzing
+global_alloc_churn_with_teardown/System/16B
+                        time:   [44.210 µs 47.589 µs 50.561 µs]
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B: Collecting 10 samples in estimated 600.17 ms (69k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/16B
+                        time:   [6.4408 µs 6.5416 µs 6.6980 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B: Collecting 10 samples in estimated 603.04 ms (6820 iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/16B
+                        time:   [10.592 µs 10.763 µs 10.882 µs]
+global_alloc_churn_with_teardown/16B: decommit_calls delta = 0, segments_released_total delta = 0
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B: Collecting 10 samples in estimated 614.30 ms (1870 iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/64B
+                        time:   [10.879 µs 12.070 µs 13.063 µs]
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B: Collecting 10 samples in estimated 600.37 ms (62k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/64B
+                        time:   [6.7856 µs 7.3093 µs 7.5375 µs]
+Benchmarking global_alloc_churn_with_teardown/System/64B
+Benchmarking global_alloc_churn_with_teardown/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/64B: Collecting 10 samples in estimated 602.65 ms (9570 iterations)
+Benchmarking global_alloc_churn_with_teardown/System/64B: Analyzing
+global_alloc_churn_with_teardown/System/64B
+                        time:   [43.837 µs 44.766 µs 45.500 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+global_alloc_churn_with_teardown/64B: decommit_calls delta = 0, segments_released_total delta = 0
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B: Collecting 10 samples in estimated 607.22 ms (1870 iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/256B
+                        time:   [11.955 µs 13.079 µs 14.711 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn_with_teardown/System/256B
+Benchmarking global_alloc_churn_with_teardown/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/256B: Collecting 10 samples in estimated 602.99 ms (10k iterations)
+Benchmarking global_alloc_churn_with_teardown/System/256B: Analyzing
+global_alloc_churn_with_teardown/System/256B
+                        time:   [45.479 µs 46.771 µs 48.456 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B: Collecting 10 samples in estimated 600.04 ms (39k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/256B
+                        time:   [8.2147 µs 9.1589 µs 10.095 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+global_alloc_churn_with_teardown/256B: decommit_calls delta = 0, segments_released_total delta = 0
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B: Collecting 10 samples in estimated 601.42 ms (21k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/1024B
+                        time:   [16.292 µs 16.689 µs 17.179 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B: Collecting 10 samples in estimated 600.97 ms (2035 iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/1024B
+                        time:   [12.362 µs 14.318 µs 15.625 µs]
+Benchmarking global_alloc_churn_with_teardown/System/1024B
+Benchmarking global_alloc_churn_with_teardown/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/1024B: Collecting 10 samples in estimated 604.21 ms (7480 iterations)
+Benchmarking global_alloc_churn_with_teardown/System/1024B: Analyzing
+global_alloc_churn_with_teardown/System/1024B
+                        time:   [55.112 µs 58.489 µs 60.840 µs]
+global_alloc_churn_with_teardown/1024B: decommit_calls delta = 0, segments_released_total delta = 0
+
+Benchmarking global_alloc_churn_write/mimalloc/16B
+Benchmarking global_alloc_churn_write/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/16B: Collecting 10 samples in estimated 600.42 ms (61k iterations)
+Benchmarking global_alloc_churn_write/mimalloc/16B: Analyzing
+global_alloc_churn_write/mimalloc/16B
+                        time:   [6.2433 µs 6.6903 µs 7.5623 µs]
+Benchmarking global_alloc_churn_write/System/16B
+Benchmarking global_alloc_churn_write/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/16B: Collecting 10 samples in estimated 603.03 ms (11k iterations)
+Benchmarking global_alloc_churn_write/System/16B: Analyzing
+global_alloc_churn_write/System/16B
+                        time:   [39.988 µs 41.346 µs 43.216 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_write/SeferAlloc/16B
+Benchmarking global_alloc_churn_write/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/16B: Collecting 10 samples in estimated 603.56 ms (6655 iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/16B: Analyzing
+global_alloc_churn_write/SeferAlloc/16B
+                        time:   [8.7394 µs 8.9638 µs 9.5638 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc_churn_write/System/64B
+Benchmarking global_alloc_churn_write/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/64B: Collecting 10 samples in estimated 602.47 ms (8635 iterations)
+Benchmarking global_alloc_churn_write/System/64B: Analyzing
+global_alloc_churn_write/System/64B
+                        time:   [41.641 µs 42.551 µs 43.423 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn_write/SeferAlloc/64B
+Benchmarking global_alloc_churn_write/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/64B: Collecting 10 samples in estimated 607.77 ms (1705 iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/64B: Analyzing
+global_alloc_churn_write/SeferAlloc/64B
+                        time:   [8.5876 µs 8.7919 µs 9.2272 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn_write/mimalloc/64B
+Benchmarking global_alloc_churn_write/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/64B: Collecting 10 samples in estimated 600.22 ms (51k iterations)
+Benchmarking global_alloc_churn_write/mimalloc/64B: Analyzing
+global_alloc_churn_write/mimalloc/64B
+                        time:   [7.8174 µs 8.7243 µs 9.4128 µs]
+Benchmarking global_alloc_churn_write/System/256B
+Benchmarking global_alloc_churn_write/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/256B: Collecting 10 samples in estimated 602.23 ms (10k iterations)
+Benchmarking global_alloc_churn_write/System/256B: Analyzing
+global_alloc_churn_write/System/256B
+                        time:   [42.821 µs 45.187 µs 47.004 µs]
+Benchmarking global_alloc_churn_write/mimalloc/256B
+Benchmarking global_alloc_churn_write/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/256B: Collecting 10 samples in estimated 600.82 ms (30k iterations)
+Benchmarking global_alloc_churn_write/mimalloc/256B: Analyzing
+global_alloc_churn_write/mimalloc/256B
+                        time:   [10.576 µs 12.735 µs 15.195 µs]
+Benchmarking global_alloc_churn_write/SeferAlloc/256B
+Benchmarking global_alloc_churn_write/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/256B: Collecting 10 samples in estimated 610.77 ms (1760 iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/256B: Analyzing
+global_alloc_churn_write/SeferAlloc/256B
+                        time:   [8.8868 µs 9.1354 µs 9.2710 µs]
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B: Collecting 10 samples in estimated 601.30 ms (1925 iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B: Analyzing
+global_alloc_churn_write/SeferAlloc/1024B
+                        time:   [9.3264 µs 9.6683 µs 10.395 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc_churn_write/mimalloc/1024B
+Benchmarking global_alloc_churn_write/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/1024B: Collecting 10 samples in estimated 604.63 ms (5885 iterations)
+Benchmarking global_alloc_churn_write/mimalloc/1024B: Analyzing
+global_alloc_churn_write/mimalloc/1024B
+                        time:   [67.841 µs 70.636 µs 75.395 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc_churn_write/System/1024B
+Benchmarking global_alloc_churn_write/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/1024B: Collecting 10 samples in estimated 604.24 ms (7810 iterations)
+Benchmarking global_alloc_churn_write/System/1024B: Analyzing
+global_alloc_churn_write/System/1024B
+                        time:   [50.391 µs 52.867 µs 56.263 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+working_set_cycle/SeferAlloc/16B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/64B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/256B: decommit_calls delta = 0, segments_released_total delta = 0
+working_set_cycle/SeferAlloc/1024B: decommit_calls delta = 0, segments_released_total delta = 0

@@ -5,7 +5,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use std::sync::{Arc, Barrier};
 
 use sefer_alloc::registry::bootstrap;
-use sefer_alloc::registry::heap_slot::STATE_FREE;
+use sefer_alloc::registry::heap_slot::SlotState;
 use sefer_alloc::SeferAlloc;
 
 #[test]
@@ -56,6 +56,9 @@ fn simultaneous_first_binds_take_distinct_fresh_slots() {
     sorted.sort_unstable();
     assert_eq!(sorted, (0..WORKERS as u32).collect::<Vec<_>>());
     for id in sorted {
-        assert_eq!(bootstrap::ensure().dbg_slot_state(id as usize), STATE_FREE);
+        assert_eq!(
+            bootstrap::ensure().dbg_slot_state(id as usize),
+            SlotState::Free as u8
+        );
     }
 }

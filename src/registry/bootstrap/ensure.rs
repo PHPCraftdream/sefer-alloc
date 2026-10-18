@@ -86,7 +86,7 @@ pub(super) fn ensure_chunk_slow(
         // directly, including when Sefer is the installed global allocator.
         // The whole `CHUNK_SIZE` span is guaranteed zeroed on every backend, so
         // `base` points at a fully valid all-zero `RegistryChunk`:
-        //   state       = 0 = STATE_EMPTY
+        //   state       = 0 = SlotState::Empty as u8
         //   generation  = 0
         //   heap        = MaybeUninit::uninit() (zero is fine)
         //   initialised = 0 = false

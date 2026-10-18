@@ -14,7 +14,7 @@
 
 use sefer_alloc::registry::bootstrap;
 use sefer_alloc::registry::heap_registry::{HeapLease, HeapRegistry};
-use sefer_alloc::registry::heap_slot::STATE_FREE;
+use sefer_alloc::registry::heap_slot::SlotState;
 
 // Negative auto-trait probes (ambiguity pattern, no external deps).
 macro_rules! assert_not_impl {
@@ -68,7 +68,11 @@ fn lease_slot_lifecycle_free_after_drop_and_regeneration() {
     // must return it to FREE (Release publication).
     let reg = bootstrap::ensure();
     drop(first);
-    assert_eq!(reg.dbg_slot_state(index), STATE_FREE, "Drop: LIVE -> FREE");
+    assert_eq!(
+        reg.dbg_slot_state(index),
+        SlotState::Free as u8,
+        "Drop: LIVE -> FREE"
+    );
 
     // Re-claim wins the same slot (reuse hint) at a strictly newer
     // generation — numeric evidence of the Release/Acquire round trip.
@@ -81,5 +85,5 @@ fn lease_slot_lifecycle_free_after_drop_and_regeneration() {
         gen
     );
     drop(second);
-    assert_eq!(reg.dbg_slot_state(index), STATE_FREE);
+    assert_eq!(reg.dbg_slot_state(index), SlotState::Free as u8);
 }

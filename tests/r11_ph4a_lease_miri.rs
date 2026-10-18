@@ -16,6 +16,7 @@
 
 use std::thread;
 
+use sefer_alloc::registry::heap_slot::SlotState;
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
 
 #[test]
@@ -27,10 +28,7 @@ fn lease_claim_drop_reclaim_across_threads_under_miri() {
     let index = warm.slot_index() as usize;
     let warm_gen = warm.generation();
     drop(warm);
-    assert_eq!(
-        reg.dbg_slot_state(index),
-        sefer_alloc::registry::heap_slot::STATE_FREE
-    );
+    assert_eq!(reg.dbg_slot_state(index), SlotState::Free as u8);
 
     // Thread A: claim the lease on a DIFFERENT thread and drop it. The Drop's
     // Release CAS publishes; the join provides the cross-thread happens-before.
@@ -41,18 +39,12 @@ fn lease_claim_drop_reclaim_across_threads_under_miri() {
     });
     let a_gen = handle.join().expect("thread A");
     assert!(a_gen > warm_gen);
-    assert_eq!(
-        reg.dbg_slot_state(index),
-        sefer_alloc::registry::heap_slot::STATE_FREE
-    );
+    assert_eq!(reg.dbg_slot_state(index), SlotState::Free as u8);
 
     // Main thread re-claim: the Acquire claim CAS must observe A's Release.
     let again = HeapRegistry::dbg_claim_lease().expect("re-claim after join");
     assert_eq!(again.slot_index() as usize, index);
     assert!(again.generation() > a_gen);
     drop(again);
-    assert_eq!(
-        reg.dbg_slot_state(index),
-        sefer_alloc::registry::heap_slot::STATE_FREE
-    );
+    assert_eq!(reg.dbg_slot_state(index), SlotState::Free as u8);
 }

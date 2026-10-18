@@ -30,12 +30,12 @@ fn lease_teardown_lifecycle_same_thread_under_miri() {
     let first = HeapRegistry::dbg_claim_lease().expect("first claim");
     let index = first.slot_index() as usize;
     let first_gen = first.generation();
-    assert_eq!(reg.dbg_slot_state(index), heap_slot::STATE_LIVE);
+    assert_eq!(reg.dbg_slot_state(index), heap_slot::SlotState::Live as u8);
 
     // Teardown: HeapLease::drop publishes LIVE → FREE (Release) and plants
     // the last-recycled-slot hint, so the next claim re-claims THIS slot.
     drop(first);
-    assert_eq!(reg.dbg_slot_state(index), heap_slot::STATE_FREE);
+    assert_eq!(reg.dbg_slot_state(index), heap_slot::SlotState::Free as u8);
 
     // Re-claim via the hint: the Acquire claim CAS must observe the drop's
     // Release publication; the generation is monotone across the recycle.
@@ -44,7 +44,7 @@ fn lease_teardown_lifecycle_same_thread_under_miri() {
     let second_gen = second.generation();
     assert!(second_gen > first_gen, "generation is monotone per recycle");
     drop(second);
-    assert_eq!(reg.dbg_slot_state(index), heap_slot::STATE_FREE);
+    assert_eq!(reg.dbg_slot_state(index), heap_slot::SlotState::Free as u8);
 
     // A further claim re-hands the SAME (only) slot via the hint — its third
     // lifecycle leg, still exactly one owner at a time.
@@ -52,5 +52,5 @@ fn lease_teardown_lifecycle_same_thread_under_miri() {
     assert_eq!(third.slot_index() as usize, index);
     assert!(third.generation() > second_gen);
     drop(third);
-    assert_eq!(reg.dbg_slot_state(index), heap_slot::STATE_FREE);
+    assert_eq!(reg.dbg_slot_state(index), heap_slot::SlotState::Free as u8);
 }

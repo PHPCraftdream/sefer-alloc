@@ -1,0 +1,159 @@
+E0_METADATA {"id":"R4c-02","head":"6560a0a2945e1157a33bb5473fbe31c36f5ebbfa","tree":"be3c5234e8e09b16c9f8885e12cfb5c4df70c598","setup":"\n  nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (8006091eb 2026-10-17)\n\ninfo: syncing channel updates for nightly-x86_64-unknown-linux-gnu\ninfo: latest update on 2026-10-18 for version 1.101.0-nightly (8006091eb 2026-10-17)\ninfo: downloading 4 components\n"}
+E0_METADATA {"id":"R4c-02","head":"6560a0a2945e1157a33bb5473fbe31c36f5ebbfa","tree":"be3c5234e8e09b16c9f8885e12cfb5c4df70c598","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"Loom (--cfg loom --release)","recipe":"docs/evidence/reverify-recipes/R4c-02.json","recipe_sha256":"5d20da0edc66589b8917444ed4daad98a8b45d39d0b757d15044e3449fa9c741","registry_activation_hash":"728334ba9dc792527eee7d2948936078b3ae44734bc3b00c7c5ba896be74b2b2"}
+
+E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r8_maintenance_lease target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r8_maintenance_lease"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+   [1m[94m|[0m
+[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+   [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
+[1m[94m...[0m
+[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+   [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4.15s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/loom_r8_maintenance_lease.rs (target/release/deps/loom_r8_maintenance_lease-432be7b5d285326b)
+
+running 1 test
+test claim_maintenance_and_recycle_have_one_mutator_and_publish_payload ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+
+E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r11_ph4a_heap_lease target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r11_ph4a_heap_lease"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test lease_drop_release_pairs_with_claim_and_maintenance_acquires \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+   [1m[94m|[0m
+[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+   [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
+[1m[94m...[0m
+[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+   [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.06s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/loom_r11_ph4a_heap_lease.rs (target/release/deps/loom_r11_ph4a_heap_lease-8421d708094381c5)
+
+running 1 test
+test lease_drop_release_pairs_with_claim_and_maintenance_acquires ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+
+E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r11_ph4b_publish_recycle_drain target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r11_ph4b_publish_recycle_drain"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test publication_survives_recycle_and_is_consumed_exactly_once \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+   [1m[94m|[0m
+[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+   [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
+[1m[94m...[0m
+[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+   [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4.16s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/loom_r11_ph4b_publish_recycle_drain.rs (target/release/deps/loom_r11_ph4b_publish_recycle_drain-6a7c9cfb0d9ad308)
+
+running 1 test
+test publication_survives_recycle_and_is_consumed_exactly_once ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+
+E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_r11_registry_claim target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,internals,tagged-index-stack/loom","--test","loom_r11_registry_claim"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test completed_free_publication_cannot_leave_false_full_or_two_owners \\.\\.\\. ok","test result: ok\\. 1 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+   [1m[94m|[0m
+[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+   [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
+[1m[94m...[0m
+[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+   [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4.10s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/loom_r11_registry_claim.rs (target/release/deps/loom_r11_registry_claim-a874ac8a1ea15e9d)
+
+running 1 test
+test completed_free_publication_cannot_leave_false_full_or_two_owners ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+
+E0_STEP {"id":"R4c-02","kind":"baseline","name":"loom_registry_free_slots target","argv":["cargo","test","--release","--features","alloc-global,alloc-xthread,tagged-index-stack/loom","--test","loom_registry_free_slots"],"env":{"RUSTFLAGS":"--cfg loom"},"expect":{"exit":0,"stdoutRegex":["test registry_free_slots_claim_recycle_is_conservative_under_contention \\.\\.\\. ok","test recycled_slot_is_not_published_until_it_is_free \\.\\.\\. ok","test result: ok\\. 2 passed; 0 failed"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[33mwarning[0m[1m: associated function `from_initialized` is never used[0m
+  [1m[94m--> [0msrc/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs:59:19
+   [1m[94m|[0m
+[1m[94m50[0m [1m[94m|[0m impl<'a> SidecarBitmap<'a> {
+   [1m[94m|[0m [1m[94m--------------------------[0m [1m[94massociated function in this implementation[0m
+[1m[94m...[0m
+[1m[94m59[0m [1m[94m|[0m     pub(crate) fn from_initialized(
+   [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: methods `dbg_is_ready` and `dbg_rollback_reenterable` are never used[0m
+   [1m[94m--> [0msrc/registry/bootstrap/loom_shim.rs:194:19
+    [1m[94m|[0m
+[1m[94m 94[0m [1m[94m|[0m impl<T> OncePtrCell<T> {
+    [1m[94m|[0m [1m[94m----------------------[0m [1m[94mmethods in this implementation[0m
+[1m[94m...[0m
+[1m[94m194[0m [1m[94m|[0m     pub(crate) fn dbg_is_ready(&self) -> bool {
+    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^[0m
+[1m[94m...[0m
+[1m[94m206[0m [1m[94m|[0m     pub(crate) fn dbg_rollback_reenterable(&self) -> RollbackProbe {
+    [1m[94m|[0m                   [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 7.44s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/loom_registry_free_slots.rs (target/release/deps/loom_registry_free_slots-6e65e7f18175c201)
+
+running 2 tests
+test recycled_slot_is_not_published_until_it_is_free ... ok
+test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.50s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}

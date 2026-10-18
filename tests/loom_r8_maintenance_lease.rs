@@ -6,7 +6,7 @@ use loom::cell::UnsafeCell;
 use loom::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
-use sefer_alloc::registry::heap_slot::{STATE_FREE, STATE_LIVE, STATE_MAINTENANCE};
+use sefer_alloc::registry::heap_slot::SlotState;
 
 struct Slot {
     state: AtomicU8,
@@ -17,7 +17,12 @@ struct Slot {
 fn take_and_recycle(slot: &Slot, desired: u8) {
     if slot
         .state
-        .compare_exchange(STATE_FREE, desired, Ordering::AcqRel, Ordering::Acquire)
+        .compare_exchange(
+            SlotState::Free as u8,
+            desired,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
         .is_err()
     {
         return;
@@ -36,7 +41,12 @@ fn take_and_recycle(slot: &Slot, desired: u8) {
     assert_eq!(slot.active.fetch_sub(1, Ordering::Relaxed), 1);
     assert!(slot
         .state
-        .compare_exchange(desired, STATE_FREE, Ordering::Release, Ordering::Relaxed)
+        .compare_exchange(
+            desired,
+            SlotState::Free as u8,
+            Ordering::Release,
+            Ordering::Relaxed
+        )
         .is_ok());
 }
 
@@ -46,22 +56,23 @@ fn claim_maintenance_and_recycle_have_one_mutator_and_publish_payload() {
     builder.preemption_bound = Some(2);
     builder.check(|| {
         let slot = Arc::new(Slot {
-            state: AtomicU8::new(STATE_FREE),
+            state: AtomicU8::new(SlotState::Free as u8),
             active: AtomicUsize::new(0),
             payload: UnsafeCell::new(0),
         });
         let owner_slot = slot.clone();
-        let owner = thread::spawn(move || take_and_recycle(&owner_slot, STATE_LIVE));
+        let owner = thread::spawn(move || take_and_recycle(&owner_slot, SlotState::Live as u8));
         let maintenance_slot = slot.clone();
         let maintenance = thread::spawn(move || {
-            take_and_recycle(&maintenance_slot, STATE_MAINTENANCE);
+            take_and_recycle(&maintenance_slot, SlotState::Maintenance as u8);
         });
         let next_owner_slot = slot.clone();
-        let next_owner = thread::spawn(move || take_and_recycle(&next_owner_slot, STATE_LIVE));
+        let next_owner =
+            thread::spawn(move || take_and_recycle(&next_owner_slot, SlotState::Live as u8));
         owner.join().expect("owner");
         maintenance.join().expect("maintenance");
         next_owner.join().expect("next owner");
-        assert_eq!(slot.state.load(Ordering::Acquire), STATE_FREE);
+        assert_eq!(slot.state.load(Ordering::Acquire), SlotState::Free as u8);
         assert_eq!(slot.active.load(Ordering::Relaxed), 0);
         slot.payload.with(|pointer| {
             // SAFETY: every child has joined; no mutator or lease remains.

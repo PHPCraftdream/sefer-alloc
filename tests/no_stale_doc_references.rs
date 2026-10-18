@@ -232,20 +232,20 @@ fn no_removed_heap_type_doc_mentions() {
 /// tense while explaining the removal.
 ///
 /// This is deliberately narrower than a blanket "abandon"/"adopt" word-stem
-/// ban: those stems are ALSO the live [`AbandonGuard`] type name in
-/// `global/tls_heap.rs` (the TLS destructor guard — a name that outlived the
-/// behaviour it was named for, not renamed by this guard's scope), and
-/// "adopting thread" prose in `concurrent/sharded/sharded_region.rs` describing an
-/// unrelated, still-live shard-reuse mechanism — all correct and not the
-/// target of this guard.
+/// ban: those stems used to collide with the TLS destructor guard's name in
+/// `global/tls_heap.rs` — renamed to `LeaseReleaseGuard` in R6-T44, so no live
+/// type carries the "abandon" stem any more; the remaining "abandon"/"adopt"
+/// prose here is historical context, as is the "adopting thread" prose in
+/// `concurrent/sharded/sharded_region.rs` describing an unrelated, still-live
+/// shard-reuse mechanism — all correct and not the target of this guard.
 ///
 /// Doc-only guard: reads source text, never links the crate, so it runs in
 /// every feature configuration.
 #[test]
 fn no_stale_abandon_adopt_substrate_references() {
     // Exact identifiers from the removed API surface (commit 65d441a's
-    // message enumerates the full removed list). None of these collide with
-    // `AbandonGuard` or generic "adopt"/"abandon" prose.
+    // message enumerates the full removed list); none collide with any live
+    // identifier or generic "adopt"/"abandon" prose.
     let forbidden_tokens: &[&str] = &[
         "try_adopt",
         "abandon_segments",

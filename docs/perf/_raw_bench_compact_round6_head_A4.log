@@ -1,0 +1,74 @@
+warning: unused import: `mem::OwnedBlock`
+  --> src\alloc_core\alloc_core\mod.rs:97:16
+   |
+97 | pub(crate) use mem::OwnedBlock;
+   |                ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `heap_registry::config_conflicts_total`
+  --> src\registry\mod.rs:54:9
+   |
+54 | pub use heap_registry::config_conflicts_total;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `canonical_root_for` is never used
+  --> src\alloc_core\alloc_core\mem\mem_impl.rs:29:19
+   |
+25 | impl AllocCore {
+   | -------------- method in this implementation
+...
+29 |     pub(crate) fn canonical_root_for(&self, ptr: *mut u8) -> Option<*mut u8> {
+   |                   ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `release_initializing` is never used
+   --> src\alloc_core\large\reservation_state.rs:125:12
+    |
+ 23 | impl<'a> LargeReservationState<'a> {
+    | ---------------------------------- method in this implementation
+...
+125 |     pub fn release_initializing(&self, generation: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: static `SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL` is never used
+  --> src\alloc_core\segment\segment_table\segment_table_impl.rs:84:19
+   |
+84 | pub(crate) static SEGMENT_RECYCLE_UNVERIFIED_BASE_TOTAL: core::sync::atomic::AtomicU64 =
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: static `CONFIG_CONFLICTS` is never used
+  --> src\registry\heap_registry\counters.rs:33:19
+   |
+33 | pub(super) static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
+   |                   ^^^^^^^^^^^^^^^^
+
+warning: function `config_conflicts_total` is never used
+  --> src\registry\heap_registry\counters.rs:86:8
+   |
+86 | pub fn config_conflicts_total() -> u64 {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `sefer-alloc` (lib) generated 7 warnings (run `cargo fix --lib -p sefer-alloc` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running `target\release\examples\malloc_macro.exe`
+== sefer-alloc MT macro-benchmark ==
+Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.
+op = one alloc+free pair. Higher is better.
+
+--- workload: larson  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1           27.20 M           55.98 M           16.24 M
+  2            2.29 M           62.87 M           15.86 M
+  4            0.67 M           87.29 M           28.69 M
+
+--- workload: mstress  (mode: unpinned) ---
+  T        SeferAlloc          mimalloc            System
+  1            2.66 M           70.44 M            5.88 M
+  2            0.10 M           95.95 M           11.97 M
+  4            0.22 M          177.64 M           19.84 M
+
+(M = million ops/sec. RSS is not measured here — no portable,
+ dependency-free peak-RSS probe across Win/Linux/macOS; would
+ require platform syscalls. Reported honestly as N/A.)

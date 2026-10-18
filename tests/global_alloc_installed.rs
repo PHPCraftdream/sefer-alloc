@@ -36,7 +36,7 @@
 //! Thread-exit abandonment is a no-op stub in 12.3: the test thread's heap
 //! segments LEAK on exit (bounded — one heap's footprint; sound — the
 //! segments stay mapped). This is expected and documented in
-//! `tls_heap::AbandonGuard::drop`. Adoption (reclaiming the leak) is 12.4.
+//! `tls_heap::LeaseReleaseGuard::drop`. Adoption (reclaiming the leak) is 12.4.
 
 #![cfg(feature = "alloc-global")]
 

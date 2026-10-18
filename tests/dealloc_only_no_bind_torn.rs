@@ -1,5 +1,5 @@
 //! R6-OPT-P0-1 — the TORN half of the "dealloc without binding a heap"
-//! deliverable: a thread whose `AbandonGuard` already recycled its registry
+//! deliverable: a thread whose `LeaseReleaseGuard` already recycled its registry
 //! slot (see `global::tls_heap`'s "TLS teardown and the TORN sentinel"
 //! module doc) must resolve a subsequent foreign dealloc via
 //! `CurrentHeapForDealloc::ForeignNoBind`, WITHOUT taking the fallback
@@ -13,7 +13,7 @@
 //! could observe it). `tls_heap` exposes
 //! `dbg_teardown_then_resolve_is_foreign_no_bind`, the `current_for_dealloc`
 //! analogue of the existing `dbg_teardown_then_resolve_is_fallback` hook: it
-//! calls the EXACT SAME `mark_local_torn` function `AbandonGuard::drop`
+//! calls the EXACT SAME `mark_local_torn` function `LeaseReleaseGuard::drop`
 //! calls (not a reimplementation), then resolves `current_for_dealloc()` and
 //! reports whether it took the `ForeignNoBind` arm.
 //!
@@ -32,7 +32,7 @@
 //!
 //! Beyond the deterministic resolver-mapping proof above, this file also
 //! drives a REAL TORN-thread dealloc end to end: a worker thread binds a
-//! heap (one alloc), exits (its `AbandonGuard::drop` recycles the slot and
+//! heap (one alloc), exits (its `LeaseReleaseGuard::drop` recycles the slot and
 //! stamps `LOCAL` to `TORN`) — then, from the CURRENT (test) thread, we poke
 //! the same `mark_local_torn` hook to reproduce the TORN state locally and
 //! free a genuinely foreign pointer (allocated by a THIRD, still-live
@@ -176,7 +176,7 @@ fn torn_dealloc_of_foreign_pointer_is_correct_and_skips_fallback_lock() {
     // correct either way.
 
     // Reproduce the TORN state on THIS (test) thread via the same
-    // `mark_local_torn` function `AbandonGuard::drop` calls, saving/
+    // `mark_local_torn` function `LeaseReleaseGuard::drop` calls, saving/
     // restoring `LOCAL` exactly like `dbg_teardown_then_resolve_is_foreign_no_bind`
     // does internally — except here we keep the poisoned state across the
     // real `dealloc` call under test, then restore it manually.
