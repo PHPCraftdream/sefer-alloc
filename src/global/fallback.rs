@@ -57,7 +57,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use crate::registry::HeapCore;
 
 /// The fallback bootstrap state machine, typed. `#[repr(u8)]`: the
-/// discriminants ARE the values [`INIT_STATE`] has always carried (`pub` so
+/// discriminants ARE the values `INIT_STATE` has always carried (`pub` so
 /// the F-8 counterfactual test, `tests/regression_fallback_init_unwind_guard.rs`,
 /// can name them by intent rather than by raw `0`/`1`/`2` literals). One
 /// canonical spelling per state; the former `STATE_INITIALIZING` constant
@@ -579,7 +579,7 @@ impl Drop for LockGuard {
     }
 }
 
-/// F-8 (R34-17/task #536) — RAII guard over the fallback [`INIT_STATE`] bootstrap
+/// F-8 (R34-17/task #536) — RAII guard over the fallback `INIT_STATE` bootstrap
 /// word. Arming it declares "I have won the UNINIT→INITIALIZING CAS and am about
 /// to do fallible init"; its [`Drop`] rolls `INIT_STATE` back to `UNINIT` IF it
 /// is still armed when the guard goes out of scope (the unwind path), so loser
@@ -631,7 +631,7 @@ struct InitStateGuard {
 
 impl InitStateGuard {
     /// Construct an armed guard. The caller MUST have just won the
-    /// `UNINIT → INITIALIZING` CAS on [`INIT_STATE`].
+    /// `UNINIT → INITIALIZING` CAS on `INIT_STATE`.
     fn armed() -> Self {
         InitStateGuard { armed: true }
     }
@@ -766,7 +766,7 @@ pub fn dbg_set_inject_fallback_init_panic(on: bool) {
 }
 
 /// `#[doc(hidden)]` test hook (R34-17/task #536) — not part of the public API.
-/// Reads the current [`INIT_STATE`] value (`FallbackInitState::Uninit` /
+/// Reads the current `INIT_STATE` value (`FallbackInitState::Uninit` /
 /// `FallbackInitState::Initializing` / `FallbackInitState::Ready`). Lets a test assert the precondition (UNINIT, before any
 /// fallback init has run) and the post-panic/post-recovery state.
 #[cfg(feature = "internals")]
@@ -790,7 +790,7 @@ pub fn dbg_init_state() -> u8 {
 ///
 /// ## Precondition
 ///
-/// The hook REQUIRES [`INIT_STATE`] to be `UNINIT` on entry (the fallback must
+/// The hook REQUIRES `INIT_STATE` to be `UNINIT` on entry (the fallback must
 /// not already be initialised — otherwise `heap_ptr`'s fast path returns before
 /// the guarded region and the injection is never reached, making the test
 /// vacuous). In a dedicated test binary that does NOT install `SeferAlloc` as
