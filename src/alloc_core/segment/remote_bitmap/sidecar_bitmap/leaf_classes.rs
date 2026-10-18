@@ -3,21 +3,25 @@
 //! read 0, so a producer's terminal publication (Acquire, before the
 //! pending-bit RMW) drops foreign frees of interior pointers without reading
 //! segment state. Producers never write them.
+//!
+//! # Construction contract
+//! The backing is built from all-zero bytes (the directory uses
+//! `System.alloc_zeroed`); the all-zero pattern is the valid initial state
+//! (null leaf pointers, zero presence bits). There is no in-place constructor.
 #![allow(unsafe_code)]
-
-use core::ptr;
 #[cfg(feature = "internals")]
 use core::sync::atomic::AtomicUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 use std::cell::Cell;
 
-use super::{AtomicPtr, AtomicU8, Ordering};
+use super::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 const LEAF_GRANULES: usize = 256;
 const LEAVES: usize = 1024;
+const PRESENT_WORDS: usize = LEAVES / u64::BITS as usize;
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 std::thread_local! {
@@ -39,25 +43,13 @@ static FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct ClassLeaves {
     mixed: [AtomicPtr<AtomicU8>; LEAVES],
+    /// Owner-private leaf-presence bits, maintained only by `prepare`
+    /// (promotion); producers never read them. A set bit implies the leaf
+    /// pointer in `mixed` was Release-published.
+    present: [AtomicU64; PRESENT_WORDS],
 }
 
 impl ClassLeaves {
-    /// # Safety
-    /// `raw` is a private, aligned, writable ClassLeaves slot in the
-    /// System-backed sidecar. No reference or Drop may access it until return.
-    pub(crate) unsafe fn initialize_at(raw: *mut Self) {
-        // SAFETY: caller grants exclusive writable storage of Self; field
-        // addresses are formed without a reference to uninitialized bytes.
-        let mixed = unsafe { ptr::addr_of_mut!((*raw).mixed).cast::<AtomicPtr<AtomicU8>>() };
-        for i in 0..LEAVES {
-            // SAFETY: each index is within its field and written exactly once
-            // before the enclosing route is published.
-            unsafe {
-                mixed.add(i).write(AtomicPtr::new(ptr::null_mut()));
-            }
-        }
-    }
-
     pub(crate) fn prepared(&self, granule: usize, class: u8) -> bool {
         if granule >= LEAVES * LEAF_GRANULES || usize::from(class) >= SMALL_CLASS_COUNT {
             return false;
@@ -108,6 +100,11 @@ impl ClassLeaves {
             unsafe { fresh.add(i).write(AtomicU8::new(0)) };
         }
         self.mixed[leaf].store(fresh, Ordering::Release);
+        // Owner-only promotion bookkeeping: set the presence bit only after the
+        // leaf pointer is Release-published, so any future reader that sees the
+        // bit also sees the fully initialized leaf. Producers never read it;
+        // Drop (also owner-only, after the last pin) walks exactly these bits.
+        self.present[leaf / 64].fetch_or(1u64 << (leaf % 64), Ordering::Release);
         true
     }
 
@@ -221,16 +218,33 @@ impl Drop for ClassLeaves {
     fn drop(&mut self) {
         let layout = Layout::array::<AtomicU8>(LEAF_GRANULES)
             .unwrap_or_else(|_| fatal(b"leaf_classes: sidecar bitmap layout overflow\n"));
-        for slot in &self.mixed {
-            let p = slot.load(Ordering::Relaxed);
-            if !p.is_null() {
+        for (word, bits) in self.present.iter().enumerate() {
+            let mut bits = bits.load(Ordering::Relaxed);
+            while bits != 0 {
+                let leaf = word * 64 + bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let ptr = self.mixed[leaf].load(Ordering::Relaxed);
+                debug_assert!(
+                    !ptr.is_null(),
+                    "present bit without a leaf pointer: leaf {leaf}"
+                );
                 #[cfg(feature = "internals")]
                 Self::record_free(layout.size());
-                // SAFETY: each pointer is the genuine System allocation
-                // published once by this route's owner, with this layout;
-                // last-pin Drop is after unlink, so no scanner remains.
-                unsafe { System.dealloc(p.cast(), layout) };
+                // SAFETY: promotion published a genuine System allocation with
+                // this layout for every presence bit; Drop runs after unlink,
+                // so no scanner or pin still references the leaf.
+                unsafe { System.dealloc(ptr.cast(), layout) };
             }
+        }
+        #[cfg(debug_assertions)]
+        for (leaf, slot) in self.mixed.iter().enumerate() {
+            let present =
+                self.present[leaf / 64].load(Ordering::Relaxed) & (1u64 << (leaf % 64)) != 0;
+            debug_assert_eq!(
+                present,
+                !slot.load(Ordering::Relaxed).is_null(),
+                "leaf presence invariant broken: leaf {leaf}"
+            );
         }
     }
 }

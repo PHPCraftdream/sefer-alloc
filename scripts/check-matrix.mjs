@@ -257,7 +257,7 @@ export const PER_PR_ROWS = [
     kind: 'test',
     features: 'production internals bench-internals',
     target: { flag: '--test', name: 'r6_t40_sidecar_system_alloc' },
-    note: 'OPT04: non-zeroed System SmallSidecar allocation initializes before route issue.',
+    note: 'B4-R6: System-zeroed SmallSidecar backing — the all-zero pattern is the valid initial state (r6_t40 asserts the zeroed-bytes delta).',
   },
   {
     id: 'test-r8-large-commit-failure',

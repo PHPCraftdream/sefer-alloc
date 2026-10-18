@@ -28,22 +28,16 @@ mod alloc_core {
 mod remote_bitmap;
 
 use remote_bitmap::ClassLeaves;
-use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 fn leaves() -> Arc<ClassLeaves> {
-    let mut raw = Box::new(MaybeUninit::<ClassLeaves>::uninit());
-    // SAFETY: raw owns a private, aligned, writable ClassLeaves-sized slot;
-    // no reference to ClassLeaves or Drop accesses it before initialization.
+    // SAFETY: the all-zero byte pattern is a valid ClassLeaves value (null
+    // leaf pointers, zero presence bits) — the same contract the directory's
+    // System.alloc_zeroed backing relies on. The Box retains exclusive
+    // ownership and its original allocation/layout.
     #[allow(unsafe_code)]
-    unsafe {
-        ClassLeaves::initialize_at(raw.as_mut_ptr());
-    }
-    // SAFETY: initialize_at initialized both complete atomic arrays; the Box
-    // retains exclusive ownership and its original allocation/layout.
-    #[allow(unsafe_code)]
-    let initialized = unsafe { raw.assume_init() };
+    let initialized = unsafe { Box::<ClassLeaves>::new_zeroed().assume_init() };
     Arc::from(initialized)
 }
 

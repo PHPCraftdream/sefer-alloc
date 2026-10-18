@@ -88,7 +88,10 @@ fn class_leaves_ordering_inventory_is_exact() {
     let text = leaves_src();
     for (name, expected) in [
         ("prepared", vec![("load", vec!["Acquire"])]),
-        ("prepare", vec![("store", vec!["Release"])]),
+        (
+            "prepare",
+            vec![("store", vec!["Release"]), ("fetch_or", vec!["Release"])],
+        ),
         (
             "issue",
             vec![("load", vec!["Acquire"]), ("store", vec!["Release"])],
@@ -125,6 +128,41 @@ fn mixed_leaf_published_after_its_initialization() {
     assert!(
         body.find(initialization).unwrap() + initialization.len() < body.find(publication).unwrap(),
         "initialize the entire leaf before mixed publication:\n{body}"
+    );
+}
+
+#[test]
+fn promotion_sets_presence_bit_after_leaf_publication() {
+    let body = fn_body(&leaves_src(), "prepare");
+    let publication = "self.mixed[leaf].store(fresh, Ordering::Release)";
+    let presence = "self.present[leaf / 64].fetch_or(1u64 << (leaf % 64), Ordering::Release)";
+    assert_eq!(
+        body.matches(publication).count(),
+        1,
+        "publish the leaf pointer once:\n{body}"
+    );
+    assert_eq!(
+        body.matches(presence).count(),
+        1,
+        "set the presence bit exactly once:\n{body}"
+    );
+    assert!(
+        body.find(publication).unwrap() < body.find(presence).unwrap(),
+        "presence bit only after the leaf pointer's Release publication:\n{body}"
+    );
+}
+
+#[test]
+fn drop_walks_presence_bits_not_the_full_slot_array() {
+    let text = leaves_src();
+    let body = fn_body(&text, "drop");
+    assert!(
+        body.contains("self.present.iter().enumerate()"),
+        "Drop must iterate the presence bitmap:\n{body}"
+    );
+    assert!(
+        !body.contains("for slot in &self.mixed"),
+        "Drop must not linearly scan all leaf slots:\n{body}"
     );
 }
 

@@ -86,9 +86,10 @@ impl Backing {
     }
 }
 
-/// `ClassLeaves` backing for the mixed-leaf tests below: the pending words the
-/// production `from_leaves` geometry requires, plus one System-backed leaf set
-/// initialised exactly like `tests/class_leaves_publication_miri.rs` does.
+/// ClassLeaves backing for the mixed-leaf tests below: the pending words the
+/// production from_leaves geometry requires, plus one System-backed leaf set
+/// constructed from all-zero bytes — the valid initial state, exactly like
+/// tests/class_leaves_publication_miri.rs does.
 struct LeafBacking {
     words: Vec<AtomicU64>,
     leaves: Box<ClassLeaves>,
@@ -99,13 +100,10 @@ impl LeafBacking {
         let words = (0..SidecarBitmap::WORDS)
             .map(|_| AtomicU64::new(0))
             .collect();
-        let mut slot = Box::new(core::mem::MaybeUninit::<ClassLeaves>::uninit());
-        // SAFETY: the Box owns a private, aligned, writable ClassLeaves-sized
-        // slot; nothing references it until `initialize_at` returns.
-        unsafe { ClassLeaves::initialize_at(slot.as_mut_ptr()) };
-        // SAFETY: every field was initialized above; the Box keeps ownership
-        // of its original allocation and layout.
-        let leaves = unsafe { slot.assume_init() };
+        // SAFETY: the all-zero byte pattern is a valid ClassLeaves value
+        // (null leaf pointers, zero presence bits) — the same contract the
+        // directory's System.alloc_zeroed backing relies on.
+        let leaves = unsafe { Box::<ClassLeaves>::new_zeroed().assume_init() };
         Self { words, leaves }
     }
 
