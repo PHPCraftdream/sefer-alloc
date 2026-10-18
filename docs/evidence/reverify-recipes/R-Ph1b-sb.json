@@ -1,0 +1,32 @@
+{
+  "id": "R-Ph1b-sb",
+  "registryActivationHash": "2700dfe6299d44c9fbcc72d930fbda658ff0f415e30f68c2645f264435c6b7de",
+  "steps": [
+    {
+      "name": "exact-object paused-Box witness on HEAD (Miri SB)",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "exact-object-proto internals bench-internals",
+        "--test",
+        "r11_exact_object_proto",
+        "--",
+        "paused"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdoutRegex": [
+          "\\[r11_exact_object_proto\\] COMPLETE paused"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

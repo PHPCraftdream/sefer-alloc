@@ -1418,7 +1418,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **423 integration test files**,
+needs its acceptance run. The present tree contains **424 integration test files**,
 **96 example binaries**, **33 benches**, and **19 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1428,7 +1428,7 @@ and support modules. The test tree also contains 15 nested Rust source files.
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (423 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (424 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (96 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (33 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1881,6 +1881,34 @@ Memory-safety bugs, soundness holes, and `unsafe`-contract violations
 qualify as security issues. **Please do not open public issues for these.**
 Use GitHub Security Advisories (private) per [`SECURITY.md`](SECURITY.md).
 Acknowledgement within 72 hours; coordinated disclosure standard.
+
+### Additive features can change the global allocator
+
+Cargo features are additive and unified across the whole dependency graph:
+any dependency that enables a `sefer-alloc` feature changes the feature set
+of the entire build — including for your binary. The features that change
+global-allocator behavior are:
+
+- `exact-object-proto` — prototype (not in `production`): narrow requests are
+  served by exact `System` allocations with an out-of-object descriptor shard;
+  a `Layout` mismatch aborts.
+- `virgin-zero-skip` — not in `production`: `alloc_zeroed` may skip the
+  explicit zero fill for a genuinely virgin block; the zeroing guarantee then
+  rests on the allocator's virgin-bit invariant.
+- `hardened` — adds own-thread interior-pointer and layout-consistency
+  guards; detected Small free-list corruption aborts the process instead of
+  returning null (new abort paths).
+- `bench-internals` — measurement-only counters on hot paths plus additional
+  `unsafe` diagnostic hooks; allocation results do not change, but the
+  shipped code does.
+
+Check what a build actually ships with
+`cargo tree -e features -i sefer-alloc`, and set `default-features = false`
+on your direct dependency to control the feature set deliberately. Mock
+backends are already restricted by a build-time `--cfg` flag (see
+`numa-aware-mock` in `Cargo.toml`) for exactly this reason; a similar
+`--cfg` restriction for the features above is a possible future direction,
+not the current behavior.
 
 ---
 

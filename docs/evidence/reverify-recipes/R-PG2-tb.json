@@ -1,0 +1,34 @@
+{
+  "id": "R-PG2-tb",
+  "registryActivationHash": "aff7acb2b69ca5f2e9fe163088fbf0f6c565f492bacc3b8f59bf1fa3c86de8af",
+  "steps": [
+    {
+      "name": "paused witness expected red on HEAD (Miri TB, production shape)",
+      "env": {
+        "MIRIFLAGS": "-Zmiri-tree-borrows -Zmiri-disable-isolation"
+      },
+      "argv": [
+        "cargo",
+        "+nightly",
+        "miri",
+        "test",
+        "--locked",
+        "--features",
+        "production internals bench-internals",
+        "--test",
+        "miri_global_box_acceptance",
+        "--",
+        "paused"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdoutRegex": [
+          "Undefined Behavior: write access through .* is forbidden",
+          "0: sefer_alloc::alloc_core::platform::node::Node::write_next",
+          "reclaim_sidecar_record|flush_run|dealloc_small"
+        ]
+      }
+    }
+  ],
+  "mutant": null
+}

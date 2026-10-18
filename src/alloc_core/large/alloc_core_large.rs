@@ -149,16 +149,12 @@ impl AllocCore {
     }
 
     /// Reject before any lifecycle credit or hardened small-layout guard.
-    /// Callers return immediately on rejection, so each free is counted once.
+    /// Pure predicate since R6-T55: the callers count the rejection (into
+    /// `LOCAL_REJECT_FREES`, not the public foreign/unroutable stat) at their
+    /// own single rejection site.
     #[inline]
     pub(crate) fn reject_large_interior_free(base: *mut u8, ptr: *mut u8) -> bool {
-        if !Self::large_payload_mismatch(base, ptr) {
-            return false;
-        }
-        #[cfg(any(feature = "alloc-global", feature = "alloc-stats"))]
-        crate::alloc_core::FOREIGN_OR_UNROUTABLE_FREES
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        true
+        Self::large_payload_mismatch(base, ptr)
     }
 
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
