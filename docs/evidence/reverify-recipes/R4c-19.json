@@ -25,5 +25,24 @@
       }
     }
   ],
-  "mutant": null
+  "mutant": {
+    "file": "tests/loom_r8_maintenance_lease.rs",
+    "find": "            Ordering::Release,\n            Ordering::Relaxed\n        )\n        .is_ok());",
+    "replace": "            Ordering::Relaxed,\n            Ordering::Relaxed\n        )\n        .is_ok());",
+    "steps": [
+      {
+        "name": "compile Ph4c mutant 11 loom model",
+        "env": {"RUSTFLAGS": "--cfg loom"},
+        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r8_maintenance_lease", "--no-run"],
+        "expect": {"exit": 0, "stdoutRegex": ["Finished"]}
+      },
+      {
+        "name": "Ph4c mutant 11 loom runtime",
+        "env": {"RUSTFLAGS": "--cfg loom"},
+        "argv": ["cargo", "test", "--release", "--features", "alloc-global,alloc-xthread,internals,tagged-index-stack/loom", "--test", "loom_r8_maintenance_lease", "--", "--nocapture"],
+        "expect": {"exitNonZero": true, "stdoutRegex": ["Causality violation|Concurrent write accesses to UnsafeCell"]}
+      }
+    ],
+    "expect": {"exitNonZero": true, "stdoutRegex": ["Causality violation|Concurrent write accesses to UnsafeCell"]}
+  }
 }

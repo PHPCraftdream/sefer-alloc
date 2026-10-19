@@ -5,11 +5,12 @@ import {
   appendFileSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync,
   readFileSync, readSync, realpathSync, rmSync, writeFileSync, writeSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import {
   HEADER, ID, SHA, STAGES, parseCsv, readRegistry, selectIds, validateStep,
+  evaluateStep, mutantVerdict, cargoBuildSignature, encodeOutputFrames, decodeOutputFrames,
   validateRecipe as validateRecipeData, verifyPerformed, verifyArtifacts,
 } from './r20_evidence_reverify_support.mjs';
 
@@ -22,7 +23,7 @@ const quote = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
 const encode = (rows) => `${rows.map((row) => row.map(quote).join(',')).join('\n')}\n`;
 
 function cli(argv) {
-  const options = { stages: [], outDir: join(ROOT, 'target/r20-evidence-reverify') };
+  const options = { stages: [], outDir: join(ROOT, '.rush/r20-evidence-reverify') };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--selftest') options.selftest = true;
@@ -82,10 +83,10 @@ function load(id, row, root = RECIPE_ROOT) {
 function mutantPreflight(mutant, root = ROOT) {
   const path = resolve(root, mutant.file);
   const relativePath = relative(root, path);
-  if (!path.startsWith(root + sep) || relativePath === '..' ||
-      relativePath.startsWith(`..${sep}`)) {
-    throw Error('mutant path escape');
-  }
+  if (isAbsolute(mutant.file) || path === root || isAbsolute(relativePath) || relativePath === '..' ||
+      relativePath.startsWith(`..${sep}`) || !/^(?:src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|tests\/loom_[A-Za-z0-9_.-]+\.rs)$/.test(mutant.file) ||
+      mutant.file.split('/').some((part) => part === '.' || part === '..')) throw Error('mutant path escape');
+  if (!path.startsWith(root + sep)) throw Error('mutant path escape');
   let current = root;
   for (const part of mutant.file.split('/')) {
     current = join(current, part);
@@ -126,16 +127,8 @@ function profile(data) {
   return args.includes('--release') ? 'release' : 'debug';
 }
 
-function matches(step, output, code, signal, error) {
-  const markers = step.expect.stdoutRegex.map((regex) => ({
-    regex,
-    matched: new RegExp(regex).test(output),
-    actual: [...output.matchAll(new RegExp(regex, 'g'))].map((match) => match[0]),
-  }));
-  return {
-    passed: !error && !signal && code === step.expect.exit && markers.every((marker) => marker.matched),
-    markers,
-  };
+function matches(step, output, code, signal, error, stderrOutput = '', cargoBuildPassed = false) {
+  return evaluateStep(step.expect, { exit: code, signal, error, stderrOutput, cargoBuildPassed }, output);
 }
 
 function runStep(step, log, id, kind) {
@@ -156,10 +149,8 @@ function runStep(step, log, id, kind) {
       child.on('error', (cause) => { error = cause.message; });
       child.on('close', (code, signal) => {
         try {
-          const end = fstatSync(fd).size;
-          writeSync(fd, Buffer.from(`\nE0_STEP_END ${JSON.stringify({ code, signal, error })}\n`));
-          closeSync(fd);
-          const buffer = Buffer.alloc(end - start);
+          const rawEnd = fstatSync(fd).size;
+          const buffer = Buffer.alloc(rawEnd - start);
           const reader = openSync(log, 'r');
           let offset = 0;
           while (offset < buffer.length) {
@@ -168,12 +159,26 @@ function runStep(step, log, id, kind) {
             offset += count;
           }
           closeSync(reader);
-          const result = matches(step, buffer.toString('utf8'), code, signal, error);
-          resolveRun({
-            name: step.name, argv: step.argv, env: step.env, exit: code, signal, error,
-            expected: step.expect.exit, expect: step.expect, passed: result.passed,
-            start, end, matches: result.markers,
-          });
+          writeSync(fd, Buffer.from(`\nE0_STEP_END ${JSON.stringify({ code, signal, error })}\n`));
+          const captured = buffer.toString('utf8');
+          // Structured receipt frames, encoded with the same shared helper the
+          // verifier decodes with (verifyArtifacts -> frameFor).
+          writeSync(fd, Buffer.from(encodeOutputFrames(captured, '')));
+          const end = fstatSync(fd).size;
+          closeSync(fd);
+          const result = matches(step, captured, code, signal, error, captured,
+        Boolean(step.argv[0] === 'cargo' && step.argv.includes('--test') &&
+          runStep.lastSuccessfulBuild &&
+          runStep.lastSuccessfulBuild.signature === cargoBuildSignature(step.argv, step.env)));
+      if (step.argv[0] === 'cargo' && step.argv.includes('--no-run') && code === 0 && !signal && !error) {
+        runStep.lastSuccessfulBuild = { signature: cargoBuildSignature(step.argv, step.env) };
+      }
+      resolveRun({
+        name: step.name, argv: step.argv, env: step.env, exit: code, signal, error,
+        expected: step.expect.mutant === 'signal' ? null :
+          (step.expect.exitNonZero === true ? -1 : step.expect.exit), expect: step.expect, passed: result.passed,
+        start, end, matches: result.matches,
+      });
         } catch (cause) {
           rejectRun(cause);
         }
@@ -195,7 +200,7 @@ async function runSteps(steps, log, id, kind) {
   return results;
 }
 
-const outputFor = (log, step) => readFileSync(log).subarray(step.start, step.end).toString('utf8');
+const outputFor = (log, step) => decodeOutputFrames(readFileSync(log).subarray(step.start, step.end).toString('utf8'), 'STDOUT');
 
 function aggregateMutant(mutant, steps, log) {
   const output = steps.map((step) => outputFor(log, step)).join('\n');
@@ -292,6 +297,7 @@ async function runOracle(plans, out, identity) {
       if (plan.recipe.mutant) {
         const mutant = plan.recipe.mutant;
         plan.mutantOriginalHash = plan.snapshot.originalHash;
+        runStep.lastSuccessfulBuild = null;
         plan.mutantSteps = await applyMutant(mutant, ROOT, async (snapshot) => {
           if (snapshot.originalHash !== plan.mutantOriginalHash) {
             throw Error('source changed after preflight');
@@ -302,8 +308,7 @@ async function runOracle(plans, out, identity) {
         metadata(log, { id: plan.id, kind: 'restored', sha256: plan.mutantRestoredHash });
         plan.mutantMatches = aggregateMutant(mutant, plan.mutantSteps, log);
         const killed = plan.mutantSteps.length === mutant.steps.length &&
-          plan.mutantSteps.every((step) => !step.error && !step.signal &&
-            step.exit !== 0 && step.passed) && plan.mutantMatches.every((match) => match.matched);
+          mutantVerdict(mutant.expect, plan.mutantSteps) && plan.mutantMatches.every((match) => match.matched);
         if (!killed || plan.mutantRestoredHash !== plan.mutantOriginalHash) {
           plan.verdict = 'fail';
           plan.reason = 'mutant expectation/restoration failed';
@@ -534,10 +539,25 @@ function makeSelftestStep(name, argv, env, regexes, expectedExit = 0, actualExit
   };
 }
 
-function buildSelftestArtifacts({ out, fixture, identity, recipeFile, receiptBytes, receiptName }) {
-  const receiptHash = hash(receiptBytes);
-  writeFileSync(join(out, receiptName), receiptBytes);
-  const results = fixture.steps.map((step) => ({
+function buildFixtureReceipt(steps, stepOutputs) {
+  // Real receipt bytes, with structured frames written through the same
+  // shared helper the verifier decodes with.
+  let buffer = Buffer.from('E0_METADATA fixture receipt\n');
+  const ranges = steps.map((step, index) => {
+    const frames = Buffer.from(encodeOutputFrames(stepOutputs[index], ''));
+    const start = buffer.length;
+    buffer = Buffer.concat([buffer,
+      Buffer.from(`E0_STEP ${JSON.stringify({ name: step.name })}\n`), frames]);
+    return { start, end: buffer.length };
+  });
+  return { buffer, ranges };
+}
+
+function buildSelftestArtifacts({ out, fixture, identity, recipeFile, receiptName, stepOutputs }) {
+  const { buffer, ranges } = buildFixtureReceipt(fixture.steps, stepOutputs);
+  writeFileSync(join(out, receiptName), buffer);
+  const receiptHash = hash(buffer);
+  const results = fixture.steps.map((step, index) => ({
     name: step.name,
     argv: step.argv,
     env: step.env,
@@ -545,6 +565,8 @@ function buildSelftestArtifacts({ out, fixture, identity, recipeFile, receiptByt
     exit: step.expect.exit,
     expected: step.expect.exit,
     passed: true,
+    start: ranges[index].start,
+    end: ranges[index].end,
     matches: step.expect.stdoutRegex.map((regex) => ({ regex, matched: true, actual: [regex] })),
   }));
   const summaryRow = makeSyntheticResult(fixture.id, fixture.row, identity, recipeFile,
@@ -569,10 +591,33 @@ function buildSelftestArtifacts({ out, fixture, identity, recipeFile, receiptByt
   writeFileSync(join(out, 'proposed_rows.csv'),
     encode([HEADER, HEADER.map((key) => proposal[key] ?? '')]));
   writeFileSync(join(out, 'verdict.txt'), 'E0 PASS\n');
-  return summary;
+  return { summary, receiptBytes: buffer };
 }
 
 async function selftest() {
+  // Point 5: both focused Node selftests must run under --selftest.
+  for (const file of [
+    'tests/evidence_reverify_support_selftest.mjs',
+    'tests/evidence_reverify_runner_selftest.mjs',
+  ]) {
+    const focused = spawnSync(process.execPath, [join(ROOT, file)], {
+      cwd: ROOT, encoding: 'utf8', timeout: 600000,
+    });
+    if (focused.error || focused.status !== 0) {
+      throw Error(`focused selftest failed (${file}): ` +
+        `${focused.stderr || focused.error?.message || 'nonzero exit'}`);
+    }
+  }
+  // Unique scratch per run (parallel-safe), removed even when a check throws.
+  const root = join(ROOT, `.rush/e0-selftest-${process.pid}-${Date.now()}`);
+  try {
+    await runSelftestChecks(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function runSelftestChecks(root) {
   let rejected = false;
   try { selectIds(['../bad']); } catch { rejected = true; }
   if (!rejected) throw Error('unsafe row id selector accepted');
@@ -604,21 +649,20 @@ async function selftest() {
   if (!activationRejected) throw Error('activation hash tamper accepted');
   const { registry, row } = createSelftestRegistry();
   const identity = { head: 'a'.repeat(40), tree: 'b'.repeat(40) };
-  const root = join(ROOT, 'target/e0-selftest');
-  rmSync(root, { recursive: true, force: true });
   mkdirSync(root, { recursive: true });
+  mkdirSync(join(root, 'tests'), { recursive: true });
   const original = Buffer.from('A\r\nunique\r\nB\r\n');
-  const mutantFile = join(root, 'rollback.rs');
+  const mutantFile = join(root, 'tests/loom_selftest.rs');
   writeFileSync(mutantFile, original);
   const mutant = {
-    file: relative(ROOT, mutantFile).split(sep).join('/'),
+    file: 'tests/loom_selftest.rs',
     find: 'unique\n',
     replace: 'mutated\n',
   };
-  const snapshot = mutantPreflight(mutant);
+  const snapshot = mutantPreflight(mutant, root);
   let awaitedReplacementObserved = false;
   try {
-    await applyMutant(mutant, ROOT, async () => {
+    await applyMutant(mutant, root, async () => {
       await Promise.resolve();
       awaitedReplacementObserved = readFileSync(mutantFile, 'utf8').includes('mutated');
       throw Error('expected test exception');
@@ -631,7 +675,7 @@ async function selftest() {
   for (const content of ['no match', 'unique\nunique\n']) {
     writeFileSync(mutantFile, content);
     let countRejected = false;
-    try { mutantPreflight(mutant); } catch { countRejected = true; }
+    try { mutantPreflight(mutant, root); } catch { countRejected = true; }
     if (!countRejected) throw Error('mutant fragment count accepted 0 or 2 matches');
   }
 
@@ -687,18 +731,20 @@ async function selftest() {
     makeSelftestStep('second', recipeData.steps[1].argv, recipeData.steps[1].env,
       ['second-marker']),
   ];
-  const receiptBytes = Buffer.from('fixture receipt\n');
   const receiptName = '_raw_reverify_SYNTH.log';
   const fixture = {
     id: 'SYNTH', row, recipe: recipeData, steps, toolchain: 'fixture toolchain',
   };
-  const baselineSummary = buildSelftestArtifacts({
-    out: artifactRoot, fixture, identity, recipeFile, receiptBytes, receiptName,
+  const baselineOutputs = recipeData.steps.map((step) => `${step.expect.stdoutRegex[0]}\n`);
+  const baselineBuild = buildSelftestArtifacts({
+    out: artifactRoot, fixture, identity, recipeFile, receiptName, stepOutputs: baselineOutputs,
   });
+  const baselineSummary = baselineBuild.summary;
+  const baselineReceiptBytes = baselineBuild.receiptBytes;
   verify(artifactRoot, ['SYNTH'], identity, registry, recipeRoot);
   const baselineRecipeBytes = readFileSync(recipeFile);
   const baselineCsv = readFileSync(join(artifactRoot, 'proposed_rows.csv'), 'utf8');
-  const baselineReceiptHash = hash(receiptBytes);
+  const baselineReceiptHash = hash(baselineReceiptBytes);
   const badCases = [
     'missing-receipt', 'receipt-hash', 'recipe-file', 'recipe-hash',
     'toolchain-row', 'toolchain-map', 'toolchain-csv', 'step-missing',
@@ -707,8 +753,8 @@ async function selftest() {
   for (const kind of badCases) {
     writeFileSync(recipeFile, baselineRecipeBytes);
     const fresh = buildSelftestArtifacts({
-      out: artifactRoot, fixture, identity, recipeFile, receiptBytes, receiptName,
-    });
+      out: artifactRoot, fixture, identity, recipeFile, receiptName, stepOutputs: baselineOutputs,
+    }).summary;
     if (JSON.stringify(fresh) !== JSON.stringify(baselineSummary)) {
       throw Error('self-test fixture did not return to its valid baseline');
     }
@@ -737,8 +783,62 @@ async function selftest() {
     try { verify(artifactRoot, ['SYNTH'], identity, registry, recipeRoot); }
     catch { rejectedArtifact = true; }
     if (!rejectedArtifact) throw Error(`artifact verifier accepted isolated tamper: ${kind}`);
-    if (hash(receiptBytes) !== baselineReceiptHash) throw Error('receipt fixture hash drift');
+    if (hash(baselineReceiptBytes) !== baselineReceiptHash) throw Error('receipt fixture hash drift');
   }
+
+  // End-to-end: the real writer (runSteps -> receipt) feeds the real verifier.
+  const e2e = createSelftestRegistry('E2E');
+  const e2eRoot = join(root, 'e2e-recipes');
+  mkdirSync(e2eRoot);
+  const e2eRecipe = {
+    id: 'E2E',
+    registryActivationHash: hash(Buffer.from(e2e.row.activation)),
+    steps: [{ name: 'e2e', env: {},
+      argv: ['node', 'scripts/ev1_receipt_fixture.mjs'],
+      expect: { exit: 0, stdoutRegex: ['e2e-out', 'e2e-err'] } }],
+    mutant: null,
+  };
+  const e2ePath = recipePath('E2E', e2eRoot);
+  writeFileSync(e2ePath, `${JSON.stringify(e2eRecipe, null, 2)}\n`);
+  const e2eLog = join(artifactRoot, '_raw_reverify_E2E.log');
+  writeFileSync(e2eLog, '');
+  const e2eSteps = await runSteps(e2eRecipe.steps, e2eLog, 'E2E', 'baseline');
+  if (e2eSteps.length !== 1 || !e2eSteps[0].passed) throw Error('e2e real step did not pass');
+  const writeE2e = (receiptBytes) => {
+    const result = makeSyntheticResult('E2E', e2e.row, identity, e2ePath, e2eRecipe,
+      hash(receiptBytes), 'e2e toolchain', e2eSteps);
+    writeFileSync(join(artifactRoot, 'summary.json'), `${JSON.stringify({
+      identity, selectedIds: ['E2E'], stages: ['oracle'],
+      toolchains: { E2E: 'e2e toolchain' }, rows: [result],
+    }, null, 2)}\n`);
+    const proposal = { ...e2e.row, source_sha: identity.head, source_tree: identity.tree,
+      profile: result.profile, toolchain: 'e2e toolchain', receipt: result.receipt,
+      receipt_sha256: result.receipt_sha256 };
+    writeFileSync(join(artifactRoot, 'proposed_rows.csv'),
+      encode([HEADER, HEADER.map((key) => proposal[key] ?? '')]));
+    writeFileSync(join(artifactRoot, 'verdict.txt'), 'E0 PASS\n');
+  };
+  const e2eBytes = readFileSync(e2eLog);
+  writeE2e(e2eBytes);
+  verify(artifactRoot, ['E2E'], identity, e2e.registry, e2eRoot);
+  // One payload byte inside the step's frames flipped, hashes re-stamped: the
+  // receipt hash check passes, so only frame replay can reject it.
+  const frameAt = e2eBytes.indexOf('E0_STDOUT ', e2eSteps[0].start);
+  if (frameAt < 0 || frameAt >= e2eSteps[0].end) throw Error('e2e receipt has no stdout frame');
+  const forged = Buffer.from(e2eBytes);
+  const at = frameAt + 'E0_STDOUT '.length;
+  forged[at] = forged[at] === 0x41 ? 0x42 : 0x41;
+  writeFileSync(e2eLog, forged);
+  writeE2e(forged);
+  let e2eForgedRejected = false;
+  try { verify(artifactRoot, ['E2E'], identity, e2e.registry, e2eRoot); }
+  catch (error) {
+    // Must fail on replayed content, not on a stale hash.
+    if (/sha|hash/i.test(error.message)) throw Error(`e2e forged receipt rejected for the wrong reason: ${error.message}`);
+    e2eForgedRejected = true;
+  }
+  if (!e2eForgedRejected) throw Error('verifier accepted a forged real receipt frame');
+  rmSync(e2eLog);
 
   const r0RegistryData = createSelftestRegistry('R0-21', 'PASS', 'true');
   const r0Root = join(root, 'r0-recipes');
@@ -769,7 +869,8 @@ async function selftest() {
     toolchain: 'stable fixture toolchain',
   };
   buildSelftestArtifacts({ out: artifactRoot, fixture: panicFixture, identity,
-    recipeFile: panicPath, receiptBytes, receiptName: '_raw_reverify_R0-21.log' });
+    recipeFile: panicPath, receiptName: '_raw_reverify_R0-21.log',
+    stepOutputs: panicRecipe.steps.map((step) => `${step.expect.stdoutRegex.join('\n')}\n`) });
   verify(artifactRoot, ['R0-21'], identity, r0RegistryData.registry, r0Root);
   const wrongR0 = JSON.parse(readFileSync(join(artifactRoot, 'summary.json'), 'utf8'));
   wrongR0.rows[0].steps = wrongR0.rows[0].steps.map((step) => ({
@@ -804,16 +905,21 @@ async function selftest() {
   writeFileSync(nightlyPath, `${JSON.stringify(nightlyRecipe, null, 2)}\n`);
   const stableStep = makeSelftestStep('first', stableRecipe.steps[0].argv, {}, ['stdout-marker']);
   const nightlyStep = makeSelftestStep('first', nightlyRecipe.steps[0].argv, {}, ['stdout-marker']);
+  const stableReceipt = buildFixtureReceipt([stableStep], ['stdout-marker\n']);
+  const nightlyReceipt = buildFixtureReceipt([nightlyStep], ['stdout-marker\n']);
+  stableStep.start = stableReceipt.ranges[0].start;
+  stableStep.end = stableReceipt.ranges[0].end;
+  nightlyStep.start = nightlyReceipt.ranges[0].start;
+  nightlyStep.end = nightlyReceipt.ranges[0].end;
+  writeFileSync(join(artifactRoot, '_raw_reverify_STABLE.log'), stableReceipt.buffer);
+  writeFileSync(join(artifactRoot, '_raw_reverify_NIGHTLY.log'), nightlyReceipt.buffer);
   const mixedRegistry = new Map([['STABLE', stableRow], ['NIGHTLY', nightlyRow]]);
   const mixedRows = [
     makeSyntheticResult('STABLE', stableRow, identity, stablePath, stableRecipe,
-      baselineReceiptHash, 'stable toolchain', [stableStep]),
+      hash(stableReceipt.buffer), 'stable toolchain', [stableStep]),
     makeSyntheticResult('NIGHTLY', nightlyRow, identity, nightlyPath, nightlyRecipe,
-      baselineReceiptHash, 'nightly toolchain', [nightlyStep]),
+      hash(nightlyReceipt.buffer), 'nightly toolchain', [nightlyStep]),
   ];
-  for (const id of ['STABLE', 'NIGHTLY']) {
-    writeFileSync(join(artifactRoot, `_raw_reverify_${id}.log`), receiptBytes);
-  }
   const mixedSummary = {
     identity, selectedIds: ['STABLE', 'NIGHTLY'], stages: ['oracle'],
     toolchains: { STABLE: 'stable toolchain', NIGHTLY: 'nightly toolchain' }, rows: mixedRows,
@@ -830,8 +936,7 @@ async function selftest() {
   writeFileSync(join(artifactRoot, 'verdict.txt'), 'E0 PASS\n');
   verify(artifactRoot, ['STABLE', 'NIGHTLY'], identity, mixedRegistry, mixedRoot);
 
-  rmSync(root, { recursive: true, force: true });
-  console.log('PASS E0 selftest: streaming; R0 witnesses; mixed toolchains; independent artifact tampering');
+  console.log('PASS E0 selftest: streaming; real-receipt e2e; R0 witnesses; mixed toolchains; independent artifact tampering');
 }
 
 try {

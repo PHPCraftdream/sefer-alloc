@@ -1,0 +1,79 @@
+E0_METADATA {"id":"R5b-19","head":"810c018a27e329b6403e7d36c7bf9be5c387c913","tree":"91a2460d3ab8804bf0f798cdb4751de41afcacc6","setup":""}
+E0_METADATA {"id":"R5b-19","head":"810c018a27e329b6403e7d36c7bf9be5c387c913","tree":"91a2460d3ab8804bf0f798cdb4751de41afcacc6","os":"linux x64","toolchain":"rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1","profile":"debug","recipe":"docs/evidence/reverify-recipes/R5b-19.json","recipe_sha256":"49104f74e1c3f1149a8cc3b3993d950c0391d8d3ef07ead9ce1c3a65ecaa22a2","registry_activation_hash":"ef4264c89aafc5893c2d7c7693de65551dece08cea517e2084d8a6193881fa5e"}
+
+E0_STEP {"id":"R5b-19","kind":"baseline","name":"fallback OOM baseline","argv":["cargo","test","--locked","--features","production alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","r11_ph5b_c6_fallback_oom"],"env":{},"expect":{"exit":0,"stdoutRegex":["fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed","test result: ok"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph5b_c6_fallback_oom.rs (target/debug/deps/r11_ph5b_c6_fallback_oom-755c1e3a16d911e2)
+
+running 1 test
+test fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuMTRzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg1Yl9jNl9mYWxsYmFja19vb20ucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3IxMV9waDViX2M2X2ZhbGxiYWNrX29vbS03NTVjMWUzYTE2ZDkxMWUyKQoKcnVubmluZyAxIHRlc3QKdGVzdCBmYWxsYmFja19vb21faW5qZWN0aW9uX251bGxzX2FsbG9jX2FuZF9yZWNvdmVyc193aGVuX2Rpc2FybWVkIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgo=
+
+E0_STEP {"id":"R5b-19","kind":"mutant","name":"fallback injector bypass mutant","argv":["cargo","test","--locked","--features","production alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","r11_ph5b_c6_fallback_oom"],"env":{},"expect":{"exitNonZero":true,"stdoutRegex":["fallback alloc with the OOM injector armed returned"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[33mwarning[0m[1m: function `dbg_forced_oom` is never used[0m
+   [1m[94m--> [0msrc/global/fallback.rs:709:4
+    [1m[94m|[0m
+[1m[94m709[0m [1m[94m|[0m fn dbg_forced_oom() -> bool {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m: `sefer-alloc` (lib) generated 1 warning
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph5b_c6_fallback_oom.rs (target/debug/deps/r11_ph5b_c6_fallback_oom-755c1e3a16d911e2)
+
+running 1 test
+test fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed ... FAILED
+
+failures:
+
+---- fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed stdout ----
+
+thread 'fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed' (8280) panicked at tests/r11_ph5b_c6_fallback_oom.rs:47:5:
+fallback alloc with the OOM injector armed returned Some(0x7faf1d02f3c0) — the injection did not surface as OOM
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[91merror[0m: test failed, to rerun pass `--test r11_ph5b_c6_fallback_oom`
+
+E0_STEP_END {"code":101,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1szM213YXJuaW5nG1swbRtbMW06IGZ1bmN0aW9uIGBkYmdfZm9yY2VkX29vbWAgaXMgbmV2ZXIgdXNlZBtbMG0KICAgG1sxbRtbOTRtLS0+IBtbMG1zcmMvZ2xvYmFsL2ZhbGxiYWNrLnJzOjcwOTo0CiAgICAbWzFtG1s5NG18G1swbQobWzFtG1s5NG03MDkbWzBtIBtbMW0bWzk0bXwbWzBtIGZuIGRiZ19mb3JjZWRfb29tKCkgLT4gYm9vbCB7CiAgICAbWzFtG1s5NG18G1swbSAgICAbWzFtG1szM21eXl5eXl5eXl5eXl5eXhtbMG0KICAgIBtbMW0bWzk0bXwbWzBtCiAgICAbWzFtG1s5NG09IBtbMG0bWzFtbm90ZRtbMG06IGAjW3dhcm4oZGVhZF9jb2RlKV1gIChwYXJ0IG9mIGAjW3dhcm4odW51c2VkKV1gKSBvbiBieSBkZWZhdWx0CgobWzFtG1szM213YXJuaW5nG1swbTogYHNlZmVyLWFsbG9jYCAobGliKSBnZW5lcmF0ZWQgMSB3YXJuaW5nChtbMW0bWzkybSAgICBGaW5pc2hlZBtbMG0gYHRlc3RgIHByb2ZpbGUgW3Vub3B0aW1pemVkICsgZGVidWdpbmZvXSB0YXJnZXQocykgaW4gMC45OHMKG1sxbRtbMzNtd2FybmluZxtbMG06IHRoZSBmb2xsb3dpbmcgcGFja2FnZXMgY29udGFpbiBjb2RlIHRoYXQgd2lsbCBiZSByZWplY3RlZCBieSBhIGZ1dHVyZSB2ZXJzaW9uIG9mIFJ1c3Q6IHByb2MtbWFjcm8tZXJyb3IyIHYyLjAuMQobWzFtG1s5Mm1ub3RlG1swbTogdG8gc2VlIHdoYXQgdGhlIHByb2JsZW1zIHdlcmUsIHVzZSB0aGUgb3B0aW9uIGAtLWZ1dHVyZS1pbmNvbXBhdC1yZXBvcnRgLCBvciBydW4gYGNhcmdvIHJlcG9ydCBmdXR1cmUtaW5jb21wYXRpYmlsaXRpZXMgLS1pZCAxYAobWzFtG1s5Mm0gICAgIFJ1bm5pbmcbWzBtIHRlc3RzL3IxMV9waDViX2M2X2ZhbGxiYWNrX29vbS5ycyAodGFyZ2V0L2RlYnVnL2RlcHMvcjExX3BoNWJfYzZfZmFsbGJhY2tfb29tLTc1NWMxZTNhMTZkOTExZTIpCgpydW5uaW5nIDEgdGVzdAp0ZXN0IGZhbGxiYWNrX29vbV9pbmplY3Rpb25fbnVsbHNfYWxsb2NfYW5kX3JlY292ZXJzX3doZW5fZGlzYXJtZWQgLi4uIEZBSUxFRAoKZmFpbHVyZXM6CgotLS0tIGZhbGxiYWNrX29vbV9pbmplY3Rpb25fbnVsbHNfYWxsb2NfYW5kX3JlY292ZXJzX3doZW5fZGlzYXJtZWQgc3Rkb3V0IC0tLS0KCnRocmVhZCAnZmFsbGJhY2tfb29tX2luamVjdGlvbl9udWxsc19hbGxvY19hbmRfcmVjb3ZlcnNfd2hlbl9kaXNhcm1lZCcgKDgyODApIHBhbmlja2VkIGF0IHRlc3RzL3IxMV9waDViX2M2X2ZhbGxiYWNrX29vbS5yczo0Nzo1OgpmYWxsYmFjayBhbGxvYyB3aXRoIHRoZSBPT00gaW5qZWN0b3IgYXJtZWQgcmV0dXJuZWQgU29tZSgweDdmYWYxZDAyZjNjMCkg4oCUIHRoZSBpbmplY3Rpb24gZGlkIG5vdCBzdXJmYWNlIGFzIE9PTQpub3RlOiBydW4gd2l0aCBgUlVTVF9CQUNLVFJBQ0U9MWAgZW52aXJvbm1lbnQgdmFyaWFibGUgdG8gZGlzcGxheSBhIGJhY2t0cmFjZQoKCmZhaWx1cmVzOgogICAgZmFsbGJhY2tfb29tX2luamVjdGlvbl9udWxsc19hbGxvY19hbmRfcmVjb3ZlcnNfd2hlbl9kaXNhcm1lZAoKdGVzdCByZXN1bHQ6IEZBSUxFRC4gMCBwYXNzZWQ7IDEgZmFpbGVkOyAwIGlnbm9yZWQ7IDAgbWVhc3VyZWQ7IDAgZmlsdGVyZWQgb3V0OyBmaW5pc2hlZCBpbiAwLjAwcwoKG1sxbRtbOTFtZXJyb3IbWzBtOiB0ZXN0IGZhaWxlZCwgdG8gcmVydW4gcGFzcyBgLS10ZXN0IHIxMV9waDViX2M2X2ZhbGxiYWNrX29vbWAK
+E0_METADATA {"id":"R5b-19","kind":"restored","sha256":"5a45c3a14fb43cb2a87ef681acaccdcee3d68bd7c35a6de352f903b4a7e0dea1"}
+
+E0_STEP {"id":"R5b-19","kind":"restored-baseline","name":"fallback OOM baseline","argv":["cargo","test","--locked","--features","production alloc-global alloc-xthread alloc-decommit internals bench-internals","--test","r11_ph5b_c6_fallback_oom"],"env":{},"expect":{"exit":0,"stdoutRegex":["fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed","test result: ok"]}}
+[1m[33mwarning[0m: crates/tagged-index-stack/Cargo.toml: `lints.clippy.incompatible-msrv` is deprecated in favor of `lints.clippy.incompatible_msrv` and will not work in a future edition
+[1m[33mwarning[0m: `tagged-index-stack` (manifest) generated 1 warning
+[1m[92m   Compiling[0m sefer-alloc v0.3.0 (/home/runner/work/sefer-alloc/sefer-alloc)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m tests/r11_ph5b_c6_fallback_oom.rs (target/debug/deps/r11_ph5b_c6_fallback_oom-755c1e3a16d911e2)
+
+running 1 test
+test fallback_oom_injection_nulls_alloc_and_recovers_when_disarmed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+E0_STEP_END {"code":0,"signal":null,"error":null}
+E0_STDOUT G1sxbRtbMzNtd2FybmluZxtbMG06IGNyYXRlcy90YWdnZWQtaW5kZXgtc3RhY2svQ2FyZ28udG9tbDogYGxpbnRzLmNsaXBweS5pbmNvbXBhdGlibGUtbXNydmAgaXMgZGVwcmVjYXRlZCBpbiBmYXZvciBvZiBgbGludHMuY2xpcHB5LmluY29tcGF0aWJsZV9tc3J2YCBhbmQgd2lsbCBub3Qgd29yayBpbiBhIGZ1dHVyZSBlZGl0aW9uChtbMW0bWzMzbXdhcm5pbmcbWzBtOiBgdGFnZ2VkLWluZGV4LXN0YWNrYCAobWFuaWZlc3QpIGdlbmVyYXRlZCAxIHdhcm5pbmcKG1sxbRtbOTJtICAgQ29tcGlsaW5nG1swbSBzZWZlci1hbGxvYyB2MC4zLjAgKC9ob21lL3J1bm5lci93b3JrL3NlZmVyLWFsbG9jL3NlZmVyLWFsbG9jKQobWzFtG1s5Mm0gICAgRmluaXNoZWQbWzBtIGB0ZXN0YCBwcm9maWxlIFt1bm9wdGltaXplZCArIGRlYnVnaW5mb10gdGFyZ2V0KHMpIGluIDAuOThzChtbMW0bWzMzbXdhcm5pbmcbWzBtOiB0aGUgZm9sbG93aW5nIHBhY2thZ2VzIGNvbnRhaW4gY29kZSB0aGF0IHdpbGwgYmUgcmVqZWN0ZWQgYnkgYSBmdXR1cmUgdmVyc2lvbiBvZiBSdXN0OiBwcm9jLW1hY3JvLWVycm9yMiB2Mi4wLjEKG1sxbRtbOTJtbm90ZRtbMG06IHRvIHNlZSB3aGF0IHRoZSBwcm9ibGVtcyB3ZXJlLCB1c2UgdGhlIG9wdGlvbiBgLS1mdXR1cmUtaW5jb21wYXQtcmVwb3J0YCwgb3IgcnVuIGBjYXJnbyByZXBvcnQgZnV0dXJlLWluY29tcGF0aWJpbGl0aWVzIC0taWQgMWAKG1sxbRtbOTJtICAgICBSdW5uaW5nG1swbSB0ZXN0cy9yMTFfcGg1Yl9jNl9mYWxsYmFja19vb20ucnMgKHRhcmdldC9kZWJ1Zy9kZXBzL3IxMV9waDViX2M2X2ZhbGxiYWNrX29vbS03NTVjMWUzYTE2ZDkxMWUyKQoKcnVubmluZyAxIHRlc3QKdGVzdCBmYWxsYmFja19vb21faW5qZWN0aW9uX251bGxzX2FsbG9jX2FuZF9yZWNvdmVyc193aGVuX2Rpc2FybWVkIC4uLiBvawoKdGVzdCByZXN1bHQ6IG9rLiAxIHBhc3NlZDsgMCBmYWlsZWQ7IDAgaWdub3JlZDsgMCBtZWFzdXJlZDsgMCBmaWx0ZXJlZCBvdXQ7IGZpbmlzaGVkIGluIDAuMDBzCgo=

@@ -34,4 +34,5 @@ R4c-16,src/registry/heap_registry,,,Maintenance registry scan over uninitialised
 R4c-17,src/registry/heap_registry,,,Maintenance pass budget and cursor
 R4c-19,src/registry/heap_registry,,,Loom shadow model of the maintenance lease
 R5b-18,src/global/fallback.rs,,,Fallback heap OOM behaviour
+R5b-19,src/global/fallback.rs,,,Fallback heap OOM injector bypass mutant
 R6a-M8,src/global/maintenance_service.rs;src/registry/heap_registry,,,StartingGuard rollback on spawn failure

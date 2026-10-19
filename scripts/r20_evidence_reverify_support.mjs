@@ -82,6 +82,64 @@ export function readRegistry(text) {
   return map;
 }
 
+// Admitted mutant targets: crate sources and Loom shadow models only.
+export function assertMutantPath(file) {
+  if (typeof file !== 'string' ||
+      !/^(?:src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs|tests\/loom_[A-Za-z0-9_.-]+\.rs)$/.test(file) ||
+      file.split('/').includes('..') || file.split('/').includes('.')) {
+    throw Error('unsafe mutant path');
+  }
+}
+
+export function mutantPreflight(mutant, root, { resolvePath, relativePath, separator, isAbsolute, existsSync, lstatSync, realpathSync, readFileSync, writeFileSync, lf, hash }) {
+  // Re-checked here: preflight must not rely on validateRecipe having run.
+  assertMutantPath(mutant.file);
+  const path = resolvePath(root, mutant.file);
+  const rel = relativePath(root, path);
+  if (isAbsolute(mutant.file) || path === root || isAbsolute(rel) || rel === '..' ||
+      rel.startsWith(`..${separator}`)) throw Error('mutant path escape');
+  if (path !== root && !path.startsWith(root + separator)) throw Error('mutant path escape');
+  if (mutant.file.split('/').some((part) => part === '.' || part === '..')) {
+    throw Error('mutant path traversal');
+  }
+  let current = root;
+  for (const part of mutant.file.split('/')) {
+    current = resolvePath(current, part);
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) throw Error('mutant symlink');
+  }
+  const real = realpathSync(path);
+  if (!real.startsWith(root + separator)) throw Error('mutant realpath escape');
+  const original = readFileSync(real);
+  const source = lf(original.toString('utf8'));
+  const find = lf(mutant.find);
+  const replace = lf(mutant.replace);
+  const count = source.split(find).length - 1;
+  if (count !== 1) throw Error(`mutant exact count ${count}`);
+  return { file: real, original, source, find, replace, originalHash: hash(original) };
+}
+
+export function evaluateStep(expect, result, output) {
+  const markers = expect.stdoutRegex.map((regex) => ({
+    regex, matched: new RegExp(regex).test(output),
+    actual: [...output.matchAll(new RegExp(regex, 'g'))].map((match) => match[0]),
+  }));
+  const timedOut = [124, 137].includes(result.exit) ||
+    ['SIGTERM', 'SIGKILL'].includes(result.signal) || result.timedOut === true;
+  const compileFailure = /(?:^|\n)error: could not compile|error\[E\d+\]:|failed to run custom build command|Could not compile/i.test(output);
+  const crashReceipt = /(?:process (?:did not|didn't) exit successfully:[^\n]*(?:signal:\s*(?:11|7|6)|SIGSEGV|SIGBUS|SIGABRT|STATUS_ACCESS_VIOLATION|0xc0000005)|STATUS_ACCESS_VIOLATION|0xc0000005)/i.test(output);
+  const runtimeSignal = ['SIGSEGV', 'SIGBUS', 'SIGABRT'].includes(result.signal) ||
+    ([3221225477, -1073741819].includes(result.exit) && /STATUS_ACCESS_VIOLATION|0xc0000005/i.test(output));
+  const signalAccepted = expect.mutant === 'signal' && !timedOut && !compileFailure &&
+    /(?:^|\n)running [1-9]\d* test\b/.test(output) &&
+    (runtimeSignal || (result.exit === 101 && result.cargoBuildPassed === true && crashReceipt));
+  const exitAccepted = Number.isInteger(expect.exit) && result.exit === expect.exit &&
+    !result.signal && !result.error && !timedOut && !compileFailure;
+  const nonzeroAccepted = expect.exitNonZero === true && Number.isInteger(result.exit) &&
+    result.exit !== 0 && result.exit !== 124 && result.exit !== 137 && !result.signal &&
+    !result.error && !timedOut && !compileFailure;
+  return { passed: !result.error && !timedOut && (signalAccepted || exitAccepted || nonzeroAccepted) &&
+    markers.every((marker) => marker.matched), matches: markers, timedOut };
+}
 export function validateStep(step, where) {
   strict(step, ['name', 'env', 'argv', 'expect'], where);
   if (typeof step.name !== 'string' || !step.name.trim() || step.name.length > 120) {
@@ -114,15 +172,33 @@ export function validateStep(step, where) {
   if (!step.expect || typeof step.expect !== 'object' || Array.isArray(step.expect)) {
     throw Error(`${where} expect`);
   }
-  const expectationKeys = Object.keys(step.expect);
-  if (!('exit' in step.expect) || expectationKeys.length !== 2 ||
-      expectationKeys.find((key) => key !== 'exit') !== 'stdoutRegex') {
-    throw Error(`${where} expect keys`);
+  for (const key of Object.keys(step.expect)) {
+    if (!['exit', 'mutant', 'exitNonZero', 'stdoutRegex'].includes(key)) {
+      throw Error(`${where} expect unknown ${key}`);
+    }
   }
-  if (!Number.isInteger(step.expect.exit)) throw Error(`${where} exit`);
-  const patterns = step.expect.stdoutRegex || step.expect.stderrRegex;
+  const expectationKeys = Object.keys(step.expect);
+  const markersKeyValid = expectationKeys.includes('stdoutRegex') &&
+    expectationKeys.every((key) => ['exit', 'mutant', 'exitNonZero', 'stdoutRegex'].includes(key));
+  const signalExpectation = step.expect.mutant === 'signal' && !('exit' in step.expect) &&
+    !('exitNonZero' in step.expect) && markersKeyValid;
+  const nonzeroExpectation = step.expect.exitNonZero === true && !('exit' in step.expect) &&
+    !('mutant' in step.expect) && markersKeyValid;
+  const exitExpectation = Number.isInteger(step.expect.exit) && !('mutant' in step.expect) &&
+    !('exitNonZero' in step.expect) && markersKeyValid;
+  if (!signalExpectation && !nonzeroExpectation && !exitExpectation) throw Error(`${where} expect keys`);
+  if (signalExpectation && step.argv[0] === 'cargo' && args.includes('--no-run') &&
+      (step.expect.exit !== 0 || step.expect.mutant !== undefined || step.expect.exitNonZero !== undefined)) {
+    throw Error(`${where} Cargo build step must expect exit zero`);
+  }
+  const signalMarkers = step.expect.stdoutRegex;
+  if (signalExpectation && step.argv[0] === 'cargo' && !args.includes('--no-run') &&
+      (!signalMarkers.some((pattern) => /running(?: \[1-9\]\[0-9\]\*| 1 test| [1-9][0-9]* test)/.test(pattern)) || signalMarkers.length < 2)) {
+    throw Error(`${where} cargo signal requires running-test and signal receipt markers`);
+  }
+  const patterns = step.expect.stdoutRegex;
   if (!Array.isArray(patterns) || !patterns.length) throw Error(`${where} patterns`);
-  for (const pattern of patterns) {
+  for (const pattern of [...patterns, ...(step.expect.stderrRegex || [])]) {
     if (typeof pattern !== 'string' || !pattern) throw Error(`${where} regex`);
     new RegExp(pattern);
   }
@@ -140,21 +216,41 @@ export function validateRecipe(data, id, row, hash) {
   if (data.mutant !== null) {
     const mutant = data.mutant;
     strict(mutant, ['file', 'find', 'replace', 'steps', 'expect'], `${id}.mutant`);
-    if (typeof mutant.file !== 'string' ||
-        !/^src\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.rs$/.test(mutant.file) ||
-        mutant.file.split('/').includes('..')) {
-      throw Error('unsafe mutant path');
+    if (!mutant.expect || typeof mutant.expect !== 'object' || Array.isArray(mutant.expect) ||
+        Object.keys(mutant.expect).some((key) => !['signal', 'exitNonZero', 'stdoutRegex'].includes(key))) {
+      throw Error('mutant aggregate expectation keys');
     }
+
+    assertMutantPath(mutant.file);
     if (typeof mutant.find !== 'string' || !mutant.find ||
         typeof mutant.replace !== 'string' || !mutant.replace || mutant.find === mutant.replace) {
       throw Error('bad mutant text');
     }
     if (!Array.isArray(mutant.steps) || !mutant.steps.length) throw Error('mutant steps');
     mutant.steps.forEach((step, index) => validateStep(step, `${id}.mutant.${index}`));
-    strict(mutant.expect, ['exitNonZero', 'stdoutRegex'], `${id}.mutant.expect`);
-    if (mutant.expect.exitNonZero !== true || !Array.isArray(mutant.expect.stdoutRegex) ||
-        !mutant.expect.stdoutRegex.length) {
+    const expectationKeys = Object.keys(mutant.expect);
+    const expectationKind = expectationKeys.includes('signal') && mutant.expect.signal === true &&
+      !expectationKeys.includes('exitNonZero')
+      ? 'signal'
+      : expectationKeys.includes('exitNonZero') && mutant.expect.exitNonZero === true &&
+        !expectationKeys.includes('signal') ? 'exitNonZero' : null;
+    if (!expectationKind || expectationKeys.length !== 2 ||
+        !Array.isArray(mutant.expect.stdoutRegex) || !mutant.expect.stdoutRegex.length) {
       throw Error('mutant aggregate expectation');
+    }
+    if (mutant.expect.signal === true) {
+      const runtimeStep = mutant.steps.at(-1);
+      const setupSteps = mutant.steps.slice(0, -1);
+      const buildMatchesRuntime = setupSteps.some((step) => step.argv[0] === 'cargo' &&
+        step.argv.includes('--no-run') && JSON.stringify(step.env) === JSON.stringify(runtimeStep.env) &&
+        cargoBuildSignature(step.argv, step.env) === cargoBuildSignature(runtimeStep.argv, runtimeStep.env));
+      if (setupSteps.some((step) => step.expect.exit !== 0 || step.expect.exitNonZero !== undefined) ||
+          !buildMatchesRuntime || runtimeStep.expect.mutant !== 'signal' || runtimeStep.argv[0] !== 'cargo' ||
+          !runtimeStep.argv.includes('--nocapture') || runtimeStep.argv.includes('--no-run') ||
+          runtimeStep.expect.stdoutRegex.length < 2 ||
+          !runtimeStep.expect.stdoutRegex.some((pattern) => /running/.test(pattern))) {
+        throw Error('signal mutant requires exit-zero setup and final runtime signal step');
+      }
     }
     for (const pattern of mutant.expect.stdoutRegex) {
       if (typeof pattern !== 'string' || !pattern) throw Error('mutant regex');
@@ -164,40 +260,82 @@ export function validateRecipe(data, id, row, hash) {
   return data;
 }
 
-export function verifyPerformed(actual, expected, where, passed, mutant = false) {
-  if (!Array.isArray(actual) || actual.length > expected.length) {
+export function mutantVerdict(expect, steps) {
+  const complete = Array.isArray(steps) && steps.length > 0 && steps.every((step) => step.passed);
+  if (!complete) return false;
+  const last = steps.at(-1);
+  if (expect.signal === true) {
+    return last.expect?.mutant === 'signal' && last.argv?.[0] === 'cargo' &&
+      steps.slice(0, -1).every((step) => step.expect?.exit === 0 && step.passed && !step.error && !step.signal) &&
+      last.passed;
+  }
+  return expect.exitNonZero === true && steps.some((step) =>
+    (step.expect?.exitNonZero === true || step.exit !== 0) && step.exit !== null &&
+    !step.signal && !step.error && !step.timedOut);
+}
+
+export function cargoBuildSignature(argv, env) {
+  return JSON.stringify({ argv: argv.filter((arg) => arg !== '--no-run' && arg !== '--' && arg !== '--nocapture'), env });
+}
+
+// Shared receipt-frame codec: the runner encodes step output with
+// encodeOutputFrames() and the verifier decodes it with decodeOutputFrames().
+export function encodeOutputFrames(stdout, stderr) {
+  let text = '';
+  if (stdout && stdout.length) {
+    text += `E0_STDOUT ${Buffer.from(stdout, 'utf8').toString('base64')}\n`;
+  }
+  if (stderr && stderr.length) {
+    text += `E0_STDERR ${Buffer.from(stderr, 'utf8').toString('base64')}\n`;
+  }
+  return text;
+}
+export function decodeOutputFrames(text, channel) {
+  return [...text.matchAll(/E0_(STDOUT|STDERR) ([A-Za-z0-9+/=]+)\n/g)]
+    .filter((frame) => frame[1] === channel)
+    .map((frame) => Buffer.from(frame[2], 'base64').toString('utf8')).join('');
+}
+export function verifyPerformed(actual, expected, where, passed, mutant = false, outputForStep = null, stderrForStep = null) {
+  if (!Array.isArray(actual) || actual.length > expected.length || (passed && actual.length !== expected.length)) {
     throw Error(`${where} step count mismatch`);
   }
+  let successfulCargoBuild = null;
   for (let index = 0; index < actual.length; index += 1) {
     const result = actual[index];
     const step = expected[index];
+    const expectedExit = step.expect.mutant === 'signal' ? null :
+      (step.expect.exitNonZero === true ? -1 : step.expect.exit);
     if (!result || result.name !== step.name ||
         JSON.stringify(result.argv) !== JSON.stringify(step.argv) ||
         JSON.stringify(result.env) !== JSON.stringify(step.env) ||
-        JSON.stringify(result.expect) !== JSON.stringify(step.expect)) {
+        JSON.stringify(result.expect) !== JSON.stringify(step.expect) ||
+        result.expected !== expectedExit) {
       throw Error(`${where} step mismatch ${index}`);
     }
-    if (!Number.isInteger(result.expected) || result.expected !== step.expect.exit ||
-        result.exit === undefined || !Array.isArray(result.matches) ||
-        result.matches.length !== step.expect.stdoutRegex.length ||
-        result.matches.some((marker, markerIndex) =>
-          marker.regex !== step.expect.stdoutRegex[markerIndex] ||
-          typeof marker.matched !== 'boolean' || !Array.isArray(marker.actual))) {
-      throw Error(`${where} step result malformed ${index}`);
+    const output = outputForStep ? outputForStep(result) : result.output || '';
+    const stepResult = { ...result };
+    const cargoBuildForStep = successfulCargoBuild && step.argv?.[0] === 'cargo' &&
+      step.argv.includes('--test') && successfulCargoBuild.signature === cargoBuildSignature(step.argv, step.env);
+    const evaluated = evaluateStep(step.expect, { ...stepResult, cargoBuildPassed: cargoBuildForStep }, output);
+    if (step.argv?.[0] === 'cargo' && step.argv.includes('--no-run') && evaluated.passed &&
+        result.exit === 0 && !result.signal && !result.error) {
+      successfulCargoBuild = { signature: cargoBuildSignature(step.argv, step.env) };
     }
-    if (result.passed !== (result.exit === step.expect.exit &&
-        result.matches.every((marker) => marker.matched) && !result.signal && !result.error)) {
-      throw Error(`${where} step verdict inconsistent ${index}`);
+    if (result.passed !== evaluated.passed ||
+        result.expected !== expectedExit ||
+        result.exit !== undefined && result.exit !== null && !Number.isInteger(result.exit) ||
+        !Array.isArray(result.matches) ||
+        JSON.stringify(result.matches) !== JSON.stringify(evaluated.matches) ||
+        result.signal !== undefined && result.signal !== null && typeof result.signal !== 'string' ||
+        result.error !== undefined && result.error !== null && typeof result.error !== 'string') {
+      throw Error(`${where} step result malformed/verdict inconsistent ${index}`);
     }
-    const exitMatches = mutant
-      ? result.expected !== 0 && result.exit !== 0 && result.exit === result.expected
-      : result.expected === step.expect.exit;
-    if (passed && (!result.passed || result.exit !== step.expect.exit || !exitMatches ||
-        result.matches.some((marker) => !marker.matched))) {
-      throw Error(`${where} step did not pass ${index}`);
-    }
+    if (passed && !evaluated.passed) throw Error(`${where} step did not pass ${index}`);
   }
-  if (passed && actual.length !== expected.length) throw Error(`${where} missing steps`);
+  if (passed && mutant && expected.some((step) => step.expect.mutant === 'signal') &&
+      !mutantVerdict({ signal: true }, actual)) throw Error(`${where} aggregate signal verdict did not pass`);
+  if (passed && mutant && expected.some((step) => step.expect.exitNonZero === true) &&
+      !mutantVerdict({ exitNonZero: true }, actual)) throw Error(`${where} aggregate exit verdict did not pass`);
 }
 
 export function verifyArtifacts({ out, chosen, ident, registry, recipeRoot, hash, existsSync, readFileSync,
@@ -229,6 +367,7 @@ export function verifyArtifacts({ out, chosen, ident, registry, recipeRoot, hash
         result.source_sha !== ident.head || result.source_tree !== ident.tree) {
       throw Error(`status/identity mismatch ${result.id}`);
     }
+    const receipt = join(out, `_raw_reverify_${result.id}.log`);
     const file = recipePath(result.id, recipeRoot);
     if (!existsSync(file)) {
       if (result.recipe || result.recipe_sha256 ||
@@ -245,17 +384,32 @@ export function verifyArtifacts({ out, chosen, ident, registry, recipeRoot, hash
         throw Error(`recipe pin/activation mismatch ${result.id}`);
       }
       const data = loaded.recipe;
-      verifyPerformed(result.steps, data.steps, `${result.id} baseline`, result.verdict === 'pass');
+      const receipt = join(out, `_raw_reverify_${result.id}.log`);
+      if (!existsSync(receipt)) throw Error(`receipt missing ${result.id}`);
+      const receiptBytes = readFileSync(receipt);
+      const frameFor = (step, channel) => {
+        if (!Number.isInteger(step.start) || !Number.isInteger(step.end) ||
+            step.start < 0 || step.end < step.start || step.end > receiptBytes.length) {
+          throw Error(`step receipt range malformed ${result.id}`);
+        }
+        return decodeOutputFrames(receiptBytes.subarray(step.start, step.end).toString('utf8'), channel);
+      };
+      const outputForStep = (step) => frameFor(step, 'STDOUT');
+      const stderrForStep = (step) => frameFor(step, 'STDERR');
+      verifyPerformed(result.steps, data.steps, `${result.id} baseline`, result.verdict === 'pass', false,
+        (step) => outputForStep(step), (step) => stderrForStep(step));
       if (data.mutant) {
         verifyPerformed(result.mutant_steps, data.mutant.steps,
-          `${result.id} mutant`, result.verdict === 'pass', true);
+          `${result.id} mutant`, result.verdict === 'pass', true,
+          (step) => outputForStep(step), (step) => stderrForStep(step));
         verifyPerformed(result.restored_steps, data.steps,
-          `${result.id} restored`, result.verdict === 'pass');
+          `${result.id} restored`, result.verdict === 'pass', false,
+          (step) => outputForStep(step), (step) => stderrForStep(step));
         if (result.verdict === 'pass' && (!result.mutant_rejected ||
             result.mutant_original_sha256 !== result.mutant_restored_sha256 ||
             !SHA.test(result.mutant_original_sha256 || '') || !result.mutant_matches?.length ||
             result.mutant_matches.some((match) => !match.matched) ||
-            result.mutant_steps.some((step) => step.exit === 0))) {
+            !mutantVerdict(data.mutant.expect, result.mutant_steps))) {
           throw Error(`mutant/restoration mismatch ${result.id}`);
         }
       } else {
@@ -271,10 +425,8 @@ export function verifyArtifacts({ out, chosen, ident, registry, recipeRoot, hash
                 /should panic/i.test(marker.regex) && marker.matched === true).length !== 2))) {
           throw Error(`unexpected embedded mutant cycle ${result.id}`);
         }
-        if (isR0) {
-          verifyPerformed(result.steps, data.steps, 'R0-21 embedded mutant witnesses',
-            result.verdict === 'pass');
-        }
+        if (isR0) verifyPerformed(result.steps, data.steps, 'R0-21 embedded mutant witnesses',
+          result.verdict === 'pass', false, outputForStep, stderrForStep);
       }
     }
     if (result.verdict === 'pass') {
@@ -284,7 +436,6 @@ export function verifyArtifacts({ out, chosen, ident, registry, recipeRoot, hash
         throw Error(`pass toolchain/steps mismatch ${result.id}`);
       }
     }
-    const receipt = join(out, `_raw_reverify_${result.id}.log`);
     if (result.receipt) {
       if (result.receipt !== `docs/evidence/_raw_reverify_${result.id}.log` ||
           !SHA.test(result.receipt_sha256 || '') || !existsSync(receipt) ||
