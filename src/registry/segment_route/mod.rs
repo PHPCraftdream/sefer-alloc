@@ -11,6 +11,14 @@
 //! reclaimed on the last pin. Pins do not keep reservation memory alive: an independent
 //! owner ledger must do that until every unpublished free is accounted for.
 
+// Atomic seam for source-including Loom harnesses (see
+// tests/loom_b4_r1_pin_cache.rs, precedent
+// tests/loom_sidecar_bitmap_actual.rs): the protocol files below resolve
+// their atomics through `super` instead of `core::sync::atomic`, so a
+// harness re-exporting these names from its root module runs the REAL
+// production code on loom atomics.
+pub(crate) use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+
 mod directory;
 mod error;
 mod kind;

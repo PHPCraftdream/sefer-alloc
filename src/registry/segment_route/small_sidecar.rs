@@ -1,10 +1,10 @@
 //! Owning backing for the single authoritative SidecarBitmap primitive.
 #![allow(unsafe_code)]
 
-use core::ptr;
-use core::sync::atomic::AtomicU64;
+use super::AtomicU64;
 #[cfg(feature = "internals")]
-use core::sync::atomic::Ordering;
+use super::Ordering;
+use core::ptr;
 
 use crate::alloc_core::fatal::fatal;
 use crate::alloc_core::os::SEGMENT;
