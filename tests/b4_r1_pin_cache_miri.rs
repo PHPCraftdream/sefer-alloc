@@ -45,6 +45,7 @@
     feature = "bench-internals"
 ))]
 
+use std::alloc::GlobalAlloc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::alloc_core::AllocCore;
@@ -277,8 +278,17 @@ fn narrow_pin_cache_hit_release_and_delivery_miri() {
     // Owner-side deterministic drain: same-class own alloc/free cycles are
     // the production drain trigger for detached foreign publications.
     // ------------------------------------------------------------------
+    // Raw alloc/dealloc, not `Box`: on non-fastbin rows a by-value `Box::drop`
+    // frame hits the accepted P1-box defect (card 164, `dealloc_small` writes
+    // the link while the frame is live), which is not what this test pins.
+    let layout = core::alloc::Layout::new::<Block>();
     for _ in 0..10_000 {
-        drop(Box::new(Block([0u8; 256])));
+        // SAFETY: non-zero layout; the block is freed once with the same layout.
+        unsafe {
+            let p = GlobalAlloc::alloc(&GLOBAL, layout);
+            assert!(!p.is_null(), "owner drain cycle allocation failed");
+            GlobalAlloc::dealloc(&GLOBAL, p, layout);
+        }
         GLOBAL.trim_current_thread();
         if pending_at(first_addr) || pending_at(hit_addr) || pending_at(other_addr) {
             continue;
