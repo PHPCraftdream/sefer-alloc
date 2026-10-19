@@ -1,0 +1,29 @@
+Use of uninitialized value $pairs[0] in numeric lt (<) at /usr/bin/callgrind_annotate line 1200.
+Use of uninitialized value $high in numeric lt (<) at /usr/bin/callgrind_annotate line 1211.
+MARGINAL Ir/op (sefer larson T=1): 302
+--- by source file (Ir/op)
+  302.8	PROGRAM TOTALS
+  170.0	events annotated
+   80.0	split-n9c/crates/malloc-bench-rs/src/lib.rs
+   32.5	split-n9c/src/registry/heap_core/free/dealloc_own_base.rs
+   25.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/mod.rs
+   19.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sync/mpmc/list.rs
+   18.4	split-n9c/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   17.0	split-n9c/src/alloc_core/platform/size_classes.rs
+   15.9	(bit >> 3 1u8 << (bit & 7))
+   13.8	split-n9c/src/registry/heap_core/alloc/hot.rs
+   12.0	slots[idx] = Some(unsafe { alloc_block(a &mut rng) });
+   12.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   11.0	let cnt = self.tcache.classes[c].count as usize;
+    8.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+    7.9	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/sync/atomic.rs
+    6.8	16 + (r >> 8) as usize % (512 - 16)
+    6.8	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+    6.0	x ^= x >> 27;
+    6.0	x ^= x >> 12;
+    6.0	x ^= x << 25;
+    6.0	Some(SIZE2CLASS[seed_idx] as usize)
+    6.0	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/index.rs
+    6.0	(self.next_u64() % n as u64) as usize
+    5.0	unsafe fn alloc_block<A
+    5.0	if meta.magazine_bitmap().is_in_magazine(off) {

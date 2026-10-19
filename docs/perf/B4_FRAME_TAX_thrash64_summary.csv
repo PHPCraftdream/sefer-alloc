@@ -1,0 +1,4 @@
+label,arm,source_identity,segments,w_alloc_ir,w_free_ir,w_alloc_estcycles,w_free_estcycles
+t64-base,main f93c1b52,f93c1b52 (src clean),64,25,99,25,108.6
+t64-split,b4-split final,f93c1b52 + diff sha256 1638450c744e6adf86c5763d6be9be00c8fcfcc3e2c0229c240fd2a8b1922a97,64,26,103,26,112.6
+t64-mi2,mimalloc,f93c1b52 harness,1,212,23,212.4,23

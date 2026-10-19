@@ -183,7 +183,13 @@ impl HeapCore {
         // `large_hot_cursor`, as `alloc_batch` already does (R12-05); the
         // rotating probe retires remote Large publications over successive
         // allocs, and the full sweep stays on the refill rescue and trim paths.
-        #[cfg(feature = "alloc-xthread")]
+        // N1-alloc: under fastbin this drain moved INSIDE the
+        // `alloc_large_without_magazine` tail (one terminal tail instead of
+        // two non-tail calls); only the non-fastbin build keeps it here.
+        #[cfg(all(
+            feature = "alloc-xthread",
+            not(all(feature = "alloc-global", feature = "fastbin"))
+        ))]
         {
             if class.is_none() {
                 self.drain_large_before_alloc();
@@ -356,10 +362,9 @@ impl HeapCore {
         // Without fastbin every alloc reaches here, so hand the class computed
         // above down instead of reclassifying inside `AllocCore::alloc`.
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-        let ptr = self.alloc_large_without_magazine(layout);
+        return self.alloc_large_without_magazine(layout, class);
         #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
-        let ptr = self.core.alloc_with_class(layout, class);
-        ptr
+        return self.core.alloc_with_class(layout, class);
     }
 
     #[cfg(feature = "alloc-xthread")]
@@ -375,7 +380,15 @@ impl HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
     #[inline(never)]
-    fn alloc_large_without_magazine(&mut self, layout: Layout) -> *mut u8 {
+    fn alloc_large_without_magazine(&mut self, layout: Layout, class: Option<usize>) -> *mut u8 {
+        // N1-alloc: the Large-drain probe moved here from `alloc_with_class`
+        // so the magazine-hit path never pays for it and the Large arm is a
+        // single terminal tail call (drain + substrate alloc in one cold
+        // frame; guard order unchanged: drain still precedes the alloc).
+        #[cfg(feature = "alloc-xthread")]
+        if class.is_none() {
+            self.drain_large_before_alloc();
+        }
         self.core.alloc(layout)
     }
 

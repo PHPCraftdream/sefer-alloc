@@ -1,0 +1,27 @@
+MARGINAL Ir/op (sefer mstress T=1): 422
+--- by source file (Ir/op)
+  422.2	PROGRAM TOTALS
+  246.8	events annotated
+   49.5	split-n7b/crates/malloc-bench-rs/src/lib.rs
+   45.8	split-n7b/src/registry/heap_core/free/dealloc_own_base.rs
+   40.6	split-n7b/src/alloc_core/segment/bitmap/segment_bitmap.rs
+   33.1	split-n7b/src/alloc_core/small/alloc_core_small_magazine.rs
+   26.1	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs
+   24.8	split-n7b/src/alloc_core/platform/size_classes.rs
+   24.5	split-n7b/src/registry/heap_core/alloc/hot.rs
+   22.7	split-n7b/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs
+   18.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs
+   15.4	let cnt = self.tcache.classes[c].count as usize;
+   14.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs
+   14.7	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/option.rs
+   13.2	let bit = (off >> MIN_BLOCK_SHIFT) as usize;
+   13.0	Node
+   10.8	16 + (r >> 8) as usize % (512 - 16)
+   10.5	<counts for unidentified lines in split-n7b/src/registry/heap_core/free/dealloc_own_base.rs>
+   10.0	split-n7b/src/alloc_core/segment/segment_table/route_slots.rs
+    9.9	<counts for unidentified lines in split-n7b/src/alloc_core/small/alloc_core_small_magazine.rs>
+    8.6	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/slice/iter/macros.rs
+    8.4	Some(SIZE2CLASS[seed_idx] as usize)
+    8.4	/rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs
+    7.9	head_off = if next.is_null() {
+    7.8	let w = Self

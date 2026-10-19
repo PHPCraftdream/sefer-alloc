@@ -1,0 +1,51 @@
+== sefer w_alloc marginal Ir/op: 26
+   7.0	 | src/registry/heap_core/alloc/hot.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   7.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   6.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+   4.0	examples/zz_thrash.rs | fn w_alloc<A: GlobalAlloc>(a: &A, l: Layout) -> *mut u8 { unsafe { a.alloc(l) } }
+   4.0	 | examples/zz_thrash.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [tgtao-split-n9-th/release/examples/zz_thrash]
+   2.0	src/registry/heap_core/alloc/hot.rs | let issued = self.tcache.classes[c].slots[new_cnt & (TCACHE_CAP - 1)];
+   2.0	src/registry/heap_core/alloc/hot.rs | let cnt = self.tcache.classes[c].count as usize;
+   2.0	 | src/global/tls_heap.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   2.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	src/registry/heap_core/alloc/hot.rs | self.tcache.classes[c].count = new_cnt as u8;
+   1.0	src/registry/heap_core/alloc/hot.rs | let new_cnt = cnt - 1;
+   1.0	src/registry/heap_core/alloc/hot.rs | if cnt > 0 {
+   1.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | Node::write_u8(p, byte & !mask);
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/sys/thread_local/native/mod.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:zz_thrash::w_alloc::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+== sefer w_alloc cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=26.0
+== sefer w_free marginal Ir/op: 68
+  22.0	 | src/registry/heap_core/free/dealloc_own_base.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+  12.0	 | examples/zz_thrash.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc> [tgtao-split-n9-th/release/examples/zz_thrash]
+  11.0	examples/zz_thrash.rs | fn w_free<A: GlobalAlloc>(a: &A, p: *mut u8, l: Layout) { unsafe { a.dealloc(p, l) } }
+   8.0	 | src/alloc_core/segment/bitmap/segment_bitmap.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   7.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | (bit >> 3, 1u8 << (bit & 7))
+   5.0	src/registry/heap_core/free/dealloc_own_base.rs | if meta.magazine_bitmap().is_in_magazine(off) {
+   5.0	src/alloc_core/segment/segment_table/segment_table_impl.rs | if !self.last_root.is_null() && self.last_key == key.addr() {
+   5.0	 | src/alloc_core/segment/segment_table/segment_table_impl.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   4.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mod.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   3.0	src/registry/heap_core/free/dealloc_own_base.rs | if meta.alloc_bitmap().is_free(off) {
+   3.0	src/registry/heap_core/free/dealloc_own_base.rs | if (off as usize) < payload_start {
+   3.0	src/registry/heap_core/free/dealloc_own_base.rs | <counts for unidentified lines in split-n9-th/src/registry/heap_core/free/dealloc_own_base.rs>
+   3.0	src/alloc_core/segment/segment_header/segment_header_views.rs | match b {
+   3.0	 | src/alloc_core/segment/segment_header/segment_header_views.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   3.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/thread/local.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   3.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/ptr/mut_ptr.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   2.0	src/registry/heap_core/free/dealloc_own_base.rs | self.tcache.classes[c].count = (cnt + 1) as u8;
+   2.0	src/registry/heap_core/free/dealloc_own_base.rs | if cnt < cap {
+   2.0	src/registry/heap_core/free/dealloc_own_base.rs | if (off as usize) >= meta.bump_of() {
+   2.0	src/global/sefer_alloc/global_alloc.rs | if ptr.is_null() {
+   2.0	src/alloc_core/alloc_core/mem/mem_impl.rs | if off >= span {
+   2.0	 | src/global/sefer_alloc/global_alloc.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   2.0	 | src/alloc_core/alloc_core/mem/mem_impl.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   2.0	 | /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/core/src/num/uint_macros.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+   1.0	src/registry/heap_core/free/dealloc_own_base.rs | self.tcache.classes[c].slots[cnt & (TCACHE_CAP - 1)] = block;
+   1.0	src/registry/heap_core/free/dealloc_own_base.rs | let cnt = self.tcache.classes[c].count as usize;
+   1.0	src/global/tls_heap.rs | match LOCAL.try_with(|c| c.get()) {
+   1.0	src/alloc_core/segment/bitmap/segment_bitmap.rs | Node::write_u8(p, byte | mask);
+   1.0	examples/zz_thrash.rs | <counts for unidentified lines in split-n9-th/examples/zz_thrash.rs>
+   1.0	 | src/global/tls_heap.rs:zz_thrash::w_free::<sefer_alloc::global::sefer_alloc::core::SeferAlloc>
+== sefer w_free cache: D1m/op=0.00 LLm/op=0.00 EstCycles/op=68.0

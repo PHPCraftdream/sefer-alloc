@@ -1,0 +1,17 @@
+step,label,diff_sha,ao_alloc_ir,ao_free_ir,ao_alloc_cycles,ao_free_cycles,batch_alloc_ir,batch_free_ir,const_alloc_ir,const_free_ir,batchl_alloc,batchl_free,thrash_alloc,thrash_free,larson_ir,mstress_ir,flush_event_ir,verdict
+base,база main f93c1b52,,63,115,,120.6,136,173,26,74,133,175,26,74,319.4,494.1,509.1,base
+n1a,N1-alloc (split-a1),2992e8c8277f592d4480b257c5877f79c5d33055e4d29dd41508ae638f3a9699,55,115,,,,127,173,,,,,,,311.4,449.6,,GO
+n1b,N1-free хвосты,,63,110,,,,,,,,,,,322.1,,,NO-GO
+n1c,N1-free контекст,,63,111,,,,,,,,,,,320.9,,,NO-GO
+n1d,N1-free counterfactual,,63,110,,,,,,,,,,,320.1,,,NO-GO
+n2,N2 inline free-хвоста,,55,115,,,127,176,,,,,,,308,,,NO-GO
+n3,N3 root-only Tier-1,,55,116,,,127,170,26,75,,,,,,,NO-GO
+n6,N6 enum ClassIdx,,61,113,,,134,171,,,,,,,315.4,,,NO-GO
+n7,N7 refill до середины,,50,101,,,141,159,26,66,146,172,,,293.3,408,,NO-GO
+n7b,N7b вариант,,52,102,,,131,159,26,66,137,172,,,297.7,422.2,,NO-GO
+n8a,N8a слияние поиска runs,,55,116,,,127,175,,,,,,,NO-GO
+n8-fin,N8 n8b+n8c (split-n8-fin),d061cdbc324081bd73d9848cc18f9576a077b10e72044cfc764b0924668f9ac6,55,115,,,127,171,,,,,,,311.1,447.5,,GO
+n9c,N9 (split-n9c/n9d),639e44c3a6d0e0399ef64cd48cda98fcf4b0880b1b08da14eb54bbecc91efed5,55,108,62.3,113.2,127,162,26,67,133,175,26,67,302.8,431.5,,GO
+n4,N4 (split-n4, итог),a0daba8c4ddcbd09830c9cc9314f04ce9d96faac286b6da426ccc13a490b4448,55,105,62.0,110.2,126,159,26,66,131,172,26,66,302.5,422.2,421.0,финал
+n5,N5 LUT класс+divides,,55,113,62.0,118.2,126,166,26,66,,,,,,,NO-GO
+n5b,N5b counterfactual,,55,114,,,126,167,26,66,,,,,,,NO-GO

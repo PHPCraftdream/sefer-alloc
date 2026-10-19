@@ -1,4 +1,4 @@
-use super::{SegmentTable, HASH_CAPACITY, SEGMENT_SHIFT};
+use super::{SegmentTable, FREE_LIST_CAPACITY, HASH_CAPACITY, SEGMENT_SHIFT};
 // The fetch_max sites that consume this static are `alloc-stats`-gated.
 #[cfg(feature = "alloc-stats")]
 use super::HASH_REMOVE_MAX_SCAN_STEPS;
@@ -323,5 +323,61 @@ impl SegmentTable {
     #[inline(always)]
     pub(crate) fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
         self.hash_contains(base)
+    }
+}
+
+impl SegmentTable {
+    // -------------------------------------------------------------------
+    // Task #135 (Part 1) — O(1) free-list of recycled slot indices.
+    //
+    // A plain stack (LIFO) of `u32` slot indices, carved in the primordial
+    // segment right after the hash table. Invariant: an index is on the
+    // free-list IF AND ONLY IF the corresponding `slots[index]` is currently
+    // NULL. `unregister`/`recycle` push (after NULLing the slot); `register`
+    // pops (before writing the new base into the slot). Both call sites are
+    // guarded so an index is pushed at most once per NULL transition (see
+    // their `current == base` / `current != base` checks), so the free-list
+    // never holds a duplicate entry and never holds an index whose slot is
+    // actually live.
+    // -------------------------------------------------------------------
+
+    /// Address of free-list entry `i`. Pure pointer arithmetic through the
+    /// `node` seam.
+    #[inline(always)]
+    pub(super) fn free_list_slot_ptr(&self, i: usize) -> *mut u32 {
+        crate::alloc_core::node::Node::offset(
+            self.free_list as *mut u8,
+            i * core::mem::size_of::<u32>(),
+        ) as *mut u32
+    }
+
+    /// Push `idx` onto the free-list stack. Caller's invariant: `idx`'s slot
+    /// was just NULLed (transitioned live → recyclable) and is not already on
+    /// the free-list — see the guarded call sites in `unregister`/`recycle`.
+    #[inline]
+    pub(super) fn free_list_push(&mut self, idx: u32) {
+        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
+        debug_assert!(
+            (top as usize) < FREE_LIST_CAPACITY,
+            "free-list overflow — more recycled slots than MAX_SEGMENTS"
+        );
+        let slot = self.free_list_slot_ptr(top as usize);
+        crate::alloc_core::node::Node::write_u32(slot, idx);
+        crate::alloc_core::node::Node::write_u32(self.free_top, top + 1);
+    }
+
+    /// Pop the most-recently-recycled index off the free-list, or `None` if
+    /// it is empty. O(1).
+    #[inline]
+    pub(super) fn free_list_pop(&mut self) -> Option<u32> {
+        let top = crate::alloc_core::node::Node::read_u32(self.free_top as *const u32);
+        if top == 0 {
+            return None;
+        }
+        let new_top = top - 1;
+        let slot = self.free_list_slot_ptr(new_top as usize);
+        let idx = crate::alloc_core::node::Node::read_u32(slot);
+        crate::alloc_core::node::Node::write_u32(self.free_top, new_top);
+        Some(idx)
     }
 }

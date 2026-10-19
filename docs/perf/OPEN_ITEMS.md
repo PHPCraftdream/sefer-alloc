@@ -266,6 +266,14 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
    >   логи s7_cnt_12: `b4_find_segment_calls=368,604`, `b4_scan_words`
    >   ≤ 4,071,583 — −143× к s6_warm_01.
 
+102. **[A] B4 frame tax — хвосты принятой цепочки N1-alloc/N8/N9/N4.** (Filed 2026-10-20, `docs/perf/B4_FRAME_TAX.md`.)
+
+   > **Current state**
+   > - **Status:** open.
+   > - **Current:** (а) N9 на промахо-тяжёлой нагрузке thrash64 (64 сегмента) дороже базы на +4 Ir/free и +1 Ir/alloc (§9; на локальных нагрузках −7 Ir/free); (б) N7 «refill наполовину» — larson −5…−9 Ir, но пакетный alloc +5…+15 — решение владельца; (в) n4b «бит из указателя» на alloc-hit не измерен (оценка −2…−4 Ir); (г) Win64-часть налога кадра в WSL-callgrind не видна.
+   > - **Next trigger:** (а) политика заполнения memo N9 без записи на каждом выигрыше `hash_find` — следующий раунд микроприёмов; (б) решение владельца; (в) тот же раунд; (г) asm-трипвайр `w_alloc`/`w_free` для `x86_64-pc-windows-msvc` на CI.
+   > - **Evidence:** `docs/perf/B4_FRAME_TAX.md` §4, §6, §9; `docs/perf/B4_FRAME_TAX_summary.csv`, `docs/perf/B4_FRAME_TAX_thrash64_summary.csv`; сырьё `docs/perf/_raw_b4_frame_*.log`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**

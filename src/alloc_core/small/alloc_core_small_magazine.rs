@@ -613,31 +613,40 @@ impl AllocCore {
         } else {
             SegLayout::small_meta_end()
         };
+        // N3-c (split-n8c): hoist the accepted-offset range out of the loop as
+        // ONE saturating span. `span = bump.saturating_sub(payload_start)`;
+        // a block is accepted iff `(off - payload_start) mod 2^64 < span`.
+        // Equivalent to the per-block pair `off < payload_start || off >= bump`
+        // in ALL header states, including a corrupted `bump < payload_start`
+        // (both forms then reject every offset: see ox §1.5).
 
         // Capture the segment's CURRENT freelist head ONCE — the first accepted
         // block links to this (matching the first sequential `dealloc_small`,
         // whose `old_head` is exactly this value).
         let old_head = bt.head(class_idx);
-        let mut prev_off = old_head; // next-target for the next accepted block
         let mut last_accepted: Option<u32> = None;
+        // N3-b (split-n8b): thread the PREVIOUS block's pointer through the
+        // pass instead of re-deriving it per block from `prev_off`. The
+        // linked value and provenance are byte-identical: the hoisted
+        // `Node::deref(base, old_head)` and `block_nn.as_ptr()` of the prior
+        // iteration are exactly the `Node::deref(base, prev_off)` the old
+        // per-block branch computed (both derive from `base`, same address).
+        let mut prev_ptr: *mut u8 = if old_head == FREE_LIST_NULL {
+            core::ptr::null_mut()
+        } else {
+            Node::deref(base, old_head as usize)
+        };
         // Count accepted blocks for one owner-side credit retirement after `set_head`.
         let mut accepted_count: usize = 0;
+        let span: usize = bump.saturating_sub(payload_start);
 
         for &ptr in run {
             let off = (ptr as usize - base as usize) as u32;
-            // Guard 0 (per-block): H-1 payload lower bound (`payload_start`
-            // hoisted above — run-invariant). A `write_next` on an
-            // in-metadata offset would clobber this segment's own header/
-            // page-map/bin-table in place.
-            if (off as usize) < payload_start {
-                continue;
-            }
-            // Guard 1 (per-block): decommit stale-free `off >= bump`. M-1
-            // (UBFIX-3): previously `#[cfg(feature = "alloc-decommit")]`-only
-            // — non-decommit builds had no upper bound at all. Corruption
-            // containment must not depend on the decommit feature;
-            // unconditional now (`bump` is hoisted unconditionally above).
-            if (off as usize) >= bump {
+            // Guards 0+1 (per-block, split-n8c): the hoisted span check.
+            // `off < payload_start` wraps to a huge value ≥ span; `off >= bump`
+            // yields ≥ span. With a corrupted `bump < payload_start`, span is
+            // 0 and every offset is rejected — same strength as the old pair.
+            if (off as usize).wrapping_sub(payload_start) >= span {
                 continue;
             }
             // Guard 2 (per-block): skip a block whose current bitmap state is free.
@@ -651,17 +660,12 @@ impl AllocCore {
                 None => continue,
             };
             // Link this accepted block at the head of the run-local chain: its
-            // `next` is the PRIOR accepted block's off (or the captured
-            // `old_head` for the first accepted). Byte-identical to the LIFO
-            // push each sequential `dealloc_small` performs.
-            let next_ptr = if prev_off == FREE_LIST_NULL {
-                core::ptr::null_mut()
-            } else {
-                Node::deref(base, prev_off as usize)
-            };
-            Node::write_next(block_nn, next_ptr);
+            // `next` is the PRIOR accepted block (or the captured `old_head`
+            // for the first accepted). Byte-identical to the LIFO push each
+            // sequential `dealloc_small` performs.
+            Node::write_next(block_nn, prev_ptr);
             bm.mark_free(off);
-            prev_off = off;
+            prev_ptr = block_nn.as_ptr();
             last_accepted = Some(off);
             accepted_count += 1;
         }
