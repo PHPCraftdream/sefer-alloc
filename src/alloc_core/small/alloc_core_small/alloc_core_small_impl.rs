@@ -10,9 +10,9 @@ use crate::alloc_core::os;
 use crate::alloc_core::os::SEGMENT;
 // R7-A2: `SegmentHeader::segment_id_at` is consulted here by the
 // `alloc-segment-directory`-gated directory-bitmap maintenance arms of
-// `pop_free`/`drain_freelist_batch` and, unconditionally, by the Ph3a batch
-// commit witnesses (`IssueTransaction::commit_prepared`'s registry index),
-// so the import itself is unconditional.
+// `pop_free`/`drain_freelist_batch` and by the `hardened` freelist
+// validation, so the import is gated on exactly those features.
+#[cfg(any(feature = "hardened", feature = "alloc-segment-directory"))]
 use crate::alloc_core::segment_header::SegmentHeader;
 use crate::alloc_core::segment_header::{align_up, SegmentMeta, FREE_LIST_NULL};
 // `Layout as SegLayout` is consulted here only by the `alloc-decommit`-gated
@@ -24,7 +24,6 @@ use crate::alloc_core::segment_header::Layout as SegLayout;
 use crate::alloc_core::size_classes::SizeClasses;
 
 use crate::alloc_core::alloc_core::AllocCore;
-use crate::alloc_core::segment::segment_table::IssueTransaction;
 
 /// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
 /// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
@@ -539,9 +538,11 @@ impl AllocCore {
         }
         let mut meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
-        // The commit half re-validates this index against `segment`'s stamped
-        // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
-        let index = SegmentHeader::segment_id_at(segment) as usize;
+        // Run-level protocol (B4-R3): the fatal route guards run once in
+        // `prepare_small_issue_run`; per-block `prepare_for` promotes only on
+        // a leaf CHANGE, `run.commit` is one Release store (see `IssueRun`).
+        // The debug witness `index` re-check lives in `IssueRun::commit`;
+        // `issue_small` re-derives the id in all builds.
 
         {
             // Read the head ONCE.
@@ -549,6 +550,7 @@ impl AllocCore {
             if head_off == FREE_LIST_NULL {
                 return Ok(0);
             }
+            let mut run = self.table.prepare_small_issue_run(segment, class_idx);
             // Prepare every spill on the still-owned chain. On OOM head, bitmap, live count and
             // output stay unchanged; promoted leaves are valid zero-filled copies for a retry.
             #[cfg(not(feature = "hardened"))]
@@ -567,11 +569,7 @@ impl AllocCore {
                 let Some(nn) = NonNull::new(block) else {
                     break;
                 };
-                if self
-                    .table
-                    .prepare_small_issue(segment, probe, class_idx)
-                    .is_none()
-                {
+                if !run.prepare_for(probe) {
                     return Err(());
                 }
                 let next = Node::read_next(nn);
@@ -623,7 +621,7 @@ impl AllocCore {
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);
-                IssueTransaction::commit_prepared(&self.table, index, segment, head_off, class_idx);
+                run.commit(head_off);
                 out[k] = block_ptr;
                 k += 1;
                 // The probe pass above validated this same chain link by link.
@@ -638,6 +636,9 @@ impl AllocCore {
             // R7-A2: directory bitmap maintenance — the old head was non-null
             // (early return above), so the only transition is non-empty→empty
             // when the drain exhausted the chain (head_off == FREE_LIST_NULL).
+            // The run borrows `self.table` immutably; this last use ends the
+            // borrow before the `&mut self` directory publish below.
+            let _ = run;
             #[cfg(feature = "alloc-segment-directory")]
             if head_off == FREE_LIST_NULL {
                 let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
@@ -878,18 +879,16 @@ impl AllocCore {
         }
         let room = (SEGMENT - aligned_start) / block_size;
         let n = out.len().min(room);
-        // The commit half re-validates this index against `segment`'s stamped
-        // id (witness-checked in `IssueTransaction::commit`); `issue_small` re-derives it.
-        let index = SegmentHeader::segment_id_at(segment) as usize;
+        // Run-level protocol (B4-R3): guards once per run, per-block
+        // prepare_for promotes only on a leaf CHANGE, run.commit is one
+        // Release store (see `IssueRun`). The witness `index` re-check lives
+        // in `IssueRun::commit`'s debug path; `issue_small` re-derives the id.
         // A successful promotion is retained even if later OS commit fails;
         // no class code or issue credit changes until the carve commits.
+        let mut run = self.table.prepare_small_issue_run(segment, class_idx);
         for i in 0..n {
             let off = aligned_start + i * block_size;
-            if self
-                .table
-                .prepare_small_issue(segment, off as u32, class_idx)
-                .is_none()
-            {
+            if !run.prepare_for(off as u32) {
                 return Err(());
             }
         }
@@ -984,7 +983,7 @@ impl AllocCore {
                 }
             }
             let ptr = Node::deref(segment, off);
-            IssueTransaction::commit_prepared(&self.table, index, segment, off as u32, class_idx);
+            run.commit(off as u32);
             *slot = ptr;
         }
         Ok(n)
